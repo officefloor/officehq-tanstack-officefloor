@@ -11,6 +11,7 @@ import { claimDueNow, dueBy, isOverdue } from '../overdue/useOverdue';
 import { useSettings } from '../settings/useSettings';
 import { useSheetToday } from '../today/useSheetToday';
 import { claimed, claimsKey, useClaims, type Claim } from './useClaims';
+import { useClaimSelection } from './useClaimSelection';
 
 /** A person's claimed: the sum of their counted (OPEN or SETTLED; only SETTLED while held) claims' amounts. */
 function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: number }) {
@@ -46,6 +47,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   const today = useSheetToday(sheetId).data?.today;
   const periods = usePeriods(sheetId);
   const queryClient = useQueryClient();
+  const selection = useClaimSelection(sheetId);
   const [editing, setEditing] = useState<number | null>(null);
   const [refused, setRefused] = useState<number | null>(null);
   const [amount, setAmount] = useState('');
@@ -171,6 +173,14 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
           <tbody>
             {mine.map((c) => (
               <tr key={c.id} data-testid={`claim-row-${c.id}`}>
+                <td>
+                  <input
+                    type="checkbox"
+                    data-testid="claim-select"
+                    checked={selection.ids.has(c.id)}
+                    onChange={(e) => selection.toggle(c.id, e.target.checked)}
+                  />
+                </td>
                 <td data-testid="claim-number">{c.number ?? ''}</td>
                 <td data-testid="claim-amount">{c.amount}</td>
                 <td data-testid="claim-date">{c.date}</td>
@@ -225,6 +235,47 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   );
 }
 
+/** Open the selected claims together: the server opens, in list order, each that can be opened and
+ *  leaves the rest; the bar shows how many were opened and how many refused (gone while it runs). */
+function BulkOpen({ sheetId }: { sheetId: string }) {
+  const selection = useClaimSelection(sheetId);
+  const queryClient = useQueryClient();
+  const submitOnce = useSingleFlight();
+  const bulk = useMutation({
+    mutationFn: (claimIds: number[]) =>
+      postJson<{ opened: number; refused: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/bulk-open`, { claimIds }),
+    onSuccess: () => selection.clear(),
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+  });
+  return (
+    <p data-testid="bulk-open-bar">
+      <button
+        type="button"
+        data-testid="bulk-open"
+        disabled={bulk.isPending}
+        onClick={() =>
+          submitOnce(() => {
+            bulk.reset();
+            return bulk.mutateAsync([...selection.ids]);
+          })
+        }
+      >
+        Open selected ({selection.ids.size})
+      </button>
+      {bulk.isSuccess && (
+        <>
+          {' '}
+          Opened <strong data-testid="bulk-opened">{bulk.data.opened}</strong>, refused{' '}
+          <strong data-testid="bulk-refused">{bulk.data.refused}</strong>
+        </>
+      )}
+      {bulk.isError && <span data-testid="bulk-open-error">{bulk.error.message}</span>}
+    </p>
+  );
+}
+
 /** The sheet's claimed-total: everyone's claimed added up. */
 function ClaimedTotal({ sheetId }: { sheetId: string }) {
   const claims = useClaims(sheetId);
@@ -240,5 +291,6 @@ export const contributions = [
   PersonColumnHead.fill({ order: 10, Component: () => <th>Claimed</th> }),
   PersonCells.fill({ order: 10, Component: PersonClaimed }),
   PersonDetail.fill({ order: 10, Component: PersonClaims }),
+  SheetBody.fill({ order: 15, Component: BulkOpen }),
   SheetBody.fill({ order: 20, Component: ({ sheetId }) => <ClaimedTotal sheetId={sheetId} /> }),
 ];
