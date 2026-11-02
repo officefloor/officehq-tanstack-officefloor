@@ -1,0 +1,77 @@
+diff --git a/src/main/frontend/features/header/header.slot.tsx b/src/main/frontend/features/header/header.slot.tsx
+new file mode 100644
+index 000000000..64ebdc066
+--- /dev/null
++++ b/src/main/frontend/features/header/header.slot.tsx
+@@ -0,0 +1,32 @@
++import { SheetBody } from '../../slots/defs/sheetBody';
++import { useClaims } from '../claims/useClaims';
++import { useOverdue } from '../overdue/useOverdue';
++import { usePeople } from '../people/usePeople';
++import { useDueTotals } from '../rates/useDueTotals';
++import { sumDues } from '../rates/useRates';
++import { countWithStatus, STATUSES } from '../summary/statusCounts';
++
++/** The sheet's header counters, shown at all times: how many people are on the sheet (retired people
++ *  included), how many claims have each status (as the summary counts them), and the sheet's
++ *  due-total and overdue-total (as the totals show them). */
++function Header({ sheetId }: { sheetId: string }) {
++  const people = usePeople(sheetId);
++  const claims = useClaims(sheetId);
++  const dueTotals = useDueTotals(sheetId);
++  const overdue = [...useOverdue(sheetId).values()];
++  return (
++    <header data-testid="header">
++      People <strong data-testid="header-people-count">{(people.data ?? []).length}</strong>
++      {STATUSES.map((s) => (
++        <span key={s}>
++          {' '}
++          · {s} <strong data-testid={`header-claims-${s}-count`}>{countWithStatus(claims.data, s)}</strong>
++        </span>
++      ))}{' '}
++      · Due total <strong data-testid="header-due-total">{sumDues([...dueTotals.values()])}</strong> · Overdue
++      total <strong data-testid="header-overdue-total">{sumDues(overdue.map((f) => f.total))}</strong>
++    </header>
++  );
++}
++
++export const contribution = SheetBody.fill({ order: -10, Component: ({ sheetId }) => <Header sheetId={sheetId} /> });
+diff --git a/src/main/frontend/features/summary/statusCounts.ts b/src/main/frontend/features/summary/statusCounts.ts
+new file mode 100644
+index 000000000..5db29b007
+--- /dev/null
++++ b/src/main/frontend/features/summary/statusCounts.ts
+@@ -0,0 +1,9 @@
++import type { Claim } from '../claims/useClaims';
++
++/** The statuses the summary counts; no claim is PENDING today, so its count stays 0. */
++export const STATUSES: string[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'];
++
++/** How many of these claims have a status. */
++export function countWithStatus(claims: readonly Claim[] | undefined, status: string): number {
++  return (claims ?? []).filter((c) => c.status === status).length;
++}
+diff --git a/src/main/frontend/features/summary/summary.slot.tsx b/src/main/frontend/features/summary/summary.slot.tsx
+index a2a61200d..baab7522c 100644
+--- a/src/main/frontend/features/summary/summary.slot.tsx
++++ b/src/main/frontend/features/summary/summary.slot.tsx
+@@ -5,9 +5,7 @@ import { usePeriodDueTotals } from '../periods/usePeriodDueTotals';
+ import { usePeriods } from '../periods/usePeriods';
+ import { useDueTotals } from '../rates/useDueTotals';
+ import { sumDues } from '../rates/useRates';
+-
+-/** The statuses the summary counts; no claim is PENDING today, so its count stays 0. */
+-const STATUSES: string[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'];
++import { countWithStatus, STATUSES } from './statusCounts';
+ 
+ /** The sheet's summary, worked out from the same figures the lists show: per grade, how many people
+  *  have it on the sheet's today (retired people left out) and their due-totals added up (skipping
+@@ -72,7 +70,7 @@ function Summary({ sheetId }: { sheetId: string }) {
+             <tr key={s}>
+               <td>{s}</td>
+               <td data-testid={`summary-status-${s}-count`}>
+-                {(claims.data ?? []).filter((c) => c.status === s).length}
++                {countWithStatus(claims.data, s)}
+               </td>
+             </tr>
+           ))}
