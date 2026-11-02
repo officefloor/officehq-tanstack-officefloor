@@ -69,7 +69,19 @@ public class ClaimStatusChanger {
      *  writing nothing when it is refused. */
     public void change(String sheet, String user, Claim claim, ClaimStatusChange requested, String reason)
             throws InvalidClaimStatusChangeException {
-        requested = vet(sheet, user, claim, requested, reason);
+        change(sheet, user, claim, requested, reason, true);
+    }
+
+    /** Settles the claim just split off another to part-settle it, as the settle button does (to PENDING when the
+     *  clerk limit says so), save that the four-eyes rules and the proof rule were judged on the claim it was split
+     *  off, so are not judged again on it (whose opener is the user); writes nothing when it is refused. */
+    public void settlePart(String sheet, String user, Claim part) throws InvalidClaimStatusChangeException {
+        change(sheet, user, part, ClaimStatusChange.SETTLE, null, false);
+    }
+
+    private void change(String sheet, String user, Claim claim, ClaimStatusChange requested, String reason,
+            boolean ownRules) throws InvalidClaimStatusChangeException {
+        requested = vet(sheet, user, claim, requested, reason, ownRules);
         String voidReason = requested == ClaimStatusChange.VOID && voidReasons.any(sheet) ? reason.trim() : null;
         Person person = people.find(sheet, claim.person());
         Rollup.Snapshot before = rollup.take(sheet);
@@ -129,6 +141,12 @@ public class ClaimStatusChanger {
      *  it makes (a clerk's settle above the clerk limit is a move to PENDING). */
     public ClaimStatusChange vet(String sheet, String user, Claim claim, ClaimStatusChange requested, String reason)
             throws InvalidClaimStatusChangeException {
+        return vet(sheet, user, claim, requested, reason, true);
+    }
+
+    /** As {@link #vet}, judging the four-eyes rules and the proof rule on the claim only when ownRules. */
+    private ClaimStatusChange vet(String sheet, String user, Claim claim, ClaimStatusChange requested, String reason,
+            boolean ownRules) throws InvalidClaimStatusChangeException {
         // A viewer changes nothing.
         if (Role.VIEWER.equals(roles.of(sheet, user))) {
             throw new InvalidClaimStatusChangeException("A viewer cannot change a claim");
@@ -177,12 +195,12 @@ public class ClaimStatusChanger {
             throw new InvalidClaimStatusChangeException("A deferred claim cannot be settled until its date");
         }
         // Four eyes: the user who opened a claim may not settle it, nor approve it.
-        if ((requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.APPROVE)
+        if (ownRules && (requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.APPROVE)
                 && user.equals(claim.openedBy())) {
             throw new InvalidClaimStatusChangeException("The user who opened a claim cannot settle or approve it");
         }
         // Nor may the user who last edited it.
-        if ((requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.APPROVE)
+        if (ownRules && (requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.APPROVE)
                 && user.equals(claims.editedBy(sheet, claim.id()))) {
             throw new InvalidClaimStatusChangeException("The user who last edited a claim cannot settle or approve it");
         }
@@ -205,7 +223,7 @@ public class ClaimStatusChanger {
         // A claim whose due is above the proof threshold in force on its date (its person's grade's then when it has
         // one, else the sheet's) is settled or approved only once it has
         // a proof (a due of n/a is above no threshold); checked before the clerk limit, so it never goes to PENDING.
-        if (requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.APPROVE) {
+        if (ownRules && (requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.APPROVE)) {
             BigDecimal threshold = settings.proofThreshold(sheet, person.gradeOn(claim.date()),
                     LocalDate.parse(claim.date()));
             // While the sheet has proof kinds, it needs one proof of each of them, not just one.

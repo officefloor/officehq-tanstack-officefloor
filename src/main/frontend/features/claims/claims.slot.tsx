@@ -207,6 +207,17 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
     },
   });
   const split = useSubmitOnce(splitMutation);
+  // An OPEN claim part-settles an amount, typed beside the Settle part button: split off and settled at once.
+  const [partAmount, setPartAmount] = useState('');
+  const partMutation = useMutation({
+    mutationFn: (amount: string) =>
+      postJson<Claim[]>(byUser(`${claimsPath(sheet)}/${claim.id}/part`, user), { amount }),
+    onSuccess: (updated) => {
+      setPartAmount('');
+      queryClient.setQueryData(claimsKey(sheet), updated);
+    },
+  });
+  const settlePart = useSubmitOnce(partMutation);
   const selected = useSelectedClaims(sheet).has(claim.id);
   // Edit opens the claim's editor by locking it for this user: the server refuses a claim that is not a DRAFT, one
   // due inside a closed period, or one another user's editor holds, and the row shows the error instead.
@@ -308,6 +319,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           commentMutation.reset();
           lineMutation.reset();
           splitMutation.reset();
+          partMutation.reset();
           inlineMutation.reset();
           waiveMutation.reset();
           holdMutation.reset();
@@ -333,6 +345,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           commentMutation.reset();
           lineMutation.reset();
           splitMutation.reset();
+          partMutation.reset();
           inlineMutation.reset();
           waiveMutation.reset();
           holdMutation.reset();
@@ -371,6 +384,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           remindMutation.reset();
           redateMutation.reset();
           splitMutation.reset();
+          partMutation.reset();
           inlineMutation.reset();
           addProof(proofKind);
         }}
@@ -393,6 +407,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           remindMutation.reset();
             redateMutation.reset();
             splitMutation.reset();
+            partMutation.reset();
             inlineMutation.reset();
           inlineMutation.reset();
             proofMutation.reset();
@@ -429,6 +444,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           status.reset();
           move.reset();
           splitMutation.reset();
+          partMutation.reset();
           inlineMutation.reset();
         }}
       />{' '}
@@ -446,6 +462,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           remindMutation.reset();
           redateMutation.reset();
           splitMutation.reset();
+          partMutation.reset();
           inlineMutation.reset();
           proofMutation.reset();
           commentMutation.reset();
@@ -479,6 +496,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           remindMutation.reset();
           redateMutation.reset();
           splitMutation.reset();
+          partMutation.reset();
           proofMutation.reset();
           commentMutation.reset();
           lineMutation.reset();
@@ -501,6 +519,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           remindMutation.reset();
           redateMutation.reset();
           splitMutation.reset();
+          partMutation.reset();
           inlineMutation.reset();
           proofMutation.reset();
           commentMutation.reset();
@@ -522,6 +541,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           setMoveTo(e.target.value);
           move.reset();
           splitMutation.reset();
+          partMutation.reset();
           inlineMutation.reset();
         }}
       >
@@ -548,6 +568,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           remindMutation.reset();
           redateMutation.reset();
           splitMutation.reset();
+          partMutation.reset();
           inlineMutation.reset();
           proofMutation.reset();
           commentMutation.reset();
@@ -571,6 +592,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           remindMutation.reset();
           redateMutation.reset();
           splitMutation.reset();
+          partMutation.reset();
           inlineMutation.reset();
           proofMutation.reset();
           commentMutation.reset();
@@ -592,6 +614,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           remindMutation.reset();
           redateMutation.reset();
           splitMutation.reset();
+          partMutation.reset();
           inlineMutation.reset();
         }}
       />{' '}
@@ -608,6 +631,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           commentMutation.reset();
           lineMutation.reset();
           splitMutation.reset();
+          partMutation.reset();
           inlineMutation.reset();
           redateMutation.reset();
           remindMutation.reset();
@@ -633,6 +657,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           commentMutation.reset();
           lineMutation.reset();
           splitMutation.reset();
+          partMutation.reset();
           inlineMutation.reset();
           remindMutation.reset();
           remind(undefined);
@@ -669,6 +694,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           commentMutation.reset();
           lineMutation.reset();
           splitMutation.reset();
+          partMutation.reset();
           inlineMutation.reset();
           redate(redateTo);
         }}
@@ -682,6 +708,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
         onChange={(e) => {
           setSplitAmount(e.target.value);
           splitMutation.reset();
+          partMutation.reset();
           inlineMutation.reset();
         }}
       />{' '}
@@ -702,10 +729,45 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           proofMutation.reset();
           commentMutation.reset();
           lineMutation.reset();
+          partMutation.reset();
           split(splitAmount);
         }}
       >
         Split
+      </button>{' '}
+      <input
+        data-testid="claim-settle-part-amount"
+        placeholder="settle part amount"
+        value={partAmount}
+        onChange={(e) => {
+          setPartAmount(e.target.value);
+          partMutation.reset();
+          inlineMutation.reset();
+        }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="claim-settle-part"
+        disabled={partMutation.isPending}
+        onClick={() => {
+          clearEditError();
+          status.reset();
+          move.reset();
+          resettleMutation.reset();
+          deferMutation.reset();
+          waiveMutation.reset();
+          holdMutation.reset();
+          remindMutation.reset();
+          redateMutation.reset();
+          proofMutation.reset();
+          commentMutation.reset();
+          lineMutation.reset();
+          splitMutation.reset();
+          inlineMutation.reset();
+          settlePart(partAmount);
+        }}
+      >
+        Settle part
       </button>{' '}
       <input
         data-testid="claim-comment-text"
@@ -733,6 +795,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           redateMutation.reset();
           proofMutation.reset();
           splitMutation.reset();
+          partMutation.reset();
           inlineMutation.reset();
           commentMutation.reset();
           lineMutation.reset();
@@ -784,6 +847,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           redateMutation.reset();
           proofMutation.reset();
           splitMutation.reset();
+          partMutation.reset();
           inlineMutation.reset();
           commentMutation.reset();
           lineMutation.reset();
@@ -877,6 +941,11 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
       {splitMutation.isError && (
         <span data-testid="claim-error" role="alert">
           {' '}A {claim.status} claim cannot be split (only an OPEN claim, not deferred nor due inside a closed period, by a role that may open a claim, and only an amount more than 0.00 and less than the claim's).
+        </span>
+      )}
+      {partMutation.isError && (
+        <span data-testid="claim-error" role="alert">
+          {' '}A {claim.status} claim cannot be part-settled (the amount must split off as the Split button does, and the part must settle as the Settle button does: not by the user who opened or last edited the claim, and with a proof while the claim's due is above the proof threshold).
         </span>
       )}
       {inlineMutation.isError && (
