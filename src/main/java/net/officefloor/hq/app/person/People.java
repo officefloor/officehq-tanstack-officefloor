@@ -214,6 +214,11 @@ public class People {
         }
     }
 
+    /** Turns every grade record of the person on the grade into the other grade, whatever its from-date. */
+    public void regrade(long id, String grade, String into) {
+        jdbc.update("UPDATE person_grade SET grade = ? WHERE person_id = ? AND grade = ?", into, id, grade);
+    }
+
     /** Sets the person's own terms from the beginning of time (null: none). */
     public void setTerms(long id, Integer terms) {
         jdbc.update("UPDATE person SET terms = ? WHERE id = ?", terms, id);

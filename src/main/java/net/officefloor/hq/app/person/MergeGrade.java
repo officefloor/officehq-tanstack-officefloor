@@ -15,7 +15,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 /**
  * A steward merges a grade into another: every person whose grade in force on the sheet's today is the merged grade is
  * given the other from the sheet's today, in list order (by position), exactly as the person form would, each with its
- * own PERSON_EDITED and rollup lines after the GRADE_MERGED line, then the rollup lines of the whole merge. Refused before anything is written for anyone but a
+ * own PERSON_EDITED and rollup lines after the GRADE_MERGED line; then every grade record of theirs on the merged grade,
+ * whatever its from-date, becomes the other (so all their claims use its rates, terms and thresholds; frozen and
+ * statement-bound figures stay as they are), then the rollup lines of the whole merge. Refused before anything is written for anyone but a
  * steward, a grade not the sheet's, the same grade twice, or a retired grade to give anyone.
  */
 public class MergeGrade {
@@ -50,6 +52,8 @@ public class MergeGrade {
                             current.terms() == null ? "" : current.terms().toString(),
                             current.contact() == null ? "" : current.contact(), null),
                     people, clock, audit, rollup);
+            // The merge is retroactive: every grade record of theirs on the merged grade becomes the other.
+            people.regrade(current.id(), from, into);
         }
         // Then the figures the merge as a whole moved.
         rollup.record(sheet, user, before);
