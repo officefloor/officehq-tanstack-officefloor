@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { byUser } from '../session/session';
-import { usePeople } from '../people/people';
+import { shownName, usePeople } from '../people/people';
 import { usePersonDueCentsOf } from '../claims/claims';
 import { twoDecimals } from '../rates/rates';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
@@ -39,10 +39,12 @@ function CrewRow({ sheet, user, crew }: { sheet: string; user: string; crew: Cre
   };
 
   const due = crewDueCents(crew, people, dueOf);
+  const lead = people.find((p) => p.id === crew.lead.person);
+  const leadName = lead ? shownName(lead) : crew.lead.name;
 
   return (
     <li data-testid={`crew-row-${crew.name}`}>
-      <strong>{crew.name}</strong> — lead <span data-testid="crew-lead">{crew.lead.name}</span>, due total{' '}
+      <strong>{crew.name}</strong> — lead <span data-testid="crew-lead">{leadName}</span>, due total{' '}
       <span data-testid="crew-due-total"><Fig>{twoDecimals(due)}</Fig></span>
       <ul>
         {crew.members.map((m) => (

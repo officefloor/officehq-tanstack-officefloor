@@ -6,7 +6,7 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { byUser } from '../session/session';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
-import { GRADES, isRetired, peopleKey, peoplePath, usePeople, useShowRetired } from './people';
+import { GRADES, isRetired, peopleKey, peoplePath, shownName, usePeople, useShowRetired } from './people';
 import type { Grade, Person } from './people';
 import { SORT_KEYS, useSorted, useSortBy } from './sort';
 import type { SortKey } from './sort';
@@ -284,7 +284,7 @@ function People({ sheet, user }: { sheet: string; user: string }) {
         <tbody>
           {people.map((p) => (
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
-              <td data-testid="person-name">{p.name}</td>
+              <td data-testid="person-name">{shownName(p)}</td>
               <td data-testid="person-grade">{p.grade}</td>
               {shown('terms') && <td data-testid="person-terms">{termsText(p)}</td>}
               {shown('contact') && <td data-testid="person-contact">{p.contact ?? ''}</td>}

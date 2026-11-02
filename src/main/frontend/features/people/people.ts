@@ -54,6 +54,10 @@ export type Person = {
   flagged: boolean;
 };
 
+/** A person's name as the screen shows it: "<name> (<grade in force on the sheet's today>)". Exports, audit lines,
+ *  the import and paste boxes and the selects of names keep the plain name. */
+export const shownName = (p: Person) => `${p.name} (${p.grade})`;
+
 /** The person's grade in force on a date (yyyy-MM-dd): the one whose from-date is the latest on or before it. */
 export function gradeOn(person: Person, date: string): Grade | undefined {
   let found: GradeFrom | undefined;

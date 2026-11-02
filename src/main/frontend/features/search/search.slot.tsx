@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { getJson } from '../../api/http';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
-import { usePeople } from '../people/people';
+import { shownName, usePeople } from '../people/people';
 import { useAliases } from '../aliases/aliases';
 import { useClaims, usePersonDueCentsOf } from '../claims/claims';
 import { useRates, showDue } from '../rates/rates';
@@ -27,7 +27,7 @@ function SheetMatches({ sheet, text, report }: { sheet: string; text: string; re
               p.name.toLowerCase().includes(needle) ||
               aliases.some((a) => a.person === p.id && a.alias.toLowerCase().includes(needle)),
           )
-          .map((p) => `${sheet} ${p.name} ${showDue(dueOf(p))}`)
+          .map((p) => `${sheet} ${shownName(p)} ${showDue(dueOf(p))}`)
       : null;
   const key = lines === null ? null : JSON.stringify(lines);
   useEffect(() => {

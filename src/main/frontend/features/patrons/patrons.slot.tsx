@@ -5,7 +5,7 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { byUser } from '../session/session';
 import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
 import { useShown } from '../columns/columns';
-import { peoplePath, usePeople } from '../people/people';
+import { peoplePath, shownName, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { recentSettledCents, useClaims } from '../claims/claims';
 import { twoDecimals } from '../rates/rates';
@@ -58,7 +58,7 @@ function PersonPatrons({ sheet, user, person }: { sheet: string; user: string; p
   const named = mine.map((p, i) => ({ patron: p, share: shares[i] }));
   const names = [...named]
     .sort((a, b) => a.patron.name.localeCompare(b.patron.name))
-    .map((n) => `${n.patron.name} ${twoDecimals(n.share)}`);
+    .map((n) => `${shownName(n.patron)} ${twoDecimals(n.share)}`);
   const backing = roundHundredths(
     named.reduce((sum, n) => sum + recentSettledCents(claims, n.patron, today) * n.share, 0n),
   );
