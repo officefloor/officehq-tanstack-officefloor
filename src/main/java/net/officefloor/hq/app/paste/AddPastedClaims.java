@@ -19,6 +19,7 @@ import net.officefloor.hq.app.period.Periods;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.setting.Settings;
+import net.officefloor.hq.app.sheet.SheetClock;
 import net.officefloor.plugin.variable.Val;
 import net.officefloor.web.ObjectResponse;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -38,7 +39,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 public class AddPastedClaims {
     public void add(@PathVariable("sheet") String sheet, @RequestParam("user") String user,
             @Val PastedClaims pasted, Claims claims, Periods periods, Settings settings, Holidays holidays, ClaimLog log, Audit audit, Rollup rollup,
-            ClaimStatusChanger changer, PlatformTransactionManager transactions, ObjectResponse<PasteResponse> response)
+            ClaimStatusChanger changer, SheetClock clock, PlatformTransactionManager transactions, ObjectResponse<PasteResponse> response)
             throws InvalidClaimException {
         TransactionTemplate transaction = new TransactionTemplate(transactions);
         transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_NESTED);
@@ -49,7 +50,7 @@ public class AddPastedClaims {
             // Within a savepoint, so a refusal part way through undoes the lines before it.
             transaction.execute((status) -> {
                 try {
-                    take(sheet, user, pasted, was, claims, periods, settings, holidays, log, audit, rollup, changer);
+                    take(sheet, user, clock.today(sheet), pasted, was, claims, periods, settings, holidays, log, audit, rollup, changer);
                 } catch (InvalidClaimException refused) {
                     throw new Refused(refused);
                 }
@@ -66,7 +67,7 @@ public class AddPastedClaims {
         response.send(new PasteResponse(pasted.lines().size(), claims.list(sheet)));
     }
 
-    private static void take(String sheet, String user, PastedClaims pasted, List<Claim> was, Claims claims,
+    private static void take(String sheet, String user, LocalDate today, PastedClaims pasted, List<Claim> was, Claims claims,
             Periods periods, Settings settings, Holidays holidays, ClaimLog log, Audit audit, Rollup rollup,
             ClaimStatusChanger changer) throws InvalidClaimException {
         for (PastedClaim line : pasted.lines()) {
@@ -80,7 +81,7 @@ public class AddPastedClaims {
                     .toList();
             long id;
             if (matches.isEmpty()) {
-                id = add(sheet, user, person, input, claims, periods, settings, holidays, log, audit, rollup);
+                id = add(sheet, user, today, person, input, claims, periods, settings, holidays, log, audit, rollup);
             } else {
                 Claim draft = matches.stream().filter((c) -> c.status() == ClaimStatus.DRAFT).findFirst()
                         .orElseThrow(() -> new InvalidClaimException(
@@ -107,11 +108,11 @@ public class AddPastedClaims {
         }
     }
 
-    private static long add(String sheet, String user, Person person, ClaimInput input, Claims claims, Periods periods,
+    private static long add(String sheet, String user, LocalDate today, Person person, ClaimInput input, Claims claims, Periods periods,
             Settings settings, Holidays holidays, ClaimLog log, Audit audit, Rollup rollup) {
         Rollup.Snapshot before = rollup.take(sheet);
-        LocalDate dueBy = person.dueBy(sheet, input.date(), settings, holidays);
-        long id = claims.add(sheet, person.id(), input, dueBy, person.termsOn(sheet, input.date(), settings));
+        LocalDate dueBy = person.dueBy(sheet, input.date(), today, settings, holidays);
+        long id = claims.add(sheet, person.id(), input, dueBy, person.termsOn(sheet, today, settings));
         log.record(sheet, user, id);
         audit.record("CLAIM_ADDED sheet=" + sheet + " by=" + user + " " + input.addedAuditFields(person.name()));
         if (periods.softClosedOn(sheet, dueBy)) {

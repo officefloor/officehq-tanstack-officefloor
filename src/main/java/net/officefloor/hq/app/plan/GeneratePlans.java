@@ -44,13 +44,13 @@ public class GeneratePlans {
                 if (plans.made(plan.id(), day)) {
                     continue;
                 }
-                LocalDate dueBy = person.dueBy(sheet, day, settings, holidays);
+                LocalDate dueBy = person.dueBy(sheet, day, today, settings, holidays);
                 if (periods.closedOn(sheet, dueBy) || person.retiredBefore(day)) {
                     continue;
                 }
                 ClaimInput input = new ClaimInput(new BigDecimal(plan.amount()), day, "");
                 Rollup.Snapshot before = rollup.take(sheet);
-                long id = claims.add(sheet, person.id(), input, dueBy, person.termsOn(sheet, day, settings));
+                long id = claims.add(sheet, person.id(), input, dueBy, person.termsOn(sheet, today, settings));
                 log.record(sheet, user, id);
                 plans.recordMade(plan.id(), day, id);
                 audit.record("CLAIM_ADDED sheet=" + sheet + " by=" + user + " " + input.addedAuditFields(person.name()));

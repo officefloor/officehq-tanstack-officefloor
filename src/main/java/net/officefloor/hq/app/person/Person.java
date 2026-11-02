@@ -111,21 +111,21 @@ public record Person(long id, String name, String grade, long version, String re
     }
 
     /**
-     * The due-by of a claim of theirs dated {@code date}, fixed when it is made: the terms-th business day after the
-     * date (skipping weekends and the sheet's holidays as they stand now), the terms being the first of their own
-     * terms, the terms of their grade then, and the sheet's terms then.
+     * The due-by of a claim of theirs dated {@code date}, fixed when it is made on {@code made} (the sheet's today
+     * then): the terms-th business day after the date (skipping weekends and the sheet's holidays as they stand now),
+     * the terms being those in force on the day it is made (see {@link #termsOn}).
      */
-    public LocalDate dueBy(String sheet, LocalDate date, Settings settings, Holidays holidays) {
-        return holidays.businessDaysAfter(sheet, date, termsOn(sheet, date, settings));
+    public LocalDate dueBy(String sheet, LocalDate date, LocalDate made, Settings settings, Holidays holidays) {
+        return holidays.businessDaysAfter(sheet, date, termsOn(sheet, made, settings));
     }
 
     /**
-     * The terms a claim of theirs dated {@code date} is fixed with: their own in force then, else their grade's then,
-     * else the sheet's then.
+     * The terms a claim of theirs made on {@code made} (the sheet's today then) is fixed with: their own in force that
+     * day, else those of the grade they had that day, else the sheet's that day.
      */
-    public int termsOn(String sheet, LocalDate date, Settings settings) {
-        Integer own = termsOn(termsFrom, date);
-        return own != null ? own : settings.terms(sheet, gradeOn(date), date);
+    public int termsOn(String sheet, LocalDate made, Settings settings) {
+        Integer own = termsOn(termsFrom, made);
+        return own != null ? own : settings.terms(sheet, gradeOn(made), made);
     }
 
     /** Their own terms in force on the date: the ones whose from-date is the latest on or before it (null: none). */

@@ -11,6 +11,7 @@ import net.officefloor.hq.app.person.InvalidPersonException;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.setting.Settings;
+import net.officefloor.hq.app.sheet.SheetClock;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -24,7 +25,7 @@ public class ValidateQuickAdd {
     private static final Pattern AMOUNT = Pattern.compile("\\d+(\\.\\d{1,2})?");
 
     public void validate(@PathVariable("sheet") String sheet, @RequestBody QuickAddRequest request, Settings settings, Holidays holidays,
-            Periods periods, People people, Out<QuickAddRequest> body, Out<ClaimInput> claim)
+            Periods periods, People people, SheetClock clock, Out<QuickAddRequest> body, Out<ClaimInput> claim)
             throws InvalidPersonException, InvalidClaimException {
         String name = request == null || request.name() == null ? "" : request.name().trim();
         String amount = request == null || request.amount() == null ? "" : request.amount().trim();
@@ -35,10 +36,12 @@ public class ValidateQuickAdd {
             throw new InvalidClaimException("The amount must be a number of 0.00 or more with up to two decimals");
         }
         ClaimInput input = new ClaimInput(new BigDecimal(amount), settings.entryDay(sheet), "");
-        // The due-by it would be fixed with: from the person of the name, else from a new person of grade A.
+        // The due-by it would be fixed with, from the terms in force today: from the person of the name, else from a
+        // new person of grade A.
         Person person = people.findByName(sheet, name);
-        LocalDate dueBy = person != null ? person.dueBy(sheet, input.date(), settings, holidays)
-                : holidays.businessDaysAfter(sheet, input.date(), settings.terms(sheet, "A", input.date()));
+        LocalDate today = clock.today(sheet);
+        LocalDate dueBy = person != null ? person.dueBy(sheet, input.date(), today, settings, holidays)
+                : holidays.businessDaysAfter(sheet, input.date(), settings.terms(sheet, "A", today));
         if (periods.closedOn(sheet, dueBy)) {
             throw new InvalidClaimException("A claim may not be due inside a closed period");
         }

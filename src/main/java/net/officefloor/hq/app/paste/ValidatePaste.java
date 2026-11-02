@@ -17,6 +17,7 @@ import net.officefloor.hq.app.period.Periods;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.setting.Settings;
+import net.officefloor.hq.app.sheet.SheetClock;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -33,7 +34,7 @@ public class ValidatePaste {
     private static final Pattern AMOUNT = Pattern.compile("-?\\d+(\\.\\d{1,2})?");
 
     public void validate(@PathVariable("sheet") String sheet, @RequestBody PasteRequest request, People people,
-            Settings settings, Holidays holidays, Periods periods, Claims claims, Out<PastedClaims> pasted)
+            Settings settings, Holidays holidays, Periods periods, Claims claims, SheetClock clock, Out<PastedClaims> pasted)
             throws InvalidClaimException {
         String text = request == null || request.text() == null ? "" : request.text();
         List<PastedClaim> lines = new ArrayList<>();
@@ -44,7 +45,7 @@ public class ValidatePaste {
             if (line.isBlank()) {
                 continue;
             }
-            PastedClaim checked = check(sheet, at, line, people, settings, holidays, periods);
+            PastedClaim checked = check(sheet, at, line, people, settings, holidays, periods, clock.today(sheet));
             String ref = checked.input().ref();
             if (ref != null) {
                 if (!refs.add(ref.toLowerCase(Locale.ROOT))) {
@@ -65,7 +66,7 @@ public class ValidatePaste {
     }
 
     private static PastedClaim check(String sheet, int at, String line, People people, Settings settings, Holidays holidays,
-            Periods periods) throws InvalidClaimException {
+            Periods periods, LocalDate today) throws InvalidClaimException {
         String[] fields = line.split(",", 4);
         String name = fields[0].trim();
         String amount = fields.length > 1 ? fields[1].trim() : "";
@@ -95,7 +96,7 @@ public class ValidatePaste {
         } catch (DateTimeParseException e) {
             throw new InvalidClaimException("Line " + at + ": not a valid date: " + date);
         }
-        if (periods.closedOn(sheet, person.dueBy(sheet, on, settings, holidays))) {
+        if (periods.closedOn(sheet, person.dueBy(sheet, on, today, settings, holidays))) {
             throw new InvalidClaimException("Line " + at + ": a claim may not be due inside a closed period");
         }
         if (person.retiredBefore(on)) {

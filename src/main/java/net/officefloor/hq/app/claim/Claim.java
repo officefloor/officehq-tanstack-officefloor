@@ -15,7 +15,7 @@ import net.officefloor.hq.app.setting.Dated;
  * the number of the claim it corrects (null unless it is a correction), and the date it rounds on: its own, or for
  * a correction the date of the claim it corrects, and its number within its period (<period>-<n>, or X-<n> in no
  * period) when it was opened while the sheet numbered by period, in place of a number on the sheet (null otherwise),
- * and its due-by (yyyy-MM-dd), fixed when it was added from the terms of its person's grade in force on its date,
+ * and its due-by (yyyy-MM-dd), fixed when it was added from the terms in force on the sheet's today then (its person's own, their grade's, the sheet's),
  * and its status log, oldest first, and the date it was last deferred until (null when never), with whether it is
  * deferred now: OPEN (or VOID, voided while deferred) with that date after the sheet's today, and its proofs count, and the number (as it shows) of
  * the claim it was split off (null unless it was), and the user whose open editor locks it (null when none does),
