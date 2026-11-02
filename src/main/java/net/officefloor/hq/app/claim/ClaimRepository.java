@@ -44,7 +44,7 @@ public class ClaimRepository {
 
     /** The sheet's claims, newest first. */
     public List<Claim> list(String sheetId) {
-        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? ORDER BY id DESC", ROW, sheetId);
+        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? ORDER BY listed DESC, id DESC", ROW, sheetId);
     }
 
     /** A claim on the sheet; null when the sheet has no such claim. */
@@ -195,8 +195,16 @@ public class ClaimRepository {
 
     /** A person's claims on the sheet. */
     public List<Claim> ofPerson(String sheetId, long personId) {
-        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY id DESC",
+        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY listed DESC, id DESC",
                 ROW, sheetId, personId);
+    }
+
+    /** Move a DRAFT, OPEN or PENDING claim to another person: it is unbound from its last statement (live
+     *  again) and listed as its new person's newest claim; false when the sheet has no such claim in those statuses. */
+    public boolean reassign(String sheetId, long claimId, long personId) {
+        return jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL,"
+                + " listed = NEXT VALUE FOR claim_listed_seq WHERE id = ? AND sheet_id = ?"
+                + " AND status IN ('DRAFT', 'OPEN', 'PENDING')", personId, claimId, sheetId) > 0;
     }
 
     /** Fix a settled claim's due. */

@@ -58,6 +58,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   const [note, setNote] = useState('');
   const [corrects, setCorrects] = useState('');
   const [reasons, setReasons] = useState<Record<number, string>>({});
+  const [targets, setTargets] = useState<Record<number, string>>({});
 
   const clearForm = () => {
     setEditing(null);
@@ -92,9 +93,28 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
     },
   });
 
+  // A steward moves a DRAFT, OPEN or PENDING claim to the person chosen on its row; a refusal shows on that claim's row.
+  const reassign = useMutation({
+    mutationFn: (r: { id: number; personId: number | null }) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/reassign`, { claimId: r.id, personId: r.personId }),
+    onSuccess: (_, r) => setTargets((t) => ({ ...t, [r.id]: '' })),
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+  });
+
+  const move = (id: number) => {
+    setRefused(null);
+    action.reset();
+    reassign.reset();
+    const target = targets[id] ?? '';
+    reassign.mutate({ id, personId: target === '' ? null : Number(target) });
+  };
+
   const act = (id: number, a: ClaimAction) => {
     setRefused(null);
     action.reset();
+    reassign.reset();
     action.mutate({ id, action: a, reason: a === 'reject' ? reasons[id] ?? '' : '' });
   };
 
@@ -103,6 +123,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   const openEditor = (c: Claim) => {
     save.reset();
     action.reset();
+    reassign.reset();
     if (c.status !== 'DRAFT') {
       setRefused(c.id);
       return;
@@ -225,6 +246,34 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                       {label}
                     </button>
                   ))}
+                  <select
+                    data-testid="claim-reassign-to"
+                    value={targets[c.id] ?? ''}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setTargets((t) => ({ ...t, [c.id]: v }));
+                    }}
+                  >
+                    <option value="">move to…</option>
+                    {(people.data ?? [])
+                      .filter((p) => p.id !== personId)
+                      .map((p) => (
+                        <option key={p.id} value={String(p.id)}>
+                          {p.name}
+                        </option>
+                      ))}
+                  </select>{' '}
+                  <button
+                    type="button"
+                    data-testid="claim-reassign"
+                    disabled={reassign.isPending}
+                    onClick={() => move(c.id)}
+                  >
+                    Reassign
+                  </button>
+                  {reassign.isError && reassign.variables?.id === c.id && (
+                    <span data-testid="claim-error">{reassign.error.message}</span>
+                  )}
                   {action.isError && action.variables?.id === c.id && (
                     <span data-testid="claim-error">{action.error.message}</span>
                   )}
