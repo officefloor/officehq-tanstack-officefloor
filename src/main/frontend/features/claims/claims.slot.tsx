@@ -25,13 +25,13 @@ function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: numbe
   );
 }
 
-type ClaimAction = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | 'defer' | 'proof';
+type ClaimAction = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | 'defer' | 'proof' | 'split';
 
 /** A claim's status changes; the server refuses one its status does not allow, a settle by the user
  *  who opened the claim, and an approve or reject by anyone but a steward (an approve also by the
  *  user who opened the claim), and a re-settle by anyone but a steward or of a claim not SETTLED. A reject takes the reason typed on the claim's row.
  *  A settle or approve of a claim whose due is above the proof threshold in force on its date is refused while it has no proof. */
-const ACTIONS: [Exclude<ClaimAction, 'defer' | 'proof'>, string][] = [
+const ACTIONS: [Exclude<ClaimAction, 'defer' | 'proof' | 'split'>, string][] = [
   ['open', 'Open'],
   ['settle', 'Settle'],
   ['approve', 'Approve'],
@@ -61,6 +61,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   const [reasons, setReasons] = useState<Record<number, string>>({});
   const [targets, setTargets] = useState<Record<number, string>>({});
   const [deferDates, setDeferDates] = useState<Record<number, string>>({});
+  const [splitAmounts, setSplitAmounts] = useState<Record<number, string>>({});
 
   const clearForm = () => {
     setEditing(null);
@@ -84,13 +85,15 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   });
 
   // A status change (open, settle, approve, reject, void) of one claim, or deferring an OPEN one until the
-  // date typed on its row, or adding a proof to it; a refusal shows on that claim's row.
+  // date typed on its row, or adding a proof to it, or splitting the amount typed on its row off an OPEN one
+  // (a new OPEN claim listed under the person); a refusal shows on that claim's row.
   const action = useMutation({
-    mutationFn: (a: { id: number; action: ClaimAction; reason: string; until: string }) =>
-      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${a.id}/${a.action}`, { reason: a.reason, until: a.until }),
+    mutationFn: (a: { id: number; action: ClaimAction; reason: string; until: string; amount: string }) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${a.id}/${a.action}`, { reason: a.reason, until: a.until, amount: a.amount }),
     onSuccess: (_, a) => {
       if (a.action === 'reject') setReasons((r) => ({ ...r, [a.id]: '' }));
       if (a.action === 'defer') setDeferDates((d) => ({ ...d, [a.id]: '' }));
+      if (a.action === 'split') setSplitAmounts((m) => ({ ...m, [a.id]: '' }));
     },
     onSettled: async () => {
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
@@ -124,6 +127,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
       action: a,
       reason: a === 'reject' ? reasons[id] ?? '' : '',
       until: a === 'defer' ? (deferDates[id] ?? '').trim() : '',
+      amount: a === 'split' ? (splitAmounts[id] ?? '').trim() : '',
     });
   };
 
@@ -235,6 +239,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                 <td data-testid="claim-status">{c.status}</td>
                 <td data-testid="claim-opened-by">{c.openedBy ?? ''}</td>
                 <td data-testid="claim-proofs">{c.proofs}</td>
+                <td data-testid="claim-split-from">{c.splitFrom ?? ''}</td>
                 <td data-testid="claim-deferred">{isDeferred(c, today) ? 'yes' : 'no'}</td>
                 <td data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</td>
                 <td data-testid="claim-log">
@@ -291,6 +296,25 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                     onClick={() => act(c.id, 'defer')}
                   >
                     Defer
+                  </button>{' '}
+                  <input
+                    data-testid="claim-split-amount"
+                    inputMode="decimal"
+                    placeholder="split off amount"
+                    value={splitAmounts[c.id] ?? ''}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setSplitAmounts((m) => ({ ...m, [c.id]: v }));
+                      if (action.variables?.id === c.id) action.reset();
+                    }}
+                  />{' '}
+                  <button
+                    type="button"
+                    data-testid="claim-split"
+                    disabled={action.isPending}
+                    onClick={() => act(c.id, 'split')}
+                  >
+                    Split
                   </button>{' '}
                   <select
                     data-testid="claim-reassign-to"

@@ -17,7 +17,8 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
  *  sheet's terms), and its status log: a line per status it has had, oldest first, as
  *  "<STATUS> by <user> on <date> due=<due>" with the sheet's today and its due at that moment, and whether
  *  its last statement bound it to n/a (the rate that would apply to it had ended: its due stays n/a), and
- *  the date it is deferred until (null when it was never deferred: see `isDeferred`), and how many proofs it has. */
+ *  the date it is deferred until (null when it was never deferred: see `isDeferred`), and how many proofs it has,
+ *  and, for a claim split off another, the number of the claim it was split from (null otherwise). */
 export type Claim = {
   id: number;
   personId: number;
@@ -35,6 +36,7 @@ export type Claim = {
   statedNa: boolean;
   deferredUntil: string | null;
   proofs: number;
+  splitFrom: string | null;
   log: string[];
 };
 

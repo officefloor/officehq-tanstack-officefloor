@@ -19,7 +19,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no, settled_due, opened_by, stated, stated_due, corrects, due_by, stated_na, deferred_until, proofs,"
+    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no, settled_due, opened_by, stated, stated_due, corrects, due_by, stated_na, deferred_until, proofs, split_from,"
             + " (status = 'OPEN' AND deferred_until IS NOT NULL AND deferred_until > (SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id)) AS deferred";
 
     private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getLong("person_id"),
@@ -30,7 +30,7 @@ public class ClaimRepository {
             rs.getString("corrects"), rs.getDate("due_by").toLocalDate().toString(),
             rs.getBoolean("stated_na"),
             rs.getDate("deferred_until") == null ? null : rs.getDate("deferred_until").toLocalDate().toString(),
-            rs.getBoolean("deferred"), rs.getInt("proofs"));
+            rs.getBoolean("deferred"), rs.getInt("proofs"), rs.getString("split_from"));
 
     /** The grade a person (sheet, person id) has on a date: the one with the latest from-date on
      *  or before it, the first one they were given applying from the beginning of time. */
@@ -291,7 +291,38 @@ public class ClaimRepository {
             return ps;
         }, keys);
         return new Claim(keys.getKey().longValue(), personId, money(amount), date.toString(), note, "DRAFT", null, null, null, false, null, corrects,
-                dueBy.toString(), false, null, false, 0);
+                dueBy.toString(), false, null, false, 0, null);
+    }
+
+    /** Split an amount off an OPEN claim: the claim keeps the rest of its amount and is unbound from its last
+     *  statement (live again); a new OPEN claim of the same person with the split-off amount, the same date and
+     *  note, opened by {@code by}, with its due-by fixed now and the original's number as split-from, is added
+     *  (unnumbered: the caller numbers it). The new claim's id, or null when the sheet has no such OPEN claim. */
+    public Long split(String sheetId, Claim claim, BigDecimal amount, String by) {
+        BigDecimal rest = new BigDecimal(claim.amount()).subtract(amount);
+        if (jdbc.update("UPDATE claim SET amount = ?, stated = FALSE, stated_due = NULL, stated_na = FALSE"
+                + " WHERE id = ? AND sheet_id = ? AND status = 'OPEN'", rest, claim.id(), sheetId) == 0) {
+            return null;
+        }
+        LocalDate date = LocalDate.parse(claim.date());
+        LocalDate dueBy = dueBy(sheetId, claim.personId(), date);
+        GeneratedKeyHolder keys = new GeneratedKeyHolder();
+        jdbc.update(c -> {
+            PreparedStatement ps = c.prepareStatement(
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, due_by, status, opened_by, split_from)"
+                            + " VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?, ?)",
+                    new String[] { "id" });
+            ps.setString(1, sheetId);
+            ps.setLong(2, claim.personId());
+            ps.setBigDecimal(3, amount);
+            ps.setDate(4, Date.valueOf(date));
+            ps.setString(5, claim.note());
+            ps.setDate(6, Date.valueOf(dueBy));
+            ps.setString(7, by);
+            ps.setString(8, claim.number());
+            return ps;
+        }, keys);
+        return keys.getKey().longValue();
     }
 
     /** Change a DRAFT claim's amount, date, note and the number it corrects; false when the sheet has no
