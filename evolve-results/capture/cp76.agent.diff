@@ -1,0 +1,70 @@
+diff --git a/src/main/java/net/officefloor/hq/app/Audit.java b/src/main/java/net/officefloor/hq/app/Audit.java
+index 11d0d0f74..46995e29b 100644
+--- a/src/main/java/net/officefloor/hq/app/Audit.java
++++ b/src/main/java/net/officefloor/hq/app/Audit.java
+@@ -25,7 +25,7 @@ import org.springframework.stereotype.Service;
+ public class Audit {
+ 
+     /** The lines that only report figures (or tell of a change already recorded): never marked for a delegator. */
+-    private static final Set<String> REPORTS = Set.of("ROLLUP", "TOTALS", "ALERT", "NOTIFY");
++    private static final Set<String> REPORTS = Set.of("ROLLUP", "TOTALS", "SNAPSHOT", "ALERT", "NOTIFY");
+ 
+     private final Path file;
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 91461d3c9..5cafc0c2f 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -103,6 +103,13 @@ public class Rollup {
+         return total;
+     }
+ 
++    /** Record one SNAPSHOT line per person (in the order they were added) with their due-total as {@code before} had it. */
++    public void snapshot(String sheetId, String by, Snapshot before) {
++        for (Figures f : before.people().values()) {
++            audit.record("SNAPSHOT sheet=" + sheetId + " by=" + by + " name=" + f.name() + " due-total=" + f.dueTotal());
++        }
++    }
++
+     /** Record the lines for whatever figures moved since {@code before}. */
+     public void record(String sheetId, String by, Snapshot before) {
+         Snapshot after = take(sheetId);
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SaveSheetToday.java b/src/main/java/net/officefloor/hq/app/sheet/SaveSheetToday.java
+index a1051ca35..5db77e7d1 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SaveSheetToday.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SaveSheetToday.java
+@@ -11,7 +11,7 @@ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.server.http.ServerHttpConnection;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+-/** Set the sheet's today (a new date releases every claim's editor lock), then close each open period lapsed past the sheet's grace days. */
++/** Set the sheet's today (a new date first records each person's due-total as it stood on the day left, and releases every claim's editor lock), then close each open period lapsed past the sheet's grace days. */
+ public class SaveSheetToday {
+     public void save(@PathVariable("sheetId") String sheetId, @Val LocalDate today,
+             ServerHttpConnection connection, SheetRepository repository, Rollup rollup, PeriodCloser closer, ClaimRepository claims,
+@@ -25,6 +25,7 @@ public class SaveSheetToday {
+             throw new BadRequestException("no such sheet");
+         }
+         if (!today.equals(was)) {
++            rollup.snapshot(id, by, before);
+             claims.unlockAll(id);
+         }
+         closer.closeLapsed(id, by, today);
+diff --git a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+index 89e03c5cf..0498b5317 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+@@ -85,10 +85,9 @@ public class TakeStatement {
+                 total = total.add(now);
+                 fixed = true;
+             }
+-            // With no figure because the rate that would apply has ended (or it is bound to n/a already),
+-            // it is bound to n/a: it stays n/a even once a later rate is in force on its date.
+-            boolean na = figure == null && ((c.bound() && c.statedNa())
+-                    || (then == null ? claims.rateEnded(id, c) : then.rateEnded(c)));
++            // With no figure (no rate applies, or it is bound to n/a already) it is bound to n/a: it stays
++            // n/a even once a rate is in force on its date (a later rate, or a new grade for its person then).
++            boolean na = figure == null;
+             claims.bind(id, c.id(), true, figure, na);
+         }
+         boolean rated = then == null ? claims.rated(id, pid, today) : then.rated(pid);
