@@ -13,7 +13,7 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.web.bind.annotation.PathVariable;
 
-/** Close a period: fix its due-total as shown now (the figures of the counting claims dated in it, a held
+/** Close a period: fix its due-total as shown now (the dues now, late charges included, of the counting claims dated in it, a held
  *  person's OPEN claims left out,
  *  skipping those with none), so later changes to rates do not alter it. */
 public class ClosePeriod {
@@ -39,8 +39,8 @@ public class ClosePeriod {
         for (Claim c : claims.list(id)) {
             LocalDate on = LocalDate.parse(c.date());
             if (!c.counts(held.contains(c.personId())) || on.isBefore(from) || on.isAfter(to)) continue;
-            BigDecimal figure = claims.figure(id, c);
-            if (figure != null) total = total.add(figure);
+            BigDecimal now = claims.dueNow(id, c);
+            if (now != null) total = total.add(now);
         }
         String shown = total.setScale(2).toPlainString();
         repository.close(id, found.id(), total);

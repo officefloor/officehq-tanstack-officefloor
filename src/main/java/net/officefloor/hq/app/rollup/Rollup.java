@@ -43,7 +43,7 @@ public class Rollup {
         this.audit = audit;
     }
 
-    /** The sheet's figures now. A person's due-total is the sum of their counting claims' figures,
+    /** The sheet's figures now. A person's due-total is the sum of their counting claims' dues now (late charges included),
      *  skipping those with none; 'n/a' when no rate for their grade is in force on the sheet's today and
      *  no counting claim keeps a fixed figure. The sheet's due-total skips 'n/a'. */
     public Snapshot take(String sheetId) {
@@ -62,8 +62,8 @@ public class Rollup {
                     if (c.personId() != p.id() || !c.counts(p.held())) continue;
                     claimed = claimed.add(new BigDecimal(c.amount()));
                     fixed |= c.due() != null || (c.stated() && c.statedDue() != null);
-                    BigDecimal figure = claims.figure(sheetId, c);
-                    if (figure != null) due = due.add(figure);
+                    BigDecimal now = claims.dueNow(sheetId, c);
+                    if (now != null) due = due.add(now);
                 }
                 boolean shown = fixed || claims.rated(sheetId, p.id(), today);
                 figures.put(p.id(), new Figures(p.name(), claimed.toPlainString(),

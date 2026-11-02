@@ -6,20 +6,24 @@ import { SheetBody } from '../../slots/defs/sheetBody';
 import { counts, fixedDue, useClaims } from '../claims/useClaims';
 import { heldIds, usePeople } from '../people/usePeople';
 import { due, rateFor, sumDues, useRates } from '../rates/useRates';
+import { dueNow } from '../overdue/useOverdue';
 import { useSettings } from '../settings/useSettings';
+import { useSheetToday } from '../today/useSheetToday';
 import { periodOf, periodsKey, usePeriods, type Period } from './usePeriods';
 
 /** The sheet's periods: a form that adds one (a name unique on the sheet, a from- and to-date,
  *  inclusive, overlapping no other period), and each period with its due-total: the figures of the
  *  claims that count whose date falls in it (a settled claim's frozen due, else the figure its last
- *  statement bound it to, else its live due), skipping those with none — fixed once it is closed —
+ *  statement bound it to, else its live due, with its late charge while overdue), skipping those with none — fixed once it is closed —
  *  and whether it is closed, with a button that closes it. */
 function Periods({ sheetId }: { sheetId: string }) {
   const periods = usePeriods(sheetId);
   const claims = useClaims(sheetId);
   const people = usePeople(sheetId);
   const rates = useRates(sheetId);
-  const floor = useSettings(sheetId).data?.floor;
+  const settings = useSettings(sheetId).data;
+  const floor = settings?.floor;
+  const today = useSheetToday(sheetId).data?.today;
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
   const [from, setFrom] = useState('');
@@ -49,7 +53,7 @@ function Periods({ sheetId }: { sheetId: string }) {
     return sumDues(
       (claims.data ?? [])
         .filter((c) => counts(c, held) && periodOf([p], c.date) !== undefined)
-        .map((c) => fixedDue(c) ?? due(c.amount, rateFor(rates.data, grades.get(c.personId), c.date), floor)),
+        .map((c) => dueNow(c, fixedDue(c) ?? due(c.amount, rateFor(rates.data, grades.get(c.personId), c.date), floor), settings, today)),
     );
   };
 

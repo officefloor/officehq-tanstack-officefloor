@@ -5,6 +5,7 @@ import java.math.RoundingMode;
 import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -98,6 +99,27 @@ public class ClaimRepository {
         if (claim.due() != null) return new BigDecimal(claim.due());
         if (claim.stated() && claim.statedDue() != null) return new BigDecimal(claim.statedDue());
         return due(sheetId, claim);
+    }
+
+    /** A claim's due now: its figure, plus, while it is overdue (OPEN and its due-by — its date plus the
+     *  sheet's terms — before the sheet's today), the sheet's late percent of that figure for every full
+     *  30 days it is overdue, rounded half to even to two decimals. A statement never binds the charge:
+     *  it keeps following the sheet's today until settling freezes it in. Null when it has no figure. */
+    public BigDecimal dueNow(String sheetId, Claim claim) {
+        BigDecimal figure = figure(sheetId, claim);
+        if (figure == null || !claim.status().equals("OPEN")) return figure;
+        List<Object[]> found = jdbc.query("SELECT today, terms, late_pct FROM sheet WHERE id = ?",
+                (rs, i) -> new Object[] { rs.getDate("today").toLocalDate(), rs.getInt("terms"),
+                        rs.getBigDecimal("late_pct") }, sheetId);
+        if (found.isEmpty()) return figure;
+        LocalDate today = (LocalDate) found.get(0)[0];
+        LocalDate dueBy = LocalDate.parse(claim.date()).plusDays((Integer) found.get(0)[1]);
+        BigDecimal pct = (BigDecimal) found.get(0)[2];
+        long periods = dueBy.isBefore(today) ? ChronoUnit.DAYS.between(dueBy, today) / 30 : 0;
+        if (periods == 0 || pct == null || pct.signum() == 0) return figure;
+        BigDecimal charge = figure.multiply(pct).multiply(BigDecimal.valueOf(periods)).movePointLeft(2)
+                .setScale(2, RoundingMode.HALF_EVEN);
+        return figure.add(charge);
     }
 
     /** Whether a rate for the person's grade is in force on a date. */

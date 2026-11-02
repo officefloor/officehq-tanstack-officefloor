@@ -26,7 +26,8 @@ public class SettingsRepository {
         List<Role> roles = jdbc.query("SELECT user_name, role FROM sheet_role WHERE sheet_id = ? ORDER BY user_name",
                 (rs, i) -> new Role(rs.getString("user_name"), rs.getString("role")), sheetId);
         BigDecimal limit = clerkLimit(sheetId);
-        return new Settings(limit == null ? null : money(limit), money(floor(sheetId)), terms(sheetId), roles);
+        return new Settings(limit == null ? null : money(limit), money(floor(sheetId)), terms(sheetId),
+                money(latePct(sheetId)), roles);
     }
 
     /** The sheet's clerk limit; null when it has none. */
@@ -60,6 +61,18 @@ public class SettingsRepository {
 
     public void setTerms(String sheetId, int terms) {
         jdbc.update("UPDATE sheet SET terms = ? WHERE id = ?", terms, sheetId);
+    }
+
+    /** The sheet's late percent: what an overdue claim's due gains, of its figure, for every full 30 days
+     *  it is overdue; 0.00 unless set otherwise. */
+    public BigDecimal latePct(String sheetId) {
+        List<BigDecimal> found = jdbc.query("SELECT late_pct FROM sheet WHERE id = ?",
+                (rs, i) -> rs.getBigDecimal("late_pct"), sheetId);
+        return found.isEmpty() || found.get(0) == null ? BigDecimal.ZERO : found.get(0);
+    }
+
+    public void setLatePct(String sheetId, BigDecimal pct) {
+        jdbc.update("UPDATE sheet SET late_pct = ? WHERE id = ?", pct, sheetId);
     }
 
     /** The role a user name holds on the sheet: clerk unless set otherwise. */

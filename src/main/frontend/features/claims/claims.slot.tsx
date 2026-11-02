@@ -7,7 +7,7 @@ import { SheetBody } from '../../slots/defs/sheetBody';
 import { heldIds, usePeople } from '../people/usePeople';
 import { periodOf, usePeriods } from '../periods/usePeriods';
 import { due, rateFor, useRates } from '../rates/useRates';
-import { dueBy, isOverdue } from '../overdue/useOverdue';
+import { dueBy, dueNow, isOverdue } from '../overdue/useOverdue';
 import { useSettings } from '../settings/useSettings';
 import { useSheetToday } from '../today/useSheetToday';
 import { claimed, claimsKey, fixedDue, useClaims, type Claim } from './useClaims';
@@ -115,7 +115,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   const mine = (claims.data ?? []).filter((c) => c.personId === personId);
   // A claim's due: the one fixed when it was settled, else the one its last statement bound it to,
   // else its amount at the rate for its person's grade in force on its date, at least the sheet's floor
-  // ('n/a' when none applies).
+  // ('n/a' when none applies), with its late charge while it is overdue.
   const grade = people.data?.find((p) => p.id === personId)?.grade;
 
   return (
@@ -162,7 +162,9 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                 <td data-testid="claim-date">{c.date}</td>
                 <td data-testid="claim-period">{periodOf(periods.data, c.date)?.name ?? ''}</td>
                 <td data-testid="claim-note">{c.note}</td>
-                <td data-testid="claim-due">{fixedDue(c) ?? due(c.amount, rateFor(rates.data, grade, c.date), floor)}</td>
+                <td data-testid="claim-due">
+                  {dueNow(c, fixedDue(c) ?? due(c.amount, rateFor(rates.data, grade, c.date), floor), settings, today)}
+                </td>
                 <td data-testid="claim-due-by">{terms === undefined ? '' : dueBy(c.date, terms)}</td>
                 <td data-testid="claim-overdue">
                   {terms === undefined || today === undefined ? '' : isOverdue(c, terms, today) ? 'yes' : 'no'}

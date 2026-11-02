@@ -33,6 +33,11 @@ public class SaveSettings {
             repository.setTerms(id, input.terms());
             audit.record("SETTING_CHANGED sheet=" + id + " by=" + by + " key=terms value=" + input.terms());
         }
+        if (input.setsLatePct()) {
+            repository.setLatePct(id, input.latePct());
+            audit.record("SETTING_CHANGED sheet=" + id + " by=" + by + " key=late-pct value="
+                    + SettingsRepository.money(input.latePct()));
+        }
         rollup.record(id, by, before);
         settings.set(repository.load(id));
     }

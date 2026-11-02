@@ -50,7 +50,7 @@ public class ChangeClaimStatus {
         if (to.equals("SETTLED") && found.status().equals("OPEN")
                 && settings.role(id, by).equals(SettingsRepository.CLERK)) {
             BigDecimal limit = settings.clerkLimit(id);
-            BigDecimal now = repository.figure(id, found);
+            BigDecimal now = repository.dueNow(id, found);
             if (limit != null && now != null && now.compareTo(limit) > 0) {
                 throw new BadRequestException("a clerk cannot settle a claim whose due is above the clerk limit of "
                         + SettingsRepository.money(limit));
@@ -69,11 +69,11 @@ public class ChangeClaimStatus {
             openedBy = by;
         }
         // Settling fixes the claim's due as it is now: the figure its last statement bound it to, else its
-        // live due ('n/a' when its grade has no rate, which stays live).
+        // live due ('n/a' when its grade has no rate, which stays live), with its late charge frozen in.
         String due = null;
         String settledDue = "";
         if (to.equals("SETTLED")) {
-            BigDecimal now = repository.figure(id, found);
+            BigDecimal now = repository.dueNow(id, found);
             repository.settleDue(id, cid, now);
             due = ClaimRepository.dueOf(now);
             settledDue = " due=" + (due == null ? "n/a" : due);
