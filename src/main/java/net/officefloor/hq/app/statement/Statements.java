@@ -4,7 +4,10 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.Date;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -19,19 +22,32 @@ public class Statements {
         this.jdbc = jdbc;
     }
 
-    /** Per person on the sheet with a statement: the count, and the last one's due-total and date (the date it was taken as of, else the sheet's today then). */
+    /**
+     * Per person on the sheet with a statement: the count, the last one's due-total and date (the date it was taken as
+     * of, else the sheet's today then), and a line per statement, oldest first by date.
+     */
     public List<StatementSummary> list(String sheet) {
+        Map<Long, List<StatementSummary.Line>> lines = new HashMap<>();
+        jdbc.query("""
+                SELECT person, due_total, COALESCE(as_of, taken_on) AS stated_on FROM statement WHERE sheet = ?
+                ORDER BY person, stated_on, seq, id""", rs -> {
+            lines.computeIfAbsent(rs.getLong("person"), p -> new ArrayList<>()).add(new StatementSummary.Line(
+                    rs.getDate("stated_on").toLocalDate().toString(), figure(rs.getBigDecimal("due_total"))));
+        }, sheet);
         return jdbc.query("""
                 SELECT s.person, (SELECT COUNT(*) FROM statement c WHERE c.sheet = s.sheet AND c.person = s.person)
                   AS taken, s.due_total, COALESCE(s.as_of, s.taken_on) AS stated_on FROM statement s
                 WHERE s.sheet = ? AND NOT EXISTS (SELECT 1 FROM statement o WHERE o.sheet = s.sheet
                   AND o.person = s.person AND (o.seq > s.seq OR (o.seq = s.seq AND o.id > s.id)))
                 ORDER BY s.person""", (rs, i) -> {
-            BigDecimal due = rs.getBigDecimal("due_total");
-            return new StatementSummary(rs.getLong("person"), rs.getInt("taken"),
-                    due == null ? "n/a" : due.setScale(2, RoundingMode.UNNECESSARY).toPlainString(),
-                    rs.getDate("stated_on").toLocalDate().toString());
+            long person = rs.getLong("person");
+            return new StatementSummary(person, rs.getInt("taken"), figure(rs.getBigDecimal("due_total")),
+                    rs.getDate("stated_on").toLocalDate().toString(), lines.getOrDefault(person, List.of()));
         }, sheet);
+    }
+
+    private static String figure(BigDecimal due) {
+        return due == null ? "n/a" : due.setScale(2, RoundingMode.UNNECESSARY).toPlainString();
     }
 
     /**

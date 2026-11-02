@@ -25,6 +25,11 @@ public class SheetClock {
         return found.isEmpty() ? LocalDate.now() : found.get(0);
     }
 
+    /** Whether the sheet's today has ever been set (else it is the real date, and the sheet has no dated history). */
+    public boolean isSet(String sheet) {
+        return jdbc.queryForObject("SELECT COUNT(*) FROM sheet WHERE id = ?", Integer.class, sheet) > 0;
+    }
+
     public void setToday(String sheet, LocalDate today) {
         jdbc.update("MERGE INTO sheet (id, today) KEY (id) VALUES (?, ?)", sheet, Date.valueOf(today));
     }

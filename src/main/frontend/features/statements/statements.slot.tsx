@@ -20,12 +20,13 @@ function StatementHeader({ sheet, user }: { sheet: string; user: string }) {
       {shown('statement-count') && <th>Statements</th>}
       {shown('stated-total') && <th>Stated total</th>}
       {shown('statement-date') && <th>Stated on</th>}
+      <th>Statement lines</th>
       <th />
     </>
   );
 }
 
-// A person's statements: how many, the last one's due-total and date, the button that takes the next and the one
+// A person's statements: how many, the last one's due-total and date, a line per statement (oldest first), the button that takes the next and the one
 // that cancels the last. Taking one binds their counting claims to their figures now, and cancelling one makes the
 // claims it bound live again, so the claims are re-read before the count moves on. A date beside the button takes
 // the statement as of that date (blank: now); it is cleared once the statement is taken or refused, so a refused date
@@ -65,6 +66,13 @@ function PersonStatements({ sheet, user, person }: { sheet: string; user: string
       {shown('statement-count') && <td data-testid="person-statement-count">{mine?.count ?? 0}</td>}
       {shown('stated-total') && <td data-testid="person-stated-total"><Fig>{mine?.lastDueTotal ?? ''}</Fig></td>}
       {shown('statement-date') && <td data-testid="person-statement-date">{mine?.lastDate ?? ''}</td>}
+      <td data-testid="person-statement-lines">
+        {(mine?.lines ?? []).map((line, i) => (
+          <div key={i} data-testid="person-statement-line-line">
+            {line.date} <Fig>{line.dueTotal}</Fig>
+          </div>
+        ))}
+      </td>
       <td>
         <input
           type="date"
