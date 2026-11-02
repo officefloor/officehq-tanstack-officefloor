@@ -440,4 +440,28 @@ public class Claims {
         jdbc.update("UPDATE claim_number SET last_number = ? WHERE sheet = ?", next, sheet);
         return next;
     }
+
+    /**
+     * Takes the next number of the fiscal year's sequence (FY<yyyy>) the sheet shares with the other sheets of its
+     * tree: the one after the last number given in that year on any of them (1 when none has given one), recorded as
+     * the sheet's last number in it. Locked as {@link #nextNumber}.
+     */
+    public int nextFiscalYearNumber(String sheet, List<String> tree, String fy) {
+        try {
+            jdbc.update("INSERT INTO claim_fy_number (sheet, fy, last_number) VALUES (?, ?, 0)", sheet, fy);
+        } catch (DuplicateKeyException exists) {
+            // The sheet has given a number in this fiscal year already: its counter is in place.
+        }
+        java.util.TreeSet<String> sheets = new java.util.TreeSet<>(tree);
+        sheets.add(sheet);
+        String in = String.join(", ", java.util.Collections.nCopies(sheets.size(), "?"));
+        List<Object> args = new java.util.ArrayList<>();
+        args.add(fy);
+        args.addAll(sheets);
+        List<Integer> lasts = jdbc.queryForList("SELECT last_number FROM claim_fy_number WHERE fy = ? AND sheet IN (" + in
+                + ") ORDER BY sheet FOR UPDATE", Integer.class, args.toArray());
+        int next = lasts.stream().mapToInt(Integer::intValue).max().orElse(0) + 1;
+        jdbc.update("UPDATE claim_fy_number SET last_number = ? WHERE sheet = ? AND fy = ?", next, sheet, fy);
+        return next;
+    }
 }

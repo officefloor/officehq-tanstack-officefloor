@@ -77,7 +77,7 @@ public class ClaimStatusChanger {
             throw new InvalidClaimStatusChangeException(
                     "A " + claim.status() + " claim does not allow " + requested.name().toLowerCase());
         }
-        // Opening gives the next number its sheet's tree shares, or, while the sheet numbers by period from on or
+        // Opening gives the next number (FY<yyyy>-<n>) of its fiscal year its sheet's tree shares, or, while the sheet numbers by period from on or
         // before its today, the next number in the claim's period (X for none); a voided claim keeps the number it
         // had (never reused).
         Claim changed = claim;
@@ -226,7 +226,7 @@ public class ClaimStatusChanger {
     }
 
     /**
-     * Gives an opening claim the next number of the sequence its sheet shares with its tree, or, while the sheet numbers by period from on or before its
+     * Gives an opening claim the next number (FY<yyyy>-<n>) of its due-by's fiscal year in the sequence its sheet shares with its tree, or, while the sheet numbers by period from on or before its
      * today, the next number in the claim's period (X for none); returns the claim so numbered.
      */
     public Claim number(String sheet, Claim claim) {
@@ -238,8 +238,13 @@ public class ClaimStatusChanger {
             claims.setPeriodNumber(sheet, claim.id(), numbered.periodNumber());
             return numbered;
         }
-        Claim numbered = claim.withNumber(claims.nextNumber(sheet, settings.wholeTree(sheet)));
-        claims.setNumber(sheet, claim.id(), numbered.number());
+        // Sheet-wide numbering restarts each fiscal year (of the due-by, the date that places it in a period):
+        // FY<yyyy>-<n>, kept as the number it shows.
+        LocalDate dueBy = LocalDate.parse(claim.dueBy());
+        int start = settings.fiscalStartMonth(sheet);
+        String fy = "FY" + (dueBy.getMonthValue() >= start ? dueBy.getYear() : dueBy.getYear() - 1);
+        Claim numbered = claim.withPeriodNumber(fy + "-" + claims.nextFiscalYearNumber(sheet, settings.wholeTree(sheet), fy));
+        claims.setPeriodNumber(sheet, claim.id(), numbered.periodNumber());
         return numbered;
     }
 }
