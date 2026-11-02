@@ -90,11 +90,19 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
   // While the sheet has void reasons, a void needs one, chosen beside the Void button.
   const { data: voidReasons = [] } = useVoidReasons(sheet);
   const [voidReason, setVoidReason] = useState('');
+  // A settle is as of the date typed beside the Settle button (blank for the sheet's today).
+  const [settleOn, setSettleOn] = useState('');
   const status = useMutation({
     mutationFn: (change: ClaimStatusChange) =>
       postJson<Claim[]>(
         byUser(`${claimsPath(sheet)}/${claim.id}/${change}`, user),
-        change === 'reject' ? { reason } : change === 'void' ? { reason: voidReason } : {},
+        change === 'reject'
+          ? { reason }
+          : change === 'void'
+            ? { reason: voidReason }
+            : change === 'settle'
+              ? { on: settleOn }
+              : {},
       ),
     onSuccess: (updated, change) => {
       queryClient.setQueryData(claimsKey(sheet), updated);
@@ -420,6 +428,16 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           {label}
         </button>
       ))}{' '}
+      <input
+        type="date"
+        data-testid="claim-settle-date"
+        aria-label="settle as of"
+        value={settleOn}
+        onChange={(e) => {
+          setSettleOn(e.target.value);
+          status.reset();
+        }}
+      />{' '}
       <select
         data-testid="claim-void-reason"
         value={voidReason}
@@ -890,7 +908,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
       )}
       {status.isError && (
         <span data-testid="claim-error" role="alert">
-          {' '}A {claim.status} claim cannot be changed that way (your role may not take that action; the user who opened it cannot settle or approve it; only a steward approves or rejects a PENDING claim, a reject needs a reason, a void needs a reason from the sheet's list while it has one, a claim whose due is above the proof threshold needs a proof, one of each of the sheet's proof kinds while it has them, and one whose due is above the note threshold needs a note to be opened; only a steward reviews a REVIEW claim, which is not edited, settled nor split; only a DRAFT outside a closed period is deleted, and a DELETED claim is restored only on the day it was deleted).
+          {' '}A {claim.status} claim cannot be changed that way (your role may not take that action; the user who opened it cannot settle or approve it; only a steward approves or rejects a PENDING claim, a reject needs a reason, a void needs a reason from the sheet's list while it has one, a claim whose due is above the proof threshold needs a proof, one of each of the sheet's proof kinds while it has them, and one whose due is above the note threshold needs a note to be opened; only a steward reviews a REVIEW claim, which is not edited, settled nor split; only a DRAFT outside a closed period is deleted, and a DELETED claim is restored only on the day it was deleted; a settle as of a date needs a date on or before the sheet's today on which the claim already existed).
         </span>
       )}
       {resettleMutation.isError && (

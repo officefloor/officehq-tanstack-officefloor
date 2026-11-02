@@ -69,18 +69,25 @@ public class ClaimStatusChanger {
      *  writing nothing when it is refused. */
     public void change(String sheet, String user, Claim claim, ClaimStatusChange requested, String reason)
             throws InvalidClaimStatusChangeException {
-        change(sheet, user, claim, requested, reason, true);
+        change(sheet, user, claim, requested, reason, true, null, null);
+    }
+
+    /** Settles the claim as the settle button does, freezing the due it had at the end of the date (on or before the
+     *  sheet's today, worked out by the caller) in place of today's; writes nothing when it is refused. */
+    public void settleAsOf(String sheet, String user, Claim claim, LocalDate on, BigDecimal due)
+            throws InvalidClaimStatusChangeException {
+        change(sheet, user, claim, ClaimStatusChange.SETTLE, null, true, on, due);
     }
 
     /** Settles the claim just split off another to part-settle it, as the settle button does (to PENDING when the
      *  clerk limit says so), save that the four-eyes rules and the proof rule were judged on the claim it was split
      *  off, so are not judged again on it (whose opener is the user); writes nothing when it is refused. */
     public void settlePart(String sheet, String user, Claim part) throws InvalidClaimStatusChangeException {
-        change(sheet, user, part, ClaimStatusChange.SETTLE, null, false);
+        change(sheet, user, part, ClaimStatusChange.SETTLE, null, false, null, null);
     }
 
     private void change(String sheet, String user, Claim claim, ClaimStatusChange requested, String reason,
-            boolean ownRules) throws InvalidClaimStatusChangeException {
+            boolean ownRules, LocalDate on, BigDecimal dueOn) throws InvalidClaimStatusChangeException {
         requested = vet(sheet, user, claim, requested, reason, ownRules);
         String voidReason = requested == ClaimStatusChange.VOID && voidReasons.any(sheet) ? reason.trim() : null;
         Person person = people.find(sheet, claim.person());
@@ -106,10 +113,15 @@ public class ClaimStatusChanger {
         // Settling (or approving a PENDING claim) fixes the due at the person's grade rate in force on the claim's date (or the figure its
         // statement bound), with its late charge frozen in; with no rate there is nothing to fix, so it stays live.
         if (requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.APPROVE) {
-            BigDecimal due = claim.due(rates.list(sheet), person.gradeOn(claim.date()), settings.floor(sheet),
+            // Settled as of a date, the due is the one it had at the end of that day.
+            boolean asOf = on != null && requested == ClaimStatusChange.SETTLE;
+            BigDecimal due = asOf ? dueOn : claim.due(rates.list(sheet), person.gradeOn(claim.date()), settings.floor(sheet),
                     settings.late(sheet, clock.today(sheet)));
             claims.setSettledDue(sheet, claim.id(), due);
             fields += " due=" + (due == null ? "n/a" : due.toPlainString());
+            if (asOf) {
+                fields += " on=" + on;
+            }
         }
         // Voiding a SETTLED claim reverses its frozen figure out of every total.
         if (requested == ClaimStatusChange.VOID && claim.status() == ClaimStatus.SETTLED) {
