@@ -2,7 +2,8 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 
 /** A person; `version` goes up by one each time they are saved. Their statements: how many have been
- *  taken, and the last one's due-total and date (null before the first). */
+ *  taken, and the last one's due-total and date (null before the first); the date they are retired
+ *  from (null when not retired). */
 export type Person = {
   id: number;
   name: string;
@@ -11,6 +12,7 @@ export type Person = {
   statementCount: number;
   statedTotal: string | null;
   statementDate: string | null;
+  retiredFrom: string | null;
 };
 
 export const GRADES = ['A', 'B', 'C'] as const;

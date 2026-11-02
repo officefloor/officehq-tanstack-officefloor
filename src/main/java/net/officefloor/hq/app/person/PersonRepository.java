@@ -4,6 +4,7 @@ import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.time.LocalDate;
 import java.util.List;
+import net.officefloor.hq.app.BadRequestException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -12,11 +13,12 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PersonRepository {
 
-    private static final String COLUMNS = "id, name, grade, version, statement_count, stated_total, statement_date";
+    private static final String COLUMNS = "id, name, grade, version, statement_count, stated_total, statement_date, retired_from";
 
     private static final RowMapper<Person> ROW = (rs, i) -> new Person(rs.getLong("id"), rs.getString("name"),
             rs.getString("grade"), rs.getLong("version"), rs.getLong("statement_count"), rs.getString("stated_total"),
-            rs.getDate("statement_date") == null ? null : rs.getDate("statement_date").toLocalDate().toString());
+            rs.getDate("statement_date") == null ? null : rs.getDate("statement_date").toLocalDate().toString(),
+            rs.getDate("retired_from") == null ? null : rs.getDate("retired_from").toLocalDate().toString());
 
     private final JdbcTemplate jdbc;
 
@@ -47,6 +49,19 @@ public class PersonRepository {
                 + " WHERE id = ? AND sheet_id = ?", total, Date.valueOf(date), id, sheetId);
     }
 
+    /** Retire a person from a date. */
+    public void retire(String sheetId, long id, LocalDate from) {
+        jdbc.update("UPDATE person SET retired_from = ? WHERE id = ? AND sheet_id = ?", Date.valueOf(from), id, sheetId);
+    }
+
+    /** Refuse a claim of the person dated after the date they are retired from. */
+    public void claimAllowed(String sheetId, long id, LocalDate date) throws BadRequestException {
+        Person p = find(sheetId, id);
+        if (p != null && p.retiredFrom() != null && date.isAfter(LocalDate.parse(p.retiredFrom()))) {
+            throw new BadRequestException(p.name() + " is retired from " + p.retiredFrom());
+        }
+    }
+
     /** Whether another person on the sheet (other than {@code exceptId}; 0 for none) already has this name, ignoring case. */
     public boolean nameTaken(String sheetId, String name, long exceptId) {
         Integer taken = jdbc.queryForObject(
@@ -72,7 +87,7 @@ public class PersonRepository {
             ps.setString(3, grade);
             return ps;
         }, keys);
-        return new Person(keys.getKey().longValue(), name, grade, 1, 0, null, null);
+        return new Person(keys.getKey().longValue(), name, grade, 1, 0, null, null, null);
     }
 
     /** Whether the sheet has this person. */

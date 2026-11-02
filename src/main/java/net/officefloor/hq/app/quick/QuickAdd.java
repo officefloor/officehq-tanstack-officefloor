@@ -33,6 +33,9 @@ public class QuickAdd {
         LocalDate date = sheets.today(id);
         PeriodGuard.open(periods, id, date);
         Person person = people.findByName(id, input.name());
+        if (person != null) {
+            people.claimAllowed(id, person.id(), date);
+        }
         if (person == null) {
             Rollup.Snapshot before = rollup.take(id);
             try {

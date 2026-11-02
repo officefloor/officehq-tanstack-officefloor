@@ -5,16 +5,18 @@ import { useSingleFlight } from '../../query/useSingleFlight';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { PersonCells, PersonColumnHead, PersonDetail } from '../../slots/defs/personRow';
 import { claimsKey, type Claim } from '../claims/useClaims';
+import { useShowRetired } from '../retire/useShowRetired';
 import { GRADES, fetchPeople, peopleKey, usePeople, type Person } from './usePeople';
 
 /** The sheet's people: a form that adds a person, or edits one when their editor is open, and the
- *  list of everyone in the order they were added. The editor remembers the version of the person
- *  it loaded; when someone else has saved them since, the save is refused (409) and the editor
- *  shows their current values, at their current version. Each person is a <tbody> so features can add
+ *  list of everyone in the order they were added (retired people only when "show retired" is on).
+ *  The editor remembers the version of the person it loaded; when someone else has saved them since,
+ *  the save is refused (409) and the editor shows their current values, at their current version. Each person is a <tbody> so features can add
  *  cells and rows of their own to it (slots/defs/personRow). A quick-add bar takes a name and an amount
  *  and adds a draft claim for that person (adding them with grade A when the name is new) in one change. */
 function People({ sheetId }: { sheetId: string }) {
   const people = usePeople(sheetId);
+  const [showRetired] = useShowRetired();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<number | null>(null);
   const [name, setName] = useState('');
@@ -183,7 +185,7 @@ function People({ sheetId }: { sheetId: string }) {
             <th />
           </tr>
         </thead>
-        {(people.data ?? []).map((p) => (
+        {(people.data ?? []).filter((p) => showRetired || !p.retiredFrom).map((p) => (
           <tbody key={p.id} data-testid={`person-row-${p.id}`}>
             <tr>
               <td data-testid="person-name">{p.name}</td>
