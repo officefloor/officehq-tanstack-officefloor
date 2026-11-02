@@ -61,16 +61,24 @@ function useMyCrewTotal(sheet: string, user: string): string {
   return twoDecimals(led.reduce((sum, c) => sum + crewDueCents(c, people, dueOf), 0n));
 }
 
+// The REVIEW claims assigned to the signed-in user to review (users compared without regard to case).
+function useMyReviews(sheet: string, user: string): number {
+  const { data: claims = [] } = useClaims(sheet);
+  const me = user.toLowerCase();
+  return claims.filter((c) => c.status === 'REVIEW' && c.reviewAssigned?.toLowerCase() === me).length;
+}
+
 // The sheet's counters, shown at all times above everything else. Each repeats a figure figured elsewhere, from the
 // same helpers: the people on the sheet (retired ones included), the claims per status (as the summary counts them),
 // the sheet's due-total and overdue-total (as the rollup shows them), and the user's own figures (see useMyTotals and
-// useMyCrewTotal).
+// useMyCrewTotal), and the REVIEW claims assigned to the user (see useMyReviews).
 function Header({ sheet, user }: { sheet: string; user: string }) {
   const { data: people = [] } = usePeople(sheet);
   const { data: claims = [] } = useClaims(sheet);
   const { due, overdue } = useSheetTotals(sheet);
   const my = useMyTotals(sheet, user);
   const myCrew = useMyCrewTotal(sheet, user);
+  const myReviews = useMyReviews(sheet, user);
   return (
     <header>
       <span>
@@ -101,6 +109,10 @@ function Header({ sheet, user }: { sheet: string; user: string }) {
       <span>
         {' '}
         My crew due total: <strong data-testid="my-crew-due-total"><Fig>{myCrew}</Fig></strong>
+      </span>
+      <span>
+        {' '}
+        My reviews: <strong data-testid="my-reviews-count">{myReviews}</strong>
       </span>
     </header>
   );

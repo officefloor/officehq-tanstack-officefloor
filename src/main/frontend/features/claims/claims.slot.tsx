@@ -244,6 +244,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
     setEditRefused(false);
     lockMutation.reset();
     shareMutation.reset();
+    reviewAssignMutation.reset();
   };
   // A claim is shared with another person on the sheet, picked beside the Share button with their share of its due
   // (a percent with two decimals, more than 0.00). The server refuses the claim's own person, a person already holding a
@@ -260,6 +261,18 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
     },
   });
   const share = useSubmitOnce(shareMutation);
+  // A steward assigns a REVIEW claim to a user to review, typed beside the Assign button. The server refuses a blank
+  // user, any other status, and anyone but a steward.
+  const [reviewUser, setReviewUser] = useState('');
+  const reviewAssignMutation = useMutation({
+    mutationFn: (body: { user: string }) =>
+      postJson<Claim[]>(byUser(`${claimsPath(sheet)}/${claim.id}/reviewer`, user), body),
+    onSuccess: (updated) => {
+      setReviewUser('');
+      queryClient.setQueryData(claimsKey(sheet), updated);
+    },
+  });
+  const assignReview = useSubmitOnce(reviewAssignMutation);
   const nameOf = (id: number) => people.find((p) => p.id === id)?.name ?? '';
   // A DRAFT's amount is changed in the row: saved as the claim's editor saves it (its date, note, corrects, reference and tags kept),
   // so the server refuses it by the same rules (the amount's form, a claim that is not a DRAFT, one due inside a
@@ -355,6 +368,42 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
         }}
       >
         Waive late charge
+      </button>{' '}
+      review by <span data-testid="claim-review-assigned">{claim.reviewAssigned ?? ''}</span>{' '}
+      <input
+        data-testid="claim-review-user"
+        aria-label="review user"
+        placeholder="reviewer"
+        value={reviewUser}
+        onChange={(e) => {
+          setReviewUser(e.target.value);
+          reviewAssignMutation.reset();
+        }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="claim-review-assign"
+        disabled={reviewAssignMutation.isPending}
+        onClick={() => {
+          clearEditError();
+          status.reset();
+          move.reset();
+          resettleMutation.reset();
+          deferMutation.reset();
+          waiveMutation.reset();
+          holdMutation.reset();
+          remindMutation.reset();
+          redateMutation.reset();
+          proofMutation.reset();
+          commentMutation.reset();
+          lineMutation.reset();
+          splitMutation.reset();
+          partMutation.reset();
+          inlineMutation.reset();
+          assignReview({ user: reviewUser });
+        }}
+      >
+        Assign review
       </button>{' '}
       held <span data-testid="claim-held">{claim.held ? 'yes' : 'no'}</span>{' '}
       <button
@@ -1045,6 +1094,11 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
       {shareMutation.isError && (
         <span data-testid="claim-error" role="alert">
           {' '}This claim cannot be shared that way (not with its own person, nor with a person already holding a share; a share is a percent with up to two decimals, more than 0.00, and the shares may total at most 100.00; a SETTLED, VOID or DELETED claim is not shared).
+        </span>
+      )}
+      {reviewAssignMutation.isError && (
+        <span data-testid="claim-error" role="alert">
+          {' '}This review cannot be assigned (only a steward assigns one, only for a REVIEW claim, and to a user named).
         </span>
       )}
       {move.isError && (

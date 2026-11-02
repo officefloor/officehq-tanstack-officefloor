@@ -38,7 +38,8 @@ public class Claims {
             rs.getDate("reminded_on") == null ? null : rs.getDate("reminded_on").toLocalDate().toString(),
             rs.getString("ref"), tagList(rs.getString("tags")), tagList(rs.getString("tags_ever")), List.of(),
             rs.getObject("batch", Integer.class), List.of(), rs.getObject("added", Long.class),
-            rs.getBoolean("waived"), rs.getInt("proof_photos"), rs.getBoolean("held"), List.of());
+            rs.getBoolean("waived"), rs.getInt("proof_photos"), rs.getBoolean("held"), List.of(),
+            rs.getString("review_assigned"));
 
     /** The tags kept as comma separated text (empty for none). */
     private static List<String> tagList(String kept) {
@@ -55,7 +56,7 @@ public class Claims {
     private static final String COLUMNS = "SELECT claim.id, claim.person, claim.amount, claim.claimed_on, claim.note, claim.status,"
             + " claim.number_on_sheet, claim.settled_due, claim.opened_by, claim.stated, claim.stated_due, claim.corrects,"
             + " claim.period_number, claim.due_by, COALESCE(corrected.claimed_on, claim.claimed_on) AS rounds_on,"
-            + " claim.deferred_until, claim.proofs, claim.split_from, claim.locked_by, claim.late_entry, claim.reminded_on, claim.ref, claim.tags, claim.tags_ever, claim.batch, claim.added, claim.waived, claim.proof_photos, claim.held, (claim.status IN ('OPEN', 'VOID') AND claim.deferred_until IS NOT NULL AND claim.deferred_until >"
+            + " claim.deferred_until, claim.proofs, claim.split_from, claim.locked_by, claim.late_entry, claim.reminded_on, claim.ref, claim.tags, claim.tags_ever, claim.batch, claim.added, claim.waived, claim.proof_photos, claim.held, claim.review_assigned, (claim.status IN ('OPEN', 'VOID') AND claim.deferred_until IS NOT NULL AND claim.deferred_until >"
             + " COALESCE((SELECT s.today FROM sheet s WHERE s.id = claim.sheet), CURRENT_DATE)) AS deferred FROM claim"
             + " LEFT JOIN claim corrected ON corrected.sheet = claim.sheet AND "
             + " COALESCE(corrected.period_number, CAST(corrected.number_on_sheet AS VARCHAR)) = claim.corrects";
@@ -390,6 +391,12 @@ public class Claims {
     public boolean hold(String sheet, long id, ClaimStatus status, boolean held) {
         return jdbc.update("UPDATE claim SET held = ? WHERE sheet = ? AND id = ? AND status = ? AND held = ?",
                 held, sheet, id, status.name(), !held) == 1;
+    }
+
+    /** Assigns the REVIEW claim to the user to review, conditional on it still being REVIEW: false when it is not. */
+    public boolean assignReview(String sheet, long id, String user) {
+        return jdbc.update("UPDATE claim SET review_assigned = ? WHERE sheet = ? AND id = ? AND status = ?",
+                user, sheet, id, ClaimStatus.REVIEW.name()) == 1;
     }
 
     /** Defers an OPEN claim until the date: false when it is no longer OPEN. */

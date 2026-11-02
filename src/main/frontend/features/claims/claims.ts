@@ -114,6 +114,8 @@ export type Claim = {
   /** The people it is shared with, in the order shared, each with their share of its due (a percent, two decimals):
    *  each holder's due figures count their part of it (see {@link partCents}), its own person's the rest. */
   shares: ClaimShare[];
+  /** The user a steward assigned it to review while it was REVIEW (null when none; kept once reviewed). */
+  reviewAssigned: string | null;
 };
 
 /** One share of a claim: the person holding it, and their share of its due (a percent with two decimals). */
