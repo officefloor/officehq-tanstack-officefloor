@@ -1,0 +1,264 @@
+diff --git a/src/main/frontend/features/today/today.slot.tsx b/src/main/frontend/features/today/today.slot.tsx
+index 24ca30056..fae0726ab 100644
+--- a/src/main/frontend/features/today/today.slot.tsx
++++ b/src/main/frontend/features/today/today.slot.tsx
+@@ -5,8 +5,9 @@ import { useSingleFlight } from '../../query/useSingleFlight';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { useSheetToday, type SheetToday } from './useSheetToday';
+ 
+-/** The sheet's today, shown and changeable. Changing it re-reads the whole sheet, since every
+- *  date decision in it depends on today. */
++/** The sheet's today, shown and changeable, and whether it is archived, with the steward's archive
++ *  button. Changing today re-reads the whole sheet, since every date decision in it depends on today.
++ *  Both share the one sheet error: the last of them refused. */
+ function TodayControl({ sheetId }: { sheetId: string }) {
+   const today = useSheetToday(sheetId);
+   const [date, setDate] = useState('');
+@@ -23,6 +24,11 @@ function TodayControl({ sheetId }: { sheetId: string }) {
+       });
+     },
+   });
++  const archive = useMutation({
++    mutationFn: () => postJson<SheetToday>(`/api/sheets/${encodeURIComponent(sheetId)}/archive`, {}),
++    onSuccess: (sheet) => queryClient.setQueryData(['sheet', sheetId, 'today'], sheet),
++  });
++  const error = save.error ?? archive.error;
+ 
+   return (
+     <form
+@@ -31,6 +37,7 @@ function TodayControl({ sheetId }: { sheetId: string }) {
+         e.preventDefault();
+         submitOnce(() => {
+           save.reset();
++          archive.reset();
+           return save.mutateAsync(date);
+         });
+       }}
+@@ -46,13 +53,29 @@ function TodayControl({ sheetId }: { sheetId: string }) {
+           onChange={(e) => {
+             setDate(e.target.value);
+             save.reset();
++            archive.reset();
+           }}
+         />
+       </label>{' '}
+       <button type="submit" data-testid="sheet-today-save" disabled={save.isPending}>
+         Set
+       </button>
+-      {save.isError && <p data-testid="sheet-error">{save.error.message}</p>}
++      Archived: <strong data-testid="sheet-archived">{today.data ? (today.data.archived ? 'yes' : 'no') : ''}</strong>{' '}
++      <button
++        type="button"
++        data-testid="sheet-archive"
++        disabled={archive.isPending}
++        onClick={() =>
++          submitOnce(() => {
++            save.reset();
++            archive.reset();
++            return archive.mutateAsync();
++          })
++        }
++      >
++        Archive sheet
++      </button>
++      {error && <p data-testid="sheet-error">{error.message}</p>}
+     </form>
+   );
+ }
+diff --git a/src/main/frontend/features/today/useSheetToday.ts b/src/main/frontend/features/today/useSheetToday.ts
+index 6f79f089e..40027ff52 100644
+--- a/src/main/frontend/features/today/useSheetToday.ts
++++ b/src/main/frontend/features/today/useSheetToday.ts
+@@ -1,9 +1,9 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ 
+-export type SheetToday = { id: string; today: string };
++export type SheetToday = { id: string; today: string; archived: boolean };
+ 
+-/** The sheet's today (yyyy-mm-dd). Every date decision and default date in a sheet uses this,
++/** The sheet's today (yyyy-mm-dd), and whether it is archived. Every date decision and default date in a sheet uses this,
+  *  never the browser's clock. */
+ export function useSheetToday(sheetId: string) {
+   return useQuery({
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+index ca89765d0..204e61aea 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+@@ -24,6 +24,9 @@ final class ClaimStatusChange {
+ 
+     static Claim apply(String id, long cid, String action, String reason, String by, ClaimRepository repository,
+             PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup, WatchRepository watches) throws BadRequestException {
++        if (settings.archived(id)) {
++            throw new BadRequestException("the sheet is archived");
++        }
+         if ("resettle".equals(action == null ? "" : action.trim())) {
+             return resettle(id, cid, by, repository, periods, settings, audit, rollup, watches);
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/RefuseViewer.java b/src/main/java/net/officefloor/hq/app/settings/RefuseViewer.java
+index bc30488d9..a8c49f62a 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/RefuseViewer.java
++++ b/src/main/java/net/officefloor/hq/app/settings/RefuseViewer.java
+@@ -5,13 +5,16 @@ import net.officefloor.hq.app.CurrentUser;
+ import net.officefloor.server.http.ServerHttpConnection;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+-/** Refuse any change by a viewer of the sheet (400, nothing written). The first step of every endpoint
++/** Refuse any change by a viewer of the sheet, and any change at all to an archived sheet (400, nothing written). The first step of every endpoint
+  *  that changes a sheet, except the bulk ones, where a viewer's selection is simply all refused. */
+ public class RefuseViewer {
+     public void refuse(@PathVariable("sheetId") String sheetId, ServerHttpConnection connection,
+             SettingsRepository settings) throws BadRequestException {
+         String by = CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
++        if (settings.archived(id)) {
++            throw new BadRequestException("the sheet is archived");
++        }
+         if (settings.role(id, by).equals(SettingsRepository.VIEWER)) {
+             throw new BadRequestException("a viewer can change nothing");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java b/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
+index 2b97080ec..5d22cd243 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
+@@ -29,6 +29,12 @@ public class SettingsRepository {
+         return known != null && known > 0;
+     }
+ 
++    /** Whether a steward has archived the sheet: every change to it is then refused. */
++    public boolean archived(String sheetId) {
++        List<Boolean> found = jdbc.query("SELECT archived FROM sheet WHERE id = ?", (rs, i) -> rs.getBoolean("archived"), sheetId);
++        return !found.isEmpty() && found.get(0);
++    }
++
+     /** The sheet's settings and roles, roles by user name: each dated setting as in force on the sheet's
+      *  today, and every value recorded for each, by key. */
+     public Settings load(String sheetId) {
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/ArchiveSheet.java b/src/main/java/net/officefloor/hq/app/sheet/ArchiveSheet.java
+new file mode 100644
+index 000000000..259a1b410
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/ArchiveSheet.java
+@@ -0,0 +1,31 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.hq.app.settings.SettingsRepository;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.server.http.ServerHttpConnection;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Archive the sheet: a steward only, and only once. */
++public class ArchiveSheet {
++    public void archive(@PathVariable("sheetId") String sheetId, ServerHttpConnection connection,
++            SheetRepository repository, SettingsRepository settings, Audit audit, Out<Sheet> sheet)
++            throws BadRequestException {
++        String by = CurrentUser.require(connection);
++        String id = sheetId == null ? "" : sheetId.trim();
++        if (!settings.sheetExists(id)) {
++            throw new BadRequestException("no such sheet");
++        }
++        if (!settings.role(id, by).equals(SettingsRepository.STEWARD)) {
++            throw new BadRequestException("only a steward can archive the sheet");
++        }
++        if (repository.archived(id)) {
++            throw new BadRequestException("the sheet is already archived");
++        }
++        repository.archive(id);
++        audit.record("SHEET_ARCHIVED sheet=" + id + " by=" + by);
++        sheet.set(new Sheet(id, repository.today(id).toString(), true));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/LoadSheetToday.java b/src/main/java/net/officefloor/hq/app/sheet/LoadSheetToday.java
+index e6ae8764a..915d4c425 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/LoadSheetToday.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/LoadSheetToday.java
+@@ -13,7 +13,7 @@ public class LoadSheetToday {
+         CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
+         try {
+-            sheet.set(new Sheet(id, repository.today(id).toString()));
++            sheet.set(new Sheet(id, repository.today(id).toString(), repository.archived(id)));
+         } catch (EmptyResultDataAccessException e) {
+             throw new BadRequestException("no such sheet");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SaveSheetToday.java b/src/main/java/net/officefloor/hq/app/sheet/SaveSheetToday.java
+index 4726b2229..390bb1fe8 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SaveSheetToday.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SaveSheetToday.java
+@@ -24,6 +24,6 @@ public class SaveSheetToday {
+         }
+         closer.closeLapsed(id, by, today);
+         rollup.record(id, by, before);
+-        sheet.set(new Sheet(id, today.toString()));
++        sheet.set(new Sheet(id, today.toString(), repository.archived(id)));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/Sheet.java b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+index 3bf819fd8..1a241de9d 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.sheet;
+ 
+-/** A sheet: its id and its own today (ISO yyyy-MM-dd), which stands in for the real date. */
+-public record Sheet(String id, String today) {
++/** A sheet: its id, its own today (ISO yyyy-MM-dd), which stands in for the real date, and whether a steward
++ *  has archived it (nothing on it can then be changed). */
++public record Sheet(String id, String today, boolean archived) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+index fc884305f..6a79b6ee0 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+@@ -26,7 +26,7 @@ public class SheetRepository {
+                 // another user loaded the same new id at the same moment: it is made either way
+             }
+         }
+-        return new Sheet(id, today(id).toString());
++        return new Sheet(id, today(id).toString(), archived(id));
+     }
+ 
+     /** The sheet's today: the date every date decision and default in the sheet uses. */
+@@ -35,6 +35,17 @@ public class SheetRepository {
+         return today.toLocalDate();
+     }
+ 
++    /** Whether a steward has archived the sheet. */
++    public boolean archived(String id) {
++        Boolean archived = jdbc.queryForObject("SELECT archived FROM sheet WHERE id = ?", Boolean.class, id);
++        return Boolean.TRUE.equals(archived);
++    }
++
++    /** Archive the sheet; false when there is no such sheet. */
++    public boolean archive(String id) {
++        return jdbc.update("UPDATE sheet SET archived = TRUE WHERE id = ?", id) > 0;
++    }
++
+     /** Set the sheet's today; false when there is no such sheet. */
+     public boolean setToday(String id, LocalDate today) {
+         return jdbc.update("UPDATE sheet SET today = ? WHERE id = ?", Date.valueOf(today), id) > 0;
+diff --git a/src/main/resources/db/migration/V43__sheet_archived.sql b/src/main/resources/db/migration/V43__sheet_archived.sql
+new file mode 100644
+index 000000000..d7c2f2afb
+--- /dev/null
++++ b/src/main/resources/db/migration/V43__sheet_archived.sql
+@@ -0,0 +1,3 @@
++-- An archived sheet: a steward has archived it. Everything on it stays visible and every change to it is
++-- refused (only watching, which is the user's own, is left).
++ALTER TABLE sheet ADD COLUMN archived BOOLEAN DEFAULT FALSE NOT NULL;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/archive.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/archive.POST.yml
+new file mode 100644
+index 000000000..fc68362dc
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/archive.POST.yml
+@@ -0,0 +1,7 @@
++# Archive the sheet: a steward only. Everything stays visible; every change after is refused.
++archive:
++  class: net.officefloor.hq.app.sheet.ArchiveSheet
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.sheet.RespondWithSheet
