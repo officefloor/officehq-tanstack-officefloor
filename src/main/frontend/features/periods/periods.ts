@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { claimDueCents, countedOn } from '../claims/claims';
+import { claimDueCents, counted, countedOn } from '../claims/claims';
 import type { Claim, Late } from '../claims/claims';
 import { gradeOn } from '../people/people';
 import type { Person } from '../people/people';
@@ -108,6 +108,29 @@ export function personPeriodDueCents(
     const byPerson = totals.get(period.name) ?? new Map<number, bigint>();
     byPerson.set(person.id, (byPerson.get(person.id) ?? 0n) + due);
     totals.set(period.name, byPerson);
+  }
+  return totals;
+}
+
+/** Each period's classic due-total (in hundredths, by name): the due now of the claims whose due-by falls in it that
+ *  count by their status now (see {@link counted}: OPEN, PENDING or SETTLED), not by their status log; a claim with no
+ *  rate adds nothing. */
+export function classicPeriodDueCents(
+  periods: Period[],
+  claims: Claim[],
+  people: Person[],
+  rates: Rate[],
+  floor: DatedCents,
+  late: Late,
+): Map<string, bigint> {
+  const byId = new Map(people.map((p) => [p.id, p]));
+  const totals = new Map<string, bigint>();
+  for (const c of counted(claims, people)) {
+    const period = periodOf(periods, c.dueBy);
+    const person = byId.get(c.person);
+    if (period === undefined || person === undefined) continue;
+    const due = claimDueCents(c, rateOf(rates, gradeOn(person, c.date), c.date), floor, late) ?? 0n;
+    totals.set(period.name, (totals.get(period.name) ?? 0n) + due);
   }
   return totals;
 }
