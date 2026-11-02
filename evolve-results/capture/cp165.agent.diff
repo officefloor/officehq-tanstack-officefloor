@@ -1,0 +1,238 @@
+diff --git a/src/main/frontend/features/settings/settings.slot.tsx b/src/main/frontend/features/settings/settings.slot.tsx
+index c4b5b405..729ce50c 100644
+--- a/src/main/frontend/features/settings/settings.slot.tsx
++++ b/src/main/frontend/features/settings/settings.slot.tsx
+@@ -52,6 +52,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
+   const [policyDate, setPolicyDate] = useState('');
+   const [periodNumberingFrom, setPeriodNumberingFrom] = useState('');
+   const [graceDays, setGraceDays] = useState('');
++  const [escalateAfter, setEscalateAfter] = useState('');
+   const [entryDate, setEntryDate] = useState('');
+   const [pot, setPot] = useState('');
+   const [parent, setParent] = useState('');
+@@ -94,6 +95,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
+       setPolicyDate('');
+       setPeriodNumberingFrom('');
+       setGraceDays('');
++      setEscalateAfter('');
+       setEntryDate('');
+       setPot('');
+       setParent('');
+@@ -141,7 +143,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
+       ...(Object.fromEntries(PERMISSIONS.map(({ action }) => [`perm-${action}`, perms[action] ?? ''])) as Record<`perm-${PermAction}`, string>), 'clerk-limit': clerkLimit, floor, terms, 'late-pct': latePct, 'policy-date': policyDate,
+       'period-numbering-from': periodNumberingFrom, 'terms-A': gradeTerms.A ?? '', 'terms-B': gradeTerms.B ?? '',
+       'terms-C': gradeTerms.C ?? '', cap, 'proof-threshold': proofThreshold, 'note-threshold': noteThreshold, 'review-threshold': reviewThreshold,
+-      'grace-days': graceDays, 'entry-date': entryDate, pot, parent, 'fiscal-start-month': fiscalStartMonth, 'alert-threshold': alertThreshold, rounding, 'grace-A': gradeGrace.A ?? '', 'grace-B': gradeGrace.B ?? '',
++      'grace-days': graceDays, 'escalate-after': escalateAfter, 'entry-date': entryDate, pot, parent, 'fiscal-start-month': fiscalStartMonth, 'alert-threshold': alertThreshold, rounding, 'grace-A': gradeGrace.A ?? '', 'grace-B': gradeGrace.B ?? '',
+       'grace-C': gradeGrace.C ?? '', 'proof-threshold-A': gradeProofThreshold.A ?? '',
+       'proof-threshold-B': gradeProofThreshold.B ?? '', 'proof-threshold-C': gradeProofThreshold.C ?? '' };
+     const keys: SettingKey[] = changed.length === 0 ? ['clerk-limit'] : changed;
+@@ -397,6 +399,21 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
+           />
+         </label>{' '}
+         now <span data-testid="setting-grace-days-current"><Fig>{data?.graceDays ?? ''}</Fig></span>{' '}
++        <label>
++          Escalate after{' '}
++          <input
++            data-testid="setting-escalate-after"
++            placeholder="whole days (blank: off)"
++            value={escalateAfter}
++            onChange={(e) => {
++              setEscalateAfter(e.target.value);
++              touch('escalate-after');
++            }}
++            // As the policy date: clearing an already blank field must still send the blank.
++            onFocus={() => touch('escalate-after')}
++          />
++        </label>{' '}
++        now <span data-testid="setting-escalate-after-current"><Fig>{data?.escalateAfter ?? ''}</Fig></span>{' '}
+         <label>
+           Entry date{' '}
+           <input
+diff --git a/src/main/frontend/features/settings/settings.ts b/src/main/frontend/features/settings/settings.ts
+index 1c902133..4d1b12d3 100644
+--- a/src/main/frontend/features/settings/settings.ts
++++ b/src/main/frontend/features/settings/settings.ts
+@@ -29,7 +29,7 @@ import { hundredths } from '../rates/rates';
+  *  And, for each dated key (every one that carries a figure), its values as recorded, by from-date. */
+ export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string;
+   termsA: string; termsB: string; termsC: string; cap: string;
+-  proofThreshold: string; noteThreshold: string; reviewThreshold: string; graceDays: string; entryDate: string; graceA: string; graceB: string; graceC: string;
++  proofThreshold: string; noteThreshold: string; reviewThreshold: string; graceDays: string; escalateAfter: string; entryDate: string; graceA: string; graceB: string; graceC: string;
+   proofThresholdA: string; proofThresholdB: string; proofThresholdC: string; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string; rounding: string; perms: Partial<Record<PermAction, string>>; dated: Partial<Record<SettingKey, DatedValue[]>> };
+ 
+ /** A dated setting's value as recorded: in force from its from-date (yyyy-MM-dd). */
+@@ -40,7 +40,7 @@ export type DatedCents = (date: string) => bigint;
+ 
+ /** Whether a setting is dated: every one that carries a figure is but the pot and the alert threshold; the policy, period numbering and entry dates and the grace days are not. */
+ export function isDated(key: SettingKey): boolean {
+-  return key !== 'policy-date' && key !== 'period-numbering-from' && key !== 'grace-days' && key !== 'entry-date' && key !== 'pot' && key !== 'alert-threshold' && key !== 'parent' && key !== 'fiscal-start-month' && !key.startsWith('perm-');
++  return key !== 'policy-date' && key !== 'period-numbering-from' && key !== 'grace-days' && key !== 'escalate-after' && key !== 'entry-date' && key !== 'pot' && key !== 'alert-threshold' && key !== 'parent' && key !== 'fiscal-start-month' && !key.startsWith('perm-');
+ }
+ 
+ /** The figure in force on a date: the value of the latest from-date on or before it, before every from-date (or
+@@ -59,7 +59,7 @@ function datedCents(values: DatedValue[] | undefined, start: string): DatedCents
+ 
+ /** A setting's key as the server names it, with the field of {@link Settings} that shows it. */
+ export type SettingKey = 'clerk-limit' | 'floor' | 'terms' | 'late-pct' | 'policy-date' | 'period-numbering-from'
+-  | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'cap' | 'proof-threshold' | 'note-threshold' | 'review-threshold' | 'grace-days' | 'entry-date' | 'pot' | 'parent' | 'fiscal-start-month' | 'alert-threshold' | 'rounding' | `perm-${PermAction}`;
++  | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'cap' | 'proof-threshold' | 'note-threshold' | 'review-threshold' | 'grace-days' | 'escalate-after' | 'entry-date' | 'pot' | 'parent' | 'fiscal-start-month' | 'alert-threshold' | 'rounding' | `perm-${PermAction}`;
+ 
+ /** The actions whose roles the permission matrix sets, each with its standing rule (used while its entry is blank). */
+ export const PERMISSIONS = [
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claims.java b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+index e47b3ba9..710ddf88 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+@@ -360,6 +360,12 @@ public class Claims {
+                 Date.valueOf(today)) == 1;
+     }
+ 
++    /** Marks the claim escalated, conditional on it not yet being so: false when it already was. */
++    public boolean escalate(String sheet, long id) {
++        return jdbc.update("UPDATE claim SET escalated = TRUE WHERE sheet = ? AND id = ? AND NOT escalated", sheet,
++                id) == 1;
++    }
++
+     /**
+      * Raises the claim's proofs count by one, conditional on the status and count read, so a concurrent change by
+      * another user is refused, not overwritten: false when it was not.
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RemindClaim.java b/src/main/java/net/officefloor/hq/app/claim/RemindClaim.java
+index 822a5a74..2206dc04 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RemindClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RemindClaim.java
+@@ -4,6 +4,7 @@ import java.time.LocalDate;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.person.People;
+ import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.setting.Settings;
+ import net.officefloor.hq.app.sheet.SheetClock;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
+@@ -11,11 +12,13 @@ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /**
+  * Reminds an OPEN or PENDING claim: REMIND is written naming the claim, and the claim keeps the sheet's today as its
+- * reminded date. A claim is reminded at most once per sheet-today.
++ * reminded date. A claim is reminded at most once per sheet-today. While the sheet has an escalation gap, reminding a
++ * claim whose previous reminder was at least that many days before the sheet's today escalates it: ESCALATE naming the
++ * claim is written after the REMIND line, once per claim ever.
+  */
+ public class RemindClaim {
+     public void remind(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val Claim claim,
+-            Claims claims, People people, SheetClock clock, Audit audit) throws InvalidClaimStatusChangeException {
++            Claims claims, People people, Settings settings, SheetClock clock, Audit audit) throws InvalidClaimStatusChangeException {
+         if (claim.status() != ClaimStatus.OPEN && claim.status() != ClaimStatus.PENDING) {
+             throw new InvalidClaimStatusChangeException("A " + claim.status() + " claim cannot be reminded");
+         }
+@@ -29,5 +32,11 @@ public class RemindClaim {
+             throw new InvalidClaimStatusChangeException("The claim changed since it was read");
+         }
+         audit.record("REMIND sheet=" + sheet + " by=" + user + " " + claim.statusAuditFields(person.name()));
++        Integer gap = settings.escalateAfter(sheet);
++        if (gap != null && claim.remindedOn() != null
++                && !LocalDate.parse(claim.remindedOn()).plusDays(gap).isAfter(today)
++                && claims.escalate(sheet, claim.id())) {
++            audit.record("ESCALATE sheet=" + sheet + " by=" + user + " " + claim.statusAuditFields(person.name()));
++        }
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Settings.java b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+index 1248b329..b46e0767 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+@@ -79,6 +79,10 @@ public class Settings {
+      *  today change closes it (a whole number); blank: off. */
+     public static final String GRACE_DAYS = "grace-days";
+ 
++    /** The days at least which a claim's previous reminder must lie before the sheet's today for reminding it to
++     *  escalate it, once per claim ever (a whole number, not dated); blank: off. */
++    public static final String ESCALATE_AFTER = "escalate-after";
++
+     /** The default date of a new claim in place of the sheet's today (yyyy-MM-dd); blank: off. */
+     public static final String ENTRY_DATE = "entry-date";
+ 
+@@ -123,7 +127,7 @@ public class Settings {
+ 
+     /** Whether the key is dated: every setting that carries a figure is but the pot and the alert threshold; the policy, period numbering and entry dates, the grace days and the parent are not. */
+     public static boolean dated(String key) {
+-        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key)
++        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key)
+                 && !ENTRY_DATE.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
+                 && !key.startsWith("perm-");
+     }
+@@ -304,6 +308,12 @@ public class Settings {
+         return days.isEmpty() ? null : Integer.valueOf(days);
+     }
+ 
++    /** The sheet's escalation gap in days, or null when it is off. */
++    public Integer escalateAfter(String sheet) {
++        String days = get(sheet, ESCALATE_AFTER);
++        return days.isEmpty() ? null : Integer.valueOf(days);
++    }
++
+     /** The default date of a new claim: the sheet's entry date while it is set, else the sheet's today. */
+     public LocalDate entryDay(String sheet) {
+         String entry = get(sheet, ENTRY_DATE);
+@@ -397,6 +407,6 @@ public class Settings {
+                 on(sheet, gradeProofThreshold("A"), today), on(sheet, gradeProofThreshold("B"), today),
+                 on(sheet, gradeProofThreshold("C"), today), get(sheet, POT), parent(sheet),
+                 Integer.toString(fiscalStartMonth(sheet)), get(sheet, ALERT_THRESHOLD), on(sheet, ROUNDING, today),
+-                on(sheet, REVIEW_THRESHOLD, today));
++                on(sheet, REVIEW_THRESHOLD, today), get(sheet, ESCALATE_AFTER));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+index db172ef5..9ba60023 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+@@ -12,12 +12,12 @@ import java.util.Map;
+  * own proof threshold with two decimals, or "" for none (the grade takes the sheet's). And the pot with two decimals,
+  * or "" for none. And the parent sheet's id, or "" for none. And the fiscal start month (1 to 12). And the alert
+  * threshold with two decimals, or "" for off. And the rounding mode (half-up or half-even), or "" for none. And the review
+- * threshold with two decimals, or "" for none.
++ * threshold with two decimals, or "" for none. And the escalation gap (a whole number of days), or "" for off.
+  */
+ public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
+         String periodNumberingFrom, String termsA, String termsB, String termsC, String cap,
+         String proofThreshold, Map<String, String> perms, Map<String, List<DatedValue>> dated,
+         String graceDays, String noteThreshold, String entryDate, String graceA, String graceB, String graceC,
+         String proofThresholdA, String proofThresholdB, String proofThresholdC, String pot, String parent,
+-        String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold) {
++        String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+index beea9ba5..2e233280 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+@@ -62,7 +62,7 @@ public class ValidateSetting {
+         String value = request == null || request.value() == null ? "" : request.value().trim();
+         if (!Settings.CLERK_LIMIT.equals(key) && !Settings.CAP.equals(key) && !Settings.PROOF_THRESHOLD.equals(key) && !Settings.NOTE_THRESHOLD.equals(key) && !Settings.REVIEW_THRESHOLD.equals(key) && !Settings.FLOOR.equals(key) && !Settings.TERMS.equals(key)
+                 && !Settings.LATE_PCT.equals(key) && !Settings.POLICY_DATE.equals(key)
+-                && !Settings.PERIOD_NUMBERING_FROM.equals(key) && !Settings.GRACE_DAYS.equals(key) && !Settings.ENTRY_DATE.equals(key)
++                && !Settings.PERIOD_NUMBERING_FROM.equals(key) && !Settings.GRACE_DAYS.equals(key) && !Settings.ESCALATE_AFTER.equals(key) && !Settings.ENTRY_DATE.equals(key)
+                 && !Settings.POT.equals(key) && !Settings.ALERT_THRESHOLD.equals(key) && !Settings.PARENT.equals(key) && !Settings.FISCAL_START_MONTH.equals(key) && !Settings.ROUNDING.equals(key)
+                 && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeTerms(g).equals(key))
+                 && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeGrace(g).equals(key))
+@@ -143,6 +143,13 @@ public class ValidateSetting {
+             }
+             return new SettingInput(key, value.isEmpty() ? "" : Integer.toString(Integer.parseInt(value)));
+         }
++        // The escalation gap is a whole number of days; blank turns escalation off.
++        if (Settings.ESCALATE_AFTER.equals(key)) {
++            if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
++                throw new InvalidSettingException("The escalation gap must be a whole number of days, 0 or more, or blank");
++            }
++            return new SettingInput(key, value.isEmpty() ? "" : Integer.toString(Integer.parseInt(value)));
++        }
+         // A grade's grace is a whole number of days; blank means none.
+         if (Settings.GRADES.stream().anyMatch((g) -> Settings.gradeGrace(g).equals(key))) {
+             if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
+diff --git a/src/main/resources/db/migration/V77__claim_escalated.sql b/src/main/resources/db/migration/V77__claim_escalated.sql
+new file mode 100644
+index 00000000..8e8c5b55
+--- /dev/null
++++ b/src/main/resources/db/migration/V77__claim_escalated.sql
+@@ -0,0 +1,2 @@
++-- Whether reminding the claim has escalated it: a claim is escalated at most once ever.
++ALTER TABLE claim ADD COLUMN escalated BOOLEAN NOT NULL DEFAULT FALSE;
