@@ -1,0 +1,373 @@
+diff --git a/src/main/frontend/features/periods/periods.slot.tsx b/src/main/frontend/features/periods/periods.slot.tsx
+index de95823a..44c06455 100644
+--- a/src/main/frontend/features/periods/periods.slot.tsx
++++ b/src/main/frontend/features/periods/periods.slot.tsx
+@@ -11,6 +11,8 @@ import { useFiscalStartMonth, useFloorCents } from '../settings/settings';
+ import { useClaims, useLate } from '../claims/claims';
+ import {
+   closePeriodPath,
++  lockPeriodPath,
++  unlockPeriodPath,
+   fiscalYearOf,
+   generateFiscalYearPath,
+   generatePeriodsPath,
+@@ -28,7 +30,9 @@ import { Fig } from '../locale/Fig';
+ // One period with its due-total (fixed once closed or soft-closed) and closed flag (yes, soft or no), and the buttons
+ // that close, soft-close and reopen it. The server refuses closing a period already closed, soft-closing one already
+ // closed or soft-closed, and reopening one neither; and any of them by a role the permission matrix does not allow;
+-// the row shows that error until its next action.
++// the row shows that error until its next action. It also shows whether the period is locked, with the buttons that
++// lock and unlock it; the server refuses either by anyone but a steward, locking one locked, unlocking one not, and
++// reopening one locked.
+ // It also shows the fiscal year its from-date falls in.
+ function PeriodRow({ sheet, user, period, dueCents, fiscalStart }: { sheet: string; user: string; period: Period; dueCents: bigint; fiscalStart: number }) {
+   const queryClient = useQueryClient();
+@@ -46,8 +50,20 @@ function PeriodRow({ sheet, user, period, dueCents, fiscalStart }: { sheet: stri
+   });
+   const closeOnce = useSubmitOnce(close);
+   const softCloseOnce = useSubmitOnce(softClose);
+-  const pending = close.isPending || softClose.isPending || reopen.isPending;
++  const lock = useMutation({
++    mutationFn: () => postJson<Period[]>(byUser(lockPeriodPath(sheet, period.name), user), {}),
++    onSuccess: (updated) => queryClient.setQueryData(periodsKey(sheet), updated),
++  });
++  const unlock = useMutation({
++    mutationFn: () => postJson<Period[]>(byUser(unlockPeriodPath(sheet, period.name), user), {}),
++    onSuccess: (updated) => queryClient.setQueryData(periodsKey(sheet), updated),
++  });
++  const pending = close.isPending || softClose.isPending || reopen.isPending || lock.isPending || unlock.isPending;
+   const reopenOnce = useSubmitOnce(reopen);
++  const lockOnce = useSubmitOnce(lock);
++  const unlockOnce = useSubmitOnce(unlock);
++  // Clears every action's error but the one about to be taken.
++  const resetAll = () => [close, softClose, reopen, lock, unlock].forEach((m) => m.reset());
+ 
+   return (
+     <tr data-testid={`period-row-${period.name}`}>
+@@ -58,14 +74,14 @@ function PeriodRow({ sheet, user, period, dueCents, fiscalStart }: { sheet: stri
+       <td data-testid="period-closed">{period.closed ? 'yes' : period.soft ? 'soft' : 'no'}</td>
+       <td data-testid="period-fy">{fiscalYearOf(period.from, fiscalStart)}</td>
+       <td data-testid="period-cap"><Fig>{period.cap ?? ''}</Fig></td>
++      <td data-testid="period-locked">{period.locked ? 'yes' : 'no'}</td>
+       <td>
+         <button
+           type="button"
+           data-testid="period-close"
+           disabled={pending}
+           onClick={() => {
+-            softClose.reset();
+-            reopen.reset();
++            resetAll();
+             closeOnce(undefined);
+           }}
+         >
+@@ -76,8 +92,7 @@ function PeriodRow({ sheet, user, period, dueCents, fiscalStart }: { sheet: stri
+           data-testid="period-soft-close"
+           disabled={pending}
+           onClick={() => {
+-            close.reset();
+-            reopen.reset();
++            resetAll();
+             softCloseOnce(undefined);
+           }}
+         >
+@@ -88,12 +103,33 @@ function PeriodRow({ sheet, user, period, dueCents, fiscalStart }: { sheet: stri
+           data-testid="period-reopen"
+           disabled={pending}
+           onClick={() => {
+-            close.reset();
+-            softClose.reset();
++            resetAll();
+             reopenOnce(undefined);
+           }}
+         >
+           Reopen
++        </button>{' '}
++        <button
++          type="button"
++          data-testid="period-lock"
++          disabled={pending}
++          onClick={() => {
++            resetAll();
++            lockOnce(undefined);
++          }}
++        >
++          Lock
++        </button>{' '}
++        <button
++          type="button"
++          data-testid="period-unlock"
++          disabled={pending}
++          onClick={() => {
++            resetAll();
++            unlockOnce(undefined);
++          }}
++        >
++          Unlock
+         </button>
+         {close.isError && (
+           <span data-testid="period-error" role="alert">
+@@ -107,7 +143,17 @@ function PeriodRow({ sheet, user, period, dueCents, fiscalStart }: { sheet: stri
+         )}
+         {reopen.isError && (
+           <span data-testid="period-error" role="alert">
+-            {' '}This period cannot be reopened: it is not closed or soft-closed, or your role may not reopen it.
++            {' '}This period cannot be reopened: it is not closed or soft-closed, it is locked, or your role may not reopen it.
++          </span>
++        )}
++        {lock.isError && (
++          <span data-testid="period-error" role="alert">
++            {' '}This period cannot be locked: it is already locked, or only a steward may lock it.
++          </span>
++        )}
++        {unlock.isError && (
++          <span data-testid="period-error" role="alert">
++            {' '}This period cannot be unlocked: it is not locked, or only a steward may unlock it.
+           </span>
+         )}
+       </td>
+@@ -306,6 +352,7 @@ function Periods({ sheet, user }: { sheet: string; user: string }) {
+             <th>Closed</th>
+             <th>Fiscal year</th>
+             <th>Cap</th>
++            <th>Locked</th>
+             <th></th>
+           </tr>
+         </thead>
+diff --git a/src/main/frontend/features/periods/periods.ts b/src/main/frontend/features/periods/periods.ts
+index c884191a..382d7ea4 100644
+--- a/src/main/frontend/features/periods/periods.ts
++++ b/src/main/frontend/features/periods/periods.ts
+@@ -14,7 +14,8 @@ import type { DatedCents } from '../settings/settings';
+  *  soft-closed instead: its figures fixed the same way, while claims dated in it may still change; and the most OPEN or
+  *  PENDING claims a person may have in it (null for no cap); and each person's carried figure for it fixed when it was
+  *  (soft-)closed (by person id; empty while open); and each person's opening balance for it, added to their carried
+- *  figure (by person id; none for a person with no opening). */
++ *  figure (by person id; none for a person with no opening); and whether a steward has locked it, so it cannot be
++ *  reopened. */
+ export type Period = {
+   name: string;
+   from: string;
+@@ -26,6 +27,7 @@ export type Period = {
+   cap: number | null;
+   closedCarried: Record<string, string>;
+   openings: Record<string, string>;
++  locked: boolean;
+ };
+ 
+ export const periodsKey = (sheet: string) => ['periods', sheet] as const;
+@@ -64,6 +66,14 @@ export const softClosePeriodPath = (sheet: string, name: string) =>
+ export const reopenPeriodPath = (sheet: string, name: string) =>
+   `${periodsPath(sheet)}/${encodeURIComponent(name)}/reopen`;
+ 
++/** Where a period is locked (a steward only). */
++export const lockPeriodPath = (sheet: string, name: string) =>
++  `${periodsPath(sheet)}/${encodeURIComponent(name)}/lock`;
++
++/** Where a locked period is unlocked (a steward only). */
++export const unlockPeriodPath = (sheet: string, name: string) =>
++  `${periodsPath(sheet)}/${encodeURIComponent(name)}/unlock`;
++
+ /** Every period on the sheet, by from-date; no two overlap. */
+ export function usePeriods(sheet: string) {
+   return useQuery({
+diff --git a/src/main/java/net/officefloor/hq/app/period/LockPeriod.java b/src/main/java/net/officefloor/hq/app/period/LockPeriod.java
+new file mode 100644
+index 00000000..24f28f85
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/LockPeriod.java
+@@ -0,0 +1,25 @@
++package net.officefloor.hq.app.period;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.role.Role;
++import net.officefloor.hq.app.role.Roles;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Locks a period so it cannot be reopened. Only a steward may; refuses anyone else, a period not on the sheet, or one already locked. */
++public class LockPeriod {
++    public void lock(@PathVariable("sheet") String sheet, @PathVariable("period") String period,
++            @RequestParam("user") String user, Periods periods, Roles roles, Audit audit)
++            throws InvalidPeriodException {
++        if (!Role.STEWARD.equals(roles.of(sheet, user))) {
++            throw new InvalidPeriodException("Only a steward may lock a period");
++        }
++        if (!periods.named(sheet, period)) {
++            throw new InvalidPeriodException("There is no period named " + period);
++        }
++        if (!periods.lock(sheet, period, true)) {
++            throw new InvalidPeriodException("The period " + period + " is already locked");
++        }
++        audit.record("PERIOD_LOCKED sheet=" + sheet + " by=" + user + " period=" + period);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/Period.java b/src/main/java/net/officefloor/hq/app/period/Period.java
+index 1b5b424f..beb4985f 100644
+--- a/src/main/java/net/officefloor/hq/app/period/Period.java
++++ b/src/main/java/net/officefloor/hq/app/period/Period.java
+@@ -9,11 +9,12 @@ import java.util.Map;
+  * figures fixed the same way, but claims due inside it may still be added, edited and change status; and the most OPEN
+  * or PENDING claims a person may have in it (null for no cap); and each person's carried figure for it fixed when it was
+  * (soft-)closed (by person id, two decimals; empty while open); and each person's opening balance for it, added to their
+- * carried figure (by person id, two decimals; none for a person with no opening).
++ * carried figure (by person id, two decimals; none for a person with no opening); and whether a steward has locked it, so
++ * it cannot be reopened.
+  */
+ public record Period(String name, String from, String to, boolean closed, String closedTotal,
+         Map<Long, String> closedPeople, boolean soft, Integer cap, Map<Long, String> closedCarried,
+-        Map<Long, String> openings) {
++        Map<Long, String> openings, boolean locked) {
+ 
+     /** Whether its figures are fixed: closed or soft-closed. */
+     public boolean fixed() {
+diff --git a/src/main/java/net/officefloor/hq/app/period/Periods.java b/src/main/java/net/officefloor/hq/app/period/Periods.java
+index 95c9289d..2bc7959c 100644
+--- a/src/main/java/net/officefloor/hq/app/period/Periods.java
++++ b/src/main/java/net/officefloor/hq/app/period/Periods.java
+@@ -18,9 +18,10 @@ public class Periods {
+             rs.getDate("from_date").toLocalDate().toString(), rs.getDate("to_date").toLocalDate().toString(),
+             rs.getBoolean("closed"),
+             rs.getBigDecimal("closed_total") == null ? null : rs.getBigDecimal("closed_total").toPlainString(),
+-            Map.of(), rs.getBoolean("soft"), (Integer) rs.getObject("claim_cap"), Map.of(), Map.of());
++            Map.of(), rs.getBoolean("soft"), (Integer) rs.getObject("claim_cap"), Map.of(), Map.of(),
++            rs.getBoolean("locked"));
+ 
+-    private static final String COLUMNS = "SELECT name, from_date, to_date, closed, closed_total, soft, claim_cap FROM period";
++    private static final String COLUMNS = "SELECT name, from_date, to_date, closed, closed_total, soft, claim_cap, locked FROM period";
+ 
+     private final JdbcTemplate jdbc;
+ 
+@@ -42,7 +43,7 @@ public class Periods {
+                     openings.put(rs.getLong("person"), rs.getBigDecimal("amount").toPlainString());
+                 }, sheet, period.name());
+         return new Period(period.name(), period.from(), period.to(), period.closed(), period.closedTotal(),
+-                period.closedPeople(), period.soft(), period.cap(), period.closedCarried(), openings);
++                period.closedPeople(), period.soft(), period.cap(), period.closedCarried(), openings, period.locked());
+     }
+ 
+     /** Each person's opening balance for the period (by person id); none for a person with no opening. */
+@@ -77,7 +78,7 @@ public class Periods {
+                     carried.put(rs.getLong("person"), rs.getBigDecimal("carried").toPlainString());
+                 }, sheet, period.name());
+         return new Period(period.name(), period.from(), period.to(), period.closed(), period.closedTotal(), people,
+-                period.soft(), period.cap(), carried, period.openings());
++                period.soft(), period.cap(), carried, period.openings(), period.locked());
+     }
+ 
+     /** The sheet's period of the name, or null when there is none. */
+@@ -156,14 +157,20 @@ public class Periods {
+         return true;
+     }
+ 
+-    /** Reopens the closed or soft-closed period, dropping its fixed due-totals and carried figures; false when it was neither (or is gone). */
++    /** Reopens the closed or soft-closed period, dropping its fixed due-totals and carried figures; false when it was neither, is locked (or is gone). */
+     public boolean reopen(String sheet, String name) {
+         if (jdbc.update("UPDATE period SET closed = FALSE, soft = FALSE, closed_total = NULL WHERE sheet = ? AND name = ?"
+-                + " AND (closed OR soft)",
++                + " AND (closed OR soft) AND NOT locked",
+                 sheet, name) != 1) {
+             return false;
+         }
+         jdbc.update("DELETE FROM period_person_total WHERE sheet = ? AND period = ?", sheet, name);
+         return true;
+     }
++
++    /** Locks or unlocks the period; false when it already was (or is gone). */
++    public boolean lock(String sheet, String name, boolean locked) {
++        return jdbc.update("UPDATE period SET locked = ? WHERE sheet = ? AND name = ? AND locked <> ?", locked, sheet,
++                name, locked) == 1;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/ReopenPeriod.java b/src/main/java/net/officefloor/hq/app/period/ReopenPeriod.java
+index 2616cb6c..3d5d45c4 100644
+--- a/src/main/java/net/officefloor/hq/app/period/ReopenPeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/ReopenPeriod.java
+@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /**
+  * Reopens a closed or soft-closed period: its fixed due-total is dropped, so it totals its claims' current figures again. Only a
+- * role the permission matrix lets (by default a steward) may; refuses anyone else, a period not on the sheet, or one not closed.
++ * role the permission matrix lets (by default a steward) may; refuses anyone else, a period not on the sheet, one locked, or one not closed.
+  */
+ public class ReopenPeriod {
+     public void reopen(@PathVariable("sheet") String sheet, @PathVariable("period") String period,
+@@ -21,6 +21,9 @@ public class ReopenPeriod {
+         if (found == null) {
+             throw new InvalidPeriodException("There is no period named " + period);
+         }
++        if (found.locked()) {
++            throw new InvalidPeriodException("The period " + period + " is locked");
++        }
+         if (!found.fixed() || !periods.reopen(sheet, period)) {
+             throw new InvalidPeriodException("The period " + period + " is not closed");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/period/UnlockPeriod.java b/src/main/java/net/officefloor/hq/app/period/UnlockPeriod.java
+new file mode 100644
+index 00000000..1c0b9360
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/UnlockPeriod.java
+@@ -0,0 +1,25 @@
++package net.officefloor.hq.app.period;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.role.Role;
++import net.officefloor.hq.app.role.Roles;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Unlocks a locked period so it may be reopened again. Only a steward may; refuses anyone else, a period not on the sheet, or one not locked. */
++public class UnlockPeriod {
++    public void unlock(@PathVariable("sheet") String sheet, @PathVariable("period") String period,
++            @RequestParam("user") String user, Periods periods, Roles roles, Audit audit)
++            throws InvalidPeriodException {
++        if (!Role.STEWARD.equals(roles.of(sheet, user))) {
++            throw new InvalidPeriodException("Only a steward may unlock a period");
++        }
++        if (!periods.named(sheet, period)) {
++            throw new InvalidPeriodException("There is no period named " + period);
++        }
++        if (!periods.lock(sheet, period, false)) {
++            throw new InvalidPeriodException("The period " + period + " is not locked");
++        }
++        audit.record("PERIOD_UNLOCKED sheet=" + sheet + " by=" + user + " period=" + period);
++    }
++}
+diff --git a/src/main/resources/db/migration/V89__period_locked.sql b/src/main/resources/db/migration/V89__period_locked.sql
+new file mode 100644
+index 00000000..937bff05
+--- /dev/null
++++ b/src/main/resources/db/migration/V89__period_locked.sql
+@@ -0,0 +1,2 @@
++-- A locked period: a steward locks it, and it cannot be reopened until a steward unlocks it.
++ALTER TABLE period ADD COLUMN locked BOOLEAN DEFAULT FALSE NOT NULL;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheet}/periods/{period}/lock.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheet}/periods/{period}/lock.POST.yml
+new file mode 100644
+index 00000000..502b38e1
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheet}/periods/{period}/lock.POST.yml
+@@ -0,0 +1,9 @@
++# Lock a period so it cannot be reopened; refuses a user who is not a steward, a period not on the sheet, or one
++# already locked. Responds with the sheet's periods.
++lock:
++  class: net.officefloor.hq.app.period.LockPeriod
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.period.RespondWithPeriods
++  govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheet}/periods/{period}/unlock.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheet}/periods/{period}/unlock.POST.yml
+new file mode 100644
+index 00000000..666ad177
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheet}/periods/{period}/unlock.POST.yml
+@@ -0,0 +1,9 @@
++# Unlock a locked period so it may be reopened; refuses a user who is not a steward, a period not on the sheet, or one
++# not locked. Responds with the sheet's periods.
++unlock:
++  class: net.officefloor.hq.app.period.UnlockPeriod
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.period.RespondWithPeriods
++  govern: [ transaction ]
