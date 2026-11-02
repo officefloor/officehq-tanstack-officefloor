@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
@@ -7,7 +8,8 @@ import { usePersonRowAction } from '../people/usePersonRowAction';
 
 /** A person's statements: how many have been taken, the last one's due-total and date (blank before
  *  the first), and a button that takes one. Taking a statement records their due-total and binds each
- *  of their counting claims to the figure it has then (unbinding the rest), until the next one. */
+ *  of their counting claims to the figure it has then (unbinding the rest), until the next one; a
+ *  steward can cancel the last one, its claims going live again. */
 function PersonStatement({ sheetId, personId }: { sheetId: string; personId: number }) {
   const people = usePeople(sheetId);
   const queryClient = useQueryClient();
@@ -23,7 +25,24 @@ function PersonStatement({ sheetId, personId }: { sheetId: string; personId: num
       ]);
     },
   });
-  const announce = usePersonRowAction(sheetId, personId, take.reset);
+  const unstate = useMutation({
+    mutationFn: () =>
+      postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/unstate`, {}),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+      ]);
+    },
+  });
+  const { reset: resetTake } = take;
+  const { reset: resetUnstate } = unstate;
+  const reset = useCallback(() => {
+    resetTake();
+    resetUnstate();
+  }, [resetTake, resetUnstate]);
+  const announce = usePersonRowAction(sheetId, personId, reset);
+  const error = take.error ?? unstate.error;
 
   return (
     <>
@@ -37,13 +56,25 @@ function PersonStatement({ sheetId, personId }: { sheetId: string; personId: num
           disabled={take.isPending}
           onClick={() => {
             announce();
-            take.reset();
+            reset();
             take.mutate();
           }}
         >
           Statement
         </button>
-        {take.isError && <span data-testid="person-error">{take.error.message}</span>}
+        <button
+          type="button"
+          data-testid="person-unstate"
+          disabled={unstate.isPending}
+          onClick={() => {
+            announce();
+            reset();
+            unstate.mutate();
+          }}
+        >
+          Cancel statement
+        </button>
+        {error && <span data-testid="person-error">{error.message}</span>}
       </td>
     </>
   );

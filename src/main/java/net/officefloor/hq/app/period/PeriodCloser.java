@@ -72,13 +72,13 @@ public class PeriodCloser {
                 e -> e.getValue().setScale(2).toPlainString(), (a, b) -> a, LinkedHashMap::new)), soft);
     }
 
-    /** Close, by the sheet's grace days (none when blank), every open period whose to-date plus the grace days is
+    /** Close, by the sheet's grace days (none when blank), every open (not closed nor soft-closed) period whose to-date plus the grace days is
      *  before the sheet's today, in order of their to-dates. */
     public void closeLapsed(String sheetId, String by, LocalDate today) {
         Integer grace = settings.graceDays(sheetId);
         if (grace == null) return;
         List<Period> lapsed = periods.list(sheetId).stream()
-                .filter(p -> !p.closed() && LocalDate.parse(p.to()).plusDays(grace).isBefore(today))
+                .filter(p -> !p.closed() && !p.softClosed() && LocalDate.parse(p.to()).plusDays(grace).isBefore(today))
                 .sorted(Comparator.comparing(Period::to)).toList();
         for (Period p : lapsed) close(sheetId, by, p, true);
     }

@@ -46,9 +46,6 @@ final class ClaimRedate {
             throw new BadRequestException("the new date must be yyyy-mm-dd");
         }
         LocalDate old = LocalDate.parse(found.date());
-        if (date.equals(old)) {
-            throw new BadRequestException("the claim is already dated " + old);
-        }
         PeriodGuard.open(periods, id, old);
         PeriodGuard.open(periods, id, date);
         people.claimAllowed(id, found.personId(), date);

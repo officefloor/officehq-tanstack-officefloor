@@ -106,6 +106,22 @@ public class PersonRepository {
     public void stated(String sheetId, long id, String total, LocalDate date) {
         jdbc.update("UPDATE person SET statement_count = statement_count + 1, stated_total = ?, statement_date = ?"
                 + " WHERE id = ? AND sheet_id = ?", total, Date.valueOf(date), id, sheetId);
+        jdbc.update("INSERT INTO person_statement (sheet_id, person_id, seq, due_total, statement_date)"
+                + " SELECT sheet_id, id, statement_count, stated_total, statement_date FROM person WHERE id = ? AND sheet_id = ?",
+                id, sheetId);
+    }
+
+    /** Cancel a person's last statement: one fewer, showing the due-total and date of the one before it
+     *  (none when it was the first, or was taken before statements were kept). */
+    public void unstated(String sheetId, long id) {
+        jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?"
+                + " AND seq = (SELECT statement_count FROM person WHERE id = ? AND sheet_id = ?)", sheetId, id, id, sheetId);
+        jdbc.update("UPDATE person SET statement_count = statement_count - 1,"
+                + " stated_total = (SELECT s.due_total FROM person_statement s WHERE s.sheet_id = person.sheet_id"
+                + " AND s.person_id = person.id AND s.seq = person.statement_count - 1),"
+                + " statement_date = (SELECT s.statement_date FROM person_statement s WHERE s.sheet_id = person.sheet_id"
+                + " AND s.person_id = person.id AND s.seq = person.statement_count - 1)"
+                + " WHERE id = ? AND sheet_id = ? AND statement_count > 0", id, sheetId);
     }
 
     /** Retire a person from a date. */
