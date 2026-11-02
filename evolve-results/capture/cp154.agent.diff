@@ -1,0 +1,98 @@
+diff --git a/src/main/frontend/features/periods/periods.ts b/src/main/frontend/features/periods/periods.ts
+index f65982a1..a2ca4f05 100644
+--- a/src/main/frontend/features/periods/periods.ts
++++ b/src/main/frontend/features/periods/periods.ts
+@@ -1,6 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+-import { claimDueCents, countedOn } from '../claims/claims';
++import { claimDueCents, counted, countedOn } from '../claims/claims';
+ import type { Claim, Late } from '../claims/claims';
+ import { gradeOn } from '../people/people';
+ import type { Person } from '../people/people';
+@@ -112,6 +112,29 @@ export function personPeriodDueCents(
+   return totals;
+ }
+ 
++/** Each period's classic due-total (in hundredths, by name): the due now of the claims whose due-by falls in it that
++ *  count by their status now (see {@link counted}: OPEN, PENDING or SETTLED), not by their status log; a claim with no
++ *  rate adds nothing. */
++export function classicPeriodDueCents(
++  periods: Period[],
++  claims: Claim[],
++  people: Person[],
++  rates: Rate[],
++  floor: DatedCents,
++  late: Late,
++): Map<string, bigint> {
++  const byId = new Map(people.map((p) => [p.id, p]));
++  const totals = new Map<string, bigint>();
++  for (const c of counted(claims, people)) {
++    const period = periodOf(periods, c.dueBy);
++    const person = byId.get(c.person);
++    if (period === undefined || person === undefined) continue;
++    const due = claimDueCents(c, rateOf(rates, gradeOn(person, c.date), c.date), floor, late) ?? 0n;
++    totals.set(period.name, (totals.get(period.name) ?? 0n) + due);
++  }
++  return totals;
++}
++
+ /** Whether a period's figures are fixed: closed or soft-closed. */
+ export function isFixed(period: Period): boolean {
+   return period.closed || period.soft;
+diff --git a/src/main/frontend/features/summary/summary.slot.tsx b/src/main/frontend/features/summary/summary.slot.tsx
+index e25f7490..8e4287ca 100644
+--- a/src/main/frontend/features/summary/summary.slot.tsx
++++ b/src/main/frontend/features/summary/summary.slot.tsx
+@@ -5,12 +5,14 @@ import { hundredths, twoDecimals, useRates } from '../rates/rates';
+ import { useCapCents, useFloorCents } from '../settings/settings';
+ import { CLAIM_STATUSES, isActive, personDueCents, statusCount, useClaims, useLate } from '../claims/claims';
+ import { useVoidReasons } from '../voidreasons/voidreasons';
+-import { periodDueCents, shownDueTotal, usePeriods } from '../periods/periods';
++import { classicPeriodDueCents, periodDueCents, shownDueTotal, usePeriods } from '../periods/periods';
+ 
+ // The sheet at a glance, figured exactly as the lists figure it. Per grade: the people on it today (retired ones
+ // excluded), their due-totals added up (an n/a due-total adds nothing) and how many of them are active. Per period: its due-total, as its row shows
+ // it, and its change from the period before it by from-date (none for the earliest). Per status: how many of the sheet's claims have it (every claim, whoever's). Per void reason on the list: how
+ // many VOID claims were voided with it.
++// Beside it, the classic summary: per period, its due-total counting each claim by its status now (a closed period shows
++// the figure fixed when it closed), and the sheet's due-total untrimmed (everyone's due-total added up, n/a adding nothing).
+ function Summary({ sheet }: { sheet: string; user: string }) {
+   const { data: claims = [] } = useClaims(sheet);
+   const { data: people = [] } = usePeople(sheet);
+@@ -27,6 +29,8 @@ function Summary({ sheet }: { sheet: string; user: string }) {
+   const shownTotals = [...periods]
+     .sort((a, b) => a.from.localeCompare(b.from))
+     .map((p) => ({ period: p, shown: shownDueTotal(p, periodTotals.get(p.name) ?? 0n) }));
++  const classicTotals = classicPeriodDueCents(periods, claims, people, rates, floor, late);
++  const classicDue = people.reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, cap) ?? 0n), 0n);
+   const periodChanges = new Map(
+     shownTotals.map(({ period, shown }, i) => [
+       period.name,
+@@ -95,6 +99,26 @@ function Summary({ sheet }: { sheet: string; user: string }) {
+           ))}
+         </tbody>
+       </table>
++      <h3>Classic summary</h3>
++      <table>
++        <thead>
++          <tr>
++            <th>Period</th>
++            <th>Due total</th>
++          </tr>
++        </thead>
++        <tbody>
++          {periods.map((p) => (
++            <tr key={p.name}>
++              <td>{p.name}</td>
++              <td data-testid={`classic-period-${p.name}-due-total`}>{shownDueTotal(p, classicTotals.get(p.name) ?? 0n)}</td>
++            </tr>
++          ))}
++        </tbody>
++      </table>
++      <p>
++        Due total: <strong data-testid="classic-due-total">{twoDecimals(classicDue)}</strong>
++      </p>
+       <table>
+         <thead>
+           <tr>
