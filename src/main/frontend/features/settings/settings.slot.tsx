@@ -63,6 +63,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
   const [reviewSla, setReviewSla] = useState('');
   const [scoreMid, setScoreMid] = useState('');
   const [scoreHigh, setScoreHigh] = useState('');
+  const [scoreLog, setScoreLog] = useState('');
   const [entryDate, setEntryDate] = useState('');
   const [pot, setPot] = useState('');
   const [parent, setParent] = useState('');
@@ -112,6 +113,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       setReviewSla('');
       setScoreMid('');
       setScoreHigh('');
+      setScoreLog('');
       setEntryDate('');
       setPot('');
       setParent('');
@@ -161,7 +163,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       ...(Object.fromEntries(PERMISSIONS.map(({ action }) => [`perm-${action}`, perms[action] ?? ''])) as Record<`perm-${PermAction}`, string>), 'clerk-limit': clerkLimit, floor, terms, 'late-pct': latePct, 'policy-date': policyDate,
       'period-numbering-from': periodNumberingFrom, 'terms-A': gradeTerms.A ?? '', 'terms-B': gradeTerms.B ?? '',
       'terms-C': gradeTerms.C ?? '', cap, 'proof-threshold': proofThreshold, 'proof-kinds': proofKinds, 'note-threshold': noteThreshold, 'review-threshold': reviewThreshold,
-      'grace-days': graceDays, 'escalate-after': escalateAfter, 'review-sla': reviewSla, 'score-mid': scoreMid, 'score-high': scoreHigh, 'entry-date': entryDate, pot, parent, 'fiscal-start-month': fiscalStartMonth, 'alert-threshold': alertThreshold, rounding, 'default-grade': defaultGrade, 'grace-A': gradeGrace.A ?? '', 'grace-B': gradeGrace.B ?? '',
+      'grace-days': graceDays, 'escalate-after': escalateAfter, 'review-sla': reviewSla, 'score-mid': scoreMid, 'score-high': scoreHigh, 'score-log': scoreLog, 'entry-date': entryDate, pot, parent, 'fiscal-start-month': fiscalStartMonth, 'alert-threshold': alertThreshold, rounding, 'default-grade': defaultGrade, 'grace-A': gradeGrace.A ?? '', 'grace-B': gradeGrace.B ?? '',
       'grace-C': gradeGrace.C ?? '', 'proof-threshold-A': gradeProofThreshold.A ?? '',
       'proof-threshold-B': gradeProofThreshold.B ?? '', 'proof-threshold-C': gradeProofThreshold.C ?? '',
       'clerk-limit-A': gradeClerkLimit.A ?? '', 'clerk-limit-B': gradeClerkLimit.B ?? '', 'clerk-limit-C': gradeClerkLimit.C ?? '' };
@@ -514,6 +516,21 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
           />
         </label>{' '}
         now <span data-testid="setting-score-high-current"><Fig>{data?.scoreHigh ?? ''}</Fig></span>{' '}
+        <label>
+          Score log{' '}
+          <input
+            data-testid="setting-score-log"
+            placeholder="on (blank: off)"
+            value={scoreLog}
+            onChange={(e) => {
+              setScoreLog(e.target.value);
+              touch('score-log');
+            }}
+            // As the policy date: clearing an already blank field must still send the blank.
+            onFocus={() => touch('score-log')}
+          />
+        </label>{' '}
+        now <span data-testid="setting-score-log-current">{data?.scoreLog ?? ''}</span>{' '}
         <label>
           Entry date{' '}
           <input

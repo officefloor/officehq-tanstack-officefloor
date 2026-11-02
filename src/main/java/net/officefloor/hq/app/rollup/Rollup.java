@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.rollup;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -10,6 +11,7 @@ import java.util.Map;
 import java.util.Objects;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.Claim;
+import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.Claims;
 import net.officefloor.hq.app.claim.Late;
 import net.officefloor.hq.app.person.People;
@@ -34,9 +36,9 @@ public class Rollup {
 
     /**
      * A person's figures: claimed (two decimals), due-total (two decimals, or n/a) and overdue-total (the dues of
-     * their counted overdue claims, two decimals).
+     * their counted overdue claims, two decimals); and the score (see {@link #score}).
      */
-    public record Figures(String name, String claimed, String dueTotal, String overdueTotal) {
+    public record Figures(String name, String claimed, String dueTotal, String overdueTotal, long score) {
     }
 
     /** The sheet's figures at one moment: per person id, in list order, and the totals. */
@@ -76,6 +78,8 @@ public class Rollup {
             BigDecimal claimed = BigDecimal.ZERO.setScale(2);
             BigDecimal due = BigDecimal.ZERO.setScale(2);
             BigDecimal overdue = BigDecimal.ZERO.setScale(2);
+            BigDecimal settled = BigDecimal.ZERO.setScale(2);
+            int overdueCount = 0;
             for (Claim claim : all) {
                 if (claim.person() == person.id() && person.countsClaimed(claim) && !claim.correction()) {
                     claimed = claimed.add(new BigDecimal(claim.amount()));
@@ -84,8 +88,14 @@ public class Rollup {
             for (Claim claim : mine) {
                 BigDecimal d = claim.due(sheetRates, person.gradeOn(claim.date()), floor, late);
                 due = d == null ? due : due.add(d);
-                if (d != null && late.overdue(claim, person.gradeOn(claim.date()))) {
-                    overdue = overdue.add(d);
+                if (d != null && claim.status() == ClaimStatus.SETTLED) {
+                    settled = settled.add(d);
+                }
+                if (late.overdue(claim, person.gradeOn(claim.date()))) {
+                    overdueCount++;
+                    if (d != null) {
+                        overdue = overdue.add(d);
+                    }
                 }
             }
             // n/a when the grade has no rate on the sheet's today, unless a claim has a figure apart from it.
@@ -98,10 +108,17 @@ public class Rollup {
                 dueFigures.add(due);
             }
             figures.put(person.id(), new Figures(person.name(), claimed.toPlainString(), na ? "n/a" : due.toPlainString(),
-                    overdue.toPlainString()));
+                    overdue.toPlainString(), score(settled, overdueCount)));
         }
         return new Snapshot(figures, claimedTotal.toPlainString(), trimmedSum(dueFigures).toPlainString(),
                 trimmedSum(overdueFigures).toPlainString());
+    }
+
+    /** A person's score: their settled-total divided by 100, minus 5 for every overdue claim of theirs that counts,
+     *  rounded half to even to a whole number. */
+    static long score(BigDecimal settled, int overdueCount) {
+        return settled.movePointLeft(2).subtract(BigDecimal.valueOf(5L * overdueCount))
+                .setScale(0, RoundingMode.HALF_EVEN).longValueExact();
     }
 
     /** Adds up the people's figures, leaving out the single highest and the single lowest when three or more have one. */

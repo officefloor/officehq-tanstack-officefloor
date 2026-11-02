@@ -15,7 +15,7 @@ import java.util.Map;
  * threshold with two decimals, or "" for none. And the escalation gap (a whole number of days), or "" for off. And the review SLA (a whole number of
  * days), or "" for none. And the proof kinds (comma separated), or "" for none. And the default grade, or "" for A. And each grade's own clerk
  * limit with two decimals, or "" for none (the grade takes the sheet's). And the score thresholds of the MID and HIGH
- * bands (whole numbers), each "" for none.
+ * bands (whole numbers), each "" for none. And the score log switch, "on" or "" for off.
  */
 public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
         String periodNumberingFrom, String termsA, String termsB, String termsC, String cap,
@@ -23,5 +23,5 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
         String graceDays, String noteThreshold, String entryDate, String graceA, String graceB, String graceC,
         String proofThresholdA, String proofThresholdB, String proofThresholdC, String pot, String parent,
         String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla, String proofKinds, String defaultGrade,
-        String clerkLimitA, String clerkLimitB, String clerkLimitC, String scoreMid, String scoreHigh) {
+        String clerkLimitA, String clerkLimitB, String clerkLimitC, String scoreMid, String scoreHigh, String scoreLog) {
 }

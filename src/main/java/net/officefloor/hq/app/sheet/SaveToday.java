@@ -7,6 +7,7 @@ import net.officefloor.hq.app.asof.SheetSnapshots;
 import net.officefloor.hq.app.claim.Claims;
 import net.officefloor.hq.app.period.PeriodCloser;
 import net.officefloor.hq.app.rollup.Rollup;
+import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.hq.app.snapshot.SnapshotLines;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -15,7 +16,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 public class SaveToday {
     public void save(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val LocalDate today,
             SheetClock clock, PeriodCloser closer, Rollup rollup, Claims claims, SheetStates states, SheetSnapshots snapshots,
-            SnapshotLines lines, Audit audit) {
+            SnapshotLines lines, Settings settings, Audit audit) {
         Rollup.Snapshot before = rollup.take(sheet);
         // A change of today releases every claim editor's lock on the sheet.
         LocalDate was = clock.today(sheet);
@@ -26,6 +27,13 @@ public class SaveToday {
             // Every row it holds is kept too, for the screen shown as of that date: before the snapshot lines of
             // leaving it, which were not there yet on that date.
             snapshots.keep(sheet, was, today);
+            // While the score log is on, each person's score as it stood on the day being left, in list order.
+            if ("on".equals(settings.get(sheet, Settings.SCORE_LOG))) {
+                for (Rollup.Figures figures : before.people().values()) {
+                    audit.record("SCORE sheet=" + sheet + " by=" + user + " name=" + figures.name() + " score="
+                            + figures.score());
+                }
+            }
             // Each person's due-total as it stood on the day being left, in list order.
             for (Map.Entry<Long, Rollup.Figures> entry : before.people().entrySet()) {
                 Rollup.Figures figures = entry.getValue();
