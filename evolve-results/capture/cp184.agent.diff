@@ -1,0 +1,152 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 54cc049b..0eb8cb5d 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -18,6 +18,7 @@ import {
+   claimed,
+   claimsKey,
+   claimsPath,
++  claimedCounted,
+   counted,
+   overdue,
+   reviewLate,
+@@ -137,7 +138,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
+     onSuccess: (updated) => queryClient.setQueryData(claimsKey(sheet), updated),
+   });
+   const waive = useSubmitOnce(waiveMutation);
+-  // An OPEN or PENDING claim is held, or released when held: while held (and not bound by a statement) it counts in no live total.
++  // An OPEN or PENDING claim is held, or released when held: while held (and not bound by a statement) it counts in no due figure, but stays in claimed.
+   const holdMutation = useMutation({
+     mutationFn: () => postJson<Claim[]>(byUser(`${claimsPath(sheet)}/${claim.id}/hold`, user), {}),
+     onSuccess: (updated) => queryClient.setQueryData(claimsKey(sheet), updated),
+@@ -997,7 +998,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
+ 
+   return (
+     <>
+-      {shown('claimed') && <td data-testid="person-claimed"><Fig>{claimed(counted(claims, [person]))}</Fig></td>}
++      {shown('claimed') && <td data-testid="person-claimed"><Fig>{claimed(claimedCounted(claims, [person]))}</Fig></td>}
+       {shown('due-total') && <td data-testid="person-due-total"><Fig>{showDue(personDueCents(claims, rates, person, today, floor, late, cap))}</Fig></td>}
+       {shown('excess') && <td data-testid="person-excess"><Fig>{twoDecimals(excess)}</Fig></td>}
+       {shown('overdue-count') && <td data-testid="person-overdue-count">{lateClaims.count}</td>}
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 097c342a..fef23015 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -109,7 +109,7 @@ export type Claim = {
+   added: number | null;
+   /** Whether a steward waived its late charge (only while OPEN or PENDING, once): from then on it bears none. */
+   waived: boolean;
+-  /** Whether it is held (toggled while OPEN or PENDING): while held, unless bound by a statement, it counts in no live total. */
++  /** Whether it is held (toggled while OPEN or PENDING): while held, unless bound by a statement, it counts in no due figure (it stays in claimed). */
+   held: boolean;
+ };
+ 
+@@ -136,7 +136,7 @@ export function useClaims(sheet: string) {
+   });
+ }
+ 
+-/** The claims that count toward claimed, due-total and every total: the OPEN, PENDING and SETTLED ones, but not
++/** The claims that count toward due-total and every due figure (claimed: see {@link claimedCounted}): the OPEN, PENDING and SETTLED ones, but not
+  *  the deferred ones, nor the OPEN or PENDING ones held, dated within a hold of their person or whose person's
+  *  retirement date is reached, unless bound by a statement. */
+ export function counted(claims: Claim[], people: Person[]): Claim[] {
+@@ -150,6 +150,19 @@ export function counted(claims: Claim[], people: Person[]): Claim[] {
+   });
+ }
+ 
++/** The claims that count toward claimed and the claimed-total: as {@link counted}, but a hold (the person's or the
++ *  claim's) does not take a claim out; only its person's retirement date being reached does. */
++export function claimedCounted(claims: Claim[], people: Person[]): Claim[] {
++  const byId = new Map(people.map((p) => [p.id, p]));
++  return claims.filter((c) => {
++    if (c.deferred) return false;
++    if (c.status === 'SETTLED') return true;
++    if (!isOpen(c)) return false;
++    const person = byId.get(c.person);
++    return bound(c) || person === undefined || !person.retiredNow;
++  });
++}
++
+ /** The status a claim had at the end of the day (yyyy-MM-dd), as its status log records it (the last line on or before
+  *  it); undefined when it was not yet added then. A claim kept from before the log (no lines) has its status now. */
+ export function statusOn(claim: Claim, end: string): ClaimStatus | undefined {
+@@ -435,7 +448,7 @@ export function useSheetTotals(sheet: string): {
+   // The settled-total and open-total: everyone's added up, not trimmed.
+   const split = people.map((p) => splitDueCents(all, rates, p, floor, late));
+   return {
+-    claimed: claimed(counted(all, people)),
++    claimed: claimed(claimedCounted(all, people)),
+     due,
+     overdue: { count: overdue.count, cents: trimmedSum(perPerson) },
+     settled: split.reduce((s, x) => s + x.settled, 0n),
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index d59784c4..c5f1922e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -26,7 +26,7 @@ import net.officefloor.hq.app.setting.Dated;
+  * when it was added (the claim sequence's value; null when kept from before it was recorded), which decides the
+  * forward-only rates it sees, and whether a steward waived its late charge (it then bears none), and how many of its
+  * proofs are photos (the rest are receipts), and whether it is held (toggled while OPEN or PENDING): while held and
+- * not bound by a statement it counts in no live total.
++ * not bound by a statement it counts in no due figure (it stays in claimed).
+  */
+ public record Claim(long id, long person, String amount, String date, String note, ClaimStatus status,
+         Integer number, String settledDue, String openedBy, boolean stated, String statedDue, String corrects,
+diff --git a/src/main/java/net/officefloor/hq/app/claim/HoldClaim.java b/src/main/java/net/officefloor/hq/app/claim/HoldClaim.java
+index 2ff92aad..75af6c87 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/HoldClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/HoldClaim.java
+@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /**
+  * Holds an OPEN or PENDING claim, or releases it when held: while held and not bound by a statement it counts in no
+- * live total, as a held person's claims do. Refuses any other status.
++ * due figure (it stays in claimed), as a held person's claims do. Refuses any other status.
+  */
+ public class HoldClaim {
+     public void hold(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val Claim claim,
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 66941eec..85c1d923 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -45,6 +45,20 @@ public record Person(long id, String name, String grade, long version, String re
+         return !claim.held() && !retiredNow && holds.stream().noneMatch((h) -> h.covers(claim.date()));
+     }
+ 
++    /**
++     * Whether the claim, theirs, counts toward claimed and the claimed-total: as {@link #counts}, except that a hold
++     * (theirs or the claim's) does not take it out; only their retirement date being reached does.
++     */
++    public boolean countsClaimed(Claim claim) {
++        if (!claim.counts()) {
++            return false;
++        }
++        if (claim.status() == ClaimStatus.SETTLED || claim.bound()) {
++            return true;
++        }
++        return !retiredNow;
++    }
++
+     /** This person as they stand with the date for the sheet's today: their grade in force then, and retired then or not. */
+     public Person on(LocalDate today) {
+         return new Person(id, name, gradeOn(grades, today), version, retiredFrom, holds, grades,
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index cc5d5aba..fa0cfe31 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -76,10 +76,13 @@ public class Rollup {
+             BigDecimal claimed = BigDecimal.ZERO.setScale(2);
+             BigDecimal due = BigDecimal.ZERO.setScale(2);
+             BigDecimal overdue = BigDecimal.ZERO.setScale(2);
+-            for (Claim claim : mine) {
+-                if (!claim.correction()) {
++            // A held claim stays in claimed; only its due leaves the totals.
++            for (Claim claim : all) {
++                if (claim.person() == person.id() && person.countsClaimed(claim) && !claim.correction()) {
+                     claimed = claimed.add(new BigDecimal(claim.amount()));
+                 }
++            }
++            for (Claim claim : mine) {
+                 BigDecimal d = claim.due(sheetRates, person.gradeOn(claim.date()), floor, late);
+                 due = d == null ? due : due.add(d);
+                 if (d != null && late.overdue(claim, person.gradeOn(claim.date()))) {
