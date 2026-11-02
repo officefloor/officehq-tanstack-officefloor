@@ -38,7 +38,7 @@ export function useGradeDue(sheet: string): { ready: boolean; due: Record<Grade,
       g,
       current
         .filter((p) => p.grade === g)
-        .reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, cap) ?? 0n), 0n),
+        .reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, cap, people) ?? 0n), 0n),
     ]),
   ) as Record<Grade, bigint>;
   const ready = [sheetQ, peopleQ, claimsQ, ratesQ, settingsQ].every((q) => q.isSuccess && !q.isFetching);

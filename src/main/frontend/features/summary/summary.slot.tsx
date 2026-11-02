@@ -32,7 +32,7 @@ function Summary({ sheet }: { sheet: string; user: string }) {
     .sort((a, b) => a.from.localeCompare(b.from))
     .map((p) => ({ period: p, shown: shownDueTotal(p, periodTotals.get(p.name) ?? 0n) }));
   const classicTotals = classicPeriodDueCents(periods, claims, people, rates, floor, late);
-  const classicDue = people.reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, cap) ?? 0n), 0n);
+  const classicDue = people.reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, cap, people) ?? 0n), 0n);
   const periodChanges = new Map(
     shownTotals.map(({ period, shown }, i) => [
       period.name,
@@ -55,7 +55,7 @@ function Summary({ sheet }: { sheet: string; user: string }) {
         <tbody>
           {GRADES.map((g) => {
             const onGrade = current.filter((p) => p.grade === g);
-            const due = onGrade.reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, cap) ?? 0n), 0n);
+            const due = onGrade.reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, cap, people) ?? 0n), 0n);
             return (
               <tr key={g}>
                 <td>{g}</td>

@@ -38,7 +38,7 @@ public class Claims {
             rs.getDate("reminded_on") == null ? null : rs.getDate("reminded_on").toLocalDate().toString(),
             rs.getString("ref"), tagList(rs.getString("tags")), tagList(rs.getString("tags_ever")), List.of(),
             rs.getObject("batch", Integer.class), List.of(), rs.getObject("added", Long.class),
-            rs.getBoolean("waived"), rs.getInt("proof_photos"), rs.getBoolean("held"));
+            rs.getBoolean("waived"), rs.getInt("proof_photos"), rs.getBoolean("held"), List.of());
 
     /** The tags kept as comma separated text (empty for none). */
     private static List<String> tagList(String kept) {
@@ -75,19 +75,54 @@ public class Claims {
 
     private static final String LINES = "SELECT claim, label, qty, unit FROM claim_line WHERE sheet = ?";
 
+    private static final String SHARES = "SELECT claim, person, share FROM claim_share WHERE sheet = ?";
+
     /** Every claim on the sheet, newest first. */
     public List<Claim> list(String sheet) {
-        return withLines(withComments(withLogs(sheet, jdbc.query(COLUMNS + " WHERE claim.sheet = ? ORDER BY claim.listed DESC, claim.id DESC", ROW, sheet),
+        return withShares(withLines(withComments(withLogs(sheet, jdbc.query(COLUMNS + " WHERE claim.sheet = ? ORDER BY claim.listed DESC, claim.id DESC", ROW, sheet),
                 jdbc.query(LOG + " ORDER BY id", LOG_ROW, sheet)), jdbc.query(COMMENTS + " ORDER BY id", COMMENT_ROW, sheet)),
-                jdbc.query(LINES + " ORDER BY id", LINE_ROW, sheet));
+                jdbc.query(LINES + " ORDER BY id", LINE_ROW, sheet)), jdbc.query(SHARES + " ORDER BY id", SHARE_ROW, sheet));
     }
 
     public Claim find(String sheet, long id) {
         List<Claim> found = jdbc.query(COLUMNS + " WHERE claim.sheet = ? AND claim.id = ?", ROW, sheet, id);
         return found.isEmpty() ? null
-                : withLines(withComments(withLogs(sheet, found, jdbc.query(LOG + " AND claim = ? ORDER BY id", LOG_ROW, sheet, id)),
+                : withShares(withLines(withComments(withLogs(sheet, found, jdbc.query(LOG + " AND claim = ? ORDER BY id", LOG_ROW, sheet, id)),
                         jdbc.query(COMMENTS + " AND claim = ? ORDER BY id", COMMENT_ROW, sheet, id)),
-                        jdbc.query(LINES + " AND claim = ? ORDER BY id", LINE_ROW, sheet, id)).get(0);
+                        jdbc.query(LINES + " AND claim = ? ORDER BY id", LINE_ROW, sheet, id)),
+                        jdbc.query(SHARES + " AND claim = ? ORDER BY id", SHARE_ROW, sheet, id)).get(0);
+    }
+
+    private record Shared(long claim, ClaimShare share) {
+    }
+
+    private static final RowMapper<Shared> SHARE_ROW = (rs, i) -> new Shared(rs.getLong("claim"),
+            new ClaimShare(rs.getLong("person"), rs.getBigDecimal("share").setScale(2, RoundingMode.UNNECESSARY).toPlainString()));
+
+    /** The claims, each with the shares of it others hold (in the order shared). */
+    private static List<Claim> withShares(List<Claim> found, List<Shared> shared) {
+        Map<Long, List<ClaimShare>> shares = new HashMap<>();
+        for (Shared s : shared) {
+            shares.computeIfAbsent(s.claim(), k -> new ArrayList<>()).add(s.share());
+        }
+        return found.stream().map(c -> c.withShares(shares.getOrDefault(c.id(), List.of()))).toList();
+    }
+
+    /**
+     * Shares the claim with the person, conditional on the claim still having the status read and the shares read
+     * (their count), so a concurrent change is refused: false when it was not.
+     */
+    public boolean share(String sheet, long id, ClaimStatus status, int was, long person, BigDecimal share) {
+        // Locks the claim's row, so two shares at once are taken one after the other.
+        if (jdbc.update("UPDATE claim SET status = status WHERE sheet = ? AND id = ? AND status = ?", sheet, id, status.name()) != 1) {
+            return false;
+        }
+        Integer now = jdbc.queryForObject("SELECT COUNT(*) FROM claim_share WHERE sheet = ? AND claim = ?", Integer.class, sheet, id);
+        if (now == null || now != was) {
+            return false;
+        }
+        jdbc.update("INSERT INTO claim_share (sheet, claim, person, share) VALUES (?, ?, ?, ?)", sheet, id, person, share);
+        return true;
     }
 
     private record Lined(long claim, ClaimLine line) {

@@ -243,7 +243,24 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
   const clearEditError = () => {
     setEditRefused(false);
     lockMutation.reset();
+    shareMutation.reset();
   };
+  // A claim is shared with another person on the sheet, picked beside the Share button with their share of its due
+  // (a percent with two decimals, more than 0.00). The server refuses the claim's own person, a person already holding a
+  // share, shares totalling more than 100.00, and a SETTLED, VOID or DELETED claim.
+  const [shareWith, setShareWith] = useState('');
+  const [sharePct, setSharePct] = useState('');
+  const shareMutation = useMutation({
+    mutationFn: (body: { person: number | null; share: string }) =>
+      postJson<Claim[]>(byUser(`${claimsPath(sheet)}/${claim.id}/share`, user), body),
+    onSuccess: (updated) => {
+      setShareWith('');
+      setSharePct('');
+      queryClient.setQueryData(claimsKey(sheet), updated);
+    },
+  });
+  const share = useSubmitOnce(shareMutation);
+  const nameOf = (id: number) => people.find((p) => p.id === id)?.name ?? '';
   // A DRAFT's amount is changed in the row: saved as the claim's editor saves it (its date, note, corrects, reference and tags kept),
   // so the server refuses it by the same rules (the amount's form, a claim that is not a DRAFT, one due inside a
   // closed period, one another user's editor holds, a viewer).
@@ -598,6 +615,57 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
         }}
       >
         Reassign
+      </button>{' '}
+      shared with <span data-testid="claim-shares">{claim.shares.map((s) => `${nameOf(s.person)} ${s.share}`).join(', ')}</span>{' '}
+      <select
+        data-testid="claim-share-select"
+        value={shareWith}
+        onChange={(e) => {
+          setShareWith(e.target.value);
+          shareMutation.reset();
+        }}
+      >
+        <option value="">share with…</option>
+        {people.map((p) => (
+          <option key={p.id} value={String(p.id)}>
+            {p.name}
+          </option>
+        ))}
+      </select>{' '}
+      <input
+        data-testid="claim-share-pct"
+        aria-label="share percent"
+        placeholder="share %"
+        value={sharePct}
+        onChange={(e) => {
+          setSharePct(e.target.value);
+          shareMutation.reset();
+        }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="claim-share-add"
+        disabled={shareMutation.isPending}
+        onClick={() => {
+          clearEditError();
+          status.reset();
+          move.reset();
+          resettleMutation.reset();
+          deferMutation.reset();
+          waiveMutation.reset();
+          holdMutation.reset();
+          remindMutation.reset();
+          redateMutation.reset();
+          splitMutation.reset();
+          partMutation.reset();
+          inlineMutation.reset();
+          proofMutation.reset();
+          commentMutation.reset();
+          lineMutation.reset();
+          share({ person: shareWith === '' ? null : Number(shareWith), share: sharePct });
+        }}
+      >
+        Share
       </button>{' '}
       <button
         type="button"
@@ -974,6 +1042,11 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           {' '}This amount cannot be saved: it needs up to two decimals (a negative one must be a correction), and only a DRAFT outside a closed period can be edited, not while another user has its editor open, nor by a viewer.
         </span>
       )}
+      {shareMutation.isError && (
+        <span data-testid="claim-error" role="alert">
+          {' '}This claim cannot be shared that way (not with its own person, nor with a person already holding a share; a share is a percent with up to two decimals, more than 0.00, and the shares may total at most 100.00; a SETTLED, VOID or DELETED claim is not shared).
+        </span>
+      )}
       {move.isError && (
         <span data-testid="claim-error" role="alert">
           {' '}A {claim.status} claim cannot be reassigned (only a role the permission matrix lets, by default a steward, moves a claim, and only a DRAFT, OPEN or PENDING one, to another person).
@@ -1010,12 +1083,13 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
   const bandOf = useScoreBand(sheet);
   const today = useSheetToday(sheet);
   const late = useLate(sheet);
+  const { data: people = [] } = usePeople(sheet);
   // The excess: how far the sum of their figures is above the cap (0.00 when it is not, or is n/a).
-  const uncapped = uncappedPersonDueCents(claims, rates, person, today, floor, late);
+  const uncapped = uncappedPersonDueCents(all, rates, person, today, floor, late, people);
   const excess = uncapped !== undefined && cap !== undefined && uncapped > cap ? uncapped - cap : 0n;
   const lateClaims = overdueCents(claims, [person], rates, late, floor);
   const aged = agedCents(claims, person, rates, late, floor);
-  const split = splitDueCents(claims, rates, person, floor, late);
+  const split = splitDueCents(all, rates, person, floor, late, people);
   const score = scoreOf(split.scored, lateClaims.count);
   const [draft, setDraft] = useState<Draft>(EMPTY);
   // The editor is open on the claim this user's lock holds, as the store says: it stays open across a re-load of the
@@ -1091,7 +1165,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
   return (
     <>
       {shown('claimed') && <td data-testid="person-claimed"><Fig>{claimed(claimedCounted(claims, [person]))}</Fig></td>}
-      {shown('due-total') && <td data-testid="person-due-total"><Fig>{showDue(personDueCents(claims, rates, person, today, floor, late, cap))}</Fig></td>}
+      {shown('due-total') && <td data-testid="person-due-total"><Fig>{showDue(personDueCents(all, rates, person, today, floor, late, cap, people))}</Fig></td>}
       {shown('excess') && <td data-testid="person-excess"><Fig>{twoDecimals(excess)}</Fig></td>}
       {shown('overdue-count') && <td data-testid="person-overdue-count">{lateClaims.count}</td>}
       {shown('overdue-total') && <td data-testid="person-overdue-total"><Fig>{twoDecimals(lateClaims.cents)}</Fig></td>}

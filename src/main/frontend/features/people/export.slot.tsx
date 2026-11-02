@@ -28,7 +28,7 @@ function ExportPeople({ sheet }: { sheet: string; user: string }) {
     const lines = [
       'name,grade,retired-from,due-total',
       ...people.map((p) =>
-        [p.name, p.grade, p.retiredFrom ?? '', showDue(personDueCents(claims, rates, p, today, floor, late, cap))]
+        [p.name, p.grade, p.retiredFrom ?? '', showDue(personDueCents(claims, rates, p, today, floor, late, cap, people))]
           .map(csvValue)
           .join(','),
       ),

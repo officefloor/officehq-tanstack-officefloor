@@ -28,7 +28,8 @@ import org.springframework.stereotype.Service;
  * claimed-total, due-total and overdue-total (the totals leave out the single highest and lowest person's figure when
  * three or more people have one). A change takes them before it writes, then {@link #record} audits the ones it moved: a ROLLUP line
  * per person whose figures changed (in list order, by position; a new person counts as changed), then a TOTALS
- * line when the sheet's totals changed, then an ALERT line per person whose due-total crossed above the sheet's alert
+ * line when the sheet's totals changed (a shared claim's due counts for each holder their share of it, and for its own
+ * person the rest), then an ALERT line per person whose due-total crossed above the sheet's alert
  * threshold (from at or below it, or no due-total), in list order.
  */
 @Service
@@ -73,7 +74,10 @@ public class Rollup {
         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
         List<BigDecimal> dueFigures = new ArrayList<>();
         List<BigDecimal> overdueFigures = new ArrayList<>();
-        for (Person person : people.list(sheet)) {
+        List<Person> listed = people.list(sheet);
+        Map<Long, Person> byId = new LinkedHashMap<>();
+        listed.forEach((p) -> byId.put(p.id(), p));
+        for (Person person : listed) {
             List<Claim> mine = all.stream().filter((c) -> c.person() == person.id() && person.counts(c)).toList();
             BigDecimal claimed = BigDecimal.ZERO.setScale(2);
             BigDecimal due = BigDecimal.ZERO.setScale(2);
@@ -87,9 +91,11 @@ public class Rollup {
             }
             for (Claim claim : mine) {
                 BigDecimal d = claim.due(sheetRates, person.gradeOn(claim.date()), floor, late);
-                due = d == null ? due : due.add(d);
-                if (d != null && claim.status() == ClaimStatus.SETTLED && !claim.correction()) {
-                    settled = settled.add(d);
+                // The holders' parts of a shared claim count for them, not for its own person.
+                BigDecimal own = d == null ? null : d.subtract(claim.sharedPart(d));
+                due = own == null ? due : due.add(own);
+                if (own != null && claim.status() == ClaimStatus.SETTLED && !claim.correction()) {
+                    settled = settled.add(own);
                 }
                 if (late.overdue(claim, person.gradeOn(claim.date()))) {
                     overdueCount++;
@@ -98,8 +104,32 @@ public class Rollup {
                     }
                 }
             }
-            // n/a when the grade has no rate on the sheet's today, unless a claim has a figure apart from it.
-            boolean na = Rate.on(sheetRates, person.grade(), today) == null
+            // The person's parts of the claims shared with them, counted as their own persons count them.
+            boolean holdsPart = false;
+            for (Claim claim : all) {
+                Person owner = byId.get(claim.person());
+                if (owner == null || !owner.counts(claim)) {
+                    continue;
+                }
+                for (var share : claim.shares()) {
+                    if (share.person() != person.id()) {
+                        continue;
+                    }
+                    BigDecimal d = claim.due(sheetRates, owner.gradeOn(claim.date()), floor, late);
+                    if (d == null) {
+                        continue;
+                    }
+                    BigDecimal part = share.partOf(d);
+                    holdsPart = true;
+                    due = due.add(part);
+                    if (claim.status() == ClaimStatus.SETTLED && !claim.correction()) {
+                        settled = settled.add(part);
+                    }
+                }
+            }
+            // n/a when the grade has no rate on the sheet's today, unless a claim has a figure apart from it, or they
+            // hold a part of a claim shared with them.
+            boolean na = !holdsPart && Rate.on(sheetRates, person.grade(), today) == null
                     && mine.stream().noneMatch((c) -> person.figureApartFrom(c, today, sheetRates, floor));
             due = Settings.capped(due, cap);
             claimedTotal = claimedTotal.add(claimed);

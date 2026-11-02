@@ -111,7 +111,51 @@ export type Claim = {
   waived: boolean;
   /** Whether it is held (toggled while OPEN or PENDING): while held, unless bound by a statement, it counts in no due figure (it stays in claimed). */
   held: boolean;
+  /** The people it is shared with, in the order shared, each with their share of its due (a percent, two decimals):
+   *  each holder's due figures count their part of it (see {@link partCents}), its own person's the rest. */
+  shares: ClaimShare[];
 };
+
+/** One share of a claim: the person holding it, and their share of its due (a percent with two decimals). */
+export type ClaimShare = { person: number; share: string };
+
+/** A holder's part of a claim's due (in hundredths): the due times their share divided by 100, rounded half to even. */
+export function partCents(due: bigint, share: string): bigint {
+  const product = due * hundredths(share);
+  const negative = product < 0n;
+  const abs = negative ? -product : product;
+  let quotient = abs / 10000n;
+  const remainder = abs % 10000n;
+  if (remainder > 5000n || (remainder === 5000n && quotient % 2n === 1n)) quotient += 1n;
+  return negative ? -quotient : quotient;
+}
+
+/** What a claim's own person counts of its due (in hundredths): the due less the holders' parts. */
+export function ownCents(claim: Claim, due: bigint): bigint {
+  return (claim.shares ?? []).reduce((rest, s) => rest - partCents(due, s.share), due);
+}
+
+/** The person's parts of the claims shared with them (in hundredths), each with the claim: of the claims that count
+ *  as their own persons count them (see {@link counted}); a claim with no due gives no part. */
+export function heldParts(
+  claims: Claim[],
+  people: Person[],
+  rates: Rate[],
+  person: Person,
+  floor: DatedCents,
+  late: Late,
+): { claim: Claim; cents: bigint }[] {
+  const byId = new Map(people.map((p) => [p.id, p]));
+  const parts: { claim: Claim; cents: bigint }[] = [];
+  for (const c of claims) {
+    const share = (c.shares ?? []).find((s) => s.person === person.id);
+    const owner = byId.get(c.person);
+    if (share === undefined || owner === undefined || counted([c], [owner]).length === 0) continue;
+    const due = claimDueCents(c, claimRateOf(rates, gradeOn(owner, c.date), c), floor, late);
+    if (due !== undefined) parts.push({ claim: c, cents: partCents(due, share.share) });
+  }
+  return parts;
+}
 
 /** One line of a claim: its label, quantity (a whole number) and unit amount (two decimals). */
 export type ClaimLine = { label: string; qty: number; unit: string };
@@ -299,8 +343,9 @@ export function personDueCents(
   floor: DatedCents,
   late: Late,
   cap?: bigint,
+  people: Person[] = [person],
 ): bigint | undefined {
-  const sum = uncappedPersonDueCents(claims, rates, person, today, floor, late);
+  const sum = uncappedPersonDueCents(claims, rates, person, today, floor, late, people);
   return sum !== undefined && cap !== undefined && sum > cap ? cap : sum;
 }
 
@@ -312,16 +357,22 @@ export function uncappedPersonDueCents(
   today: string | undefined,
   floor: DatedCents,
   late: Late,
+  people: Person[] = [person],
 ): bigint | undefined {
   const mine = counted(claims.filter((c) => c.person === person.id), [person]);
+  const parts = heldParts(claims, people, rates, person, floor, late);
   // A claim has a figure apart from today's grade when it keeps one, or when another grade in force on its date gives one.
   const apart = (c: Claim) => {
     const then = gradeOn(person, c.date);
     return fixed(c) || (then !== undefined && then !== person.grade && claimFigureCents(c, claimRateOf(rates, then, c), floor) !== undefined)
       || (then !== undefined && today !== undefined && c.date <= today && claimFigureCents(c, claimRateOf(rates, then, c), floor) !== undefined);
   };
-  if (rateOf(rates, person.grade, today) === undefined && !mine.some(apart)) return undefined;
-  return mine.reduce((sum, c) => sum + (claimDueCents(c, claimRateOf(rates, gradeOn(person, c.date), c), floor, late) ?? 0n), 0n);
+  if (rateOf(rates, person.grade, today) === undefined && !mine.some(apart) && parts.length === 0) return undefined;
+  const own = mine.reduce((sum, c) => {
+    const due = claimDueCents(c, claimRateOf(rates, gradeOn(person, c.date), c), floor, late);
+    return sum + (due === undefined ? 0n : ownCents(c, due));
+  }, 0n);
+  return parts.reduce((sum, p) => sum + p.cents, own);
 }
 
 /** A person's settled-total and open-total (in hundredths): the dues of their SETTLED claims that count (at their
@@ -334,15 +385,19 @@ export function splitDueCents(
   person: Person,
   floor: DatedCents,
   late: Late,
+  people: Person[] = [person],
 ): { settled: bigint; open: bigint; scored: bigint } {
   const split = { settled: 0n, open: 0n, scored: 0n };
-  for (const c of counted(claims.filter((c) => c.person === person.id), [person])) {
-    const due = claimDueCents(c, claimRateOf(rates, gradeOn(person, c.date), c), floor, late) ?? 0n;
+  const add = (c: Claim, due: bigint) => {
     if (c.status === 'SETTLED') {
       split.settled += due;
       if (c.corrects === null) split.scored += due;
     } else if (isOpen(c)) split.open += due;
+  };
+  for (const c of counted(claims.filter((c) => c.person === person.id), [person])) {
+    add(c, ownCents(c, claimDueCents(c, claimRateOf(rates, gradeOn(person, c.date), c), floor, late) ?? 0n));
   }
+  for (const { claim, cents } of heldParts(claims, people, rates, person, floor, late)) add(claim, cents);
   return split;
 }
 
@@ -457,13 +512,13 @@ export function useSheetTotals(sheet: string): {
   const late = useLate(sheet);
   const cap = useCapCents(sheet);
   const dues = people
-    .map((p) => personDueCents(all, rates, p, today, floor, late, cap))
+    .map((p) => personDueCents(all, rates, p, today, floor, late, cap, people))
     .filter((cents): cents is bigint => cents !== undefined);
   const due = trimmedSum(dues);
   const overdue = overdueCents(all, people, rates, late, floor);
   const perPerson = people.map((p) => overdueCents(all, [p], rates, late, floor).cents);
   // The settled-total and open-total: everyone's added up, not trimmed.
-  const split = people.map((p) => splitDueCents(all, rates, p, floor, late));
+  const split = people.map((p) => splitDueCents(all, rates, p, floor, late, people));
   return {
     claimed: claimed(claimedCounted(all, people)),
     due,
@@ -540,5 +595,6 @@ export function usePersonDueCentsOf(sheet: string): (person: Person) => bigint |
   const floor = useFloorCents(sheet);
   const late = useLate(sheet);
   const cap = useCapCents(sheet);
-  return (person) => personDueCents(all, rates, person, today, floor, late, cap);
+  const { data: people = [] } = usePeople(sheet);
+  return (person) => personDueCents(all, rates, person, today, floor, late, cap, people);
 }

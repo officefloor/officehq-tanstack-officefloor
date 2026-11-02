@@ -39,10 +39,11 @@ function useMyTotals(sheet: string, user: string): { due: string; overdue: strin
   const cap = useCapCents(sheet);
   const today = useSheetToday(sheet);
   const late = useLate(sheet);
+  const { data: people = [] } = usePeople(sheet);
   if (person === undefined) return { due: '', overdue: '' };
   const mine = claims.filter((c) => c.person === person.id);
   return {
-    due: showDue(personDueCents(mine, rates, person, today, floor, late, cap)),
+    due: showDue(personDueCents(claims, rates, person, today, floor, late, cap, people)),
     overdue: twoDecimals(overdueCents(mine, [person], rates, late, floor).cents),
   };
 }
