@@ -62,6 +62,13 @@ public class Settings {
     /** The date before which a claim rounds half up, on or after it half to even (yyyy-MM-dd); blank: the sheet's today. */
     public static final String POLICY_DATE = "policy-date";
 
+    /** The mode a claim dated while it is in force rounds its live figures by (half-up or half-even); blank: none, so
+     *  the policy date decides. */
+    public static final String ROUNDING = "rounding";
+
+    /** The rounding modes a sheet may set. */
+    public static final List<String> ROUNDING_MODES = List.of("half-up", "half-even");
+
     /** The date from which (on the sheet's today) a claim opened is numbered within its period (yyyy-MM-dd); blank: off. */
     public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
 
@@ -272,7 +279,8 @@ public class Settings {
     /** What makes the sheet's late charges on its today. */
     public Late late(String sheet, LocalDate today) {
         String policy = get(sheet, POLICY_DATE);
-        return new Late(latePct(sheet), today, policy.isEmpty() ? today : LocalDate.parse(policy), graces(sheet));
+        return new Late(latePct(sheet), today, policy.isEmpty() ? today : LocalDate.parse(policy), graces(sheet),
+                history(sheet, ROUNDING));
     }
 
     /** The date from which claims opened are numbered within their period, or null when they are not. */
@@ -364,7 +372,7 @@ public class Settings {
     public SettingsResponse all(String sheet) {
         LocalDate today = clock.today(sheet);
         Map<String, List<DatedValue>> dated = new LinkedHashMap<>();
-        for (String key : List.of(CLERK_LIMIT, CAP, FLOOR, TERMS, gradeTerms("A"), gradeTerms("B"), gradeTerms("C"), gradeGrace("A"), gradeGrace("B"), gradeGrace("C"), LATE_PCT, PROOF_THRESHOLD, gradeProofThreshold("A"), gradeProofThreshold("B"), gradeProofThreshold("C"), NOTE_THRESHOLD)) {
+        for (String key : List.of(CLERK_LIMIT, CAP, FLOOR, TERMS, gradeTerms("A"), gradeTerms("B"), gradeTerms("C"), gradeGrace("A"), gradeGrace("B"), gradeGrace("C"), LATE_PCT, PROOF_THRESHOLD, gradeProofThreshold("A"), gradeProofThreshold("B"), gradeProofThreshold("C"), NOTE_THRESHOLD, ROUNDING)) {
             dated.put(key, history(sheet, key));
         }
         Map<String, String> perms = new LinkedHashMap<>();
@@ -379,6 +387,6 @@ public class Settings {
                 on(sheet, gradeGrace("A"), today), on(sheet, gradeGrace("B"), today), on(sheet, gradeGrace("C"), today),
                 on(sheet, gradeProofThreshold("A"), today), on(sheet, gradeProofThreshold("B"), today),
                 on(sheet, gradeProofThreshold("C"), today), get(sheet, POT), parent(sheet),
-                Integer.toString(fiscalStartMonth(sheet)), get(sheet, ALERT_THRESHOLD));
+                Integer.toString(fiscalStartMonth(sheet)), get(sheet, ALERT_THRESHOLD), on(sheet, ROUNDING, today));
     }
 }

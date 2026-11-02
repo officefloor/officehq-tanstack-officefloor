@@ -11,12 +11,12 @@ import java.util.Map;
  * with two decimals, or "" for none. And the entry date (yyyy-MM-dd), or "" for off. And each grade's grace (a whole number of days), or "" for none. And each grade's
  * own proof threshold with two decimals, or "" for none (the grade takes the sheet's). And the pot with two decimals,
  * or "" for none. And the parent sheet's id, or "" for none. And the fiscal start month (1 to 12). And the alert
- * threshold with two decimals, or "" for off.
+ * threshold with two decimals, or "" for off. And the rounding mode (half-up or half-even), or "" for none.
  */
 public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
         String periodNumberingFrom, String termsA, String termsB, String termsC, String cap,
         String proofThreshold, Map<String, String> perms, Map<String, List<DatedValue>> dated,
         String graceDays, String noteThreshold, String entryDate, String graceA, String graceB, String graceC,
         String proofThresholdA, String proofThresholdB, String proofThresholdC, String pot, String parent,
-        String fiscalStartMonth, String alertThreshold) {
+        String fiscalStartMonth, String alertThreshold, String rounding) {
 }

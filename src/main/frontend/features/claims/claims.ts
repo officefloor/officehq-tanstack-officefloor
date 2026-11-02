@@ -4,7 +4,7 @@ import { gradeOn, setAsideOn, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { dueCents, hundredths, rateOf, twoDecimals, useRates, type Rate } from '../rates/rates';
 import { useSheet, useSheetToday } from '../sheet/sheet';
-import { useCapCents, useFloorCents, useGraceDays, useLatePctCents, usePolicyDate, type DatedCents } from '../settings/settings';
+import { useCapCents, useFloorCents, useGraceDays, useLatePctCents, usePolicyDate, useRoundingMode, type DatedCents, type RoundingModeOn } from '../settings/settings';
 
 /** Where a claim is in its life: DRAFT -> OPEN -> SETTLED, or DRAFT/OPEN/PENDING -> VOID. A clerk's settle of a
  *  due above the clerk limit makes it PENDING, which a steward approves (SETTLED) or rejects (back to OPEN).
@@ -165,26 +165,33 @@ export function fixed(claim: Claim): boolean {
  *  The charge is never bound by a statement: it follows the sheet's today. It also carries the sheet's policy date
  *  (yyyy-MM-dd; undefined: its today), which decides how a claim's live figures round. And the date a claim's
  *  overdue days are counted from (yyyy-MM-dd): its due-by plus the grace of its person's grade in force on its date,
- *  where that grade has one in force on that date. */
-export type Late = { pct: DatedCents; today: string | undefined; policy: string | undefined; graceBy: (claim: Claim) => string };
+ *  where that grade has one in force on that date. And the sheet's rounding mode by date, which, where one is in force
+ *  on the date a claim rounds on, decides its rounding in place of the policy date. */
+export type Late = { pct: DatedCents; today: string | undefined; policy: string | undefined; graceBy: (claim: Claim) => string;
+  rounding?: RoundingModeOn };
 
-/** The sheet's late percent, today, policy date and graces. */
+/** The sheet's late percent, today, policy date, graces and rounding mode. */
 export function useLate(sheet: string): Late {
   const today = useSheetToday(sheet);
   const policy = usePolicyDate(sheet);
   const grace = useGraceDays(sheet);
+  const rounding = useRoundingMode(sheet);
   const { data: people } = usePeople(sheet);
   const graceBy = (claim: Claim) => {
     const person = people?.find((p) => p.id === claim.person);
     const days = person === undefined ? 0 : grace(gradeOn(person, claim.date), claim.date);
     return days === 0 ? claim.dueBy : plusDays(claim.dueBy, days);
   };
-  return { pct: useLatePctCents(sheet), today, policy: policy === '' ? today : policy, graceBy };
+  return { pct: useLatePctCents(sheet), today, policy: policy === '' ? today : policy, graceBy, rounding };
 }
 
-/** Whether a claim's live figures round half up: it rounds on a date (its own, or for a correction the date of the
- *  claim it corrects) before the policy date; on or after it they round half to even. */
+/** Whether a claim's live figures round half up: by the rounding mode in force on the date it rounds on (its own, or
+ *  for a correction the date of the claim it corrects) where there is one; else when that date is before the policy
+ *  date; on or after it they round half to even. */
 export function roundsHalfUp(claim: Claim, late: Late): boolean {
+  const mode = late.rounding?.(claim.roundsOn) ?? '';
+  if (mode === 'half-up') return true;
+  if (mode === 'half-even') return false;
   return late.policy !== undefined && claim.roundsOn < late.policy;
 }
 

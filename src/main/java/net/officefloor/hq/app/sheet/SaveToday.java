@@ -20,6 +20,12 @@ public class SaveToday {
         // A change of today releases every claim editor's lock on the sheet.
         LocalDate was = clock.today(sheet);
         if (!today.equals(was)) {
+            claims.unlockAll(sheet);
+            // What the sheet holds at the end of its old today is kept, for a statement taken as of that date.
+            states.keep(sheet, was, today);
+            // Every row it holds is kept too, for the screen shown as of that date: before the snapshot lines of
+            // leaving it, which were not there yet on that date.
+            snapshots.keep(sheet, was, today);
             // Each person's due-total as it stood on the day being left, in list order.
             for (Map.Entry<Long, Rollup.Figures> entry : before.people().entrySet()) {
                 Rollup.Figures figures = entry.getValue();
@@ -27,11 +33,6 @@ public class SaveToday {
                 audit.record("SNAPSHOT sheet=" + sheet + " by=" + user + " name=" + figures.name() + " due-total="
                         + figures.dueTotal());
             }
-            claims.unlockAll(sheet);
-            // What the sheet holds at the end of its old today is kept, for a statement taken as of that date.
-            states.keep(sheet, was, today);
-            // Every row it holds is kept too, for the screen shown as of that date.
-            snapshots.keep(sheet, was, today);
         }
         clock.setToday(sheet, today);
         // Periods past their grace days close before the figures the today change moved are audited.

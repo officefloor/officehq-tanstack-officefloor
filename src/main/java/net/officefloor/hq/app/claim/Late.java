@@ -15,16 +15,27 @@ import net.officefloor.hq.app.setting.Settings;
  * by the due-by fixed when it was added. The charge is never bound by a statement: it follows the sheet's today.
  * It also carries the sheet's policy date, which decides how a claim's live figures round, and each grade's grace
  * as recorded by from-date: the days a claim of a person whose grade in force on its date has a grace in force on
- * that date is given past its due-by before it is overdue.
+ * that date is given past its due-by before it is overdue. And the sheet's rounding mode as recorded by from-date,
+ * which, where one is in force on the date a claim rounds on, decides its rounding in place of the policy date.
  */
-public record Late(Dated pct, LocalDate today, LocalDate policy, Map<String, List<DatedValue>> grace) {
+public record Late(Dated pct, LocalDate today, LocalDate policy, Map<String, List<DatedValue>> grace,
+        List<DatedValue> roundingModes) {
 
     /**
-     * How the claim's live figures round: half up when it rounds on a date (its own, or for a correction the date of
-     * the claim it corrects) before the policy date, half to even on or after it.
+     * How the claim's live figures round: by the rounding mode in force on the date it rounds on (its own, or for a
+     * correction the date of the claim it corrects) where there is one; else half up when that date is before the
+     * policy date, half to even on or after it.
      */
     public RoundingMode rounding(Claim claim) {
-        return LocalDate.parse(claim.roundsOn()).isBefore(policy) ? RoundingMode.HALF_UP : RoundingMode.HALF_EVEN;
+        LocalDate on = LocalDate.parse(claim.roundsOn());
+        String mode = roundingModes == null ? "" : Settings.on(roundingModes, on);
+        if ("half-up".equals(mode)) {
+            return RoundingMode.HALF_UP;
+        }
+        if ("half-even".equals(mode)) {
+            return RoundingMode.HALF_EVEN;
+        }
+        return on.isBefore(policy) ? RoundingMode.HALF_UP : RoundingMode.HALF_EVEN;
     }
 
     /**

@@ -23,11 +23,13 @@ import { hundredths } from '../rates/rates';
  *  parent's is used, then its parent's, up to three levels up.
  *  And the fiscal start month (1 to 12, not dated): the month a fiscal year starts in.
  *  And the alert threshold (two decimals; '' for off, not dated): a person's due-total crossing above it is audited.
+ *  And the rounding mode (half-up or half-even; '' for none), in force on the sheet's today: a claim whose date has
+ *  one in force rounds its live figures by it in place of the policy date.
  *  And, for each dated key (every one that carries a figure), its values as recorded, by from-date. */
 export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string;
   termsA: string; termsB: string; termsC: string; cap: string;
   proofThreshold: string; noteThreshold: string; graceDays: string; entryDate: string; graceA: string; graceB: string; graceC: string;
-  proofThresholdA: string; proofThresholdB: string; proofThresholdC: string; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string; perms: Partial<Record<PermAction, string>>; dated: Partial<Record<SettingKey, DatedValue[]>> };
+  proofThresholdA: string; proofThresholdB: string; proofThresholdC: string; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string; rounding: string; perms: Partial<Record<PermAction, string>>; dated: Partial<Record<SettingKey, DatedValue[]>> };
 
 /** A dated setting's value as recorded: in force from its from-date (yyyy-MM-dd). */
 export type DatedValue = { from: string; value: string };
@@ -56,7 +58,7 @@ function datedCents(values: DatedValue[] | undefined, start: string): DatedCents
 
 /** A setting's key as the server names it, with the field of {@link Settings} that shows it. */
 export type SettingKey = 'clerk-limit' | 'floor' | 'terms' | 'late-pct' | 'policy-date' | 'period-numbering-from'
-  | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'cap' | 'proof-threshold' | 'note-threshold' | 'grace-days' | 'entry-date' | 'pot' | 'parent' | 'fiscal-start-month' | 'alert-threshold' | `perm-${PermAction}`;
+  | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'cap' | 'proof-threshold' | 'note-threshold' | 'grace-days' | 'entry-date' | 'pot' | 'parent' | 'fiscal-start-month' | 'alert-threshold' | 'rounding' | `perm-${PermAction}`;
 
 /** The actions whose roles the permission matrix sets, each with its standing rule (used while its entry is blank). */
 export const PERMISSIONS = [
@@ -153,6 +155,23 @@ export function useGraceDays(sheet: string): GraceDays {
       value = v.value;
     }
     return value === '' ? 0 : Number.parseInt(value, 10);
+  };
+}
+
+/** The sheet's rounding mode in force on a date (yyyy-MM-dd): 'half-up', 'half-even', or '' for none. */
+export type RoundingModeOn = (date: string) => string;
+
+/** The sheet's rounding mode by date: the value of the latest from-date on or before it (a blank, or none: none). */
+export function useRoundingMode(sheet: string): RoundingModeOn {
+  const { data } = useSettings(sheet);
+  const sorted = [...(data?.dated?.rounding ?? [])].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
+  return (date) => {
+    let value = '';
+    for (const v of sorted) {
+      if (v.from > date) break;
+      value = v.value;
+    }
+    return value;
   };
 }
 

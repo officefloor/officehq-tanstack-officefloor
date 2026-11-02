@@ -40,7 +40,7 @@ public class SheetStates {
         return new SheetState(people.list(sheet), claims.list(sheet), rates.list(sheet),
                 settings.history(sheet, Settings.FLOOR), settings.history(sheet, Settings.LATE_PCT),
                 settings.history(sheet, Settings.CAP), settings.get(sheet, Settings.POLICY_DATE),
-                settings.graces(sheet));
+                settings.graces(sheet), settings.history(sheet, Settings.ROUNDING));
     }
 
     /** Keeps what the sheet holds now, as its today moves from one date to another. */
