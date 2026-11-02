@@ -1,0 +1,452 @@
+diff --git a/src/main/frontend/features/hold/hold.slot.tsx b/src/main/frontend/features/hold/hold.slot.tsx
+index 792262487..7a8165f50 100644
+--- a/src/main/frontend/features/hold/hold.slot.tsx
++++ b/src/main/frontend/features/hold/hold.slot.tsx
+@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
+ import { peopleKey, usePeople, type Person } from '../people/usePeople';
++import { usePersonRowAction } from '../people/usePersonRowAction';
+ 
+ /** A person's holds: whether they have any, a line per hold (from – to), and a from-date (blank: the
+  *  sheet's today), an optional to-date (blank: open-ended) and a button that adds a hold. Their open
+@@ -24,6 +25,7 @@ function PersonHold({ sheetId, personId }: { sheetId: string; personId: number }
+       await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+     },
+   });
++  const announce = usePersonRowAction(sheetId, personId, hold.reset);
+ 
+   return (
+     <>
+@@ -61,6 +63,7 @@ function PersonHold({ sheetId, personId }: { sheetId: string; personId: number }
+           data-testid="person-hold-toggle"
+           disabled={hold.isPending}
+           onClick={() => {
++            announce();
+             hold.reset();
+             hold.mutate({ from: from.trim(), to: to.trim() });
+           }}
+diff --git a/src/main/frontend/features/people/usePersonRowAction.ts b/src/main/frontend/features/people/usePersonRowAction.ts
+new file mode 100644
+index 000000000..2fb6f33b3
+--- /dev/null
++++ b/src/main/frontend/features/people/usePersonRowAction.ts
+@@ -0,0 +1,22 @@
++import { useEffect, useId } from 'react';
++
++// The actions on a person's row (statement, hold, retire) live in separate slots, but share the row's one
++// `person-error`. Taking any of them announces it on the row, and every other action there clears its old
++// error, so a refusal left by one action never shows beside (or for) the next.
++const bus = new EventTarget();
++
++/** Clear this action's error (`reset`) when another action on the same row is taken; returns the
++ *  `announce` to call as this action is taken. */
++export function usePersonRowAction(sheetId: string, personId: number, reset: () => void): () => void {
++  const self = useId();
++  const row = `${sheetId}/${personId}`;
++  useEffect(() => {
++    const listener = (e: Event) => {
++      const d = (e as CustomEvent<{ row: string; from: string }>).detail;
++      if (d.row === row && d.from !== self) reset();
++    };
++    bus.addEventListener('person-action', listener);
++    return () => bus.removeEventListener('person-action', listener);
++  }, [row, self, reset]);
++  return () => bus.dispatchEvent(new CustomEvent('person-action', { detail: { row, from: self } }));
++}
+diff --git a/src/main/frontend/features/retire/retire.slot.tsx b/src/main/frontend/features/retire/retire.slot.tsx
+index 99c84ec6b..058fdab89 100644
+--- a/src/main/frontend/features/retire/retire.slot.tsx
++++ b/src/main/frontend/features/retire/retire.slot.tsx
+@@ -4,6 +4,7 @@ import { postJson } from '../../api/http';
+ import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { peopleKey, usePeople, type Person } from '../people/usePeople';
++import { usePersonRowAction } from '../people/usePersonRowAction';
+ import { useShowRetired } from './useShowRetired';
+ 
+ /** A person's retirement: whether they are retired and from when, and a date (blank: the sheet's
+@@ -23,6 +24,7 @@ function PersonRetire({ sheetId, personId }: { sheetId: string; personId: number
+       await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+     },
+   });
++  const announce = usePersonRowAction(sheetId, personId, retire.reset);
+ 
+   return (
+     <>
+@@ -44,6 +46,7 @@ function PersonRetire({ sheetId, personId }: { sheetId: string; personId: number
+           data-testid="person-retire"
+           disabled={retire.isPending}
+           onClick={() => {
++            announce();
+             retire.reset();
+             retire.mutate(date);
+           }}
+diff --git a/src/main/frontend/features/settings/settings.slot.tsx b/src/main/frontend/features/settings/settings.slot.tsx
+index 0afed24ee..3d2554abf 100644
+--- a/src/main/frontend/features/settings/settings.slot.tsx
++++ b/src/main/frontend/features/settings/settings.slot.tsx
+@@ -15,7 +15,7 @@ import { settingOn, settingsKey, useSettings, type Settings } from './useSetting
+  *  <period>-<n>, or X-<n> in no period; blank is off), each grade's own terms (blank is the sheet's
+  *  terms), its cap (the most a person's due-total can be; blank is none), its proof threshold (a claim whose due is
+  *  above the one in force on its date cannot be settled or approved without a proof; blank is none), its permission matrix (for each of open, settle, void,
+- *  reassign, close and reopen, the roles that may do it, comma separated; blank keeps the standing rule; not dated), and the role (clerk or steward)
++ *  reassign, close and reopen, the roles that may do it, comma separated; blank keeps the standing rule; not dated), and the role (clerk, steward or viewer — a viewer changes nothing)
+  *  assigned to each user name. Saving saves each setting whose field was entered (focused or typed
+  *  in, even when left blank); the others stay as they are. A setting with a figure (the clerk limit, the
+  *  floor, the terms, each grade's terms, the late percent, the cap and the proof threshold) is saved from its from-date, blank
+@@ -297,7 +297,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
+           Role{' '}
+           <input
+             data-testid="role-form-role"
+-            placeholder="clerk or steward"
++            placeholder="clerk, steward or viewer"
+             value={role}
+             onChange={(e) => {
+               setRole(e.target.value);
+diff --git a/src/main/frontend/features/statements/statements.slot.tsx b/src/main/frontend/features/statements/statements.slot.tsx
+index 619c94ad8..c9570187c 100644
+--- a/src/main/frontend/features/statements/statements.slot.tsx
++++ b/src/main/frontend/features/statements/statements.slot.tsx
+@@ -3,6 +3,7 @@ import { postJson } from '../../api/http';
+ import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
+ import { claimsKey } from '../claims/useClaims';
+ import { peopleKey, usePeople, type Person } from '../people/usePeople';
++import { usePersonRowAction } from '../people/usePersonRowAction';
+ 
+ /** A person's statements: how many have been taken, the last one's due-total and date (blank before
+  *  the first), and a button that takes one. Taking a statement records their due-total and binds each
+@@ -22,6 +23,7 @@ function PersonStatement({ sheetId, personId }: { sheetId: string; personId: num
+       ]);
+     },
+   });
++  const announce = usePersonRowAction(sheetId, personId, take.reset);
+ 
+   return (
+     <>
+@@ -34,6 +36,7 @@ function PersonStatement({ sheetId, personId }: { sheetId: string; personId: num
+           data-testid="person-statement"
+           disabled={take.isPending}
+           onClick={() => {
++            announce();
+             take.reset();
+             take.mutate();
+           }}
+diff --git a/src/main/java/net/officefloor/hq/app/settings/RefuseViewer.java b/src/main/java/net/officefloor/hq/app/settings/RefuseViewer.java
+new file mode 100644
+index 000000000..bc30488d9
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/settings/RefuseViewer.java
+@@ -0,0 +1,19 @@
++package net.officefloor.hq.app.settings;
++
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.server.http.ServerHttpConnection;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Refuse any change by a viewer of the sheet (400, nothing written). The first step of every endpoint
++ *  that changes a sheet, except the bulk ones, where a viewer's selection is simply all refused. */
++public class RefuseViewer {
++    public void refuse(@PathVariable("sheetId") String sheetId, ServerHttpConnection connection,
++            SettingsRepository settings) throws BadRequestException {
++        String by = CurrentUser.require(connection);
++        String id = sheetId == null ? "" : sheetId.trim();
++        if (settings.role(id, by).equals(SettingsRepository.VIEWER)) {
++            throw new BadRequestException("a viewer can change nothing");
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/settings/Role.java b/src/main/java/net/officefloor/hq/app/settings/Role.java
+index c3abe2d77..2ab531843 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/Role.java
++++ b/src/main/java/net/officefloor/hq/app/settings/Role.java
+@@ -1,5 +1,5 @@
+ package net.officefloor.hq.app.settings;
+ 
+-/** The role a user name holds on a sheet: clerk or steward. */
++/** The role a user name holds on a sheet: clerk, steward or viewer. */
+ public record Role(String user, String role) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java b/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
+index c0ae8b000..b0dab5357 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
+@@ -13,6 +13,8 @@ import org.springframework.stereotype.Repository;
+ public class SettingsRepository {
+     public static final String CLERK = "clerk";
+     public static final String STEWARD = "steward";
++    /** A viewer sees everything and changes nothing. */
++    public static final String VIEWER = "viewer";
+     /** The actions the permission matrix covers, in the order shown. */
+     public static final List<String> PERMISSION_ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/settings/ValidateRole.java b/src/main/java/net/officefloor/hq/app/settings/ValidateRole.java
+index d9fb58870..b1cca9045 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/ValidateRole.java
++++ b/src/main/java/net/officefloor/hq/app/settings/ValidateRole.java
+@@ -5,9 +5,9 @@ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+-/** Bind the role form: a user name (no spaces) and a role, clerk or steward. */
++/** Bind the role form: a user name (no spaces) and a role, clerk, steward or viewer. */
+ public class ValidateRole {
+-    private static final Set<String> ROLES = Set.of(SettingsRepository.CLERK, SettingsRepository.STEWARD);
++    private static final Set<String> ROLES = Set.of(SettingsRepository.CLERK, SettingsRepository.STEWARD, SettingsRepository.VIEWER);
+ 
+     public void validate(@RequestBody RoleRequest request, Out<Role> role) throws BadRequestException {
+         String user = request == null || request.user() == null ? "" : request.user().trim();
+@@ -19,7 +19,7 @@ public class ValidateRole {
+             throw new BadRequestException("user must not contain spaces");
+         }
+         if (!ROLES.contains(name)) {
+-            throw new BadRequestException("role must be clerk or steward");
++            throw new BadRequestException("role must be clerk, steward or viewer");
+         }
+         role.set(new Role(user, name));
+     }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.POST.yml
+index 6f33cdb37..159a1cc94 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.POST.yml
+@@ -1,5 +1,8 @@
+ # Edit a DRAFT claim: its amount, date (blank: the sheet's today) and note, validated as when added.
+ # Any other claim is refused (400) and writes nothing: to change an open claim, void it and add a new one.
++guard:
++  class: net.officefloor.hq.app.settings.RefuseViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaim
+   next: save
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
+index c485d0e9b..932e8d7a5 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
+@@ -3,6 +3,9 @@
+ # (DRAFT, OPEN or PENDING -> VOID), or resettle (a steward refreezes a SETTLED claim at its figure today), or defer an
+ # OPEN claim (not in a closed period) until a date after the sheet's today (body: until).
+ # Or proof: raise the proofs count of a claim not SETTLED or VOID (nor in a closed period) by one. Any other change is refused (400) and writes nothing.
++guard:
++  class: net.officefloor.hq.app.settings.RefuseViewer
++  next: change
+ change:
+   class: net.officefloor.hq.app.claim.ChangeClaimStatus
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste.POST.yml
+index 09496902e..db2b9636c 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste.POST.yml
+@@ -1,5 +1,8 @@
+ # Paste claims: lines of name,amount,date,note, each a draft claim for the named person (who must be on
+ # the sheet), checked by the claim form's rules. One change: if any line is refused, nothing is added.
++guard:
++  class: net.officefloor.hq.app.settings.RefuseViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.paste.ValidatePaste
+   next: save
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+index d5334e784..31ef1c599 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+@@ -1,4 +1,7 @@
+ # Add a person to the sheet: a name (required) and a grade (A, B or C).
++guard:
++  class: net.officefloor.hq.app.settings.RefuseViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePerson
+   next: save
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.POST.yml
+index 0931b0a31..a9191fd62 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.POST.yml
+@@ -1,4 +1,7 @@
+ # Edit a person on the sheet: their name (required) and grade (A, B or C), recorded from a from-date (blank: the sheet's today).
++guard:
++  class: net.officefloor.hq.app.settings.RefuseViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePerson
+   next: save
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+index 764cea8f8..96e5cdae0 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+@@ -1,6 +1,9 @@
+ # Add a claim to a person: an amount (required; up to two decimals), a date (blank: the sheet's
+ # today), a note (may be empty) and corrects. A negative amount is a correction, allowed only when
+ # corrects names, by number, a SETTLED claim of the same person.
++guard:
++  class: net.officefloor.hq.app.settings.RefuseViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaim
+   next: save
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.POST.yml
+index fe041ed3a..e3ce67b11 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.POST.yml
+@@ -1,4 +1,7 @@
+ # Put a person on hold from a from-date (blank: the sheet's today) to an optional to-date.
++guard:
++  class: net.officefloor.hq.app.settings.RefuseViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.person.ValidateHold
+   next: hold
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml
+index b2df1d088..b3c78e16e 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml
+@@ -1,4 +1,7 @@
+ # Name another person on the sheet as one of a person's patrons (not themselves, not twice).
++guard:
++  class: net.officefloor.hq.app.settings.RefuseViewer
++  next: add
+ add:
+   class: net.officefloor.hq.app.person.AddPatron
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml
+index c65dda2cd..b4128c052 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml
+@@ -1,4 +1,7 @@
+ # Retire a person from a date (blank: the sheet's today). No claim of theirs may be dated after it.
++guard:
++  class: net.officefloor.hq.app.settings.RefuseViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.person.ValidateRetire
+   next: retire
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml
+index 6a8be4162..9e4ae768e 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml
+@@ -1,5 +1,8 @@
+ # Take a person's statement: record their due-total, and bind each of their counting claims to the
+ # figure it has now (unbinding the rest), until their next statement.
++guard:
++  class: net.officefloor.hq.app.settings.RefuseViewer
++  next: take
+ take:
+   class: net.officefloor.hq.app.statement.TakeStatement
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.POST.yml
+index acd5f6fdd..600b05a26 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.POST.yml
+@@ -1,5 +1,8 @@
+ # Add a period: a name unique on the sheet and a from- and to-date (inclusive, from on or before
+ # to) that overlap no other period of the sheet.
++guard:
++  class: net.officefloor.hq.app.settings.RefuseViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.period.ValidatePeriod
+   next: save
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodName}/close.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodName}/close.POST.yml
+index 12b52b455..ea57b4267 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodName}/close.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodName}/close.POST.yml
+@@ -1,4 +1,7 @@
+ # Close a period: fix its due-total as it is now. A closed period cannot be closed again.
++guard:
++  class: net.officefloor.hq.app.settings.RefuseViewer
++  next: close
+ close:
+   class: net.officefloor.hq.app.period.ClosePeriod
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodName}/reopen.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodName}/reopen.POST.yml
+index dee47a32e..80a06ead3 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodName}/reopen.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{periodName}/reopen.POST.yml
+@@ -1,4 +1,7 @@
+ # Reopen a closed period (a steward only): its due-total is live again.
++guard:
++  class: net.officefloor.hq.app.settings.RefuseViewer
++  next: reopen
+ reopen:
+   class: net.officefloor.hq.app.period.ReopenPeriod
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick.POST.yml
+index a5cfeec11..c6e95a882 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick.POST.yml
+@@ -1,5 +1,8 @@
+ # Quick-add a draft claim by name: a name (required; a new name adds the person with grade A) and an
+ # amount (as the claim form), dated the sheet's today with an empty note. One change: a refusal writes nothing.
++guard:
++  class: net.officefloor.hq.app.settings.RefuseViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.quick.ValidateQuickAdd
+   next: save
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.POST.yml
+index 155e23ddd..3344feb55 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.POST.yml
+@@ -2,6 +2,9 @@
+ # optional from-date (blank: from the beginning of time) through an optional to-date (blank: no end;
+ # before the from-date is refused). Replaces the grade's rate from that date
+ # when it has one.
++guard:
++  class: net.officefloor.hq.app.settings.RefuseViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.rate.ValidateRate
+   next: save
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/reassign.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/reassign.POST.yml
+index 12e07100e..37dfc15e8 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/reassign.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/reassign.POST.yml
+@@ -1,6 +1,9 @@
+ # Move a DRAFT, OPEN or PENDING claim to another person on the sheet (steward only). It keeps its number and
+ # date, loses any figure a statement bound it to, and lists as its new person's newest claim. A settled or
+ # voided claim, a non-steward, an unknown person or the claim's own person is refused (400) and writes nothing.
++guard:
++  class: net.officefloor.hq.app.settings.RefuseViewer
++  next: reassign
+ reassign:
+   class: net.officefloor.hq.app.claim.ReassignClaim
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.POST.yml
+index 5edebf7ba..3ffc7a122 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.POST.yml
+@@ -1,4 +1,7 @@
+-# Assign a role (clerk or steward) to a user name on the sheet.
++# Assign a role (clerk, steward or viewer) to a user name on the sheet.
++guard:
++  class: net.officefloor.hq.app.settings.RefuseViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.settings.ValidateRole
+   next: save
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.POST.yml
+index 7fd44de74..e6c1b441c 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.POST.yml
+@@ -2,6 +2,9 @@
+ # no limit), its floor (0.00 or more with up to two decimals) its terms (whole days, 0 to 3650) and each grade's terms
+ # (likewise; blank means the sheet's terms). A setting left out stays as it is. A setting with a figure is
+ # recorded from its from-date (blank: the sheet's today), keeping the values recorded from other dates.
++guard:
++  class: net.officefloor.hq.app.settings.RefuseViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.settings.ValidateSettings
+   next: save
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
+index 56662a3b7..01877be51 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
+@@ -1,4 +1,7 @@
+ # Change the sheet's today: the date every date decision and default date in the sheet uses.
++guard:
++  class: net.officefloor.hq.app.settings.RefuseViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.sheet.ValidateToday
+   next: save
