@@ -109,6 +109,8 @@ export type Claim = {
   added: number | null;
   /** Whether a steward waived its late charge (only while OPEN or PENDING, once): from then on it bears none. */
   waived: boolean;
+  /** Whether it is held (toggled while OPEN or PENDING): while held, unless bound by a statement, it counts in no live total. */
+  held: boolean;
 };
 
 /** One line of a claim: its label, quantity (a whole number) and unit amount (two decimals). */
@@ -135,8 +137,8 @@ export function useClaims(sheet: string) {
 }
 
 /** The claims that count toward claimed, due-total and every total: the OPEN, PENDING and SETTLED ones, but not
- *  the deferred ones, nor the OPEN or PENDING ones dated within a hold of their person or whose person's retirement
- *  date is reached, unless bound by a statement. */
+ *  the deferred ones, nor the OPEN or PENDING ones held, dated within a hold of their person or whose person's
+ *  retirement date is reached, unless bound by a statement. */
 export function counted(claims: Claim[], people: Person[]): Claim[] {
   const byId = new Map(people.map((p) => [p.id, p]));
   return claims.filter((c) => {
@@ -144,7 +146,7 @@ export function counted(claims: Claim[], people: Person[]): Claim[] {
     if (c.status === 'SETTLED') return true;
     if (!isOpen(c)) return false;
     const person = byId.get(c.person);
-    return bound(c) || person === undefined || !setAsideOn(person, c.date);
+    return bound(c) || (!c.held && (person === undefined || !setAsideOn(person, c.date)));
   });
 }
 
@@ -159,13 +161,13 @@ export function statusOn(claim: Claim, end: string): ClaimStatus | undefined {
 
 /** Whether a claim counts toward a period ending on the day (yyyy-MM-dd): by the status it had at the end of it
  *  (OPEN, PENDING or SETTLED; not yet added: no), unless deferred now, or open now (as {@link counted}), unbound and
- *  dated within a hold of its person or its person's retirement date is reached. */
+ *  held, dated within a hold of its person or its person's retirement date is reached. */
 export function countedOn(claim: Claim, person: Person | undefined, end: string): boolean {
   const then = statusOn(claim, end);
   if (claim.deferred || then === undefined) return false;
   if (then === 'SETTLED') return true;
   if (then !== 'OPEN' && then !== 'PENDING') return false;
-  return !isOpen(claim) || bound(claim) || person === undefined || !setAsideOn(person, claim.date);
+  return !isOpen(claim) || bound(claim) || (!claim.held && (person === undefined || !setAsideOn(person, claim.date)));
 }
 
 /** The sum of the claims' amounts with two decimals, added in whole cents so no float error shows, leaving out the

@@ -137,6 +137,12 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
     onSuccess: (updated) => queryClient.setQueryData(claimsKey(sheet), updated),
   });
   const waive = useSubmitOnce(waiveMutation);
+  // An OPEN or PENDING claim is held, or released when held: while held (and not bound by a statement) it counts in no live total.
+  const holdMutation = useMutation({
+    mutationFn: () => postJson<Claim[]>(byUser(`${claimsPath(sheet)}/${claim.id}/hold`, user), {}),
+    onSuccess: (updated) => queryClient.setQueryData(claimsKey(sheet), updated),
+  });
+  const holdClaim = useSubmitOnce(holdMutation);
   // An OPEN or PENDING claim is reminded, at most once per sheet-today.
   const remindMutation = useMutation({
     mutationFn: () => postJson<Claim[]>(byUser(`${claimsPath(sheet)}/${claim.id}/remind`, user), {}),
@@ -303,10 +309,36 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           splitMutation.reset();
           inlineMutation.reset();
           waiveMutation.reset();
+          holdMutation.reset();
           waive(undefined);
         }}
       >
         Waive late charge
+      </button>{' '}
+      held <span data-testid="claim-held">{claim.held ? 'yes' : 'no'}</span>{' '}
+      <button
+        type="button"
+        data-testid="claim-hold"
+        disabled={holdMutation.isPending}
+        onClick={() => {
+          clearEditError();
+          status.reset();
+          move.reset();
+          resettleMutation.reset();
+          deferMutation.reset();
+          remindMutation.reset();
+          redateMutation.reset();
+          proofMutation.reset();
+          commentMutation.reset();
+          lineMutation.reset();
+          splitMutation.reset();
+          inlineMutation.reset();
+          waiveMutation.reset();
+          holdMutation.reset();
+          holdClaim(undefined);
+        }}
+      >
+        {claim.held ? 'Release' : 'Hold'}
       </button>{' '}
       proofs <span data-testid="claim-proofs">{claim.proofs}</span>{' '}
       (receipts <span data-testid="claim-proofs-receipt">{claim.proofs - claim.photos}</span>,{' '}
@@ -334,6 +366,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           resettleMutation.reset();
           deferMutation.reset();
           waiveMutation.reset();
+          holdMutation.reset();
           remindMutation.reset();
           redateMutation.reset();
           splitMutation.reset();
@@ -355,6 +388,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
             resettleMutation.reset();
             deferMutation.reset();
             waiveMutation.reset();
+            holdMutation.reset();
           remindMutation.reset();
             redateMutation.reset();
             splitMutation.reset();
@@ -407,6 +441,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           resettleMutation.reset();
           deferMutation.reset();
           waiveMutation.reset();
+          holdMutation.reset();
           remindMutation.reset();
           redateMutation.reset();
           splitMutation.reset();
@@ -439,6 +474,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           resettleMutation.reset();
           deferMutation.reset();
           waiveMutation.reset();
+          holdMutation.reset();
           remindMutation.reset();
           redateMutation.reset();
           splitMutation.reset();
@@ -460,6 +496,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           resettleMutation.reset();
           deferMutation.reset();
           waiveMutation.reset();
+          holdMutation.reset();
           remindMutation.reset();
           redateMutation.reset();
           splitMutation.reset();
@@ -506,6 +543,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           resettleMutation.reset();
           deferMutation.reset();
           waiveMutation.reset();
+          holdMutation.reset();
           remindMutation.reset();
           redateMutation.reset();
           splitMutation.reset();
@@ -528,6 +566,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           move.reset();
           deferMutation.reset();
           waiveMutation.reset();
+          holdMutation.reset();
           remindMutation.reset();
           redateMutation.reset();
           splitMutation.reset();
@@ -548,6 +587,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           setDeferTo(e.target.value);
           deferMutation.reset();
           waiveMutation.reset();
+          holdMutation.reset();
           remindMutation.reset();
           redateMutation.reset();
           splitMutation.reset();
@@ -586,6 +626,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           resettleMutation.reset();
           deferMutation.reset();
           waiveMutation.reset();
+          holdMutation.reset();
           redateMutation.reset();
           proofMutation.reset();
           commentMutation.reset();
@@ -621,6 +662,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           resettleMutation.reset();
           deferMutation.reset();
           waiveMutation.reset();
+          holdMutation.reset();
           remindMutation.reset();
           proofMutation.reset();
           commentMutation.reset();
@@ -653,6 +695,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           resettleMutation.reset();
           deferMutation.reset();
           waiveMutation.reset();
+          holdMutation.reset();
           remindMutation.reset();
           redateMutation.reset();
           proofMutation.reset();
@@ -684,6 +727,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           resettleMutation.reset();
           deferMutation.reset();
           waiveMutation.reset();
+          holdMutation.reset();
           remindMutation.reset();
           redateMutation.reset();
           proofMutation.reset();
@@ -734,6 +778,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           resettleMutation.reset();
           deferMutation.reset();
           waiveMutation.reset();
+          holdMutation.reset();
           remindMutation.reset();
           redateMutation.reset();
           proofMutation.reset();
@@ -796,6 +841,11 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
       {waiveMutation.isError && (
         <span data-testid="claim-error" role="alert">
           {' '}This claim's late charge cannot be waived (only a steward waives, only an OPEN or PENDING claim, and only once).
+        </span>
+      )}
+      {holdMutation.isError && (
+        <span data-testid="claim-error" role="alert">
+          {' '}A {claim.status} claim cannot be held or released (only an OPEN or PENDING claim).
         </span>
       )}
       {remindMutation.isError && (

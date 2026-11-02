@@ -33,7 +33,7 @@ public record Person(long id, String name, String grade, long version, String re
 
     /**
      * Whether the claim, theirs, counts toward the live totals: it counts, unless it is open, not bound by a statement,
-     * and dated within one of their holds or their retirement date is reached.
+     * and held, dated within one of their holds or their retirement date is reached.
      */
     public boolean counts(Claim claim) {
         if (!claim.counts()) {
@@ -42,7 +42,7 @@ public record Person(long id, String name, String grade, long version, String re
         if (claim.status() == ClaimStatus.SETTLED || claim.bound()) {
             return true;
         }
-        return !retiredNow && holds.stream().noneMatch((h) -> h.covers(claim.date()));
+        return !claim.held() && !retiredNow && holds.stream().noneMatch((h) -> h.covers(claim.date()));
     }
 
     /** This person as they stand with the date for the sheet's today: their grade in force then, and retired then or not. */
@@ -65,7 +65,7 @@ public record Person(long id, String name, String grade, long version, String re
     /**
      * Whether the claim, theirs, counts toward a period ending on the date: by the status it had at the end of that
      * day (OPEN, PENDING or SETTLED; not yet added: no), unless deferred now, or open now, not bound by a statement
-     * and dated within one of their holds or their retirement date is reached.
+     * and held, dated within one of their holds or their retirement date is reached.
      */
     public boolean countsOn(Claim claim, LocalDate end) {
         ClaimStatus then = claim.statusOn(end);
@@ -79,7 +79,7 @@ public record Person(long id, String name, String grade, long version, String re
             return false;
         }
         return (claim.status() != ClaimStatus.OPEN && claim.status() != ClaimStatus.PENDING) || claim.bound()
-                || (!retiredNow && holds.stream().noneMatch((h) -> h.covers(claim.date())));
+                || (!claim.held() && !retiredNow && holds.stream().noneMatch((h) -> h.covers(claim.date())));
     }
 
     /**
