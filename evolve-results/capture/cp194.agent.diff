@@ -1,0 +1,387 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 469ef96b..ef4e01ba 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -90,11 +90,19 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
+   // While the sheet has void reasons, a void needs one, chosen beside the Void button.
+   const { data: voidReasons = [] } = useVoidReasons(sheet);
+   const [voidReason, setVoidReason] = useState('');
++  // A settle is as of the date typed beside the Settle button (blank for the sheet's today).
++  const [settleOn, setSettleOn] = useState('');
+   const status = useMutation({
+     mutationFn: (change: ClaimStatusChange) =>
+       postJson<Claim[]>(
+         byUser(`${claimsPath(sheet)}/${claim.id}/${change}`, user),
+-        change === 'reject' ? { reason } : change === 'void' ? { reason: voidReason } : {},
++        change === 'reject'
++          ? { reason }
++          : change === 'void'
++            ? { reason: voidReason }
++            : change === 'settle'
++              ? { on: settleOn }
++              : {},
+       ),
+     onSuccess: (updated, change) => {
+       queryClient.setQueryData(claimsKey(sheet), updated);
+@@ -420,6 +428,16 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
+           {label}
+         </button>
+       ))}{' '}
++      <input
++        type="date"
++        data-testid="claim-settle-date"
++        aria-label="settle as of"
++        value={settleOn}
++        onChange={(e) => {
++          setSettleOn(e.target.value);
++          status.reset();
++        }}
++      />{' '}
+       <select
+         data-testid="claim-void-reason"
+         value={voidReason}
+@@ -890,7 +908,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
+       )}
+       {status.isError && (
+         <span data-testid="claim-error" role="alert">
+-          {' '}A {claim.status} claim cannot be changed that way (your role may not take that action; the user who opened it cannot settle or approve it; only a steward approves or rejects a PENDING claim, a reject needs a reason, a void needs a reason from the sheet's list while it has one, a claim whose due is above the proof threshold needs a proof, one of each of the sheet's proof kinds while it has them, and one whose due is above the note threshold needs a note to be opened; only a steward reviews a REVIEW claim, which is not edited, settled nor split; only a DRAFT outside a closed period is deleted, and a DELETED claim is restored only on the day it was deleted).
++          {' '}A {claim.status} claim cannot be changed that way (your role may not take that action; the user who opened it cannot settle or approve it; only a steward approves or rejects a PENDING claim, a reject needs a reason, a void needs a reason from the sheet's list while it has one, a claim whose due is above the proof threshold needs a proof, one of each of the sheet's proof kinds while it has them, and one whose due is above the note threshold needs a note to be opened; only a steward reviews a REVIEW claim, which is not edited, settled nor split; only a DRAFT outside a closed period is deleted, and a DELETED claim is restored only on the day it was deleted; a settle as of a date needs a date on or before the sheet's today on which the claim already existed).
+         </span>
+       )}
+       {resettleMutation.isError && (
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfState.java b/src/main/java/net/officefloor/hq/app/asof/AsOfState.java
+new file mode 100644
+index 00000000..e3da4ff0
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfState.java
+@@ -0,0 +1,57 @@
++package net.officefloor.hq.app.asof;
++
++import java.time.LocalDate;
++import java.util.HashSet;
++import java.util.Set;
++import net.officefloor.hq.app.rate.Rate;
++import net.officefloor.hq.app.rate.Rates;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.sheet.SheetClock;
++import org.springframework.stereotype.Service;
++
++/**
++ * Puts a sheet, inside the caller's transaction, as it stood at the end of a date (see {@link SheetSnapshots#show}),
++ * with the date for its today, as the as-of view shows it: its parents whose rates it takes (see Rates) are put as
++ * they stood then too, bar a parent whose today was never set (it has no dated history, so it is taken as it stands
++ * now) — unless the sheet itself had nothing then, when no parent is taken. So too the sheet it was cloned from, and
++ * its parents and source in turn. The caller must roll back.
++ */
++@Service
++public class AsOfState {
++
++    private final SheetSnapshots snapshots;
++    private final Settings settings;
++    private final SheetClock clock;
++    private final Rates rates;
++
++    public AsOfState(SheetSnapshots snapshots, Settings settings, SheetClock clock, Rates rates) {
++        this.snapshots = snapshots;
++        this.settings = settings;
++        this.clock = clock;
++        this.rates = rates;
++    }
++
++    /** Puts the sheet as it stood at the end of the date; returns whether it had anything to show then. */
++    public boolean show(String sheet, LocalDate date) {
++        boolean had = snapshots.show(sheet, date);
++        Set<String> shown = new HashSet<>(Set.of(sheet));
++        for (String from = sheet; !from.isEmpty(); ) {
++            String parent = settings.parent(from);
++            for (int level = 1; level <= Rate.LEVELS && !parent.isEmpty() && shown.add(parent); level++) {
++                if (clock.isSet(parent) || !had) {
++                    snapshots.show(parent, date);
++                }
++                parent = settings.parent(parent);
++            }
++            from = rates.source(from);
++            if (!from.isEmpty() && shown.add(from)) {
++                if (clock.isSet(from) || !had) {
++                    snapshots.show(from, date);
++                }
++            } else {
++                from = "";
++            }
++        }
++        return had;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+index d42f0468..bf1390ae 100644
+--- a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+@@ -9,14 +9,8 @@ import java.net.URLDecoder;
+ import java.nio.charset.StandardCharsets;
+ import java.time.LocalDate;
+ import java.time.format.DateTimeParseException;
+-import java.util.HashSet;
+-import java.util.Set;
+ import java.util.regex.Matcher;
+ import java.util.regex.Pattern;
+-import net.officefloor.hq.app.rate.Rate;
+-import net.officefloor.hq.app.rate.Rates;
+-import net.officefloor.hq.app.setting.Settings;
+-import net.officefloor.hq.app.sheet.SheetClock;
+ import org.springframework.core.Ordered;
+ import org.springframework.core.annotation.Order;
+ import org.springframework.stereotype.Component;
+@@ -26,7 +20,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
+ 
+ /**
+  * A screen showing the sheet as of a date (?asOf=yyyy-MM-dd on its reads): each read of the sheet runs in a
+- * transaction that first puts the sheet as it stood at the end of that date (see {@link SheetSnapshots#show}) and is
++ * transaction that first puts the sheet as it stood at the end of that date (see {@link AsOfState#show}) and is
+  * always rolled back, so every figure the endpoints make is made from that state, with the date for the sheet's
+  * today, and nothing is ever written. The sheet's parents whose rates it takes (see Rates) are put as they stood at
+  * the end of that date too, bar a parent whose today was never set: it has no dated history, so it is taken as it
+@@ -42,18 +36,11 @@ public class AsOfView extends OncePerRequestFilter {
+ 
+     private static final Pattern SHEET = Pattern.compile("^/api/sheets/([^/]+)(/.*)?$");
+ 
+-    private final SheetSnapshots snapshots;
+-    private final Settings settings;
+-    private final SheetClock clock;
+-    private final Rates rates;
++    private final AsOfState state;
+     private final TransactionTemplate transaction;
+ 
+-    public AsOfView(SheetSnapshots snapshots, Settings settings, SheetClock clock, Rates rates,
+-            PlatformTransactionManager transactions) {
+-        this.snapshots = snapshots;
+-        this.settings = settings;
+-        this.clock = clock;
+-        this.rates = rates;
++    public AsOfView(AsOfState state, PlatformTransactionManager transactions) {
++        this.state = state;
+         this.transaction = new TransactionTemplate(transactions);
+     }
+ 
+@@ -77,25 +64,7 @@ public class AsOfView extends OncePerRequestFilter {
+         try {
+             transaction.executeWithoutResult((status) -> {
+                 status.setRollbackOnly();
+-                boolean had = snapshots.show(sheet, date);
+-                Set<String> shown = new HashSet<>(Set.of(sheet));
+-                for (String from = sheet; !from.isEmpty(); ) {
+-                    String parent = settings.parent(from);
+-                    for (int level = 1; level <= Rate.LEVELS && !parent.isEmpty() && shown.add(parent); level++) {
+-                        if (clock.isSet(parent) || !had) {
+-                            snapshots.show(parent, date);
+-                        }
+-                        parent = settings.parent(parent);
+-                    }
+-                    from = rates.source(from);
+-                    if (!from.isEmpty() && shown.add(from)) {
+-                        if (clock.isSet(from) || !had) {
+-                            snapshots.show(from, date);
+-                        }
+-                    } else {
+-                        from = "";
+-                    }
+-                }
++                state.show(sheet, date);
+                 try {
+                     chain.doFilter(request, response);
+                 } catch (IOException | ServletException e) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+index 9145458f..9c9d6cc0 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimStatus.java
+@@ -1,20 +1,43 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
++import net.officefloor.hq.app.sheet.SheetClock;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+-/** Moves the claim to the status the change takes it to, refusing a change its status does not allow. */
++/** Moves the claim to the status the change takes it to, refusing a change its status does not allow; a settle
++ *  with a date is as of that day. */
+ public class ApplyClaimStatus {
+     public void apply(@PathVariable("sheet") String sheet, @PathVariable("change") String change,
+             @RequestParam("user") String user, @RequestBody ClaimStatusRequest body, @Val Claim claim,
+-            ClaimStatusChanger changer, Claims claims) throws InvalidClaimStatusChangeException {
++            ClaimStatusChanger changer, Claims claims, ClaimDueAsOf dueAsOf, SheetClock clock) throws InvalidClaimStatusChangeException {
+         ClaimStatusChange requested = ClaimStatusChange.of(change);
+         if (requested == null) {
+             throw new InvalidClaimStatusChangeException("No such status change: " + change);
+         }
+-        changer.change(sheet, user, claim, requested, body == null ? null : body.reason());
++        String on = body == null || body.on() == null ? "" : body.on().trim();
++        if (requested == ClaimStatusChange.SETTLE && !on.isEmpty()) {
++            // Settled as of a date on or before the sheet's today, at the due the claim had at the end of it.
++            LocalDate date;
++            try {
++                date = LocalDate.parse(on);
++            } catch (DateTimeParseException e) {
++                throw new InvalidClaimStatusChangeException("Not a valid settle date: " + on);
++            }
++            if (date.isAfter(clock.today(sheet))) {
++                throw new InvalidClaimStatusChangeException("A claim cannot be settled as of a date after today");
++            }
++            ClaimDueAsOf.Then then = dueAsOf.on(sheet, claim.id(), date);
++            if (!then.existed()) {
++                throw new InvalidClaimStatusChangeException("The claim did not exist on " + date);
++            }
++            changer.settleAsOf(sheet, user, claim, date, then.due());
++        } else {
++            changer.change(sheet, user, claim, requested, body == null ? null : body.reason());
++        }
+         if (requested == ClaimStatusChange.SETTLE) {
+             // Settled one at a time: no longer part of a bulk settle batch.
+             claims.setBatch(sheet, claim.id(), null);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimDueAsOf.java b/src/main/java/net/officefloor/hq/app/claim/ClaimDueAsOf.java
+new file mode 100644
+index 00000000..89c51dcf
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimDueAsOf.java
+@@ -0,0 +1,58 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++import java.time.LocalDate;
++import net.officefloor.hq.app.asof.AsOfState;
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.rate.Rates;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.sheet.SheetClock;
++import org.springframework.stereotype.Service;
++import org.springframework.transaction.PlatformTransactionManager;
++import org.springframework.transaction.TransactionDefinition;
++import org.springframework.transaction.support.TransactionTemplate;
++
++/** A claim's due as it stood at the end of a date, as the as-of view works it out (the sheet put as it stood then,
++ *  inside a savepoint always rolled back, so nothing is written). */
++@Service
++public class ClaimDueAsOf {
++
++    /** The claim's due then (null for n/a); existed is false when the claim was not on the sheet then. */
++    public record Then(boolean existed, BigDecimal due) {
++    }
++
++    private final AsOfState state;
++    private final Claims claims;
++    private final People people;
++    private final Rates rates;
++    private final Settings settings;
++    private final SheetClock clock;
++    private final TransactionTemplate transaction;
++
++    public ClaimDueAsOf(AsOfState state, Claims claims, People people, Rates rates, Settings settings,
++            SheetClock clock, PlatformTransactionManager transactions) {
++        this.state = state;
++        this.claims = claims;
++        this.people = people;
++        this.rates = rates;
++        this.settings = settings;
++        this.clock = clock;
++        this.transaction = new TransactionTemplate(transactions);
++        this.transaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_NESTED);
++    }
++
++    public Then on(String sheet, long id, LocalDate date) {
++        return transaction.execute((status) -> {
++            status.setRollbackOnly();
++            state.show(sheet, date);
++            Claim claim = claims.find(sheet, id);
++            Person person = claim == null ? null : people.find(sheet, claim.person());
++            if (person == null) {
++                return new Then(false, null);
++            }
++            return new Then(true, claim.due(rates.list(sheet), person.gradeOn(claim.date()), settings.floor(sheet),
++                    settings.late(sheet, clock.today(sheet))));
++        });
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
+index 48dec7af..df930541 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
+@@ -69,18 +69,25 @@ public class ClaimStatusChanger {
+      *  writing nothing when it is refused. */
+     public void change(String sheet, String user, Claim claim, ClaimStatusChange requested, String reason)
+             throws InvalidClaimStatusChangeException {
+-        change(sheet, user, claim, requested, reason, true);
++        change(sheet, user, claim, requested, reason, true, null, null);
++    }
++
++    /** Settles the claim as the settle button does, freezing the due it had at the end of the date (on or before the
++     *  sheet's today, worked out by the caller) in place of today's; writes nothing when it is refused. */
++    public void settleAsOf(String sheet, String user, Claim claim, LocalDate on, BigDecimal due)
++            throws InvalidClaimStatusChangeException {
++        change(sheet, user, claim, ClaimStatusChange.SETTLE, null, true, on, due);
+     }
+ 
+     /** Settles the claim just split off another to part-settle it, as the settle button does (to PENDING when the
+      *  clerk limit says so), save that the four-eyes rules and the proof rule were judged on the claim it was split
+      *  off, so are not judged again on it (whose opener is the user); writes nothing when it is refused. */
+     public void settlePart(String sheet, String user, Claim part) throws InvalidClaimStatusChangeException {
+-        change(sheet, user, part, ClaimStatusChange.SETTLE, null, false);
++        change(sheet, user, part, ClaimStatusChange.SETTLE, null, false, null, null);
+     }
+ 
+     private void change(String sheet, String user, Claim claim, ClaimStatusChange requested, String reason,
+-            boolean ownRules) throws InvalidClaimStatusChangeException {
++            boolean ownRules, LocalDate on, BigDecimal dueOn) throws InvalidClaimStatusChangeException {
+         requested = vet(sheet, user, claim, requested, reason, ownRules);
+         String voidReason = requested == ClaimStatusChange.VOID && voidReasons.any(sheet) ? reason.trim() : null;
+         Person person = people.find(sheet, claim.person());
+@@ -106,10 +113,15 @@ public class ClaimStatusChanger {
+         // Settling (or approving a PENDING claim) fixes the due at the person's grade rate in force on the claim's date (or the figure its
+         // statement bound), with its late charge frozen in; with no rate there is nothing to fix, so it stays live.
+         if (requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.APPROVE) {
+-            BigDecimal due = claim.due(rates.list(sheet), person.gradeOn(claim.date()), settings.floor(sheet),
++            // Settled as of a date, the due is the one it had at the end of that day.
++            boolean asOf = on != null && requested == ClaimStatusChange.SETTLE;
++            BigDecimal due = asOf ? dueOn : claim.due(rates.list(sheet), person.gradeOn(claim.date()), settings.floor(sheet),
+                     settings.late(sheet, clock.today(sheet)));
+             claims.setSettledDue(sheet, claim.id(), due);
+             fields += " due=" + (due == null ? "n/a" : due.toPlainString());
++            if (asOf) {
++                fields += " on=" + on;
++            }
+         }
+         // Voiding a SETTLED claim reverses its frozen figure out of every total.
+         if (requested == ClaimStatusChange.VOID && claim.status() == ClaimStatus.SETTLED) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusRequest.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusRequest.java
+index 3d5db3c7..c9f4bb44 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusRequest.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusRequest.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.claim;
+ 
+-/** The body of a status change: the reason a reject gives (ignored by the other changes). */
+-public record ClaimStatusRequest(String reason) {
++/** The body of a status change: the reason a reject gives, and the date (yyyy-MM-dd) a settle is as of, blank for
++ *  the sheet's today as it stands (each ignored by the other changes). */
++public record ClaimStatusRequest(String reason, String on) {
+ }
+diff --git a/tmp_e2e/settleasof.log b/tmp_e2e/settleasof.log
+new file mode 100644
+index 00000000..11106b52
+--- /dev/null
++++ b/tmp_e2e/settleasof.log
+@@ -0,0 +1,12 @@
++Picked up JAVA_TOOL_OPTIONS: -Djava.io.tmpdir=/home/daniel/ui-work/runs/202610271-to/tmp
++
++Running 4 tests using 1 worker
++
++  ✓  1 [chromium] › acceptance.spec.ts:6:7 › settle as of date › settle as of date (17.4s)
++  ✓  2 [chromium] › acceptance.spec.ts:78:7 › settle as of date › settle as of date scenario 1 (51.9s)
++  ✓  3 [chromium] › acceptance.spec.ts:466:7 › settle as of date › settle as of date scenario 2 (36.2s)
++  ✓  4 [chromium] › acceptance.spec.ts:960:7 › settle as of date › settle as of date scenario 3 (31.7s)
++
++  Slow test file: [chromium] › acceptance.spec.ts (2.3m)
++  Consider splitting slow test files to speed up parallel execution
++  4 passed (2.3m)
