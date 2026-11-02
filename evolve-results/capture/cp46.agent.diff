@@ -1,0 +1,89 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 5093b65af..6102cd3a6 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -24,17 +24,18 @@ function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: numbe
+   );
+ }
+ 
+-type ClaimAction = 'open' | 'settle' | 'approve' | 'reject' | 'void';
++type ClaimAction = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle';
+ 
+ /** A claim's status changes; the server refuses one its status does not allow, a settle by the user
+  *  who opened the claim, and an approve or reject by anyone but a steward (an approve also by the
+- *  user who opened the claim). A reject takes the reason typed on the claim's row. */
++ *  user who opened the claim), and a re-settle by anyone but a steward or of a claim not SETTLED. A reject takes the reason typed on the claim's row. */
+ const ACTIONS: [ClaimAction, string][] = [
+   ['open', 'Open'],
+   ['settle', 'Settle'],
+   ['approve', 'Approve'],
+   ['reject', 'Reject'],
+   ['void', 'Void'],
++  ['resettle', 'Re-settle'],
+ ];
+ 
+ /** A person's claims, newest first, under their row, with a form that adds a claim, or edits one
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+index c2dab10bc..900410bb4 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+@@ -23,6 +23,9 @@ final class ClaimStatusChange {
+ 
+     static Claim apply(String id, long cid, String action, String reason, String by, ClaimRepository repository,
+             PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup) throws BadRequestException {
++        if ("resettle".equals(action == null ? "" : action.trim())) {
++            return resettle(id, cid, by, repository, periods, settings, audit, rollup);
++        }
+         String to;
+         List<String> from;
+         String event;
+@@ -103,4 +106,37 @@ final class ClaimStatusChange {
+         rollup.record(id, by, before);
+         return changed;
+     }
++
++    /** A steward re-settles a SETTLED claim (not in a closed period): its due is frozen again at the figure it would
++     *  have today as an open claim bound by no statement (today's rates, grades, floor and late charge). */
++    private static Claim resettle(String id, long cid, String by, ClaimRepository repository, PeriodRepository periods,
++            SettingsRepository settings, Audit audit, Rollup rollup) throws BadRequestException {
++        Claim found = repository.find(id, cid);
++        if (found == null) {
++            throw new BadRequestException("no such claim");
++        }
++        if (!settings.role(id, by).equals(SettingsRepository.STEWARD)) {
++            throw new BadRequestException("only a steward can re-settle a claim");
++        }
++        if (!found.status().equals("SETTLED")) {
++            throw new BadRequestException("only a SETTLED claim can be re-settled");
++        }
++        PeriodGuard.open(periods, id, LocalDate.parse(found.date()));
++        Claim live = new Claim(found.id(), found.personId(), found.amount(), found.date(), found.note(), "OPEN",
++                found.number(), null, found.openedBy(), false, null, found.corrects(), found.dueBy(), false);
++        BigDecimal now = repository.dueNow(id, live);
++        Rollup.Snapshot before = rollup.take(id);
++        repository.settleDue(id, cid, now);
++        repository.log(id, cid, by);
++        String old = found.due() == null ? "n/a" : found.due();
++        String due = ClaimRepository.dueOf(now);
++        Claim changed = new Claim(found.id(), found.personId(), found.amount(), found.date(), found.note(),
++                found.status(), found.number(), due, found.openedBy(), found.stated(), found.statedDue(),
++                found.corrects(), found.dueBy(), found.statedNa());
++        audit.record("CLAIM_RESETTLED sheet=" + id + " by=" + by + " person=" + repository.personName(id, found.personId())
++                + " amount=" + changed.amount() + " date=" + changed.date() + Claim.auditNumber(found.number())
++                + " old=" + old + " new=" + (due == null ? "n/a" : due));
++        rollup.record(id, by, before);
++        return changed;
++    }
+ }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
+index e03d24bf1..8d4147555 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
+@@ -1,6 +1,6 @@
+ # Change a claim's status: open (DRAFT -> OPEN), settle (OPEN -> SETTLED, or PENDING when a clerk settles
+ # above the clerk limit), approve (PENDING -> SETTLED), reject with a reason (PENDING -> OPEN) or void
+-# (DRAFT, OPEN or PENDING -> VOID). Any other change is refused (400) and writes nothing.
++# (DRAFT, OPEN or PENDING -> VOID), or resettle (a steward refreezes a SETTLED claim at its figure today). Any other change is refused (400) and writes nothing.
+ change:
+   class: net.officefloor.hq.app.claim.ChangeClaimStatus
+   govern: [ transaction ]
