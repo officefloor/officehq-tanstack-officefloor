@@ -1,0 +1,116 @@
+diff --git a/src/main/frontend/features/settings/settings.slot.tsx b/src/main/frontend/features/settings/settings.slot.tsx
+index d8ce81aa..184a9a73 100644
+--- a/src/main/frontend/features/settings/settings.slot.tsx
++++ b/src/main/frontend/features/settings/settings.slot.tsx
+@@ -28,7 +28,7 @@ import { Fig } from '../locale/Fig';
+ // when it went to REVIEW) plus the review SLA (whole days, not dated; blank means none) is before the sheet's today is late for review. Each setting that carries a figure (all but the policy date and the period numbering
+ // from-date) has a from-date beside it: its value is recorded from that date (blank: the sheet's today), keeping the
+ // values recorded from other dates, and each shows the value in force on the sheet's today. The permission matrix gives,
+-// for each of open, settle, void, reassign, close and reopen, the roles that may take it (comma separated); blank keeps
++// for each of open, settle, void, reassign, close, reopen and today (changing the sheet's today), the roles that may take it (comma separated); blank keeps
+ // its standing rule (reassign and reopen by a steward, the rest by a clerk or a steward). The grace days (whole days,
+ // not dated; blank turns it off): a today change closes each open period whose to-date plus them is before the new today.
+ // The entry date (not dated; blank turns it off): while set, a new claim with a blank date takes it in place of the sheet's today.
+diff --git a/src/main/frontend/features/settings/settings.ts b/src/main/frontend/features/settings/settings.ts
+index 8ec4a14f..25a573cc 100644
+--- a/src/main/frontend/features/settings/settings.ts
++++ b/src/main/frontend/features/settings/settings.ts
+@@ -79,6 +79,7 @@ export const PERMISSIONS = [
+   { action: 'reassign', standing: 'steward' },
+   { action: 'close', standing: 'clerk,steward' },
+   { action: 'reopen', standing: 'steward' },
++  { action: 'today', standing: 'clerk,steward' },
+ ] as const;
+ 
+ export type PermAction = (typeof PERMISSIONS)[number]['action'];
+diff --git a/src/main/java/net/officefloor/hq/app/pool/Pools.java b/src/main/java/net/officefloor/hq/app/pool/Pools.java
+index 34a81e27..eddfa3cb 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/Pools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/Pools.java
+@@ -116,6 +116,22 @@ public class Pools {
+         String added = asAt == null ? "" : " AND (added_on IS NULL OR added_on <= ?)";
+         Object[] args = asAt == null ? new Object[] { sheet } : new Object[] { sheet, at };
+         Map<String, List<Ordered>> members = new LinkedHashMap<>();
++        // As of a past day, a person's retirement is the one the sheet held then: from the rows kept when its today
++        // moved past the day (a retirement recorded later does not count), else the one it holds now.
++        Map<Long, Date> retiredThen = new HashMap<>();
++        boolean kept = false;
++        if (asAt != null) {
++            List<Long> snapshot = jdbc.queryForList("SELECT id FROM sheet_snapshot WHERE sheet = ? AND from_today <= ?"
++                    + " AND to_today > ? ORDER BY id LIMIT 1", Long.class, sheet, at, at);
++            if (!snapshot.isEmpty()) {
++                kept = true;
++                jdbc.query("SELECT id, retired_from FROM person__asof WHERE snapshot_id = ?",
++                        (rs) -> {
++                            retiredThen.put(rs.getLong("id"), rs.getDate("retired_from"));
++                        }, snapshot.get(0));
++            }
++        }
++        boolean fromKept = kept;
+         jdbc.query("SELECT name FROM pool WHERE sheet = ?" + added + " ORDER BY position",
+                 (rs) -> {
+                     members.put(rs.getString("name"), new ArrayList<>());
+@@ -127,7 +143,9 @@ public class Pools {
+                 (rs) -> {
+                     List<Ordered> list = members.get(rs.getString("pool"));
+                     if (list != null) {
+-                        Date retired = rs.getDate("retired_from");
++                        long id = rs.getLong("person_id");
++                        Date retired = fromKept && retiredThen.containsKey(id) ? retiredThen.get(id)
++                                : rs.getDate("retired_from");
+                         list.add(new Ordered(rs.getInt("position"), new PoolMember(rs.getLong("person_id"), null,
+                                 rs.getString("name"), rs.getBigDecimal("share").setScale(2).toPlainString(),
+                                 retired != null && (at == null || !retired.after(at)), dateOf(rs, "from_date"),
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Settings.java b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+index 89add36f..d13fd932 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+@@ -140,14 +140,14 @@ public class Settings {
+     public static final String DEFAULT_FISCAL_START_MONTH = "1";
+ 
+     /** The actions whose roles the permission matrix sets, each under the key perm-<action>. */
+-    public static final List<String> PERMISSIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
++    public static final List<String> PERMISSIONS = List.of("open", "settle", "void", "reassign", "close", "reopen", "today");
+ 
+     /** The key of an action's permitted roles (a comma separated list of roles); blank: its standing rule. */
+     public static String perm(String action) {
+         return "perm-" + action;
+     }
+ 
+-    /** The roles that may take the action under the standing rule: reassign and reopen a steward, the rest any. */
++    /** The roles that may take the action under the standing rule: reassign and reopen a steward, the rest (today, changing the sheet's today, too) any but a viewer. */
+     public static String defaultPerm(String action) {
+         return "reassign".equals(action) || "reopen".equals(action) ? "steward" : "clerk,steward";
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/ValidateToday.java b/src/main/java/net/officefloor/hq/app/sheet/ValidateToday.java
+index 650a92f3..7ed34970 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/ValidateToday.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/ValidateToday.java
+@@ -2,16 +2,26 @@ package net.officefloor.hq.app.sheet;
+ 
+ import java.time.LocalDate;
+ import java.time.format.DateTimeParseException;
++import net.officefloor.hq.app.role.Roles;
++import net.officefloor.hq.app.setting.Settings;
+ import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
++/** Reads the requested today, refusing a bad date or a role the permission matrix does not let change it. */
+ public class ValidateToday {
+-    public void validate(@RequestBody TodayRequest request, Out<LocalDate> today) throws InvalidTodayException {
++    public void validate(@PathVariable("sheet") String sheet, @RequestParam("user") String user,
++            @RequestBody TodayRequest request, Settings settings, Roles roles, Out<LocalDate> today)
++            throws InvalidTodayException {
+         String raw = request == null || request.today() == null ? "" : request.today().trim();
+         try {
+             today.set(LocalDate.parse(raw));
+         } catch (DateTimeParseException e) {
+             throw new InvalidTodayException("Not a valid date: " + raw);
+         }
++        if (!settings.permits(sheet, "today", roles.of(sheet, user))) {
++            throw new InvalidTodayException("Your role may not change the sheet's today");
++        }
+     }
+ }
