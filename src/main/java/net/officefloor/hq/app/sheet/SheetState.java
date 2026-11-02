@@ -43,6 +43,12 @@ public record SheetState(List<Person> people, List<Claim> claims, List<Rate> rat
                 rounding == null ? List.of() : rounding);
     }
 
+    /** A person's cap: the one in force on the date of their latest claim that counts (none counting: on the date
+     *  given), or null when there is none then. */
+    public BigDecimal capOf(java.util.Collection<Claim> counted, LocalDate otherwise) {
+        return Settings.capOf(cap == null ? List.of() : cap, counted, otherwise);
+    }
+
     /** The cap in force on the date, or null when there is none. */
     public BigDecimal capOn(LocalDate today) {
         String value = Settings.on(cap, today);

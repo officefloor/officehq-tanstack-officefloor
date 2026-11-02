@@ -109,7 +109,8 @@ public class TakeStatement {
                 claims.setStated(sheet, claim.id(), false, null);
             }
         }
-        BigDecimal dueTotal = na ? null : Settings.capped(total, state.capOn(on));
+        BigDecimal dueTotal = na ? null : Settings.capped(total,
+                state.capOf(past.stream().filter(then::counts).toList(), on));
         statements.add(sheet, person.id(), dueTotal, today, asOf);
         audit.record("STATEMENT sheet=" + sheet + " by=" + user + " name=" + person.name() + " due-total="
                 + (dueTotal == null ? "n/a" : dueTotal.toPlainString()) + " claims=" + bound.size()

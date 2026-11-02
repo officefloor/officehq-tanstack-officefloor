@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { hundredths } from '../rates/rates';
+import { counted, useClaims } from '../claims/claims';
+import type { Person } from '../people/people';
 import { useCapCents } from '../settings/settings';
 
 /** A member of a pool with their share percent (two decimals): a person (memberPool null), retired when the person has
@@ -53,12 +55,17 @@ export function personCutCents(pools: Pool[], personId: number): bigint {
   return cents;
 }
 
-/** Each person's cap in hundredths: the cap covers their due-total plus their cut total, so their due-total is held
+/** Each person's cap in hundredths: the sheet's cap in force on the date of their latest claim that counts (none
+ *  counting: on the sheet's today). The cap covers their due-total plus their cut total, so their due-total is held
  *  to the cap less their cut total, not below 0.00; undefined when there is no cap. */
-export function useCapCentsOf(sheet: string): (person: { id: number }) => bigint | undefined {
-  const cap = useCapCents(sheet);
+export function useCapCentsOf(sheet: string): (person: Person) => bigint | undefined {
+  const capOn = useCapCents(sheet);
   const { data: pools = [] } = usePools(sheet);
+  const { data: claims = [] } = useClaims(sheet);
   return (person) => {
+    const latest = counted(claims.filter((c) => c.person === person.id), [person])
+      .reduce<string | undefined>((max, c) => (max === undefined || c.date > max ? c.date : max), undefined);
+    const cap = capOn(latest);
     if (cap === undefined) return undefined;
     const left = cap - personCutCents(pools, person.id);
     return left > 0n ? left : 0n;

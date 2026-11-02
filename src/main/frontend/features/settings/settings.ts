@@ -35,12 +35,15 @@ import { hundredths } from '../rates/rates';
  *  And the score thresholds of the MID and HIGH bands (whole numbers; '' for none, not dated).
  *  And the most OPEN or PENDING claims a person may have for opening another (a whole number; '' for none, not dated).
  *  And the score log switch (on; '' for off, not dated): a change of the sheet's today writes each person's score.
- *  And, for each dated key (every one that carries a figure), its values as recorded, by from-date. */
+ *  And, for each dated key (every one that carries a figure), its values as recorded, by from-date.
+ *  And the from-date of each policy version (yyyy-MM-dd; '' for none: it counts always), in the order made: the policy
+ *  settings (the rounding mode, the floor, the cap, the terms, the late percent and the clerk limit) are versioned
+ *  together, every change to one of them a new version numbered from 1; the current version is their count. */
 export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string;
   termsA: string; termsB: string; termsC: string; cap: string;
   proofThreshold: string; noteThreshold: string; reviewThreshold: string; graceDays: string; escalateAfter: string; entryDate: string; graceA: string; graceB: string; graceC: string;
   proofThresholdA: string; proofThresholdB: string; proofThresholdC: string; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string; rounding: string; reviewSla: string; pendingSla: string; maxOpen: string; proofKinds: string; defaultGrade: string;
-  clerkLimitA: string; clerkLimitB: string; clerkLimitC: string; scoreMid: string; scoreHigh: string; scoreLog: string; perms: Partial<Record<PermAction, string>>; dated: Partial<Record<SettingKey, DatedValue[]>> };
+  clerkLimitA: string; clerkLimitB: string; clerkLimitC: string; scoreMid: string; scoreHigh: string; scoreLog: string; policyVersions: string[]; perms: Partial<Record<PermAction, string>>; dated: Partial<Record<SettingKey, DatedValue[]>> };
 
 /** A dated setting's value as recorded: in force from its from-date (yyyy-MM-dd). */
 export type DatedValue = { from: string; value: string };
@@ -145,10 +148,34 @@ export function useFiscalStartMonth(sheet: string): number {
   return Number(data?.fiscalStartMonth || '1');
 }
 
-/** The sheet's cap in hundredths: the most a person's due-total is; undefined when there is none. */
-export function useCapCents(sheet: string): bigint | undefined {
+/** The sheet's cap in hundredths on a date (yyyy-MM-dd; none given: the one in force on the sheet's today): the
+ *  value of the latest from-date on or before it; undefined when there is none then (none recorded, or a blank). */
+export type CapCentsOn = (date?: string) => bigint | undefined;
+
+/** The sheet's cap by date: the most a person's due-total is, the one in force on the date of their latest claim
+ *  that counts. */
+export function useCapCents(sheet: string): CapCentsOn {
   const { data } = useSettings(sheet);
-  return data?.cap ? hundredths(data.cap) : undefined;
+  const sorted = [...(data?.dated?.cap ?? [])].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
+  return (date) => {
+    let value = data?.cap ?? '';
+    if (date !== undefined) {
+      value = '';
+      for (const v of sorted) {
+        if (v.from > date) break;
+        value = v.value;
+      }
+    }
+    return value ? hundredths(value) : undefined;
+  };
+}
+
+/** The policy version in force on a date (yyyy-MM-dd): the number of versions whose from-date is on or before it, a
+ *  version with no from-date counting always. */
+export function usePolicyVersionOn(sheet: string): (date: string) => number {
+  const { data } = useSettings(sheet);
+  const versions = data?.policyVersions ?? [];
+  return (date) => versions.filter((from) => from === '' || from <= date).length;
 }
 
 /** The sheet's late percent in hundredths by date: charged on an overdue claim's figure for every full 30 days it is

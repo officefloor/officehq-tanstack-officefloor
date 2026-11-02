@@ -22,6 +22,7 @@ import net.officefloor.hq.app.pool.Pools;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.Rates;
 import net.officefloor.hq.app.setting.Dated;
+import net.officefloor.hq.app.setting.DatedValue;
 import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.hq.app.sheet.SheetClock;
 import org.springframework.stereotype.Service;
@@ -73,8 +74,8 @@ public class Rollup {
         LocalDate today = clock.today(sheet);
         List<Rate> sheetRates = rates.list(sheet);
         Dated floor = settings.floor(sheet);
-        BigDecimal cap = settings.cap(sheet);
-        Map<Long, BigDecimal> cuts = cap == null ? Map.of() : cutTotals(sheet);
+        List<DatedValue> caps = settings.caps(sheet);
+        Map<Long, BigDecimal> cuts = caps.isEmpty() ? Map.of() : cutTotals(sheet);
         Late late = settings.late(sheet, today);
         List<Claim> all = claims.list(sheet);
         Map<Long, Figures> figures = new LinkedHashMap<>();
@@ -139,7 +140,9 @@ public class Rollup {
             // hold a part of a claim shared with them.
             boolean na = !holdsPart && Rate.on(sheetRates, person.grade(), today) == null
                     && mine.stream().noneMatch((c) -> person.figureApartFrom(c, today, sheetRates, floor));
-            // The cap covers the due-total plus the person's cut total.
+            // The cap (the one in force on the date of their latest claim that counts) covers the due-total plus the
+            // person's cut total.
+            BigDecimal cap = Settings.capOf(caps, mine, today);
             due = Settings.capped(due, Settings.capLess(cap, cuts.get(person.id())));
             claimedTotal = claimedTotal.add(claimed);
             overdueFigures.add(overdue);

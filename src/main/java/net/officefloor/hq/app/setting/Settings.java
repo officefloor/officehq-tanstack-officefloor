@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.Late;
 import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.sheet.SheetClock;
@@ -168,6 +169,9 @@ public class Settings {
                 && !DEFAULT_GRADE.equals(key) && !key.startsWith("perm-");
     }
 
+    /** The policy settings, versioned together: every change to one of them is a new policy version. */
+    public static final List<String> POLICY_KEYS = List.of(ROUNDING, FLOOR, CAP, TERMS, LATE_PCT, CLERK_LIMIT);
+
     /** The from-date an undated setting's one value is kept under. */
     private static final Date UNDATED = Date.valueOf(LocalDate.of(1, 1, 1));
 
@@ -219,6 +223,10 @@ public class Settings {
                     Date.valueOf(clock.today(sheet)), value);
         }
         Date date = dated(key) && from != null ? Date.valueOf(from) : UNDATED;
+        if (POLICY_KEYS.contains(key)) {
+            jdbc.update("INSERT INTO policy_version (sheet, setting_key, from_date) VALUES (?, ?, ?)", sheet, key,
+                    date.equals(UNDATED) ? null : date);
+        }
         jdbc.update("MERGE INTO setting (sheet, setting_key, from_date, setting_value) KEY (sheet, setting_key, from_date)"
                 + " VALUES (?, ?, ?, ?)", sheet, key, date, value);
     }
@@ -237,24 +245,40 @@ public class Settings {
         return new Dated(start, values);
     }
 
-    /** The sheet's clerk limit in force on its today, or null when there is none. */
-    public BigDecimal clerkLimit(String sheet) {
-        String limit = on(sheet, CLERK_LIMIT, clock.today(sheet));
+    /** The sheet's clerk limit in force on the date, or null when there is none. */
+    public BigDecimal clerkLimit(String sheet, LocalDate date) {
+        String limit = on(sheet, CLERK_LIMIT, date);
         return limit.isEmpty() ? null : new BigDecimal(limit);
     }
 
     /**
-     * The clerk limit of the grade in force on the sheet's today: its own when it has one then, else the sheet's (a
-     * null grade takes the sheet's); null when there is none.
+     * The clerk limit of the grade in force on the date (a claim's own date): its own when it has one then, else the
+     * sheet's (a null grade takes the sheet's); null when there is none.
      */
-    public BigDecimal clerkLimit(String sheet, String grade) {
-        String own = grade == null ? "" : on(sheet, gradeClerkLimit(grade), clock.today(sheet));
-        return own.isEmpty() ? clerkLimit(sheet) : new BigDecimal(own);
+    public BigDecimal clerkLimit(String sheet, String grade, LocalDate date) {
+        String own = grade == null ? "" : on(sheet, gradeClerkLimit(grade), date);
+        return own.isEmpty() ? clerkLimit(sheet, date) : new BigDecimal(own);
     }
 
-    /** The sheet's cap in force on its today: the most a person's due-total is, or null when there is none. */
-    public BigDecimal cap(String sheet) {
-        String cap = on(sheet, CAP, clock.today(sheet));
+    /** The sheet's cap by date: the most a person's due-total is, the one in force on the date of their latest claim
+     *  that counts (see {@link #capOf}). */
+    public List<DatedValue> caps(String sheet) {
+        return history(sheet, CAP);
+    }
+
+    /**
+     * A person's cap: the one in force on the date of their latest claim that counts (none counting: on the date
+     * given, the sheet's today), or null when there is none then.
+     */
+    public static BigDecimal capOf(List<DatedValue> caps, java.util.Collection<Claim> counted, LocalDate otherwise) {
+        LocalDate latest = null;
+        for (Claim claim : counted) {
+            LocalDate date = LocalDate.parse(claim.date());
+            if (latest == null || date.isAfter(latest)) {
+                latest = date;
+            }
+        }
+        String cap = on(caps, latest == null ? otherwise : latest);
         return cap.isEmpty() ? null : new BigDecimal(cap);
     }
 
@@ -481,6 +505,14 @@ public class Settings {
         return List.of((roles.isEmpty() ? defaultPerm(action) : roles).split(",")).contains(acting);
     }
 
+    /** The from-date of each policy version, in the order made ("" for one with no from-date: it counts always). */
+    public List<String> policyVersions(String sheet) {
+        return jdbc.query("SELECT from_date FROM policy_version WHERE sheet = ? ORDER BY id", (rs, i) -> {
+            Date from = rs.getDate(1);
+            return from == null ? "" : from.toLocalDate().toString();
+        }, sheet);
+    }
+
     /** The settings in force on the sheet's today, with every dated key's recorded values. */
     public SettingsResponse all(String sheet) {
         LocalDate today = clock.today(sheet);
@@ -503,6 +535,7 @@ public class Settings {
                 Integer.toString(fiscalStartMonth(sheet)), get(sheet, ALERT_THRESHOLD), on(sheet, ROUNDING, today),
                 on(sheet, REVIEW_THRESHOLD, today), get(sheet, ESCALATE_AFTER), get(sheet, REVIEW_SLA), get(sheet, PROOF_KINDS),
                 get(sheet, DEFAULT_GRADE), on(sheet, gradeClerkLimit("A"), today), on(sheet, gradeClerkLimit("B"), today),
-                on(sheet, gradeClerkLimit("C"), today), get(sheet, SCORE_MID), get(sheet, SCORE_HIGH), get(sheet, SCORE_LOG), get(sheet, MAX_OPEN), get(sheet, PENDING_SLA));
+                on(sheet, gradeClerkLimit("C"), today), get(sheet, SCORE_MID), get(sheet, SCORE_HIGH), get(sheet, SCORE_LOG), get(sheet, MAX_OPEN), get(sheet, PENDING_SLA),
+                policyVersions(sheet));
     }
 }

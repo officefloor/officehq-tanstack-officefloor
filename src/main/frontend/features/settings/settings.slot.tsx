@@ -19,8 +19,10 @@ import { Fig } from '../locale/Fig';
 // numbering from-date, a claim opened is numbered within its period; blank turns that off. A grade's own terms (whole
 // days) fix the due-by of a claim added for a person of that grade; blank makes the grade take the sheet's terms. Saving sends each setting whose field was changed; with none changed it
 // sends the clerk limit, so saving a blank form clears the limit. A grade's own clerk limit (two decimals, dated; blank
-// means none) in force on the sheet's today takes the place of the sheet's for a claim whose person has that grade. The cap is the most a person's due-total is (two
-// decimals); blank means no cap. A claim whose due is above the proof threshold in force on its date (two decimals;
+// means none) in force on a claim's date takes the place of the sheet's for a claim whose person has that grade. The cap is the most a person's due-total is (two
+// decimals; the one in force on the date of their latest claim that counts); blank means no cap. The policy settings
+// (the rounding mode, the floor, the cap, the terms, the late percent and the clerk limit) are versioned together:
+// every change to one of them is a new policy version, and the current version number shows above the form. A claim whose due is above the proof threshold in force on its date (two decimals;
 // blank means none) needs a proof before it is settled or approved; a grade's own proof threshold (two decimals, dated;
 // blank means none) in force on a claim's date takes the place of the sheet's for a claim whose person has that grade then. A claim whose due is above the note threshold in force on its date (two decimals;
 // blank means none) cannot be opened with an empty note. A claim whose due is above the review threshold in force on its
@@ -178,6 +180,9 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
   return (
     <section>
       <h2>Settings</h2>
+      <p>
+        Policy version <span data-testid="policy-version">{data?.policyVersions?.length ?? 0}</span>
+      </p>
       <form onSubmit={submit}>
         <label>
           Clerk limit{' '}
