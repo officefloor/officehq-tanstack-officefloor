@@ -1,0 +1,161 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 03220119..a86e0357 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -1,7 +1,7 @@
+ import { useEffect, useRef, useState } from 'react';
+ import type { FormEvent } from 'react';
+-import { useMutation, useQueryClient } from '@tanstack/react-query';
+-import { postJson, putJson } from '../../api/http';
++import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
++import { getJson, postJson, putJson } from '../../api/http';
+ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { byUser } from '../session/session';
+ import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
+@@ -224,6 +224,15 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
+   const saveInline = useSubmitOnce(inlineMutation);
+   // A steward rejects a PENDING claim with a reason, typed beside the Reject button.
+   const [reason, setReason] = useState('');
++  // The claim's timeline: the audit lines about it, newest first, read from the file at each press of its button
++  // (so a second press shows the file as it stands then; while a press is being read the old lines are gone).
++  const [timelinePress, setTimelinePress] = useState(0);
++  const timeline = useQuery({
++    queryKey: ['claim-timeline', sheet, claim.id, timelinePress],
++    queryFn: () => getJson<string[]>(`${claimsPath(sheet)}/${claim.id}/timeline`),
++    enabled: timelinePress > 0,
++    gcTime: 0,
++  });
+ 
+   return (
+     <li data-testid={`claim-row-${claim.id}`}>
+@@ -528,6 +537,9 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
+       >
+         Remind
+       </button>{' '}
++      <button type="button" data-testid="claim-timeline" onClick={() => setTimelinePress((n) => n + 1)}>
++        Timeline
++      </button>{' '}
+       <input
+         data-testid="claim-date-new"
+         placeholder="re-date yyyy-mm-dd"
+@@ -756,6 +768,20 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
+           {' '}A {claim.status} claim cannot be reassigned (only a role the permission matrix lets, by default a steward, moves a claim, and only a DRAFT, OPEN or PENDING one, to another person).
+         </span>
+       )}
++      {timeline.isError && (
++        <span data-testid="claim-timeline-error" role="alert">
++          {' '}The timeline could not be read.
++        </span>
++      )}
++      {timeline.isSuccess && !timeline.isFetching && (
++        <ol>
++          {timeline.data.map((line, i) => (
++            <li key={i} data-testid="claim-timeline-line">
++              <code>{line}</code>
++            </li>
++          ))}
++        </ol>
++      )}
+     </li>
+   );
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RespondWithClaimTimeline.java b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaimTimeline.java
+new file mode 100644
+index 00000000..6daa1445
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaimTimeline.java
+@@ -0,0 +1,60 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.ArrayList;
++import java.util.Collections;
++import java.util.HashMap;
++import java.util.List;
++import java.util.Locale;
++import java.util.Map;
++import java.util.regex.Matcher;
++import java.util.regex.Pattern;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/**
++ * Responds with a claim's timeline: the sheet's audit lines about it, newest first, exactly as the file holds them.
++ * A numbered claim's lines are those carrying number=<its number (as it shows)>; a claim with no number has the lines
++ * naming its person (compared as names are), amount and date together that carry no number. It reads the file; it
++ * records nothing.
++ */
++public class RespondWithClaimTimeline {
++
++    /** A key=value field; its value runs to the next " key=" field or the end of the line (names may hold spaces). */
++    private static final Pattern FIELD = Pattern.compile("(?:^| )([^ =]+)=(.*?)(?= [^ =]+=|$)");
++
++    public void respond(@PathVariable("sheet") String sheet, @Val Claim claim, Audit audit, People people,
++            ObjectResponse<List<String>> response) {
++        String number = claim.shownNumber();
++        Person person = people.find(sheet, claim.person());
++        String name = person == null ? null : person.name().trim().toLowerCase(Locale.ROOT);
++        List<String> lines = new ArrayList<>();
++        for (String line : audit.lines(sheet)) {
++            Map<String, String> fields = fields(line);
++            boolean about = number != null
++                    ? number.equals(fields.get("number"))
++                    : !fields.containsKey("number") && name != null
++                            && fields.get("person") != null
++                            && name.equals(fields.get("person").trim().toLowerCase(Locale.ROOT))
++                            && claim.amount().equals(fields.get("amount")) && claim.date().equals(fields.get("date"));
++            if (about) {
++                lines.add(line);
++            }
++        }
++        Collections.reverse(lines);
++        response.send(lines);
++    }
++
++    /** The line's fields by key; a key given twice keeps its first value. */
++    private static Map<String, String> fields(String line) {
++        Map<String, String> fields = new HashMap<>();
++        Matcher m = FIELD.matcher(line);
++        while (m.find()) {
++            fields.putIfAbsent(m.group(1), m.group(2));
++        }
++        return fields;
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheet}/claims/{claim}/timeline.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheet}/claims/{claim}/timeline.GET.yml
+new file mode 100644
+index 00000000..21892abf
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheet}/claims/{claim}/timeline.GET.yml
+@@ -0,0 +1,8 @@
++# A claim's timeline: the sheet's audit lines about it, newest first, exactly as the file holds them.
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ readonly-transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaimTimeline
++  govern: [ readonly-transaction ]
+diff --git a/tmp_e2e/e2e11.log b/tmp_e2e/e2e11.log
+new file mode 100644
+index 00000000..0efe64eb
+--- /dev/null
++++ b/tmp_e2e/e2e11.log
+@@ -0,0 +1,13 @@
++Picked up JAVA_TOOL_OPTIONS: -Djava.io.tmpdir=/home/daniel/ui-work/runs/202610271-to/tmp
++
++Running 4 tests using 1 worker
++
++  ✓  1 [chromium] › acceptance.spec.ts:6:7 › claim timeline › claim timeline (13.2s)
++  ✓  2 [chromium] › acceptance.spec.ts:59:7 › claim timeline › claim timeline scenario 1 (22.3s)
++  ✓  3 [chromium] › acceptance.spec.ts:482:7 › claim timeline › claim timeline scenario 2 (35.2s)
++  ✓  4 [chromium] › acceptance.spec.ts:1035:7 › claim timeline › claim timeline scenario 3 (37.6s)
++
++  Slow test file: [chromium] › acceptance.spec.ts (1.8m)
++  Consider splitting slow test files to speed up parallel execution
++  4 passed (1.9m)
++ 572924
+\ No newline at end of file
