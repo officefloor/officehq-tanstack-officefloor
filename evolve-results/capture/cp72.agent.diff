@@ -1,0 +1,204 @@
+diff --git a/src/main/frontend/features/active/useActive.ts b/src/main/frontend/features/active/useActive.ts
+index f9d5188bb..cb736bb33 100644
+--- a/src/main/frontend/features/active/useActive.ts
++++ b/src/main/frontend/features/active/useActive.ts
+@@ -13,7 +13,7 @@ export function useActive(sheetId: string): Map<number, boolean> {
+   const people = usePeople(sheetId);
+   const claims = useClaims(sheetId);
+   const today = useSheetToday(sheetId).data?.today;
+-  const holds = holdsById(people.data);
++  const holds = holdsById(people.data, today);
+   const active = new Map<number, boolean>();
+   if (today === undefined) return active;
+   const from = windowStart(today);
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 8ae0a4cad..f48dcaffd 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -21,7 +21,7 @@ function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: numbe
+   const today = useSheetToday(sheetId).data?.today;
+   return (
+     <td data-testid="person-claimed">
+-      {claimed((claims.data ?? []).filter((c) => c.personId === personId), holdsById(people.data), today)}
++      {claimed((claims.data ?? []).filter((c) => c.personId === personId), holdsById(people.data, today), today)}
+     </td>
+   );
+ }
+@@ -550,7 +550,7 @@ function ClaimedTotal({ sheetId }: { sheetId: string }) {
+   const today = useSheetToday(sheetId).data?.today;
+   return (
+     <p>
+-      Claimed total: <strong data-testid="rollup-claimed-total">{claimed(claims.data ?? [], holdsById(people.data), today)}</strong>
++      Claimed total: <strong data-testid="rollup-claimed-total">{claimed(claims.data ?? [], holdsById(people.data, today), today)}</strong>
+     </p>
+   );
+ }
+diff --git a/src/main/frontend/features/overdue/useOverdue.ts b/src/main/frontend/features/overdue/useOverdue.ts
+index b298fede3..3e53eaf47 100644
+--- a/src/main/frontend/features/overdue/useOverdue.ts
++++ b/src/main/frontend/features/overdue/useOverdue.ts
+@@ -64,7 +64,7 @@ export function useOverdue(sheetId: string): Map<number, { count: number; total:
+   const rates = useRates(sheetId);
+   const settings = useSettings(sheetId).data;
+   const today = useSheetToday(sheetId).data?.today;
+-  const holds = holdsById(people.data);
++  const holds = holdsById(people.data, today);
+   const figures = new Map<number, { count: number; total: string }>();
+   if (settings === undefined || today === undefined) return figures;
+   for (const p of people.data ?? []) {
+diff --git a/src/main/frontend/features/people/usePeople.ts b/src/main/frontend/features/people/usePeople.ts
+index f41a74a25..fe31d72a9 100644
+--- a/src/main/frontend/features/people/usePeople.ts
++++ b/src/main/frontend/features/people/usePeople.ts
+@@ -90,9 +90,16 @@ export function useWatched(sheetId: string) {
+   });
+ }
+ 
+-/** These people's holds, by person id. */
+-export function holdsById(people: Person[] | undefined): Map<number, Hold[]> {
+-  return new Map((people ?? []).map((p) => [p.id, p.holds ?? []]));
++/** These people's holds, by person id, as they act on live totals on the sheet's today: a person whose
++ *  retirement date is reached (the sheet's today on or after it) is held over every date as well. */
++export function holdsById(people: Person[] | undefined, today: string | undefined): Map<number, Hold[]> {
++  return new Map((people ?? []).map((p) => [p.id, retiredOn(p, today)
++    ? [...(p.holds ?? []), { from: null, to: null }] : p.holds ?? []]));
++}
++
++/** Whether a person's retirement date is reached on the sheet's today (unknown until it is loaded). */
++export function retiredOn(person: Person, today: string | undefined): boolean {
++  return person.retiredFrom !== null && today !== undefined && person.retiredFrom <= today;
+ }
+ 
+ /** The sheet's people, in the order they were added. */
+diff --git a/src/main/frontend/features/periods/usePeriodDueTotals.ts b/src/main/frontend/features/periods/usePeriodDueTotals.ts
+index d8a6f997e..9c517e96a 100644
+--- a/src/main/frontend/features/periods/usePeriodDueTotals.ts
++++ b/src/main/frontend/features/periods/usePeriodDueTotals.ts
+@@ -17,7 +17,7 @@ export function usePersonPeriodDueTotals(sheetId: string): Map<number, Map<strin
+   const rates = useRates(sheetId);
+   const settings = useSettings(sheetId).data;
+   const today = useSheetToday(sheetId).data?.today;
+-  const holds = holdsById(people.data);
++  const holds = holdsById(people.data, today);
+   const totals = new Map<number, Map<string, string>>();
+   for (const person of people.data ?? []) {
+     const own = (claims.data ?? []).filter((c) => c.personId === person.id);
+diff --git a/src/main/frontend/features/rates/useDueTotals.ts b/src/main/frontend/features/rates/useDueTotals.ts
+index 99d49b861..7179597da 100644
+--- a/src/main/frontend/features/rates/useDueTotals.ts
++++ b/src/main/frontend/features/rates/useDueTotals.ts
+@@ -32,7 +32,7 @@ function useDueFigures(sheetId: string): Map<number, { total: string; excess: st
+   const rates = useRates(sheetId);
+   const today = useSheetToday(sheetId);
+   const settings = useSettings(sheetId).data;
+-  const holds = holdsById(people.data);
++  const holds = holdsById(people.data, today.data?.today);
+   const cap = settingOn(settings, 'cap', today.data?.today);
+   const totals = new Map<number, { total: string; excess: string }>();
+   for (const p of people.data ?? []) {
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java b/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java
+index ab472094f..583fe8e93 100644
+--- a/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java
+@@ -48,12 +48,15 @@ public class PeriodCloser {
+     public Period close(String sheetId, String by, Period found, boolean auto, boolean soft) {
+         LocalDate from = LocalDate.parse(found.from());
+         LocalDate to = LocalDate.parse(found.to());
+-        Map<Long, List<Hold>> holds = people.holds(sheetId);
++        String today = periods.today(sheetId);
++        Map<Long, List<Hold>> holds = new java.util.HashMap<>();
+         BigDecimal total = BigDecimal.ZERO.setScale(2);
+         Map<Long, BigDecimal> personTotals = new LinkedHashMap<>();
+-        for (Person p : people.list(sheetId)) personTotals.put(p.id(), BigDecimal.ZERO.setScale(2));
++        for (Person p : people.list(sheetId)) {
++            personTotals.put(p.id(), BigDecimal.ZERO.setScale(2));
++            holds.put(p.id(), p.liveHolds(today));
++        }
+         Map<Long, String> statusesThen = claims.statusesOn(sheetId, to);
+-        String today = periods.today(sheetId);
+         for (Claim c : claims.list(sheetId)) {
+             LocalDate on = LocalDate.parse(c.date());
+             if (on.isBefore(from) || on.isAfter(to)
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 897d234b2..7cd89de8d 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -25,4 +25,13 @@ public record Person(long id, String name, String grade, long version, long stat
+     public boolean retired() {
+         return retiredFrom != null;
+     }
++
++    /** Their holds as they act on live totals on the sheet's today: once their retirement date is reached
++     *  (the sheet's today on or after it) they are held over every date as well. */
++    public List<Hold> liveHolds(String today) {
++        if (retiredFrom == null || today == null || retiredFrom.compareTo(today) > 0) return holds;
++        List<Hold> all = new java.util.ArrayList<>(holds);
++        all.add(new Hold(null, null));
++        return all;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RetirePerson.java b/src/main/java/net/officefloor/hq/app/person/RetirePerson.java
+index 49460173b..32ef1008c 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RetirePerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/RetirePerson.java
+@@ -4,18 +4,20 @@ import java.time.LocalDate;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.server.http.ServerHttpConnection;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+-/** Retire a person from a date (blank: the sheet's today). They count as retired at once; their claims
+- *  keep counting in every total, and no claim of theirs may be dated after that date. */
++/** Retire a person from a date (blank: the sheet's today). They count as retired at once, and no claim of
++ *  theirs may be dated after that date; from the day the date is reached (the sheet's today on or after it)
++ *  their open (OPEN or PENDING) claims not bound by a statement count in no live total, as a hold's would. */
+ public class RetirePerson {
+     public void retire(@PathVariable("sheetId") String sheetId, @PathVariable("personId") String personId,
+             @Val RetireInput input, ServerHttpConnection connection, PersonRepository repository,
+-            SheetRepository sheets, Audit audit, Out<Person> person) throws BadRequestException {
++            SheetRepository sheets, Audit audit, Rollup rollup, Out<Person> person) throws BadRequestException {
+         String by = CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
+         long pid;
+@@ -29,8 +31,10 @@ public class RetirePerson {
+             throw new BadRequestException("no such person");
+         }
+         LocalDate from = input.date() != null ? input.date() : sheets.today(id);
++        Rollup.Snapshot before = rollup.take(id);
+         repository.retire(id, pid, from);
+         audit.record("PERSON_RETIRED sheet=" + id + " by=" + by + " name=" + found.name() + " from=" + from);
++        rollup.record(id, by, before);
+         person.set(repository.find(id, pid));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index ee21793ee..91461d3c9 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -72,7 +72,7 @@ public class Rollup {
+                 BigDecimal overdue = BigDecimal.ZERO.setScale(2);
+                 boolean fixed = false;
+                 for (Claim c : all) {
+-                    if (c.personId() != p.id() || !c.counts(p.holds())) continue;
++                    if (c.personId() != p.id() || !c.counts(p.liveHolds(today == null ? null : today.toString()))) continue;
+                     claimed = claimed.add(new BigDecimal(c.amount()));
+                     fixed |= c.fixed();
+                     BigDecimal now = claims.dueNow(sheetId, c);
+diff --git a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+index e85837169..409462e4a 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+@@ -46,7 +46,7 @@ public class TakeStatement {
+         boolean fixed = false;
+         int count = 0;
+         for (Claim c : claims.ofPerson(id, pid)) {
+-            if (!c.counts(found.holds())) {
++            if (!c.counts(found.liveHolds(today == null ? null : today.toString()))) {
+                 claims.bind(id, c.id(), false, null, false);
+                 continue;
+             }
