@@ -25,8 +25,8 @@ import net.officefloor.hq.app.setting.Dated;
  * batch that last settled it (null when settled one at a time, or never), and its lines, in the order added, and
  * when it was added (the claim sequence's value; null when kept from before it was recorded), which decides the
  * forward-only rates it sees, and whether a steward waived its late charge (it then bears none), and how many of its
- * proofs are photos (the rest are receipts), and whether it is held (toggled while OPEN or PENDING): while held and
- * not bound by a statement it counts in no due figure (it stays in claimed).
+ * proofs are photos (the rest are receipts), and whether it is held (toggled while OPEN or PENDING): it still counts in
+ * every total (a hold takes only a person's cut in the pools).
  */
 public record Claim(long id, long person, String amount, String date, String note, ClaimStatus status,
         Integer number, String settledDue, String openedBy, boolean stated, String statedDue, String corrects,

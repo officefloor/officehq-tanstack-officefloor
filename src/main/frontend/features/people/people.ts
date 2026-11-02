@@ -80,8 +80,8 @@ export const heldOn = (p: Person, date: string) =>
 export const isRetired = (p: Person) => p.retiredFrom !== null;
 
 /** Whether a claim of the person's dated on the day (yyyy-MM-dd), open and not bound by a statement, is kept out of
- *  every live total: it is dated within one of their holds, or their retirement date is reached. */
-export const setAsideOn = (p: Person, date: string) => p.retiredNow || heldOn(p, date);
+ *  every live total: their retirement date is reached (a hold takes only their cut in the pools). */
+export const setAsideOn = (p: Person, _date: string) => p.retiredNow;
 
 export const peopleKey = (sheet: string) => ['people', sheet] as const;
 
