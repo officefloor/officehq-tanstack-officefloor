@@ -1,0 +1,106 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AddClaim.java b/src/main/java/net/officefloor/hq/app/claim/AddClaim.java
+index f0651138e..069757580 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AddClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AddClaim.java
+@@ -27,8 +27,8 @@ public class AddClaim {
+         }
+         LocalDate date = input.date() != null ? input.date() : sheets.today(id);
+         Claim added = repository.add(id, pid, input.amount(), date, input.note());
+-        audit.record("claim-add sheet=" + id + " by=" + by + " claim=" + added.id() + " person=" + pid
+-                + " amount=" + added.amount() + " date=" + added.date() + " note=" + added.note());
++        audit.record("CLAIM_ADDED sheet=" + id + " by=" + by + " person=" + repository.personName(id, pid)
++                + " amount=" + added.amount() + " date=" + added.date());
+         claim.set(added);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 39b2c50bf..b531fecf9 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -34,6 +34,12 @@ public class ClaimRepository {
+                 sheetId);
+     }
+ 
++    /** The name of a person on the sheet. */
++    public String personName(String sheetId, long personId) {
++        return jdbc.queryForObject("SELECT name FROM person WHERE sheet_id = ? AND id = ?",
++                String.class, sheetId, personId);
++    }
++
+     /** The person (on the sheet) a claim belongs to; null when the sheet has no such claim. */
+     public Long personOf(String sheetId, long claimId) {
+         List<Long> found = jdbc.queryForList("SELECT person_id FROM claim WHERE sheet_id = ? AND id = ?",
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java b/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
+index 997c78f56..0567b038c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
+@@ -29,8 +29,8 @@ public class SaveClaim {
+         LocalDate date = input.date() != null ? input.date() : sheets.today(id);
+         repository.update(id, cid, input.amount(), date, input.note());
+         Claim saved = new Claim(cid, pid, ClaimRepository.money(input.amount()), date.toString(), input.note());
+-        audit.record("claim-edit sheet=" + id + " by=" + by + " claim=" + cid + " person=" + pid
+-                + " amount=" + saved.amount() + " date=" + saved.date() + " note=" + saved.note());
++        audit.record("CLAIM_EDITED sheet=" + id + " by=" + by + " person=" + repository.personName(id, pid)
++                + " amount=" + saved.amount() + " date=" + saved.date());
+         claim.set(saved);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/AddPerson.java b/src/main/java/net/officefloor/hq/app/person/AddPerson.java
+index bf0472dfd..37fc269c0 100644
+--- a/src/main/java/net/officefloor/hq/app/person/AddPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/AddPerson.java
+@@ -27,8 +27,8 @@ public class AddPerson {
+         } catch (DuplicateKeyException e) {
+             throw new BadRequestException("name is already in use");
+         }
+-        audit.record("person-add sheet=" + id + " by=" + by + " person=" + added.id()
+-                + " grade=" + added.grade() + " name=" + added.name());
++        audit.record("PERSON_ADDED sheet=" + id + " by=" + by + " name=" + added.name()
++                + " grade=" + added.grade());
+         person.set(added);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/SavePerson.java b/src/main/java/net/officefloor/hq/app/person/SavePerson.java
+index 4fbf8e3c4..da5116568 100644
+--- a/src/main/java/net/officefloor/hq/app/person/SavePerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/SavePerson.java
+@@ -34,8 +34,8 @@ public class SavePerson {
+         if (!updated) {
+             throw new BadRequestException("no such person");
+         }
+-        audit.record("person-edit sheet=" + id + " by=" + by + " person=" + pid
+-                + " grade=" + saved.grade() + " name=" + saved.name());
++        audit.record("PERSON_EDITED sheet=" + id + " by=" + by + " name=" + saved.name()
++                + " grade=" + saved.grade());
+         person.set(saved);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SaveSheetToday.java b/src/main/java/net/officefloor/hq/app/sheet/SaveSheetToday.java
+index 0c644b1e9..15eb1cab0 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SaveSheetToday.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SaveSheetToday.java
+@@ -1,7 +1,6 @@
+ package net.officefloor.hq.app.sheet;
+ 
+ import java.time.LocalDate;
+-import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.CurrentUser;
+ import net.officefloor.plugin.variable.Out;
+@@ -11,14 +10,13 @@ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ public class SaveSheetToday {
+     public void save(@PathVariable("sheetId") String sheetId, @Val LocalDate today,
+-            ServerHttpConnection connection, SheetRepository repository, Audit audit, Out<Sheet> sheet)
++            ServerHttpConnection connection, SheetRepository repository, Out<Sheet> sheet)
+             throws BadRequestException {
+-        String by = CurrentUser.require(connection);
++        CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
+         if (!repository.setToday(id, today)) {
+             throw new BadRequestException("no such sheet");
+         }
+-        audit.record("sheet-today sheet=" + id + " by=" + by + " date=" + today);
+         sheet.set(new Sheet(id, today.toString()));
+     }
+ }
