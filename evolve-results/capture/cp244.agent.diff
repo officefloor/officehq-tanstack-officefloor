@@ -1,0 +1,213 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 1e0f7e2e..ded9fc70 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -4,7 +4,7 @@ import { gradeOn, setAsideOn, usePeople } from '../people/people';
+ import type { Person } from '../people/people';
+ import { dueCents, hundredths, claimRateOf, rateOf, twoDecimals, useRates, type Rate } from '../rates/rates';
+ import { useSheet, useSheetToday } from '../sheet/sheet';
+-import { useCapCentsOf } from '../pools/pools';
++import { personCutCents, useCapCentsOf, usePools } from '../pools/pools';
+ import { useFloorCents, useGraceDays, useLatePctCents, usePolicyDate, useRoundingMode, type DatedCents, type RoundingModeOn } from '../settings/settings';
+ 
+ /** Where a claim is in its life: DRAFT -> OPEN -> SETTLED, or DRAFT/OPEN/PENDING -> VOID. A clerk's settle of a
+@@ -544,15 +544,18 @@ export function trimmedSum(figures: bigint[]): bigint {
+ /** The sheet's totals: its claimed-total (everyone's counted claims added up,
+  *  corrections left out), its due-total (everyone's due-total
+  *  added up, skipping the people whose due-total is n/a, trimmed — see trimmedSum), and how many of the counted claims
+- *  are overdue, with their total (each person's overdue-total, trimmed), and its settled-total and open-total. */
++ *  are overdue, with their total (each person's overdue-total, trimmed), and its settled-total, open-total and cut
++ *  total (each person's, trimmed). */
+ export function useSheetTotals(sheet: string): {
+   claimed: string;
+   due: bigint;
+   overdue: { count: number; cents: bigint };
+-  /** Each person's figures before trimming: the due-totals that are not n/a, and everyone's overdue-total. */
+-  figures: { due: bigint[]; overdue: bigint[] };
++  /** Each person's figures before trimming: the due-totals that are not n/a, and everyone's overdue-total,
++   *  settled-total, open-total and cut total. */
++  figures: { due: bigint[]; overdue: bigint[]; settled: bigint[]; open: bigint[]; cut: bigint[] };
+   settled: bigint;
+   open: bigint;
++  cut: bigint;
+   aged: { upTo30: bigint; upTo60: bigint; over60: bigint };
+ } {
+   const { data: all = [] } = useClaims(sheet);
+@@ -562,21 +565,26 @@ export function useSheetTotals(sheet: string): {
+   const floor = useFloorCents(sheet);
+   const late = useLate(sheet);
+   const capOf = useCapCentsOf(sheet);
++  const { data: pools = [] } = usePools(sheet);
+   const dues = people
+     .map((p) => personDueCents(all, rates, p, today, floor, late, capOf(p), people))
+     .filter((cents): cents is bigint => cents !== undefined);
+   const due = trimmedSum(dues);
+   const overdue = overdueCents(all, people, rates, late, floor);
+   const perPerson = people.map((p) => overdueCents(all, [p], rates, late, floor).cents);
+-  // The settled-total and open-total: everyone's added up, not trimmed.
++  // The settled-total, open-total and cut total: everyone's, trimmed.
+   const split = people.map((p) => splitDueCents(all, rates, p, floor, late, people));
++  const settled = split.map((x) => x.settled);
++  const open = split.map((x) => x.open);
++  const cut = people.map((p) => personCutCents(pools, p.id));
+   return {
+     claimed: claimed(claimedCounted(all, people)),
+     due,
+     overdue: { count: overdue.count, cents: trimmedSum(perPerson) },
+-    figures: { due: dues, overdue: perPerson },
+-    settled: split.reduce((s, x) => s + x.settled, 0n),
+-    open: split.reduce((s, x) => s + x.open, 0n),
++    figures: { due: dues, overdue: perPerson, settled, open, cut },
++    settled: trimmedSum(settled),
++    open: trimmedSum(open),
++    cut: trimmedSum(cut),
+     // The age buckets: everyone's added up, not trimmed.
+     aged: people
+       .map((p) => agedCents(all, p, rates, late, floor))
+diff --git a/src/main/frontend/features/claims/rollup.slot.tsx b/src/main/frontend/features/claims/rollup.slot.tsx
+index 5d4edde5..03d2f336 100644
+--- a/src/main/frontend/features/claims/rollup.slot.tsx
++++ b/src/main/frontend/features/claims/rollup.slot.tsx
+@@ -3,7 +3,7 @@ import { twoDecimals } from '../rates/rates';
+ import { useMonthDueTotals, useSheetTotals, useTagDueTotals } from './claims';
+ import { Fig } from '../locale/Fig';
+ 
+-// The sheet's claimed-total, due-total, overdue count and total, settled-total and open-total, and age buckets (see useSheetTotals),
++// The sheet's claimed-total, due-total, overdue count and total, settled-total and open-total (trimmed), and age buckets (see useSheetTotals),
+ // the due-total of each tag ever used on the sheet or carried by a person on it (see useTagDueTotals), and the due-total of each month any claim
+ // is dated in (see useMonthDueTotals).
+ function ClaimedTotal({ sheet }: { sheet: string; user: string }) {
+diff --git a/src/main/frontend/features/consolidated/consolidated.slot.tsx b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+index 2030480c..70a1a1ec 100644
+--- a/src/main/frontend/features/consolidated/consolidated.slot.tsx
++++ b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+@@ -17,6 +17,10 @@ type Figures = {
+   /** Each person's due-total that is not n/a, and everyone's overdue-total, untrimmed. */
+   due: bigint[];
+   overdue: bigint[];
++  /** Everyone's settled-total, open-total and cut total, untrimmed. */
++  settled: bigint[];
++  open: bigint[];
++  cut: bigint[];
+   /** The sheet's grades, in order, and per grade the due-totals of the people on it. */
+   codes: Grade[];
+   grades: Record<Grade, bigint>;
+@@ -56,12 +60,25 @@ function SheetFigures({ sheet, report }: { sheet: string; report: (sheet: string
+     names,
+     figures.due.map(String),
+     figures.overdue.map(String),
++    figures.settled.map(String),
++    figures.open.map(String),
++    figures.cut.map(String),
+     codes,
+     codes.map((g) => grades[g].toString()),
+     CLAIM_STATUSES.map((s) => statuses[s]),
+   ]);
+   useEffect(
+-    () => report(sheet, { people: names, due: figures.due, overdue: figures.overdue, codes, grades, statuses }),
++    () => report(sheet, {
++        people: names,
++        due: figures.due,
++        overdue: figures.overdue,
++        settled: figures.settled,
++        open: figures.open,
++        cut: figures.cut,
++        codes,
++        grades,
++        statuses,
++      }),
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+     [sheet, report, key],
+   );
+@@ -70,7 +87,7 @@ function SheetFigures({ sheet, report }: { sheet: string; report: (sheet: string
+ 
+ // The consolidated figures over the sheet and all its descendants (see useFamily): the people, each counted once across
+ // the tree (people whose names or aliases match, as names are compared, are one person); the due-total and the
+-// overdue-total, every person's figure over the whole tree added up and trimmed once (see trimmedSum); and the
++// overdue-total, the settled-total, the open-total and the cut total, every person's figure over the whole tree added up and trimmed once (see trimmedSum); and the
+ // per-grade due-totals and the per-status claim counts of each sheet, added up. A sheet with no children shows its own. While the screen shows the sheet as of a
+ // date, every sheet of the tree is read as it stood at the end of that date, with the date for its today.
+ // How many distinct people there are among them, each given by their names: those sharing a name, directly or through
+@@ -100,6 +117,9 @@ function Consolidated({ sheet }: { sheet: string; user: string }) {
+   const people = distinctPeople(shown.flatMap((f) => f.people));
+   const due = trimmedSum(shown.flatMap((f) => f.due));
+   const overdue = trimmedSum(shown.flatMap((f) => f.overdue));
++  const settled = trimmedSum(shown.flatMap((f) => f.settled));
++  const open = trimmedSum(shown.flatMap((f) => f.open));
++  const cut = trimmedSum(shown.flatMap((f) => f.cut));
+   // This sheet's grades, then any other grade of the tree, each once.
+   const own = useGradeCodes(sheet);
+   const codes = [...new Set([...own, ...shown.flatMap((f) => f.codes)])];
+@@ -124,6 +144,10 @@ function Consolidated({ sheet }: { sheet: string; user: string }) {
+           , {s} claims <strong data-testid={`consolidated-status-${s}-count`}>{statusClaims(s)}</strong>
+         </span>
+       ))}
++      , settled total{' '}
++      <strong data-testid="consolidated-settled-total"><Fig>{twoDecimals(settled)}</Fig></strong>, open total{' '}
++      <strong data-testid="consolidated-open-total"><Fig>{twoDecimals(open)}</Fig></strong>, cut total{' '}
++      <strong data-testid="consolidated-cut-total"><Fig>{twoDecimals(cut)}</Fig></strong>
+     </p>
+   );
+ }
+diff --git a/src/main/frontend/features/pools/cut-total.slot.tsx b/src/main/frontend/features/pools/cut-total.slot.tsx
+index 7af82904..e98617ab 100644
+--- a/src/main/frontend/features/pools/cut-total.slot.tsx
++++ b/src/main/frontend/features/pools/cut-total.slot.tsx
+@@ -1,21 +1,11 @@
+ import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
+ import { SheetPanels } from '../../slots/defs/sheetPanels';
+ import type { Person } from '../people/people';
+-import { hundredths, twoDecimals } from '../rates/rates';
+-import { personCutCents, usePools, type Pool } from './pools';
++import { twoDecimals } from '../rates/rates';
++import { personCutCents, usePools } from './pools';
++import { useSheetTotals } from '../claims/claims';
+ import { Fig } from '../locale/Fig';
+ 
+-/** The sheet's cut total in hundredths: every person's cut total added up. */
+-function sheetCutCents(pools: Pool[]): bigint {
+-  let cents = 0n;
+-  for (const pool of pools) {
+-    for (const m of pool.members) {
+-      if (m.memberPool === null && m.cut !== '') cents += hundredths(m.cut);
+-    }
+-  }
+-  return cents;
+-}
+-
+ function CutTotalHeader() {
+   return <th>Cut total</th>;
+ }
+@@ -25,11 +15,12 @@ function PersonCutTotal({ sheet, person }: { sheet: string; user: string; person
+   return <td data-testid="person-cut-total"><Fig>{twoDecimals(personCutCents(pools, person.id))}</Fig></td>;
+ }
+ 
++// The sheet's cut total: every person's cut total, trimmed (see useSheetTotals).
+ function SheetCutTotal({ sheet }: { sheet: string; user: string }) {
+-  const { data: pools = [] } = usePools(sheet);
++  const { cut } = useSheetTotals(sheet);
+   return (
+     <p>
+-      Cut total: <strong data-testid="rollup-cut-total"><Fig>{twoDecimals(sheetCutCents(pools))}</Fig></strong>
++      Cut total: <strong data-testid="rollup-cut-total"><Fig>{twoDecimals(cut)}</Fig></strong>
+     </p>
+   );
+ }
+diff --git a/tmp_e2e/run.log b/tmp_e2e/run.log
+deleted file mode 100644
+index 2bbad7f1..00000000
+--- a/tmp_e2e/run.log
++++ /dev/null
+@@ -1,12 +0,0 @@
+-Picked up JAVA_TOOL_OPTIONS: -Djava.io.tmpdir=/home/daniel/ui-work/runs/202610271-to/tmp
+-
+-Running 4 tests using 1 worker
+-
+-  ✓  1 [chromium] › acceptance.spec.ts:6:7 › person timeline › person timeline (16.0s)
+-  ✓  2 [chromium] › acceptance.spec.ts:47:7 › person timeline › person timeline scenario 1 (33.8s)
+-  ✓  3 [chromium] › acceptance.spec.ts:534:7 › person timeline › person timeline scenario 2 (51.6s)
+-  ✓  4 [chromium] › acceptance.spec.ts:1322:7 › person timeline › person timeline scenario 3 (31.4s)
+-
+-  Slow test file: [chromium] › acceptance.spec.ts (2.2m)
+-  Consider splitting slow test files to speed up parallel execution
+-  4 passed (2.2m)
