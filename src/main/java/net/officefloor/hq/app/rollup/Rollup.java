@@ -10,6 +10,7 @@ import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
+import net.officefloor.hq.app.settings.SettingsRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import org.springframework.stereotype.Service;
 
@@ -34,9 +35,12 @@ public class Rollup {
     private final PersonRepository people;
     private final ClaimRepository claims;
     private final SheetRepository sheets;
+    private final SettingsRepository settings;
     private final Audit audit;
 
-    public Rollup(PersonRepository people, ClaimRepository claims, SheetRepository sheets, Audit audit) {
+    public Rollup(PersonRepository people, ClaimRepository claims, SheetRepository sheets, SettingsRepository settings,
+            Audit audit) {
+        this.settings = settings;
         this.people = people;
         this.claims = claims;
         this.sheets = sheets;
@@ -45,7 +49,7 @@ public class Rollup {
 
     /** The sheet's figures now. A person's due-total is the sum of their counting claims' dues now (late charges included),
      *  skipping those with none; 'n/a' when no rate for the grade they have on the sheet's today is in force
-     *  then and no counting claim keeps a fixed figure or has a due (at the grade it was claimed under). The sheet's due-total skips 'n/a'. */
+     *  then and no counting claim keeps a fixed figure or has a due (at the grade it was claimed under). A due-total is at most the sheet's cap (an 'n/a' is not capped). The sheet's due-total skips 'n/a'. */
     public Snapshot take(String sheetId) {
         List<Person> everyone = people.list(sheetId);
         Map<Long, Figures> figures = new LinkedHashMap<>();
@@ -54,6 +58,7 @@ public class Rollup {
         if (!everyone.isEmpty()) {
             LocalDate today = sheets.today(sheetId);
             List<Claim> all = claims.list(sheetId);
+            BigDecimal cap = settings.cap(sheetId);
             for (Person p : everyone) {
                 BigDecimal claimed = BigDecimal.ZERO.setScale(2);
                 BigDecimal due = BigDecimal.ZERO.setScale(2);
@@ -67,6 +72,7 @@ public class Rollup {
                     fixed |= now != null;
                 }
                 boolean shown = fixed || claims.rated(sheetId, p.id(), today);
+                due = SettingsRepository.capped(due, cap);
                 figures.put(p.id(), new Figures(p.name(), claimed.toPlainString(),
                         shown ? due.toPlainString() : "n/a"));
                 claimedTotal = claimedTotal.add(claimed);

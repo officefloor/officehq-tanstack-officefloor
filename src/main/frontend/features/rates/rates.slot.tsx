@@ -6,7 +6,7 @@ import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { GRADES } from '../people/usePeople';
 import { useSheetToday } from '../today/useSheetToday';
-import { useDueTotals } from './useDueTotals';
+import { useDueTotals, useExcess } from './useDueTotals';
 import { rateFor, ratesKey, sumDues, useRates, type Rate } from './useRates';
 
 /** The sheet's rates for each grade: a form that sets one from an optional from-date (replacing the
@@ -144,6 +144,12 @@ function PersonDueTotal({ sheetId, personId }: { sheetId: string; personId: numb
   return <td data-testid="person-due-total">{totals.get(personId) ?? ''}</td>;
 }
 
+/** A person's excess: how far the sum of their figures is above the sheet's cap. */
+function PersonExcess({ sheetId, personId }: { sheetId: string; personId: number }) {
+  const excess = useExcess(sheetId);
+  return <td data-testid="person-excess">{excess.get(personId) ?? ''}</td>;
+}
+
 /** The sheet's due-total: everyone's due-total added up, skipping 'n/a'. */
 function DueTotal({ sheetId }: { sheetId: string }) {
   const totals = useDueTotals(sheetId);
@@ -158,5 +164,7 @@ export const contributions = [
   SheetBody.fill({ order: 5, Component: ({ sheetId }) => <Rates sheetId={sheetId} /> }),
   PersonColumnHead.fill({ order: 20, Component: () => <th>Due</th> }),
   PersonCells.fill({ order: 20, Component: PersonDueTotal }),
+  PersonColumnHead.fill({ order: 21, Component: () => <th>Excess</th> }),
+  PersonCells.fill({ order: 21, Component: PersonExcess }),
   SheetBody.fill({ order: 30, Component: ({ sheetId }) => <DueTotal sheetId={sheetId} /> }),
 ];

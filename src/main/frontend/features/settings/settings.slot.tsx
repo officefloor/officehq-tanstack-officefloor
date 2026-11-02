@@ -12,7 +12,7 @@ import { settingsKey, useSettings, type Settings } from './useSettings';
  *  up, one on or after it half to even; blank is the sheet's today), its period numbering from-date
  *  (while set and the sheet's today is on or after it, a claim opened is numbered within its period,
  *  <period>-<n>, or X-<n> in no period; blank is off), each grade's own terms (blank is the sheet's
- *  terms), and the role (clerk or steward)
+ *  terms), its cap (the most a person's due-total can be; blank is none), and the role (clerk or steward)
  *  assigned to each user name. Saving saves each setting whose field was entered (focused or typed
  *  in, even when left blank); the others stay as they are. */
 /** The grades a person can have, each of which can have its own terms. */
@@ -28,12 +28,13 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
   const [latePct, setLatePct] = useState<string | null>(null);
   const [policyDate, setPolicyDate] = useState<string | null>(null);
   const [numberingFrom, setNumberingFrom] = useState<string | null>(null);
+  const [cap, setCap] = useState<string | null>(null);
   const [user, setUser] = useState('');
   const [role, setRole] = useState('');
 
   const saveOnce = useSingleFlight();
   const save = useMutation({
-    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string> }) =>
+    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null }) =>
       postJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, f),
     onSuccess: (saved) => {
       setLimit(null);
@@ -43,6 +44,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
       setLatePct(null);
       setPolicyDate(null);
       setNumberingFrom(null);
+      setCap(null);
       queryClient.setQueryData(settingsKey(sheetId), saved);
     },
   });
@@ -66,7 +68,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           e.preventDefault();
           saveOnce(() => {
             save.reset();
-            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms });
+            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap });
           });
         }}
       >
@@ -163,6 +165,19 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
             }}
           />
         </label>{' '}
+        <label>
+          Cap{' '}
+          <input
+            data-testid="setting-cap"
+            inputMode="decimal"
+            value={cap ?? ''}
+            onFocus={() => setCap((v) => v ?? '')}
+            onChange={(e) => {
+              setCap(e.target.value);
+              save.reset();
+            }}
+          />
+        </label>{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>{' '}
@@ -177,7 +192,8 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
         late % <strong data-testid="setting-late-pct-current">{settings.data?.latePct ?? ''}</strong>,
         policy date <strong data-testid="setting-policy-date-current">{settings.data?.policyDate ?? ''}</strong>,
         period numbering from{' '}
-        <strong data-testid="setting-period-numbering-from-current">{settings.data?.periodNumberingFrom ?? ''}</strong>
+        <strong data-testid="setting-period-numbering-from-current">{settings.data?.periodNumberingFrom ?? ''}</strong>,
+        cap <strong data-testid="setting-cap-current">{settings.data?.cap ?? ''}</strong>
         {save.isError && <p data-testid="settings-error">{save.error.message}</p>}
       </form>
       <form

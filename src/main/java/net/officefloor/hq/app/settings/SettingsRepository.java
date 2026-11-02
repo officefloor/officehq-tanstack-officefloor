@@ -34,7 +34,8 @@ public class SettingsRepository {
         LocalDate numbering = periodNumberingFrom(sheetId);
         return new Settings(limit == null ? null : money(limit), money(floor(sheetId)), terms(sheetId),
                 money(latePct(sheetId)), roles, policy == null ? null : policy.toString(),
-                numbering == null ? null : numbering.toString(), gradeTerms(sheetId));
+                numbering == null ? null : numbering.toString(), gradeTerms(sheetId),
+                cap(sheetId) == null ? null : money(cap(sheetId)));
     }
 
     /** The sheet's clerk limit; null when it has none. */
@@ -46,6 +47,22 @@ public class SettingsRepository {
 
     public void setClerkLimit(String sheetId, BigDecimal limit) {
         jdbc.update("UPDATE sheet SET clerk_limit = ? WHERE id = ?", limit, sheetId);
+    }
+
+    /** The sheet's cap: the most a person's due-total can be; null when it has none. */
+    public BigDecimal cap(String sheetId) {
+        List<BigDecimal> found = jdbc.query("SELECT cap FROM sheet WHERE id = ?",
+                (rs, i) -> rs.getBigDecimal("cap"), sheetId);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    public void setCap(String sheetId, BigDecimal cap) {
+        jdbc.update("UPDATE sheet SET cap = ? WHERE id = ?", cap, sheetId);
+    }
+
+    /** A due-total held to the cap: at most the cap when there is one. */
+    public static BigDecimal capped(BigDecimal total, BigDecimal cap) {
+        return cap != null && total.compareTo(cap) > 0 ? cap.setScale(2) : total;
     }
 
     /** The sheet's floor: the least a live due can be; 1.00 unless set otherwise. */

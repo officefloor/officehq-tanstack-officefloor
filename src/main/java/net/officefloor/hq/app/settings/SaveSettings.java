@@ -53,6 +53,11 @@ public class SaveSettings {
             audit.record("SETTING_CHANGED sheet=" + id + " by=" + by + " key=period-numbering-from value="
                     + (input.periodNumberingFrom() == null ? "" : input.periodNumberingFrom().toString()));
         }
+        if (input.setsCap()) {
+            repository.setCap(id, input.cap());
+            audit.record("SETTING_CHANGED sheet=" + id + " by=" + by + " key=cap value="
+                    + (input.cap() == null ? "" : SettingsRepository.money(input.cap())));
+        }
         rollup.record(id, by, before);
         settings.set(repository.load(id));
     }

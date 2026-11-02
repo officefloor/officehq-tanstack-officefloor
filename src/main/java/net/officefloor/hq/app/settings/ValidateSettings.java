@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  3650; the late percent is 0.00 or more with up to two decimals; the policy date is a date
  *  (yyyy-mm-dd), blank meaning the sheet's today; the period
  *  numbering from-date is a date, blank meaning off; a grade's (A, B or C) terms are like the sheet's, blank
- *  meaning the grade uses the sheet's terms. A setting left out is not changed. */
+ *  meaning the grade uses the sheet's terms; the cap is 0.00 or more with up to two decimals, blank meaning none. A setting left out is not changed. */
 public class ValidateSettings {
     private static final Pattern MONEY = Pattern.compile("\\d{1,9}(\\.\\d{1,2})?|\\.\\d{1,2}");
     private static final List<String> GRADES = List.of("A", "B", "C");
@@ -53,6 +53,10 @@ public class ValidateSettings {
         if (latePct != null && !MONEY.matcher(latePct).matches()) {
             throw new BadRequestException("late percent must be 0.00 or more with up to two decimals");
         }
+        String cap = request == null || request.cap() == null ? null : request.cap().trim();
+        if (cap != null && !cap.isEmpty() && !MONEY.matcher(cap).matches()) {
+            throw new BadRequestException("cap must be 0.00 or more with up to two decimals");
+        }
         String policy = request == null || request.policyDate() == null ? null : request.policyDate().trim();
         LocalDate policyDate = null;
         if (policy != null && !policy.isEmpty()) {
@@ -77,6 +81,7 @@ public class ValidateSettings {
                 floor != null, floor == null ? null : new BigDecimal(floor).setScale(2),
                 terms != null, terms == null ? null : Integer.parseInt(terms),
                 latePct != null, latePct == null ? null : new BigDecimal(latePct).setScale(2),
-                policy != null, policyDate, numbering != null, numberingFrom, gradeTerms));
+                policy != null, policyDate, numbering != null, numberingFrom, gradeTerms,
+                cap != null, cap == null || cap.isEmpty() ? null : new BigDecimal(cap).setScale(2)));
     }
 }

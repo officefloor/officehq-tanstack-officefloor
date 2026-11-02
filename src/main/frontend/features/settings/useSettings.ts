@@ -11,9 +11,10 @@ export type Role = { user: string; role: string };
  *  sheet's today: a claim dated before it rounds half up, one on or after it half to even), and its period numbering from-date (yyyy-mm-dd; null
  *  when blank, meaning off: while set and the sheet's today is on or after it, a claim opened is
  *  numbered within its period), and each grade's own terms, by grade (a grade not listed uses the sheet's
- *  terms; a claim's due-by is fixed from them when it is created). */
+ *  terms; a claim's due-by is fixed from them when it is created), and its cap (two decimals; null means
+ *  none: a person's due-total is at most it). */
 export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; roles: Role[]; policyDate: string | null; periodNumberingFrom: string | null;
-  gradeTerms: Record<string, number> };
+  gradeTerms: Record<string, number>; cap: string | null };
 
 export function settingsKey(sheetId: string) {
   return ['sheet', sheetId, 'settings'];

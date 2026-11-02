@@ -34,7 +34,7 @@ export function rateFor(rates: Rate[] | undefined, grade: string | undefined, on
 }
 
 /** A two-decimal number as a whole count of hundredths ("12.50" -> 1250, "-0.30" -> -30). */
-function hundredths(v: string): bigint {
+export function hundredths(v: string): bigint {
   const t = v.trim();
   const negative = t.startsWith('-');
   const [whole, frac = ''] = (negative ? t.slice(1) : t).split('.');
@@ -43,7 +43,7 @@ function hundredths(v: string): bigint {
 }
 
 /** A whole count of hundredths as a two-decimal number (-30 -> "-0.30"). */
-function money(cents: bigint): string {
+export function money(cents: bigint): string {
   const abs = cents < 0n ? -cents : cents;
   return `${cents < 0n ? '-' : ''}${abs / 100n}.${(abs % 100n).toString().padStart(2, '0')}`;
 }

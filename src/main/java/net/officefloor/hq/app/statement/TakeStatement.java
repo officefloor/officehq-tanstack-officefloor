@@ -10,6 +10,7 @@ import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
+import net.officefloor.hq.app.settings.SettingsRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.server.http.ServerHttpConnection;
@@ -21,11 +22,12 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  claim that does not count is unbound (live again). A late charge is never bound: it keeps following
  *  the sheet's today. The due-total is as shown: the sum of the counting claims' dues now (late charges
  *  included), skipping those with none; 'n/a' when no rate for the grade they have on the sheet's today
- *  is in force then and no counting claim has a fixed figure or a due (at the grade it was claimed under). */
+ *  is in force then and no counting claim has a fixed figure or a due (at the grade it was claimed under); at
+ *  most the sheet's cap. */
 public class TakeStatement {
     public void take(@PathVariable("sheetId") String sheetId, @PathVariable("personId") String personId,
             ServerHttpConnection connection, PersonRepository people, ClaimRepository claims,
-            SheetRepository sheets, Audit audit, Rollup rollup, Out<Person> person) throws BadRequestException {
+            SheetRepository sheets, SettingsRepository settings, Audit audit, Rollup rollup, Out<Person> person) throws BadRequestException {
         String by = CurrentUser.require(connection);
         String id = sheetId == null ? "" : sheetId.trim();
         long pid;
@@ -62,7 +64,7 @@ public class TakeStatement {
             boolean na = figure == null && ((c.bound() && c.statedNa()) || claims.rateEnded(id, c));
             claims.bind(id, c.id(), true, figure, na);
         }
-        String dueTotal = fixed || claims.rated(id, pid, today) ? total.setScale(2).toPlainString() : "n/a";
+        String dueTotal = fixed || claims.rated(id, pid, today) ? SettingsRepository.capped(total, settings.cap(id)).setScale(2).toPlainString() : "n/a";
         people.stated(id, pid, dueTotal, today);
         audit.record("STATEMENT sheet=" + id + " by=" + by + " name=" + found.name() + " due-total=" + dueTotal
                 + " claims=" + count);
