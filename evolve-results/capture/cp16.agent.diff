@@ -1,0 +1,377 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AddClaim.java b/src/main/java/net/officefloor/hq/app/claim/AddClaim.java
+index 069757580..d274eb3a4 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AddClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AddClaim.java
+@@ -4,6 +4,7 @@ import java.time.LocalDate;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+@@ -13,7 +14,7 @@ import org.springframework.web.bind.annotation.PathVariable;
+ public class AddClaim {
+     public void add(@PathVariable("sheetId") String sheetId, @PathVariable("personId") String personId,
+             @Val ClaimInput input, ServerHttpConnection connection, ClaimRepository repository,
+-            SheetRepository sheets, Audit audit, Out<Claim> claim) throws BadRequestException {
++            SheetRepository sheets, Audit audit, Rollup rollup, Out<Claim> claim) throws BadRequestException {
+         String by = CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
+         long pid;
+@@ -26,9 +27,11 @@ public class AddClaim {
+             throw new BadRequestException("no such person");
+         }
+         LocalDate date = input.date() != null ? input.date() : sheets.today(id);
++        Rollup.Snapshot before = rollup.take(id);
+         Claim added = repository.add(id, pid, input.amount(), date, input.note());
+         audit.record("CLAIM_ADDED sheet=" + id + " by=" + by + " person=" + repository.personName(id, pid)
+                 + " amount=" + added.amount() + " date=" + added.date());
++        rollup.record(id, by, before);
+         claim.set(added);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ChangeClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ChangeClaimStatus.java
+index e2487af98..a01e06cac 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ChangeClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ChangeClaimStatus.java
+@@ -5,6 +5,7 @@ import java.util.List;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.server.http.ServerHttpConnection;
+ import org.springframework.web.bind.annotation.PathVariable;
+@@ -13,7 +14,7 @@ import org.springframework.web.bind.annotation.PathVariable;
+ public class ChangeClaimStatus {
+     public void change(@PathVariable("sheetId") String sheetId, @PathVariable("claimId") String claimId,
+             @PathVariable("action") String action, ServerHttpConnection connection, ClaimRepository repository,
+-            Audit audit, Out<Claim> claim) throws BadRequestException {
++            Audit audit, Rollup rollup, Out<Claim> claim) throws BadRequestException {
+         String by = CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
+         long cid;
+@@ -39,6 +40,7 @@ public class ChangeClaimStatus {
+         if (to.equals("SETTLED") && found.status().equals("OPEN") && by.equals(found.openedBy())) {
+             throw new BadRequestException("the user who opened a claim cannot settle it");
+         }
++        Rollup.Snapshot before = rollup.take(id);
+         if (!repository.changeStatus(id, cid, from, to)) {
+             throw new BadRequestException("a " + found.status() + " claim cannot be moved to " + to);
+         }
+@@ -68,6 +70,7 @@ public class ChangeClaimStatus {
+                 number, due, openedBy, found.stated(), found.statedDue());
+         audit.record(event + " sheet=" + id + " by=" + by + " person=" + repository.personName(id, found.personId())
+                 + " amount=" + changed.amount() + " date=" + changed.date() + Claim.auditNumber(had) + settledDue);
++        rollup.record(id, by, before);
+         claim.set(changed);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java b/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
+index 58626b0ce..cabddf15f 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
+@@ -4,6 +4,7 @@ import java.time.LocalDate;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+@@ -13,7 +14,7 @@ import org.springframework.web.bind.annotation.PathVariable;
+ public class SaveClaim {
+     public void save(@PathVariable("sheetId") String sheetId, @PathVariable("claimId") String claimId,
+             @Val ClaimInput input, ServerHttpConnection connection, ClaimRepository repository,
+-            SheetRepository sheets, Audit audit, Out<Claim> claim) throws BadRequestException {
++            SheetRepository sheets, Audit audit, Rollup rollup, Out<Claim> claim) throws BadRequestException {
+         String by = CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
+         long cid;
+@@ -27,12 +28,14 @@ public class SaveClaim {
+             throw new BadRequestException("no such claim");
+         }
+         LocalDate date = input.date() != null ? input.date() : sheets.today(id);
++        Rollup.Snapshot before = rollup.take(id);
+         repository.update(id, cid, input.amount(), date, input.note());
+         long pid = found.personId();
+         Claim saved = new Claim(cid, pid, ClaimRepository.money(input.amount()), date.toString(), input.note(),
+                 found.status(), found.number(), found.due(), found.openedBy(), found.stated(), found.statedDue());
+         audit.record("CLAIM_EDITED sheet=" + id + " by=" + by + " person=" + repository.personName(id, pid)
+                 + " amount=" + saved.amount() + " date=" + saved.date() + Claim.auditNumber(saved.number()));
++        rollup.record(id, by, before);
+         claim.set(saved);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/AddPerson.java b/src/main/java/net/officefloor/hq/app/person/AddPerson.java
+index 37fc269c0..f19c2ff0b 100644
+--- a/src/main/java/net/officefloor/hq/app/person/AddPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/AddPerson.java
+@@ -3,6 +3,7 @@ package net.officefloor.hq.app.person;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.server.http.ServerHttpConnection;
+@@ -11,7 +12,7 @@ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ public class AddPerson {
+     public void add(@PathVariable("sheetId") String sheetId, @Val PersonRequest request,
+-            ServerHttpConnection connection, PersonRepository repository, Audit audit, Out<Person> person)
++            ServerHttpConnection connection, PersonRepository repository, Audit audit, Rollup rollup, Out<Person> person)
+             throws BadRequestException {
+         String by = CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
+@@ -21,6 +22,7 @@ public class AddPerson {
+         if (repository.nameTaken(id, request.name(), 0)) {
+             throw new BadRequestException("name is already in use");
+         }
++        Rollup.Snapshot before = rollup.take(id);
+         Person added;
+         try {
+             added = repository.add(id, request.name(), request.grade());
+@@ -29,6 +31,7 @@ public class AddPerson {
+         }
+         audit.record("PERSON_ADDED sheet=" + id + " by=" + by + " name=" + added.name()
+                 + " grade=" + added.grade());
++        rollup.record(id, by, before);
+         person.set(added);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/SavePerson.java b/src/main/java/net/officefloor/hq/app/person/SavePerson.java
+index c4d99d095..8e68f53c3 100644
+--- a/src/main/java/net/officefloor/hq/app/person/SavePerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/SavePerson.java
+@@ -4,6 +4,7 @@ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.ConflictException;
+ import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.server.http.ServerHttpConnection;
+@@ -14,7 +15,7 @@ import org.springframework.web.bind.annotation.PathVariable;
+ public class SavePerson {
+     public void save(@PathVariable("sheetId") String sheetId, @PathVariable("personId") String personId,
+             @Val PersonRequest request, ServerHttpConnection connection, PersonRepository repository,
+-            Audit audit, Out<Person> person) throws BadRequestException, ConflictException {
++            Audit audit, Rollup rollup, Out<Person> person) throws BadRequestException, ConflictException {
+         String by = CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
+         long pid;
+@@ -33,6 +34,7 @@ public class SavePerson {
+             throw new BadRequestException("name is already in use");
+         }
+         long version = request.version();
++        Rollup.Snapshot before = rollup.take(id);
+         boolean updated;
+         try {
+             updated = repository.update(id, pid, version, request.name(), request.grade());
+@@ -45,6 +47,7 @@ public class SavePerson {
+         Person saved = repository.find(id, pid);
+         audit.record("PERSON_EDITED sheet=" + id + " by=" + by + " name=" + saved.name()
+                 + " grade=" + saved.grade());
++        rollup.record(id, by, before);
+         person.set(saved);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/SaveRate.java b/src/main/java/net/officefloor/hq/app/rate/SaveRate.java
+index 8057c1ab4..a28450583 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/SaveRate.java
++++ b/src/main/java/net/officefloor/hq/app/rate/SaveRate.java
+@@ -3,6 +3,7 @@ package net.officefloor.hq.app.rate;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.server.http.ServerHttpConnection;
+@@ -10,16 +11,18 @@ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ public class SaveRate {
+     public void save(@PathVariable("sheetId") String sheetId, @Val RateInput input,
+-            ServerHttpConnection connection, RateRepository repository, Audit audit, Out<Rate> rate)
++            ServerHttpConnection connection, RateRepository repository, Audit audit, Rollup rollup, Out<Rate> rate)
+             throws BadRequestException {
+         String by = CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
+         if (!repository.sheetExists(id)) {
+             throw new BadRequestException("no such sheet");
+         }
++        Rollup.Snapshot before = rollup.take(id);
+         Rate saved = repository.set(id, input.grade(), input.pct(), input.from());
+         audit.record("RATE_SET sheet=" + id + " by=" + by + " grade=" + saved.grade() + " rate=" + saved.pct()
+                 + (saved.from() == null ? "" : " from=" + saved.from()));
++        rollup.record(id, by, before);
+         rate.set(saved);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+new file mode 100644
+index 000000000..95ff78ff6
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -0,0 +1,92 @@
++package net.officefloor.hq.app.rollup;
++
++import java.math.BigDecimal;
++import java.time.LocalDate;
++import java.util.LinkedHashMap;
++import java.util.List;
++import java.util.Map;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import org.springframework.stereotype.Service;
++
++/** The sheet's figures as shown: each person's claimed and due-total, and the sheet's claimed-total and
++ *  due-total. A change takes them before it writes, then after its own audit lines records one ROLLUP
++ *  line per person whose figures moved (people in the order they were added; a new person counts as
++ *  moved), then a TOTALS line when the sheet's totals moved. */
++@Service
++public class Rollup {
++
++    /** A person's figures: claimed (two decimals) and due-total (two decimals, or 'n/a'). */
++    record Figures(String name, String claimed, String dueTotal) {
++        boolean same(Figures other) {
++            return other != null && claimed.equals(other.claimed) && dueTotal.equals(other.dueTotal);
++        }
++    }
++
++    /** The figures of a sheet at one moment, people by id in the order they were added. */
++    public record Snapshot(Map<Long, Figures> people, String claimedTotal, String dueTotal) {
++    }
++
++    private final PersonRepository people;
++    private final ClaimRepository claims;
++    private final SheetRepository sheets;
++    private final Audit audit;
++
++    public Rollup(PersonRepository people, ClaimRepository claims, SheetRepository sheets, Audit audit) {
++        this.people = people;
++        this.claims = claims;
++        this.sheets = sheets;
++        this.audit = audit;
++    }
++
++    /** The sheet's figures now. A person's due-total is the sum of their counting claims' figures,
++     *  skipping those with none; 'n/a' when no rate for their grade is in force on the sheet's today and
++     *  no counting claim keeps a fixed figure. The sheet's due-total skips 'n/a'. */
++    public Snapshot take(String sheetId) {
++        List<Person> everyone = people.list(sheetId);
++        Map<Long, Figures> figures = new LinkedHashMap<>();
++        BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
++        BigDecimal dueTotal = BigDecimal.ZERO.setScale(2);
++        if (!everyone.isEmpty()) {
++            LocalDate today = sheets.today(sheetId);
++            List<Claim> all = claims.list(sheetId);
++            for (Person p : everyone) {
++                BigDecimal claimed = BigDecimal.ZERO.setScale(2);
++                BigDecimal due = BigDecimal.ZERO.setScale(2);
++                boolean fixed = false;
++                for (Claim c : all) {
++                    if (c.personId() != p.id() || !c.counts()) continue;
++                    claimed = claimed.add(new BigDecimal(c.amount()));
++                    fixed |= c.due() != null || (c.stated() && c.statedDue() != null);
++                    BigDecimal figure = claims.figure(sheetId, c);
++                    if (figure != null) due = due.add(figure);
++                }
++                boolean shown = fixed || claims.rated(sheetId, p.id(), today);
++                figures.put(p.id(), new Figures(p.name(), claimed.toPlainString(),
++                        shown ? due.toPlainString() : "n/a"));
++                claimedTotal = claimedTotal.add(claimed);
++                if (shown) dueTotal = dueTotal.add(due);
++            }
++        }
++        return new Snapshot(figures, claimedTotal.toPlainString(), dueTotal.toPlainString());
++    }
++
++    /** Record the lines for whatever figures moved since {@code before}. */
++    public void record(String sheetId, String by, Snapshot before) {
++        Snapshot after = take(sheetId);
++        for (Map.Entry<Long, Figures> e : after.people().entrySet()) {
++            Figures now = e.getValue();
++            if (now.same(before.people().get(e.getKey()))) continue;
++            audit.record("ROLLUP sheet=" + sheetId + " by=" + by + " person=" + now.name() + " claimed="
++                    + now.claimed() + " due-total=" + now.dueTotal());
++        }
++        if (!after.claimedTotal().equals(before.claimedTotal()) || !after.dueTotal().equals(before.dueTotal())) {
++            audit.record("TOTALS sheet=" + sheetId + " by=" + by + " claimed-total=" + after.claimedTotal()
++                    + " due-total=" + after.dueTotal());
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SaveSheetToday.java b/src/main/java/net/officefloor/hq/app/sheet/SaveSheetToday.java
+index 15eb1cab0..bf911c3a1 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SaveSheetToday.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SaveSheetToday.java
+@@ -3,6 +3,7 @@ package net.officefloor.hq.app.sheet;
+ import java.time.LocalDate;
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.server.http.ServerHttpConnection;
+@@ -10,13 +11,15 @@ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ public class SaveSheetToday {
+     public void save(@PathVariable("sheetId") String sheetId, @Val LocalDate today,
+-            ServerHttpConnection connection, SheetRepository repository, Out<Sheet> sheet)
++            ServerHttpConnection connection, SheetRepository repository, Rollup rollup, Out<Sheet> sheet)
+             throws BadRequestException {
+-        CurrentUser.require(connection);
++        String by = CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
++        Rollup.Snapshot before = rollup.take(id);
+         if (!repository.setToday(id, today)) {
+             throw new BadRequestException("no such sheet");
+         }
++        rollup.record(id, by, before);
+         sheet.set(new Sheet(id, today.toString()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+index 057d6c3c4..2de4398ee 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+@@ -5,6 +5,7 @@ import java.time.LocalDate;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.claim.Claim;
+ import net.officefloor.hq.app.claim.ClaimRepository;
+ import net.officefloor.hq.app.person.Person;
+@@ -22,7 +23,7 @@ import org.springframework.web.bind.annotation.PathVariable;
+ public class TakeStatement {
+     public void take(@PathVariable("sheetId") String sheetId, @PathVariable("personId") String personId,
+             ServerHttpConnection connection, PersonRepository people, ClaimRepository claims,
+-            SheetRepository sheets, Audit audit, Out<Person> person) throws BadRequestException {
++            SheetRepository sheets, Audit audit, Rollup rollup, Out<Person> person) throws BadRequestException {
+         String by = CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
+         long pid;
+@@ -36,6 +37,7 @@ public class TakeStatement {
+             throw new BadRequestException("no such person");
+         }
+         LocalDate today = sheets.today(id);
++        Rollup.Snapshot before = rollup.take(id);
+         BigDecimal total = BigDecimal.ZERO.setScale(2);
+         boolean fixed = false;
+         int count = 0;
+@@ -56,6 +58,7 @@ public class TakeStatement {
+         people.stated(id, pid, dueTotal, today);
+         audit.record("STATEMENT sheet=" + id + " by=" + by + " name=" + found.name() + " due-total=" + dueTotal
+                 + " claims=" + count);
++        rollup.record(id, by, before);
+         person.set(people.find(id, pid));
+     }
+ }
