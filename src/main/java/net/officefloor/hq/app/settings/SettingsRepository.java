@@ -42,7 +42,7 @@ public class SettingsRepository {
         return new Settings(limit == null ? null : money(limit), money(floor(sheetId, today)), terms(sheetId, today),
                 money(latePct(sheetId, today)), roles, policy == null ? null : policy.toString(),
                 numbering == null ? null : numbering.toString(), gradeTerms(sheetId, today),
-                cap == null ? null : money(cap), dated(sheetId), permissions(sheetId));
+                cap == null ? null : money(cap), dated(sheetId), permissions(sheetId), graceDays(sheetId));
     }
 
     /** The sheet's today; the real date when there is no such sheet. */
@@ -190,6 +190,17 @@ public class SettingsRepository {
     public void setPeriodNumberingFrom(String sheetId, LocalDate from) {
         jdbc.update("UPDATE sheet SET period_numbering_from = ? WHERE id = ?", from == null ? null : Date.valueOf(from),
                 sheetId);
+    }
+
+    /** The sheet's grace days; null when blank (off). */
+    public Integer graceDays(String sheetId) {
+        List<Integer> found = jdbc.query("SELECT grace_days FROM sheet WHERE id = ?",
+                (rs, i) -> (Integer) rs.getObject("grace_days", Integer.class), sheetId);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    public void setGraceDays(String sheetId, Integer days) {
+        jdbc.update("UPDATE sheet SET grace_days = ? WHERE id = ?", days, sheetId);
     }
 
     /** The role a user name holds on the sheet: clerk unless set otherwise. */

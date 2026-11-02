@@ -15,7 +15,8 @@ import { settingOn, settingsKey, useSettings, type Settings } from './useSetting
  *  <period>-<n>, or X-<n> in no period; blank is off), each grade's own terms (blank is the sheet's
  *  terms), its cap (the most a person's due-total can be; blank is none), its proof threshold (a claim whose due is
  *  above the one in force on its date cannot be settled or approved without a proof; blank is none), its permission matrix (for each of open, settle, void,
- *  reassign, close and reopen, the roles that may do it, comma separated; blank keeps the standing rule; not dated), and the role (clerk, steward or viewer — a viewer changes nothing)
+ *  reassign, close and reopen, the roles that may do it, comma separated; blank keeps the standing rule; not dated), its grace days (changing the
+ *  sheet's today closes each open period whose to-date plus them is before the new today; blank is off; not dated), and the role (clerk, steward or viewer — a viewer changes nothing)
  *  assigned to each user name. Saving saves each setting whose field was entered (focused or typed
  *  in, even when left blank); the others stay as they are. A setting with a figure (the clerk limit, the
  *  floor, the terms, each grade's terms, the late percent, the cap and the proof threshold) is saved from its from-date, blank
@@ -60,13 +61,14 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
   const [proofThreshold, setProofThreshold] = useState<string | null>(null);
   const [from, setFrom] = useState<Record<string, string>>({});
   const [permissions, setPermissions] = useState<Record<string, string>>({});
+  const [graceDays, setGraceDays] = useState<string | null>(null);
   const today = useSheetToday(sheetId).data?.today;
   const [user, setUser] = useState('');
   const [role, setRole] = useState('');
 
   const saveOnce = useSingleFlight();
   const save = useMutation({
-    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null; permissions: Record<string, string> }) =>
+    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null; permissions: Record<string, string>; graceDays: string | null }) =>
       postJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, f),
     onSuccess: (saved) => {
       setLimit(null);
@@ -80,6 +82,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
       setProofThreshold(null);
       setFrom({});
       setPermissions({});
+      setGraceDays(null);
       queryClient.setQueryData(settingsKey(sheetId), saved);
     },
   });
@@ -103,7 +106,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           e.preventDefault();
           saveOnce(() => {
             save.reset();
-            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap, from, proofThreshold, permissions });
+            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap, from, proofThreshold, permissions, graceDays });
           });
         }}
       >
@@ -248,6 +251,19 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
             />{' '}
           </label>
         ))}
+        <label>
+          Grace days{' '}
+          <input
+            data-testid="setting-grace-days"
+            inputMode="numeric"
+            value={graceDays ?? ''}
+            onFocus={() => setGraceDays((v) => v ?? '')}
+            onChange={(e) => {
+              setGraceDays(e.target.value);
+              save.reset();
+            }}
+          />
+        </label>{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>{' '}
@@ -270,6 +286,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
             , may {a} <strong data-testid={`setting-perm-${a}-current`}>{settings.data?.permissions?.[a] ?? ''}</strong>
           </span>
         ))}
+        , grace days <strong data-testid="setting-grace-days-current">{settings.data?.graceDays ?? ''}</strong>
         {save.isError && <p data-testid="settings-error">{save.error.message}</p>}
       </form>
       <form

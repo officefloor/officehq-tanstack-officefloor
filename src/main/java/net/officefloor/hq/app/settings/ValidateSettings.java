@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  numbering from-date is a date, blank meaning off; a grade's (A, B or C) terms are like the sheet's, blank
  *  meaning the grade uses the sheet's terms; the cap is 0.00 or more with up to two decimals, blank meaning none; the proof threshold likewise. A from-date given for a
  *  setting with a figure is a date; blank is the sheet's today. A permission matrix entry (open, settle, void, reassign, close or reopen) is a comma separated
- *  list of roles (clerk, steward), blank keeping the standing rule. A setting left out is not changed. */
+ *  list of roles (clerk, steward), blank keeping the standing rule. The grace days are a whole number of days, 0 to 3650, blank meaning off. A setting left out is not changed. */
 public class ValidateSettings {
     private static final Pattern MONEY = Pattern.compile("\\d{1,9}(\\.\\d{1,2})?|\\.\\d{1,2}");
     private static final List<String> GRADES = List.of("A", "B", "C");
@@ -62,6 +62,10 @@ public class ValidateSettings {
         String proof = request == null || request.proofThreshold() == null ? null : request.proofThreshold().trim();
         if (proof != null && !proof.isEmpty() && !MONEY.matcher(proof).matches()) {
             throw new BadRequestException("proof threshold must be 0.00 or more with up to two decimals");
+        }
+        String grace = request == null || request.graceDays() == null ? null : request.graceDays().trim();
+        if (grace != null && !grace.isEmpty() && (!TERMS.matcher(grace).matches() || Integer.parseInt(grace) > 3650)) {
+            throw new BadRequestException("grace days must be a whole number of days from 0 to 3650");
         }
         String policy = request == null || request.policyDate() == null ? null : request.policyDate().trim();
         LocalDate policyDate = null;
@@ -134,6 +138,7 @@ public class ValidateSettings {
                 latePct != null, latePct == null ? null : new BigDecimal(latePct).setScale(2),
                 policy != null, policyDate, numbering != null, numberingFrom, gradeTerms,
                 cap != null, cap == null || cap.isEmpty() ? null : new BigDecimal(cap).setScale(2), from,
-                proof != null, proof == null || proof.isEmpty() ? null : new BigDecimal(proof).setScale(2), permissions));
+                proof != null, proof == null || proof.isEmpty() ? null : new BigDecimal(proof).setScale(2), permissions,
+                grace != null, grace == null || grace.isEmpty() ? null : Integer.parseInt(grace)));
     }
 }

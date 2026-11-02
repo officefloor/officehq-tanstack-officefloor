@@ -12,8 +12,9 @@ import java.util.List;
  *  force on the sheet's today; {@code dated} is every value recorded for each of them, by key (clerk-limit, floor,
  *  terms, terms-<grade>, late-pct, cap, proof-threshold), oldest from-date first. {@code permissions} is the permission
  *  matrix entries set, by action (open, settle, void, reassign, close, reopen), each a comma separated list of roles; an
- *  action not listed keeps the standing rule. */
+ *  action not listed keeps the standing rule. {@code graceDays} is the days after a period's to-date it is left
+ *  open (null when blank: off; not dated): changing the sheet's today closes each open period lapsed past them. */
 public record Settings(String clerkLimit, String floor, int terms, String latePct, List<Role> roles, String policyDate,
         String periodNumberingFrom, java.util.Map<String, Integer> gradeTerms, String cap,
-        java.util.Map<String, List<DatedValue>> dated, java.util.Map<String, String> permissions) {
+        java.util.Map<String, List<DatedValue>> dated, java.util.Map<String, String> permissions, Integer graceDays) {
 }

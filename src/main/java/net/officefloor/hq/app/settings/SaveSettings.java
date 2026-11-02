@@ -68,6 +68,10 @@ public class SaveSettings {
                     + (input.proofThreshold() == null ? "" : SettingsRepository.money(input.proofThreshold()))
                     + given(input, "proof-threshold"));
         }
+        if (input.setsGraceDays()) {
+            repository.setGraceDays(id, input.graceDays());
+            audit.record(prefix + "grace-days value=" + (input.graceDays() == null ? "" : input.graceDays()));
+        }
         input.permissions().forEach((action, roles) -> {
             repository.setPermission(id, action, roles);
             audit.record(prefix + "perm-" + action + " value=" + roles);
