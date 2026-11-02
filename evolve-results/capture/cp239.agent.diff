@@ -1,0 +1,77 @@
+diff --git a/src/main/frontend/features/periods/periods.slot.tsx b/src/main/frontend/features/periods/periods.slot.tsx
+index 0c3b7f2f..0826af16 100644
+--- a/src/main/frontend/features/periods/periods.slot.tsx
++++ b/src/main/frontend/features/periods/periods.slot.tsx
+@@ -17,6 +17,7 @@ import {
+   generateFiscalYearPath,
+   generatePeriodsPath,
+   generateQuartersPath,
++  periodClaimCounts,
+   periodDueCents,
+   shownDueTotal,
+   reopenPeriodPath,
+@@ -34,8 +35,8 @@ import { Fig } from '../locale/Fig';
+ // the row shows that error until its next action. It also shows whether the period is locked, with the buttons that
+ // lock and unlock it; the server refuses either by anyone but a steward, locking one locked, unlocking one not, and
+ // reopening one locked.
+-// It also shows the fiscal year its from-date falls in.
+-function PeriodRow({ sheet, user, period, dueCents, fiscalStart }: { sheet: string; user: string; period: Period; dueCents: bigint; fiscalStart: number }) {
++// It also shows the fiscal year its from-date falls in, and how many claims belong to it (see periodClaimCounts).
++function PeriodRow({ sheet, user, period, dueCents, claimsCount, fiscalStart }: { sheet: string; user: string; period: Period; dueCents: bigint; claimsCount: number; fiscalStart: number }) {
+   const queryClient = useQueryClient();
+   const close = useMutation({
+     mutationFn: () => postJson<Period[]>(byUser(closePeriodPath(sheet, period.name), user), {}),
+@@ -76,6 +77,7 @@ function PeriodRow({ sheet, user, period, dueCents, fiscalStart }: { sheet: stri
+       <td data-testid="period-fy">{fiscalYearOf(period.from, fiscalStart)}</td>
+       <td data-testid="period-cap"><Fig>{period.cap ?? ''}</Fig></td>
+       <td data-testid="period-locked">{period.locked ? 'yes' : 'no'}</td>
++      <td data-testid="period-claims-count">{claimsCount}</td>
+       <td>
+         <button
+           type="button"
+@@ -324,6 +326,7 @@ function Periods({ sheet, user }: { sheet: string; user: string }) {
+   };
+ 
+   const totals = periodDueCents(periods, all, people, rates, floor, late);
++  const counts = periodClaimCounts(periods, all);
+ 
+   return (
+     <section>
+@@ -381,12 +384,13 @@ function Periods({ sheet, user }: { sheet: string; user: string }) {
+             <th>Fiscal year</th>
+             <th>Cap</th>
+             <th>Locked</th>
++            <th>Claims</th>
+             <th></th>
+           </tr>
+         </thead>
+         <tbody>
+           {periods.map((p) => (
+-            <PeriodRow key={p.name} sheet={sheet} user={user} period={p} dueCents={totals.get(p.name) ?? 0n} fiscalStart={fiscalStart} />
++            <PeriodRow key={p.name} sheet={sheet} user={user} period={p} dueCents={totals.get(p.name) ?? 0n} claimsCount={counts.get(p.name) ?? 0} fiscalStart={fiscalStart} />
+           ))}
+         </tbody>
+       </table>
+diff --git a/src/main/frontend/features/periods/periods.ts b/src/main/frontend/features/periods/periods.ts
+index 25abc78b..3646c640 100644
+--- a/src/main/frontend/features/periods/periods.ts
++++ b/src/main/frontend/features/periods/periods.ts
+@@ -139,6 +139,18 @@ export function personPeriodDueCents(
+   return totals;
+ }
+ 
++/** Each period's claim count (by name): how many of the sheet's claims have their due-by in it, VOID and DELETED ones
++ *  left out. */
++export function periodClaimCounts(periods: Period[], claims: Claim[]): Map<string, number> {
++  const counts = new Map<string, number>();
++  for (const c of claims) {
++    if (c.status === 'VOID' || c.status === 'DELETED') continue;
++    const period = periodOf(periods, c.dueBy);
++    if (period !== undefined) counts.set(period.name, (counts.get(period.name) ?? 0) + 1);
++  }
++  return counts;
++}
++
+ /** Each period's carried figure per person (in hundredths, by period name then person id): the due now of the person's
+  *  claims that count at the end of the period (see {@link countedOn}) whose due-by falls in an earlier period (one
+  *  ending before it starts) and that were still OPEN or PENDING at its end by their status log, plus their opening
