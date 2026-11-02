@@ -102,10 +102,7 @@ public class ClaimRepository {
      *  claims opened at once get consecutive numbers. */
     public String numberInPeriod(String sheetId, long claimId, LocalDate date) {
         jdbc.update("UPDATE sheet SET claim_number = claim_number WHERE id = ?", sheetId);
-        List<Object[]> period = jdbc.query("SELECT id, name FROM period WHERE sheet_id = ? AND from_date <= ?"
-                + " AND to_date >= ? ORDER BY from_date LIMIT 1",
-                (rs, i) -> new Object[] { rs.getLong("id"), rs.getString("name") }, sheetId, Date.valueOf(date),
-                Date.valueOf(date));
+        List<Object[]> period = periodOn(sheetId, date);
         String key = period.isEmpty() ? "X" : "P" + period.get(0)[0];
         String prefix = period.isEmpty() ? "X" : (String) period.get(0)[1];
         if (jdbc.update("UPDATE claim_sequence SET last_no = last_no + 1 WHERE sheet_id = ? AND seq_key = ?",
@@ -117,6 +114,27 @@ public class ClaimRepository {
         String number = prefix + "-" + next;
         jdbc.update("UPDATE claim SET claim_no = ? WHERE id = ? AND sheet_id = ?", number, claimId, sheetId);
         return number;
+    }
+
+    /** The period a date falls in, as [id, name] (the earliest by from-date), or none. */
+    private List<Object[]> periodOn(String sheetId, LocalDate date) {
+        return jdbc.query("SELECT id, name FROM period WHERE sheet_id = ? AND from_date <= ?"
+                + " AND to_date >= ? ORDER BY from_date LIMIT 1",
+                (rs, i) -> new Object[] { rs.getLong("id"), rs.getString("name") }, sheetId, Date.valueOf(date),
+                Date.valueOf(date));
+    }
+
+    /** The key of the numbering sequence of the period a date falls in: P<period id>, or X when in no period. */
+    public String sequenceKey(String sheetId, LocalDate date) {
+        List<Object[]> period = periodOn(sheetId, date);
+        return period.isEmpty() ? "X" : "P" + period.get(0)[0];
+    }
+
+    /** Re-date an OPEN or PENDING claim (its due-by and statement binding stay as they are); false when the
+     *  sheet has no such claim in those statuses. */
+    public boolean redate(String sheetId, long claimId, LocalDate date) {
+        return jdbc.update("UPDATE claim SET claim_date = ? WHERE id = ? AND sheet_id = ? AND status IN ('OPEN', 'PENDING')",
+                Date.valueOf(date), claimId, sheetId) > 0;
     }
 
     /** Record who opened a claim. */

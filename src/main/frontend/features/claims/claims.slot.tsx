@@ -25,13 +25,13 @@ function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: numbe
   );
 }
 
-type ClaimAction = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | 'defer' | 'proof' | 'split';
+type ClaimAction = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | 'defer' | 'proof' | 'split' | 'redate';
 
 /** A claim's status changes; the server refuses one its status does not allow, a settle by the user
  *  who opened the claim, and an approve or reject by anyone but a steward (an approve also by the
  *  user who opened the claim), a re-settle by anyone but a steward or of a claim not SETTLED, and a void of a SETTLED claim by anyone but a steward, more than 7 days after its settlement or in a closed period. A reject takes the reason typed on the claim's row.
  *  A settle or approve of a claim whose due is above the proof threshold in force on its date is refused while it has no proof. */
-const ACTIONS: [Exclude<ClaimAction, 'defer' | 'proof' | 'split'>, string][] = [
+const ACTIONS: [Exclude<ClaimAction, 'defer' | 'proof' | 'split' | 'redate'>, string][] = [
   ['open', 'Open'],
   ['settle', 'Settle'],
   ['approve', 'Approve'],
@@ -62,6 +62,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   const [targets, setTargets] = useState<Record<number, string>>({});
   const [deferDates, setDeferDates] = useState<Record<number, string>>({});
   const [splitAmounts, setSplitAmounts] = useState<Record<number, string>>({});
+  const [newDates, setNewDates] = useState<Record<number, string>>({});
 
   const clearForm = () => {
     setEditing(null);
@@ -86,14 +87,16 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
 
   // A status change (open, settle, approve, reject, void) of one claim, or deferring an OPEN one until the
   // date typed on its row, or adding a proof to it, or splitting the amount typed on its row off an OPEN one
-  // (a new OPEN claim listed under the person); a refusal shows on that claim's row.
+  // (a new OPEN claim listed under the person), or re-dating an OPEN or PENDING one to the date typed on its row;
+  // a refusal shows on that claim's row.
   const action = useMutation({
-    mutationFn: (a: { id: number; action: ClaimAction; reason: string; until: string; amount: string }) =>
-      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${a.id}/${a.action}`, { reason: a.reason, until: a.until, amount: a.amount }),
+    mutationFn: (a: { id: number; action: ClaimAction; reason: string; until: string; amount: string; date: string }) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${a.id}/${a.action}`, { reason: a.reason, until: a.until, amount: a.amount, date: a.date }),
     onSuccess: (_, a) => {
       if (a.action === 'reject') setReasons((r) => ({ ...r, [a.id]: '' }));
       if (a.action === 'defer') setDeferDates((d) => ({ ...d, [a.id]: '' }));
       if (a.action === 'split') setSplitAmounts((m) => ({ ...m, [a.id]: '' }));
+      if (a.action === 'redate') setNewDates((d) => ({ ...d, [a.id]: '' }));
     },
     onSettled: async () => {
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
@@ -128,6 +131,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
       reason: a === 'reject' ? reasons[id] ?? '' : '',
       until: a === 'defer' ? (deferDates[id] ?? '').trim() : '',
       amount: a === 'split' ? (splitAmounts[id] ?? '').trim() : '',
+      date: a === 'redate' ? (newDates[id] ?? '').trim() : '',
     });
   };
 
@@ -315,6 +319,25 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                     onClick={() => act(c.id, 'split')}
                   >
                     Split
+                  </button>{' '}
+                  <input
+                    type="text"
+                    data-testid="claim-date-new"
+                    placeholder="new date yyyy-mm-dd"
+                    value={newDates[c.id] ?? ''}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setNewDates((d) => ({ ...d, [c.id]: v }));
+                      if (action.variables?.id === c.id) action.reset();
+                    }}
+                  />{' '}
+                  <button
+                    type="button"
+                    data-testid="claim-redate"
+                    disabled={action.isPending}
+                    onClick={() => act(c.id, 'redate')}
+                  >
+                    Re-date
                   </button>{' '}
                   <select
                     data-testid="claim-reassign-to"
