@@ -3,13 +3,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useSingleFlight } from '../../query/useSingleFlight';
 import { SheetBody } from '../../slots/defs/sheetBody';
-import { counts, fixedDue, useClaims } from '../claims/useClaims';
-import { gradeOn, heldIds, usePeople } from '../people/usePeople';
-import { due, rateFor, sumDues, useRates } from '../rates/useRates';
-import { dueNow } from '../overdue/useOverdue';
-import { useSettings } from '../settings/useSettings';
-import { useSheetToday } from '../today/useSheetToday';
-import { periodOf, periodsKey, usePeriods, type Period } from './usePeriods';
+import { usePeriodDueTotals } from './usePeriodDueTotals';
+import { periodsKey, usePeriods, type Period } from './usePeriods';
 
 /** The sheet's periods: a form that adds one (a name unique on the sheet, a from- and to-date,
  *  inclusive, overlapping no other period), and each period with its due-total: the figures of the
@@ -18,12 +13,7 @@ import { periodOf, periodsKey, usePeriods, type Period } from './usePeriods';
  *  and whether it is closed, with a button that closes it. */
 function Periods({ sheetId }: { sheetId: string }) {
   const periods = usePeriods(sheetId);
-  const claims = useClaims(sheetId);
-  const people = usePeople(sheetId);
-  const rates = useRates(sheetId);
-  const settings = useSettings(sheetId).data;
-  const floor = settings?.floor;
-  const today = useSheetToday(sheetId).data?.today;
+  const dueTotals = usePeriodDueTotals(sheetId);
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
   const [from, setFrom] = useState('');
@@ -44,17 +34,6 @@ function Periods({ sheetId }: { sheetId: string }) {
   const field = (set: (v: string) => void) => (e: ChangeEvent<HTMLInputElement>) => {
     set(e.target.value);
     save.reset();
-  };
-
-  const dueTotal = (p: Period) => {
-    if (p.closed && p.closedTotal !== null) return p.closedTotal;
-    const byId = new Map((people.data ?? []).map((person) => [person.id, person]));
-    const held = heldIds(people.data);
-    return sumDues(
-      (claims.data ?? [])
-        .filter((c) => counts(c, held) && periodOf([p], c.date) !== undefined)
-        .map((c) => dueNow(c, fixedDue(c) ?? due(c.amount, rateFor(rates.data, gradeOn(byId.get(c.personId), c.date), c.date), floor), settings, today)),
-    );
   };
 
   return (
@@ -97,7 +76,7 @@ function Periods({ sheetId }: { sheetId: string }) {
         </thead>
         <tbody>
           {(periods.data ?? []).map((p) => (
-            <PeriodRow key={p.id} sheetId={sheetId} period={p} dueTotal={dueTotal(p)} />
+            <PeriodRow key={p.id} sheetId={sheetId} period={p} dueTotal={dueTotals.get(p.name) ?? ''} />
           ))}
         </tbody>
       </table>
