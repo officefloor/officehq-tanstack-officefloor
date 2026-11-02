@@ -7,7 +7,7 @@ import { SheetBody } from '../../slots/defs/sheetBody';
 import { GRADES } from '../people/usePeople';
 import { useSheetToday } from '../today/useSheetToday';
 import { useDueTotals, useExcess } from './useDueTotals';
-import { rateFor, ratesKey, sumDues, useRates, type Rate } from './useRates';
+import { rateFor, ratesKey, trimmedSum, useRates, type Rate } from './useRates';
 
 /** The sheet's rates for each grade: a form that sets one from an optional from-date (replacing the
  *  grade's rate from that date; blank is from the beginning of time) through an optional to-date
@@ -150,12 +150,13 @@ function PersonExcess({ sheetId, personId }: { sheetId: string; personId: number
   return <td data-testid="person-excess">{excess.get(personId) ?? ''}</td>;
 }
 
-/** The sheet's due-total: everyone's due-total added up, skipping 'n/a'. */
+/** The sheet's due-total: everyone's due-total added up, skipping 'n/a',
+ *  leaving out the highest and the lowest when three or more people have one. */
 function DueTotal({ sheetId }: { sheetId: string }) {
   const totals = useDueTotals(sheetId);
   return (
     <p>
-      Due total: <strong data-testid="rollup-due-total">{sumDues([...totals.values()])}</strong>
+      Due total: <strong data-testid="rollup-due-total">{trimmedSum([...totals.values()])}</strong>
     </p>
   );
 }

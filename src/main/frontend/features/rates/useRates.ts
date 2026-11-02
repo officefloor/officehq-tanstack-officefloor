@@ -88,3 +88,11 @@ export function withCharge(figure: string, latePcts: string[], halfUp: boolean):
 export function sumDues(dues: string[]): string {
   return money(dues.filter((d) => d !== 'n/a').reduce((sum, d) => sum + hundredths(d), 0n));
 }
+
+/** A sheet's total of people's figures: added up, skipping 'n/a', but leaving out the single highest
+ *  and the single lowest figure when three or more people have one. */
+export function trimmedSum(figures: string[]): string {
+  const cents = figures.filter((d) => d !== 'n/a').map(hundredths).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const kept = cents.length >= 3 ? cents.slice(1, -1) : cents;
+  return money(kept.reduce((sum, c) => sum + c, 0n));
+}

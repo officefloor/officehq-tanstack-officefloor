@@ -2,6 +2,8 @@ package net.officefloor.hq.app.rollup;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -51,13 +53,15 @@ public class Rollup {
 
     /** The sheet's figures now. A person's due-total is the sum of their counting claims' dues now (late charges included),
      *  skipping those with none; 'n/a' when no rate for the grade they have on the sheet's today is in force
-     *  then and no counting claim keeps a fixed figure or has a due (at the grade it was claimed under). A due-total is at most the sheet's cap (an 'n/a' is not capped). The sheet's due-total skips 'n/a'. */
+     *  then and no counting claim keeps a fixed figure or has a due (at the grade it was claimed under). A due-total is at most the sheet's cap (an 'n/a' is not capped). The sheet's due-total skips 'n/a'.
+     *  The sheet's due-total and overdue-total leave out the single highest and lowest person's figure when three or more
+     *  people have one. */
     public Snapshot take(String sheetId) {
         List<Person> everyone = people.list(sheetId);
         Map<Long, Figures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
-        BigDecimal dueTotal = BigDecimal.ZERO.setScale(2);
-        BigDecimal overdueTotal = BigDecimal.ZERO.setScale(2);
+        List<BigDecimal> dues = new ArrayList<>();
+        List<BigDecimal> overdues = new ArrayList<>();
         if (!everyone.isEmpty()) {
             LocalDate today = sheets.today(sheetId);
             List<Claim> all = claims.list(sheetId);
@@ -81,11 +85,22 @@ public class Rollup {
                 figures.put(p.id(), new Figures(p.name(), claimed.toPlainString(),
                         shown ? due.toPlainString() : "n/a", overdue.toPlainString()));
                 claimedTotal = claimedTotal.add(claimed);
-                if (shown) dueTotal = dueTotal.add(due);
-                overdueTotal = overdueTotal.add(overdue);
+                if (shown) dues.add(due);
+                overdues.add(overdue);
             }
         }
-        return new Snapshot(figures, claimedTotal.toPlainString(), dueTotal.toPlainString(), overdueTotal.toPlainString());
+        return new Snapshot(figures, claimedTotal.toPlainString(), trimmed(dues).toPlainString(),
+                trimmed(overdues).toPlainString());
+    }
+
+    /** People's figures added up, leaving out the single highest and the single lowest when there are three or more. */
+    static BigDecimal trimmed(List<BigDecimal> figures) {
+        List<BigDecimal> sorted = new ArrayList<>(figures);
+        Collections.sort(sorted);
+        if (sorted.size() >= 3) sorted = sorted.subList(1, sorted.size() - 1);
+        BigDecimal total = BigDecimal.ZERO.setScale(2);
+        for (BigDecimal f : sorted) total = total.add(f);
+        return total;
     }
 
     /** Record the lines for whatever figures moved since {@code before}. */

@@ -1,6 +1,6 @@
 import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
-import { sumDues } from '../rates/useRates';
+import { trimmedSum } from '../rates/useRates';
 import { useOverdue } from './useOverdue';
 
 /** A person's overdue count and overdue-total: their claims that count and are overdue, and the sum
@@ -15,13 +15,14 @@ function PersonOverdue({ sheetId, personId }: { sheetId: string; personId: numbe
   );
 }
 
-/** The sheet's overdue count and overdue-total: everyone's added up. */
+/** The sheet's overdue count and overdue-total: everyone's added up, leaving out the
+ *  highest and the lowest overdue-total when three or more people have one. */
 function SheetOverdue({ sheetId }: { sheetId: string }) {
   const figures = [...useOverdue(sheetId).values()];
   return (
     <p>
       Overdue: <strong data-testid="rollup-overdue-count">{figures.reduce((n, f) => n + f.count, 0)}</strong>,
-      total <strong data-testid="rollup-overdue-total">{sumDues(figures.map((f) => f.total))}</strong>
+      total <strong data-testid="rollup-overdue-total">{trimmedSum(figures.map((f) => f.total))}</strong>
     </p>
   );
 }
