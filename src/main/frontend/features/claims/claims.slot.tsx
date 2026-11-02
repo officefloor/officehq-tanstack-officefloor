@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { postJson, putJson } from '../../api/http';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { getJson, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { byUser } from '../session/session';
 import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
@@ -224,6 +224,15 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
   const saveInline = useSubmitOnce(inlineMutation);
   // A steward rejects a PENDING claim with a reason, typed beside the Reject button.
   const [reason, setReason] = useState('');
+  // The claim's timeline: the audit lines about it, newest first, read from the file at each press of its button
+  // (so a second press shows the file as it stands then; while a press is being read the old lines are gone).
+  const [timelinePress, setTimelinePress] = useState(0);
+  const timeline = useQuery({
+    queryKey: ['claim-timeline', sheet, claim.id, timelinePress],
+    queryFn: () => getJson<string[]>(`${claimsPath(sheet)}/${claim.id}/timeline`),
+    enabled: timelinePress > 0,
+    gcTime: 0,
+  });
 
   return (
     <li data-testid={`claim-row-${claim.id}`}>
@@ -528,6 +537,9 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
       >
         Remind
       </button>{' '}
+      <button type="button" data-testid="claim-timeline" onClick={() => setTimelinePress((n) => n + 1)}>
+        Timeline
+      </button>{' '}
       <input
         data-testid="claim-date-new"
         placeholder="re-date yyyy-mm-dd"
@@ -755,6 +767,20 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
         <span data-testid="claim-error" role="alert">
           {' '}A {claim.status} claim cannot be reassigned (only a role the permission matrix lets, by default a steward, moves a claim, and only a DRAFT, OPEN or PENDING one, to another person).
         </span>
+      )}
+      {timeline.isError && (
+        <span data-testid="claim-timeline-error" role="alert">
+          {' '}The timeline could not be read.
+        </span>
+      )}
+      {timeline.isSuccess && !timeline.isFetching && (
+        <ol>
+          {timeline.data.map((line, i) => (
+            <li key={i} data-testid="claim-timeline-line">
+              <code>{line}</code>
+            </li>
+          ))}
+        </ol>
       )}
     </li>
   );
