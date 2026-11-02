@@ -8,6 +8,8 @@ import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
 import { GRADES, isRetired, peopleKey, peoplePath, usePeople, useShowRetired } from './people';
 import type { Grade, Person } from './people';
+import { SORT_KEYS, useSorted, useSortBy } from './sort';
+import type { SortKey } from './sort';
 import { claimsKey } from '../claims/claims';
 import type { Claim } from '../claims/claims';
 
@@ -85,7 +87,10 @@ function People({ sheet, user }: { sheet: string; user: string }) {
   const { data: everyone = [] } = usePeople(sheet);
   const [showRetired, setShowRetired] = useShowRetired();
   // Retired people have no row at all unless "show retired" is on; their claims still count in every total.
-  const people = showRetired ? everyone : everyone.filter((p) => !isRetired(p));
+  const listed = showRetired ? everyone : everyone.filter((p) => !isRetired(p));
+  // The rows as this user's screen sorts them; list order itself is unchanged.
+  const people = useSorted(sheet, listed);
+  const [sortBy, setSortBy] = useSortBy();
   const [draft, setDraft] = useState<Draft>(EMPTY);
   const [editing, setEditing] = useState<{ id: number; version: number } | null>(null);
 
@@ -225,6 +230,20 @@ function People({ sheet, user }: { sheet: string; user: string }) {
           onChange={(e) => setShowRetired(e.target.checked || undefined)}
         />{' '}
         Show retired
+      </label>{' '}
+      <label>
+        Sort by{' '}
+        <select
+          data-testid="sort-by"
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value === 'added' ? undefined : (e.target.value as SortKey))}
+        >
+          {SORT_KEYS.map((k) => (
+            <option key={k} value={k}>
+              {k}
+            </option>
+          ))}
+        </select>
       </label>
       <table>
         <thead>

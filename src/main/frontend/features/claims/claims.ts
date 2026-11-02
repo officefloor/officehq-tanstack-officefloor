@@ -446,3 +446,14 @@ export function useMonthDueTotals(sheet: string): { month: string; cents: bigint
   }
   return [...totals].map(([month, cents]) => ({ month, cents }));
 }
+
+/** Each person's due-total as their row shows it (see {@link personDueCents}): undefined when n/a. */
+export function usePersonDueCentsOf(sheet: string): (person: Person) => bigint | undefined {
+  const { data: all = [] } = useClaims(sheet);
+  const { data: rates = [] } = useRates(sheet);
+  const today = useSheetToday(sheet);
+  const floor = useFloorCents(sheet);
+  const late = useLate(sheet);
+  const cap = useCapCents(sheet);
+  return (person) => personDueCents(all, rates, person, today, floor, late, cap);
+}
