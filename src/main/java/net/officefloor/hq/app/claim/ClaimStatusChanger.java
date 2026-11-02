@@ -90,7 +90,7 @@ public class ClaimStatusChanger {
             claims.setOpenedBy(sheet, claim.id(), user);
         }
         String fields = changed.statusAuditFields(person.name());
-        // Settling (or approving a PENDING claim, its live figure then) fixes the due at the person's grade rate in force on the claim's date (or the figure its
+        // Settling (or approving a PENDING claim) fixes the due at the person's grade rate in force on the claim's date (or the figure its
         // statement bound), with its late charge frozen in; with no rate there is nothing to fix, so it stays live.
         if (requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.APPROVE) {
             BigDecimal due = claim.due(rates.list(sheet), person.gradeOn(claim.date()), settings.floor(sheet),

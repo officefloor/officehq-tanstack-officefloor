@@ -40,14 +40,14 @@ export function reviewLate(claim: Claim, sla: number | null, today: string | und
 /** A status change a claim's row offers; the server refuses one its status does not allow. */
 export type ClaimStatusChange = 'open' | 'settle' | 'void' | 'approve' | 'reject' | 'delete' | 'restore' | 'review';
 
-/** Whether a claim is still open: OPEN, or PENDING (handled like OPEN, but not bound by a statement). */
+/** Whether a claim is still open: OPEN, or PENDING (handled like OPEN). */
 export function isOpen(claim: Claim): boolean {
   return claim.status === 'OPEN' || claim.status === 'PENDING';
 }
 
-/** Whether a claim's statement binds its figure: it is stated and not PENDING (which shows its live figure). */
+/** Whether a claim's statement binds its figure: it is stated (a PENDING claim too, like any that counts). */
 export function bound(claim: Claim): boolean {
-  return claim.stated && claim.status !== 'PENDING';
+  return claim.stated;
 }
 
 /** A claim: its amount with two decimals, its date (yyyy-MM-dd), its note, its status and its number on

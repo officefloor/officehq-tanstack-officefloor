@@ -148,14 +148,14 @@ public record Claim(long id, long person, String amount, String date, String not
         return then;
     }
 
-    /** Whether this claim's statement binds its figure: it is stated, and not PENDING (which shows its live figure). */
+    /** Whether this claim's statement binds its figure: it is stated (a PENDING claim too, like any that counts). */
     public boolean bound() {
-        return stated && status != ClaimStatus.PENDING;
+        return stated;
     }
 
     /**
      * Whether this claim keeps a figure whatever the rates: fixed when settled, or bound by a statement (a claim
-     * settled or bound when its grade had no rate keeps none; a PENDING claim is not bound).
+     * settled or bound when its grade had no rate keeps none).
      */
     public boolean fixed() {
         return settledDue != null || (bound() && statedDue != null);
@@ -175,7 +175,7 @@ public record Claim(long id, long person, String amount, String date, String not
     }
 
     /**
-     * This claim's figure: the due fixed when settled, else the rate figure its statement bound (unless PENDING), else
+     * This claim's figure: the due fixed when settled, else the rate figure its statement bound, else
      * its amount at the grade's rate in force on its date, of the rates it sees (the floor is applied last, in {@link #due}); null when
      * there is none.
      */
