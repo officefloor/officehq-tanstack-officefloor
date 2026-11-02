@@ -18,7 +18,8 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
  *  "<STATUS> by <user> on <date> due=<due>" with the sheet's today and its due at that moment, and whether
  *  its last statement bound it to n/a (the rate that would apply to it had ended: its due stays n/a), and
  *  the date it is deferred until (null when it was never deferred: see `isDeferred`), and how many proofs it has,
- *  and, for a claim split off another, the number of the claim it was split from (null otherwise). */
+ *  and, for a claim split off another, the number of the claim it was split from (null otherwise), and the user
+ *  whose open editor locks it for everyone else (null when it is not locked). */
 export type Claim = {
   id: number;
   personId: number;
@@ -38,6 +39,7 @@ export type Claim = {
   proofs: number;
   splitFrom: string | null;
   log: string[];
+  lockedBy: string | null;
 };
 
 /** Whether a claim is open: OPEN, or PENDING (handled like OPEN everywhere but its statement binding). */
@@ -100,10 +102,16 @@ export function useClaims(sheetId: string) {
   return useQuery({
     queryKey: claimsKey(sheetId),
     queryFn: async () => {
-      const res = await getJson<{ claims: Omit<Claim, 'log'>[]; logs: Record<string, string[]> }>(
-        `/api/sheets/${encodeURIComponent(sheetId)}/claims`,
-      );
-      return res.claims.map((c): Claim => ({ ...c, log: res.logs[String(c.id)] ?? [] }));
+      const res = await getJson<{
+        claims: Omit<Claim, 'log' | 'lockedBy'>[];
+        logs: Record<string, string[]>;
+        locks: Record<string, string>;
+      }>(`/api/sheets/${encodeURIComponent(sheetId)}/claims`);
+      return res.claims.map((c): Claim => ({
+        ...c,
+        log: res.logs[String(c.id)] ?? [],
+        lockedBy: res.locks[String(c.id)] ?? null,
+      }));
     },
   });
 }

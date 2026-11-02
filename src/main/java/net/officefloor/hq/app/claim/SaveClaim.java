@@ -34,6 +34,10 @@ public class SaveClaim {
         if (!found.status().equals("DRAFT")) {
             throw new BadRequestException("a " + found.status() + " claim cannot be edited");
         }
+        String holder = repository.lockedBy(id, cid);
+        if (holder != null && !holder.equals(by)) {
+            throw new BadRequestException("the claim is being edited by " + holder);
+        }
         LocalDate date = input.date() != null ? input.date() : sheets.today(id);
         PeriodGuard.open(periods, id, LocalDate.parse(found.date()));
         PeriodGuard.open(periods, id, date);
@@ -43,6 +47,7 @@ public class SaveClaim {
         if (!repository.update(id, cid, input.amount(), date, input.note(), input.corrects())) {
             throw new BadRequestException("only a DRAFT claim can be edited");
         }
+        repository.unlock(id, cid, by);
         long pid = found.personId();
         Claim saved = new Claim(cid, pid, ClaimRepository.money(input.amount()), date.toString(), input.note(),
                 found.status(), found.number(), found.due(), found.openedBy(), found.stated(), found.statedDue(), input.corrects(),

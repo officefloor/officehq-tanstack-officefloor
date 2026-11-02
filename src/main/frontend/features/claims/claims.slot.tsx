@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent } from 'react';
+import { useEffect, useState, type ChangeEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useSingleFlight } from '../../query/useSingleFlight';
@@ -8,6 +8,7 @@ import { gradeOn, holdsById, usePeople } from '../people/usePeople';
 import { periodOf, usePeriods } from '../periods/usePeriods';
 import { rateFor, useRates } from '../rates/useRates';
 import { claimDueNow, isOverdue } from '../overdue/useOverdue';
+import { useSignedInUser } from '../session/useSession';
 import { useSettings } from '../settings/useSettings';
 import { useSheetToday } from '../today/useSheetToday';
 import { claimed, claimsKey, isDeferred, useClaims, type Claim } from './useClaims';
@@ -48,12 +49,14 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   const people = usePeople(sheetId);
   const rates = useRates(sheetId);
   const settings = useSettings(sheetId).data;
-  const today = useSheetToday(sheetId).data?.today;
+  const sheet = useSheetToday(sheetId).data;
+  const today = sheet?.today;
   const periods = usePeriods(sheetId);
+  const [user] = useSignedInUser();
   const queryClient = useQueryClient();
   const selection = useClaimSelection(sheetId);
   const [editing, setEditing] = useState<number | null>(null);
-  const [refused, setRefused] = useState<number | null>(null);
+  const [refused, setRefused] = useState<{ id: number; message: string } | null>(null);
   const [amount, setAmount] = useState('');
   const [date, setDate] = useState('');
   const [note, setNote] = useState('');
@@ -72,6 +75,20 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
     setCorrects('');
   };
 
+  // Mark a claim's editor lock as held (or not) by this user in the cached list, ahead of the re-read.
+  const markLock = (id: number, lockedBy: string | null) =>
+    queryClient.setQueryData<Claim[]>(claimsKey(sheetId), (old) =>
+      old?.map((c) => (c.id === id ? { ...c, lockedBy } : c)),
+    );
+
+  const fillForm = (c: Claim) => {
+    setEditing(c.id);
+    setAmount(c.amount);
+    setDate(c.date);
+    setNote(c.note);
+    setCorrects(c.corrects === null ? '' : String(c.corrects));
+  };
+
   const submitOnce = useSingleFlight();
   const save = useMutation({
     mutationFn: (f: { id: number | null; amount: string; date: string; note: string; corrects: string }) => {
@@ -79,9 +96,26 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
       const path = f.id === null ? `${sheet}/people/${personId}/claims` : `${sheet}/claims/${f.id}`;
       return postJson<Claim>(path, { amount: f.amount, date: f.date, note: f.note, corrects: f.corrects });
     },
-    onSuccess: async () => {
+    onSuccess: async (_, f) => {
+      if (f.id !== null) markLock(f.id, null);
       clearForm();
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+  });
+
+  // Opening a claim's editor locks the claim for every other user until it is saved or cancelled (or the
+  // sheet's today changes); the server refuses a claim another user holds, and any it would not let be edited.
+  const lock = useMutation({
+    mutationFn: (l: { id: number; action: 'lock' | 'unlock' }) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${l.id}/${l.action}`, {}),
+    onSuccess: (_, l) => {
+      if (l.action === 'lock') {
+        queryClient.setQueryData<Claim[]>(claimsKey(sheetId), (old) =>
+          old?.map((c) =>
+            c.id === l.id ? { ...c, lockedBy: user } : c.personId === personId && c.lockedBy === user ? { ...c, lockedBy: null } : c,
+          ),
+        );
+      }
     },
   });
 
@@ -135,35 +169,67 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
     });
   };
 
-  // Only a DRAFT can be edited: editing any other claim is refused on its row and opens no editor
-  // (to change an open claim, void it and add a new one).
+  // Only a DRAFT outside a closed period, not locked by another user, can be edited, and not by a viewer: editing
+  // any other claim is refused on its row, opens no editor and takes no lock (to change an open claim, void it and
+  // add a new one). What this screen already knows is refused at once; the server refuses the rest, and the editor
+  // then goes back to what it was.
   const openEditor = (c: Claim) => {
     save.reset();
     action.reset();
     reassign.reset();
-    if (c.status !== 'DRAFT') {
-      setRefused(c.id);
+    lock.reset();
+    const role = settings?.roles.find((r) => r.user === user)?.role;
+    const known =
+      sheet?.archived ? 'the sheet is archived'
+      : role === 'viewer' ? 'a viewer can change nothing'
+      : c.status !== 'DRAFT' ? 'only a DRAFT claim can be edited'
+      : periodOf(periods.data, c.date)?.closed ? `the period ${periodOf(periods.data, c.date)?.name} is closed`
+      : c.lockedBy !== null && c.lockedBy !== user ? `the claim is being edited by ${c.lockedBy}`
+      : null;
+    if (known !== null) {
+      setRefused({ id: c.id, message: known });
       return;
     }
     setRefused(null);
-    setEditing(c.id);
-    setAmount(c.amount);
-    setDate(c.date);
-    setNote(c.note);
-    setCorrects(c.corrects === null ? '' : String(c.corrects));
+    const before = { editing, amount, date, note, corrects };
+    fillForm(c);
+    lock.mutate(
+      { id: c.id, action: 'lock' },
+      {
+        onError: (e) => {
+          setRefused({ id: c.id, message: e.message });
+          setEditing(before.editing);
+          setAmount(before.amount);
+          setDate(before.date);
+          setNote(before.note);
+          setCorrects(before.corrects);
+        },
+      },
+    );
   };
 
   const cancel = () => {
     save.reset();
+    if (editing !== null) {
+      markLock(editing, null);
+      lock.mutate({ id: editing, action: 'unlock' });
+    }
     clearForm();
   };
+
+  // A claim of this person whose lock this user still holds (after the sheet is re-loaded) shows its editor open.
+  const mine = (claims.data ?? []).filter((c) => c.personId === personId);
+  const held = mine.find((c) => c.status === 'DRAFT' && c.lockedBy !== null && c.lockedBy === user);
+  useEffect(() => {
+    if (editing === null && held !== undefined && !lock.isPending) fillForm(held);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [held?.id, editing, lock.isPending]);
 
   const field = (set: (v: string) => void) => (e: ChangeEvent<HTMLInputElement>) => {
     set(e.target.value);
     save.reset();
   };
 
-  const mine = (claims.data ?? []).filter((c) => c.personId === personId);
   // A claim's due: the one fixed when it was settled, else the greater of the floor in force on its date and its
   // figure (the rate figure its last statement bound it to, else its amount at the rate in force on its date for the
   // grade its person had on that date; 'n/a' when none applies) plus its late charge while it is overdue.
@@ -209,7 +275,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
               onChange={field(setCorrects)}
             />
           </label>{' '}
-          <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
+          <button type="submit" data-testid="claim-form-submit" disabled={save.isPending || (lock.isPending && lock.variables?.action === 'lock')}>
             {editing === null ? 'Add claim' : 'Save claim'}
           </button>
           {save.isError && <p data-testid="claim-form-error">{save.error.message}</p>}
@@ -370,7 +436,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                   {action.isError && action.variables?.id === c.id && (
                     <span data-testid="claim-error">{action.error.message}</span>
                   )}
-                  {refused === c.id && <span data-testid="claim-error">only a DRAFT claim can be edited</span>}
+                  {refused?.id === c.id && <span data-testid="claim-error">{refused.message}</span>}
                 </td>
                 <td>
                   {editing === c.id ? (

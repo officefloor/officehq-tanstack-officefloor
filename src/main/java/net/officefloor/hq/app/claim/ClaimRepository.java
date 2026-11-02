@@ -365,6 +365,45 @@ public class ClaimRepository {
                 amount, Date.valueOf(date), note, corrects, claimId, sheetId) > 0;
     }
 
+    /** Lock a claim for {@code by}'s editor, releasing any other claim of the same person {@code by} held;
+     *  false when another user holds the claim's lock. */
+    public boolean lock(String sheetId, Claim claim, String by) {
+        if (jdbc.update("UPDATE claim SET locked_by = ? WHERE id = ? AND sheet_id = ?"
+                + " AND (locked_by IS NULL OR locked_by = ?)", by, claim.id(), sheetId, by) == 0) {
+            return false;
+        }
+        jdbc.update("UPDATE claim SET locked_by = NULL WHERE sheet_id = ? AND person_id = ? AND locked_by = ? AND id <> ?",
+                sheetId, claim.personId(), by, claim.id());
+        return true;
+    }
+
+    /** Release a claim's lock when {@code by} holds it. */
+    public void unlock(String sheetId, long claimId, String by) {
+        jdbc.update("UPDATE claim SET locked_by = NULL WHERE id = ? AND sheet_id = ? AND locked_by = ?", claimId, sheetId, by);
+    }
+
+    /** Release every claim lock on the sheet (its today changed). */
+    public void unlockAll(String sheetId) {
+        jdbc.update("UPDATE claim SET locked_by = NULL WHERE sheet_id = ? AND locked_by IS NOT NULL", sheetId);
+    }
+
+    /** Who holds a claim's lock; null when it is not locked. */
+    public String lockedBy(String sheetId, long claimId) {
+        List<String> found = jdbc.queryForList("SELECT locked_by FROM claim WHERE id = ? AND sheet_id = ?", String.class,
+                claimId, sheetId);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** Who holds each locked claim of the sheet, by claim id. */
+    public Map<String, String> locks(String sheetId) {
+        Map<String, String> locks = new LinkedHashMap<>();
+        jdbc.query("SELECT id, locked_by FROM claim WHERE sheet_id = ? AND locked_by IS NOT NULL",
+                rs -> {
+                    locks.put(String.valueOf(rs.getLong("id")), rs.getString("locked_by"));
+                }, sheetId);
+        return locks;
+    }
+
     /** Write a line of a claim's status log: its status now, who moved it there, the sheet's today and its
      *  due as computed now. */
     public void log(String sheetId, long claimId, String by) {
