@@ -7,7 +7,9 @@ import { SheetBody } from '../../slots/defs/sheetBody';
 import { heldIds, usePeople } from '../people/usePeople';
 import { periodOf, usePeriods } from '../periods/usePeriods';
 import { due, rateFor, useRates } from '../rates/useRates';
+import { dueBy, isOverdue } from '../overdue/useOverdue';
 import { useSettings } from '../settings/useSettings';
+import { useSheetToday } from '../today/useSheetToday';
 import { claimed, claimsKey, fixedDue, useClaims, type Claim } from './useClaims';
 
 /** A person's claimed: the sum of their counted (OPEN or SETTLED; only SETTLED while held) claims' amounts. */
@@ -37,7 +39,10 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   const claims = useClaims(sheetId);
   const people = usePeople(sheetId);
   const rates = useRates(sheetId);
-  const floor = useSettings(sheetId).data?.floor;
+  const settings = useSettings(sheetId).data;
+  const floor = settings?.floor;
+  const terms = settings?.terms;
+  const today = useSheetToday(sheetId).data?.today;
   const periods = usePeriods(sheetId);
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<number | null>(null);
@@ -158,6 +163,10 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                 <td data-testid="claim-period">{periodOf(periods.data, c.date)?.name ?? ''}</td>
                 <td data-testid="claim-note">{c.note}</td>
                 <td data-testid="claim-due">{fixedDue(c) ?? due(c.amount, rateFor(rates.data, grade, c.date), floor)}</td>
+                <td data-testid="claim-due-by">{terms === undefined ? '' : dueBy(c.date, terms)}</td>
+                <td data-testid="claim-overdue">
+                  {terms === undefined || today === undefined ? '' : isOverdue(c, terms, today) ? 'yes' : 'no'}
+                </td>
                 <td data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</td>
                 <td data-testid="claim-status">{c.status}</td>
                 <td data-testid="claim-opened-by">{c.openedBy ?? ''}</td>

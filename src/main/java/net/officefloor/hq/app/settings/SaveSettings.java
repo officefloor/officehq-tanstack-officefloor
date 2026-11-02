@@ -29,6 +29,10 @@ public class SaveSettings {
             audit.record("SETTING_CHANGED sheet=" + id + " by=" + by + " key=floor value="
                     + SettingsRepository.money(input.floor()));
         }
+        if (input.setsTerms()) {
+            repository.setTerms(id, input.terms());
+            audit.record("SETTING_CHANGED sheet=" + id + " by=" + by + " key=terms value=" + input.terms());
+        }
         rollup.record(id, by, before);
         settings.set(repository.load(id));
     }
