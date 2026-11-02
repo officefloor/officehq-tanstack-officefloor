@@ -25,8 +25,17 @@ export function useExcess(sheetId: string): Map<number, string> {
   return excess;
 }
 
-/** Each person's due-total held to the cap, and their excess over it. */
-function useDueFigures(sheetId: string): Map<number, { total: string; excess: string }> {
+/** Each person's settled-total and open-total, by person id: the sum of the figures of their counting SETTLED
+ *  claims, and of their counting open (OPEN or PENDING) claims, as in their due-total ('n/a' figures skipped).
+ *  The two add up to the due-total before the cap. */
+export function useSettledOpenTotals(sheetId: string): Map<number, { settled: string; open: string }> {
+  const split = new Map<number, { settled: string; open: string }>();
+  for (const [id, f] of useDueFigures(sheetId)) split.set(id, { settled: f.settled, open: f.open });
+  return split;
+}
+
+/** Each person's due-total held to the cap, their excess over it, and its settled and open parts. */
+function useDueFigures(sheetId: string): Map<number, { total: string; excess: string; settled: string; open: string }> {
   const people = usePeople(sheetId);
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId);
@@ -34,7 +43,7 @@ function useDueFigures(sheetId: string): Map<number, { total: string; excess: st
   const settings = useSettings(sheetId).data;
   const holds = holdsById(people.data, today.data?.today);
   const cap = settingOn(settings, 'cap', today.data?.today);
-  const totals = new Map<number, { total: string; excess: string }>();
+  const totals = new Map<number, { total: string; excess: string; settled: string; open: string }>();
   for (const p of people.data ?? []) {
     const counting = (claims.data ?? []).filter((c) => c.personId === p.id && counts(c, holds, today.data?.today));
     const rated = rateFor(rates.data, p.grade, today.data?.today) !== undefined;
@@ -46,6 +55,8 @@ function useDueFigures(sheetId: string): Map<number, { total: string; excess: st
     totals.set(p.id, {
       total: !shown ? 'n/a' : over ? cap : sum,
       excess: over ? money(hundredths(sum) - hundredths(cap)) : '0.00',
+      settled: sumDues(dues.filter((_, i) => counting[i].status === 'SETTLED')),
+      open: sumDues(dues.filter((_, i) => counting[i].status !== 'SETTLED')),
     });
   }
   return totals;

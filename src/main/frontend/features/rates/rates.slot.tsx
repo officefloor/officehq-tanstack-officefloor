@@ -6,8 +6,8 @@ import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { GRADES } from '../people/usePeople';
 import { useSheetToday } from '../today/useSheetToday';
-import { useDueTotals, useExcess } from './useDueTotals';
-import { rateFor, ratesKey, trimmedSum, useRates, type Rate } from './useRates';
+import { useDueTotals, useExcess, useSettledOpenTotals } from './useDueTotals';
+import { rateFor, ratesKey, sumDues, trimmedSum, useRates, type Rate } from './useRates';
 
 /** The sheet's rates for each grade: a form that sets one from an optional from-date (replacing the
  *  grade's rate from that date; blank is from the beginning of time) through an optional to-date
@@ -150,6 +150,29 @@ function PersonExcess({ sheetId, personId }: { sheetId: string; personId: number
   return <td data-testid="person-excess">{excess.get(personId) ?? ''}</td>;
 }
 
+/** A person's settled-total and open-total: the parts of their due-total (before the cap) from their
+ *  SETTLED claims and from their open (OPEN or PENDING) claims. */
+function PersonSettledOpen({ sheetId, personId }: { sheetId: string; personId: number }) {
+  const split = useSettledOpenTotals(sheetId).get(personId);
+  return (
+    <>
+      <td data-testid="person-settled-total">{split?.settled ?? ''}</td>
+      <td data-testid="person-open-total">{split?.open ?? ''}</td>
+    </>
+  );
+}
+
+/** The sheet's settled-total and open-total: everyone's figure simply added up (not trimmed). */
+function SettledOpenTotals({ sheetId }: { sheetId: string }) {
+  const split = [...useSettledOpenTotals(sheetId).values()];
+  return (
+    <p>
+      Settled total: <strong data-testid="rollup-settled-total">{sumDues(split.map((s) => s.settled))}</strong>,
+      open total <strong data-testid="rollup-open-total">{sumDues(split.map((s) => s.open))}</strong>
+    </p>
+  );
+}
+
 /** The sheet's due-total: everyone's due-total added up, skipping 'n/a',
  *  leaving out the highest and the lowest when three or more people have one. */
 function DueTotal({ sheetId }: { sheetId: string }) {
@@ -167,5 +190,8 @@ export const contributions = [
   PersonCells.fill({ order: 20, Component: PersonDueTotal }),
   PersonColumnHead.fill({ order: 21, Component: () => <th>Excess</th> }),
   PersonCells.fill({ order: 21, Component: PersonExcess }),
+  PersonColumnHead.fill({ order: 21.5, Component: () => <><th>Settled</th><th>Open</th></> }),
+  PersonCells.fill({ order: 21.5, Component: PersonSettledOpen }),
   SheetBody.fill({ order: 30, Component: ({ sheetId }) => <DueTotal sheetId={sheetId} /> }),
+  SheetBody.fill({ order: 31, Component: ({ sheetId }) => <SettledOpenTotals sheetId={sheetId} /> }),
 ];
