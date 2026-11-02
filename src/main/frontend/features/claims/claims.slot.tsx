@@ -5,6 +5,7 @@ import { useSingleFlight } from '../../query/useSingleFlight';
 import { PERSON_ROW_SPAN, PersonCells, PersonColumnHead, PersonDetail } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { usePeople } from '../people/usePeople';
+import { periodOf, usePeriods } from '../periods/usePeriods';
 import { due, rateFor, useRates } from '../rates/useRates';
 import { claimed, claimsKey, fixedDue, useClaims, type Claim } from './useClaims';
 
@@ -30,6 +31,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   const claims = useClaims(sheetId);
   const people = usePeople(sheetId);
   const rates = useRates(sheetId);
+  const periods = usePeriods(sheetId);
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<number | null>(null);
   const [amount, setAmount] = useState('');
@@ -135,6 +137,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                 <td data-testid="claim-number">{c.number ?? ''}</td>
                 <td data-testid="claim-amount">{c.amount}</td>
                 <td data-testid="claim-date">{c.date}</td>
+                <td data-testid="claim-period">{periodOf(periods.data, c.date)?.name ?? ''}</td>
                 <td data-testid="claim-note">{c.note}</td>
                 <td data-testid="claim-due">{fixedDue(c) ?? due(c.amount, rateFor(rates.data, grade, c.date))}</td>
                 <td data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</td>
