@@ -1,0 +1,280 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 5383e9fc..6fa01966 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -12,7 +12,7 @@ import { useSheetToday } from '../sheet/sheet';
+ import { claimRateOf, showDue, twoDecimals, useRates } from '../rates/rates';
+ import type { Rate } from '../rates/rates';
+ import { periodOf, usePeriods } from '../periods/periods';
+-import { useCapCents, useFloorCents, useReviewSla } from '../settings/settings';
++import { useCapCents, useFloorCents, useReviewSla, useScoreBand } from '../settings/settings';
+ import {
+   claimDueCents,
+   claimed,
+@@ -55,6 +55,7 @@ function ClaimedHeader({ sheet, user }: { sheet: string; user: string }) {
+       <th>Settled total</th>
+       <th>Open total</th>
+       <th>Score</th>
++      <th>Band</th>
+       <th>Claims</th>
+     </>
+   );
+@@ -1006,6 +1007,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
+   const { data: rates = [] } = useRates(sheet);
+   const floor = useFloorCents(sheet);
+   const cap = useCapCents(sheet);
++  const bandOf = useScoreBand(sheet);
+   const today = useSheetToday(sheet);
+   const late = useLate(sheet);
+   // The excess: how far the sum of their figures is above the cap (0.00 when it is not, or is n/a).
+@@ -1014,6 +1016,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
+   const lateClaims = overdueCents(claims, [person], rates, late, floor);
+   const aged = agedCents(claims, person, rates, late, floor);
+   const split = splitDueCents(claims, rates, person, floor, late);
++  const score = scoreOf(split.settled, lateClaims.count);
+   const [draft, setDraft] = useState<Draft>(EMPTY);
+   // The editor is open on the claim this user's lock holds, as the store says: it stays open across a re-load of the
+   // sheet, and closes once the lock is released (saved, cancelled, or the sheet's today changed).
+@@ -1097,7 +1100,8 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
+       <td data-testid="person-aged-61"><Fig>{twoDecimals(aged.over60)}</Fig></td>
+       <td data-testid="person-settled-total"><Fig>{twoDecimals(split.settled)}</Fig></td>
+       <td data-testid="person-open-total"><Fig>{twoDecimals(split.open)}</Fig></td>
+-      <td data-testid="person-score">{scoreOf(split.settled, lateClaims.count).toString()}</td>
++      <td data-testid="person-score">{score.toString()}</td>
++      <td data-testid="person-band">{bandOf(score)}</td>
+       <td>
+         <form onSubmit={submit}>
+           <input
+diff --git a/src/main/frontend/features/settings/settings.slot.tsx b/src/main/frontend/features/settings/settings.slot.tsx
+index 9bb6cb59..f807c5f3 100644
+--- a/src/main/frontend/features/settings/settings.slot.tsx
++++ b/src/main/frontend/features/settings/settings.slot.tsx
+@@ -61,6 +61,8 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
+   const [graceDays, setGraceDays] = useState('');
+   const [escalateAfter, setEscalateAfter] = useState('');
+   const [reviewSla, setReviewSla] = useState('');
++  const [scoreMid, setScoreMid] = useState('');
++  const [scoreHigh, setScoreHigh] = useState('');
+   const [entryDate, setEntryDate] = useState('');
+   const [pot, setPot] = useState('');
+   const [parent, setParent] = useState('');
+@@ -108,6 +110,8 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
+       setGraceDays('');
+       setEscalateAfter('');
+       setReviewSla('');
++      setScoreMid('');
++      setScoreHigh('');
+       setEntryDate('');
+       setPot('');
+       setParent('');
+@@ -157,7 +161,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
+       ...(Object.fromEntries(PERMISSIONS.map(({ action }) => [`perm-${action}`, perms[action] ?? ''])) as Record<`perm-${PermAction}`, string>), 'clerk-limit': clerkLimit, floor, terms, 'late-pct': latePct, 'policy-date': policyDate,
+       'period-numbering-from': periodNumberingFrom, 'terms-A': gradeTerms.A ?? '', 'terms-B': gradeTerms.B ?? '',
+       'terms-C': gradeTerms.C ?? '', cap, 'proof-threshold': proofThreshold, 'proof-kinds': proofKinds, 'note-threshold': noteThreshold, 'review-threshold': reviewThreshold,
+-      'grace-days': graceDays, 'escalate-after': escalateAfter, 'review-sla': reviewSla, 'entry-date': entryDate, pot, parent, 'fiscal-start-month': fiscalStartMonth, 'alert-threshold': alertThreshold, rounding, 'default-grade': defaultGrade, 'grace-A': gradeGrace.A ?? '', 'grace-B': gradeGrace.B ?? '',
++      'grace-days': graceDays, 'escalate-after': escalateAfter, 'review-sla': reviewSla, 'score-mid': scoreMid, 'score-high': scoreHigh, 'entry-date': entryDate, pot, parent, 'fiscal-start-month': fiscalStartMonth, 'alert-threshold': alertThreshold, rounding, 'default-grade': defaultGrade, 'grace-A': gradeGrace.A ?? '', 'grace-B': gradeGrace.B ?? '',
+       'grace-C': gradeGrace.C ?? '', 'proof-threshold-A': gradeProofThreshold.A ?? '',
+       'proof-threshold-B': gradeProofThreshold.B ?? '', 'proof-threshold-C': gradeProofThreshold.C ?? '',
+       'clerk-limit-A': gradeClerkLimit.A ?? '', 'clerk-limit-B': gradeClerkLimit.B ?? '', 'clerk-limit-C': gradeClerkLimit.C ?? '' };
+@@ -480,6 +484,36 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
+           />
+         </label>{' '}
+         now <span data-testid="setting-review-sla-current"><Fig>{data?.reviewSla ?? ''}</Fig></span>{' '}
++        <label>
++          Score mid{' '}
++          <input
++            data-testid="setting-score-mid"
++            placeholder="whole number (blank: no bands)"
++            value={scoreMid}
++            onChange={(e) => {
++              setScoreMid(e.target.value);
++              touch('score-mid');
++            }}
++            // As the policy date: clearing an already blank field must still send the blank.
++            onFocus={() => touch('score-mid')}
++          />
++        </label>{' '}
++        now <span data-testid="setting-score-mid-current"><Fig>{data?.scoreMid ?? ''}</Fig></span>{' '}
++        <label>
++          Score high{' '}
++          <input
++            data-testid="setting-score-high"
++            placeholder="whole number (blank: no bands)"
++            value={scoreHigh}
++            onChange={(e) => {
++              setScoreHigh(e.target.value);
++              touch('score-high');
++            }}
++            // As the policy date: clearing an already blank field must still send the blank.
++            onFocus={() => touch('score-high')}
++          />
++        </label>{' '}
++        now <span data-testid="setting-score-high-current"><Fig>{data?.scoreHigh ?? ''}</Fig></span>{' '}
+         <label>
+           Entry date{' '}
+           <input
+diff --git a/src/main/frontend/features/settings/settings.ts b/src/main/frontend/features/settings/settings.ts
+index 28621191..b19eaa50 100644
+--- a/src/main/frontend/features/settings/settings.ts
++++ b/src/main/frontend/features/settings/settings.ts
+@@ -32,12 +32,13 @@ import { hundredths } from '../rates/rates';
+  *  before the sheet's today is late for review.
+  *  And the default grade (A, B or C; '' for A, not dated): the grade a person added by the quick-add bar, or by an
+  *  import line with a blank grade, takes.
++ *  And the score thresholds of the MID and HIGH bands (whole numbers; '' for none, not dated).
+  *  And, for each dated key (every one that carries a figure), its values as recorded, by from-date. */
+ export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string;
+   termsA: string; termsB: string; termsC: string; cap: string;
+   proofThreshold: string; noteThreshold: string; reviewThreshold: string; graceDays: string; escalateAfter: string; entryDate: string; graceA: string; graceB: string; graceC: string;
+   proofThresholdA: string; proofThresholdB: string; proofThresholdC: string; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string; rounding: string; reviewSla: string; proofKinds: string; defaultGrade: string;
+-  clerkLimitA: string; clerkLimitB: string; clerkLimitC: string; perms: Partial<Record<PermAction, string>>; dated: Partial<Record<SettingKey, DatedValue[]>> };
++  clerkLimitA: string; clerkLimitB: string; clerkLimitC: string; scoreMid: string; scoreHigh: string; perms: Partial<Record<PermAction, string>>; dated: Partial<Record<SettingKey, DatedValue[]>> };
+ 
+ /** A dated setting's value as recorded: in force from its from-date (yyyy-MM-dd). */
+ export type DatedValue = { from: string; value: string };
+@@ -47,7 +48,7 @@ export type DatedCents = (date: string) => bigint;
+ 
+ /** Whether a setting is dated: every one that carries a figure is but the pot and the alert threshold; the policy, period numbering and entry dates and the grace days are not. */
+ export function isDated(key: SettingKey): boolean {
+-  return key !== 'policy-date' && key !== 'period-numbering-from' && key !== 'grace-days' && key !== 'escalate-after' && key !== 'review-sla' && key !== 'entry-date' && key !== 'proof-kinds' && key !== 'pot' && key !== 'alert-threshold' && key !== 'parent' && key !== 'fiscal-start-month' && key !== 'default-grade' && !key.startsWith('perm-');
++  return key !== 'policy-date' && key !== 'period-numbering-from' && key !== 'grace-days' && key !== 'escalate-after' && key !== 'review-sla' && key !== 'entry-date' && key !== 'proof-kinds' && key !== 'pot' && key !== 'alert-threshold' && key !== 'score-mid' && key !== 'score-high' && key !== 'parent' && key !== 'fiscal-start-month' && key !== 'default-grade' && !key.startsWith('perm-');
+ }
+ 
+ /** The figure in force on a date: the value of the latest from-date on or before it, before every from-date (or
+@@ -66,7 +67,7 @@ function datedCents(values: DatedValue[] | undefined, start: string): DatedCents
+ 
+ /** A setting's key as the server names it, with the field of {@link Settings} that shows it. */
+ export type SettingKey = 'clerk-limit' | 'floor' | 'terms' | 'late-pct' | 'policy-date' | 'period-numbering-from'
+-  | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'clerk-limit-A' | 'clerk-limit-B' | 'clerk-limit-C' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'cap' | 'proof-threshold' | 'proof-kinds' | 'note-threshold' | 'review-threshold' | 'grace-days' | 'escalate-after' | 'review-sla' | 'entry-date' | 'pot' | 'parent' | 'fiscal-start-month' | 'alert-threshold' | 'rounding' | 'default-grade' | `perm-${PermAction}`;
++  | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'clerk-limit-A' | 'clerk-limit-B' | 'clerk-limit-C' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'cap' | 'proof-threshold' | 'proof-kinds' | 'note-threshold' | 'review-threshold' | 'grace-days' | 'escalate-after' | 'review-sla' | 'entry-date' | 'pot' | 'parent' | 'fiscal-start-month' | 'alert-threshold' | 'score-mid' | 'score-high' | 'rounding' | 'default-grade' | `perm-${PermAction}`;
+ 
+ /** The actions whose roles the permission matrix sets, each with its standing rule (used while its entry is blank). */
+ export const PERMISSIONS = [
+@@ -161,6 +162,19 @@ export function useReviewSla(sheet: string): number | null {
+   return days === '' ? null : Number.parseInt(days, 10);
+ }
+ 
++/** A person's band by score: HIGH at or above the high threshold, MID at or above the mid one, else LOW; '' while
++ *  either threshold is blank. */
++export function useScoreBand(sheet: string): (score: bigint) => string {
++  const { data } = useSettings(sheet);
++  const mid = data?.scoreMid ?? '';
++  const high = data?.scoreHigh ?? '';
++  return (score) => {
++    if (mid === '' || high === '') return '';
++    if (score >= BigInt(high)) return 'HIGH';
++    return score >= BigInt(mid) ? 'MID' : 'LOW';
++  };
++}
++
+ /** The grace of a grade in force on a date (yyyy-MM-dd), in whole days; 0 when it has none then. */
+ export type GraceDays = (grade: string | undefined, date: string) => number;
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Settings.java b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+index df11f931..b1c6515d 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+@@ -106,6 +106,12 @@ public class Settings {
+     /** The due-total above which a person's crossing it writes an ALERT line (two decimals, not dated); blank: off. */
+     public static final String ALERT_THRESHOLD = "alert-threshold";
+ 
++    /** The score at or above which a person is in the MID band (a whole number, not dated); blank: no bands. */
++    public static final String SCORE_MID = "score-mid";
++
++    /** The score at or above which a person is in the HIGH band (a whole number, not dated); blank: no bands. */
++    public static final String SCORE_HIGH = "score-high";
++
+     /** The id of the sheet whose rates this sheet takes where it has none of its own (not dated, and kept apart from
+      *  the sheet's own settings, so a sheet shown as of a date keeps it); blank: none. */
+     public static final String PARENT = "parent";
+@@ -146,7 +152,7 @@ public class Settings {
+     /** Whether the key is dated: every setting that carries a figure is but the pot and the alert threshold; the policy, period numbering and entry dates, the grace days and the parent are not. */
+     public static boolean dated(String key) {
+         return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key)
+-                && !ENTRY_DATE.equals(key) && !PROOF_KINDS.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
++                && !ENTRY_DATE.equals(key) && !PROOF_KINDS.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !SCORE_MID.equals(key) && !SCORE_HIGH.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
+                 && !DEFAULT_GRADE.equals(key) && !key.startsWith("perm-");
+     }
+ 
+@@ -474,6 +480,6 @@ public class Settings {
+                 Integer.toString(fiscalStartMonth(sheet)), get(sheet, ALERT_THRESHOLD), on(sheet, ROUNDING, today),
+                 on(sheet, REVIEW_THRESHOLD, today), get(sheet, ESCALATE_AFTER), get(sheet, REVIEW_SLA), get(sheet, PROOF_KINDS),
+                 get(sheet, DEFAULT_GRADE), on(sheet, gradeClerkLimit("A"), today), on(sheet, gradeClerkLimit("B"), today),
+-                on(sheet, gradeClerkLimit("C"), today));
++                on(sheet, gradeClerkLimit("C"), today), get(sheet, SCORE_MID), get(sheet, SCORE_HIGH));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+index 79423287..7283dda3 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+@@ -14,7 +14,8 @@ import java.util.Map;
+  * threshold with two decimals, or "" for off. And the rounding mode (half-up or half-even), or "" for none. And the review
+  * threshold with two decimals, or "" for none. And the escalation gap (a whole number of days), or "" for off. And the review SLA (a whole number of
+  * days), or "" for none. And the proof kinds (comma separated), or "" for none. And the default grade, or "" for A. And each grade's own clerk
+- * limit with two decimals, or "" for none (the grade takes the sheet's).
++ * limit with two decimals, or "" for none (the grade takes the sheet's). And the score thresholds of the MID and HIGH
++ * bands (whole numbers), each "" for none.
+  */
+ public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
+         String periodNumberingFrom, String termsA, String termsB, String termsC, String cap,
+@@ -22,5 +23,5 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
+         String graceDays, String noteThreshold, String entryDate, String graceA, String graceB, String graceC,
+         String proofThresholdA, String proofThresholdB, String proofThresholdC, String pot, String parent,
+         String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla, String proofKinds, String defaultGrade,
+-        String clerkLimitA, String clerkLimitB, String clerkLimitC) {
++        String clerkLimitA, String clerkLimitB, String clerkLimitC, String scoreMid, String scoreHigh) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+index 0eaa0c9d..0d6721d2 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateSetting {
+     private static final Pattern LIMIT = Pattern.compile("\\d{1,7}(\\.\\d{1,2})?");
++    private static final Pattern SCORE = Pattern.compile("-?\\d{1,7}");
+     private static final Pattern DAYS = Pattern.compile("\\d{1,4}");
+ 
+     public void validate(@PathVariable("sheet") String sheet, @RequestBody SettingRequest request, Settings settings,
+@@ -64,7 +65,7 @@ public class ValidateSetting {
+         if (!Settings.CLERK_LIMIT.equals(key) && !Settings.CAP.equals(key) && !Settings.PROOF_THRESHOLD.equals(key) && !Settings.PROOF_KINDS.equals(key) && !Settings.NOTE_THRESHOLD.equals(key) && !Settings.REVIEW_THRESHOLD.equals(key) && !Settings.FLOOR.equals(key) && !Settings.TERMS.equals(key)
+                 && !Settings.LATE_PCT.equals(key) && !Settings.POLICY_DATE.equals(key)
+                 && !Settings.PERIOD_NUMBERING_FROM.equals(key) && !Settings.GRACE_DAYS.equals(key) && !Settings.ESCALATE_AFTER.equals(key) && !Settings.REVIEW_SLA.equals(key) && !Settings.ENTRY_DATE.equals(key)
+-                && !Settings.POT.equals(key) && !Settings.ALERT_THRESHOLD.equals(key) && !Settings.PARENT.equals(key) && !Settings.FISCAL_START_MONTH.equals(key) && !Settings.ROUNDING.equals(key) && !Settings.DEFAULT_GRADE.equals(key)
++                && !Settings.POT.equals(key) && !Settings.ALERT_THRESHOLD.equals(key) && !Settings.SCORE_MID.equals(key) && !Settings.SCORE_HIGH.equals(key) && !Settings.PARENT.equals(key) && !Settings.FISCAL_START_MONTH.equals(key) && !Settings.ROUNDING.equals(key) && !Settings.DEFAULT_GRADE.equals(key)
+                 && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeTerms(g).equals(key))
+                 && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeGrace(g).equals(key))
+                 && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeProofThreshold(g).equals(key))
+@@ -180,6 +181,13 @@ public class ValidateSetting {
+             }
+             return new SettingInput(key, value.isEmpty() ? "" : Integer.toString(Integer.parseInt(value)));
+         }
++        // A score threshold is a whole number (a score may be below 0); blank means no bands.
++        if (Settings.SCORE_MID.equals(key) || Settings.SCORE_HIGH.equals(key)) {
++            if (!value.isEmpty() && !SCORE.matcher(value).matches()) {
++                throw new InvalidSettingException("The " + key + " must be a whole number, or blank");
++            }
++            return new SettingInput(key, value.isEmpty() ? "" : Integer.toString(Integer.parseInt(value)));
++        }
+         // A grade's grace is a whole number of days; blank means none.
+         if (Settings.GRADES.stream().anyMatch((g) -> Settings.gradeGrace(g).equals(key))) {
+             if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
+diff --git a/tmp_e2e/run.log b/tmp_e2e/run.log
+deleted file mode 100644
+index b8777014..00000000
+--- a/tmp_e2e/run.log
++++ /dev/null
+@@ -1,12 +0,0 @@
+-Picked up JAVA_TOOL_OPTIONS: -Djava.io.tmpdir=/home/daniel/ui-work/runs/202610271-to/tmp
+-
+-Running 4 tests using 1 worker
+-
+-  ✓  1 [chromium] › acceptance.spec.ts:6:7 › score › score (14.2s)
+-  ✓  2 [chromium] › acceptance.spec.ts:74:7 › score › score scenario 1 (21.6s)
+-  ✓  3 [chromium] › acceptance.spec.ts:525:7 › score › score scenario 2 (30.1s)
+-  ✓  4 [chromium] › acceptance.spec.ts:1041:7 › score › score scenario 3 (1.0m)
+-
+-  Slow test file: [chromium] › acceptance.spec.ts (2.1m)
+-  Consider splitting slow test files to speed up parallel execution
+-  4 passed (2.2m)
