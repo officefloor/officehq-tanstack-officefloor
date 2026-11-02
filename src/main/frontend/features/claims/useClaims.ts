@@ -6,7 +6,8 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 
 /** A claim: its amount with two decimals, its date (yyyy-mm-dd), its note, its status, its number on
  *  the sheet (given when it is opened; null while a draft and once void) and the due fixed when it was
- *  settled (null unless settled while its grade had a rate: its due is then live, from the rates). */
+ *  settled (null unless settled while its grade had a rate: its due is then live, from the rates), and
+ *  who opened it (null until it is opened). */
 export type Claim = {
   id: number;
   personId: number;
@@ -16,6 +17,7 @@ export type Claim = {
   status: ClaimStatus;
   number: number | null;
   due: string | null;
+  openedBy: string | null;
 };
 
 /** Whether a claim counts toward claimed and every total: only OPEN and SETTLED claims do. */

@@ -15,7 +15,8 @@ function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: numbe
 
 type ClaimAction = 'open' | 'settle' | 'void';
 
-/** A claim's status changes; the server refuses one its status does not allow. */
+/** A claim's status changes; the server refuses one its status does not allow, and a settle by
+ *  the user who opened the claim. */
 const ACTIONS: [ClaimAction, string][] = [
   ['open', 'Open'],
   ['settle', 'Settle'],
@@ -133,6 +134,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                 <td data-testid="claim-note">{c.note}</td>
                 <td data-testid="claim-due">{c.due ?? due(c.amount, rateFor(rates.data, grade, c.date))}</td>
                 <td data-testid="claim-status">{c.status}</td>
+                <td data-testid="claim-opened-by">{c.openedBy ?? ''}</td>
                 <td>
                   {ACTIONS.map(([a, label]) => (
                     <button

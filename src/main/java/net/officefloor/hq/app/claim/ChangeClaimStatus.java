@@ -35,14 +35,21 @@ public class ChangeClaimStatus {
         if (found == null) {
             throw new BadRequestException("no such claim");
         }
+        // Four eyes: whoever opened a claim cannot settle it.
+        if (to.equals("SETTLED") && found.status().equals("OPEN") && by.equals(found.openedBy())) {
+            throw new BadRequestException("the user who opened a claim cannot settle it");
+        }
         if (!repository.changeStatus(id, cid, from, to)) {
             throw new BadRequestException("a " + found.status() + " claim cannot be moved to " + to);
         }
         // Opening gives the sheet's next number; voiding clears it, but its line carries the number it had.
         Long number = found.number();
         Long had = number;
+        String openedBy = found.openedBy();
         if (to.equals("OPEN")) {
             number = had = repository.number(id, cid);
+            repository.openedBy(id, cid, by);
+            openedBy = by;
         } else if (to.equals("VOID")) {
             repository.clearNumber(id, cid);
             number = null;
@@ -57,7 +64,7 @@ public class ChangeClaimStatus {
             settledDue = " due=" + (due == null ? "n/a" : due);
         }
         Claim changed = new Claim(found.id(), found.personId(), found.amount(), found.date(), found.note(), to,
-                number, due);
+                number, due, openedBy);
         audit.record(event + " sheet=" + id + " by=" + by + " person=" + repository.personName(id, found.personId())
                 + " amount=" + changed.amount() + " date=" + changed.date() + Claim.auditNumber(had) + settledDue);
         claim.set(changed);

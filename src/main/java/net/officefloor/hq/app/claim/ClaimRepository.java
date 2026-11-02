@@ -15,12 +15,13 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no, settled_due";
+    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no, settled_due, opened_by";
 
     private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getLong("person_id"),
             money(rs.getBigDecimal("amount")), rs.getDate("claim_date").toLocalDate().toString(),
             rs.getString("note"), rs.getString("status"),
-            rs.getObject("claim_no", Long.class), dueOf(rs.getBigDecimal("settled_due")));
+            rs.getObject("claim_no", Long.class), dueOf(rs.getBigDecimal("settled_due")),
+            rs.getString("opened_by"));
 
     private final JdbcTemplate jdbc;
 
@@ -62,6 +63,11 @@ public class ClaimRepository {
         Long next = jdbc.queryForObject("SELECT claim_number FROM sheet WHERE id = ?", Long.class, sheetId);
         jdbc.update("UPDATE claim SET claim_no = ? WHERE id = ? AND sheet_id = ?", next, claimId, sheetId);
         return next;
+    }
+
+    /** Record who opened a claim. */
+    public void openedBy(String sheetId, long claimId, String by) {
+        jdbc.update("UPDATE claim SET opened_by = ? WHERE id = ? AND sheet_id = ?", by, claimId, sheetId);
     }
 
     /** Clear a claim's number (it is never given to another claim). */
@@ -106,7 +112,7 @@ public class ClaimRepository {
             ps.setString(5, note);
             return ps;
         }, keys);
-        return new Claim(keys.getKey().longValue(), personId, money(amount), date.toString(), note, "DRAFT", null, null);
+        return new Claim(keys.getKey().longValue(), personId, money(amount), date.toString(), note, "DRAFT", null, null, null);
     }
 
     /** Change a claim's amount, date and note; false when the sheet has no such claim. */
