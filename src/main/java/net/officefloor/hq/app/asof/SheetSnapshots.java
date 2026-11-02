@@ -32,9 +32,10 @@ public class SheetSnapshots {
 
     private static final String SHADOW = "__ASOF";
 
-    /** Tables that are history themselves, never part of what a sheet shows (a sheet note carries its own date). */
+    /** Tables that are history themselves, never part of what a sheet shows (a sheet note carries its own date), and
+     *  the grades added to a sheet, which are not dated: a sheet shown as of any date has every grade it has now. */
     private static final Set<String> SKIP = Set.of("FLYWAY_SCHEMA_HISTORY", "SHEET_STATE", "SHEET_SNAPSHOT",
-            "SHEET_NOTE");
+            "SHEET_NOTE", "GRADE_ADDED");
 
     /** A table kept per sheet: its stored columns, how its rows of one sheet are found, and its primary key (null when it
      *  has none kept). */

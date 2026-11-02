@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
-import { GRADES } from '../people/people';
 import { twoDecimals } from '../rates/rates';
 import { useGradeDue, useSheetExists } from './sheetcompare';
 
@@ -12,9 +11,9 @@ function OtherLines({ sheet, other }: { sheet: string; other: string }) {
   if (!mine.ready || !theirs.ready) return null;
   return (
     <>
-      {GRADES.map((g) => (
+      {mine.grades.map((g) => (
         <div key={g} data-testid="compare-line">
-          {`${g} ${twoDecimals(mine.due[g])} ${twoDecimals(theirs.due[g])}`}
+          {`${g} ${twoDecimals(mine.due[g])} ${twoDecimals(theirs.due[g] ?? 0n)}`}
         </div>
       ))}
     </>

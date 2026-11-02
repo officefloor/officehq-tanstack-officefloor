@@ -5,8 +5,10 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { byUser } from '../session/session';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
-import { GRADES, peopleKey, peoplePath } from './people';
+import { peopleKey, peoplePath } from './people';
+import { useGradeCodes } from '../grades/grades';
 import type { Grade, Person } from './people';
+import { useGradeCodes } from '../grades/grades';
 import { clearSelectedPeople, selectPerson, useSelectedPeople } from './selection';
 
 type BulkGraded = { graded: number; people: Person[] };
@@ -33,6 +35,7 @@ function PersonSelect({ sheet, person }: { sheet: string; user: string; person: 
 // Gives the selected people a grade together, from a from-date (blank for the sheet's today): the server saves each
 // in list order exactly as the person form would, and refuses the whole action on a bad date. Shows how many changed.
 function BulkGrade({ sheet, user }: { sheet: string; user: string }) {
+  const gradeCodes = useGradeCodes(sheet);
   const queryClient = useQueryClient();
   const selected = useSelectedPeople(sheet);
   const [grade, setGrade] = useState<Grade>('A');
@@ -60,7 +63,7 @@ function BulkGrade({ sheet, user }: { sheet: string; user: string }) {
             apply.reset();
           }}
         >
-          {GRADES.map((g) => (
+          {gradeCodes.map((g) => (
             <option key={g} value={g}>
               {g}
             </option>

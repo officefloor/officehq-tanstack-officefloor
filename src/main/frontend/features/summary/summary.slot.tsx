@@ -1,5 +1,6 @@
 import { SheetPanels } from '../../slots/defs/sheetPanels';
-import { GRADES, isRetired, usePeople } from '../people/people';
+import { isRetired, usePeople } from '../people/people';
+import { useGradeCodes } from '../grades/grades';
 import { useSheetToday } from '../sheet/sheet';
 import { hundredths, twoDecimals, useRates } from '../rates/rates';
 import { useFloorCents, useReviewSla } from '../settings/settings';
@@ -16,6 +17,7 @@ import { useCapCentsOf } from '../pools/pools';
 // Beside it, the classic summary: per period, its due-total counting each claim by its status now (a closed period shows
 // the figure fixed when it closed), and the sheet's due-total untrimmed (everyone's due-total added up, n/a adding nothing).
 function Summary({ sheet }: { sheet: string; user: string }) {
+  const gradeCodes = useGradeCodes(sheet);
   const { data: claims = [] } = useClaims(sheet);
   const { data: people = [] } = usePeople(sheet);
   const { data: periods = [] } = usePeriods(sheet);
@@ -54,7 +56,7 @@ function Summary({ sheet }: { sheet: string; user: string }) {
           </tr>
         </thead>
         <tbody>
-          {GRADES.map((g) => {
+          {gradeCodes.map((g) => {
             const onGrade = current.filter((p) => p.grade === g);
             const due = onGrade.reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, capOf(p), people) ?? 0n), 0n);
             return (

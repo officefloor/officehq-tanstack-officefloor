@@ -6,6 +6,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.grade.Grades;
 import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.role.Roles;
 import net.officefloor.hq.app.rollup.Rollup;
@@ -22,15 +23,13 @@ import org.springframework.web.bind.annotation.RequestParam;
  * and writes nothing.
  */
 public class BulkGradePeople {
-    private static final Set<String> GRADES = Set.of("A", "B", "C");
-
     public void grade(@PathVariable("sheet") String sheet, @RequestParam("user") String user,
             @RequestBody BulkGradeRequest request, People people, SheetClock clock, Audit audit, Rollup rollup, Roles roles,
-            ObjectResponse<BulkGradeResponse> response)
+            Grades grades, ObjectResponse<BulkGradeResponse> response)
             throws InvalidPersonException, DuplicatePersonNameException, StalePersonException {
         String grade = request == null || request.grade() == null ? "" : request.grade().trim();
-        if (!GRADES.contains(grade)) {
-            throw new InvalidPersonException("Grade must be A, B or C");
+        if (!grades.isGrade(sheet, grade)) {
+            throw new InvalidPersonException("Grade must be one of the sheet's grades");
         }
         String from = request.from() == null ? "" : request.from().trim();
         if (!from.isEmpty()) {

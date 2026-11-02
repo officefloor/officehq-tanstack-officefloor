@@ -14,3 +14,9 @@ export function useGrades(sheet: string) {
     queryFn: () => getJson<GradeRow[]>(gradesPath(sheet)),
   });
 }
+
+/** The sheet's grade codes, in order: A, B and C, then those added, in the order added. */
+export function useGradeCodes(sheet: string): string[] {
+  const { data } = useGrades(sheet);
+  return data?.length ? data.map((g) => g.grade) : ['A', 'B', 'C'];
+}

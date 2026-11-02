@@ -5,7 +5,7 @@ import { getJson, postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { byUser } from '../session/session';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
-import { GRADES } from '../people/people';
+import { useGradeCodes } from '../grades/grades';
 import { useSheetToday } from '../sheet/sheet';
 import type { Grade } from '../people/people';
 import { rateOf, ratePreviewPath, ratesKey, ratesPath, useRates } from './rates';
@@ -22,6 +22,7 @@ const EMPTY: Draft = { grade: 'A', pct: '', from: '', to: '' };
 function Rates({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();
   const { data: rates = [] } = useRates(sheet);
+  const gradeCodes = useGradeCodes(sheet);
   const today = useSheetToday(sheet);
   const [draft, setDraft] = useState<Draft>(EMPTY);
   // The rate calendar: each month (yyyy-MM) of the sheet's today's calendar year, read on its first day.
@@ -71,7 +72,7 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
             value={draft.grade}
             onChange={(e) => change({ grade: e.target.value as Grade })}
           >
-            {GRADES.map((g) => (
+            {gradeCodes.map((g) => (
               <option key={g} value={g}>
                 {g}
               </option>
@@ -105,7 +106,7 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
         </button>
         {save.isError && (
           <span data-testid="rate-form-error" role="alert">
-            {' '}A rate needs a grade of A, B or C and a percent of 0.00 or more with up to two decimals, a from-date and a to-date that are each a valid date or blank, and a to-date not before the from-date.
+            {' '}A rate needs one of the sheet's grades and a percent of 0.00 or more with up to two decimals, a from-date and a to-date that are each a valid date or blank, and a to-date not before the from-date.
           </span>
         )}
       </form>
@@ -120,7 +121,7 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
               preview.reset();
             }}
           >
-            {GRADES.map((g) => (
+            {gradeCodes.map((g) => (
               <option key={g} value={g}>
                 {g}
               </option>
@@ -149,7 +150,7 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
         )}
         {preview.isError && (
           <span data-testid="rate-preview-error" role="alert">
-            {' '}A preview needs a grade of A, B or C and a percent of 0.00 or more with up to two decimals.
+            {' '}A preview needs one of the sheet's grades and a percent of 0.00 or more with up to two decimals.
           </span>
         )}
       </div>
@@ -161,7 +162,7 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
           </tr>
         </thead>
         <tbody>
-          {GRADES.map((g) => (
+          {gradeCodes.map((g) => (
             <tr key={g}>
               <td>{g}</td>
               <td data-testid={`rate-current-${g}`}><Fig>{rateOf(rates, g, today) ?? 'n/a'}</Fig></td>
@@ -180,7 +181,7 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
             </tr>
           </thead>
           <tbody>
-            {GRADES.map((g) => (
+            {gradeCodes.map((g) => (
               <tr key={g}>
                 <td>{g}</td>
                 {months.map((m) => (

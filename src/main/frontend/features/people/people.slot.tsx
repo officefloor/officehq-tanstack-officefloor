@@ -6,7 +6,8 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { byUser } from '../session/session';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
-import { GRADES, isRetired, peopleKey, peoplePath, shownName, usePeople, useShowRetired } from './people';
+import { isRetired, peopleKey, peoplePath, shownName, usePeople, useShowRetired } from './people';
+import { useGradeCodes } from '../grades/grades';
 import type { Grade, Person } from './people';
 import { SORT_KEYS, useSorted, useSortBy } from './sort';
 import type { SortKey } from './sort';
@@ -115,6 +116,7 @@ function restrictedTo(user: string, everyone: Person[], crews: Crew[]): Set<numb
 // once a person's editor is opened, edits them. The editor remembers the version of the person it loaded;
 // when someone else has saved them since, the save is refused and the form shows their current values.
 function People({ sheet, user }: { sheet: string; user: string }) {
+  const gradeCodes = useGradeCodes(sheet);
   const shown = useShown(sheet, user);
   const queryClient = useQueryClient();
   const { data: everyone = [] } = usePeople(sheet);
@@ -208,7 +210,7 @@ function People({ sheet, user }: { sheet: string; user: string }) {
             value={draft.grade}
             onChange={(e) => change({ grade: e.target.value as Grade })}
           >
-            {GRADES.map((g) => (
+            {gradeCodes.map((g) => (
               <option key={g} value={g}>
                 {g}
               </option>

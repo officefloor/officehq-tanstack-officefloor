@@ -22,15 +22,15 @@ public class MergeGrade {
 
     public void merge(@PathVariable("sheet") String sheet, @RequestParam("user") String user,
             @RequestBody GradeMergeRequest request, People people, SheetClock clock, Audit audit, Rollup rollup,
-            Roles roles, ObjectResponse<GradeMergeResponse> response)
+            Roles roles, Grades grades, ObjectResponse<GradeMergeResponse> response)
             throws InvalidPersonException, DuplicatePersonNameException, StalePersonException {
         if (!Role.STEWARD.equals(roles.of(sheet, user))) {
             throw new InvalidPersonException("Only a steward may merge a grade");
         }
         String from = request == null || request.from() == null ? "" : request.from().trim();
         String into = request == null || request.into() == null ? "" : request.into().trim();
-        if (!Grades.ALL.contains(from) || !Grades.ALL.contains(into)) {
-            throw new InvalidPersonException("Grades must be A, B or C");
+        if (!grades.isGrade(sheet, from) || !grades.isGrade(sheet, into)) {
+            throw new InvalidPersonException("Grades must be grades of the sheet");
         }
         if (from.equals(into)) {
             throw new InvalidPersonException("A grade cannot be merged into itself");

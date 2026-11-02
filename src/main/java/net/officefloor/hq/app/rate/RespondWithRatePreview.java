@@ -4,12 +4,12 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.Claims;
 import net.officefloor.hq.app.claim.Late;
+import net.officefloor.hq.app.grade.Grades;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.setting.Dated;
@@ -25,17 +25,16 @@ import org.springframework.web.bind.annotation.RequestParam;
  * differences. A claim bound by a statement keeps its figure; a settled one is not counted. Nothing is written.
  */
 public class RespondWithRatePreview {
-    private static final Set<String> GRADES = Set.of("A", "B", "C");
     private static final Pattern PCT = Pattern.compile("\\d{1,7}(\\.\\d{1,2})?");
 
     public void respond(@PathVariable("sheet") String sheet,
             @RequestParam(value = "grade", required = false) String grade,
             @RequestParam(value = "pct", required = false) String pct, Rates rates, People people, Claims claims,
-            Settings settings, SheetClock clock, ObjectResponse<RatePreview> response) throws InvalidRateException {
+            Settings settings, SheetClock clock, Grades grades, ObjectResponse<RatePreview> response) throws InvalidRateException {
         String g = grade == null ? "" : grade.trim();
         String p = pct == null ? "" : pct.trim();
-        if (!GRADES.contains(g)) {
-            throw new InvalidRateException("Grade must be A, B or C");
+        if (!grades.isGrade(sheet, g)) {
+            throw new InvalidRateException("Grade must be one of the sheet's grades");
         }
         if (!PCT.matcher(p).matches()) {
             throw new InvalidRateException("The rate must be a percent of 0.00 or more with up to two decimals");

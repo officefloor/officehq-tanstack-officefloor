@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { GRADES, isRetired, usePeople, type Grade } from '../people/people';
+import { isRetired, usePeople, type Grade } from '../people/people';
+import { useGrades } from '../grades/grades';
 import { useSheet, useSheetToday } from '../sheet/sheet';
 import { useRates } from '../rates/rates';
 import { useFloorCents, useSettings } from '../settings/settings';
@@ -20,7 +21,9 @@ export function useSheetExists(sheet: string) {
 
 /** Per grade, the sheet's summary due-total: the due-totals of the people on it today (retired ones left out) added
  *  up, an n/a due-total adding nothing — figured as the summary figures it. `ready` once its reads have answered. */
-export function useGradeDue(sheet: string): { ready: boolean; due: Record<Grade, bigint> } {
+export function useGradeDue(sheet: string): { ready: boolean; grades: Grade[]; due: Record<Grade, bigint> } {
+  const gradesQ = useGrades(sheet);
+  const grades = (gradesQ.data ?? []).map((g) => g.grade);
   const sheetQ = useSheet(sheet);
   const peopleQ = usePeople(sheet);
   const claimsQ = useClaims(sheet);
@@ -35,13 +38,13 @@ export function useGradeDue(sheet: string): { ready: boolean; due: Record<Grade,
   const rates = ratesQ.data ?? [];
   const current = people.filter((p) => !isRetired(p));
   const due = Object.fromEntries(
-    GRADES.map((g) => [
+    grades.map((g) => [
       g,
       current
         .filter((p) => p.grade === g)
         .reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, capOf(p), people) ?? 0n), 0n),
     ]),
   ) as Record<Grade, bigint>;
-  const ready = [sheetQ, peopleQ, claimsQ, ratesQ, settingsQ].every((q) => q.isSuccess && !q.isFetching);
-  return { ready, due };
+  const ready = [sheetQ, peopleQ, claimsQ, ratesQ, settingsQ, gradesQ].every((q) => q.isSuccess && !q.isFetching);
+  return { ready, grades, due };
 }

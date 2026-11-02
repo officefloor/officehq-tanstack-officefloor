@@ -82,6 +82,7 @@ public class SheetCloner {
         copy("USER_ROLE", Map.of("SHEET", to), "sheet = ?", sheet);
         copy("RATE", Map.of("SHEET", to), "sheet = ?", sheet);
         copy("RATE_VERSION", Map.of("SHEET", to), "sheet = ?", sheet);
+        copy("GRADE_ADDED", Map.of("SHEET", to), "sheet = ? ORDER BY id", sheet);
         copy("HOLIDAY", Map.of("SHEET", to), "sheet = ?", sheet);
         copy("VOID_REASON", Map.of("SHEET", to), "sheet = ?", sheet);
         copy("CLAIM_TEMPLATE", Map.of("SHEET", to), "sheet = ?", sheet);

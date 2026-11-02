@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
-import { GRADES, isRetired, usePeople, type Grade } from '../people/people';
+import { isRetired, usePeople, type Grade } from '../people/people';
+import { useGradeCodes } from '../grades/grades';
 import { twoDecimals, useRates } from '../rates/rates';
 import { CLAIM_STATUSES, personDueCents, statusCount, trimmedSum, useClaims, useLate, useSheetTotals, type ClaimStatus } from '../claims/claims';
 import { useAliases } from '../aliases/aliases';
@@ -16,6 +17,8 @@ type Figures = {
   /** Each person's due-total that is not n/a, and everyone's overdue-total, untrimmed. */
   due: bigint[];
   overdue: bigint[];
+  /** The sheet's grades, in order, and per grade the due-totals of the people on it. */
+  codes: Grade[];
   grades: Record<Grade, bigint>;
   statuses: Record<ClaimStatus, number>;
 };
@@ -33,13 +36,14 @@ function SheetFigures({ sheet, report }: { sheet: string; report: (sheet: string
   const capOf = useCapCentsOf(sheet);
   const { data: aliases = [] } = useAliases(sheet);
   const { figures } = useSheetTotals(sheet);
+  const codes = useGradeCodes(sheet);
   const names = people.map((p) => [
     p.name.toLowerCase(),
     ...aliases.filter((a) => a.person === p.id).map((a) => a.alias.toLowerCase()),
   ]);
   const current = people.filter((p) => !isRetired(p));
   const grades = Object.fromEntries(
-    GRADES.map((g) => [
+    codes.map((g) => [
       g,
       current
         .filter((p) => p.grade === g)
@@ -52,11 +56,12 @@ function SheetFigures({ sheet, report }: { sheet: string; report: (sheet: string
     names,
     figures.due.map(String),
     figures.overdue.map(String),
-    GRADES.map((g) => grades[g].toString()),
+    codes,
+    codes.map((g) => grades[g].toString()),
     CLAIM_STATUSES.map((s) => statuses[s]),
   ]);
   useEffect(
-    () => report(sheet, { people: names, due: figures.due, overdue: figures.overdue, grades, statuses }),
+    () => report(sheet, { people: names, due: figures.due, overdue: figures.overdue, codes, grades, statuses }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [sheet, report, key],
   );
@@ -95,7 +100,10 @@ function Consolidated({ sheet }: { sheet: string; user: string }) {
   const people = distinctPeople(shown.flatMap((f) => f.people));
   const due = trimmedSum(shown.flatMap((f) => f.due));
   const overdue = trimmedSum(shown.flatMap((f) => f.overdue));
-  const gradeDue = (g: Grade) => shown.reduce((n, f) => n + f.grades[g], 0n);
+  // This sheet's grades, then any other grade of the tree, each once.
+  const own = useGradeCodes(sheet);
+  const codes = [...new Set([...own, ...shown.flatMap((f) => f.codes)])];
+  const gradeDue = (g: Grade) => shown.reduce((n, f) => n + (f.grades[g] ?? 0n), 0n);
   const statusClaims = (s: ClaimStatus) => shown.reduce((n, f) => n + f.statuses[s], 0);
   return (
     <p>
@@ -105,7 +113,7 @@ function Consolidated({ sheet }: { sheet: string; user: string }) {
       Consolidated: people <strong data-testid="consolidated-people-count">{people}</strong>, due total{' '}
       <strong data-testid="consolidated-due-total"><Fig>{twoDecimals(due)}</Fig></strong>, overdue total{' '}
       <strong data-testid="consolidated-overdue-total"><Fig>{twoDecimals(overdue)}</Fig></strong>
-      {GRADES.map((g) => (
+      {codes.map((g) => (
         <span key={g}>
           , grade {g} due total{' '}
           <strong data-testid={`consolidated-grade-${g}-due-total`}><Fig>{twoDecimals(gradeDue(g))}</Fig></strong>

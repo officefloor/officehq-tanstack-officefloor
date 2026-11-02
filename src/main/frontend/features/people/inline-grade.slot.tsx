@@ -5,8 +5,10 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { useIsLatest } from '../../query/useIsLatest';
 import { byUser } from '../session/session';
 import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
-import { GRADES, peopleKey, peoplePath, personActionKey } from './people';
+import { peopleKey, peoplePath, personActionKey } from './people';
+import { useGradeCodes } from '../grades/grades';
 import type { Grade, Person } from './people';
+import { useGradeCodes } from '../grades/grades';
 
 function InlineGradeHeader() {
   return <th>Set grade</th>;
@@ -15,6 +17,7 @@ function InlineGradeHeader() {
 // The row's grade select (showing the person's grade until another is chosen) and the button that saves the chosen
 // grade from the sheet's today, exactly as the person form would with its from-date blank.
 function PersonInlineGrade({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
+  const gradeCodes = useGradeCodes(sheet);
   const queryClient = useQueryClient();
   const [chosen, setChosen] = useState<Grade | null>(null);
   const grade = chosen ?? person.grade;
@@ -40,7 +43,7 @@ function PersonInlineGrade({ sheet, user, person }: { sheet: string; user: strin
           save.reset();
         }}
       >
-        {GRADES.map((g) => (
+        {gradeCodes.map((g) => (
           <option key={g} value={g}>
             {g}
           </option>

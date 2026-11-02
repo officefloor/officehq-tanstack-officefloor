@@ -2,8 +2,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useReadScope } from '../../query/live';
 import { asFlag, useSearchParam } from '../../url/useSearchParam';
 
-export type Grade = 'A' | 'B' | 'C';
-export const GRADES: Grade[] = ['A', 'B', 'C'];
+/** A grade code: A, B or C, or one added to the sheet (see useGradeCodes). */
+export type Grade = string;
 
 /** One of a person's grades, in force from its from-date (yyyy-MM-dd; null when it applies from the beginning of time). */
 export type GradeFrom = { grade: Grade; from: string | null };

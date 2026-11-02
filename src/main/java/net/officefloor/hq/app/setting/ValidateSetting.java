@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.claim.ProofKind;
+import net.officefloor.hq.app.grade.Grades;
 import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.sheet.SheetRegistry;
 import net.officefloor.plugin.variable.Out;
@@ -22,8 +23,12 @@ public class ValidateSetting {
     private static final Pattern DAYS = Pattern.compile("\\d{1,4}");
 
     public void validate(@PathVariable("sheet") String sheet, @RequestBody SettingRequest request, Settings settings,
-            SheetRegistry registry, Out<SettingInput> body) throws InvalidSettingException {
+            SheetRegistry registry, Grades grades, Out<SettingInput> body) throws InvalidSettingException {
         SettingInput input = input(request);
+        if (Settings.DEFAULT_GRADE.equals(input.key()) && !input.value().isEmpty()
+                && !grades.isGrade(sheet, input.value())) {
+            throw new InvalidSettingException("The default grade must be one of the sheet's grades, or blank");
+        }
         if (Settings.PARENT.equals(input.key())) {
             parent(sheet, input.value(), settings, registry);
         }
@@ -151,8 +156,8 @@ public class ValidateSetting {
         }
         // The default grade is one of the grades; blank means A.
         if (Settings.DEFAULT_GRADE.equals(key)) {
-            if (!value.isEmpty() && !Settings.GRADES.contains(value)) {
-                throw new InvalidSettingException("The default grade must be A, B or C, or blank");
+            if (!value.isEmpty() && !value.matches("[A-Z]{1,3}")) {
+                throw new InvalidSettingException("The default grade must be one of the sheet's grades, or blank");
             }
             return new SettingInput(key, value);
         }

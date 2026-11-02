@@ -13,8 +13,8 @@ public class RetireGrade {
     public void retire(@PathVariable("sheet") String sheet, @RequestParam("user") String user,
             @RequestBody GradeRequest request, Grades grades, Audit audit) throws InvalidGradeException {
         String grade = request == null || request.grade() == null ? "" : request.grade().trim();
-        if (!Grades.ALL.contains(grade)) {
-            throw new InvalidGradeException("Grade must be A, B or C");
+        if (!grades.isGrade(sheet, grade)) {
+            throw new InvalidGradeException("Grade " + grade + " is not one of the sheet's");
         }
         if (grades.isRetired(sheet, grade)) {
             throw new InvalidGradeException("Grade " + grade + " is already retired");
