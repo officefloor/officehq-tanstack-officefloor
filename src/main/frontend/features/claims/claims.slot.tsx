@@ -3,6 +3,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { PERSON_ROW_SPAN, PersonCells, PersonColumnHead, PersonDetail } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
+import { usePeople } from '../people/usePeople';
+import { due, rateFor, useRates } from '../rates/useRates';
 import { claimed, claimsKey, useClaims, type Claim } from './useClaims';
 
 /** A person's claimed: the sum of their claims' amounts. */
@@ -15,6 +17,8 @@ function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: numbe
  *  when its editor is open. A blank date takes the sheet's today. */
 function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number }) {
   const claims = useClaims(sheetId);
+  const people = usePeople(sheetId);
+  const rates = useRates(sheetId);
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<number | null>(null);
   const [amount, setAmount] = useState('');
@@ -59,6 +63,8 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   };
 
   const mine = (claims.data ?? []).filter((c) => c.personId === personId);
+  // A claim's due: its amount at the rate for its person's grade ('n/a' when the grade has none).
+  const pct = rateFor(rates.data, people.data?.find((p) => p.id === personId)?.grade);
 
   return (
     <tr>
@@ -99,6 +105,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                 <td data-testid="claim-amount">{c.amount}</td>
                 <td data-testid="claim-date">{c.date}</td>
                 <td data-testid="claim-note">{c.note}</td>
+                <td data-testid="claim-due">{due(c.amount, pct)}</td>
                 <td>
                   {editing === c.id ? (
                     <button type="button" data-testid="claim-cancel" onClick={cancel}>
