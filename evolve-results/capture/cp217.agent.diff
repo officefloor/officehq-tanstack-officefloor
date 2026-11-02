@@ -1,0 +1,802 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 0dfae950..4993909b 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -243,7 +243,24 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
+   const clearEditError = () => {
+     setEditRefused(false);
+     lockMutation.reset();
++    shareMutation.reset();
+   };
++  // A claim is shared with another person on the sheet, picked beside the Share button with their share of its due
++  // (a percent with two decimals, more than 0.00). The server refuses the claim's own person, a person already holding a
++  // share, shares totalling more than 100.00, and a SETTLED, VOID or DELETED claim.
++  const [shareWith, setShareWith] = useState('');
++  const [sharePct, setSharePct] = useState('');
++  const shareMutation = useMutation({
++    mutationFn: (body: { person: number | null; share: string }) =>
++      postJson<Claim[]>(byUser(`${claimsPath(sheet)}/${claim.id}/share`, user), body),
++    onSuccess: (updated) => {
++      setShareWith('');
++      setSharePct('');
++      queryClient.setQueryData(claimsKey(sheet), updated);
++    },
++  });
++  const share = useSubmitOnce(shareMutation);
++  const nameOf = (id: number) => people.find((p) => p.id === id)?.name ?? '';
+   // A DRAFT's amount is changed in the row: saved as the claim's editor saves it (its date, note, corrects, reference and tags kept),
+   // so the server refuses it by the same rules (the amount's form, a claim that is not a DRAFT, one due inside a
+   // closed period, one another user's editor holds, a viewer).
+@@ -599,6 +616,57 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
+       >
+         Reassign
+       </button>{' '}
++      shared with <span data-testid="claim-shares">{claim.shares.map((s) => `${nameOf(s.person)} ${s.share}`).join(', ')}</span>{' '}
++      <select
++        data-testid="claim-share-select"
++        value={shareWith}
++        onChange={(e) => {
++          setShareWith(e.target.value);
++          shareMutation.reset();
++        }}
++      >
++        <option value="">share with…</option>
++        {people.map((p) => (
++          <option key={p.id} value={String(p.id)}>
++            {p.name}
++          </option>
++        ))}
++      </select>{' '}
++      <input
++        data-testid="claim-share-pct"
++        aria-label="share percent"
++        placeholder="share %"
++        value={sharePct}
++        onChange={(e) => {
++          setSharePct(e.target.value);
++          shareMutation.reset();
++        }}
++      />{' '}
++      <button
++        type="button"
++        data-testid="claim-share-add"
++        disabled={shareMutation.isPending}
++        onClick={() => {
++          clearEditError();
++          status.reset();
++          move.reset();
++          resettleMutation.reset();
++          deferMutation.reset();
++          waiveMutation.reset();
++          holdMutation.reset();
++          remindMutation.reset();
++          redateMutation.reset();
++          splitMutation.reset();
++          partMutation.reset();
++          inlineMutation.reset();
++          proofMutation.reset();
++          commentMutation.reset();
++          lineMutation.reset();
++          share({ person: shareWith === '' ? null : Number(shareWith), share: sharePct });
++        }}
++      >
++        Share
++      </button>{' '}
+       <button
+         type="button"
+         data-testid="claim-resettle"
+@@ -974,6 +1042,11 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
+           {' '}This amount cannot be saved: it needs up to two decimals (a negative one must be a correction), and only a DRAFT outside a closed period can be edited, not while another user has its editor open, nor by a viewer.
+         </span>
+       )}
++      {shareMutation.isError && (
++        <span data-testid="claim-error" role="alert">
++          {' '}This claim cannot be shared that way (not with its own person, nor with a person already holding a share; a share is a percent with up to two decimals, more than 0.00, and the shares may total at most 100.00; a SETTLED, VOID or DELETED claim is not shared).
++        </span>
++      )}
+       {move.isError && (
+         <span data-testid="claim-error" role="alert">
+           {' '}A {claim.status} claim cannot be reassigned (only a role the permission matrix lets, by default a steward, moves a claim, and only a DRAFT, OPEN or PENDING one, to another person).
+@@ -1010,12 +1083,13 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
+   const bandOf = useScoreBand(sheet);
+   const today = useSheetToday(sheet);
+   const late = useLate(sheet);
++  const { data: people = [] } = usePeople(sheet);
+   // The excess: how far the sum of their figures is above the cap (0.00 when it is not, or is n/a).
+-  const uncapped = uncappedPersonDueCents(claims, rates, person, today, floor, late);
++  const uncapped = uncappedPersonDueCents(all, rates, person, today, floor, late, people);
+   const excess = uncapped !== undefined && cap !== undefined && uncapped > cap ? uncapped - cap : 0n;
+   const lateClaims = overdueCents(claims, [person], rates, late, floor);
+   const aged = agedCents(claims, person, rates, late, floor);
+-  const split = splitDueCents(claims, rates, person, floor, late);
++  const split = splitDueCents(all, rates, person, floor, late, people);
+   const score = scoreOf(split.scored, lateClaims.count);
+   const [draft, setDraft] = useState<Draft>(EMPTY);
+   // The editor is open on the claim this user's lock holds, as the store says: it stays open across a re-load of the
+@@ -1091,7 +1165,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
+   return (
+     <>
+       {shown('claimed') && <td data-testid="person-claimed"><Fig>{claimed(claimedCounted(claims, [person]))}</Fig></td>}
+-      {shown('due-total') && <td data-testid="person-due-total"><Fig>{showDue(personDueCents(claims, rates, person, today, floor, late, cap))}</Fig></td>}
++      {shown('due-total') && <td data-testid="person-due-total"><Fig>{showDue(personDueCents(all, rates, person, today, floor, late, cap, people))}</Fig></td>}
+       {shown('excess') && <td data-testid="person-excess"><Fig>{twoDecimals(excess)}</Fig></td>}
+       {shown('overdue-count') && <td data-testid="person-overdue-count">{lateClaims.count}</td>}
+       {shown('overdue-total') && <td data-testid="person-overdue-total"><Fig>{twoDecimals(lateClaims.cents)}</Fig></td>}
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 43f7abe4..71363e92 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -111,8 +111,52 @@ export type Claim = {
+   waived: boolean;
+   /** Whether it is held (toggled while OPEN or PENDING): while held, unless bound by a statement, it counts in no due figure (it stays in claimed). */
+   held: boolean;
++  /** The people it is shared with, in the order shared, each with their share of its due (a percent, two decimals):
++   *  each holder's due figures count their part of it (see {@link partCents}), its own person's the rest. */
++  shares: ClaimShare[];
+ };
+ 
++/** One share of a claim: the person holding it, and their share of its due (a percent with two decimals). */
++export type ClaimShare = { person: number; share: string };
++
++/** A holder's part of a claim's due (in hundredths): the due times their share divided by 100, rounded half to even. */
++export function partCents(due: bigint, share: string): bigint {
++  const product = due * hundredths(share);
++  const negative = product < 0n;
++  const abs = negative ? -product : product;
++  let quotient = abs / 10000n;
++  const remainder = abs % 10000n;
++  if (remainder > 5000n || (remainder === 5000n && quotient % 2n === 1n)) quotient += 1n;
++  return negative ? -quotient : quotient;
++}
++
++/** What a claim's own person counts of its due (in hundredths): the due less the holders' parts. */
++export function ownCents(claim: Claim, due: bigint): bigint {
++  return (claim.shares ?? []).reduce((rest, s) => rest - partCents(due, s.share), due);
++}
++
++/** The person's parts of the claims shared with them (in hundredths), each with the claim: of the claims that count
++ *  as their own persons count them (see {@link counted}); a claim with no due gives no part. */
++export function heldParts(
++  claims: Claim[],
++  people: Person[],
++  rates: Rate[],
++  person: Person,
++  floor: DatedCents,
++  late: Late,
++): { claim: Claim; cents: bigint }[] {
++  const byId = new Map(people.map((p) => [p.id, p]));
++  const parts: { claim: Claim; cents: bigint }[] = [];
++  for (const c of claims) {
++    const share = (c.shares ?? []).find((s) => s.person === person.id);
++    const owner = byId.get(c.person);
++    if (share === undefined || owner === undefined || counted([c], [owner]).length === 0) continue;
++    const due = claimDueCents(c, claimRateOf(rates, gradeOn(owner, c.date), c), floor, late);
++    if (due !== undefined) parts.push({ claim: c, cents: partCents(due, share.share) });
++  }
++  return parts;
++}
++
+ /** One line of a claim: its label, quantity (a whole number) and unit amount (two decimals). */
+ export type ClaimLine = { label: string; qty: number; unit: string };
+ 
+@@ -299,8 +343,9 @@ export function personDueCents(
+   floor: DatedCents,
+   late: Late,
+   cap?: bigint,
++  people: Person[] = [person],
+ ): bigint | undefined {
+-  const sum = uncappedPersonDueCents(claims, rates, person, today, floor, late);
++  const sum = uncappedPersonDueCents(claims, rates, person, today, floor, late, people);
+   return sum !== undefined && cap !== undefined && sum > cap ? cap : sum;
+ }
+ 
+@@ -312,16 +357,22 @@ export function uncappedPersonDueCents(
+   today: string | undefined,
+   floor: DatedCents,
+   late: Late,
++  people: Person[] = [person],
+ ): bigint | undefined {
+   const mine = counted(claims.filter((c) => c.person === person.id), [person]);
++  const parts = heldParts(claims, people, rates, person, floor, late);
+   // A claim has a figure apart from today's grade when it keeps one, or when another grade in force on its date gives one.
+   const apart = (c: Claim) => {
+     const then = gradeOn(person, c.date);
+     return fixed(c) || (then !== undefined && then !== person.grade && claimFigureCents(c, claimRateOf(rates, then, c), floor) !== undefined)
+       || (then !== undefined && today !== undefined && c.date <= today && claimFigureCents(c, claimRateOf(rates, then, c), floor) !== undefined);
+   };
+-  if (rateOf(rates, person.grade, today) === undefined && !mine.some(apart)) return undefined;
+-  return mine.reduce((sum, c) => sum + (claimDueCents(c, claimRateOf(rates, gradeOn(person, c.date), c), floor, late) ?? 0n), 0n);
++  if (rateOf(rates, person.grade, today) === undefined && !mine.some(apart) && parts.length === 0) return undefined;
++  const own = mine.reduce((sum, c) => {
++    const due = claimDueCents(c, claimRateOf(rates, gradeOn(person, c.date), c), floor, late);
++    return sum + (due === undefined ? 0n : ownCents(c, due));
++  }, 0n);
++  return parts.reduce((sum, p) => sum + p.cents, own);
+ }
+ 
+ /** A person's settled-total and open-total (in hundredths): the dues of their SETTLED claims that count (at their
+@@ -334,15 +385,19 @@ export function splitDueCents(
+   person: Person,
+   floor: DatedCents,
+   late: Late,
++  people: Person[] = [person],
+ ): { settled: bigint; open: bigint; scored: bigint } {
+   const split = { settled: 0n, open: 0n, scored: 0n };
+-  for (const c of counted(claims.filter((c) => c.person === person.id), [person])) {
+-    const due = claimDueCents(c, claimRateOf(rates, gradeOn(person, c.date), c), floor, late) ?? 0n;
++  const add = (c: Claim, due: bigint) => {
+     if (c.status === 'SETTLED') {
+       split.settled += due;
+       if (c.corrects === null) split.scored += due;
+     } else if (isOpen(c)) split.open += due;
++  };
++  for (const c of counted(claims.filter((c) => c.person === person.id), [person])) {
++    add(c, ownCents(c, claimDueCents(c, claimRateOf(rates, gradeOn(person, c.date), c), floor, late) ?? 0n));
+   }
++  for (const { claim, cents } of heldParts(claims, people, rates, person, floor, late)) add(claim, cents);
+   return split;
+ }
+ 
+@@ -457,13 +512,13 @@ export function useSheetTotals(sheet: string): {
+   const late = useLate(sheet);
+   const cap = useCapCents(sheet);
+   const dues = people
+-    .map((p) => personDueCents(all, rates, p, today, floor, late, cap))
++    .map((p) => personDueCents(all, rates, p, today, floor, late, cap, people))
+     .filter((cents): cents is bigint => cents !== undefined);
+   const due = trimmedSum(dues);
+   const overdue = overdueCents(all, people, rates, late, floor);
+   const perPerson = people.map((p) => overdueCents(all, [p], rates, late, floor).cents);
+   // The settled-total and open-total: everyone's added up, not trimmed.
+-  const split = people.map((p) => splitDueCents(all, rates, p, floor, late));
++  const split = people.map((p) => splitDueCents(all, rates, p, floor, late, people));
+   return {
+     claimed: claimed(claimedCounted(all, people)),
+     due,
+@@ -540,5 +595,6 @@ export function usePersonDueCentsOf(sheet: string): (person: Person) => bigint |
+   const floor = useFloorCents(sheet);
+   const late = useLate(sheet);
+   const cap = useCapCents(sheet);
+-  return (person) => personDueCents(all, rates, person, today, floor, late, cap);
++  const { data: people = [] } = usePeople(sheet);
++  return (person) => personDueCents(all, rates, person, today, floor, late, cap, people);
+ }
+diff --git a/src/main/frontend/features/consolidated/consolidated.slot.tsx b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+index 494166e9..1cd5fe60 100644
+--- a/src/main/frontend/features/consolidated/consolidated.slot.tsx
++++ b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+@@ -42,7 +42,7 @@ function SheetFigures({ sheet, report }: { sheet: string; report: (sheet: string
+       g,
+       current
+         .filter((p) => p.grade === g)
+-        .reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, cap) ?? 0n), 0n),
++        .reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, cap, people) ?? 0n), 0n),
+     ]),
+   ) as Record<Grade, bigint>;
+   const statuses = Object.fromEntries(CLAIM_STATUSES.map((s) => [s, statusCount(claims, s)])) as Record<ClaimStatus, number>;
+diff --git a/src/main/frontend/features/header/header.slot.tsx b/src/main/frontend/features/header/header.slot.tsx
+index 2fb39c34..59086b9f 100644
+--- a/src/main/frontend/features/header/header.slot.tsx
++++ b/src/main/frontend/features/header/header.slot.tsx
+@@ -39,10 +39,11 @@ function useMyTotals(sheet: string, user: string): { due: string; overdue: strin
+   const cap = useCapCents(sheet);
+   const today = useSheetToday(sheet);
+   const late = useLate(sheet);
++  const { data: people = [] } = usePeople(sheet);
+   if (person === undefined) return { due: '', overdue: '' };
+   const mine = claims.filter((c) => c.person === person.id);
+   return {
+-    due: showDue(personDueCents(mine, rates, person, today, floor, late, cap)),
++    due: showDue(personDueCents(claims, rates, person, today, floor, late, cap, people)),
+     overdue: twoDecimals(overdueCents(mine, [person], rates, late, floor).cents),
+   };
+ }
+diff --git a/src/main/frontend/features/people/export.slot.tsx b/src/main/frontend/features/people/export.slot.tsx
+index caf5ff75..0a40f2c8 100644
+--- a/src/main/frontend/features/people/export.slot.tsx
++++ b/src/main/frontend/features/people/export.slot.tsx
+@@ -28,7 +28,7 @@ function ExportPeople({ sheet }: { sheet: string; user: string }) {
+     const lines = [
+       'name,grade,retired-from,due-total',
+       ...people.map((p) =>
+-        [p.name, p.grade, p.retiredFrom ?? '', showDue(personDueCents(claims, rates, p, today, floor, late, cap))]
++        [p.name, p.grade, p.retiredFrom ?? '', showDue(personDueCents(claims, rates, p, today, floor, late, cap, people))]
+           .map(csvValue)
+           .join(','),
+       ),
+diff --git a/src/main/frontend/features/session/SheetPicker.tsx b/src/main/frontend/features/session/SheetPicker.tsx
+index 76c13faa..a9fb6beb 100644
+--- a/src/main/frontend/features/session/SheetPicker.tsx
++++ b/src/main/frontend/features/session/SheetPicker.tsx
+@@ -1,8 +1,15 @@
+ import { useState } from 'react';
+ import type { FormEvent } from 'react';
+-import { useCurrentSheet } from './session';
++import { useRouterState } from '@tanstack/react-router';
++import { useCurrentSheet, useCurrentUser } from './session';
++import { usePeople } from '../people/people';
++import { useClaims } from '../claims/claims';
++import { useUserRole } from '../roles/roles';
++import { useCrews } from '../crews/crews';
+ 
+-// Choose the active sheet by typing its id and loading it.
++// Choose the active sheet by typing its id and loading it. The sheet shows as loaded once its load (the route's
++// re-read) is done and what its rows need is on hand (its people and claims, the user's role and the crews, which decide
++// who a restricted user sees), so what is on screen then is the sheet as the store holds it.
+ export function SheetPicker() {
+   const [sheet, setSheet] = useCurrentSheet();
+   const [draft, setDraft] = useState('');
+@@ -21,11 +28,23 @@ export function SheetPicker() {
+       <button type="submit" data-testid="sheet-load">
+         Load
+       </button>
+-      {sheet && (
+-        <span>
+-          {' '}Sheet: <strong data-testid="sheet-current-id">{sheet}</strong>
+-        </span>
+-      )}
++      {sheet && <CurrentSheet sheet={sheet} />}
+     </form>
+   );
+ }
++
++// The loaded sheet's id, shown once its load is done (see SheetPicker).
++function CurrentSheet({ sheet }: { sheet: string }) {
++  const loading = useRouterState({ select: (s) => s.status === 'pending' });
++  const { data: people } = usePeople(sheet);
++  const { data: claims } = useClaims(sheet);
++  const [user] = useCurrentUser();
++  const { data: role } = useUserRole(sheet, user ?? '');
++  const { data: crews } = useCrews(sheet);
++  if (loading || people === undefined || claims === undefined || role === undefined || crews === undefined) return null;
++  return (
++    <span>
++      {' '}Sheet: <strong data-testid="sheet-current-id">{sheet}</strong>
++    </span>
++  );
++}
+diff --git a/src/main/frontend/features/sheetcompare/sheetcompare.ts b/src/main/frontend/features/sheetcompare/sheetcompare.ts
+index 0fd94317..08c187d0 100644
+--- a/src/main/frontend/features/sheetcompare/sheetcompare.ts
++++ b/src/main/frontend/features/sheetcompare/sheetcompare.ts
+@@ -38,7 +38,7 @@ export function useGradeDue(sheet: string): { ready: boolean; due: Record<Grade,
+       g,
+       current
+         .filter((p) => p.grade === g)
+-        .reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, cap) ?? 0n), 0n),
++        .reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, cap, people) ?? 0n), 0n),
+     ]),
+   ) as Record<Grade, bigint>;
+   const ready = [sheetQ, peopleQ, claimsQ, ratesQ, settingsQ].every((q) => q.isSuccess && !q.isFetching);
+diff --git a/src/main/frontend/features/summary/summary.slot.tsx b/src/main/frontend/features/summary/summary.slot.tsx
+index 3c1bf0ee..5c39a0a7 100644
+--- a/src/main/frontend/features/summary/summary.slot.tsx
++++ b/src/main/frontend/features/summary/summary.slot.tsx
+@@ -32,7 +32,7 @@ function Summary({ sheet }: { sheet: string; user: string }) {
+     .sort((a, b) => a.from.localeCompare(b.from))
+     .map((p) => ({ period: p, shown: shownDueTotal(p, periodTotals.get(p.name) ?? 0n) }));
+   const classicTotals = classicPeriodDueCents(periods, claims, people, rates, floor, late);
+-  const classicDue = people.reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, cap) ?? 0n), 0n);
++  const classicDue = people.reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, cap, people) ?? 0n), 0n);
+   const periodChanges = new Map(
+     shownTotals.map(({ period, shown }, i) => [
+       period.name,
+@@ -55,7 +55,7 @@ function Summary({ sheet }: { sheet: string; user: string }) {
+         <tbody>
+           {GRADES.map((g) => {
+             const onGrade = current.filter((p) => p.grade === g);
+-            const due = onGrade.reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, cap) ?? 0n), 0n);
++            const due = onGrade.reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, cap, people) ?? 0n), 0n);
+             return (
+               <tr key={g}>
+                 <td>{g}</td>
+diff --git a/src/main/frontend/routes/index.tsx b/src/main/frontend/routes/index.tsx
+index 3c9c3ee1..7db4e7c3 100644
+--- a/src/main/frontend/routes/index.tsx
++++ b/src/main/frontend/routes/index.tsx
+@@ -4,17 +4,25 @@ import { SignIn } from '../features/session/SignIn';
+ import { SheetPicker } from '../features/session/SheetPicker';
+ import { useCurrentSheet, useCurrentUser } from '../features/session/session';
+ import { notesQuery } from '../features/notes/notes';
++import { claimsKey, claimsPath, type Claim } from '../features/claims/claims';
++import { peopleKey, peoplePath, type Person } from '../features/people/people';
++import { getJson } from '../api/http';
+ 
+ // The one screen. Sign in, then load a sheet by id; the sheet's panels (filled from sheet.panels)
+ // show everything kept for that sheet.
+-// Loading a sheet re-reads its notes before the sheet shows as loaded, so the list on screen is the store's as it
+-// stands, never the list cached from an earlier load (or none at all while the read is still on its way).
++// Loading a sheet re-reads its notes, people and claims before the sheet shows as loaded, so the lists on screen are
++// the store's as they stand, never the lists cached from an earlier load (or none at all while a read is still on its way).
+ export const Route = createFileRoute('/')({
+   loaderDeps: ({ search }) => ({ sheet: (search as Record<string, unknown>).sheet, asof: (search as Record<string, unknown>).asof }),
+   loader: async ({ context, deps }) => {
+     if (typeof deps.sheet === 'string' && deps.sheet) {
+-      // A failed read shows through the notes panel's own query; it never stops the sheet loading.
+-      await context.queryClient.fetchQuery(notesQuery(deps.sheet)).catch(() => undefined);
++      // A failed read shows through the panel's own query; it never stops the sheet loading.
++      const sheet = deps.sheet;
++      await Promise.all([
++        context.queryClient.fetchQuery(notesQuery(sheet)),
++        context.queryClient.fetchQuery({ queryKey: peopleKey(sheet), queryFn: () => getJson<Person[]>(peoplePath(sheet)) }),
++        context.queryClient.fetchQuery({ queryKey: claimsKey(sheet), queryFn: () => getJson<Claim[]>(claimsPath(sheet)) }),
++      ].map((read) => read.catch(() => undefined)));
+     }
+   },
+   component: Home,
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 05653ff9..4632a94c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -26,13 +26,15 @@ import net.officefloor.hq.app.setting.Dated;
+  * when it was added (the claim sequence's value; null when kept from before it was recorded), which decides the
+  * forward-only rates it sees, and whether a steward waived its late charge (it then bears none), and how many of its
+  * proofs are photos (the rest are receipts), and whether it is held (toggled while OPEN or PENDING): it still counts in
+- * every total (a hold takes only a person's cut in the pools).
++ * every total (a hold takes only a person's cut in the pools), and the people it is shared with, in the order shared,
++ * each holding a share of its due.
+  */
+ public record Claim(long id, long person, String amount, String date, String note, ClaimStatus status,
+         Integer number, String settledDue, String openedBy, boolean stated, String statedDue, String corrects,
+         String roundsOn, String periodNumber, String dueBy, List<ClaimLogLine> log, String deferredUntil, boolean deferred, int proofs,
+         String splitFrom, String lockedBy, boolean lateEntry, String remindedOn, String ref, List<String> tags,
+-        List<String> tagsEver, List<ClaimComment> comments, Integer batch, List<ClaimLine> lines, Long added, boolean waived, int photos, boolean held) {
++        List<String> tagsEver, List<ClaimComment> comments, Integer batch, List<ClaimLine> lines, Long added, boolean waived, int photos, boolean held,
++        List<ClaimShare> shares) {
+ 
+     /** Whether this claim is a correction: a negative amount, naming the number (as it shows) of the settled claim it corrects. */
+     public boolean correction() {
+@@ -51,53 +53,67 @@ public record Claim(long id, long person, String amount, String date, String not
+ 
+     /** This claim, numbered: its audit fields end with number=<number> when it has one. */
+     public Claim withNumber(Integer number) {
+-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom, lockedBy, lateEntry, remindedOn, ref, tags, tagsEver, comments, batch, lines, added, waived, photos, held);
++        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom, lockedBy, lateEntry, remindedOn, ref, tags, tagsEver, comments, batch, lines, added, waived, photos, held, shares);
+     }
+ 
+     /** This claim, numbered within its period: its audit fields end with number=<period number>. */
+     public Claim withPeriodNumber(String periodNumber) {
+-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom, lockedBy, lateEntry, remindedOn, ref, tags, tagsEver, comments, batch, lines, added, waived, photos, held);
++        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom, lockedBy, lateEntry, remindedOn, ref, tags, tagsEver, comments, batch, lines, added, waived, photos, held, shares);
+     }
+ 
+     /** This claim with another date (yyyy-MM-dd), as once re-dated. */
+     public Claim withDate(String date) {
+-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom, lockedBy, lateEntry, remindedOn, ref, tags, tagsEver, comments, batch, lines, added, waived, photos, held);
++        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom, lockedBy, lateEntry, remindedOn, ref, tags, tagsEver, comments, batch, lines, added, waived, photos, held, shares);
+     }
+ 
+     /** This claim with another amount (two decimals), as its remaining amount once split. */
+     public Claim withAmount(String amount) {
+-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom, lockedBy, lateEntry, remindedOn, ref, tags, tagsEver, comments, batch, lines, added, waived, photos, held);
++        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom, lockedBy, lateEntry, remindedOn, ref, tags, tagsEver, comments, batch, lines, added, waived, photos, held, shares);
+     }
+ 
+     /** This claim, settled with its due fixed (null when its grade had no rate). */
+     public Claim withSettledDue(String settledDue) {
+-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom, lockedBy, lateEntry, remindedOn, ref, tags, tagsEver, comments, batch, lines, added, waived, photos, held);
++        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom, lockedBy, lateEntry, remindedOn, ref, tags, tagsEver, comments, batch, lines, added, waived, photos, held, shares);
+     }
+ 
+     /** This claim as an OPEN claim bound by no statement and with no due fixed: the figure it would have live. */
+     public Claim asOpenUnbound() {
+-        return new Claim(id, person, amount, date, note, ClaimStatus.OPEN, number, null, openedBy, false, null, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom, lockedBy, lateEntry, remindedOn, ref, tags, tagsEver, comments, batch, lines, added, waived, photos, held);
++        return new Claim(id, person, amount, date, note, ClaimStatus.OPEN, number, null, openedBy, false, null, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom, lockedBy, lateEntry, remindedOn, ref, tags, tagsEver, comments, batch, lines, added, waived, photos, held, shares);
+     }
+ 
+     /** This claim as it stands with the date for the sheet's today: deferred while OPEN (or VOID) with its deferred-until after it. */
+     public Claim on(LocalDate today) {
+         boolean deferredThen = (status == ClaimStatus.OPEN || status == ClaimStatus.VOID) && deferredUntil != null && LocalDate.parse(deferredUntil).isAfter(today);
+-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferredThen, proofs, splitFrom, lockedBy, lateEntry, remindedOn, ref, tags, tagsEver, comments, batch, lines, added, waived, photos, held);
++        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferredThen, proofs, splitFrom, lockedBy, lateEntry, remindedOn, ref, tags, tagsEver, comments, batch, lines, added, waived, photos, held, shares);
+     }
+ 
+     /** This claim, with its comments (in the order written). */
+     public Claim withComments(List<ClaimComment> comments) {
+-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom, lockedBy, lateEntry, remindedOn, ref, tags, tagsEver, comments, batch, lines, added, waived, photos, held);
++        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom, lockedBy, lateEntry, remindedOn, ref, tags, tagsEver, comments, batch, lines, added, waived, photos, held, shares);
+     }
+ 
+     /** This claim, with its lines (in the order added). */
+     public Claim withLines(List<ClaimLine> lines) {
+-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom, lockedBy, lateEntry, remindedOn, ref, tags, tagsEver, comments, batch, lines, added, waived, photos, held);
++        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom, lockedBy, lateEntry, remindedOn, ref, tags, tagsEver, comments, batch, lines, added, waived, photos, held, shares);
++    }
++
++    /** This claim, with the shares of it held by other people (in the order shared). */
++    public Claim withShares(List<ClaimShare> shares) {
++        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom, lockedBy, lateEntry, remindedOn, ref, tags, tagsEver, comments, batch, lines, added, waived, photos, held, shares);
++    }
++
++    /** The holders' parts of the due (null for none) added up: what the claim's own person's due-total does not count. */
++    public BigDecimal sharedPart(BigDecimal due) {
++        BigDecimal parts = BigDecimal.ZERO.setScale(2);
++        for (ClaimShare share : shares == null || due == null ? List.<ClaimShare>of() : shares) {
++            parts = parts.add(share.partOf(due));
++        }
++        return parts;
+     }
+ 
+     /** This claim, with its status log (oldest first). */
+     public Claim withLog(List<ClaimLogLine> log) {
+-        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom, lockedBy, lateEntry, remindedOn, ref, tags, tagsEver, comments, batch, lines, added, waived, photos, held);
++        return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom, lockedBy, lateEntry, remindedOn, ref, tags, tagsEver, comments, batch, lines, added, waived, photos, held, shares);
+     }
+ 
+     /** The date it was last settled: its status log's last SETTLED line (null when the log has none). */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimShare.java b/src/main/java/net/officefloor/hq/app/claim/ClaimShare.java
+new file mode 100644
+index 00000000..66c4c31f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimShare.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++import java.math.RoundingMode;
++
++/** One share of a claim: the person on the sheet holding it, and their share of its due (a percent, two decimals). */
++public record ClaimShare(long person, String share) {
++
++    /** The holder's part of the claim's due: the due times the share divided by 100, rounded half to even to two decimals. */
++    public BigDecimal partOf(BigDecimal due) {
++        return due.multiply(new BigDecimal(share)).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claims.java b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+index 27d38d9c..d09545dc 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+@@ -38,7 +38,7 @@ public class Claims {
+             rs.getDate("reminded_on") == null ? null : rs.getDate("reminded_on").toLocalDate().toString(),
+             rs.getString("ref"), tagList(rs.getString("tags")), tagList(rs.getString("tags_ever")), List.of(),
+             rs.getObject("batch", Integer.class), List.of(), rs.getObject("added", Long.class),
+-            rs.getBoolean("waived"), rs.getInt("proof_photos"), rs.getBoolean("held"));
++            rs.getBoolean("waived"), rs.getInt("proof_photos"), rs.getBoolean("held"), List.of());
+ 
+     /** The tags kept as comma separated text (empty for none). */
+     private static List<String> tagList(String kept) {
+@@ -75,19 +75,54 @@ public class Claims {
+ 
+     private static final String LINES = "SELECT claim, label, qty, unit FROM claim_line WHERE sheet = ?";
+ 
++    private static final String SHARES = "SELECT claim, person, share FROM claim_share WHERE sheet = ?";
++
+     /** Every claim on the sheet, newest first. */
+     public List<Claim> list(String sheet) {
+-        return withLines(withComments(withLogs(sheet, jdbc.query(COLUMNS + " WHERE claim.sheet = ? ORDER BY claim.listed DESC, claim.id DESC", ROW, sheet),
++        return withShares(withLines(withComments(withLogs(sheet, jdbc.query(COLUMNS + " WHERE claim.sheet = ? ORDER BY claim.listed DESC, claim.id DESC", ROW, sheet),
+                 jdbc.query(LOG + " ORDER BY id", LOG_ROW, sheet)), jdbc.query(COMMENTS + " ORDER BY id", COMMENT_ROW, sheet)),
+-                jdbc.query(LINES + " ORDER BY id", LINE_ROW, sheet));
++                jdbc.query(LINES + " ORDER BY id", LINE_ROW, sheet)), jdbc.query(SHARES + " ORDER BY id", SHARE_ROW, sheet));
+     }
+ 
+     public Claim find(String sheet, long id) {
+         List<Claim> found = jdbc.query(COLUMNS + " WHERE claim.sheet = ? AND claim.id = ?", ROW, sheet, id);
+         return found.isEmpty() ? null
+-                : withLines(withComments(withLogs(sheet, found, jdbc.query(LOG + " AND claim = ? ORDER BY id", LOG_ROW, sheet, id)),
++                : withShares(withLines(withComments(withLogs(sheet, found, jdbc.query(LOG + " AND claim = ? ORDER BY id", LOG_ROW, sheet, id)),
+                         jdbc.query(COMMENTS + " AND claim = ? ORDER BY id", COMMENT_ROW, sheet, id)),
+-                        jdbc.query(LINES + " AND claim = ? ORDER BY id", LINE_ROW, sheet, id)).get(0);
++                        jdbc.query(LINES + " AND claim = ? ORDER BY id", LINE_ROW, sheet, id)),
++                        jdbc.query(SHARES + " AND claim = ? ORDER BY id", SHARE_ROW, sheet, id)).get(0);
++    }
++
++    private record Shared(long claim, ClaimShare share) {
++    }
++
++    private static final RowMapper<Shared> SHARE_ROW = (rs, i) -> new Shared(rs.getLong("claim"),
++            new ClaimShare(rs.getLong("person"), rs.getBigDecimal("share").setScale(2, RoundingMode.UNNECESSARY).toPlainString()));
++
++    /** The claims, each with the shares of it others hold (in the order shared). */
++    private static List<Claim> withShares(List<Claim> found, List<Shared> shared) {
++        Map<Long, List<ClaimShare>> shares = new HashMap<>();
++        for (Shared s : shared) {
++            shares.computeIfAbsent(s.claim(), k -> new ArrayList<>()).add(s.share());
++        }
++        return found.stream().map(c -> c.withShares(shares.getOrDefault(c.id(), List.of()))).toList();
++    }
++
++    /**
++     * Shares the claim with the person, conditional on the claim still having the status read and the shares read
++     * (their count), so a concurrent change is refused: false when it was not.
++     */
++    public boolean share(String sheet, long id, ClaimStatus status, int was, long person, BigDecimal share) {
++        // Locks the claim's row, so two shares at once are taken one after the other.
++        if (jdbc.update("UPDATE claim SET status = status WHERE sheet = ? AND id = ? AND status = ?", sheet, id, status.name()) != 1) {
++            return false;
++        }
++        Integer now = jdbc.queryForObject("SELECT COUNT(*) FROM claim_share WHERE sheet = ? AND claim = ?", Integer.class, sheet, id);
++        if (now == null || now != was) {
++            return false;
++        }
++        jdbc.update("INSERT INTO claim_share (sheet, claim, person, share) VALUES (?, ?, ?, ?)", sheet, id, person, share);
++        return true;
+     }
+ 
+     private record Lined(long claim, ClaimLine line) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ShareClaim.java b/src/main/java/net/officefloor/hq/app/claim/ShareClaim.java
+new file mode 100644
+index 00000000..7ed09c6b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ShareClaim.java
+@@ -0,0 +1,59 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/**
++ * Shares a claim with another person on the sheet, who holds a share of its due (a percent with up to two decimals,
++ * more than 0.00): CLAIM_SHARED is written naming the claim and ending with=<person> share=<share>. Refuses the
++ * claim's own person, a person already holding a share of it, shares totalling more than 100.00, and a SETTLED, VOID
++ * or DELETED claim.
++ */
++public class ShareClaim {
++    public void share(@PathVariable("sheet") String sheet, @RequestParam("user") String user,
++            @RequestBody ShareRequest request, @Val Claim claim, Claims claims, People people, Audit audit,
++            Rollup rollup) throws InvalidClaimStatusChangeException {
++        if (claim.status() == ClaimStatus.SETTLED || claim.status() == ClaimStatus.VOID
++                || claim.status() == ClaimStatus.DELETED) {
++            throw new InvalidClaimStatusChangeException("A " + claim.status() + " claim cannot be shared");
++        }
++        Person with = request == null || request.person() == null ? null : people.find(sheet, request.person());
++        if (with == null) {
++            throw new InvalidClaimStatusChangeException("Choose a person on the sheet to share the claim with");
++        }
++        if (with.id() == claim.person()) {
++            throw new InvalidClaimStatusChangeException("A claim cannot be shared with its own person");
++        }
++        if (claim.shares().stream().anyMatch((s) -> s.person() == with.id())) {
++            throw new InvalidClaimStatusChangeException(with.name() + " already holds a share of the claim");
++        }
++        String typed = request.share() == null ? "" : request.share().trim();
++        if (!typed.matches("\\d{1,3}(\\.\\d{1,2})?")) {
++            throw new InvalidClaimStatusChangeException("A share is a percent with up to two decimals");
++        }
++        BigDecimal share = new BigDecimal(typed).setScale(2);
++        if (share.signum() <= 0) {
++            throw new InvalidClaimStatusChangeException("A share must be more than 0.00");
++        }
++        BigDecimal total = claim.shares().stream().map((s) -> new BigDecimal(s.share())).reduce(share, BigDecimal::add);
++        if (total.compareTo(new BigDecimal("100.00")) > 0) {
++            throw new InvalidClaimStatusChangeException("The claim's shares would total more than 100.00");
++        }
++        Person person = people.find(sheet, claim.person());
++        Rollup.Snapshot before = rollup.take(sheet);
++        // Conditional on the status and the shares read, so a concurrent change is refused.
++        if (!claims.share(sheet, claim.id(), claim.status(), claim.shares().size(), with.id(), share)) {
++            throw new InvalidClaimStatusChangeException("The claim changed since it was read");
++        }
++        audit.record("CLAIM_SHARED sheet=" + sheet + " by=" + user + " " + claim.statusAuditFields(person.name())
++                + " with=" + with.name() + " share=" + share.toPlainString());
++        rollup.record(sheet, user, before);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ShareRequest.java b/src/main/java/net/officefloor/hq/app/claim/ShareRequest.java
+new file mode 100644
+index 00000000..625717ae
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ShareRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.claim;
++
++/** A share of a claim to give: the person (by id) and their share (a percent with up to two decimals). */
++public record ShareRequest(Long person, String share) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 627881f4..4b94a377 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -28,7 +28,8 @@ import org.springframework.stereotype.Service;
+  * claimed-total, due-total and overdue-total (the totals leave out the single highest and lowest person's figure when
+  * three or more people have one). A change takes them before it writes, then {@link #record} audits the ones it moved: a ROLLUP line
+  * per person whose figures changed (in list order, by position; a new person counts as changed), then a TOTALS
+- * line when the sheet's totals changed, then an ALERT line per person whose due-total crossed above the sheet's alert
++ * line when the sheet's totals changed (a shared claim's due counts for each holder their share of it, and for its own
++ * person the rest), then an ALERT line per person whose due-total crossed above the sheet's alert
+  * threshold (from at or below it, or no due-total), in list order.
+  */
+ @Service
+@@ -73,7 +74,10 @@ public class Rollup {
+         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
+         List<BigDecimal> dueFigures = new ArrayList<>();
+         List<BigDecimal> overdueFigures = new ArrayList<>();
+-        for (Person person : people.list(sheet)) {
++        List<Person> listed = people.list(sheet);
++        Map<Long, Person> byId = new LinkedHashMap<>();
++        listed.forEach((p) -> byId.put(p.id(), p));
++        for (Person person : listed) {
+             List<Claim> mine = all.stream().filter((c) -> c.person() == person.id() && person.counts(c)).toList();
+             BigDecimal claimed = BigDecimal.ZERO.setScale(2);
+             BigDecimal due = BigDecimal.ZERO.setScale(2);
+@@ -87,9 +91,11 @@ public class Rollup {
+             }
+             for (Claim claim : mine) {
+                 BigDecimal d = claim.due(sheetRates, person.gradeOn(claim.date()), floor, late);
+-                due = d == null ? due : due.add(d);
+-                if (d != null && claim.status() == ClaimStatus.SETTLED && !claim.correction()) {
+-                    settled = settled.add(d);
++                // The holders' parts of a shared claim count for them, not for its own person.
++                BigDecimal own = d == null ? null : d.subtract(claim.sharedPart(d));
++                due = own == null ? due : due.add(own);
++                if (own != null && claim.status() == ClaimStatus.SETTLED && !claim.correction()) {
++                    settled = settled.add(own);
+                 }
+                 if (late.overdue(claim, person.gradeOn(claim.date()))) {
+                     overdueCount++;
+@@ -98,8 +104,32 @@ public class Rollup {
+                     }
+                 }
+             }
+-            // n/a when the grade has no rate on the sheet's today, unless a claim has a figure apart from it.
+-            boolean na = Rate.on(sheetRates, person.grade(), today) == null
++            // The person's parts of the claims shared with them, counted as their own persons count them.
++            boolean holdsPart = false;
++            for (Claim claim : all) {
++                Person owner = byId.get(claim.person());
++                if (owner == null || !owner.counts(claim)) {
++                    continue;
++                }
++                for (var share : claim.shares()) {
++                    if (share.person() != person.id()) {
++                        continue;
++                    }
++                    BigDecimal d = claim.due(sheetRates, owner.gradeOn(claim.date()), floor, late);
++                    if (d == null) {
++                        continue;
++                    }
++                    BigDecimal part = share.partOf(d);
++                    holdsPart = true;
++                    due = due.add(part);
++                    if (claim.status() == ClaimStatus.SETTLED && !claim.correction()) {
++                        settled = settled.add(part);
++                    }
++                }
++            }
++            // n/a when the grade has no rate on the sheet's today, unless a claim has a figure apart from it, or they
++            // hold a part of a claim shared with them.
++            boolean na = !holdsPart && Rate.on(sheetRates, person.grade(), today) == null
+                     && mine.stream().noneMatch((c) -> person.figureApartFrom(c, today, sheetRates, floor));
+             due = Settings.capped(due, cap);
+             claimedTotal = claimedTotal.add(claimed);
+diff --git a/src/main/resources/db/migration/V97__claim_share.sql b/src/main/resources/db/migration/V97__claim_share.sql
+new file mode 100644
+index 00000000..dc8bc710
+--- /dev/null
++++ b/src/main/resources/db/migration/V97__claim_share.sql
+@@ -0,0 +1,9 @@
++-- The people a claim is shared with, in the order shared (by id): each holds a share of its due, a percent with two decimals.
++CREATE TABLE claim_share (
++    id     BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet  VARCHAR(200)  NOT NULL,
++    claim  BIGINT        NOT NULL REFERENCES claim (id),
++    person BIGINT        NOT NULL,
++    share  DECIMAL(5, 2) NOT NULL
++);
++CREATE INDEX claim_share_sheet ON claim_share (sheet, claim, id);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheet}/claims/{claim}/share.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheet}/claims/{claim}/share.POST.yml
+new file mode 100644
+index 00000000..0ac04e17
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheet}/claims/{claim}/share.POST.yml
+@@ -0,0 +1,12 @@
++# Share a claim with another person on the sheet, who holds a share of its due. Responds with the sheet's claims.
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ transaction ]
++  next: share
++share:
++  class: net.officefloor.hq.app.claim.ShareClaim
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaims
++  govern: [ transaction ]
