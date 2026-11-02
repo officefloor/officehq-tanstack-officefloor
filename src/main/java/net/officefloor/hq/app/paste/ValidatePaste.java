@@ -102,6 +102,6 @@ public class ValidatePaste {
             throw new InvalidClaimException(
                     "Line " + at + ": a claim may not be dated after the person's retirement date");
         }
-        return new PastedClaim(person, new ClaimInput(value, on, note, null, ref));
+        return new PastedClaim(at, person, new ClaimInput(value, on, note, null, ref));
     }
 }

@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -31,6 +32,7 @@ public class Audit {
     private static final Set<String> FIGURES = Set.of("ROLLUP", "TOTALS", "ALERT");
 
     private final Path file;
+    private final ThreadLocal<List<String>> held = new ThreadLocal<>();
     private final Delegations delegations;
     private final SheetClock clock;
 
@@ -46,6 +48,37 @@ public class Audit {
      */
     public synchronized void record(String entry) {
         entry = entry + actingFor(entry).map(s -> " for=" + s).orElse("");
+        List<String> kept = held.get();
+        if (kept != null) {
+            kept.add(entry);
+            return;
+        }
+        write(entry);
+    }
+
+    /**
+     * Holds the records this thread makes from now on instead of writing them, so a change made of many steps that
+     * may yet be refused writes nothing; {@link #release} writes them, in order, {@link #discard} drops them.
+     */
+    public void hold() {
+        held.set(new ArrayList<>());
+    }
+
+    /** Writes the records held since {@link #hold}, in the order made, and stops holding. */
+    public synchronized void release() {
+        List<String> kept = held.get();
+        held.remove();
+        if (kept != null) {
+            kept.forEach(this::write);
+        }
+    }
+
+    /** Drops the records held since {@link #hold}, and stops holding. */
+    public void discard() {
+        held.remove();
+    }
+
+    private void write(String entry) {
         try {
             Path parent = file.toAbsolutePath().getParent();
             if (parent != null) {
