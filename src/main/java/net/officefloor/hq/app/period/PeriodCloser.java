@@ -26,7 +26,7 @@ import org.springframework.stereotype.Service;
  * that counted at the end of its last day (OPEN, PENDING and SETTLED then by their status log, but not a deferred one, nor an unbound open one dated
  * within its person's hold) (a claim with no rate adds nothing); and each person's carried figure for it: the due now of
  * their claims that count at its end whose due-by falls in an earlier period (one ending before it starts) and that were
- * still OPEN or PENDING at its end by their status log. Shared by a close by hand and the auto close of a today change.
+ * still OPEN or PENDING at its end by their status log, plus their opening balance for it. Shared by a close by hand and the auto close of a today change.
  */
 @Service
 public class PeriodCloser {
@@ -70,6 +70,11 @@ public class PeriodCloser {
         Map<Long, BigDecimal> perPerson = new LinkedHashMap<>();
         byId.keySet().forEach((id) -> perPerson.put(id, BigDecimal.ZERO.setScale(2)));
         Map<Long, BigDecimal> carried = new LinkedHashMap<>(perPerson);
+        periods.openings(sheet, found.name()).forEach((id, amount) -> {
+            if (carried.containsKey(id)) {
+                carried.merge(id, amount, BigDecimal::add);
+            }
+        });
         List<Period> sheetPeriods = periods.list(sheet);
         List<Claim> sheetClaims = claims.list(sheet);
         for (Claim claim : sheetClaims) {

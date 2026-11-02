@@ -188,6 +188,7 @@ public class PersonTransferrer {
         jdbc.update("DELETE FROM patron WHERE sheet = ? AND (person_id = ? OR patron_id = ?)", sheet, f, f);
         jdbc.update("DELETE FROM pool_member WHERE sheet = ? AND person_id = ?", sheet, f);
         jdbc.update("DELETE FROM period_person_total WHERE sheet = ? AND person = ?", sheet, f);
+        jdbc.update("DELETE FROM period_opening WHERE sheet = ? AND person = ?", sheet, f);
         jdbc.update("DELETE FROM person_hold WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person_retirement WHERE person_id = ?", f);
         jdbc.update("DELETE FROM watch WHERE sheet = ? AND person_id = ?", sheet, f);

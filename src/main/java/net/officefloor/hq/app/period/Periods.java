@@ -18,7 +18,7 @@ public class Periods {
             rs.getDate("from_date").toLocalDate().toString(), rs.getDate("to_date").toLocalDate().toString(),
             rs.getBoolean("closed"),
             rs.getBigDecimal("closed_total") == null ? null : rs.getBigDecimal("closed_total").toPlainString(),
-            Map.of(), rs.getBoolean("soft"), (Integer) rs.getObject("claim_cap"), Map.of());
+            Map.of(), rs.getBoolean("soft"), (Integer) rs.getObject("claim_cap"), Map.of(), Map.of());
 
     private static final String COLUMNS = "SELECT name, from_date, to_date, closed, closed_total, soft, claim_cap FROM period";
 
@@ -31,7 +31,37 @@ public class Periods {
     /** Every period on the sheet, by from-date. */
     public List<Period> list(String sheet) {
         return jdbc.query(COLUMNS + " WHERE sheet = ? ORDER BY from_date", ROW, sheet).stream()
-                .map((p) -> withPeople(sheet, p)).toList();
+                .map((p) -> withOpenings(sheet, withPeople(sheet, p))).toList();
+    }
+
+    /** The period with its people's opening balances. */
+    private Period withOpenings(String sheet, Period period) {
+        Map<Long, String> openings = new LinkedHashMap<>();
+        jdbc.query("SELECT person, amount FROM period_opening WHERE sheet = ? AND period = ? ORDER BY person",
+                (rs) -> {
+                    openings.put(rs.getLong("person"), rs.getBigDecimal("amount").toPlainString());
+                }, sheet, period.name());
+        return new Period(period.name(), period.from(), period.to(), period.closed(), period.closedTotal(),
+                period.closedPeople(), period.soft(), period.cap(), period.closedCarried(), openings);
+    }
+
+    /** Each person's opening balance for the period (by person id); none for a person with no opening. */
+    public Map<Long, BigDecimal> openings(String sheet, String name) {
+        Map<Long, BigDecimal> openings = new LinkedHashMap<>();
+        jdbc.query("SELECT person, amount FROM period_opening WHERE sheet = ? AND period = ?",
+                (rs) -> {
+                    openings.put(rs.getLong("person"), rs.getBigDecimal("amount"));
+                }, sheet, name);
+        return openings;
+    }
+
+    /** Adds the amount to the person's opening balance for the period. */
+    public void addOpening(String sheet, String name, long person, BigDecimal amount) {
+        if (jdbc.update("UPDATE period_opening SET amount = amount + ? WHERE sheet = ? AND period = ? AND person = ?",
+                amount, sheet, name, person) == 0) {
+            jdbc.update("INSERT INTO period_opening (sheet, period, person, amount) VALUES (?, ?, ?, ?)", sheet, name,
+                    person, amount);
+        }
     }
 
     /** The period with its people's due-totals and carried figures fixed when it was closed. */
@@ -47,7 +77,7 @@ public class Periods {
                     carried.put(rs.getLong("person"), rs.getBigDecimal("carried").toPlainString());
                 }, sheet, period.name());
         return new Period(period.name(), period.from(), period.to(), period.closed(), period.closedTotal(), people,
-                period.soft(), period.cap(), carried);
+                period.soft(), period.cap(), carried, period.openings());
     }
 
     /** The sheet's period of the name, or null when there is none. */

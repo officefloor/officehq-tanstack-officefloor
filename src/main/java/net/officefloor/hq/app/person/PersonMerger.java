@@ -106,6 +106,19 @@ public class PersonMerger {
         }
         jdbc.update("DELETE FROM period_person_total WHERE sheet = ? AND person = ?", sheet, f);
 
+        // Opening balances add to the other's.
+        for (Map<String, Object> o : jdbc.queryForList(
+                "SELECT period, amount FROM period_opening WHERE sheet = ? AND person = ?", sheet, f)) {
+            String period = (String) o.get("PERIOD");
+            BigDecimal amount = (BigDecimal) o.get("AMOUNT");
+            if (jdbc.update("UPDATE period_opening SET amount = amount + ? WHERE sheet = ? AND period = ? AND person = ?",
+                    amount, sheet, period, t) == 0) {
+                jdbc.update("UPDATE period_opening SET person = ? WHERE sheet = ? AND period = ? AND person = ?", t,
+                        sheet, period, f);
+            }
+        }
+        jdbc.update("DELETE FROM period_opening WHERE sheet = ? AND person = ?", sheet, f);
+
         // Statements count as the other's, the other's last staying theirs.
         statements.move(sheet, f, sheet, t);
 

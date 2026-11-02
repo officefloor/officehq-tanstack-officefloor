@@ -13,7 +13,8 @@ import type { DatedCents } from '../settings/settings';
  *  for it fixed then (by person id; empty while open, and a person added since has none); and whether it is
  *  soft-closed instead: its figures fixed the same way, while claims dated in it may still change; and the most OPEN or
  *  PENDING claims a person may have in it (null for no cap); and each person's carried figure for it fixed when it was
- *  (soft-)closed (by person id; empty while open). */
+ *  (soft-)closed (by person id; empty while open); and each person's opening balance for it, added to their carried
+ *  figure (by person id; none for a person with no opening). */
 export type Period = {
   name: string;
   from: string;
@@ -24,6 +25,7 @@ export type Period = {
   soft: boolean;
   cap: number | null;
   closedCarried: Record<string, string>;
+  openings: Record<string, string>;
 };
 
 export const periodsKey = (sheet: string) => ['periods', sheet] as const;
@@ -46,6 +48,9 @@ export function fiscalYearOf(date: string, startMonth: number): string {
 
 /** How many periods a generate made, with every period on the sheet after it. */
 export type Generated = { made: number; periods: Period[] };
+
+/** Where opening balances are pasted. */
+export const openingsPath = (sheet: string) => `${periodsPath(sheet)}/openings`;
 
 /** Where a period is closed. */
 export const closePeriodPath = (sheet: string, name: string) =>
@@ -116,8 +121,8 @@ export function personPeriodDueCents(
 
 /** Each period's carried figure per person (in hundredths, by period name then person id): the due now of the person's
  *  claims that count at the end of the period (see {@link countedOn}) whose due-by falls in an earlier period (one
- *  ending before it starts) and that were still OPEN or PENDING at its end by their status log; a claim with no rate
- *  adds nothing. */
+ *  ending before it starts) and that were still OPEN or PENDING at its end by their status log, plus their opening
+ *  balance for it; a claim with no rate adds nothing. */
 export function personPeriodCarriedCents(
   periods: Period[],
   claims: Claim[],
@@ -128,6 +133,13 @@ export function personPeriodCarriedCents(
 ): Map<string, Map<number, bigint>> {
   const byId = new Map(people.map((p) => [p.id, p]));
   const totals = new Map<string, Map<number, bigint>>();
+  for (const period of periods) {
+    const byPerson = new Map<number, bigint>();
+    for (const [id, amount] of Object.entries(period.openings)) {
+      byPerson.set(Number(id), BigInt(amount.replace('.', '')));
+    }
+    totals.set(period.name, byPerson);
+  }
   for (const c of claims) {
     const home = periodOf(periods, c.dueBy);
     const person = byId.get(c.person);
