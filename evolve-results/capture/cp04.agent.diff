@@ -1,0 +1,115 @@
+diff --git a/src/main/java/net/officefloor/hq/app/person/AddPerson.java b/src/main/java/net/officefloor/hq/app/person/AddPerson.java
+index 2746dd68e..bf0472dfd 100644
+--- a/src/main/java/net/officefloor/hq/app/person/AddPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/AddPerson.java
+@@ -6,6 +6,7 @@ import net.officefloor.hq.app.CurrentUser;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.server.http.ServerHttpConnection;
++import org.springframework.dao.DuplicateKeyException;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ public class AddPerson {
+@@ -17,7 +18,15 @@ public class AddPerson {
+         if (!repository.sheetExists(id)) {
+             throw new BadRequestException("no such sheet");
+         }
+-        Person added = repository.add(id, request.name(), request.grade());
++        if (repository.nameTaken(id, request.name(), 0)) {
++            throw new BadRequestException("name is already in use");
++        }
++        Person added;
++        try {
++            added = repository.add(id, request.name(), request.grade());
++        } catch (DuplicateKeyException e) {
++            throw new BadRequestException("name is already in use");
++        }
+         audit.record("person-add sheet=" + id + " by=" + by + " person=" + added.id()
+                 + " grade=" + added.grade() + " name=" + added.name());
+         person.set(added);
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index b4e09b261..366745059 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -1,7 +1,6 @@
+ package net.officefloor.hq.app.person;
+ 
+ import java.sql.PreparedStatement;
+-import java.sql.Statement;
+ import java.util.List;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.jdbc.support.GeneratedKeyHolder;
+@@ -27,11 +26,19 @@ public class PersonRepository {
+                 (rs, i) -> new Person(rs.getLong("id"), rs.getString("name"), rs.getString("grade")), sheetId);
+     }
+ 
++    /** Whether another person on the sheet (other than {@code exceptId}; 0 for none) already has this name, ignoring case. */
++    public boolean nameTaken(String sheetId, String name, long exceptId) {
++        Integer taken = jdbc.queryForObject(
++                "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND LOWER(name) = LOWER(?) AND id <> ?",
++                Integer.class, sheetId, name, exceptId);
++        return taken != null && taken > 0;
++    }
++
+     public Person add(String sheetId, String name, String grade) {
+         GeneratedKeyHolder keys = new GeneratedKeyHolder();
+         jdbc.update(c -> {
+             PreparedStatement ps = c.prepareStatement(
+-                    "INSERT INTO person (sheet_id, name, grade) VALUES (?, ?, ?)", Statement.RETURN_GENERATED_KEYS);
++                    "INSERT INTO person (sheet_id, name, grade) VALUES (?, ?, ?)", new String[] { "id" });
+             ps.setString(1, sheetId);
+             ps.setString(2, name);
+             ps.setString(3, grade);
+diff --git a/src/main/java/net/officefloor/hq/app/person/SavePerson.java b/src/main/java/net/officefloor/hq/app/person/SavePerson.java
+index 799ba90f0..4fbf8e3c4 100644
+--- a/src/main/java/net/officefloor/hq/app/person/SavePerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/SavePerson.java
+@@ -6,6 +6,7 @@ import net.officefloor.hq.app.CurrentUser;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.server.http.ServerHttpConnection;
++import org.springframework.dao.DuplicateKeyException;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ public class SavePerson {
+@@ -20,8 +21,17 @@ public class SavePerson {
+         } catch (NumberFormatException e) {
+             throw new BadRequestException("no such person");
+         }
++        if (repository.nameTaken(id, request.name(), pid)) {
++            throw new BadRequestException("name is already in use");
++        }
+         Person saved = new Person(pid, request.name(), request.grade());
+-        if (!repository.update(id, saved)) {
++        boolean updated;
++        try {
++            updated = repository.update(id, saved);
++        } catch (DuplicateKeyException e) {
++            throw new BadRequestException("name is already in use");
++        }
++        if (!updated) {
+             throw new BadRequestException("no such person");
+         }
+         audit.record("person-edit sheet=" + id + " by=" + by + " person=" + pid
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+index 39c454c0b..57df98702 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+@@ -5,7 +5,7 @@ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+-/** Bind the person form: a name is required (trimmed), the grade must be A, B or C. */
++/** Bind the person form: a name is required (trimmed; unique on the sheet, checked when saved), the grade must be A, B or C. */
+ public class ValidatePerson {
+     private static final Set<String> GRADES = Set.of("A", "B", "C");
+ 
+diff --git a/src/main/resources/db/migration/V4__person_name_unique.sql b/src/main/resources/db/migration/V4__person_name_unique.sql
+new file mode 100644
+index 000000000..57cdc870f
+--- /dev/null
++++ b/src/main/resources/db/migration/V4__person_name_unique.sql
+@@ -0,0 +1,3 @@
++-- A person's name is unique on its sheet, compared without regard to case (names are stored trimmed).
++ALTER TABLE person ADD COLUMN name_key VARCHAR(500) GENERATED ALWAYS AS (LOWER(name));
++CREATE UNIQUE INDEX person_sheet_name ON person (sheet_id, name_key);
