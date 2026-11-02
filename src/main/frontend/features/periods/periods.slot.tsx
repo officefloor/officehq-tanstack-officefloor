@@ -4,7 +4,7 @@ import { postJson } from '../../api/http';
 import { useSingleFlight } from '../../query/useSingleFlight';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { counts, fixedDue, useClaims } from '../claims/useClaims';
-import { heldIds, usePeople } from '../people/usePeople';
+import { gradeOn, heldIds, usePeople } from '../people/usePeople';
 import { due, rateFor, sumDues, useRates } from '../rates/useRates';
 import { dueNow } from '../overdue/useOverdue';
 import { useSettings } from '../settings/useSettings';
@@ -48,12 +48,12 @@ function Periods({ sheetId }: { sheetId: string }) {
 
   const dueTotal = (p: Period) => {
     if (p.closed && p.closedTotal !== null) return p.closedTotal;
-    const grades = new Map((people.data ?? []).map((person) => [person.id, person.grade]));
+    const byId = new Map((people.data ?? []).map((person) => [person.id, person]));
     const held = heldIds(people.data);
     return sumDues(
       (claims.data ?? [])
         .filter((c) => counts(c, held) && periodOf([p], c.date) !== undefined)
-        .map((c) => dueNow(c, fixedDue(c) ?? due(c.amount, rateFor(rates.data, grades.get(c.personId), c.date), floor), settings, today)),
+        .map((c) => dueNow(c, fixedDue(c) ?? due(c.amount, rateFor(rates.data, gradeOn(byId.get(c.personId), c.date), c.date), floor), settings, today)),
     );
   };
 

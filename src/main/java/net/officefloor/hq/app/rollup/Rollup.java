@@ -44,8 +44,8 @@ public class Rollup {
     }
 
     /** The sheet's figures now. A person's due-total is the sum of their counting claims' dues now (late charges included),
-     *  skipping those with none; 'n/a' when no rate for their grade is in force on the sheet's today and
-     *  no counting claim keeps a fixed figure. The sheet's due-total skips 'n/a'. */
+     *  skipping those with none; 'n/a' when no rate for the grade they have on the sheet's today is in force
+     *  then and no counting claim keeps a fixed figure or has a due (at the grade it was claimed under). The sheet's due-total skips 'n/a'. */
     public Snapshot take(String sheetId) {
         List<Person> everyone = people.list(sheetId);
         Map<Long, Figures> figures = new LinkedHashMap<>();
@@ -64,6 +64,7 @@ public class Rollup {
                     fixed |= c.due() != null || (c.stated() && c.statedDue() != null);
                     BigDecimal now = claims.dueNow(sheetId, c);
                     if (now != null) due = due.add(now);
+                    fixed |= now != null;
                 }
                 boolean shown = fixed || claims.rated(sheetId, p.id(), today);
                 figures.put(p.id(), new Figures(p.name(), claimed.toPlainString(),

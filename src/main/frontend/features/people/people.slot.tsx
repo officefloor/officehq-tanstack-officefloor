@@ -9,7 +9,9 @@ import { useShowRetired } from '../retire/useShowRetired';
 import { GRADES, fetchPeople, peopleKey, usePeople, type Person } from './usePeople';
 
 /** The sheet's people: a form that adds a person, or edits one when their editor is open, and the
- *  list of everyone in the order they were added (retired people only when "show retired" is on).
+ *  list of everyone in the order they were added (retired people only when "show retired" is on), each
+ *  with the grade in force on the sheet's today. An edit records the form's grade from its from-date
+ *  (blank: the sheet's today); the first grade a person is given applies from the beginning of time.
  *  The editor remembers the version of the person it loaded; when someone else has saved them since,
  *  the save is refused (409) and the editor shows their current values, at their current version. Each person is a <tbody> so features can add
  *  cells and rows of their own to it (slots/defs/personRow). A quick-add bar takes a name and an amount
@@ -21,20 +23,22 @@ function People({ sheetId }: { sheetId: string }) {
   const [editing, setEditing] = useState<number | null>(null);
   const [name, setName] = useState('');
   const [grade, setGrade] = useState<string>('A');
+  const [gradeFrom, setGradeFrom] = useState('');
   const [version, setVersion] = useState<number | null>(null);
 
   const submitOnce = useSingleFlight();
   const save = useMutation({
-    mutationFn: (f: { id: number | null; name: string; grade: string; version: number | null }) => {
+    mutationFn: (f: { id: number | null; name: string; grade: string; gradeFrom: string; version: number | null }) => {
       const base = `/api/sheets/${encodeURIComponent(sheetId)}/people`;
       return f.id === null
         ? postJson<Person>(base, { name: f.name, grade: f.grade })
-        : postJson<Person>(`${base}/${f.id}`, { name: f.name, grade: f.grade, version: f.version });
+        : postJson<Person>(`${base}/${f.id}`, { name: f.name, grade: f.grade, gradeFrom: f.gradeFrom, version: f.version });
     },
     onSuccess: async () => {
       setEditing(null);
       setName('');
       setGrade('A');
+      setGradeFrom('');
       setVersion(null);
       await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
     },
@@ -75,6 +79,7 @@ function People({ sheetId }: { sheetId: string }) {
     setEditing(p.id);
     setName(p.name);
     setGrade(p.grade);
+    setGradeFrom('');
     setVersion(p.version);
   };
 
@@ -83,6 +88,7 @@ function People({ sheetId }: { sheetId: string }) {
     setEditing(null);
     setName('');
     setGrade('A');
+    setGradeFrom('');
     setVersion(null);
   };
 
@@ -94,7 +100,7 @@ function People({ sheetId }: { sheetId: string }) {
           e.preventDefault();
           submitOnce(() => {
             save.reset();
-            return save.mutateAsync({ id: editing, name, grade, version });
+            return save.mutateAsync({ id: editing, name, grade, gradeFrom, version });
           });
         }}
       >
@@ -125,6 +131,18 @@ function People({ sheetId }: { sheetId: string }) {
               </option>
             ))}
           </select>
+        </label>{' '}
+        <label>
+          from{' '}
+          <input
+            type="date"
+            data-testid="person-form-grade-from"
+            value={gradeFrom}
+            onChange={(e) => {
+              setGradeFrom(e.target.value);
+              save.reset();
+            }}
+          />
         </label>{' '}
         <button type="submit" data-testid="person-form-submit" disabled={save.isPending}>
           {editing === null ? 'Add person' : 'Save person'}

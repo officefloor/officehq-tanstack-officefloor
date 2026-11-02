@@ -4,7 +4,7 @@ import { postJson } from '../../api/http';
 import { useSingleFlight } from '../../query/useSingleFlight';
 import { PERSON_ROW_SPAN, PersonCells, PersonColumnHead, PersonDetail } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
-import { heldIds, usePeople } from '../people/usePeople';
+import { gradeOn, heldIds, usePeople } from '../people/usePeople';
 import { periodOf, usePeriods } from '../periods/usePeriods';
 import { due, rateFor, useRates } from '../rates/useRates';
 import { dueBy, dueNow, isOverdue } from '../overdue/useOverdue';
@@ -114,9 +114,9 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
 
   const mine = (claims.data ?? []).filter((c) => c.personId === personId);
   // A claim's due: the one fixed when it was settled, else the one its last statement bound it to,
-  // else its amount at the rate for its person's grade in force on its date, at least the sheet's floor
+  // else its amount at the rate in force on its date for the grade its person had on that date, at least the sheet's floor
   // ('n/a' when none applies), with its late charge while it is overdue.
-  const grade = people.data?.find((p) => p.id === personId)?.grade;
+  const person = people.data?.find((p) => p.id === personId);
 
   return (
     <tr>
@@ -163,7 +163,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                 <td data-testid="claim-period">{periodOf(periods.data, c.date)?.name ?? ''}</td>
                 <td data-testid="claim-note">{c.note}</td>
                 <td data-testid="claim-due">
-                  {dueNow(c, fixedDue(c) ?? due(c.amount, rateFor(rates.data, grade, c.date), floor), settings, today)}
+                  {dueNow(c, fixedDue(c) ?? due(c.amount, rateFor(rates.data, gradeOn(person, c.date), c.date), floor), settings, today)}
                 </td>
                 <td data-testid="claim-due-by">{terms === undefined ? '' : dueBy(c.date, terms)}</td>
                 <td data-testid="claim-overdue">

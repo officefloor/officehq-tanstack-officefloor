@@ -19,8 +19,8 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  held person's OPEN claims do not) to the figure it has now (a settled claim keeps its frozen due); a
  *  claim that does not count is unbound (live again). A late charge is never bound: it keeps following
  *  the sheet's today. The due-total is as shown: the sum of the counting claims' dues now (late charges
- *  included), skipping those with none; 'n/a' when no rate for their grade is in force on the sheet's
- *  today and no counting claim has a fixed figure. */
+ *  included), skipping those with none; 'n/a' when no rate for the grade they have on the sheet's today
+ *  is in force then and no counting claim has a fixed figure or a due (at the grade it was claimed under). */
 public class TakeStatement {
     public void take(@PathVariable("sheetId") String sheetId, @PathVariable("personId") String personId,
             ServerHttpConnection connection, PersonRepository people, ClaimRepository claims,
@@ -54,6 +54,7 @@ public class TakeStatement {
             BigDecimal now = claims.dueNow(id, c);
             if (now != null) {
                 total = total.add(now);
+                fixed = true;
             }
             claims.bind(id, c.id(), true, figure);
         }

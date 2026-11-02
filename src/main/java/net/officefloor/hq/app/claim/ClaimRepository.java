@@ -24,6 +24,11 @@ public class ClaimRepository {
             rs.getObject("claim_no", Long.class), dueOf(rs.getBigDecimal("settled_due")),
             rs.getString("opened_by"), rs.getBoolean("stated"), dueOf(rs.getBigDecimal("stated_due")));
 
+    /** The grade a person (sheet, person id) has on a date: the one with the latest from-date on
+     *  or before it, the first one they were given applying from the beginning of time. */
+    private static final String GRADE_ON = "(SELECT g.grade FROM person_grade g WHERE g.sheet_id = ? AND g.person_id = ?"
+            + " AND (g.from_date IS NULL OR g.from_date <= CAST(? AS DATE)) ORDER BY g.from_date DESC NULLS LAST LIMIT 1)";
+
     private final JdbcTemplate jdbc;
 
     public ClaimRepository(JdbcTemplate jdbc) {
@@ -71,16 +76,16 @@ public class ClaimRepository {
         jdbc.update("UPDATE claim SET opened_by = ? WHERE id = ? AND sheet_id = ?", by, claimId, sheetId);
     }
 
-    /** A claim's due now: its amount at the rate for its person's grade in force on the claim's date
+    /** A claim's due now: its amount at the rate, in force on the claim's date, for the grade its person
+     *  had on that date
      *  (the one with the latest from-date on or before it; an undated rate applies from the beginning
      *  of time), rounded half to even to two decimals, and at least the sheet's floor; null when no
      *  rate applies. */
     public BigDecimal due(String sheetId, Claim claim) {
-        List<BigDecimal> pct = jdbc.queryForList("SELECT r.pct FROM rate r JOIN person p ON p.sheet_id = r.sheet_id"
-                + " AND p.grade = r.grade WHERE p.sheet_id = ? AND p.id = ?"
-                + " AND (r.from_date IS NULL OR r.from_date <= CAST(? AS DATE))"
+        List<BigDecimal> pct = jdbc.queryForList("SELECT r.pct FROM rate r WHERE r.sheet_id = ? AND r.grade = "
+                + GRADE_ON + " AND (r.from_date IS NULL OR r.from_date <= CAST(? AS DATE))"
                 + " ORDER BY r.from_date DESC NULLS LAST LIMIT 1", BigDecimal.class, sheetId,
-                claim.personId(), claim.date());
+                sheetId, claim.personId(), claim.date(), claim.date());
         if (pct.isEmpty()) return null;
         BigDecimal due = new BigDecimal(claim.amount()).multiply(pct.get(0)).movePointLeft(2)
                 .setScale(2, RoundingMode.HALF_EVEN);
@@ -122,11 +127,11 @@ public class ClaimRepository {
         return figure.add(charge);
     }
 
-    /** Whether a rate for the person's grade is in force on a date. */
+    /** Whether a rate for the grade the person has on a date is in force on that date. */
     public boolean rated(String sheetId, long personId, LocalDate on) {
-        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM rate r JOIN person p ON p.sheet_id = r.sheet_id"
-                + " AND p.grade = r.grade WHERE p.sheet_id = ? AND p.id = ?"
-                + " AND (r.from_date IS NULL OR r.from_date <= ?)", Integer.class, sheetId, personId, Date.valueOf(on));
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM rate r WHERE r.sheet_id = ? AND r.grade = " + GRADE_ON
+                + " AND (r.from_date IS NULL OR r.from_date <= CAST(? AS DATE))", Integer.class, sheetId,
+                sheetId, personId, on.toString(), on.toString());
         return n != null && n > 0;
     }
 

@@ -1,5 +1,5 @@
 import { counts, fixedDue, useClaims, type Claim } from '../claims/useClaims';
-import { heldIds, usePeople } from '../people/usePeople';
+import { gradeOn, heldIds, usePeople } from '../people/usePeople';
 import { due, rateFor, sumDues, useRates, withCharge } from '../rates/useRates';
 import { useSettings, type Settings } from '../settings/useSettings';
 import { useSheetToday } from '../today/useSheetToday';
@@ -47,7 +47,7 @@ export function useOverdue(sheetId: string): Map<number, { count: number; total:
     figures.set(p.id, {
       count: overdue.length,
       total: sumDues(overdue.map((c) =>
-        dueNow(c, fixedDue(c) ?? due(c.amount, rateFor(rates.data, p.grade, c.date), settings.floor), settings, today))),
+        dueNow(c, fixedDue(c) ?? due(c.amount, rateFor(rates.data, gradeOn(p, c.date), c.date), settings.floor), settings, today))),
     });
   }
   return figures;
