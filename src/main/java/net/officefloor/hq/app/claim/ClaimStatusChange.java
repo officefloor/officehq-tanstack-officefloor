@@ -11,7 +11,7 @@ import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.settings.SettingsRepository;
 
-/** A claim's status change (open, settle, approve, reject or void), shared by the single and the bulk actions. Every
+/** A claim's status change (open, settle, approve, reject or void — a SETTLED claim too, by a steward within 7 days of its settlement), shared by the single and the bulk actions. Every
  *  check is made before anything is written, so a refusal writes nothing to the store or the audit. */
 final class ClaimStatusChange {
     private ClaimStatusChange() {
@@ -38,7 +38,7 @@ final class ClaimStatusChange {
             case "settle" -> { to = "SETTLED"; from = List.of("OPEN"); event = "CLAIM_SETTLED"; }
             case "approve" -> { to = "SETTLED"; from = List.of("PENDING"); event = "CLAIM_APPROVED"; }
             case "reject" -> { to = "OPEN"; from = List.of("PENDING"); event = "CLAIM_REJECTED"; }
-            case "void" -> { to = "VOID"; from = List.of("DRAFT", "OPEN", "PENDING"); event = "CLAIM_VOIDED"; }
+            case "void" -> { to = "VOID"; from = List.of("DRAFT", "OPEN", "PENDING", "SETTLED"); event = "CLAIM_VOIDED"; }
             default -> throw new BadRequestException("no such action");
         }
         Claim found = repository.find(id, cid);
@@ -69,6 +69,17 @@ final class ClaimStatusChange {
             }
             if (to.equals("SETTLED") && by.equals(found.openedBy())) {
                 throw new BadRequestException("the user who opened a claim cannot approve it");
+            }
+        }
+        // Only a steward voids a SETTLED claim, and only within 7 days of the date its status log settled it.
+        boolean reversing = found.status().equals("SETTLED") && to.equals("VOID");
+        if (reversing) {
+            if (!settings.role(id, by).equals(SettingsRepository.STEWARD)) {
+                throw new BadRequestException("only a steward can void a settled claim");
+            }
+            Long days = repository.daysSinceSettled(id, cid);
+            if (days == null || days < 0 || days > 7) {
+                throw new BadRequestException("a settled claim can be voided only within 7 days of its settlement");
             }
         }
         String why = reason == null ? "" : reason.trim();
@@ -113,6 +124,9 @@ final class ClaimStatusChange {
         // (a PENDING claim's is live), else its live due ('n/a' when its grade has no rate, which stays live), with its late charge frozen in.
         String due = null;
         String tail = event.equals("CLAIM_REJECTED") ? " reason=" + why : "";
+        if (reversing) {
+            tail = " reversed=" + (found.due() == null ? "n/a" : found.due());
+        }
         if (to.equals("SETTLED")) {
             BigDecimal now = repository.dueNow(id, found);
             repository.settleDue(id, cid, now);

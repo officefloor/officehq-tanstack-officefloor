@@ -357,6 +357,15 @@ public class ClaimRepository {
                 sheetId, claimId, claim.status(), by, dueNow(sheetId, claim), sheetId);
     }
 
+    /** How many days the sheet's today is past the date a claim's status log last records it SETTLED; null when
+     *  it records no SETTLED line. */
+    public Long daysSinceSettled(String sheetId, long claimId) {
+        List<Long> found = jdbc.query("SELECT DATEDIFF('DAY', l.on_date, s.today) AS days FROM claim_log l"
+                + " JOIN sheet s ON s.id = l.sheet_id WHERE l.sheet_id = ? AND l.claim_id = ? AND l.status = 'SETTLED'"
+                + " ORDER BY l.id DESC LIMIT 1", (rs, i) -> rs.getLong("days"), sheetId, claimId);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
     /** The status logs of the sheet's claims, by claim id: each a line per status it has had, oldest first,
      *  as "<STATUS> by <user> on <date> due=<due>" ('n/a' when it had no due). */
     public Map<String, List<String>> logs(String sheetId) {

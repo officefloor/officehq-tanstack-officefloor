@@ -29,7 +29,7 @@ type ClaimAction = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle
 
 /** A claim's status changes; the server refuses one its status does not allow, a settle by the user
  *  who opened the claim, and an approve or reject by anyone but a steward (an approve also by the
- *  user who opened the claim), and a re-settle by anyone but a steward or of a claim not SETTLED. A reject takes the reason typed on the claim's row.
+ *  user who opened the claim), a re-settle by anyone but a steward or of a claim not SETTLED, and a void of a SETTLED claim by anyone but a steward, more than 7 days after its settlement or in a closed period. A reject takes the reason typed on the claim's row.
  *  A settle or approve of a claim whose due is above the proof threshold in force on its date is refused while it has no proof. */
 const ACTIONS: [Exclude<ClaimAction, 'defer' | 'proof' | 'split'>, string][] = [
   ['open', 'Open'],
