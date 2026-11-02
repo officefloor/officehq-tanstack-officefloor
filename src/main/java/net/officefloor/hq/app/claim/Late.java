@@ -12,7 +12,8 @@ import net.officefloor.hq.app.setting.Settings;
 
 /**
  * What makes an overdue claim's late charge: the sheet's late percent (two decimals) by date, the one in force on each 30-day boundary after the claim's due-by, and its today; a claim is due
- * by the due-by fixed when it was added. The charge is never bound by a statement: it follows the sheet's today.
+ * by the due-by fixed when it was added. The charge follows the sheet's today, except on a claim bound by a statement, whose due (charge included) is
+ * the one the statement bound.
  * It also carries the sheet's policy date, which decides how a claim's live figures round, and each grade's grace
  * as recorded by from-date: the days a claim of a person whose grade in force on its date has a grace in force on
  * that date is given past its due-by before it is overdue. And the sheet's rounding mode as recorded by from-date,

@@ -185,7 +185,8 @@ export function fixed(claim: Claim): boolean {
 
 /** What makes an overdue claim's late charge: the sheet's late percent (in hundredths) by date, the one in force on
  *  each 30-day boundary after the claim's due-by, and its today.
- *  The charge is never bound by a statement: it follows the sheet's today. It also carries the sheet's policy date
+ *  The charge follows the sheet's today, except on a claim bound by a statement, whose due (charge included) is the
+ *  one the statement bound. It also carries the sheet's policy date
  *  (yyyy-MM-dd; undefined: its today), which decides how a claim's live figures round. And the date a claim's
  *  overdue days are counted from (yyyy-MM-dd): its due-by plus the grace of its person's grade in force on its date,
  *  where that grade has one in force on that date. And the sheet's rounding mode by date, which, where one is in force
@@ -218,7 +219,8 @@ export function roundsHalfUp(claim: Claim, late: Late): boolean {
   return late.policy !== undefined && claim.roundsOn < late.policy;
 }
 
-/** A claim's figure: the one fixed when it was settled, else the rate figure its statement bound, else its amount at the
+/** A claim's figure: the one fixed when it was settled, else the due its statement bound (as shown, late charge
+ *  included), else its amount at the
  *  grade's rate in force on its date (in hundredths); the floor is applied last, in {@link claimDueCents}. */
 export function claimFigureCents(claim: Claim, pct: string | undefined, floor: DatedCents, halfUp = false): bigint | undefined {
   if (claim.settledDue !== null) return hundredths(claim.settledDue);
@@ -257,11 +259,11 @@ export function lateCents(claim: Claim, figure: bigint, late: Late): bigint {
   return total;
 }
 
-/** A claim's due: the one fixed when settled; else the greater of the sheet's floor in force on its date and its
+/** A claim's due: the one fixed when settled; else the one its statement bound (as shown then); else the greater of the sheet's floor in force on its date and its
  *  figure plus, while it is overdue, its late charge on that figure (a correction has no floor and no charge). */
 export function claimDueCents(claim: Claim, pct: string | undefined, floor: DatedCents, late: Late): bigint | undefined {
   const figure = claimFigureCents(claim, pct, floor, roundsHalfUp(claim, late));
-  if (figure === undefined || claim.settledDue !== null || correction(claim)) return figure;
+  if (figure === undefined || claim.settledDue !== null || bound(claim) || correction(claim)) return figure;
   const charged = figure + lateCents(claim, figure, late);
   const least = floor(claim.date);
   return charged >= least ? charged : least;

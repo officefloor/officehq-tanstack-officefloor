@@ -28,7 +28,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * Takes a statement of the person: records their due-total now (late charges included), binds each of their
- * counting claims to the figure it has now (without its late charge) and unbinds the rest. The due-total is n/a
+ * counting claims to the due it shows now (late charge included; a claim already bound keeps its figure) and
+ * unbinds the rest. The due-total is n/a
  * when their grade has no rate on the sheet's today, unless a
  * counting claim has a figure apart from it (settled, bound, or at another grade in force on its date): then it is the figures there are.
  * <p>
@@ -64,9 +65,9 @@ public class TakeStatement {
         Map<Long, BigDecimal> bound = new HashMap<>();
         for (Claim claim : past) {
             if (then.counts(claim)) {
-                // The statement binds the rate figure (before the floor); the late charge keeps following the sheet's today.
-                bound.put(claim.id(), claim.figure(sheetRates, then.gradeOn(claim.date()), floor, late.rounding(claim)));
+                // The statement binds the due as shown, late charge included: it no longer follows the sheet's today.
                 BigDecimal due = claim.due(sheetRates, then.gradeOn(claim.date()), floor, late);
+                bound.put(claim.id(), due);
                 total = due == null ? total : total.add(due);
             }
         }

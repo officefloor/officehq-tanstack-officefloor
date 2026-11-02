@@ -162,20 +162,21 @@ public record Claim(long id, long person, String amount, String date, String not
     }
 
     /**
-     * This claim's due: the due fixed when settled; else the greater of the sheet's floor in force on its date and its
-     * {@link #figure} plus, while it is overdue, its late charge on that figure (a correction has no floor and no
-     * charge); null when there is no figure.
+     * This claim's due: the due fixed when settled; else the due its statement bound (as shown then, late charge
+     * included); else the greater of the sheet's floor in force on its date and its {@link #figure} plus, while it is
+     * overdue, its late charge on that figure (a correction has no floor and no charge); null when there is no figure.
      */
     public BigDecimal due(List<Rate> rates, String grade, Dated floor, Late late) {
         BigDecimal figure = figure(rates, grade, floor, late.rounding(this));
-        if (figure == null || settledDue != null || correction()) {
+        if (figure == null || settledDue != null || bound() || correction()) {
             return figure;
         }
         return figure.add(late.charge(this, grade, figure)).max(floor.on(date));
     }
 
     /**
-     * This claim's figure: the due fixed when settled, else the rate figure its statement bound, else
+     * This claim's figure: the due fixed when settled, else the due its statement bound (as shown, late charge
+     * included), else
      * its amount at the grade's rate in force on its date, of the rates it sees (the floor is applied last, in {@link #due}); null when
      * there is none.
      */
