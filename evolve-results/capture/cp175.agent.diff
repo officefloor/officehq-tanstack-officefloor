@@ -1,0 +1,200 @@
+diff --git a/src/main/frontend/features/people/transfer.slot.tsx b/src/main/frontend/features/people/transfer.slot.tsx
+index 1c70cc14..340981a4 100644
+--- a/src/main/frontend/features/people/transfer.slot.tsx
++++ b/src/main/frontend/features/people/transfer.slot.tsx
+@@ -64,7 +64,49 @@ function PersonTransfer({ sheet, user, person }: { sheet: string; user: string;
+   );
+ }
+ 
++// The button that undoes the transfer that brought this person here, sending them back to the sheet they came from by
++// the transfer rules. The server refuses anyone but a steward, any day but the sheet's today they arrived, and a person
++// who did not arrive by transfer; both sheets are re-read as for a transfer.
++function PersonTransferUndo({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
++  const queryClient = useQueryClient();
++  const undo = useMutation({
++    mutationKey: personActionKey(sheet, person.id),
++    mutationFn: () => postJson<Person[]>(byUser(`${peoplePath(sheet)}/${person.id}/transfer-undo`, user), {}),
++    onSuccess: async (updated) => {
++      const target = person.origin;
++      await queryClient.invalidateQueries({
++        predicate: (q) =>
++          (q.queryKey.includes(sheet) && q.queryKey[0] !== 'sheet' && q.queryKey[0] !== 'people') ||
++          (target != null && q.queryKey.includes(target)),
++      });
++      queryClient.setQueryData(peopleKey(sheet), updated);
++    },
++  });
++  const act = useSubmitOnce(undo);
++  const latest = useIsLatest(personActionKey(sheet, person.id), undo.submittedAt);
++
++  return (
++    <td>
++      <button
++        type="button"
++        data-testid="person-transfer-undo"
++        disabled={undo.isPending}
++        onClick={() => act(undefined)}
++      >
++        Undo transfer
++      </button>
++      {undo.isError && latest && (
++        <span data-testid="person-error" role="alert">
++          {' '}Only a steward may undo a transfer, on the day the person arrived by it.
++        </span>
++      )}
++    </td>
++  );
++}
++
+ export const contributions = [
+   PersonColumnHeaders.fill({ order: 75, Component: TransferHeader }),
+   PersonColumns.fill({ order: 75, Component: PersonTransfer }),
++  PersonColumnHeaders.fill({ order: 76, Component: TransferHeader }),
++  PersonColumns.fill({ order: 76, Component: PersonTransferUndo }),
+ ];
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonTransferrer.java b/src/main/java/net/officefloor/hq/app/person/PersonTransferrer.java
+index e8504281..927b6b4d 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonTransferrer.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonTransferrer.java
+@@ -15,6 +15,7 @@ import net.officefloor.hq.app.role.Role;
+ import net.officefloor.hq.app.role.Roles;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.sheet.SheetArchive;
++import net.officefloor.hq.app.sheet.SheetClock;
+ import net.officefloor.hq.app.statement.Statements;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.jdbc.support.GeneratedKeyHolder;
+@@ -50,10 +51,11 @@ public class PersonTransferrer {
+     private final Rollup rollup;
+     private final Statements statements;
+     private final SheetTags sheetTags;
++    private final SheetClock clock;
+ 
+     public PersonTransferrer(JdbcTemplate jdbc, People people, Aliases aliases, Claims claims,
+             ClaimStatusChanger changer, Roles roles, SheetArchive archive, Audit audit, Rollup rollup,
+-            Statements statements, SheetTags sheetTags) {
++            Statements statements, SheetTags sheetTags, SheetClock clock) {
+         this.jdbc = jdbc;
+         this.people = people;
+         this.aliases = aliases;
+@@ -65,6 +67,32 @@ public class PersonTransferrer {
+         this.rollup = rollup;
+         this.statements = statements;
+         this.sheetTags = sheetTags;
++        this.clock = clock;
++    }
++
++    /**
++     * Undoes the transfer that brought the person to this sheet: only a steward may, only on the sheet's today they
++     * arrived, and only for a person who arrived by transfer. They are transferred back to the sheet they came from by
++     * exactly the transfer's rules and lines, then PERSON_TRANSFER_UNDONE is written here.
++     */
++    public void undo(String sheet, String user, Person person) throws InvalidPersonException {
++        if (!Role.STEWARD.equals(roles.of(sheet, user))) {
++            throw new InvalidPersonException("Only a steward may undo a transfer");
++        }
++        List<java.sql.Date> arrived = jdbc.queryForList("SELECT arrived_on FROM person WHERE sheet = ? AND id = ?",
++                java.sql.Date.class, sheet, person.id());
++        String origin = person.origin();
++        if (origin == null || arrived.isEmpty() || arrived.get(0) == null) {
++            throw new InvalidPersonException(person.name() + " did not arrive by transfer");
++        }
++        if (!arrived.get(0).toLocalDate().equals(clock.today(sheet))) {
++            throw new InvalidPersonException("A transfer is undone only on the day the person arrived");
++        }
++        Rollup.Snapshot before = rollup.take(sheet);
++        transfer(sheet, user, person, origin);
++        audit.record("PERSON_TRANSFER_UNDONE sheet=" + sheet + " by=" + user + " name=" + person.name() + " to="
++                + origin);
++        rollup.record(sheet, user, before);
+     }
+ 
+     /** Transfers the person to the sheet {@code to}, writing nothing when it is refused. */
+@@ -209,14 +237,15 @@ public class PersonTransferrer {
+     private long arrive(String sheet, long f, String to, List<String> theirAliases) {
+         GeneratedKeyHolder keys = new GeneratedKeyHolder();
+         jdbc.update(con -> {
+-            var ps = con.prepareStatement("INSERT INTO person (sheet, name, terms, contact, tags, list_position, origin) SELECT ?,"
+-                    + " name, terms, contact, tags, " + People.NEXT_POSITION + ", ? FROM person WHERE sheet = ? AND id = ?",
++            var ps = con.prepareStatement("INSERT INTO person (sheet, name, terms, contact, tags, list_position, origin,"
++                    + " arrived_on) SELECT ?, name, terms, contact, tags, " + People.NEXT_POSITION + ", ?, ? FROM person WHERE sheet = ? AND id = ?",
+                     new String[] { "id" });
+             ps.setString(1, to);
+             ps.setString(2, to);
+             ps.setString(3, sheet);
+-            ps.setString(4, sheet);
+-            ps.setLong(5, f);
++            ps.setDate(4, java.sql.Date.valueOf(clock.today(to)));
++            ps.setString(5, sheet);
++            ps.setLong(6, f);
+             return ps;
+         }, keys);
+         long t = keys.getKey().longValue();
+diff --git a/src/main/java/net/officefloor/hq/app/person/UndoTransfer.java b/src/main/java/net/officefloor/hq/app/person/UndoTransfer.java
+new file mode 100644
+index 00000000..12ed4d15
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/UndoTransfer.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Undoes the transfer that brought the person to this sheet, by the rules of {@link PersonTransferrer}. */
++public class UndoTransfer {
++    public void undo(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val Person person,
++            PersonTransferrer transferrer) throws InvalidPersonException {
++        transferrer.undo(sheet, user, person);
++    }
++}
+diff --git a/src/main/resources/db/migration/V82__person_arrived_on.sql b/src/main/resources/db/migration/V82__person_arrived_on.sql
+new file mode 100644
+index 00000000..95b4f36f
+--- /dev/null
++++ b/src/main/resources/db/migration/V82__person_arrived_on.sql
+@@ -0,0 +1,3 @@
++-- The sheet's today on which a person arrived on it by transfer (null for anyone who did not): a steward may undo the
++-- transfer on that day only.
++ALTER TABLE person ADD COLUMN arrived_on DATE;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheet}/people/{person}/transfer-undo.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheet}/people/{person}/transfer-undo.POST.yml
+new file mode 100644
+index 00000000..840947c9
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheet}/people/{person}/transfer-undo.POST.yml
+@@ -0,0 +1,16 @@
++# A steward undoes the transfer that brought the person to this sheet, on the sheet's today they arrived: they are
++# transferred back to the sheet they came from by the transfer rules. Refused (400, nothing written) for anyone else,
++# any later day, or a person who did not arrive by transfer. Responds with this sheet's people.
++load:
++  class: net.officefloor.hq.app.person.LoadPerson
++  govern: [ transaction ]
++  next: undo
++undo:
++  class: net.officefloor.hq.app.person.UndoTransfer
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPeople
++  govern: [ transaction ]
++handle:
++  class: net.officefloor.hq.app.person.HandleInvalidPerson
+diff --git a/tmp_e2e/undo.log b/tmp_e2e/undo.log
+new file mode 100644
+index 00000000..d1795c83
+--- /dev/null
++++ b/tmp_e2e/undo.log
+@@ -0,0 +1,12 @@
++Picked up JAVA_TOOL_OPTIONS: -Djava.io.tmpdir=/home/daniel/ui-work/runs/202610271-to/tmp
++
++Running 4 tests using 1 worker
++
++  ✓  1 [chromium] › acceptance.spec.ts:6:7 › transfer undo › transfer undo (21.2s)
++  ✓  2 [chromium] › acceptance.spec.ts:103:7 › transfer undo › transfer undo scenario 1 (39.2s)
++  ✓  3 [chromium] › acceptance.spec.ts:598:7 › transfer undo › transfer undo scenario 2 (34.1s)
++  ✓  4 [chromium] › acceptance.spec.ts:1046:7 › transfer undo › transfer undo scenario 3 (49.3s)
++
++  Slow test file: [chromium] › acceptance.spec.ts (2.4m)
++  Consider splitting slow test files to speed up parallel execution
++  4 passed (2.5m)
