@@ -1,0 +1,330 @@
+diff --git a/src/main/frontend/features/statements/statements.slot.tsx b/src/main/frontend/features/statements/statements.slot.tsx
+index 4c31df83..45ad4eba 100644
+--- a/src/main/frontend/features/statements/statements.slot.tsx
++++ b/src/main/frontend/features/statements/statements.slot.tsx
+@@ -20,12 +20,13 @@ function StatementHeader({ sheet, user }: { sheet: string; user: string }) {
+       {shown('statement-count') && <th>Statements</th>}
+       {shown('stated-total') && <th>Stated total</th>}
+       {shown('statement-date') && <th>Stated on</th>}
++      <th>Statement lines</th>
+       <th />
+     </>
+   );
+ }
+ 
+-// A person's statements: how many, the last one's due-total and date, the button that takes the next and the one
++// A person's statements: how many, the last one's due-total and date, a line per statement (oldest first), the button that takes the next and the one
+ // that cancels the last. Taking one binds their counting claims to their figures now, and cancelling one makes the
+ // claims it bound live again, so the claims are re-read before the count moves on. A date beside the button takes
+ // the statement as of that date (blank: now); it is cleared once the statement is taken or refused, so a refused date
+@@ -65,6 +66,13 @@ function PersonStatements({ sheet, user, person }: { sheet: string; user: string
+       {shown('statement-count') && <td data-testid="person-statement-count">{mine?.count ?? 0}</td>}
+       {shown('stated-total') && <td data-testid="person-stated-total"><Fig>{mine?.lastDueTotal ?? ''}</Fig></td>}
+       {shown('statement-date') && <td data-testid="person-statement-date">{mine?.lastDate ?? ''}</td>}
++      <td data-testid="person-statement-lines">
++        {(mine?.lines ?? []).map((line, i) => (
++          <div key={i} data-testid="person-statement-line-line">
++            {line.date} <Fig>{line.dueTotal}</Fig>
++          </div>
++        ))}
++      </td>
+       <td>
+         <input
+           type="date"
+diff --git a/src/main/frontend/features/statements/statements.ts b/src/main/frontend/features/statements/statements.ts
+index ce1e586e..40fa47be 100644
+--- a/src/main/frontend/features/statements/statements.ts
++++ b/src/main/frontend/features/statements/statements.ts
+@@ -2,8 +2,12 @@ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ 
+ /** A person's statements: how many were taken, and the last one's due-total (two decimals, or n/a) and date
+- *  (yyyy-MM-dd, the sheet's today when it was taken). A person with none is absent. */
+-export type StatementSummary = { person: number; count: number; lastDueTotal: string; lastDate: string };
++ *  (yyyy-MM-dd, the sheet's today when it was taken), and a line per statement standing (its date and due-total), oldest
++ *  first by date. A person with none is absent. */
++export type StatementSummary = { person: number; count: number; lastDueTotal: string; lastDate: string; lines: StatementLine[] };
++
++/** One statement standing: its date (yyyy-MM-dd) and due-total (two decimals, or n/a). */
++export type StatementLine = { date: string; dueTotal: string };
+ 
+ export const statementsKey = (sheet: string) => ['statements', sheet] as const;
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+index 5e715c4b..3d42d02d 100644
+--- a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+@@ -15,6 +15,7 @@ import java.util.regex.Matcher;
+ import java.util.regex.Pattern;
+ import net.officefloor.hq.app.rate.Rate;
+ import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.sheet.SheetClock;
+ import org.springframework.core.Ordered;
+ import org.springframework.core.annotation.Order;
+ import org.springframework.stereotype.Component;
+@@ -27,7 +28,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
+  * transaction that first puts the sheet as it stood at the end of that date (see {@link SheetSnapshots#show}) and is
+  * always rolled back, so every figure the endpoints make is made from that state, with the date for the sheet's
+  * today, and nothing is ever written. The sheet's parents whose rates it takes (see Rates) are put as they stood at
+- * the end of that date too. Every change sent while the as-of date is set is refused (see ViewerGuard).
++ * the end of that date too, bar a parent whose today was never set: it has no dated history, so it is taken as it
++ * stands now. Every change sent while the as-of date is set is refused (see ViewerGuard).
+  */
+ @Component
+ @Order(Ordered.HIGHEST_PRECEDENCE + 1)
+@@ -39,11 +41,14 @@ public class AsOfView extends OncePerRequestFilter {
+ 
+     private final SheetSnapshots snapshots;
+     private final Settings settings;
++    private final SheetClock clock;
+     private final TransactionTemplate transaction;
+ 
+-    public AsOfView(SheetSnapshots snapshots, Settings settings, PlatformTransactionManager transactions) {
++    public AsOfView(SheetSnapshots snapshots, Settings settings, SheetClock clock,
++            PlatformTransactionManager transactions) {
+         this.snapshots = snapshots;
+         this.settings = settings;
++        this.clock = clock;
+         this.transaction = new TransactionTemplate(transactions);
+     }
+ 
+@@ -71,7 +76,9 @@ public class AsOfView extends OncePerRequestFilter {
+                 Set<String> shown = new HashSet<>(Set.of(sheet));
+                 String parent = settings.parent(sheet);
+                 for (int level = 1; level <= Rate.LEVELS && !parent.isEmpty() && shown.add(parent); level++) {
+-                    snapshots.show(parent, date);
++                    if (clock.isSet(parent)) {
++                        snapshots.show(parent, date);
++                    }
+                     parent = settings.parent(parent);
+                 }
+                 try {
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetClock.java b/src/main/java/net/officefloor/hq/app/sheet/SheetClock.java
+index e2f21cf8..0dc6a715 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetClock.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetClock.java
+@@ -25,6 +25,11 @@ public class SheetClock {
+         return found.isEmpty() ? LocalDate.now() : found.get(0);
+     }
+ 
++    /** Whether the sheet's today has ever been set (else it is the real date, and the sheet has no dated history). */
++    public boolean isSet(String sheet) {
++        return jdbc.queryForObject("SELECT COUNT(*) FROM sheet WHERE id = ?", Integer.class, sheet) > 0;
++    }
++
+     public void setToday(String sheet, LocalDate today) {
+         jdbc.update("MERGE INTO sheet (id, today) KEY (id) VALUES (?, ?)", sheet, Date.valueOf(today));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/statement/StatementSummary.java b/src/main/java/net/officefloor/hq/app/statement/StatementSummary.java
+index a361b3e7..61cfec61 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/StatementSummary.java
++++ b/src/main/java/net/officefloor/hq/app/statement/StatementSummary.java
+@@ -1,8 +1,15 @@
+ package net.officefloor.hq.app.statement;
+ 
++import java.util.List;
++
+ /**
+  * A person's statements as the screen shows them: how many have been taken, and the last one's due-total (two
+- * decimals, or n/a) and date (ISO yyyy-MM-dd, the date it was taken as of, else the sheet's today when it was taken).
++ * decimals, or n/a) and date (ISO yyyy-MM-dd, the date it was taken as of, else the sheet's today when it was taken),
++ * and a line per statement standing, "<date> <due-total>", oldest first by date.
+  */
+-public record StatementSummary(long person, int count, String lastDueTotal, String lastDate) {
++public record StatementSummary(long person, int count, String lastDueTotal, String lastDate, List<Line> lines) {
++
++    /** One statement standing: its date and due-total (two decimals, or n/a). */
++    public record Line(String date, String dueTotal) {
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/statement/Statements.java b/src/main/java/net/officefloor/hq/app/statement/Statements.java
+index 88913b16..6d387573 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/Statements.java
++++ b/src/main/java/net/officefloor/hq/app/statement/Statements.java
+@@ -4,7 +4,10 @@ import java.math.BigDecimal;
+ import java.math.RoundingMode;
+ import java.sql.Date;
+ import java.time.LocalDate;
++import java.util.ArrayList;
++import java.util.HashMap;
+ import java.util.List;
++import java.util.Map;
+ import java.util.Optional;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+@@ -19,21 +22,34 @@ public class Statements {
+         this.jdbc = jdbc;
+     }
+ 
+-    /** Per person on the sheet with a statement: the count, and the last one's due-total and date (the date it was taken as of, else the sheet's today then). */
++    /**
++     * Per person on the sheet with a statement: the count, the last one's due-total and date (the date it was taken as
++     * of, else the sheet's today then), and a line per statement, oldest first by date.
++     */
+     public List<StatementSummary> list(String sheet) {
++        Map<Long, List<StatementSummary.Line>> lines = new HashMap<>();
++        jdbc.query("""
++                SELECT person, due_total, COALESCE(as_of, taken_on) AS stated_on FROM statement WHERE sheet = ?
++                ORDER BY person, stated_on, seq, id""", rs -> {
++            lines.computeIfAbsent(rs.getLong("person"), p -> new ArrayList<>()).add(new StatementSummary.Line(
++                    rs.getDate("stated_on").toLocalDate().toString(), figure(rs.getBigDecimal("due_total"))));
++        }, sheet);
+         return jdbc.query("""
+                 SELECT s.person, (SELECT COUNT(*) FROM statement c WHERE c.sheet = s.sheet AND c.person = s.person)
+                   AS taken, s.due_total, COALESCE(s.as_of, s.taken_on) AS stated_on FROM statement s
+                 WHERE s.sheet = ? AND NOT EXISTS (SELECT 1 FROM statement o WHERE o.sheet = s.sheet
+                   AND o.person = s.person AND (o.seq > s.seq OR (o.seq = s.seq AND o.id > s.id)))
+                 ORDER BY s.person""", (rs, i) -> {
+-            BigDecimal due = rs.getBigDecimal("due_total");
+-            return new StatementSummary(rs.getLong("person"), rs.getInt("taken"),
+-                    due == null ? "n/a" : due.setScale(2, RoundingMode.UNNECESSARY).toPlainString(),
+-                    rs.getDate("stated_on").toLocalDate().toString());
++            long person = rs.getLong("person");
++            return new StatementSummary(person, rs.getInt("taken"), figure(rs.getBigDecimal("due_total")),
++                    rs.getDate("stated_on").toLocalDate().toString(), lines.getOrDefault(person, List.of()));
+         }, sheet);
+     }
+ 
++    private static String figure(BigDecimal due) {
++        return due == null ? "n/a" : due.setScale(2, RoundingMode.UNNECESSARY).toPlainString();
++    }
++
+     /**
+      * Records a statement of the person: their due-total (null when n/a), taken on the date, as of a date (null when
+      * taken now).
+diff --git a/tmp_e2e/run.log b/tmp_e2e/run.log
+new file mode 100644
+index 00000000..3fcf8cb4
+--- /dev/null
++++ b/tmp_e2e/run.log
+@@ -0,0 +1,53 @@
++Picked up JAVA_TOOL_OPTIONS: -Djava.io.tmpdir=/home/daniel/ui-work/runs/202610271-to/tmp
++
++Running 4 tests using 1 worker
++
++  ✓  1 [chromium] › acceptance.spec.ts:6:7 › statement lines › statement lines (8.5s)
++  ✓  2 [chromium] › acceptance.spec.ts:67:7 › statement lines › statement lines scenario 1 (34.5s)
++  ✘  3 [chromium] › acceptance.spec.ts:632:7 › statement lines › statement lines scenario 2 (39.5s)
++  ✓  4 [chromium] › acceptance.spec.ts:1312:7 › statement lines › statement lines scenario 3 (22.7s)
++
++
++  1) [chromium] › acceptance.spec.ts:632:7 › statement lines › statement lines scenario 2 ──────────
++
++    Error: [31mTimed out 5000ms waiting for [39m[2mexpect([22m[31mlocator[39m[2m).[22mtoHaveText[2m([22m[32mexpected[39m[2m)[22m
++
++    Locator: getByTestId('claim-row-10').getByTestId('claim-due')
++    Expected string: [32m"1.29"[39m
++    Received string: [31m"n/a"[39m
++    Call log:
++      [2m- expect.toHaveText with timeout 5000ms[22m
++    [2m  - waiting for getByTestId('claim-row-10').getByTestId('claim-due')[22m
++    [2m  -   locator resolved to <span data-testid="claim-due">n/a</span>[22m
++    [2m  -   unexpected value "n/a"[22m
++    [2m  -   locator resolved to <span data-testid="claim-due">n/a</span>[22m
++    [2m  -   unexpected value "n/a"[22m
++    [2m  -   locator resolved to <span data-testid="claim-due">n/a</span>[22m
++    [2m  -   unexpected value "n/a"[22m
++    [2m  -   locator resolved to <span data-testid="claim-due">n/a</span>[22m
++    [2m  -   unexpected value "n/a"[22m
++    [2m  -   locator resolved to <span data-testid="claim-due">n/a</span>[22m
++    [2m  -   unexpected value "n/a"[22m
++    [2m  -   locator resolved to <span data-testid="claim-due">n/a</span>[22m
++    [2m  -   unexpected value "n/a"[22m
++    [2m  -   locator resolved to <span data-testid="claim-due">n/a</span>[22m
++    [2m  -   unexpected value "n/a"[22m
++    [2m  -   locator resolved to <span data-testid="claim-due">n/a</span>[22m
++    [2m  -   unexpected value "n/a"[22m
++    [2m  -   locator resolved to <span data-testid="claim-due">n/a</span>[22m
++    [2m  -   unexpected value "n/a"[22m
++
++
++      798 |     await expect(pg_vic.getByTestId("claim-row-" + c_cam_0_2).getByTestId("claim-date")).toHaveText("2026-03-01");
++      799 |     await expect(pg_vic.getByTestId("claim-row-" + c_cam_0_2).getByTestId("claim-note")).toHaveText("n");
++    > 800 |     await expect(pg_vic.getByTestId("claim-row-" + c_cam_0_2).getByTestId("claim-due")).toHaveText("1.29");
++          |                                                                                         ^
++      801 |     await expect(pg_vic.getByTestId("claim-row-" + c_cam_0_2).getByTestId("claim-status")).toHaveText("DRAFT");
++      802 |     await expect(pg_vic.getByTestId("claim-row-" + c_cam_0_2).getByTestId("claim-number")).toHaveText("");
++      803 |     await expect(pg_vic.getByTestId("claim-row-" + c_cam_0_2).getByTestId("claim-opened-by")).toHaveText("");
++
++        at /home/daniel/ui-work/runs/202610271-to/sandbox/officehq-tanstack-officefloor/e2e/specs/acceptance.spec.ts:800:89
++
++  1 failed
++    [chromium] › acceptance.spec.ts:632:7 › statement lines › statement lines scenario 2 ───────────
++  3 passed (1.8m)
+diff --git a/tmp_e2e/run2.log b/tmp_e2e/run2.log
+new file mode 100644
+index 00000000..5236a4ef
+--- /dev/null
++++ b/tmp_e2e/run2.log
+@@ -0,0 +1,53 @@
++Picked up JAVA_TOOL_OPTIONS: -Djava.io.tmpdir=/home/daniel/ui-work/runs/202610271-to/tmp
++
++Running 4 tests using 1 worker
++
++  ✓  1 [chromium] › acceptance.spec.ts:6:7 › statement lines › statement lines (12.6s)
++  ✓  2 [chromium] › acceptance.spec.ts:67:7 › statement lines › statement lines scenario 1 (37.5s)
++  ✘  3 [chromium] › acceptance.spec.ts:632:7 › statement lines › statement lines scenario 2 (40.6s)
++  ✓  4 [chromium] › acceptance.spec.ts:1312:7 › statement lines › statement lines scenario 3 (25.3s)
++
++
++  1) [chromium] › acceptance.spec.ts:632:7 › statement lines › statement lines scenario 2 ──────────
++
++    Error: [31mTimed out 5000ms waiting for [39m[2mexpect([22m[31mlocator[39m[2m).[22mtoHaveText[2m([22m[32mexpected[39m[2m)[22m
++
++    Locator: getByTestId('claim-row-10').getByTestId('claim-due')
++    Expected string: [32m"1.29"[39m
++    Received string: [31m"n/a"[39m
++    Call log:
++      [2m- expect.toHaveText with timeout 5000ms[22m
++    [2m  - waiting for getByTestId('claim-row-10').getByTestId('claim-due')[22m
++    [2m  -   locator resolved to <span data-testid="claim-due">n/a</span>[22m
++    [2m  -   unexpected value "n/a"[22m
++    [2m  -   locator resolved to <span data-testid="claim-due">n/a</span>[22m
++    [2m  -   unexpected value "n/a"[22m
++    [2m  -   locator resolved to <span data-testid="claim-due">n/a</span>[22m
++    [2m  -   unexpected value "n/a"[22m
++    [2m  -   locator resolved to <span data-testid="claim-due">n/a</span>[22m
++    [2m  -   unexpected value "n/a"[22m
++    [2m  -   locator resolved to <span data-testid="claim-due">n/a</span>[22m
++    [2m  -   unexpected value "n/a"[22m
++    [2m  -   locator resolved to <span data-testid="claim-due">n/a</span>[22m
++    [2m  -   unexpected value "n/a"[22m
++    [2m  -   locator resolved to <span data-testid="claim-due">n/a</span>[22m
++    [2m  -   unexpected value "n/a"[22m
++    [2m  -   locator resolved to <span data-testid="claim-due">n/a</span>[22m
++    [2m  -   unexpected value "n/a"[22m
++    [2m  -   locator resolved to <span data-testid="claim-due">n/a</span>[22m
++    [2m  -   unexpected value "n/a"[22m
++
++
++      798 |     await expect(pg_vic.getByTestId("claim-row-" + c_cam_0_2).getByTestId("claim-date")).toHaveText("2026-03-01");
++      799 |     await expect(pg_vic.getByTestId("claim-row-" + c_cam_0_2).getByTestId("claim-note")).toHaveText("n");
++    > 800 |     await expect(pg_vic.getByTestId("claim-row-" + c_cam_0_2).getByTestId("claim-due")).toHaveText("1.29");
++          |                                                                                         ^
++      801 |     await expect(pg_vic.getByTestId("claim-row-" + c_cam_0_2).getByTestId("claim-status")).toHaveText("DRAFT");
++      802 |     await expect(pg_vic.getByTestId("claim-row-" + c_cam_0_2).getByTestId("claim-number")).toHaveText("");
++      803 |     await expect(pg_vic.getByTestId("claim-row-" + c_cam_0_2).getByTestId("claim-opened-by")).toHaveText("");
++
++        at /home/daniel/ui-work/runs/202610271-to/sandbox/officehq-tanstack-officefloor/e2e/specs/acceptance.spec.ts:800:89
++
++  1 failed
++    [chromium] › acceptance.spec.ts:632:7 › statement lines › statement lines scenario 2 ───────────
++  3 passed (2.0m)
+diff --git a/tmp_e2e/run3.log b/tmp_e2e/run3.log
+new file mode 100644
+index 00000000..ea90ca49
+--- /dev/null
++++ b/tmp_e2e/run3.log
+@@ -0,0 +1,12 @@
++Picked up JAVA_TOOL_OPTIONS: -Djava.io.tmpdir=/home/daniel/ui-work/runs/202610271-to/tmp
++
++Running 4 tests using 1 worker
++
++  ✓  1 [chromium] › acceptance.spec.ts:6:7 › statement lines › statement lines (12.7s)
++  ✓  2 [chromium] › acceptance.spec.ts:67:7 › statement lines › statement lines scenario 1 (39.6s)
++  ✓  3 [chromium] › acceptance.spec.ts:632:7 › statement lines › statement lines scenario 2 (46.6s)
++  ✓  4 [chromium] › acceptance.spec.ts:1312:7 › statement lines › statement lines scenario 3 (25.0s)
++
++  Slow test file: [chromium] › acceptance.spec.ts (2.1m)
++  Consider splitting slow test files to speed up parallel execution
++  4 passed (2.1m)
