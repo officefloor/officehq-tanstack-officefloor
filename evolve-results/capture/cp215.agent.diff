@@ -1,0 +1,141 @@
+diff --git a/src/main/frontend/features/sheetcompare/sheetcompare.slot.tsx b/src/main/frontend/features/sheetcompare/sheetcompare.slot.tsx
+new file mode 100644
+index 00000000..edf86ffd
+--- /dev/null
++++ b/src/main/frontend/features/sheetcompare/sheetcompare.slot.tsx
+@@ -0,0 +1,55 @@
++import { useState } from 'react';
++import type { FormEvent } from 'react';
++import { SheetPanels } from '../../slots/defs/sheetPanels';
++import { GRADES } from '../people/people';
++import { twoDecimals } from '../rates/rates';
++import { useGradeDue, useSheetExists } from './sheetcompare';
++
++// The other sheet's figures, read only once it is known to exist (reading a sheet makes it exist).
++function OtherLines({ sheet, other }: { sheet: string; other: string }) {
++  const mine = useGradeDue(sheet);
++  const theirs = useGradeDue(other);
++  if (!mine.ready || !theirs.ready) return null;
++  return (
++    <>
++      {GRADES.map((g) => (
++        <div key={g} data-testid="compare-line">
++          {`${g} ${twoDecimals(mine.due[g])} ${twoDecimals(theirs.due[g])}`}
++        </div>
++      ))}
++    </>
++  );
++}
++
++function Comparison({ sheet, other }: { sheet: string; other: string }) {
++  const exists = useSheetExists(other);
++  if (!exists.isSuccess || exists.isFetching || !exists.data) return null;
++  return <OtherLines sheet={sheet} other={other} />;
++}
++
++// Compares this sheet with another by id: one line per grade of this sheet, its summary due-total for the grade then
++// the other sheet's (0.00 for a grade the other sheet has no one on). A sheet that does not exist gives no lines.
++function SheetCompare({ sheet }: { sheet: string; user: string }) {
++  const [entry, setEntry] = useState('');
++  // Each press remounts the comparison, so the old lines go and every figure is read afresh.
++  const [asked, setAsked] = useState<{ other: string; n: number } | null>(null);
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    setAsked((prev) => ({ other: entry.trim(), n: (prev?.n ?? 0) + 1 }));
++  };
++
++  return (
++    <form onSubmit={submit}>
++      Compare with sheet:{' '}
++      <input data-testid="compare-sheet" type="text" placeholder="sheet id" value={entry}
++        onChange={(e) => setEntry(e.target.value)} />{' '}
++      <button type="submit" data-testid="compare">
++        Compare
++      </button>
++      {asked && asked.other !== '' && <Comparison key={asked.n} sheet={sheet} other={asked.other} />}
++    </form>
++  );
++}
++
++export const contribution = SheetPanels.fill({ order: 86, Component: SheetCompare });
+diff --git a/src/main/frontend/features/sheetcompare/sheetcompare.ts b/src/main/frontend/features/sheetcompare/sheetcompare.ts
+new file mode 100644
+index 00000000..0fd94317
+--- /dev/null
++++ b/src/main/frontend/features/sheetcompare/sheetcompare.ts
+@@ -0,0 +1,46 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { GRADES, isRetired, usePeople, type Grade } from '../people/people';
++import { useSheet } from '../sheet/sheet';
++import { useRates } from '../rates/rates';
++import { useCapCents, useFloorCents, useSettings } from '../settings/settings';
++import { personDueCents, useClaims, useLate } from '../claims/claims';
++
++export const sheetExistsKey = (sheet: string) => ['sheet-exists', sheet] as const;
++
++/** Whether the sheet exists (has been loaded). Asking does not make it exist. */
++export function useSheetExists(sheet: string) {
++  return useQuery({
++    queryKey: sheetExistsKey(sheet),
++    queryFn: () => getJson<boolean>(`/api/sheets/${encodeURIComponent(sheet)}/exists`),
++    enabled: sheet !== '',
++  });
++}
++
++/** Per grade, the sheet's summary due-total: the due-totals of the people on it today (retired ones left out) added
++ *  up, an n/a due-total adding nothing — figured as the summary figures it. `ready` once its reads have answered. */
++export function useGradeDue(sheet: string): { ready: boolean; due: Record<Grade, bigint> } {
++  const sheetQ = useSheet(sheet);
++  const peopleQ = usePeople(sheet);
++  const claimsQ = useClaims(sheet);
++  const ratesQ = useRates(sheet);
++  const settingsQ = useSettings(sheet);
++  const today = sheetQ.data?.today;
++  const floor = useFloorCents(sheet);
++  const cap = useCapCents(sheet);
++  const late = useLate(sheet);
++  const people = peopleQ.data ?? [];
++  const claims = claimsQ.data ?? [];
++  const rates = ratesQ.data ?? [];
++  const current = people.filter((p) => !isRetired(p));
++  const due = Object.fromEntries(
++    GRADES.map((g) => [
++      g,
++      current
++        .filter((p) => p.grade === g)
++        .reduce((sum, p) => sum + (personDueCents(claims, rates, p, today, floor, late, cap) ?? 0n), 0n),
++    ]),
++  ) as Record<Grade, bigint>;
++  const ready = [sheetQ, peopleQ, claimsQ, ratesQ, settingsQ].every((q) => q.isSuccess && !q.isFetching);
++  return { ready, due };
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheetExists.java b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheetExists.java
+new file mode 100644
+index 00000000..d7e3639c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheetExists.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Responds with whether the sheet exists, without making it exist. */
++public class RespondWithSheetExists {
++    public void respond(@PathVariable("sheet") String sheet, SheetRegistry registry,
++            ObjectResponse<Boolean> response) {
++        response.send(registry.exists(sheet));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheet}/exists.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheet}/exists.GET.yml
+new file mode 100644
+index 00000000..a9061a7d
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheet}/exists.GET.yml
+@@ -0,0 +1,4 @@
++# Whether the sheet exists (has ever been loaded). Reading it does not make it exist.
++respond:
++  class: net.officefloor.hq.app.sheet.RespondWithSheetExists
++  govern: [ readonly-transaction ]
