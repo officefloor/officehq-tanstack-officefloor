@@ -430,6 +430,7 @@ export function useSheetTotals(sheet: string): {
   overdue: { count: number; cents: bigint };
   settled: bigint;
   open: bigint;
+  aged: { upTo30: bigint; upTo60: bigint; over60: bigint };
 } {
   const { data: all = [] } = useClaims(sheet);
   const { data: people = [] } = usePeople(sheet);
@@ -453,6 +454,13 @@ export function useSheetTotals(sheet: string): {
     overdue: { count: overdue.count, cents: trimmedSum(perPerson) },
     settled: split.reduce((s, x) => s + x.settled, 0n),
     open: split.reduce((s, x) => s + x.open, 0n),
+    // The age buckets: everyone's added up, not trimmed.
+    aged: people
+      .map((p) => agedCents(all, p, rates, late, floor))
+      .reduce(
+        (s, x) => ({ upTo30: s.upTo30 + x.upTo30, upTo60: s.upTo60 + x.upTo60, over60: s.over60 + x.over60 }),
+        { upTo30: 0n, upTo60: 0n, over60: 0n },
+      ),
   };
 }
 

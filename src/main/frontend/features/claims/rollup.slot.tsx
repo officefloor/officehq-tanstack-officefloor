@@ -3,11 +3,11 @@ import { twoDecimals } from '../rates/rates';
 import { useMonthDueTotals, useSheetTotals, useTagDueTotals } from './claims';
 import { Fig } from '../locale/Fig';
 
-// The sheet's claimed-total, due-total, overdue count and total, and settled-total and open-total (see useSheetTotals),
+// The sheet's claimed-total, due-total, overdue count and total, settled-total and open-total, and age buckets (see useSheetTotals),
 // the due-total of each tag ever used on the sheet or carried by a person on it (see useTagDueTotals), and the due-total of each month any claim
 // is dated in (see useMonthDueTotals).
 function ClaimedTotal({ sheet }: { sheet: string; user: string }) {
-  const { claimed, due, overdue, settled, open } = useSheetTotals(sheet);
+  const { claimed, due, overdue, settled, open, aged } = useSheetTotals(sheet);
   const tags = useTagDueTotals(sheet);
   const months = useMonthDueTotals(sheet);
   return (
@@ -25,6 +25,11 @@ function ClaimedTotal({ sheet }: { sheet: string; user: string }) {
       <p>
         Settled total: <strong data-testid="rollup-settled-total"><Fig>{twoDecimals(settled)}</Fig></strong>, open total{' '}
         <strong data-testid="rollup-open-total"><Fig>{twoDecimals(open)}</Fig></strong>
+      </p>
+      <p>
+        Due by age: 0 to 30 days <strong data-testid="rollup-aged-0-30"><Fig>{twoDecimals(aged.upTo30)}</Fig></strong>, 31 to 60{' '}
+        <strong data-testid="rollup-aged-31-60"><Fig>{twoDecimals(aged.upTo60)}</Fig></strong>, 61 or more{' '}
+        <strong data-testid="rollup-aged-61"><Fig>{twoDecimals(aged.over60)}</Fig></strong>
       </p>
       {tags.length > 0 && (
         <ul>
