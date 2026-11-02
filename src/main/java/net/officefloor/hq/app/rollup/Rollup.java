@@ -26,7 +26,8 @@ import org.springframework.stereotype.Service;
  * claimed-total, due-total and overdue-total (the totals leave out the single highest and lowest person's figure when
  * three or more people have one). A change takes them before it writes, then {@link #record} audits the ones it moved: a ROLLUP line
  * per person whose figures changed (in list order, by position; a new person counts as changed), then a TOTALS
- * line when the sheet's totals changed.
+ * line when the sheet's totals changed, then an ALERT line per person whose due-total crossed above the sheet's alert
+ * threshold (from at or below it, or no due-total), in list order.
  */
 @Service
 public class Rollup {
@@ -127,5 +128,21 @@ public class Rollup {
             audit.record("TOTALS" + prefix + "claimed-total=" + after.claimedTotal() + " due-total=" + after.dueTotal()
                     + " overdue-total=" + after.overdueTotal());
         }
+        BigDecimal threshold = settings.alertThreshold(sheet);
+        if (threshold == null) {
+            return;
+        }
+        for (Map.Entry<Long, Figures> entry : after.people().entrySet()) {
+            Figures now = entry.getValue();
+            Figures was = before.people().get(entry.getKey());
+            if (above(now, threshold) && (was == null || !above(was, threshold))) {
+                audit.record("ALERT" + prefix + "name=" + now.name() + " due-total=" + now.dueTotal());
+            }
+        }
+    }
+
+    /** Whether the person has a due-total above the threshold. */
+    private static boolean above(Figures figures, BigDecimal threshold) {
+        return !"n/a".equals(figures.dueTotal()) && new BigDecimal(figures.dueTotal()).compareTo(threshold) > 0;
     }
 }

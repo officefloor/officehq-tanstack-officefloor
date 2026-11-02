@@ -75,6 +75,9 @@ public class Settings {
     /** The sum a balanced pool shares out among its members (two decimals, not dated); blank: none. */
     public static final String POT = "pot";
 
+    /** The due-total above which a person's crossing it writes an ALERT line (two decimals, not dated); blank: off. */
+    public static final String ALERT_THRESHOLD = "alert-threshold";
+
     /** The id of the sheet whose rates this sheet takes where it has none of its own (not dated, and kept apart from
      *  the sheet's own settings, so a sheet shown as of a date keeps it); blank: none. */
     public static final String PARENT = "parent";
@@ -108,10 +111,10 @@ public class Settings {
     /** The floor a sheet starts with. */
     public static final String DEFAULT_FLOOR = "1.00";
 
-    /** Whether the key is dated: every setting that carries a figure is but the pot; the policy, period numbering and entry dates, the grace days and the parent are not. */
+    /** Whether the key is dated: every setting that carries a figure is but the pot and the alert threshold; the policy, period numbering and entry dates, the grace days and the parent are not. */
     public static boolean dated(String key) {
         return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key)
-                && !ENTRY_DATE.equals(key) && !POT.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
+                && !ENTRY_DATE.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
                 && !key.startsWith("perm-");
     }
 
@@ -296,6 +299,12 @@ public class Settings {
         return pot.isEmpty() ? null : new BigDecimal(pot);
     }
 
+    /** The sheet's alert threshold, or null when it is off. */
+    public BigDecimal alertThreshold(String sheet) {
+        String threshold = get(sheet, ALERT_THRESHOLD);
+        return threshold.isEmpty() ? null : new BigDecimal(threshold);
+    }
+
     /** The month (1 to 12) the sheet's fiscal year starts in. */
     public int fiscalStartMonth(String sheet) {
         String month = get(sheet, FISCAL_START_MONTH);
@@ -370,6 +379,6 @@ public class Settings {
                 on(sheet, gradeGrace("A"), today), on(sheet, gradeGrace("B"), today), on(sheet, gradeGrace("C"), today),
                 on(sheet, gradeProofThreshold("A"), today), on(sheet, gradeProofThreshold("B"), today),
                 on(sheet, gradeProofThreshold("C"), today), get(sheet, POT), parent(sheet),
-                Integer.toString(fiscalStartMonth(sheet)));
+                Integer.toString(fiscalStartMonth(sheet)), get(sheet, ALERT_THRESHOLD));
     }
 }
