@@ -11,6 +11,6 @@ public class LoadClaims {
             ClaimRepository repository, Out<Claims> claims) throws BadRequestException {
         CurrentUser.require(connection);
         String id = sheetId == null ? "" : sheetId.trim();
-        claims.set(new Claims(repository.list(id)));
+        claims.set(new Claims(repository.list(id), repository.logs(id)));
     }
 }

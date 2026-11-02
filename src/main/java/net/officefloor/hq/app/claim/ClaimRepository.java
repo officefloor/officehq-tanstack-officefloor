@@ -7,7 +7,9 @@ import java.sql.PreparedStatement;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -260,6 +262,30 @@ public class ClaimRepository {
         return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ? WHERE id = ?"
                 + " AND sheet_id = ? AND status = 'DRAFT'",
                 amount, Date.valueOf(date), note, corrects, claimId, sheetId) > 0;
+    }
+
+    /** Write a line of a claim's status log: its status now, who moved it there, the sheet's today and its
+     *  due as computed now. */
+    public void log(String sheetId, long claimId, String by) {
+        Claim claim = find(sheetId, claimId);
+        if (claim == null) return;
+        jdbc.update("INSERT INTO claim_log (sheet_id, claim_id, status, by_user, on_date, due)"
+                + " SELECT ?, ?, ?, ?, today, ? FROM sheet WHERE id = ?",
+                sheetId, claimId, claim.status(), by, dueNow(sheetId, claim), sheetId);
+    }
+
+    /** The status logs of the sheet's claims, by claim id: each a line per status it has had, oldest first,
+     *  as "<STATUS> by <user> on <date> due=<due>" ('n/a' when it had no due). */
+    public Map<String, List<String>> logs(String sheetId) {
+        Map<String, List<String>> logs = new LinkedHashMap<>();
+        jdbc.query("SELECT claim_id, status, by_user, on_date, due FROM claim_log WHERE sheet_id = ? ORDER BY id",
+                rs -> {
+                    BigDecimal due = rs.getBigDecimal("due");
+                    logs.computeIfAbsent(String.valueOf(rs.getLong("claim_id")), k -> new ArrayList<>())
+                            .add(rs.getString("status") + " by " + rs.getString("by_user") + " on "
+                                    + rs.getDate("on_date").toLocalDate() + " due=" + (due == null ? "n/a" : money(due)));
+                }, sheetId);
+        return logs;
     }
 
     /** An amount as shown: two decimals, a dot, no grouping. */

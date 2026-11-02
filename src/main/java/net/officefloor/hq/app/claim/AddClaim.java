@@ -35,6 +35,7 @@ public class AddClaim {
         input.checkCorrection(repository, id, pid);
         Rollup.Snapshot before = rollup.take(id);
         Claim added = repository.add(id, pid, input.amount(), date, input.note(), input.corrects());
+        repository.log(id, added.id(), by);
         audit.record("CLAIM_ADDED sheet=" + id + " by=" + by + " person=" + repository.personName(id, pid)
                 + " amount=" + added.amount() + " date=" + added.date());
         rollup.record(id, by, before);

@@ -224,6 +224,13 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                 <td data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</td>
                 <td data-testid="claim-status">{c.status}</td>
                 <td data-testid="claim-opened-by">{c.openedBy ?? ''}</td>
+                <td data-testid="claim-log">
+                  {c.log.map((line, i) => (
+                    <div key={i} data-testid="claim-log-line">
+                      {line}
+                    </div>
+                  ))}
+                </td>
                 <td>
                   <input
                     data-testid="claim-reject-reason"

@@ -13,7 +13,8 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
  *  it was bound to (null when not bound, or bound with no figure: its due then stays live), and, for a
  *  correction (a negative amount), the number of the settled claim of the same person it corrects, and
  *  its due-by (yyyy-mm-dd), fixed when it was created from the terms of its person's grade then (else the
- *  sheet's terms). */
+ *  sheet's terms), and its status log: a line per status it has had, oldest first, as
+ *  "<STATUS> by <user> on <date> due=<due>" with the sheet's today and its due at that moment. */
 export type Claim = {
   id: number;
   personId: number;
@@ -28,6 +29,7 @@ export type Claim = {
   statedDue: string | null;
   corrects: string | null;
   dueBy: string;
+  log: string[];
 };
 
 /** Whether a claim is open: OPEN, or PENDING (handled like OPEN everywhere but its statement binding). */
@@ -55,8 +57,12 @@ export function claimsKey(sheetId: string) {
 export function useClaims(sheetId: string) {
   return useQuery({
     queryKey: claimsKey(sheetId),
-    queryFn: async () =>
-      (await getJson<{ claims: Claim[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/claims`)).claims,
+    queryFn: async () => {
+      const res = await getJson<{ claims: Omit<Claim, 'log'>[]; logs: Record<string, string[]> }>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/claims`,
+      );
+      return res.claims.map((c): Claim => ({ ...c, log: res.logs[String(c.id)] ?? [] }));
+    },
   });
 }
 

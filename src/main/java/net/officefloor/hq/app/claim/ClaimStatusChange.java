@@ -94,6 +94,7 @@ final class ClaimStatusChange {
             due = ClaimRepository.dueOf(now);
             tail = " due=" + (due == null ? "n/a" : due);
         }
+        repository.log(id, cid, by);
         Claim changed = new Claim(found.id(), found.personId(), found.amount(), found.date(), found.note(), to,
                 number, due, openedBy, found.stated(), found.statedDue(), found.corrects(), found.dueBy());
         audit.record(event + " sheet=" + id + " by=" + by + " person=" + repository.personName(id, found.personId())
