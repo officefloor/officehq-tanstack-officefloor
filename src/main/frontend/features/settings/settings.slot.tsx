@@ -41,6 +41,8 @@ import { Fig } from '../locale/Fig';
 // The fiscal start month (1 to 12, not dated; 1 unless set): the month each fiscal year starts in.
 // The rounding mode (half-up or half-even, dated; blank means none): a claim whose date has one in force rounds its
 // live figures by it in place of the policy date.
+// The default grade (A, B or C, not dated; blank means A): the grade a person added by the quick-add bar, or by an
+// import line with a blank grade, takes. Changing it changes no one.
 function Settings({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();
   const { data } = useSettings(sheet);
@@ -64,6 +66,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
   const [fiscalStartMonth, setFiscalStartMonth] = useState('');
   const [alertThreshold, setAlertThreshold] = useState('');
   const [rounding, setRounding] = useState('');
+  const [defaultGrade, setDefaultGrade] = useState('');
   const [gradeTerms, setGradeTerms] = useState<Record<string, string>>({});
   const [gradeGrace, setGradeGrace] = useState<Record<string, string>>({});
   const [gradeProofThreshold, setGradeProofThreshold] = useState<Record<string, string>>({});
@@ -109,6 +112,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       setFiscalStartMonth('');
       setAlertThreshold('');
       setRounding('');
+      setDefaultGrade('');
       setGradeTerms({});
       setGradeGrace({});
       setGradeProofThreshold({});
@@ -150,7 +154,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       ...(Object.fromEntries(PERMISSIONS.map(({ action }) => [`perm-${action}`, perms[action] ?? ''])) as Record<`perm-${PermAction}`, string>), 'clerk-limit': clerkLimit, floor, terms, 'late-pct': latePct, 'policy-date': policyDate,
       'period-numbering-from': periodNumberingFrom, 'terms-A': gradeTerms.A ?? '', 'terms-B': gradeTerms.B ?? '',
       'terms-C': gradeTerms.C ?? '', cap, 'proof-threshold': proofThreshold, 'proof-kinds': proofKinds, 'note-threshold': noteThreshold, 'review-threshold': reviewThreshold,
-      'grace-days': graceDays, 'escalate-after': escalateAfter, 'review-sla': reviewSla, 'entry-date': entryDate, pot, parent, 'fiscal-start-month': fiscalStartMonth, 'alert-threshold': alertThreshold, rounding, 'grace-A': gradeGrace.A ?? '', 'grace-B': gradeGrace.B ?? '',
+      'grace-days': graceDays, 'escalate-after': escalateAfter, 'review-sla': reviewSla, 'entry-date': entryDate, pot, parent, 'fiscal-start-month': fiscalStartMonth, 'alert-threshold': alertThreshold, rounding, 'default-grade': defaultGrade, 'grace-A': gradeGrace.A ?? '', 'grace-B': gradeGrace.B ?? '',
       'grace-C': gradeGrace.C ?? '', 'proof-threshold-A': gradeProofThreshold.A ?? '',
       'proof-threshold-B': gradeProofThreshold.B ?? '', 'proof-threshold-C': gradeProofThreshold.C ?? '' };
     const keys: SettingKey[] = changed.length === 0 ? ['clerk-limit'] : changed;
@@ -525,6 +529,21 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
           />
         </label>{' '}
         now <span data-testid="setting-alert-threshold-current"><Fig>{data?.alertThreshold ?? ''}</Fig></span>{' '}
+        <label>
+          Default grade{' '}
+          <input
+            data-testid="setting-default-grade"
+            placeholder="A, B or C (blank: A)"
+            value={defaultGrade}
+            onChange={(e) => {
+              setDefaultGrade(e.target.value);
+              touch('default-grade');
+            }}
+            // As the policy date: clearing an already blank field must still send the blank.
+            onFocus={() => touch('default-grade')}
+          />
+        </label>{' '}
+        now <span data-testid="setting-default-grade-current">{data?.defaultGrade ?? ''}</span>{' '}
         {PERMISSIONS.map(({ action, standing }) => (
           <span key={action}>
             <label>
@@ -550,7 +569,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
         </button>
         {save.isError && (
           <span data-testid="settings-error" role="alert">
-            {' '}The clerk limit, the cap, the proof threshold (the sheet's and each grade's), the note threshold, the review threshold, the floor, the late percent, the pot and the alert threshold must be 0.00 or more with up to two decimals, the terms (the sheet's and each grade's) and each grade's grace and the review SLA a whole number of days, the policy date, the period numbering from-date, the entry date and each from-date dates, each action's roles clerk or steward (comma separated), or blank; the parent a sheet that has been loaded, not this sheet nor one that has it as an ancestor, or blank; the fiscal start month a month, 1 to 12; the rounding mode half-up or half-even, or blank; the proof kinds receipt or photo, comma separated, or blank.
+            {' '}The clerk limit, the cap, the proof threshold (the sheet's and each grade's), the note threshold, the review threshold, the floor, the late percent, the pot and the alert threshold must be 0.00 or more with up to two decimals, the terms (the sheet's and each grade's) and each grade's grace and the review SLA a whole number of days, the policy date, the period numbering from-date, the entry date and each from-date dates, each action's roles clerk or steward (comma separated), or blank; the parent a sheet that has been loaded, not this sheet nor one that has it as an ancestor, or blank; the fiscal start month a month, 1 to 12; the rounding mode half-up or half-even, or blank; the proof kinds receipt or photo, comma separated, or blank; the default grade A, B or C, or blank.
           </span>
         )}
       </form>

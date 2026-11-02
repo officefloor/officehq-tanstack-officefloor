@@ -104,6 +104,10 @@ public class Settings {
      *  the sheet's own settings, so a sheet shown as of a date keeps it); blank: none. */
     public static final String PARENT = "parent";
 
+    /** The grade (one of the grades, not dated) a person added by the quick-add bar, or by an import line with a blank
+     *  grade, takes; blank: A. Changing it changes no one. */
+    public static final String DEFAULT_GRADE = "default-grade";
+
     /** The month (1 to 12, not dated) a fiscal year starts in; unset: 1. A fiscal year is named FY<yyyy> by the calendar
      *  year its first day falls in. */
     public static final String FISCAL_START_MONTH = "fiscal-start-month";
@@ -137,7 +141,7 @@ public class Settings {
     public static boolean dated(String key) {
         return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key)
                 && !ENTRY_DATE.equals(key) && !PROOF_KINDS.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
-                && !key.startsWith("perm-");
+                && !DEFAULT_GRADE.equals(key) && !key.startsWith("perm-");
     }
 
     /** The from-date an undated setting's one value is kept under. */
@@ -376,6 +380,12 @@ public class Settings {
         return Integer.parseInt(month.isEmpty() ? DEFAULT_FISCAL_START_MONTH : month);
     }
 
+    /** The grade a new person takes where none is given: the sheet's default grade, else A. */
+    public String defaultGrade(String sheet) {
+        String grade = get(sheet, DEFAULT_GRADE);
+        return grade.isEmpty() ? GRADES.get(0) : grade;
+    }
+
     /** The id of the sheet's parent, or "" when it has none. */
     public String parent(String sheet) {
         List<String> found = jdbc.queryForList("SELECT parent FROM sheet_parent WHERE child = ?", String.class, sheet);
@@ -445,6 +455,7 @@ public class Settings {
                 on(sheet, gradeProofThreshold("A"), today), on(sheet, gradeProofThreshold("B"), today),
                 on(sheet, gradeProofThreshold("C"), today), get(sheet, POT), parent(sheet),
                 Integer.toString(fiscalStartMonth(sheet)), get(sheet, ALERT_THRESHOLD), on(sheet, ROUNDING, today),
-                on(sheet, REVIEW_THRESHOLD, today), get(sheet, ESCALATE_AFTER), get(sheet, REVIEW_SLA), get(sheet, PROOF_KINDS));
+                on(sheet, REVIEW_THRESHOLD, today), get(sheet, ESCALATE_AFTER), get(sheet, REVIEW_SLA), get(sheet, PROOF_KINDS),
+                get(sheet, DEFAULT_GRADE));
     }
 }

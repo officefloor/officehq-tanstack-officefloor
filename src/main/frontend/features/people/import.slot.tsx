@@ -11,7 +11,7 @@ type Imported = { added: number; updated: number; people: Person[] };
 
 // The import box: lines of name,grade,terms,contact (the last two may be absent or blank), in order. A line whose name
 // is a name or alias of a person on the sheet updates them as the person form would (terms and contact only when given);
-// any other adds a person. The server checks every line by the form's rules first (a person or contact repeated within
+// any other adds a person (a blank grade: the sheet's default grade). The server checks every line by the form's rules first (a person or contact repeated within
 // the import too), so a refusal changes no one. Shows how many were added and how many updated.
 function ImportPeople({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();
@@ -59,7 +59,7 @@ function ImportPeople({ sheet, user }: { sheet: string; user: string }) {
       {importing.isError && (
         <span data-testid="import-error" role="alert">
           {' '}Nothing was imported: every line needs a name (a person on the sheet, by name or alias, or a new name not
-          in use), naming no one twice, a grade of A, B or C, terms of whole days or blank, and a contact not another
+          in use), naming no one twice, a grade of A, B or C (blank: the sheet's default grade), terms of whole days or blank, and a contact not another
           person's nor repeated.
         </span>
       )}

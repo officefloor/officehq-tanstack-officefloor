@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import net.officefloor.hq.app.alias.Aliases;
+import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -15,13 +16,13 @@ import org.springframework.web.bind.annotation.RequestBody;
  * before anything is written, so a refused import changes no one. A line whose name is a name or alias of a person on
  * the sheet updates them (refused when they clash with the tree, as the form refuses); any other line's name must not be
  * in use in the tree. A contact must not be another person's, and neither a person nor a contact may repeat within the
- * import (ignoring case). Blank lines are
+ * import (ignoring case). A blank grade takes the sheet's default grade. Blank lines are
  * skipped; an import with no line is refused.
  */
 public class ValidateImport {
 
     public void validate(@PathVariable("sheet") String sheet, @RequestBody ImportRequest request, People people,
-            Aliases aliases, Out<ImportedPeople> imported) throws InvalidPersonException {
+            Aliases aliases, Settings settings, Out<ImportedPeople> imported) throws InvalidPersonException {
         String text = request == null || request.text() == null ? "" : request.text();
         List<ImportedPeople.Line> lines = new ArrayList<>();
         Set<String> names = new HashSet<>();
@@ -38,7 +39,8 @@ public class ValidateImport {
             }
             PersonRequest checked;
             try {
-                checked = ValidatePerson.check(new PersonRequest(fields[0], fields[1], null, null,
+                checked = ValidatePerson.check(new PersonRequest(fields[0],
+                        fields[1].isBlank() ? settings.defaultGrade(sheet) : fields[1], null, null,
                         fields.length > 2 ? fields[2] : "", fields.length > 3 ? fields[3] : "", null));
             } catch (InvalidPersonException e) {
                 throw new InvalidPersonException("Line " + at + ": " + e.getMessage());

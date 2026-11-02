@@ -37,7 +37,7 @@ type Quick = { name: string; amount: string };
 const QUICK_EMPTY: Quick = { name: '', amount: '' };
 
 // The quick-add bar: a name and an amount make a draft claim dated the sheet's today with an empty
-// note, for the person of that name (ignoring case), who is first added with grade A when not on the
+// note, for the person of that name (ignoring case), who is first added with the sheet's default grade when not on the
 // sheet. The server checks every rule before writing, so a refusal adds no one.
 function QuickAdd({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();

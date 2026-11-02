@@ -51,17 +51,24 @@ public class Pools {
      * today is left out entirely: not in the total share, no cut. Each crew is also a pool, after the pools added, of its
      * name: its lead and then its members in the order added, at equal shares (see {@link #crewShares}). Each member
      * also has, for every period whose to-date is on or before the sheet's today, their cut as it stood at the end of
-     * that period (see {@link #asAt}).
+     * that period (see {@link #asAt}); blank when they were not then in the pool.
      */
     public List<Pool> list(String sheet) {
         LocalDate now = clock.today(sheet);
         List<Pool> pools = list(sheet, now, settings.pot(sheet), null);
         Map<String, Map<String, String>> cuts = new HashMap<>();
-        for (Period period : periods.list(sheet)) {
-            LocalDate end = LocalDate.parse(period.to());
-            if (end.isAfter(now)) {
-                continue;
+        List<Period> ended = periods.list(sheet).stream()
+                .filter((period) -> !LocalDate.parse(period.to()).isAfter(now)).toList();
+        // A member not in the pool at a period's end (or the pool not yet added) has a blank cut for it.
+        for (Pool pool : pools) {
+            for (PoolMember m : pool.members()) {
+                Map<String, String> blank = new LinkedHashMap<>();
+                ended.forEach((period) -> blank.put(period.name(), ""));
+                cuts.put(pool.name() + "\n" + m.key(), blank);
             }
+        }
+        for (Period period : ended) {
+            LocalDate end = LocalDate.parse(period.to());
             for (Pool pool : asAt(sheet, end)) {
                 for (PoolMember m : pool.members()) {
                     cuts.computeIfAbsent(pool.name() + "\n" + m.key(), (k) -> new LinkedHashMap<>())

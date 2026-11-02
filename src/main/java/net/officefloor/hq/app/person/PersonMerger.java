@@ -16,7 +16,7 @@ import org.springframework.stereotype.Service;
  * statement bound them to, listed after the other's claims in the order they were added. Their statements count as
  * the other's too; the other's last statement stays theirs (or, having none, becomes the merged person's). Their
  * name and aliases become aliases of the other; their patrons are added to the other's (not the other themselves, no
- * repeats); anyone naming them as patron names the other instead (no repeats); their pool memberships move to the
+ * repeats); anyone naming them as patron names the other instead (no repeats); their pool and crew places move to the
  * other, the shares added when the other is already a member, and so do their closed periods' totals. Their holds,
  * watchers and contact are dropped, and they leave the sheet.
  */
@@ -91,6 +91,17 @@ public class PersonMerger {
             }
         }
         jdbc.update("DELETE FROM pool_member WHERE sheet = ? AND person_id = ?", sheet, f);
+
+        // Crews: the crews they lead are led by the other (who leaves being a member of them); their crew
+        // memberships move to the other, where the other is not already in the crew.
+        jdbc.update("UPDATE crew SET lead_id = ? WHERE sheet = ? AND lead_id = ?", t, sheet, f);
+        jdbc.update("DELETE FROM crew_member WHERE sheet = ? AND person_id = ? AND crew IN"
+                + " (SELECT name FROM crew WHERE sheet = ? AND lead_id = ?)", sheet, t, sheet, t);
+        jdbc.update("UPDATE crew_member m SET person_id = ? WHERE m.sheet = ? AND m.person_id = ?"
+                + " AND NOT EXISTS (SELECT 1 FROM crew c WHERE c.sheet = m.sheet AND c.name = m.crew AND c.lead_id = ?)"
+                + " AND NOT EXISTS (SELECT 1 FROM crew_member o WHERE o.sheet = m.sheet AND o.crew = m.crew AND o.person_id = ?)",
+                t, sheet, f, t, t);
+        jdbc.update("DELETE FROM crew_member WHERE sheet = ? AND person_id = ?", sheet, f);
 
         // Closed periods' totals follow the claims.
         for (Map<String, Object> p : jdbc.queryForList(

@@ -64,7 +64,7 @@ public class ValidateSetting {
         if (!Settings.CLERK_LIMIT.equals(key) && !Settings.CAP.equals(key) && !Settings.PROOF_THRESHOLD.equals(key) && !Settings.PROOF_KINDS.equals(key) && !Settings.NOTE_THRESHOLD.equals(key) && !Settings.REVIEW_THRESHOLD.equals(key) && !Settings.FLOOR.equals(key) && !Settings.TERMS.equals(key)
                 && !Settings.LATE_PCT.equals(key) && !Settings.POLICY_DATE.equals(key)
                 && !Settings.PERIOD_NUMBERING_FROM.equals(key) && !Settings.GRACE_DAYS.equals(key) && !Settings.ESCALATE_AFTER.equals(key) && !Settings.REVIEW_SLA.equals(key) && !Settings.ENTRY_DATE.equals(key)
-                && !Settings.POT.equals(key) && !Settings.ALERT_THRESHOLD.equals(key) && !Settings.PARENT.equals(key) && !Settings.FISCAL_START_MONTH.equals(key) && !Settings.ROUNDING.equals(key)
+                && !Settings.POT.equals(key) && !Settings.ALERT_THRESHOLD.equals(key) && !Settings.PARENT.equals(key) && !Settings.FISCAL_START_MONTH.equals(key) && !Settings.ROUNDING.equals(key) && !Settings.DEFAULT_GRADE.equals(key)
                 && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeTerms(g).equals(key))
                 && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeGrace(g).equals(key))
                 && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeProofThreshold(g).equals(key))
@@ -146,6 +146,13 @@ public class ValidateSetting {
                 throw new InvalidSettingException("The fiscal start month must be a month, 1 to 12");
             }
             return new SettingInput(key, Integer.toString(month));
+        }
+        // The default grade is one of the grades; blank means A.
+        if (Settings.DEFAULT_GRADE.equals(key)) {
+            if (!value.isEmpty() && !Settings.GRADES.contains(value)) {
+                throw new InvalidSettingException("The default grade must be A, B or C, or blank");
+            }
+            return new SettingInput(key, value);
         }
         // The parent is a sheet id, checked against the sheets by the caller; blank means none.
         if (Settings.PARENT.equals(key)) {
