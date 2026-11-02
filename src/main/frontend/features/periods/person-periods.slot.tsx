@@ -5,8 +5,13 @@ import type { Person } from '../people/people';
 import { useRates } from '../rates/rates';
 import { useFloorCents } from '../settings/settings';
 import { useClaims, useLate } from '../claims/claims';
-import { personPeriodCarriedCents, personPeriodDueCents, shownPersonDueTotal, usePeriods } from './periods';
-import { twoDecimals } from '../rates/rates';
+import {
+  personPeriodCarriedCents,
+  personPeriodDueCents,
+  shownPersonCarried,
+  shownPersonDueTotal,
+  usePeriods,
+} from './periods';
 import { Fig } from '../locale/Fig';
 
 function PeriodHeaders({ sheet }: { sheet: string; user: string }) {
@@ -24,8 +29,8 @@ function PeriodHeaders({ sheet }: { sheet: string; user: string }) {
 }
 
 // Per period on the sheet, the person's due-total for it and their carried figure (see personPeriodCarriedCents): the due now of their claims whose due-by falls in it that counted at its end,
-// fixed for everyone on the sheet when the period is closed (0.00 for a person added since). The period's own
-// due-total is the sum of these.
+// both fixed for everyone on the sheet when the period is (soft-)closed (0.00 for a person added since) and live
+// again once it is reopened. The period's own due-total is the sum of the due-totals.
 function PersonPeriods({ sheet, person }: { sheet: string; user: string; person: Person }) {
   const { data: periods = [] } = usePeriods(sheet);
   const { data: claims = [] } = useClaims(sheet);
@@ -45,7 +50,7 @@ function PersonPeriods({ sheet, person }: { sheet: string; user: string; person:
             <Fig>{shownPersonDueTotal(p, person.id, totals.get(p.name)?.get(person.id) ?? 0n)}</Fig>
           </td>
           <td data-testid={`person-period-${p.name}-carried`}>
-            <Fig>{twoDecimals(carried.get(p.name)?.get(person.id) ?? 0n)}</Fig>
+            <Fig>{shownPersonCarried(p, person.id, carried.get(p.name)?.get(person.id) ?? 0n)}</Fig>
           </td>
         </Fragment>
       ))}

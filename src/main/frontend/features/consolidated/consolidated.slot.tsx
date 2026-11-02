@@ -4,7 +4,6 @@ import { usePeople } from '../people/people';
 import { twoDecimals } from '../rates/rates';
 import { useSheetTotals } from '../claims/claims';
 import { useFamily } from './consolidated';
-import { LiveFigures } from '../../query/live';
 import { Fig } from '../locale/Fig';
 
 type Figures = { people: number; due: bigint; overdue: bigint };
@@ -21,8 +20,8 @@ function SheetFigures({ sheet, report }: { sheet: string; report: (sheet: string
 }
 
 // The consolidated figures over the sheet and all its descendants (see useFamily): the people, the due-total and the
-// overdue-total of each, added up. A sheet with no children shows its own. They are the figures as the sheets stand
-// now, even while the screen shows the sheet as of a date.
+// overdue-total of each, added up. A sheet with no children shows its own. While the screen shows the sheet as of a
+// date, every sheet of the tree is read as it stood at the end of that date, with the date for its today.
 function Consolidated({ sheet }: { sheet: string; user: string }) {
   const { data: family = [sheet] } = useFamily(sheet);
   const [figures, setFigures] = useState<Map<string, Figures>>(new Map());
@@ -36,11 +35,9 @@ function Consolidated({ sheet }: { sheet: string; user: string }) {
   const overdue = shown.reduce((n, f) => n + f.overdue, 0n);
   return (
     <p>
-      <LiveFigures.Provider value={true}>
-        {family.map((s) => (
-          <SheetFigures key={s} sheet={s} report={report} />
-        ))}
-      </LiveFigures.Provider>
+      {family.map((s) => (
+        <SheetFigures key={s} sheet={s} report={report} />
+      ))}
       Consolidated: people <strong data-testid="consolidated-people-count">{people}</strong>, due total{' '}
       <strong data-testid="consolidated-due-total"><Fig>{twoDecimals(due)}</Fig></strong>, overdue total{' '}
       <strong data-testid="consolidated-overdue-total"><Fig>{twoDecimals(overdue)}</Fig></strong>

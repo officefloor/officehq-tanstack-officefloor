@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.Claim;
+import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.Claims;
 import net.officefloor.hq.app.claim.Late;
 import net.officefloor.hq.app.person.People;
@@ -23,7 +24,9 @@ import org.springframework.stereotype.Service;
 /**
  * Closes a period, fixing its due-total now, and each person's on the sheet (the part of it from their claims): the due now of the claims whose due-by falls in it
  * that counted at the end of its last day (OPEN, PENDING and SETTLED then by their status log, but not a deferred one, nor an unbound open one dated
- * within its person's hold) (a claim with no rate adds nothing). Shared by a close by hand and the auto close of a today change.
+ * within its person's hold) (a claim with no rate adds nothing); and each person's carried figure for it: the due now of
+ * their claims that count at its end whose due-by falls in an earlier period (one ending before it starts) and that were
+ * still OPEN or PENDING at its end by their status log. Shared by a close by hand and the auto close of a today change.
  */
 @Service
 public class PeriodCloser {
@@ -66,7 +69,25 @@ public class PeriodCloser {
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         Map<Long, BigDecimal> perPerson = new LinkedHashMap<>();
         byId.keySet().forEach((id) -> perPerson.put(id, BigDecimal.ZERO.setScale(2)));
-        for (Claim claim : claims.list(sheet)) {
+        Map<Long, BigDecimal> carried = new LinkedHashMap<>(perPerson);
+        List<Period> sheetPeriods = periods.list(sheet);
+        List<Claim> sheetClaims = claims.list(sheet);
+        for (Claim claim : sheetClaims) {
+            Person person = byId.get(claim.person());
+            LocalDate dueBy = LocalDate.parse(claim.dueBy());
+            boolean earlier = sheetPeriods.stream().anyMatch((p) -> !dueBy.isBefore(LocalDate.parse(p.from()))
+                    && !dueBy.isAfter(LocalDate.parse(p.to())) && LocalDate.parse(p.to()).isBefore(from));
+            ClaimStatus then = claim.statusOn(to);
+            if (person == null || !earlier || (then != ClaimStatus.OPEN && then != ClaimStatus.PENDING)
+                    || !person.countsOn(claim, to)) {
+                continue;
+            }
+            BigDecimal due = claim.due(sheetRates, person.gradeOn(claim.date()), floor, late);
+            if (due != null) {
+                carried.merge(person.id(), due, BigDecimal::add);
+            }
+        }
+        for (Claim claim : sheetClaims) {
             LocalDate date = LocalDate.parse(claim.dueBy());
             Person person = byId.get(claim.person());
             if (person == null || !person.countsOn(claim, to) || date.isBefore(from) || date.isAfter(to)) {
@@ -78,7 +99,7 @@ public class PeriodCloser {
                 perPerson.merge(person.id(), due, BigDecimal::add);
             }
         }
-        if (!periods.close(sheet, found.name(), total, perPerson, soft)) {
+        if (!periods.close(sheet, found.name(), total, perPerson, carried, soft)) {
             return false;
         }
         audit.record((soft ? "PERIOD_SOFT_CLOSED" : "PERIOD_CLOSED") + " sheet=" + sheet + " by=" + user + " period=" + found.name() + " total="

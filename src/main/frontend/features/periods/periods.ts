@@ -12,7 +12,8 @@ import type { DatedCents } from '../settings/settings';
  *  whether it is closed, its due-total fixed when closed (two decimals; null while open), and each person's due-total
  *  for it fixed then (by person id; empty while open, and a person added since has none); and whether it is
  *  soft-closed instead: its figures fixed the same way, while claims dated in it may still change; and the most OPEN or
- *  PENDING claims a person may have in it (null for no cap). */
+ *  PENDING claims a person may have in it (null for no cap); and each person's carried figure for it fixed when it was
+ *  (soft-)closed (by person id; empty while open). */
 export type Period = {
   name: string;
   from: string;
@@ -22,6 +23,7 @@ export type Period = {
   closedPeople: Record<string, string>;
   soft: boolean;
   cap: number | null;
+  closedCarried: Record<string, string>;
 };
 
 export const periodsKey = (sheet: string) => ['periods', sheet] as const;
@@ -175,6 +177,12 @@ export function isFixed(period: Period): boolean {
  *  their live one. */
 export function shownPersonDueTotal(period: Period, personId: number, liveCents: bigint): string {
   return isFixed(period) ? (period.closedPeople[String(personId)] ?? '0.00') : twoDecimals(liveCents);
+}
+
+/** A person's carried figure for a period as shown: the one fixed when it was (soft-)closed (0.00 for a person added
+ *  since), else their live one. */
+export function shownPersonCarried(period: Period, personId: number, liveCents: bigint): string {
+  return isFixed(period) ? (period.closedCarried[String(personId)] ?? '0.00') : twoDecimals(liveCents);
 }
 
 /** A period's due-total as shown: the one fixed when it was (soft-)closed, else its live one. */

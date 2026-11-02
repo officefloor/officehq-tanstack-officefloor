@@ -18,7 +18,7 @@ public class Periods {
             rs.getDate("from_date").toLocalDate().toString(), rs.getDate("to_date").toLocalDate().toString(),
             rs.getBoolean("closed"),
             rs.getBigDecimal("closed_total") == null ? null : rs.getBigDecimal("closed_total").toPlainString(),
-            Map.of(), rs.getBoolean("soft"), (Integer) rs.getObject("claim_cap"));
+            Map.of(), rs.getBoolean("soft"), (Integer) rs.getObject("claim_cap"), Map.of());
 
     private static final String COLUMNS = "SELECT name, from_date, to_date, closed, closed_total, soft, claim_cap FROM period";
 
@@ -34,18 +34,20 @@ public class Periods {
                 .map((p) -> withPeople(sheet, p)).toList();
     }
 
-    /** The period with its people's due-totals fixed when it was closed. */
+    /** The period with its people's due-totals and carried figures fixed when it was closed. */
     private Period withPeople(String sheet, Period period) {
         if (!period.fixed()) {
             return period;
         }
         Map<Long, String> people = new LinkedHashMap<>();
-        jdbc.query("SELECT person, total FROM period_person_total WHERE sheet = ? AND period = ? ORDER BY person",
+        Map<Long, String> carried = new LinkedHashMap<>();
+        jdbc.query("SELECT person, total, carried FROM period_person_total WHERE sheet = ? AND period = ? ORDER BY person",
                 (rs) -> {
                     people.put(rs.getLong("person"), rs.getBigDecimal("total").toPlainString());
+                    carried.put(rs.getLong("person"), rs.getBigDecimal("carried").toPlainString());
                 }, sheet, period.name());
         return new Period(period.name(), period.from(), period.to(), period.closed(), period.closedTotal(), people,
-                period.soft(), period.cap());
+                period.soft(), period.cap(), carried);
     }
 
     /** The sheet's period of the name, or null when there is none. */
@@ -105,10 +107,12 @@ public class Periods {
     }
 
     /**
-     * Closes the period (or soft-closes it) with its due-total and each person's (by id) fixed afresh; false when it was
+     * Closes the period (or soft-closes it) with its due-total and each person's due-total and carried figure (by id)
+     * fixed afresh; false when it was
      * already closed, or for a soft close already soft-closed (or is gone). Closing a soft-closed period is allowed.
      */
-    public boolean close(String sheet, String name, BigDecimal total, Map<Long, BigDecimal> people, boolean soft) {
+    public boolean close(String sheet, String name, BigDecimal total, Map<Long, BigDecimal> people,
+            Map<Long, BigDecimal> carried, boolean soft) {
         String sql = soft
                 ? "UPDATE period SET soft = TRUE, closed_total = ? WHERE sheet = ? AND name = ? AND NOT closed AND NOT soft"
                 : "UPDATE period SET closed = TRUE, soft = FALSE, closed_total = ? WHERE sheet = ? AND name = ? AND NOT closed";
@@ -117,12 +121,12 @@ public class Periods {
         }
         jdbc.update("DELETE FROM period_person_total WHERE sheet = ? AND period = ?", sheet, name);
         people.forEach((person, due) -> jdbc.update(
-                "INSERT INTO period_person_total (sheet, period, person, total) VALUES (?, ?, ?, ?)", sheet, name,
-                person, due));
+                "INSERT INTO period_person_total (sheet, period, person, total, carried) VALUES (?, ?, ?, ?, ?)", sheet,
+                name, person, due, carried.getOrDefault(person, BigDecimal.ZERO.setScale(2))));
         return true;
     }
 
-    /** Reopens the closed or soft-closed period, dropping its fixed due-totals; false when it was neither (or is gone). */
+    /** Reopens the closed or soft-closed period, dropping its fixed due-totals and carried figures; false when it was neither (or is gone). */
     public boolean reopen(String sheet, String name) {
         if (jdbc.update("UPDATE period SET closed = FALSE, soft = FALSE, closed_total = NULL WHERE sheet = ? AND name = ?"
                 + " AND (closed OR soft)",

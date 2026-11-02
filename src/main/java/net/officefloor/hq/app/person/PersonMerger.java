@@ -94,11 +94,12 @@ public class PersonMerger {
 
         // Closed periods' totals follow the claims.
         for (Map<String, Object> p : jdbc.queryForList(
-                "SELECT period, total FROM period_person_total WHERE sheet = ? AND person = ?", sheet, f)) {
+                "SELECT period, total, carried FROM period_person_total WHERE sheet = ? AND person = ?", sheet, f)) {
             String period = (String) p.get("PERIOD");
             BigDecimal total = (BigDecimal) p.get("TOTAL");
-            if (jdbc.update("UPDATE period_person_total SET total = total + ? WHERE sheet = ? AND period = ? AND person = ?",
-                    total, sheet, period, t) == 0) {
+            BigDecimal carried = (BigDecimal) p.get("CARRIED");
+            if (jdbc.update("UPDATE period_person_total SET total = total + ?, carried = carried + ? WHERE sheet = ?"
+                    + " AND period = ? AND person = ?", total, carried, sheet, period, t) == 0) {
                 jdbc.update("UPDATE period_person_total SET person = ? WHERE sheet = ? AND period = ? AND person = ?",
                         t, sheet, period, f);
             }
