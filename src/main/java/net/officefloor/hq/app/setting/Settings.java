@@ -106,6 +106,12 @@ public class Settings {
     /** The due-total above which a person's crossing it writes an ALERT line (two decimals, not dated); blank: off. */
     public static final String ALERT_THRESHOLD = "alert-threshold";
 
+    /** The score at or above which a person is in the MID band (a whole number, not dated); blank: no bands. */
+    public static final String SCORE_MID = "score-mid";
+
+    /** The score at or above which a person is in the HIGH band (a whole number, not dated); blank: no bands. */
+    public static final String SCORE_HIGH = "score-high";
+
     /** The id of the sheet whose rates this sheet takes where it has none of its own (not dated, and kept apart from
      *  the sheet's own settings, so a sheet shown as of a date keeps it); blank: none. */
     public static final String PARENT = "parent";
@@ -146,7 +152,7 @@ public class Settings {
     /** Whether the key is dated: every setting that carries a figure is but the pot and the alert threshold; the policy, period numbering and entry dates, the grace days and the parent are not. */
     public static boolean dated(String key) {
         return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key)
-                && !ENTRY_DATE.equals(key) && !PROOF_KINDS.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
+                && !ENTRY_DATE.equals(key) && !PROOF_KINDS.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !SCORE_MID.equals(key) && !SCORE_HIGH.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
                 && !DEFAULT_GRADE.equals(key) && !key.startsWith("perm-");
     }
 
@@ -474,6 +480,6 @@ public class Settings {
                 Integer.toString(fiscalStartMonth(sheet)), get(sheet, ALERT_THRESHOLD), on(sheet, ROUNDING, today),
                 on(sheet, REVIEW_THRESHOLD, today), get(sheet, ESCALATE_AFTER), get(sheet, REVIEW_SLA), get(sheet, PROOF_KINDS),
                 get(sheet, DEFAULT_GRADE), on(sheet, gradeClerkLimit("A"), today), on(sheet, gradeClerkLimit("B"), today),
-                on(sheet, gradeClerkLimit("C"), today));
+                on(sheet, gradeClerkLimit("C"), today), get(sheet, SCORE_MID), get(sheet, SCORE_HIGH));
     }
 }

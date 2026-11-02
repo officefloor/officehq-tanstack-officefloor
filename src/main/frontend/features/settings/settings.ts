@@ -32,12 +32,13 @@ import { hundredths } from '../rates/rates';
  *  before the sheet's today is late for review.
  *  And the default grade (A, B or C; '' for A, not dated): the grade a person added by the quick-add bar, or by an
  *  import line with a blank grade, takes.
+ *  And the score thresholds of the MID and HIGH bands (whole numbers; '' for none, not dated).
  *  And, for each dated key (every one that carries a figure), its values as recorded, by from-date. */
 export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string;
   termsA: string; termsB: string; termsC: string; cap: string;
   proofThreshold: string; noteThreshold: string; reviewThreshold: string; graceDays: string; escalateAfter: string; entryDate: string; graceA: string; graceB: string; graceC: string;
   proofThresholdA: string; proofThresholdB: string; proofThresholdC: string; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string; rounding: string; reviewSla: string; proofKinds: string; defaultGrade: string;
-  clerkLimitA: string; clerkLimitB: string; clerkLimitC: string; perms: Partial<Record<PermAction, string>>; dated: Partial<Record<SettingKey, DatedValue[]>> };
+  clerkLimitA: string; clerkLimitB: string; clerkLimitC: string; scoreMid: string; scoreHigh: string; perms: Partial<Record<PermAction, string>>; dated: Partial<Record<SettingKey, DatedValue[]>> };
 
 /** A dated setting's value as recorded: in force from its from-date (yyyy-MM-dd). */
 export type DatedValue = { from: string; value: string };
@@ -47,7 +48,7 @@ export type DatedCents = (date: string) => bigint;
 
 /** Whether a setting is dated: every one that carries a figure is but the pot and the alert threshold; the policy, period numbering and entry dates and the grace days are not. */
 export function isDated(key: SettingKey): boolean {
-  return key !== 'policy-date' && key !== 'period-numbering-from' && key !== 'grace-days' && key !== 'escalate-after' && key !== 'review-sla' && key !== 'entry-date' && key !== 'proof-kinds' && key !== 'pot' && key !== 'alert-threshold' && key !== 'parent' && key !== 'fiscal-start-month' && key !== 'default-grade' && !key.startsWith('perm-');
+  return key !== 'policy-date' && key !== 'period-numbering-from' && key !== 'grace-days' && key !== 'escalate-after' && key !== 'review-sla' && key !== 'entry-date' && key !== 'proof-kinds' && key !== 'pot' && key !== 'alert-threshold' && key !== 'score-mid' && key !== 'score-high' && key !== 'parent' && key !== 'fiscal-start-month' && key !== 'default-grade' && !key.startsWith('perm-');
 }
 
 /** The figure in force on a date: the value of the latest from-date on or before it, before every from-date (or
@@ -66,7 +67,7 @@ function datedCents(values: DatedValue[] | undefined, start: string): DatedCents
 
 /** A setting's key as the server names it, with the field of {@link Settings} that shows it. */
 export type SettingKey = 'clerk-limit' | 'floor' | 'terms' | 'late-pct' | 'policy-date' | 'period-numbering-from'
-  | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'clerk-limit-A' | 'clerk-limit-B' | 'clerk-limit-C' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'cap' | 'proof-threshold' | 'proof-kinds' | 'note-threshold' | 'review-threshold' | 'grace-days' | 'escalate-after' | 'review-sla' | 'entry-date' | 'pot' | 'parent' | 'fiscal-start-month' | 'alert-threshold' | 'rounding' | 'default-grade' | `perm-${PermAction}`;
+  | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'clerk-limit-A' | 'clerk-limit-B' | 'clerk-limit-C' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'cap' | 'proof-threshold' | 'proof-kinds' | 'note-threshold' | 'review-threshold' | 'grace-days' | 'escalate-after' | 'review-sla' | 'entry-date' | 'pot' | 'parent' | 'fiscal-start-month' | 'alert-threshold' | 'score-mid' | 'score-high' | 'rounding' | 'default-grade' | `perm-${PermAction}`;
 
 /** The actions whose roles the permission matrix sets, each with its standing rule (used while its entry is blank). */
 export const PERMISSIONS = [
@@ -159,6 +160,19 @@ export function useReviewSla(sheet: string): number | null {
   const { data } = useSettings(sheet);
   const days = data?.reviewSla ?? '';
   return days === '' ? null : Number.parseInt(days, 10);
+}
+
+/** A person's band by score: HIGH at or above the high threshold, MID at or above the mid one, else LOW; '' while
+ *  either threshold is blank. */
+export function useScoreBand(sheet: string): (score: bigint) => string {
+  const { data } = useSettings(sheet);
+  const mid = data?.scoreMid ?? '';
+  const high = data?.scoreHigh ?? '';
+  return (score) => {
+    if (mid === '' || high === '') return '';
+    if (score >= BigInt(high)) return 'HIGH';
+    return score >= BigInt(mid) ? 'MID' : 'LOW';
+  };
 }
 
 /** The grace of a grade in force on a date (yyyy-MM-dd), in whole days; 0 when it has none then. */

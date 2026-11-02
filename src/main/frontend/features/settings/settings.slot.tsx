@@ -61,6 +61,8 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
   const [graceDays, setGraceDays] = useState('');
   const [escalateAfter, setEscalateAfter] = useState('');
   const [reviewSla, setReviewSla] = useState('');
+  const [scoreMid, setScoreMid] = useState('');
+  const [scoreHigh, setScoreHigh] = useState('');
   const [entryDate, setEntryDate] = useState('');
   const [pot, setPot] = useState('');
   const [parent, setParent] = useState('');
@@ -108,6 +110,8 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       setGraceDays('');
       setEscalateAfter('');
       setReviewSla('');
+      setScoreMid('');
+      setScoreHigh('');
       setEntryDate('');
       setPot('');
       setParent('');
@@ -157,7 +161,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       ...(Object.fromEntries(PERMISSIONS.map(({ action }) => [`perm-${action}`, perms[action] ?? ''])) as Record<`perm-${PermAction}`, string>), 'clerk-limit': clerkLimit, floor, terms, 'late-pct': latePct, 'policy-date': policyDate,
       'period-numbering-from': periodNumberingFrom, 'terms-A': gradeTerms.A ?? '', 'terms-B': gradeTerms.B ?? '',
       'terms-C': gradeTerms.C ?? '', cap, 'proof-threshold': proofThreshold, 'proof-kinds': proofKinds, 'note-threshold': noteThreshold, 'review-threshold': reviewThreshold,
-      'grace-days': graceDays, 'escalate-after': escalateAfter, 'review-sla': reviewSla, 'entry-date': entryDate, pot, parent, 'fiscal-start-month': fiscalStartMonth, 'alert-threshold': alertThreshold, rounding, 'default-grade': defaultGrade, 'grace-A': gradeGrace.A ?? '', 'grace-B': gradeGrace.B ?? '',
+      'grace-days': graceDays, 'escalate-after': escalateAfter, 'review-sla': reviewSla, 'score-mid': scoreMid, 'score-high': scoreHigh, 'entry-date': entryDate, pot, parent, 'fiscal-start-month': fiscalStartMonth, 'alert-threshold': alertThreshold, rounding, 'default-grade': defaultGrade, 'grace-A': gradeGrace.A ?? '', 'grace-B': gradeGrace.B ?? '',
       'grace-C': gradeGrace.C ?? '', 'proof-threshold-A': gradeProofThreshold.A ?? '',
       'proof-threshold-B': gradeProofThreshold.B ?? '', 'proof-threshold-C': gradeProofThreshold.C ?? '',
       'clerk-limit-A': gradeClerkLimit.A ?? '', 'clerk-limit-B': gradeClerkLimit.B ?? '', 'clerk-limit-C': gradeClerkLimit.C ?? '' };
@@ -480,6 +484,36 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
           />
         </label>{' '}
         now <span data-testid="setting-review-sla-current"><Fig>{data?.reviewSla ?? ''}</Fig></span>{' '}
+        <label>
+          Score mid{' '}
+          <input
+            data-testid="setting-score-mid"
+            placeholder="whole number (blank: no bands)"
+            value={scoreMid}
+            onChange={(e) => {
+              setScoreMid(e.target.value);
+              touch('score-mid');
+            }}
+            // As the policy date: clearing an already blank field must still send the blank.
+            onFocus={() => touch('score-mid')}
+          />
+        </label>{' '}
+        now <span data-testid="setting-score-mid-current"><Fig>{data?.scoreMid ?? ''}</Fig></span>{' '}
+        <label>
+          Score high{' '}
+          <input
+            data-testid="setting-score-high"
+            placeholder="whole number (blank: no bands)"
+            value={scoreHigh}
+            onChange={(e) => {
+              setScoreHigh(e.target.value);
+              touch('score-high');
+            }}
+            // As the policy date: clearing an already blank field must still send the blank.
+            onFocus={() => touch('score-high')}
+          />
+        </label>{' '}
+        now <span data-testid="setting-score-high-current"><Fig>{data?.scoreHigh ?? ''}</Fig></span>{' '}
         <label>
           Entry date{' '}
           <input

@@ -12,7 +12,7 @@ import { useSheetToday } from '../sheet/sheet';
 import { claimRateOf, showDue, twoDecimals, useRates } from '../rates/rates';
 import type { Rate } from '../rates/rates';
 import { periodOf, usePeriods } from '../periods/periods';
-import { useCapCents, useFloorCents, useReviewSla } from '../settings/settings';
+import { useCapCents, useFloorCents, useReviewSla, useScoreBand } from '../settings/settings';
 import {
   claimDueCents,
   claimed,
@@ -55,6 +55,7 @@ function ClaimedHeader({ sheet, user }: { sheet: string; user: string }) {
       <th>Settled total</th>
       <th>Open total</th>
       <th>Score</th>
+      <th>Band</th>
       <th>Claims</th>
     </>
   );
@@ -1006,6 +1007,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
   const { data: rates = [] } = useRates(sheet);
   const floor = useFloorCents(sheet);
   const cap = useCapCents(sheet);
+  const bandOf = useScoreBand(sheet);
   const today = useSheetToday(sheet);
   const late = useLate(sheet);
   // The excess: how far the sum of their figures is above the cap (0.00 when it is not, or is n/a).
@@ -1014,6 +1016,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
   const lateClaims = overdueCents(claims, [person], rates, late, floor);
   const aged = agedCents(claims, person, rates, late, floor);
   const split = splitDueCents(claims, rates, person, floor, late);
+  const score = scoreOf(split.settled, lateClaims.count);
   const [draft, setDraft] = useState<Draft>(EMPTY);
   // The editor is open on the claim this user's lock holds, as the store says: it stays open across a re-load of the
   // sheet, and closes once the lock is released (saved, cancelled, or the sheet's today changed).
@@ -1097,7 +1100,8 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
       <td data-testid="person-aged-61"><Fig>{twoDecimals(aged.over60)}</Fig></td>
       <td data-testid="person-settled-total"><Fig>{twoDecimals(split.settled)}</Fig></td>
       <td data-testid="person-open-total"><Fig>{twoDecimals(split.open)}</Fig></td>
-      <td data-testid="person-score">{scoreOf(split.settled, lateClaims.count).toString()}</td>
+      <td data-testid="person-score">{score.toString()}</td>
+      <td data-testid="person-band">{bandOf(score)}</td>
       <td>
         <form onSubmit={submit}>
           <input
