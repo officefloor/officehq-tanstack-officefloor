@@ -31,8 +31,8 @@ import org.springframework.stereotype.Service;
  * claimed-total, due-total and overdue-total (the totals leave out the single highest and lowest person's figure when
  * three or more people have one). A change takes them before it writes, then {@link #record} audits the ones it moved: a ROLLUP line
  * per person whose figures changed (in list order, by position; a new person counts as changed), then a TOTALS
- * line when the sheet's totals changed (a shared claim's due counts for each holder their share of it, and for its own
- * person the rest), then an ALERT line per person whose due-total crossed above the sheet's alert
+ * line when the sheet's totals changed (a shared claim counts for each holder their part of it, and for its own
+ * person its due less those parts), then an ALERT line per person whose due-total crossed above the sheet's alert
  * threshold (from at or below it, or no due-total), in list order.
  */
 @Service
@@ -99,7 +99,8 @@ public class Rollup {
             for (Claim claim : mine) {
                 BigDecimal d = claim.due(sheetRates, person.gradeOn(claim.date()), floor, late);
                 // The holders' parts of a shared claim count for them, not for its own person.
-                BigDecimal own = d == null ? null : d.subtract(claim.sharedPart(d));
+                BigDecimal own = d == null ? null
+                        : d.subtract(claim.sharedPart(d, (id) -> gradeOf(byId.get(id), claim), sheetRates, late.rounding(claim)));
                 due = own == null ? due : due.add(own);
                 if (own != null && claim.status() == ClaimStatus.SETTLED && !claim.correction()) {
                     settled = settled.add(own);
@@ -123,10 +124,10 @@ public class Rollup {
                         continue;
                     }
                     BigDecimal d = claim.due(sheetRates, owner.gradeOn(claim.date()), floor, late);
-                    if (d == null) {
+                    BigDecimal part = claim.partOf(share, d, person.gradeOn(claim.date()), sheetRates, late.rounding(claim));
+                    if (part == null) {
                         continue;
                     }
-                    BigDecimal part = share.partOf(d);
                     holdsPart = true;
                     due = due.add(part);
                     if (claim.status() == ClaimStatus.SETTLED && !claim.correction()) {
@@ -150,6 +151,11 @@ public class Rollup {
         }
         return new Snapshot(figures, claimedTotal.toPlainString(), trimmedSum(dueFigures).toPlainString(),
                 trimmedSum(overdueFigures).toPlainString());
+    }
+
+    /** The person's grade on the claim's date (null when they are not on the sheet). */
+    private static String gradeOf(Person person, Claim claim) {
+        return person == null ? null : person.gradeOn(claim.date());
     }
 
     /** Each person's cut total: their cuts across every pool they are a member of (a pool showing no cut adds nothing). */

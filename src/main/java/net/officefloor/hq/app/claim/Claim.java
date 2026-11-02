@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.function.Function;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.setting.Dated;
 
@@ -104,11 +105,30 @@ public record Claim(long id, long person, String amount, String date, String not
         return new Claim(id, person, amount, date, note, status, number, settledDue, openedBy, stated, statedDue, corrects, roundsOn, periodNumber, dueBy, log, deferredUntil, deferred, proofs, splitFrom, lockedBy, lateEntry, remindedOn, ref, tags, tagsEver, comments, batch, lines, added, waived, photos, held, shares, reviewAssigned);
     }
 
-    /** The holders' parts of the due (null for none) added up: what the claim's own person's due-total does not count. */
-    public BigDecimal sharedPart(BigDecimal due) {
+    /**
+     * The holder's part of this claim: its amount times the share divided by 100, times the rate of the holder's own
+     * grade in force on its date (of the rates it sees), divided by 100, rounded by the mode; null (0.00) when that
+     * grade has no rate. A SETTLED claim keeps its parts as frozen: the share of its due (null for none).
+     */
+    public BigDecimal partOf(ClaimShare share, BigDecimal due, String holderGrade, List<Rate> rates, RoundingMode rounding) {
+        if (status == ClaimStatus.SETTLED) {
+            return due == null ? null : share.partOf(due);
+        }
+        String pct = holderGrade == null ? null : Rate.on(Rate.seenBy(rates, added), holderGrade, LocalDate.parse(date));
+        return pct == null ? null
+                : new BigDecimal(amount).multiply(new BigDecimal(share.share())).movePointLeft(2)
+                        .multiply(new BigDecimal(pct)).movePointLeft(2).setScale(2, rounding);
+    }
+
+    /**
+     * The holders' parts (see {@link #partOf}) added up: what the claim's own person's due-total does not count of its
+     * due; each holder's grade on its date given by the person.
+     */
+    public BigDecimal sharedPart(BigDecimal due, Function<Long, String> holderGrade, List<Rate> rates, RoundingMode rounding) {
         BigDecimal parts = BigDecimal.ZERO.setScale(2);
-        for (ClaimShare share : shares == null || due == null ? List.<ClaimShare>of() : shares) {
-            parts = parts.add(share.partOf(due));
+        for (ClaimShare share : shares == null ? List.<ClaimShare>of() : shares) {
+            BigDecimal part = partOf(share, due, holderGrade.apply(share.person()), rates, rounding);
+            parts = part == null ? parts : parts.add(part);
         }
         return parts;
     }

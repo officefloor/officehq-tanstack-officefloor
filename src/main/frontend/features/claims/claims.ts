@@ -130,7 +130,7 @@ export type Claim = {
   /** Whether it is held (toggled while OPEN or PENDING): while held, unless bound by a statement, it counts in no due figure (it stays in claimed). */
   held: boolean;
   /** The people it is shared with, in the order shared, each with their share of its due (a percent, two decimals):
-   *  each holder's due figures count their part of it (see {@link partCents}), its own person's the rest. */
+   *  each holder's due figures count their part of it (see {@link holderPartCents}), its own person's the rest. */
   shares: ClaimShare[];
   /** The user a steward assigned it to review while it was REVIEW (null when none; kept once reviewed). */
   reviewAssigned: string | null;
@@ -150,13 +150,42 @@ export function partCents(due: bigint, share: string): bigint {
   return negative ? -quotient : quotient;
 }
 
+/** A holder's part of a claim (in hundredths): its amount times their share divided by 100, times the rate of the
+ *  holder's own grade in force on its date (of the rates it sees), divided by 100, rounded like the claim; undefined
+ *  (0.00) when that grade has no rate. A SETTLED claim keeps its parts as frozen: the share of its due (see
+ *  {@link partCents}; undefined when it has none). */
+export function holderPartCents(
+  claim: Claim,
+  share: ClaimShare,
+  due: bigint | undefined,
+  holder: Person | undefined,
+  rates: Rate[],
+  late: Late,
+): bigint | undefined {
+  if (claim.status === 'SETTLED') return due === undefined ? undefined : partCents(due, share.share);
+  const pct = holder === undefined ? undefined : claimRateOf(rates, gradeOn(holder, claim.date), claim);
+  if (pct === undefined) return undefined;
+  const product = hundredths(claim.amount) * hundredths(share.share) * hundredths(pct);
+  // Rounded on the magnitude, as the claim's own figure is.
+  const negative = product < 0n;
+  const abs = negative ? -product : product;
+  let quotient = abs / 100000000n;
+  const remainder = abs % 100000000n;
+  if (remainder > 50000000n || (remainder === 50000000n && (roundsHalfUp(claim, late) || quotient % 2n === 1n))) quotient += 1n;
+  return negative ? -quotient : quotient;
+}
+
 /** What a claim's own person counts of its due (in hundredths): the due less the holders' parts. */
-export function ownCents(claim: Claim, due: bigint): bigint {
-  return (claim.shares ?? []).reduce((rest, s) => rest - partCents(due, s.share), due);
+export function ownCents(claim: Claim, due: bigint, people: Person[], rates: Rate[], late: Late): bigint {
+  const byId = new Map(people.map((p) => [p.id, p]));
+  return (claim.shares ?? []).reduce(
+    (rest, s) => rest - (holderPartCents(claim, s, due, byId.get(s.person), rates, late) ?? 0n),
+    due,
+  );
 }
 
 /** The person's parts of the claims shared with them (in hundredths), each with the claim: of the claims that count
- *  as their own persons count them (see {@link counted}); a claim with no due gives no part. */
+ *  as their own persons count them (see {@link counted}); a part with no rate gives none (see {@link holderPartCents}). */
 export function heldParts(
   claims: Claim[],
   people: Person[],
@@ -172,7 +201,8 @@ export function heldParts(
     const owner = byId.get(c.person);
     if (share === undefined || owner === undefined || counted([c], [owner]).length === 0) continue;
     const due = claimDueCents(c, claimRateOf(rates, gradeOn(owner, c.date), c), floor, late);
-    if (due !== undefined) parts.push({ claim: c, cents: partCents(due, share.share) });
+    const cents = holderPartCents(c, share, due, person, rates, late);
+    if (cents !== undefined) parts.push({ claim: c, cents });
   }
   return parts;
 }
@@ -390,7 +420,7 @@ export function uncappedPersonDueCents(
   if (rateOf(rates, person.grade, today) === undefined && !mine.some(apart) && parts.length === 0) return undefined;
   const own = mine.reduce((sum, c) => {
     const due = claimDueCents(c, claimRateOf(rates, gradeOn(person, c.date), c), floor, late);
-    return sum + (due === undefined ? 0n : ownCents(c, due));
+    return sum + (due === undefined ? 0n : ownCents(c, due, people, rates, late));
   }, 0n);
   return parts.reduce((sum, p) => sum + p.cents, own);
 }
@@ -415,7 +445,8 @@ export function splitDueCents(
     } else if (isOpen(c)) split.open += due;
   };
   for (const c of counted(claims.filter((c) => c.person === person.id), [person])) {
-    add(c, ownCents(c, claimDueCents(c, claimRateOf(rates, gradeOn(person, c.date), c), floor, late) ?? 0n));
+    const due = claimDueCents(c, claimRateOf(rates, gradeOn(person, c.date), c), floor, late);
+    if (due !== undefined) add(c, ownCents(c, due, people, rates, late));
   }
   for (const { claim, cents } of heldParts(claims, people, rates, person, floor, late)) add(claim, cents);
   return split;

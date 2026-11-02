@@ -69,7 +69,10 @@ public class TakeStatement {
                 BigDecimal due = claim.due(sheetRates, then.gradeOn(claim.date()), floor, late);
                 bound.put(claim.id(), due);
                 // The holders' parts of a shared claim count for them, not for its own person (as the rollup counts them).
-                total = due == null ? total : total.add(due.subtract(claim.sharedPart(due)));
+                total = due == null ? total : total.add(due.subtract(claim.sharedPart(due, (id) -> {
+                    Person holder = state.person(id, on);
+                    return holder == null ? null : holder.gradeOn(claim.date());
+                }, sheetRates, late.rounding(claim))));
             }
         }
         // The person's parts of the claims shared with them, counted as their own persons count them.
@@ -88,9 +91,10 @@ public class TakeStatement {
                     continue;
                 }
                 BigDecimal due = shown.due(sheetRates, owner.gradeOn(shown.date()), floor, late);
-                if (due != null) {
+                BigDecimal part = shown.partOf(share, due, then.gradeOn(shown.date()), sheetRates, late.rounding(shown));
+                if (part != null) {
                     holdsPart = true;
-                    total = total.add(share.partOf(due));
+                    total = total.add(part);
                 }
             }
         }
