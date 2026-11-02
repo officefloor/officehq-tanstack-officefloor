@@ -1,0 +1,483 @@
+diff --git a/src/main/frontend/features/periods/periods.slot.tsx b/src/main/frontend/features/periods/periods.slot.tsx
+index 285bc111..50718be4 100644
+--- a/src/main/frontend/features/periods/periods.slot.tsx
++++ b/src/main/frontend/features/periods/periods.slot.tsx
+@@ -7,10 +7,12 @@ import { byUser } from '../session/session';
+ import { SheetPanels } from '../../slots/defs/sheetPanels';
+ import { usePeople } from '../people/people';
+ import { twoDecimals, useRates } from '../rates/rates';
+-import { useFloorCents } from '../settings/settings';
++import { useFiscalStartMonth, useFloorCents } from '../settings/settings';
+ import { useClaims, useLate } from '../claims/claims';
+ import {
+   closePeriodPath,
++  fiscalYearOf,
++  generateFiscalYearPath,
+   generatePeriodsPath,
+   periodDueCents,
+   shownDueTotal,
+@@ -26,7 +28,8 @@ import type { Generated, Period } from './periods';
+ // that close, soft-close and reopen it. The server refuses closing a period already closed, soft-closing one already
+ // closed or soft-closed, and reopening one neither; and any of them by a role the permission matrix does not allow;
+ // the row shows that error until its next action.
+-function PeriodRow({ sheet, user, period, dueCents }: { sheet: string; user: string; period: Period; dueCents: bigint }) {
++// It also shows the fiscal year its from-date falls in.
++function PeriodRow({ sheet, user, period, dueCents, fiscalStart }: { sheet: string; user: string; period: Period; dueCents: bigint; fiscalStart: number }) {
+   const queryClient = useQueryClient();
+   const close = useMutation({
+     mutationFn: () => postJson<Period[]>(byUser(closePeriodPath(sheet, period.name), user), {}),
+@@ -52,6 +55,7 @@ function PeriodRow({ sheet, user, period, dueCents }: { sheet: string; user: str
+       <td data-testid="period-to">{period.to}</td>
+       <td data-testid="period-due-total">{shownDueTotal(period, dueCents)}</td>
+       <td data-testid="period-closed">{period.closed ? 'yes' : period.soft ? 'soft' : 'no'}</td>
++      <td data-testid="period-fy">{fiscalYearOf(period.from, fiscalStart)}</td>
+       <td>
+         <button
+           type="button"
+@@ -116,16 +120,24 @@ type Range = { from: string; to: string };
+ const NO_RANGE: Range = { from: '', to: '' };
+ 
+ // Generates one period per calendar month from the from-date's month to the to-date's, named yyyy-mm; the server leaves
+-// out a month whose name is already a period or that overlaps one, and refuses a to-date before the from-date. Shows how
+-// many were made.
++// out a month whose name is already a period or that overlaps one, and refuses a to-date before the from-date. The
++// fiscal year entry generates that fiscal year's twelve months (from the sheet's fiscal start month in that year) the
++// same way, and the server refuses a year that is not yyyy. Both share the one count of how many were made, and error.
++type GenerateBody = { path: 'range'; range: Range } | { path: 'fy'; year: string };
++
+ function GeneratePeriods({ sheet, user }: { sheet: string; user: string }) {
+   const queryClient = useQueryClient();
+   const [range, setRange] = useState<Range>(NO_RANGE);
++  const [year, setYear] = useState('');
+   const generate = useMutation({
+-    mutationFn: (body: Range) => postJson<Generated>(byUser(generatePeriodsPath(sheet), user), body),
++    mutationFn: (body: GenerateBody) =>
++      body.path === 'range'
++        ? postJson<Generated>(byUser(generatePeriodsPath(sheet), user), body.range)
++        : postJson<Generated>(byUser(generateFiscalYearPath(sheet), user), { year: body.year }),
+     onSuccess: (result) => {
+       queryClient.setQueryData(periodsKey(sheet), result.periods);
+       setRange(NO_RANGE);
++      setYear('');
+     },
+   });
+   const send = useSubmitOnce(generate);
+@@ -137,43 +149,67 @@ function GeneratePeriods({ sheet, user }: { sheet: string; user: string }) {
+ 
+   const submit = (e: FormEvent) => {
+     e.preventDefault();
+-    send(range);
++    send({ path: 'range', range });
++  };
++
++  const submitYear = (e: FormEvent) => {
++    e.preventDefault();
++    send({ path: 'fy', year });
+   };
+ 
+   return (
+-    <form onSubmit={submit}>
+-      <label>
+-        Generate monthly from{' '}
+-        <input
+-          data-testid="period-generate-from"
+-          placeholder="yyyy-mm-dd (blank: today)"
+-          value={range.from}
+-          onChange={(e) => change({ from: e.target.value })}
+-        />
+-      </label>{' '}
+-      <label>
+-        to{' '}
+-        <input
+-          data-testid="period-generate-to"
+-          placeholder="yyyy-mm-dd"
+-          value={range.to}
+-          onChange={(e) => change({ to: e.target.value })}
+-        />
+-      </label>{' '}
+-      <button type="submit" data-testid="period-generate" disabled={generate.isPending}>
+-        Generate periods
+-      </button>
+-      {generate.isSuccess && (
+-        <>
+-          {' '}Made <strong data-testid="period-generated">{generate.data.made}</strong>
+-        </>
+-      )}
+-      {generate.isError && (
+-        <span data-testid="period-generate-error" role="alert">
+-          {' '}Nothing was made: generating needs valid from and to dates, the to on or after the from.
+-        </span>
+-      )}
+-    </form>
++    <>
++      <form onSubmit={submit}>
++        <label>
++          Generate monthly from{' '}
++          <input
++            data-testid="period-generate-from"
++            placeholder="yyyy-mm-dd (blank: today)"
++            value={range.from}
++            onChange={(e) => change({ from: e.target.value })}
++          />
++        </label>{' '}
++        <label>
++          to{' '}
++          <input
++            data-testid="period-generate-to"
++            placeholder="yyyy-mm-dd"
++            value={range.to}
++            onChange={(e) => change({ to: e.target.value })}
++          />
++        </label>{' '}
++        <button type="submit" data-testid="period-generate" disabled={generate.isPending}>
++          Generate periods
++        </button>
++        {generate.isSuccess && (
++          <>
++            {' '}Made <strong data-testid="period-generated">{generate.data.made}</strong>
++          </>
++        )}
++        {generate.isError && (
++          <span data-testid="period-generate-error" role="alert">
++            {' '}Nothing was made: generating needs valid from and to dates, the to on or after the from, or a fiscal year (yyyy).
++          </span>
++        )}
++      </form>
++      <form onSubmit={submitYear}>
++        <label>
++          Generate fiscal year{' '}
++          <input
++            data-testid="period-generate-fy-year"
++            placeholder="yyyy"
++            value={year}
++            onChange={(e) => {
++              setYear(e.target.value);
++              generate.reset();
++            }}
++          />
++        </label>{' '}
++        <button type="submit" data-testid="period-generate-fy" disabled={generate.isPending}>
++          Generate fiscal year
++        </button>
++      </form>
++    </>
+   );
+ }
+ 
+@@ -188,6 +224,7 @@ function Periods({ sheet, user }: { sheet: string; user: string }) {
+   const { data: rates = [] } = useRates(sheet);
+   const floor = useFloorCents(sheet);
+   const late = useLate(sheet);
++  const fiscalStart = useFiscalStartMonth(sheet);
+   const [draft, setDraft] = useState<Draft>(EMPTY);
+ 
+   const save = useMutation({
+@@ -255,12 +292,13 @@ function Periods({ sheet, user }: { sheet: string; user: string }) {
+             <th>To</th>
+             <th>Due total</th>
+             <th>Closed</th>
++            <th>Fiscal year</th>
+             <th></th>
+           </tr>
+         </thead>
+         <tbody>
+           {periods.map((p) => (
+-            <PeriodRow key={p.name} sheet={sheet} user={user} period={p} dueCents={totals.get(p.name) ?? 0n} />
++            <PeriodRow key={p.name} sheet={sheet} user={user} period={p} dueCents={totals.get(p.name) ?? 0n} fiscalStart={fiscalStart} />
+           ))}
+         </tbody>
+       </table>
+diff --git a/src/main/frontend/features/periods/periods.ts b/src/main/frontend/features/periods/periods.ts
+index 22815ad3..5de823fd 100644
+--- a/src/main/frontend/features/periods/periods.ts
++++ b/src/main/frontend/features/periods/periods.ts
+@@ -29,6 +29,17 @@ export const periodsPath = (sheet: string) => `/api/sheets/${encodeURIComponent(
+ /** Where monthly periods are generated between two dates. */
+ export const generatePeriodsPath = (sheet: string) => `${periodsPath(sheet)}/generate`;
+ 
++/** Where a fiscal year's twelve monthly periods are generated. */
++export const generateFiscalYearPath = (sheet: string) => `${periodsPath(sheet)}/generate-fy`;
++
++/** The fiscal year a date (yyyy-MM-dd) falls in, named FY<yyyy> by the calendar year its first day falls in, for a
++ *  fiscal year starting in the month (1 to 12). */
++export function fiscalYearOf(date: string, startMonth: number): string {
++  const year = Number(date.slice(0, 4));
++  const month = Number(date.slice(5, 7));
++  return `FY${month >= startMonth ? year : year - 1}`;
++}
++
+ /** How many periods a generate made, with every period on the sheet after it. */
+ export type Generated = { made: number; periods: Period[] };
+ 
+diff --git a/src/main/frontend/features/settings/settings.slot.tsx b/src/main/frontend/features/settings/settings.slot.tsx
+index b88052ef..1db27a86 100644
+--- a/src/main/frontend/features/settings/settings.slot.tsx
++++ b/src/main/frontend/features/settings/settings.slot.tsx
+@@ -33,6 +33,7 @@ import type { PermAction, SettingKey, Settings as SheetSettings } from './settin
+ // The pot (two decimals, not dated; blank means none): what each balanced pool shares out among its members.
+ // The parent (a sheet id, not dated; blank means none): where the sheet has no rate in force for a grade on a date,
+ // the parent's is used, then its parent's, up to three levels up.
++// The fiscal start month (1 to 12, not dated; 1 unless set): the month each fiscal year starts in.
+ function Settings({ sheet, user }: { sheet: string; user: string }) {
+   const queryClient = useQueryClient();
+   const { data } = useSettings(sheet);
+@@ -49,6 +50,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
+   const [entryDate, setEntryDate] = useState('');
+   const [pot, setPot] = useState('');
+   const [parent, setParent] = useState('');
++  const [fiscalStartMonth, setFiscalStartMonth] = useState('');
+   const [gradeTerms, setGradeTerms] = useState<Record<string, string>>({});
+   const [gradeGrace, setGradeGrace] = useState<Record<string, string>>({});
+   const [gradeProofThreshold, setGradeProofThreshold] = useState<Record<string, string>>({});
+@@ -87,6 +89,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
+       setEntryDate('');
+       setPot('');
+       setParent('');
++      setFiscalStartMonth('');
+       setGradeTerms({});
+       setGradeGrace({});
+       setGradeProofThreshold({});
+@@ -128,7 +131,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
+       ...(Object.fromEntries(PERMISSIONS.map(({ action }) => [`perm-${action}`, perms[action] ?? ''])) as Record<`perm-${PermAction}`, string>), 'clerk-limit': clerkLimit, floor, terms, 'late-pct': latePct, 'policy-date': policyDate,
+       'period-numbering-from': periodNumberingFrom, 'terms-A': gradeTerms.A ?? '', 'terms-B': gradeTerms.B ?? '',
+       'terms-C': gradeTerms.C ?? '', cap, 'proof-threshold': proofThreshold, 'note-threshold': noteThreshold,
+-      'grace-days': graceDays, 'entry-date': entryDate, pot, parent, 'grace-A': gradeGrace.A ?? '', 'grace-B': gradeGrace.B ?? '',
++      'grace-days': graceDays, 'entry-date': entryDate, pot, parent, 'fiscal-start-month': fiscalStartMonth, 'grace-A': gradeGrace.A ?? '', 'grace-B': gradeGrace.B ?? '',
+       'grace-C': gradeGrace.C ?? '', 'proof-threshold-A': gradeProofThreshold.A ?? '',
+       'proof-threshold-B': gradeProofThreshold.B ?? '', 'proof-threshold-C': gradeProofThreshold.C ?? '' };
+     const keys: SettingKey[] = changed.length === 0 ? ['clerk-limit'] : changed;
+@@ -397,6 +400,20 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
+           />
+         </label>{' '}
+         now <span data-testid="setting-parent-current">{data?.parent ?? ''}</span>{' '}
++        <label>
++          Fiscal year starts in month{' '}
++          <input
++            data-testid="setting-fiscal-start-month"
++            placeholder="1 to 12"
++            value={fiscalStartMonth}
++            onChange={(e) => {
++              setFiscalStartMonth(e.target.value);
++              touch('fiscal-start-month');
++            }}
++            onFocus={() => touch('fiscal-start-month')}
++          />
++        </label>{' '}
++        now <span data-testid="setting-fiscal-start-month-current">{data?.fiscalStartMonth ?? ''}</span>{' '}
+         {PERMISSIONS.map(({ action, standing }) => (
+           <span key={action}>
+             <label>
+@@ -422,7 +439,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
+         </button>
+         {save.isError && (
+           <span data-testid="settings-error" role="alert">
+-            {' '}The clerk limit, the cap, the proof threshold (the sheet's and each grade's), the note threshold, the floor, the late percent and the pot must be 0.00 or more with up to two decimals, the terms (the sheet's and each grade's) and each grade's grace a whole number of days, the policy date, the period numbering from-date, the entry date and each from-date dates, each action's roles clerk or steward (comma separated), or blank; the parent a sheet that has been loaded, not this sheet nor one that has it as an ancestor, or blank.
++            {' '}The clerk limit, the cap, the proof threshold (the sheet's and each grade's), the note threshold, the floor, the late percent and the pot must be 0.00 or more with up to two decimals, the terms (the sheet's and each grade's) and each grade's grace a whole number of days, the policy date, the period numbering from-date, the entry date and each from-date dates, each action's roles clerk or steward (comma separated), or blank; the parent a sheet that has been loaded, not this sheet nor one that has it as an ancestor, or blank; the fiscal start month a month, 1 to 12.
+           </span>
+         )}
+       </form>
+diff --git a/src/main/frontend/features/settings/settings.ts b/src/main/frontend/features/settings/settings.ts
+index b2cfb408..5bb8c18c 100644
+--- a/src/main/frontend/features/settings/settings.ts
++++ b/src/main/frontend/features/settings/settings.ts
+@@ -21,11 +21,12 @@ import { hundredths } from '../rates/rates';
+  *  And the pot (two decimals; '' for none, not dated): what each balanced pool shares out among its members.
+  *  And the parent sheet's id ('' for none, not dated): where the sheet has no rate in force for a grade on a date, the
+  *  parent's is used, then its parent's, up to three levels up.
++ *  And the fiscal start month (1 to 12, not dated): the month a fiscal year starts in.
+  *  And, for each dated key (every one that carries a figure), its values as recorded, by from-date. */
+ export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string;
+   termsA: string; termsB: string; termsC: string; cap: string;
+   proofThreshold: string; noteThreshold: string; graceDays: string; entryDate: string; graceA: string; graceB: string; graceC: string;
+-  proofThresholdA: string; proofThresholdB: string; proofThresholdC: string; pot: string; parent: string; perms: Partial<Record<PermAction, string>>; dated: Partial<Record<SettingKey, DatedValue[]>> };
++  proofThresholdA: string; proofThresholdB: string; proofThresholdC: string; pot: string; parent: string; fiscalStartMonth: string; perms: Partial<Record<PermAction, string>>; dated: Partial<Record<SettingKey, DatedValue[]>> };
+ 
+ /** A dated setting's value as recorded: in force from its from-date (yyyy-MM-dd). */
+ export type DatedValue = { from: string; value: string };
+@@ -35,7 +36,7 @@ export type DatedCents = (date: string) => bigint;
+ 
+ /** Whether a setting is dated: every one that carries a figure is but the pot; the policy, period numbering and entry dates and the grace days are not. */
+ export function isDated(key: SettingKey): boolean {
+-  return key !== 'policy-date' && key !== 'period-numbering-from' && key !== 'grace-days' && key !== 'entry-date' && key !== 'pot' && key !== 'parent' && !key.startsWith('perm-');
++  return key !== 'policy-date' && key !== 'period-numbering-from' && key !== 'grace-days' && key !== 'entry-date' && key !== 'pot' && key !== 'parent' && key !== 'fiscal-start-month' && !key.startsWith('perm-');
+ }
+ 
+ /** The figure in force on a date: the value of the latest from-date on or before it, before every from-date (or
+@@ -54,7 +55,7 @@ function datedCents(values: DatedValue[] | undefined, start: string): DatedCents
+ 
+ /** A setting's key as the server names it, with the field of {@link Settings} that shows it. */
+ export type SettingKey = 'clerk-limit' | 'floor' | 'terms' | 'late-pct' | 'policy-date' | 'period-numbering-from'
+-  | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'cap' | 'proof-threshold' | 'note-threshold' | 'grace-days' | 'entry-date' | 'pot' | 'parent' | `perm-${PermAction}`;
++  | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'cap' | 'proof-threshold' | 'note-threshold' | 'grace-days' | 'entry-date' | 'pot' | 'parent' | 'fiscal-start-month' | `perm-${PermAction}`;
+ 
+ /** The actions whose roles the permission matrix sets, each with its standing rule (used while its entry is blank). */
+ export const PERMISSIONS = [
+@@ -116,6 +117,12 @@ export function useFloorCents(sheet: string): DatedCents {
+   return datedCents(data?.dated?.floor, DEFAULT_FLOOR);
+ }
+ 
++/** The month (1 to 12) the sheet's fiscal year starts in; 1 unless set. */
++export function useFiscalStartMonth(sheet: string): number {
++  const { data } = useSettings(sheet);
++  return Number(data?.fiscalStartMonth || '1');
++}
++
+ /** The sheet's cap in hundredths: the most a person's due-total is; undefined when there is none. */
+ export function useCapCents(sheet: string): bigint | undefined {
+   const { data } = useSettings(sheet);
+diff --git a/src/main/java/net/officefloor/hq/app/period/GenerateFiscalYearRequest.java b/src/main/java/net/officefloor/hq/app/period/GenerateFiscalYearRequest.java
+new file mode 100644
+index 00000000..16f198d6
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/GenerateFiscalYearRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.period;
++
++/** Body of POST /api/sheets/{sheet}/periods/generate-fy: the fiscal year, by the calendar year its first day falls in. */
++public record GenerateFiscalYearRequest(String year) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/ValidateGenerateFiscalYear.java b/src/main/java/net/officefloor/hq/app/period/ValidateGenerateFiscalYear.java
+new file mode 100644
+index 00000000..b2dcda5f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/ValidateGenerateFiscalYear.java
+@@ -0,0 +1,24 @@
++package net.officefloor.hq.app.period;
++
++import java.time.YearMonth;
++import java.util.regex.Pattern;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Turns a fiscal year (yyyy) into the range of its twelve months, from the sheet's fiscal start month in that year,
++ *  for the period generator. */
++public class ValidateGenerateFiscalYear {
++    private static final Pattern YEAR = Pattern.compile("\\d{4}");
++
++    public void validate(@PathVariable("sheet") String sheet, @RequestBody GenerateFiscalYearRequest request,
++            Settings settings, Out<GeneratePeriodsInput> body) throws InvalidPeriodException {
++        String year = request == null || request.year() == null ? "" : request.year().trim();
++        if (!YEAR.matcher(year).matches()) {
++            throw new InvalidPeriodException("Not a valid fiscal year: " + year);
++        }
++        YearMonth first = YearMonth.of(Integer.parseInt(year), settings.fiscalStartMonth(sheet));
++        body.set(new GeneratePeriodsInput(first.atDay(1), first.plusMonths(11).atEndOfMonth()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Settings.java b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+index 5d75ef67..2936c171 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+@@ -79,6 +79,13 @@ public class Settings {
+      *  the sheet's own settings, so a sheet shown as of a date keeps it); blank: none. */
+     public static final String PARENT = "parent";
+ 
++    /** The month (1 to 12, not dated) a fiscal year starts in; unset: 1. A fiscal year is named FY<yyyy> by the calendar
++     *  year its first day falls in. */
++    public static final String FISCAL_START_MONTH = "fiscal-start-month";
++
++    /** The fiscal start month a sheet starts with. */
++    public static final String DEFAULT_FISCAL_START_MONTH = "1";
++
+     /** The actions whose roles the permission matrix sets, each under the key perm-<action>. */
+     public static final List<String> PERMISSIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
+ 
+@@ -104,7 +111,8 @@ public class Settings {
+     /** Whether the key is dated: every setting that carries a figure is but the pot; the policy, period numbering and entry dates, the grace days and the parent are not. */
+     public static boolean dated(String key) {
+         return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key)
+-                && !ENTRY_DATE.equals(key) && !POT.equals(key) && !PARENT.equals(key) && !key.startsWith("perm-");
++                && !ENTRY_DATE.equals(key) && !POT.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
++                && !key.startsWith("perm-");
+     }
+ 
+     /** The from-date an undated setting's one value is kept under. */
+@@ -288,6 +296,12 @@ public class Settings {
+         return pot.isEmpty() ? null : new BigDecimal(pot);
+     }
+ 
++    /** The month (1 to 12) the sheet's fiscal year starts in. */
++    public int fiscalStartMonth(String sheet) {
++        String month = get(sheet, FISCAL_START_MONTH);
++        return Integer.parseInt(month.isEmpty() ? DEFAULT_FISCAL_START_MONTH : month);
++    }
++
+     /** The id of the sheet's parent, or "" when it has none. */
+     public String parent(String sheet) {
+         List<String> found = jdbc.queryForList("SELECT parent FROM sheet_parent WHERE child = ?", String.class, sheet);
+@@ -355,6 +369,7 @@ public class Settings {
+                 get(sheet, GRACE_DAYS), on(sheet, NOTE_THRESHOLD, today), get(sheet, ENTRY_DATE),
+                 on(sheet, gradeGrace("A"), today), on(sheet, gradeGrace("B"), today), on(sheet, gradeGrace("C"), today),
+                 on(sheet, gradeProofThreshold("A"), today), on(sheet, gradeProofThreshold("B"), today),
+-                on(sheet, gradeProofThreshold("C"), today), get(sheet, POT), parent(sheet));
++                on(sheet, gradeProofThreshold("C"), today), get(sheet, POT), parent(sheet),
++                Integer.toString(fiscalStartMonth(sheet)));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+index 98810c00..e17f9875 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+@@ -10,11 +10,12 @@ import java.util.Map;
+  * is the value in force on the sheet's today. And, for each dated key, its values as recorded, by from-date. And the grace days (a whole number), or "" for off. And the note threshold
+  * with two decimals, or "" for none. And the entry date (yyyy-MM-dd), or "" for off. And each grade's grace (a whole number of days), or "" for none. And each grade's
+  * own proof threshold with two decimals, or "" for none (the grade takes the sheet's). And the pot with two decimals,
+- * or "" for none. And the parent sheet's id, or "" for none.
++ * or "" for none. And the parent sheet's id, or "" for none. And the fiscal start month (1 to 12).
+  */
+ public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
+         String periodNumberingFrom, String termsA, String termsB, String termsC, String cap,
+         String proofThreshold, Map<String, String> perms, Map<String, List<DatedValue>> dated,
+         String graceDays, String noteThreshold, String entryDate, String graceA, String graceB, String graceC,
+-        String proofThresholdA, String proofThresholdB, String proofThresholdC, String pot, String parent) {
++        String proofThresholdA, String proofThresholdB, String proofThresholdC, String pot, String parent,
++        String fiscalStartMonth) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+index d7ba47e8..eadb2fc9 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+@@ -63,7 +63,7 @@ public class ValidateSetting {
+         if (!Settings.CLERK_LIMIT.equals(key) && !Settings.CAP.equals(key) && !Settings.PROOF_THRESHOLD.equals(key) && !Settings.NOTE_THRESHOLD.equals(key) && !Settings.FLOOR.equals(key) && !Settings.TERMS.equals(key)
+                 && !Settings.LATE_PCT.equals(key) && !Settings.POLICY_DATE.equals(key)
+                 && !Settings.PERIOD_NUMBERING_FROM.equals(key) && !Settings.GRACE_DAYS.equals(key) && !Settings.ENTRY_DATE.equals(key)
+-                && !Settings.POT.equals(key) && !Settings.PARENT.equals(key)
++                && !Settings.POT.equals(key) && !Settings.PARENT.equals(key) && !Settings.FISCAL_START_MONTH.equals(key)
+                 && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeTerms(g).equals(key))
+                 && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeGrace(g).equals(key))
+                 && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeProofThreshold(g).equals(key))
+@@ -117,6 +117,14 @@ public class ValidateSetting {
+             }
+             return new SettingInput(key, value);
+         }
++        // The fiscal start month is a month, 1 to 12; anything else (blank too) is refused.
++        if (Settings.FISCAL_START_MONTH.equals(key)) {
++            int month = DAYS.matcher(value).matches() ? Integer.parseInt(value) : 0;
++            if (month < 1 || month > 12) {
++                throw new InvalidSettingException("The fiscal start month must be a month, 1 to 12");
++            }
++            return new SettingInput(key, Integer.toString(month));
++        }
+         // The parent is a sheet id, checked against the sheets by the caller; blank means none.
+         if (Settings.PARENT.equals(key)) {
+             return new SettingInput(key, value);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheet}/periods/generate-fy.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheet}/periods/generate-fy.POST.yml
+new file mode 100644
+index 00000000..b1b9d0ec
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheet}/periods/generate-fy.POST.yml
+@@ -0,0 +1,12 @@
++# Validate first so a bad year is a 400; Generate adds each month of the fiscal year exactly as the period generator
++# does. Responds with how many were made and the sheet's periods.
++validate:
++  class: net.officefloor.hq.app.period.ValidateGenerateFiscalYear
++  next: generate
++generate:
++  class: net.officefloor.hq.app.period.GeneratePeriods
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.period.RespondWithGeneratedPeriods
++  govern: [ transaction ]
