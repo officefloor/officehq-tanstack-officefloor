@@ -15,6 +15,7 @@ import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.role.Roles;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.sheet.SheetArchive;
+import net.officefloor.hq.app.sheet.SheetClock;
 import net.officefloor.hq.app.statement.Statements;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -50,10 +51,11 @@ public class PersonTransferrer {
     private final Rollup rollup;
     private final Statements statements;
     private final SheetTags sheetTags;
+    private final SheetClock clock;
 
     public PersonTransferrer(JdbcTemplate jdbc, People people, Aliases aliases, Claims claims,
             ClaimStatusChanger changer, Roles roles, SheetArchive archive, Audit audit, Rollup rollup,
-            Statements statements, SheetTags sheetTags) {
+            Statements statements, SheetTags sheetTags, SheetClock clock) {
         this.jdbc = jdbc;
         this.people = people;
         this.aliases = aliases;
@@ -65,6 +67,32 @@ public class PersonTransferrer {
         this.rollup = rollup;
         this.statements = statements;
         this.sheetTags = sheetTags;
+        this.clock = clock;
+    }
+
+    /**
+     * Undoes the transfer that brought the person to this sheet: only a steward may, only on the sheet's today they
+     * arrived, and only for a person who arrived by transfer. They are transferred back to the sheet they came from by
+     * exactly the transfer's rules and lines, then PERSON_TRANSFER_UNDONE is written here.
+     */
+    public void undo(String sheet, String user, Person person) throws InvalidPersonException {
+        if (!Role.STEWARD.equals(roles.of(sheet, user))) {
+            throw new InvalidPersonException("Only a steward may undo a transfer");
+        }
+        List<java.sql.Date> arrived = jdbc.queryForList("SELECT arrived_on FROM person WHERE sheet = ? AND id = ?",
+                java.sql.Date.class, sheet, person.id());
+        String origin = person.origin();
+        if (origin == null || arrived.isEmpty() || arrived.get(0) == null) {
+            throw new InvalidPersonException(person.name() + " did not arrive by transfer");
+        }
+        if (!arrived.get(0).toLocalDate().equals(clock.today(sheet))) {
+            throw new InvalidPersonException("A transfer is undone only on the day the person arrived");
+        }
+        Rollup.Snapshot before = rollup.take(sheet);
+        transfer(sheet, user, person, origin);
+        audit.record("PERSON_TRANSFER_UNDONE sheet=" + sheet + " by=" + user + " name=" + person.name() + " to="
+                + origin);
+        rollup.record(sheet, user, before);
     }
 
     /** Transfers the person to the sheet {@code to}, writing nothing when it is refused. */
@@ -209,14 +237,15 @@ public class PersonTransferrer {
     private long arrive(String sheet, long f, String to, List<String> theirAliases) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
-            var ps = con.prepareStatement("INSERT INTO person (sheet, name, terms, contact, tags, list_position, origin) SELECT ?,"
-                    + " name, terms, contact, tags, " + People.NEXT_POSITION + ", ? FROM person WHERE sheet = ? AND id = ?",
+            var ps = con.prepareStatement("INSERT INTO person (sheet, name, terms, contact, tags, list_position, origin,"
+                    + " arrived_on) SELECT ?, name, terms, contact, tags, " + People.NEXT_POSITION + ", ?, ? FROM person WHERE sheet = ? AND id = ?",
                     new String[] { "id" });
             ps.setString(1, to);
             ps.setString(2, to);
             ps.setString(3, sheet);
-            ps.setString(4, sheet);
-            ps.setLong(5, f);
+            ps.setDate(4, java.sql.Date.valueOf(clock.today(to)));
+            ps.setString(5, sheet);
+            ps.setLong(6, f);
             return ps;
         }, keys);
         long t = keys.getKey().longValue();

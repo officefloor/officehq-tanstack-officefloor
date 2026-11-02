@@ -64,7 +64,49 @@ function PersonTransfer({ sheet, user, person }: { sheet: string; user: string; 
   );
 }
 
+// The button that undoes the transfer that brought this person here, sending them back to the sheet they came from by
+// the transfer rules. The server refuses anyone but a steward, any day but the sheet's today they arrived, and a person
+// who did not arrive by transfer; both sheets are re-read as for a transfer.
+function PersonTransferUndo({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
+  const queryClient = useQueryClient();
+  const undo = useMutation({
+    mutationKey: personActionKey(sheet, person.id),
+    mutationFn: () => postJson<Person[]>(byUser(`${peoplePath(sheet)}/${person.id}/transfer-undo`, user), {}),
+    onSuccess: async (updated) => {
+      const target = person.origin;
+      await queryClient.invalidateQueries({
+        predicate: (q) =>
+          (q.queryKey.includes(sheet) && q.queryKey[0] !== 'sheet' && q.queryKey[0] !== 'people') ||
+          (target != null && q.queryKey.includes(target)),
+      });
+      queryClient.setQueryData(peopleKey(sheet), updated);
+    },
+  });
+  const act = useSubmitOnce(undo);
+  const latest = useIsLatest(personActionKey(sheet, person.id), undo.submittedAt);
+
+  return (
+    <td>
+      <button
+        type="button"
+        data-testid="person-transfer-undo"
+        disabled={undo.isPending}
+        onClick={() => act(undefined)}
+      >
+        Undo transfer
+      </button>
+      {undo.isError && latest && (
+        <span data-testid="person-error" role="alert">
+          {' '}Only a steward may undo a transfer, on the day the person arrived by it.
+        </span>
+      )}
+    </td>
+  );
+}
+
 export const contributions = [
   PersonColumnHeaders.fill({ order: 75, Component: TransferHeader }),
   PersonColumns.fill({ order: 75, Component: PersonTransfer }),
+  PersonColumnHeaders.fill({ order: 76, Component: TransferHeader }),
+  PersonColumns.fill({ order: 76, Component: PersonTransferUndo }),
 ];
