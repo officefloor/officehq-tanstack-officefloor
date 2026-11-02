@@ -52,8 +52,8 @@ export function peopleKey(sheetId: string) {
   return ['sheet', sheetId, 'people'];
 }
 
-/** The sheet's people and the patrons they have named, as the store holds them. */
-type PeopleBody = { people: Person[]; patrons: Patron[] };
+/** The sheet's people, the patrons they have named and the people the signed-in user watches, as the store holds them. */
+type PeopleBody = { people: Person[]; patrons: Patron[]; watched: number[] };
 
 function peopleBody(sheetId: string): Promise<PeopleBody> {
   return getJson<PeopleBody>(`/api/sheets/${encodeURIComponent(sheetId)}/people`);
@@ -73,6 +73,18 @@ export function usePatrons(sheetId: string) {
   return useQuery({
     queryKey: patronsKey(sheetId),
     queryFn: async () => (await peopleBody(sheetId)).patrons,
+  });
+}
+
+export function watchedKey(sheetId: string) {
+  return [...peopleKey(sheetId), 'watched'];
+}
+
+/** The ids of the people the signed-in user watches, re-read from the store. */
+export function useWatched(sheetId: string) {
+  return useQuery({
+    queryKey: watchedKey(sheetId),
+    queryFn: async () => (await peopleBody(sheetId)).watched ?? [],
   });
 }
 

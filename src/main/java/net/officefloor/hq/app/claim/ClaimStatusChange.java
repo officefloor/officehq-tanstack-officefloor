@@ -6,6 +6,7 @@ import java.util.List;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.BadRequestException;
 import net.officefloor.hq.app.period.PeriodGuard;
+import net.officefloor.hq.app.person.WatchRepository;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.settings.SettingsRepository;
@@ -17,14 +18,14 @@ final class ClaimStatusChange {
     }
 
     static Claim apply(String id, long cid, String action, String by, ClaimRepository repository,
-            PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup) throws BadRequestException {
-        return apply(id, cid, action, null, by, repository, periods, settings, audit, rollup);
+            PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup, WatchRepository watches) throws BadRequestException {
+        return apply(id, cid, action, null, by, repository, periods, settings, audit, rollup, watches);
     }
 
     static Claim apply(String id, long cid, String action, String reason, String by, ClaimRepository repository,
-            PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup) throws BadRequestException {
+            PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup, WatchRepository watches) throws BadRequestException {
         if ("resettle".equals(action == null ? "" : action.trim())) {
-            return resettle(id, cid, by, repository, periods, settings, audit, rollup);
+            return resettle(id, cid, by, repository, periods, settings, audit, rollup, watches);
         }
         String to;
         List<String> from;
@@ -121,6 +122,10 @@ final class ClaimStatusChange {
                 found.statedNa(), found.deferredUntil(), found.deferred(), found.proofs(), found.splitFrom());
         audit.record(event + " sheet=" + id + " by=" + by + " person=" + repository.personName(id, found.personId())
                 + " amount=" + changed.amount() + " date=" + changed.date() + Claim.auditNumber(number) + tail);
+        // A settled (or approved) claim's watchers are told, after the claim's own line and before the rollup.
+        if (event.equals("CLAIM_SETTLED") || event.equals("CLAIM_APPROVED")) {
+            watches.notify(id, found.personId(), repository.personName(id, found.personId()), number, by, audit);
+        }
         rollup.record(id, by, before);
         return changed;
     }
@@ -128,7 +133,7 @@ final class ClaimStatusChange {
     /** A steward re-settles a SETTLED claim (not in a closed period): its due is frozen again at the figure it would
      *  have today as an open claim bound by no statement (today's rates, grades, floor and late charge). */
     private static Claim resettle(String id, long cid, String by, ClaimRepository repository, PeriodRepository periods,
-            SettingsRepository settings, Audit audit, Rollup rollup) throws BadRequestException {
+            SettingsRepository settings, Audit audit, Rollup rollup, WatchRepository watches) throws BadRequestException {
         Claim found = repository.find(id, cid);
         if (found == null) {
             throw new BadRequestException("no such claim");
@@ -154,6 +159,7 @@ final class ClaimStatusChange {
         audit.record("CLAIM_RESETTLED sheet=" + id + " by=" + by + " person=" + repository.personName(id, found.personId())
                 + " amount=" + changed.amount() + " date=" + changed.date() + Claim.auditNumber(found.number())
                 + " old=" + old + " new=" + (due == null ? "n/a" : due));
+        watches.notify(id, found.personId(), repository.personName(id, found.personId()), found.number(), by, audit);
         rollup.record(id, by, before);
         return changed;
     }

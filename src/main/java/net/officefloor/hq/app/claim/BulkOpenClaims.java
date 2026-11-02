@@ -9,6 +9,7 @@ import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.BadRequestException;
 import net.officefloor.hq.app.CurrentUser;
 import net.officefloor.hq.app.period.PeriodRepository;
+import net.officefloor.hq.app.person.WatchRepository;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.settings.SettingsRepository;
 import net.officefloor.plugin.variable.Out;
@@ -22,7 +23,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 public class BulkOpenClaims {
     public void open(@PathVariable("sheetId") String sheetId, @RequestBody BulkOpenRequest request,
             ServerHttpConnection connection, ClaimRepository repository, PeriodRepository periods,
-            SettingsRepository settings, Audit audit, Rollup rollup, Out<BulkOpenResult> result) throws BadRequestException {
+            SettingsRepository settings, Audit audit, Rollup rollup, WatchRepository watches, Out<BulkOpenResult> result) throws BadRequestException {
         String by = CurrentUser.require(connection);
         String id = sheetId == null ? "" : sheetId.trim();
         Set<Long> selected = new LinkedHashSet<>();
@@ -45,7 +46,7 @@ public class BulkOpenClaims {
         int opened = 0;
         for (Claim c : found) {
             try {
-                ClaimStatusChange.apply(id, c.id(), "open", by, repository, periods, settings, audit, rollup);
+                ClaimStatusChange.apply(id, c.id(), "open", by, repository, periods, settings, audit, rollup, watches);
                 opened++;
             } catch (BadRequestException e) {
                 refused++;

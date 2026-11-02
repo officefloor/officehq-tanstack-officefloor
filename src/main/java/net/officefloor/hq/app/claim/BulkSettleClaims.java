@@ -9,6 +9,7 @@ import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.BadRequestException;
 import net.officefloor.hq.app.CurrentUser;
 import net.officefloor.hq.app.period.PeriodRepository;
+import net.officefloor.hq.app.person.WatchRepository;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.settings.SettingsRepository;
 import net.officefloor.plugin.variable.Out;
@@ -22,7 +23,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 public class BulkSettleClaims {
     public void settle(@PathVariable("sheetId") String sheetId, @RequestBody BulkSettleRequest request,
             ServerHttpConnection connection, ClaimRepository repository, PeriodRepository periods,
-            SettingsRepository settings, Audit audit, Rollup rollup, Out<BulkSettleResult> result) throws BadRequestException {
+            SettingsRepository settings, Audit audit, Rollup rollup, WatchRepository watches, Out<BulkSettleResult> result) throws BadRequestException {
         String by = CurrentUser.require(connection);
         String id = sheetId == null ? "" : sheetId.trim();
         Set<Long> selected = new LinkedHashSet<>();
@@ -45,7 +46,7 @@ public class BulkSettleClaims {
         int settled = 0;
         for (Claim c : found) {
             try {
-                ClaimStatusChange.apply(id, c.id(), "settle", by, repository, periods, settings, audit, rollup);
+                ClaimStatusChange.apply(id, c.id(), "settle", by, repository, periods, settings, audit, rollup, watches);
                 settled++;
             } catch (BadRequestException e) {
                 refused++;
