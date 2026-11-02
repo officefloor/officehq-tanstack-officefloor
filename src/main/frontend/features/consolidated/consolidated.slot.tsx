@@ -2,22 +2,25 @@ import { useCallback, useEffect, useState } from 'react';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { GRADES, isRetired, usePeople, type Grade } from '../people/people';
 import { twoDecimals, useRates } from '../rates/rates';
-import { CLAIM_STATUSES, personDueCents, statusCount, useClaims, useLate, useSheetTotals, type ClaimStatus } from '../claims/claims';
+import { CLAIM_STATUSES, personDueCents, statusCount, trimmedSum, useClaims, useLate, useSheetTotals, type ClaimStatus } from '../claims/claims';
+import { useAliases } from '../aliases/aliases';
 import { useSheetToday } from '../sheet/sheet';
 import { useCapCents, useFloorCents } from '../settings/settings';
 import { useFamily } from './consolidated';
 import { Fig } from '../locale/Fig';
 
 type Figures = {
-  people: number;
-  due: bigint;
-  overdue: bigint;
+  /** Each person's names as names are compared (lower-cased): their name, then their aliases. */
+  people: string[][];
+  /** Each person's due-total that is not n/a, and everyone's overdue-total, untrimmed. */
+  due: bigint[];
+  overdue: bigint[];
   grades: Record<Grade, bigint>;
   statuses: Record<ClaimStatus, number>;
 };
 
-// One sheet's figures as that sheet shows them in its header and summary: its people (retired ones included), its
-// due-total and its overdue-total, per grade the due-totals of the people on it (retired ones left out) and per status
+// One sheet's figures: its people (retired ones included) with their names and aliases, each person's due-total and
+// overdue-total as the sheet's own totals take them before trimming, per grade the due-totals of the people on it (retired ones left out) and per status
 // how many claims have it, each figured from the same helpers. Renders nothing; it reports them up.
 function SheetFigures({ sheet, report }: { sheet: string; report: (sheet: string, f: Figures) => void }) {
   const { data: people = [] } = usePeople(sheet);
@@ -27,9 +30,12 @@ function SheetFigures({ sheet, report }: { sheet: string; report: (sheet: string
   const floor = useFloorCents(sheet);
   const late = useLate(sheet);
   const cap = useCapCents(sheet);
-  const { due, overdue } = useSheetTotals(sheet);
-  const count = people.length;
-  const cents = overdue.cents;
+  const { data: aliases = [] } = useAliases(sheet);
+  const { figures } = useSheetTotals(sheet);
+  const names = people.map((p) => [
+    p.name.toLowerCase(),
+    ...aliases.filter((a) => a.person === p.id).map((a) => a.alias.toLowerCase()),
+  ]);
   const current = people.filter((p) => !isRetired(p));
   const grades = Object.fromEntries(
     GRADES.map((g) => [
@@ -41,18 +47,42 @@ function SheetFigures({ sheet, report }: { sheet: string; report: (sheet: string
   ) as Record<Grade, bigint>;
   const statuses = Object.fromEntries(CLAIM_STATUSES.map((s) => [s, statusCount(claims, s)])) as Record<ClaimStatus, number>;
   // Keyed by value so the report runs only when a figure changes.
-  const key = JSON.stringify([GRADES.map((g) => grades[g].toString()), CLAIM_STATUSES.map((s) => statuses[s])]);
+  const key = JSON.stringify([
+    names,
+    figures.due.map(String),
+    figures.overdue.map(String),
+    GRADES.map((g) => grades[g].toString()),
+    CLAIM_STATUSES.map((s) => statuses[s]),
+  ]);
   useEffect(
-    () => report(sheet, { people: count, due, overdue: cents, grades, statuses }),
+    () => report(sheet, { people: names, due: figures.due, overdue: figures.overdue, grades, statuses }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [sheet, report, count, due, cents, key],
+    [sheet, report, key],
   );
   return null;
 }
 
-// The consolidated figures over the sheet and all its descendants (see useFamily): the people, the due-total, the
-// overdue-total, the per-grade due-totals and the per-status claim counts of each, added up. A sheet with no children shows its own. While the screen shows the sheet as of a
+// The consolidated figures over the sheet and all its descendants (see useFamily): the people, each counted once across
+// the tree (people whose names or aliases match, as names are compared, are one person); the due-total and the
+// overdue-total, every person's figure over the whole tree added up and trimmed once (see trimmedSum); and the
+// per-grade due-totals and the per-status claim counts of each sheet, added up. A sheet with no children shows its own. While the screen shows the sheet as of a
 // date, every sheet of the tree is read as it stood at the end of that date, with the date for its today.
+// How many distinct people there are among them, each given by their names: those sharing a name, directly or through
+// others, are one.
+function distinctPeople(people: string[][]): number {
+  const parent = people.map((_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const owner = new Map<string, number>();
+  people.forEach((names, i) =>
+    names.forEach((n) => {
+      const j = owner.get(n);
+      if (j === undefined) owner.set(n, i);
+      else parent[find(i)] = find(j);
+    }),
+  );
+  return new Set(people.map((_, i) => find(i))).size;
+}
+
 function Consolidated({ sheet }: { sheet: string; user: string }) {
   const { data: family = [sheet] } = useFamily(sheet);
   const [figures, setFigures] = useState<Map<string, Figures>>(new Map());
@@ -61,9 +91,9 @@ function Consolidated({ sheet }: { sheet: string; user: string }) {
     [],
   );
   const shown = family.map((s) => figures.get(s)).filter((f): f is Figures => f !== undefined);
-  const people = shown.reduce((n, f) => n + f.people, 0);
-  const due = shown.reduce((n, f) => n + f.due, 0n);
-  const overdue = shown.reduce((n, f) => n + f.overdue, 0n);
+  const people = distinctPeople(shown.flatMap((f) => f.people));
+  const due = trimmedSum(shown.flatMap((f) => f.due));
+  const overdue = trimmedSum(shown.flatMap((f) => f.overdue));
   const gradeDue = (g: Grade) => shown.reduce((n, f) => n + f.grades[g], 0n);
   const statusClaims = (s: ClaimStatus) => shown.reduce((n, f) => n + f.statuses[s], 0);
   return (
