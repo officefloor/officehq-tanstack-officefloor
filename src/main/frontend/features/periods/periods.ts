@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { claimDueCents, counted, countedOn } from '../claims/claims';
+import { claimDueCents, counted, countedOn, statusOn } from '../claims/claims';
 import type { Claim, Late } from '../claims/claims';
 import { gradeOn } from '../people/people';
 import type { Person } from '../people/people';
@@ -108,6 +108,37 @@ export function personPeriodDueCents(
     const byPerson = totals.get(period.name) ?? new Map<number, bigint>();
     byPerson.set(person.id, (byPerson.get(person.id) ?? 0n) + due);
     totals.set(period.name, byPerson);
+  }
+  return totals;
+}
+
+/** Each period's carried figure per person (in hundredths, by period name then person id): the due now of the person's
+ *  claims that count at the end of the period (see {@link countedOn}) whose due-by falls in an earlier period (one
+ *  ending before it starts) and that were still OPEN or PENDING at its end by their status log; a claim with no rate
+ *  adds nothing. */
+export function personPeriodCarriedCents(
+  periods: Period[],
+  claims: Claim[],
+  people: Person[],
+  rates: Rate[],
+  floor: DatedCents,
+  late: Late,
+): Map<string, Map<number, bigint>> {
+  const byId = new Map(people.map((p) => [p.id, p]));
+  const totals = new Map<string, Map<number, bigint>>();
+  for (const c of claims) {
+    const home = periodOf(periods, c.dueBy);
+    const person = byId.get(c.person);
+    if (home === undefined || person === undefined) continue;
+    for (const period of periods) {
+      if (home.to >= period.from) continue;
+      const then = statusOn(c, period.to);
+      if ((then !== 'OPEN' && then !== 'PENDING') || !countedOn(c, person, period.to)) continue;
+      const due = claimDueCents(c, claimRateOf(rates, gradeOn(person, c.date), c), floor, late) ?? 0n;
+      const byPerson = totals.get(period.name) ?? new Map<number, bigint>();
+      byPerson.set(person.id, (byPerson.get(person.id) ?? 0n) + due);
+      totals.set(period.name, byPerson);
+    }
   }
   return totals;
 }
