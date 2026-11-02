@@ -1,0 +1,66 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index bedbe2f1..1315177c 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -40,14 +40,14 @@ export function reviewLate(claim: Claim, sla: number | null, today: string | und
+ /** A status change a claim's row offers; the server refuses one its status does not allow. */
+ export type ClaimStatusChange = 'open' | 'settle' | 'void' | 'approve' | 'reject' | 'delete' | 'restore' | 'review';
+ 
+-/** Whether a claim is still open: OPEN, or PENDING (handled like OPEN, but not bound by a statement). */
++/** Whether a claim is still open: OPEN, or PENDING (handled like OPEN). */
+ export function isOpen(claim: Claim): boolean {
+   return claim.status === 'OPEN' || claim.status === 'PENDING';
+ }
+ 
+-/** Whether a claim's statement binds its figure: it is stated and not PENDING (which shows its live figure). */
++/** Whether a claim's statement binds its figure: it is stated (a PENDING claim too, like any that counts). */
+ export function bound(claim: Claim): boolean {
+-  return claim.stated && claim.status !== 'PENDING';
++  return claim.stated;
+ }
+ 
+ /** A claim: its amount with two decimals, its date (yyyy-MM-dd), its note, its status and its number on
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 7ee34530..e4f2bad5 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -148,14 +148,14 @@ public record Claim(long id, long person, String amount, String date, String not
+         return then;
+     }
+ 
+-    /** Whether this claim's statement binds its figure: it is stated, and not PENDING (which shows its live figure). */
++    /** Whether this claim's statement binds its figure: it is stated (a PENDING claim too, like any that counts). */
+     public boolean bound() {
+-        return stated && status != ClaimStatus.PENDING;
++        return stated;
+     }
+ 
+     /**
+      * Whether this claim keeps a figure whatever the rates: fixed when settled, or bound by a statement (a claim
+-     * settled or bound when its grade had no rate keeps none; a PENDING claim is not bound).
++     * settled or bound when its grade had no rate keeps none).
+      */
+     public boolean fixed() {
+         return settledDue != null || (bound() && statedDue != null);
+@@ -175,7 +175,7 @@ public record Claim(long id, long person, String amount, String date, String not
+     }
+ 
+     /**
+-     * This claim's figure: the due fixed when settled, else the rate figure its statement bound (unless PENDING), else
++     * This claim's figure: the due fixed when settled, else the rate figure its statement bound, else
+      * its amount at the grade's rate in force on its date, of the rates it sees (the floor is applied last, in {@link #due}); null when
+      * there is none.
+      */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
+index 44ac1823..46698ba3 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChanger.java
+@@ -90,7 +90,7 @@ public class ClaimStatusChanger {
+             claims.setOpenedBy(sheet, claim.id(), user);
+         }
+         String fields = changed.statusAuditFields(person.name());
+-        // Settling (or approving a PENDING claim, its live figure then) fixes the due at the person's grade rate in force on the claim's date (or the figure its
++        // Settling (or approving a PENDING claim) fixes the due at the person's grade rate in force on the claim's date (or the figure its
+         // statement bound), with its late charge frozen in; with no rate there is nothing to fix, so it stays live.
+         if (requested == ClaimStatusChange.SETTLE || requested == ClaimStatusChange.APPROVE) {
+             BigDecimal due = claim.due(rates.list(sheet), person.gradeOn(claim.date()), settings.floor(sheet),
