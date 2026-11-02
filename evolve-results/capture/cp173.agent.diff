@@ -1,0 +1,430 @@
+diff --git a/src/main/frontend/features/periods/openings.slot.tsx b/src/main/frontend/features/periods/openings.slot.tsx
+new file mode 100644
+index 00000000..6d83c44e
+--- /dev/null
++++ b/src/main/frontend/features/periods/openings.slot.tsx
+@@ -0,0 +1,67 @@
++import { useState, type FormEvent } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { useSubmitOnce } from '../../query/useSubmitOnce';
++import { byUser } from '../session/session';
++import { SheetPanels } from '../../slots/defs/sheetPanels';
++import { openingsPath, periodsKey } from './periods';
++import type { Period } from './periods';
++
++type ImportedOpenings = { set: number; periods: Period[] };
++
++// The opening-balance paste: lines of name,period,amount (a person on the sheet by name or alias, a period on the
++// sheet, an amount of two decimals, 0.00 or more). The server checks every line first, so a refusal sets nothing;
++// each line adds its amount to the person's carried figure for the period. Shows how many lines went through.
++function ImportOpenings({ sheet, user }: { sheet: string; user: string }) {
++  const queryClient = useQueryClient();
++  const [text, setText] = useState('');
++  const importing = useMutation({
++    mutationFn: (body: string) => postJson<ImportedOpenings>(byUser(openingsPath(sheet), user), { text: body }),
++    onSuccess: (result) => {
++      queryClient.setQueryData(periodsKey(sheet), result.periods);
++      setText('');
++    },
++  });
++  const send = useSubmitOnce(importing);
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    send(text);
++  };
++
++  return (
++    <form onSubmit={submit}>
++      <label>
++        Paste opening balances (name,period,amount per line)
++        <br />
++        <textarea
++          data-testid="opening-import"
++          rows={4}
++          cols={50}
++          value={text}
++          onChange={(e) => {
++            setText(e.target.value);
++            importing.reset();
++          }}
++        />
++      </label>
++      <br />
++      <button type="submit" data-testid="opening-import-submit" disabled={importing.isPending}>
++        Paste openings
++      </button>
++      {importing.isSuccess && (
++        <>
++          {' '}Set <strong data-testid="opening-import-done">{importing.data.set}</strong>
++        </>
++      )}
++      {importing.isError && (
++        <span data-testid="opening-error" role="alert">
++          {' '}Nothing was set: every line needs a person on the sheet (by name or alias), a period on the sheet, and an
++          amount of two decimals, 0.00 or more.
++        </span>
++      )}
++    </form>
++  );
++}
++
++export const contribution = SheetPanels.fill({ order: 25.5, Component: ImportOpenings });
+diff --git a/src/main/frontend/features/periods/periods.ts b/src/main/frontend/features/periods/periods.ts
+index e02a130b..c884191a 100644
+--- a/src/main/frontend/features/periods/periods.ts
++++ b/src/main/frontend/features/periods/periods.ts
+@@ -13,7 +13,8 @@ import type { DatedCents } from '../settings/settings';
+  *  for it fixed then (by person id; empty while open, and a person added since has none); and whether it is
+  *  soft-closed instead: its figures fixed the same way, while claims dated in it may still change; and the most OPEN or
+  *  PENDING claims a person may have in it (null for no cap); and each person's carried figure for it fixed when it was
+- *  (soft-)closed (by person id; empty while open). */
++ *  (soft-)closed (by person id; empty while open); and each person's opening balance for it, added to their carried
++ *  figure (by person id; none for a person with no opening). */
+ export type Period = {
+   name: string;
+   from: string;
+@@ -24,6 +25,7 @@ export type Period = {
+   soft: boolean;
+   cap: number | null;
+   closedCarried: Record<string, string>;
++  openings: Record<string, string>;
+ };
+ 
+ export const periodsKey = (sheet: string) => ['periods', sheet] as const;
+@@ -47,6 +49,9 @@ export function fiscalYearOf(date: string, startMonth: number): string {
+ /** How many periods a generate made, with every period on the sheet after it. */
+ export type Generated = { made: number; periods: Period[] };
+ 
++/** Where opening balances are pasted. */
++export const openingsPath = (sheet: string) => `${periodsPath(sheet)}/openings`;
++
+ /** Where a period is closed. */
+ export const closePeriodPath = (sheet: string, name: string) =>
+   `${periodsPath(sheet)}/${encodeURIComponent(name)}/close`;
+@@ -116,8 +121,8 @@ export function personPeriodDueCents(
+ 
+ /** Each period's carried figure per person (in hundredths, by period name then person id): the due now of the person's
+  *  claims that count at the end of the period (see {@link countedOn}) whose due-by falls in an earlier period (one
+- *  ending before it starts) and that were still OPEN or PENDING at its end by their status log; a claim with no rate
+- *  adds nothing. */
++ *  ending before it starts) and that were still OPEN or PENDING at its end by their status log, plus their opening
++ *  balance for it; a claim with no rate adds nothing. */
+ export function personPeriodCarriedCents(
+   periods: Period[],
+   claims: Claim[],
+@@ -128,6 +133,13 @@ export function personPeriodCarriedCents(
+ ): Map<string, Map<number, bigint>> {
+   const byId = new Map(people.map((p) => [p.id, p]));
+   const totals = new Map<string, Map<number, bigint>>();
++  for (const period of periods) {
++    const byPerson = new Map<number, bigint>();
++    for (const [id, amount] of Object.entries(period.openings)) {
++      byPerson.set(Number(id), BigInt(amount.replace('.', '')));
++    }
++    totals.set(period.name, byPerson);
++  }
+   for (const c of claims) {
+     const home = periodOf(periods, c.dueBy);
+     const person = byId.get(c.person);
+diff --git a/src/main/java/net/officefloor/hq/app/period/ImportedOpenings.java b/src/main/java/net/officefloor/hq/app/period/ImportedOpenings.java
+new file mode 100644
+index 00000000..1c79a229
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/ImportedOpenings.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app.period;
++
++import java.math.BigDecimal;
++import java.util.List;
++
++/** The checked lines of an opening-balance paste, in order: the person (by id and name), the period and the amount. */
++public record ImportedOpenings(List<Line> lines) {
++
++    public record Line(long person, String name, String period, BigDecimal amount) {
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/OpeningImportRequest.java b/src/main/java/net/officefloor/hq/app/period/OpeningImportRequest.java
+new file mode 100644
+index 00000000..e733a1fa
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/OpeningImportRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.period;
++
++/** Body of POST /api/sheets/{sheet}/periods/openings: lines of name,period,amount. */
++public record OpeningImportRequest(String text) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/OpeningImportResponse.java b/src/main/java/net/officefloor/hq/app/period/OpeningImportResponse.java
+new file mode 100644
+index 00000000..4ec0218c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/OpeningImportResponse.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.period;
++
++import java.util.List;
++
++/** How many pasted opening-balance lines went through, and every period on the sheet after them. */
++public record OpeningImportResponse(int set, List<Period> periods) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/Period.java b/src/main/java/net/officefloor/hq/app/period/Period.java
+index 95dc677d..1b5b424f 100644
+--- a/src/main/java/net/officefloor/hq/app/period/Period.java
++++ b/src/main/java/net/officefloor/hq/app/period/Period.java
+@@ -8,10 +8,12 @@ import java.util.Map;
+  * id, two decimals; empty while open — a person added since has none), and whether it is soft-closed instead: its
+  * figures fixed the same way, but claims due inside it may still be added, edited and change status; and the most OPEN
+  * or PENDING claims a person may have in it (null for no cap); and each person's carried figure for it fixed when it was
+- * (soft-)closed (by person id, two decimals; empty while open).
++ * (soft-)closed (by person id, two decimals; empty while open); and each person's opening balance for it, added to their
++ * carried figure (by person id, two decimals; none for a person with no opening).
+  */
+ public record Period(String name, String from, String to, boolean closed, String closedTotal,
+-        Map<Long, String> closedPeople, boolean soft, Integer cap, Map<Long, String> closedCarried) {
++        Map<Long, String> closedPeople, boolean soft, Integer cap, Map<Long, String> closedCarried,
++        Map<Long, String> openings) {
+ 
+     /** Whether its figures are fixed: closed or soft-closed. */
+     public boolean fixed() {
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java b/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java
+index 57cadfb0..9994f576 100644
+--- a/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java
+@@ -26,7 +26,7 @@ import org.springframework.stereotype.Service;
+  * that counted at the end of its last day (OPEN, PENDING and SETTLED then by their status log, but not a deferred one, nor an unbound open one dated
+  * within its person's hold) (a claim with no rate adds nothing); and each person's carried figure for it: the due now of
+  * their claims that count at its end whose due-by falls in an earlier period (one ending before it starts) and that were
+- * still OPEN or PENDING at its end by their status log. Shared by a close by hand and the auto close of a today change.
++ * still OPEN or PENDING at its end by their status log, plus their opening balance for it. Shared by a close by hand and the auto close of a today change.
+  */
+ @Service
+ public class PeriodCloser {
+@@ -70,6 +70,11 @@ public class PeriodCloser {
+         Map<Long, BigDecimal> perPerson = new LinkedHashMap<>();
+         byId.keySet().forEach((id) -> perPerson.put(id, BigDecimal.ZERO.setScale(2)));
+         Map<Long, BigDecimal> carried = new LinkedHashMap<>(perPerson);
++        periods.openings(sheet, found.name()).forEach((id, amount) -> {
++            if (carried.containsKey(id)) {
++                carried.merge(id, amount, BigDecimal::add);
++            }
++        });
+         List<Period> sheetPeriods = periods.list(sheet);
+         List<Claim> sheetClaims = claims.list(sheet);
+         for (Claim claim : sheetClaims) {
+diff --git a/src/main/java/net/officefloor/hq/app/period/Periods.java b/src/main/java/net/officefloor/hq/app/period/Periods.java
+index dc190cf6..95c9289d 100644
+--- a/src/main/java/net/officefloor/hq/app/period/Periods.java
++++ b/src/main/java/net/officefloor/hq/app/period/Periods.java
+@@ -18,7 +18,7 @@ public class Periods {
+             rs.getDate("from_date").toLocalDate().toString(), rs.getDate("to_date").toLocalDate().toString(),
+             rs.getBoolean("closed"),
+             rs.getBigDecimal("closed_total") == null ? null : rs.getBigDecimal("closed_total").toPlainString(),
+-            Map.of(), rs.getBoolean("soft"), (Integer) rs.getObject("claim_cap"), Map.of());
++            Map.of(), rs.getBoolean("soft"), (Integer) rs.getObject("claim_cap"), Map.of(), Map.of());
+ 
+     private static final String COLUMNS = "SELECT name, from_date, to_date, closed, closed_total, soft, claim_cap FROM period";
+ 
+@@ -31,7 +31,37 @@ public class Periods {
+     /** Every period on the sheet, by from-date. */
+     public List<Period> list(String sheet) {
+         return jdbc.query(COLUMNS + " WHERE sheet = ? ORDER BY from_date", ROW, sheet).stream()
+-                .map((p) -> withPeople(sheet, p)).toList();
++                .map((p) -> withOpenings(sheet, withPeople(sheet, p))).toList();
++    }
++
++    /** The period with its people's opening balances. */
++    private Period withOpenings(String sheet, Period period) {
++        Map<Long, String> openings = new LinkedHashMap<>();
++        jdbc.query("SELECT person, amount FROM period_opening WHERE sheet = ? AND period = ? ORDER BY person",
++                (rs) -> {
++                    openings.put(rs.getLong("person"), rs.getBigDecimal("amount").toPlainString());
++                }, sheet, period.name());
++        return new Period(period.name(), period.from(), period.to(), period.closed(), period.closedTotal(),
++                period.closedPeople(), period.soft(), period.cap(), period.closedCarried(), openings);
++    }
++
++    /** Each person's opening balance for the period (by person id); none for a person with no opening. */
++    public Map<Long, BigDecimal> openings(String sheet, String name) {
++        Map<Long, BigDecimal> openings = new LinkedHashMap<>();
++        jdbc.query("SELECT person, amount FROM period_opening WHERE sheet = ? AND period = ?",
++                (rs) -> {
++                    openings.put(rs.getLong("person"), rs.getBigDecimal("amount"));
++                }, sheet, name);
++        return openings;
++    }
++
++    /** Adds the amount to the person's opening balance for the period. */
++    public void addOpening(String sheet, String name, long person, BigDecimal amount) {
++        if (jdbc.update("UPDATE period_opening SET amount = amount + ? WHERE sheet = ? AND period = ? AND person = ?",
++                amount, sheet, name, person) == 0) {
++            jdbc.update("INSERT INTO period_opening (sheet, period, person, amount) VALUES (?, ?, ?, ?)", sheet, name,
++                    person, amount);
++        }
+     }
+ 
+     /** The period with its people's due-totals and carried figures fixed when it was closed. */
+@@ -47,7 +77,7 @@ public class Periods {
+                     carried.put(rs.getLong("person"), rs.getBigDecimal("carried").toPlainString());
+                 }, sheet, period.name());
+         return new Period(period.name(), period.from(), period.to(), period.closed(), period.closedTotal(), people,
+-                period.soft(), period.cap(), carried);
++                period.soft(), period.cap(), carried, period.openings());
+     }
+ 
+     /** The sheet's period of the name, or null when there is none. */
+diff --git a/src/main/java/net/officefloor/hq/app/period/SetImportedOpenings.java b/src/main/java/net/officefloor/hq/app/period/SetImportedOpenings.java
+new file mode 100644
+index 00000000..fa7129af
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/SetImportedOpenings.java
+@@ -0,0 +1,21 @@
++package net.officefloor.hq.app.period;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Adds each checked line's amount, in order, to its person's opening balance for its period. */
++public class SetImportedOpenings {
++    public void set(@PathVariable("sheet") String sheet, @RequestParam("user") String user,
++            @Val ImportedOpenings imported, Periods periods, Audit audit,
++            ObjectResponse<OpeningImportResponse> response) {
++        for (ImportedOpenings.Line line : imported.lines()) {
++            periods.addOpening(sheet, line.period(), line.person(), line.amount());
++            audit.record("OPENING_SET sheet=" + sheet + " by=" + user + " name=" + line.name() + " period="
++                    + line.period() + " amount=" + line.amount().toPlainString());
++        }
++        response.send(new OpeningImportResponse(imported.lines().size(), periods.list(sheet)));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/ValidateOpeningImport.java b/src/main/java/net/officefloor/hq/app/period/ValidateOpeningImport.java
+new file mode 100644
+index 00000000..712a0286
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/ValidateOpeningImport.java
+@@ -0,0 +1,56 @@
++package net.officefloor.hq.app.period;
++
++import java.math.BigDecimal;
++import java.util.ArrayList;
++import java.util.List;
++import java.util.regex.Pattern;
++import net.officefloor.hq.app.person.People;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/**
++ * Checks every pasted opening-balance line (name,period,amount: a person on the sheet by name or alias, a period on
++ * the sheet, an amount of two decimals, 0.00 or more) before anything is written, so a refused paste sets nothing.
++ * Blank lines are skipped; a paste with no line is refused.
++ */
++public class ValidateOpeningImport {
++
++    private static final Pattern AMOUNT = Pattern.compile("\\d+\\.\\d{2}");
++
++    public void validate(@PathVariable("sheet") String sheet, @RequestBody OpeningImportRequest request,
++            People people, Periods periods, Out<ImportedOpenings> imported) throws InvalidPeriodException {
++        String text = request == null || request.text() == null ? "" : request.text();
++        List<ImportedOpenings.Line> lines = new ArrayList<>();
++        int at = 0;
++        for (String line : text.split("\\r?\\n")) {
++            at++;
++            if (line.isBlank()) {
++                continue;
++            }
++            String[] fields = line.split(",", -1);
++            if (fields.length != 3) {
++                throw new InvalidPeriodException("Line " + at + ": give name,period,amount");
++            }
++            String name = fields[0].trim();
++            Person person = name.isEmpty() ? null : people.findByName(sheet, name);
++            if (person == null) {
++                throw new InvalidPeriodException("Line " + at + ": no one on the sheet is named " + name);
++            }
++            String period = fields[1].trim();
++            if (period.isEmpty() || !periods.named(sheet, period)) {
++                throw new InvalidPeriodException("Line " + at + ": no period on the sheet is named " + period);
++            }
++            String amount = fields[2].trim();
++            if (!AMOUNT.matcher(amount).matches()) {
++                throw new InvalidPeriodException("Line " + at + ": the amount must be two decimals, 0.00 or more");
++            }
++            lines.add(new ImportedOpenings.Line(person.id(), person.name(), period, new BigDecimal(amount)));
++        }
++        if (lines.isEmpty()) {
++            throw new InvalidPeriodException("Paste at least one line of name,period,amount");
++        }
++        imported.set(new ImportedOpenings(lines));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonMerger.java b/src/main/java/net/officefloor/hq/app/person/PersonMerger.java
+index 6f29121e..f717c10d 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonMerger.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonMerger.java
+@@ -106,6 +106,19 @@ public class PersonMerger {
+         }
+         jdbc.update("DELETE FROM period_person_total WHERE sheet = ? AND person = ?", sheet, f);
+ 
++        // Opening balances add to the other's.
++        for (Map<String, Object> o : jdbc.queryForList(
++                "SELECT period, amount FROM period_opening WHERE sheet = ? AND person = ?", sheet, f)) {
++            String period = (String) o.get("PERIOD");
++            BigDecimal amount = (BigDecimal) o.get("AMOUNT");
++            if (jdbc.update("UPDATE period_opening SET amount = amount + ? WHERE sheet = ? AND period = ? AND person = ?",
++                    amount, sheet, period, t) == 0) {
++                jdbc.update("UPDATE period_opening SET person = ? WHERE sheet = ? AND period = ? AND person = ?", t,
++                        sheet, period, f);
++            }
++        }
++        jdbc.update("DELETE FROM period_opening WHERE sheet = ? AND person = ?", sheet, f);
++
+         // Statements count as the other's, the other's last staying theirs.
+         statements.move(sheet, f, sheet, t);
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonTransferrer.java b/src/main/java/net/officefloor/hq/app/person/PersonTransferrer.java
+index 27f7c0fa..e8504281 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonTransferrer.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonTransferrer.java
+@@ -188,6 +188,7 @@ public class PersonTransferrer {
+         jdbc.update("DELETE FROM patron WHERE sheet = ? AND (person_id = ? OR patron_id = ?)", sheet, f, f);
+         jdbc.update("DELETE FROM pool_member WHERE sheet = ? AND person_id = ?", sheet, f);
+         jdbc.update("DELETE FROM period_person_total WHERE sheet = ? AND person = ?", sheet, f);
++        jdbc.update("DELETE FROM period_opening WHERE sheet = ? AND person = ?", sheet, f);
+         jdbc.update("DELETE FROM person_hold WHERE person_id = ?", f);
+         jdbc.update("DELETE FROM person_retirement WHERE person_id = ?", f);
+         jdbc.update("DELETE FROM watch WHERE sheet = ? AND person_id = ?", sheet, f);
+diff --git a/src/main/resources/db/migration/V80__period_opening.sql b/src/main/resources/db/migration/V80__period_opening.sql
+new file mode 100644
+index 00000000..16542b61
+--- /dev/null
++++ b/src/main/resources/db/migration/V80__period_opening.sql
+@@ -0,0 +1,8 @@
++-- A person's opening balance for a period, added to their carried figure for it; pasted openings add up.
++CREATE TABLE period_opening (
++    sheet VARCHAR(255) NOT NULL,
++    period VARCHAR(255) NOT NULL,
++    person BIGINT NOT NULL,
++    amount DECIMAL(15, 2) NOT NULL,
++    PRIMARY KEY (sheet, period, person)
++);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheet}/periods/openings.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheet}/periods/openings.POST.yml
+new file mode 100644
+index 00000000..7c885487
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheet}/periods/openings.POST.yml
+@@ -0,0 +1,9 @@
++# Check every pasted opening-balance line first so a refusal writes nothing, then add each line's amount in order.
++# Responds with how many lines went through, and the sheet's periods.
++validate:
++  class: net.officefloor.hq.app.period.ValidateOpeningImport
++  govern: [ transaction ]
++  next: set
++set:
++  class: net.officefloor.hq.app.period.SetImportedOpenings
++  govern: [ transaction ]
