@@ -10,6 +10,11 @@ import org.springframework.web.bind.annotation.RequestParam;
 public class HoldPerson {
     public void hold(@PathVariable("sheet") String sheet, @RequestParam("user") String user, @Val Person person,
             @Val Hold hold, People people, Audit audit, Rollup rollup) {
+        apply(sheet, user, person, hold, people, audit, rollup);
+    }
+
+    /** Adds the hold to the person, with its PERSON_HELD and rollup lines; the bulk hold uses it too. */
+    static void apply(String sheet, String user, Person person, Hold hold, People people, Audit audit, Rollup rollup) {
         Rollup.Snapshot before = rollup.take(sheet);
         people.hold(person.id(), hold);
         audit.record("PERSON_HELD sheet=" + sheet + " by=" + user + " name=" + person.name() + " from=" + hold.from());

@@ -23,7 +23,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * A viewer sees every screen and changes nothing: every write to a sheet (POST or PUT) by a user the sheet makes
  * a viewer is refused with a 400 before any step runs, so nothing is written nor audited. The bulk actions are let
  * through: they refuse each selected item themselves (the claim status rules refuse a viewer), reporting 0 done; so is
- * a viewer's bulk grade and bulk retire, which change no one, and a viewer's generate of planned claims or of periods,
+ * a viewer's bulk grade, bulk retire and bulk hold, which change no one, and a viewer's generate of planned claims or of periods,
  * which makes none.
  * An archived sheet refuses every write the same way, whoever makes it. So does a screen showing the sheet as of a
  * date (?asOf=), bulk actions included: nothing changes while the as-of date is set.
@@ -39,7 +39,7 @@ public class ViewerGuard extends OncePerRequestFilter {
     private static final Set<String> BULK = Set.of("/claims/bulk-open", "/claims/bulk-settle", "/claims/bulk-void");
 
     /** The writes that report a count, so a viewer's press goes through and changes no one (still refused when archived). */
-    private static final Set<String> VIEWER_COUNTED = Set.of("/people/bulk-grade", "/people/bulk-retire",
+    private static final Set<String> VIEWER_COUNTED = Set.of("/people/bulk-grade", "/people/bulk-retire", "/people/bulk-hold",
             "/plans/generate", "/periods/generate");
 
     /** The user's own locale: how the screen shows the sheet to them, never a change to it. */
