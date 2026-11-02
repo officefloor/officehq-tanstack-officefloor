@@ -7,6 +7,8 @@ import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.person.People;
+import net.officefloor.hq.app.person.Person;
 import net.officefloor.web.ObjectResponse;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -14,7 +16,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 /**
  * Responds with the sheet's audit lines exactly as the file holds them, newest first. A name keeps only the lines
  * about that person: those carrying name=<the name> or person=<the name>, compared as names are (case and surrounding
- * spaces ignored). The viewer reads the file; it records nothing.
+ * spaces ignored). When the name is that of a person on the sheet who was transferred to it, the lines about them on
+ * the sheet they came from follow, newest first, each as that sheet's file holds it. The viewer reads the file; it
+ * records nothing.
  */
 public class RespondWithAuditLines {
 
@@ -22,8 +26,20 @@ public class RespondWithAuditLines {
     private static final Pattern PERSON_FIELD = Pattern.compile("(?:^| )(?:name|person)=(.*?)(?= [^ =]+=|$)");
 
     public void respond(@PathVariable("sheet") String sheet, @RequestParam(value = "name", required = false) String name,
-            Audit audit, ObjectResponse<List<String>> response) {
+            Audit audit, People people, ObjectResponse<List<String>> response) {
         String key = name == null ? "" : name.trim().toLowerCase(Locale.ROOT);
+        List<String> lines = about(audit, sheet, key);
+        if (!key.isEmpty()) {
+            Person person = people.findByName(sheet, key);
+            if (person != null && person.origin() != null && person.name().toLowerCase(Locale.ROOT).equals(key)) {
+                lines.addAll(about(audit, person.origin(), key));
+            }
+        }
+        response.send(lines);
+    }
+
+    /** The sheet's lines about the person (every line when the key is blank), newest first. */
+    private static List<String> about(Audit audit, String sheet, String key) {
         List<String> lines = new ArrayList<>();
         for (String line : audit.lines(sheet)) {
             if (key.isEmpty() || isAbout(line, key)) {
@@ -31,7 +47,7 @@ public class RespondWithAuditLines {
             }
         }
         Collections.reverse(lines);
-        response.send(lines);
+        return lines;
     }
 
     private static boolean isAbout(String line, String key) {

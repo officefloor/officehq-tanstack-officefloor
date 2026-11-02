@@ -21,9 +21,9 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class People {
 
-    private static final String COLUMNS = "SELECT id, name, version, retired_from, terms, contact FROM person";
+    private static final String COLUMNS = "SELECT id, name, version, retired_from, terms, contact, origin FROM person";
 
-    private record Row(long id, String name, long version, String retiredFrom, Integer terms, String contact) {
+    private record Row(long id, String name, long version, String retiredFrom, Integer terms, String contact, String origin) {
     }
 
     private final JdbcTemplate jdbc;
@@ -64,7 +64,7 @@ public class People {
         List<Row> rows = jdbc.query(COLUMNS + " " + where, (rs, i) -> new Row(rs.getLong("id"), rs.getString("name"),
                 rs.getLong("version"),
                 rs.getDate("retired_from") == null ? null : rs.getDate("retired_from").toLocalDate().toString(),
-                rs.getObject("terms", Integer.class), rs.getString("contact")), args);
+                rs.getObject("terms", Integer.class), rs.getString("contact"), rs.getString("origin")), args);
         if (rows.isEmpty()) {
             return List.of();
         }
@@ -95,7 +95,7 @@ public class People {
                     List.copyOf(holds.getOrDefault(r.id(), List.of())), mine, r.terms(),
                     Person.retiredOn(r.retiredFrom(), today), r.contact(),
                     tree.contains(r.name().toLowerCase(Locale.ROOT))
-                            || aliasKeys.getOrDefault(r.id(), List.of()).stream().anyMatch(tree::contains)));
+                            || aliasKeys.getOrDefault(r.id(), List.of()).stream().anyMatch(tree::contains), r.origin()));
         }
         return people;
     }

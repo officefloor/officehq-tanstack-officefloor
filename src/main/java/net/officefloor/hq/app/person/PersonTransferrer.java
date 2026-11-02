@@ -20,14 +20,14 @@ import org.springframework.stereotype.Service;
 
 /**
  * Transfers a person to another sheet by id; only a steward may, a retired person may not be, nor to this sheet's own
- * id or an archived sheet, and a name, alias or contact of theirs already on the other sheet refuses it. They arrive
- * as the other sheet's newest person with every grade (and its from-date), their terms, contact and aliases, and their
- * claims with their status, dates, notes, frozen figures, logs and comments, listed in the order they were. Each
- * claim that had a number takes the other sheet's next one, in the order the claims were opened (by the sheet's today
- * when each was opened, then the order they were added); a correction or split names its claim's new number when that
- * claim came along (none otherwise). Statement bindings are lost (the statement count starts at 0) and references,
- * locks and settle batches are not carried. They leave this sheet entirely: patron links, pool memberships, holds,
- * closed periods' totals, statements and watches are dropped.
+ * id or an archived sheet, and a name, alias or contact of theirs already on the other sheet refuses it. They arrive as
+ * the other sheet's newest person, with this sheet as their origin, every grade (and its from-date), their terms,
+ * contact and aliases, and their claims with their status, dates, notes, frozen figures, logs and comments, listed in
+ * the order they were. Each claim that had a number takes the other sheet's next one, in the order the claims were
+ * opened (by the sheet's today when each was opened, then the order they were added); a correction or split names its
+ * claim's new number when that claim came along (none otherwise). Statement bindings are lost (the statement count
+ * starts at 0) and references, locks and settle batches are not carried. They leave this sheet entirely: patron links,
+ * pool memberships, holds, closed periods' totals, statements and watches are dropped.
  */
 @Service
 public class PersonTransferrer {
@@ -90,13 +90,14 @@ public class PersonTransferrer {
         // The person, as the other sheet's newest, with their grades, terms, contact and aliases.
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
-            var ps = con.prepareStatement("INSERT INTO person (sheet, name, terms, contact, list_position) SELECT ?, name,"
-                    + " terms, contact, " + People.NEXT_POSITION + " FROM person WHERE sheet = ? AND id = ?",
+            var ps = con.prepareStatement("INSERT INTO person (sheet, name, terms, contact, list_position, origin) SELECT ?,"
+                    + " name, terms, contact, " + People.NEXT_POSITION + ", ? FROM person WHERE sheet = ? AND id = ?",
                     new String[] { "id" });
             ps.setString(1, to);
             ps.setString(2, to);
             ps.setString(3, sheet);
-            ps.setLong(4, f);
+            ps.setString(4, sheet);
+            ps.setLong(5, f);
             return ps;
         }, keys);
         long t = keys.getKey().longValue();

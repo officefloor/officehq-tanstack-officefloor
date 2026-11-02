@@ -5,7 +5,8 @@ import { useAuditLines } from './audit';
 import type { AuditShown } from './audit';
 
 // The audit viewer: a filter and a show button over the sheet's audit lines, newest first. A blank filter lists every
-// line of the sheet; a name lists only the lines about that person (name= or person=, compared as names are). It reads
+// line of the sheet; a name lists only the lines about that person (name= or person=, compared as names are), then, for
+// a person transferred here, the lines about them on the sheet they came from, newest first. It reads
 // the audit file as it stands at each press; it is not a second record. While a press is being read the old lines are
 // gone, so the list shown is always the latest press's.
 function AuditViewer({ sheet }: { sheet: string; user: string }) {

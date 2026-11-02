@@ -33,6 +33,8 @@ export type Person = {
   /** Whether their name or an alias is already a name or alias on another sheet of the sheet's tree (its ancestors
    *  and descendants): every edit of them is refused until it renames them out of the clash. */
   clashing: boolean;
+  /** The sheet they were transferred from; null for anyone not transferred. */
+  origin: string | null;
 };
 
 /** The person's grade in force on a date (yyyy-MM-dd): the one whose from-date is the latest on or before it. */

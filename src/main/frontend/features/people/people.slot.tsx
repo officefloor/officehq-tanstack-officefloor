@@ -224,6 +224,7 @@ function People({ sheet, user }: { sheet: string; user: string }) {
             <th>Terms</th>
             <th>Contact</th>
             <th>Clashing</th>
+            <th>From sheet</th>
             <PersonColumnHeaders.Slot sheet={sheet} user={user} />
             <th />
           </tr>
@@ -236,6 +237,7 @@ function People({ sheet, user }: { sheet: string; user: string }) {
               <td data-testid="person-terms">{termsText(p)}</td>
               <td data-testid="person-contact">{p.contact ?? ''}</td>
               <td data-testid="person-clashing">{p.clashing ? 'yes' : 'no'}</td>
+              <td data-testid="person-origin">{p.origin ?? ''}</td>
               <PersonColumns.Slot sheet={sheet} user={user} person={p} />
               <td>
                 <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => open(p)}>
