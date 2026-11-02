@@ -14,6 +14,8 @@ import java.sql.Date;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
+import net.officefloor.hq.app.period.Period;
+import net.officefloor.hq.app.period.Periods;
 import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.hq.app.sheet.SheetClock;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -31,10 +33,13 @@ public class Pools {
 
     private final SheetClock clock;
 
-    public Pools(JdbcTemplate jdbc, Settings settings, SheetClock clock) {
+    private final Periods periods;
+
+    public Pools(JdbcTemplate jdbc, Settings settings, SheetClock clock, Periods periods) {
         this.jdbc = jdbc;
         this.settings = settings;
         this.clock = clock;
+        this.periods = periods;
     }
 
     /**
@@ -44,30 +49,68 @@ public class Pools {
      * the sheet's today gets no cut, their share spread over the other members with a cut, and so does a retired
      * person, whose share still counts in the total share. A member whose membership dates do not include the sheet's
      * today is left out entirely: not in the total share, no cut. Each crew is also a pool, after the pools added, of its
-     * name: its lead and then its members in the order added, at equal shares (see {@link #crewShares}).
+     * name: its lead and then its members in the order added, at equal shares (see {@link #crewShares}). Each member
+     * also has, for every period whose to-date is on or before the sheet's today, their cut as it stood at the end of
+     * that period (see {@link #asAt}).
      */
     public List<Pool> list(String sheet) {
         LocalDate now = clock.today(sheet);
+        List<Pool> pools = list(sheet, now, settings.pot(sheet), null);
+        Map<String, Map<String, String>> cuts = new HashMap<>();
+        for (Period period : periods.list(sheet)) {
+            LocalDate end = LocalDate.parse(period.to());
+            if (end.isAfter(now)) {
+                continue;
+            }
+            for (Pool pool : asAt(sheet, end)) {
+                for (PoolMember m : pool.members()) {
+                    cuts.computeIfAbsent(pool.name() + "\n" + m.key(), (k) -> new LinkedHashMap<>())
+                            .put(period.name(), m.cut());
+                }
+            }
+        }
+        return pools.stream().map((pool) -> new Pool(pool.name(), pool.members().stream()
+                .map((m) -> new PoolMember(m.person(), m.memberPool(), m.name(), m.share(), m.retired(), m.from(),
+                        m.to(), m.current(), m.cut(), cuts.getOrDefault(pool.name() + "\n" + m.key(), Map.of())))
+                .toList(), pool.totalShare(), pool.balanced())).toList();
+    }
+
+    /**
+     * The pools as they stood at the end of the day, with it as the sheet's today: only the pools and members added
+     * (on a sheet's today) on or before it, a person retired when their retirement date is on or before it, the holds
+     * in force on it and the pot as it stood then.
+     */
+    private List<Pool> asAt(String sheet, LocalDate day) {
+        return list(sheet, day, settings.potOn(sheet, day), day);
+    }
+
+    /** The pools as of the day with the pot; when asAt is given, only what was added by then (see {@link #asAt}). */
+    private List<Pool> list(String sheet, LocalDate now, BigDecimal pot, LocalDate asAt) {
+        Date at = asAt == null ? null : Date.valueOf(asAt);
+        String added = asAt == null ? "" : " AND (added_on IS NULL OR added_on <= ?)";
+        Object[] args = asAt == null ? new Object[] { sheet } : new Object[] { sheet, at };
         Map<String, List<Ordered>> members = new LinkedHashMap<>();
-        jdbc.query("SELECT name FROM pool WHERE sheet = ? ORDER BY position",
+        jdbc.query("SELECT name FROM pool WHERE sheet = ?" + added + " ORDER BY position",
                 (rs) -> {
                     members.put(rs.getString("name"), new ArrayList<>());
-                }, sheet);
+                }, args);
         jdbc.query("SELECT m.pool, m.person_id, p.name, m.share, p.retired_from, m.position, m.from_date, m.to_date"
                 + " FROM pool_member m"
-                + " JOIN person p ON p.sheet = m.sheet AND p.id = m.person_id WHERE m.sheet = ?",
+                + " JOIN person p ON p.sheet = m.sheet AND p.id = m.person_id WHERE m.sheet = ?"
+                + added.replace("added_on", "m.added_on"),
                 (rs) -> {
                     List<Ordered> list = members.get(rs.getString("pool"));
                     if (list != null) {
+                        Date retired = rs.getDate("retired_from");
                         list.add(new Ordered(rs.getInt("position"), new PoolMember(rs.getLong("person_id"), null,
                                 rs.getString("name"), rs.getBigDecimal("share").setScale(2).toPlainString(),
-                                rs.getDate("retired_from") != null, dateOf(rs, "from_date"), dateOf(rs, "to_date"),
-                                current(rs, now), "")));
+                                retired != null && (at == null || !retired.after(at)), dateOf(rs, "from_date"),
+                                dateOf(rs, "to_date"), current(rs, now), "")));
                     }
-                }, sheet);
+                }, args);
         crewPools(sheet, members);
         Map<String, String> parents = new HashMap<>();
-        jdbc.query("SELECT pool, member, share, position, from_date, to_date FROM pool_sub WHERE sheet = ?",
+        jdbc.query("SELECT pool, member, share, position, from_date, to_date FROM pool_sub WHERE sheet = ?" + added,
                 (rs) -> {
                     List<Ordered> list = members.get(rs.getString("pool"));
                     if (list != null) {
@@ -76,7 +119,7 @@ public class Pools {
                                 dateOf(rs, "from_date"), dateOf(rs, "to_date"), current(rs, now), "")));
                         parents.put(rs.getString("member"), rs.getString("pool"));
                     }
-                }, sheet);
+                }, args);
         Map<String, Pool> pools = new LinkedHashMap<>();
         members.forEach((name, ordered) -> {
             ordered.sort(Comparator.comparingInt(Ordered::position));
@@ -95,7 +138,6 @@ public class Pools {
                 + " JOIN person p ON p.id = h.person_id WHERE p.sheet = ? AND h.from_date <= ?"
                 + " AND (h.to_date IS NULL OR h.to_date >= ?)", Long.class, sheet, today, today));
         // Top down: a pool's pot is the sheet's when it is a member of none, else its cut in the pool above.
-        BigDecimal pot = settings.pot(sheet);
         Map<String, Pool> cut = new HashMap<>();
         for (String name : pools.keySet()) {
             cutDown(name, pools, parents, pot, held, cut);
@@ -250,7 +292,7 @@ public class Pools {
         for (int i = 0; i < members.size(); i++) {
             PoolMember m = members.get(i);
             out.add(new PoolMember(m.person(), m.memberPool(), m.name(), m.share(), m.retired(), m.from(), m.to(),
-                    m.current(), m.current() ? cuts.get(i).toPlainString() : ""));
+                    m.current(), m.current() ? cuts.get(i).toPlainString() : "", m.cuts()));
         }
         return out;
     }
@@ -301,20 +343,21 @@ public class Pools {
     }
 
     public void add(String sheet, String name) {
-        jdbc.update("INSERT INTO pool (sheet, name, position) VALUES (?, ?,"
-                + " (SELECT COALESCE(MAX(p.position), 0) + 1 FROM pool p WHERE p.sheet = ?))", sheet, name, sheet);
+        jdbc.update("INSERT INTO pool (sheet, name, position, added_on) VALUES (?, ?,"
+                + " (SELECT COALESCE(MAX(p.position), 0) + 1 FROM pool p WHERE p.sheet = ?), ?)", sheet, name, sheet,
+                Date.valueOf(clock.today(sheet)));
     }
 
     public void addMember(String sheet, String pool, long person, BigDecimal share, LocalDate from, LocalDate to) {
-        jdbc.update("INSERT INTO pool_member (sheet, pool, person_id, share, from_date, to_date, position)"
-                + " VALUES (?, ?, ?, ?, ?, ?, " + NEXT_MEMBER + ")", sheet, pool, person, share, sqlDate(from),
-                sqlDate(to), sheet, sheet);
+        jdbc.update("INSERT INTO pool_member (sheet, pool, person_id, share, from_date, to_date, position, added_on)"
+                + " VALUES (?, ?, ?, ?, ?, ?, " + NEXT_MEMBER + ", ?)", sheet, pool, person, share, sqlDate(from),
+                sqlDate(to), sheet, sheet, Date.valueOf(clock.today(sheet)));
     }
 
     public void addSubPool(String sheet, String pool, String member, BigDecimal share, LocalDate from, LocalDate to) {
-        jdbc.update("INSERT INTO pool_sub (sheet, pool, member, share, from_date, to_date, position)"
-                + " VALUES (?, ?, ?, ?, ?, ?, " + NEXT_MEMBER + ")", sheet, pool, member, share, sqlDate(from),
-                sqlDate(to), sheet, sheet);
+        jdbc.update("INSERT INTO pool_sub (sheet, pool, member, share, from_date, to_date, position, added_on)"
+                + " VALUES (?, ?, ?, ?, ?, ?, " + NEXT_MEMBER + ", ?)", sheet, pool, member, share, sqlDate(from),
+                sqlDate(to), sheet, sheet, Date.valueOf(clock.today(sheet)));
     }
 
     private static Date sqlDate(LocalDate date) {

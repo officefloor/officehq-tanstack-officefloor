@@ -186,6 +186,10 @@ public class Settings {
             }
             return;
         }
+        if (POT.equals(key)) {
+            jdbc.update("INSERT INTO pot_change (sheet, set_on, pot_value) VALUES (?, ?, ?)", sheet,
+                    Date.valueOf(clock.today(sheet)), value);
+        }
         Date date = dated(key) && from != null ? Date.valueOf(from) : UNDATED;
         jdbc.update("MERGE INTO setting (sheet, setting_key, from_date, setting_value) KEY (sheet, setting_key, from_date)"
                 + " VALUES (?, ?, ?, ?)", sheet, key, date, value);
@@ -344,6 +348,20 @@ public class Settings {
     public BigDecimal pot(String sheet) {
         String pot = get(sheet, POT);
         return pot.isEmpty() ? null : new BigDecimal(pot);
+    }
+
+    /**
+     * The sheet's pot as it stood at the end of the date: the last value set on a sheet's today on or before it, or
+     * null when there was none (none set yet, or a blank). A sheet with no pot changes kept has its pot now.
+     */
+    public BigDecimal potOn(String sheet, LocalDate date) {
+        Integer kept = jdbc.queryForObject("SELECT COUNT(*) FROM pot_change WHERE sheet = ?", Integer.class, sheet);
+        if (kept == null || kept == 0) {
+            return pot(sheet);
+        }
+        List<String> found = jdbc.queryForList("SELECT pot_value FROM pot_change WHERE sheet = ? AND set_on <= ?"
+                + " ORDER BY set_on DESC, id DESC LIMIT 1", String.class, sheet, Date.valueOf(date));
+        return found.isEmpty() || found.get(0).isEmpty() ? null : new BigDecimal(found.get(0));
     }
 
     /** The sheet's alert threshold, or null when it is off. */

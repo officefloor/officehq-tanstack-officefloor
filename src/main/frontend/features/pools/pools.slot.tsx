@@ -63,6 +63,12 @@ function PoolRow({ sheet, user, pool, pools }: { sheet: string; user: string; po
             {m.from || m.to ? ` (${m.from || '…'} to ${m.to || '…'})` : ''}
             {m.current ? '' : ' (not current)'}, cut{' '}
             <span data-testid="pool-cut"><Fig>{m.cut}</Fig></span>
+            {Object.entries(m.cuts).map(([period, cut]) => (
+              <span key={period}>
+                , {period}{' '}
+                <span data-testid={`pool-cut-${period}`}><Fig>{cut}</Fig></span>
+              </span>
+            ))}
           </li>
         ))}
       </ul>
