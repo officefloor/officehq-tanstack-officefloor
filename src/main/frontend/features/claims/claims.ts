@@ -238,7 +238,7 @@ export function roundsHalfUp(claim: Claim, late: Late): boolean {
 
 /** A claim's figure: the one fixed when it was settled, else the due its statement bound (as shown, late charge
  *  included), else its amount at the
- *  grade's rate in force on its date (in hundredths); the floor is applied last, in {@link claimDueCents}. */
+ *  grade's rate in force on its date (in hundredths); the floor is applied before the late charge, in {@link claimDueCents}. */
 export function claimFigureCents(claim: Claim, pct: string | undefined, floor: DatedCents, halfUp = false): bigint | undefined {
   if (claim.settledDue !== null) return hundredths(claim.settledDue);
   if (bound(claim)) return claim.statedDue === null ? undefined : hundredths(claim.statedDue);
@@ -276,14 +276,14 @@ export function lateCents(claim: Claim, figure: bigint, late: Late): bigint {
   return total;
 }
 
-/** A claim's due: the one fixed when settled; else the one its statement bound (as shown then); else the greater of the sheet's floor in force on its date and its
- *  figure plus, while it is overdue, its late charge on that figure (a correction has no floor and no charge). */
+/** A claim's due: the one fixed when settled; else the one its statement bound (as shown then); else its floored figure (the greater of the sheet's floor
+ *  in force on its date and its figure) plus, while it is overdue, its late charge on that floored figure (a correction has no floor and no charge). */
 export function claimDueCents(claim: Claim, pct: string | undefined, floor: DatedCents, late: Late): bigint | undefined {
   const figure = claimFigureCents(claim, pct, floor, roundsHalfUp(claim, late));
   if (figure === undefined || claim.settledDue !== null || bound(claim) || correction(claim)) return figure;
-  const charged = figure + lateCents(claim, figure, late);
   const least = floor(claim.date);
-  return charged >= least ? charged : least;
+  const floored = figure >= least ? figure : least;
+  return floored + lateCents(claim, floored, late);
 }
 
 
