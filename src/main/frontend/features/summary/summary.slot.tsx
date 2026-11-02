@@ -1,4 +1,5 @@
 import { SheetBody } from '../../slots/defs/sheetBody';
+import { useActive } from '../active/useActive';
 import { useClaims } from '../claims/useClaims';
 import { GRADES, usePeople } from '../people/usePeople';
 import { usePeriodDueTotals } from '../periods/usePeriodDueTotals';
@@ -9,14 +10,15 @@ import { countWithStatus, STATUSES } from './statusCounts';
 
 /** The sheet's summary, worked out from the same figures the lists show: per grade, how many people
  *  have it on the sheet's today (retired people left out) and their due-totals added up (skipping
- *  'n/a'); per period, its due-total; per status, how many claims have it. */
+ *  'n/a') and how many of them are active; per period, its due-total; per status, how many claims have it. */
 function Summary({ sheetId }: { sheetId: string }) {
   const people = usePeople(sheetId);
   const claims = useClaims(sheetId);
   const periods = usePeriods(sheetId);
   const dueTotals = useDueTotals(sheetId);
   const periodTotals = usePeriodDueTotals(sheetId);
-  const active = (people.data ?? []).filter((p) => !p.retiredFrom);
+  const activeById = useActive(sheetId);
+  const current = (people.data ?? []).filter((p) => !p.retiredFrom);
   return (
     <section data-testid="summary">
       <table>
@@ -25,17 +27,21 @@ function Summary({ sheetId }: { sheetId: string }) {
             <th>Grade</th>
             <th>People</th>
             <th>Due total</th>
+            <th>Active</th>
           </tr>
         </thead>
         <tbody>
           {GRADES.map((g) => {
-            const onGrade = active.filter((p) => p.grade === g);
+            const onGrade = current.filter((p) => p.grade === g);
             return (
               <tr key={g}>
                 <td>{g}</td>
                 <td data-testid={`summary-grade-${g}-count`}>{onGrade.length}</td>
                 <td data-testid={`summary-grade-${g}-due-total`}>
                   {sumDues(onGrade.map((p) => dueTotals.get(p.id) ?? 'n/a'))}
+                </td>
+                <td data-testid={`summary-grade-${g}-active`}>
+                  {onGrade.filter((p) => activeById.get(p.id)).length}
                 </td>
               </tr>
             );
