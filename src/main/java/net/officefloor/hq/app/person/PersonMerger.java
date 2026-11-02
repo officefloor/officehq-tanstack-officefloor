@@ -6,17 +6,19 @@ import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.role.Roles;
 import net.officefloor.hq.app.rollup.Rollup;
+import net.officefloor.hq.app.statement.Statements;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 /**
  * Merges a person into another on the sheet; only a steward may, neither may be retired, and a person is not merged
- * into themselves. The merged person's claims move to the other, keeping their numbers and dates, each unbound from
- * any statement and listed after the other's claims in the order they were added. Their name and aliases become
- * aliases of the other; their patrons are added to the other's (not the other themselves, no repeats); anyone naming
- * them as patron names the other instead (no repeats); their pool memberships move to the other, the shares added
- * when the other is already a member, and so do their closed periods' totals. Their statements, holds, watchers and
- * contact are dropped, and they leave the sheet.
+ * into themselves. The merged person's claims move to the other, keeping their numbers, dates and any figure a
+ * statement bound them to, listed after the other's claims in the order they were added. Their statements count as
+ * the other's too; the other's last statement stays theirs (or, having none, becomes the merged person's). Their
+ * name and aliases become aliases of the other; their patrons are added to the other's (not the other themselves, no
+ * repeats); anyone naming them as patron names the other instead (no repeats); their pool memberships move to the
+ * other, the shares added when the other is already a member, and so do their closed periods' totals. Their holds,
+ * watchers and contact are dropped, and they leave the sheet.
  */
 @Service
 public class PersonMerger {
@@ -26,13 +28,16 @@ public class PersonMerger {
     private final Roles roles;
     private final Audit audit;
     private final Rollup rollup;
+    private final Statements statements;
 
-    public PersonMerger(JdbcTemplate jdbc, People people, Roles roles, Audit audit, Rollup rollup) {
+    public PersonMerger(JdbcTemplate jdbc, People people, Roles roles, Audit audit, Rollup rollup,
+            Statements statements) {
         this.jdbc = jdbc;
         this.people = people;
         this.roles = roles;
         this.audit = audit;
         this.rollup = rollup;
+        this.statements = statements;
     }
 
     /** Merges the person into the one with id {@code intoId}, writing nothing when it is refused. */
@@ -54,7 +59,7 @@ public class PersonMerger {
         // Claims, in the order they were added, each listed as the sheet's newest so they follow the other's.
         for (Long claim : jdbc.queryForList("SELECT id FROM claim WHERE sheet = ? AND person = ? ORDER BY id",
                 Long.class, sheet, f)) {
-            jdbc.update("UPDATE claim SET person = ?, stated = FALSE, stated_due = NULL, listed ="
+            jdbc.update("UPDATE claim SET person = ?, listed ="
                     + " (SELECT COALESCE(MAX(l.listed), 0) + 1 FROM claim l WHERE l.sheet = ?) WHERE sheet = ? AND id = ?",
                     t, sheet, sheet, claim);
         }
@@ -100,8 +105,10 @@ public class PersonMerger {
         }
         jdbc.update("DELETE FROM period_person_total WHERE sheet = ? AND person = ?", sheet, f);
 
-        // Dropped with the person: statements, holds, watchers, grades and contact.
-        jdbc.update("DELETE FROM statement WHERE sheet = ? AND person = ?", sheet, f);
+        // Statements count as the other's, the other's last staying theirs.
+        statements.move(sheet, f, sheet, t);
+
+        // Dropped with the person: holds, watchers, grades and contact.
         jdbc.update("DELETE FROM person_hold WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person_retirement WHERE person_id = ?", f);
         jdbc.update("DELETE FROM watch WHERE sheet = ? AND person_id = ?", sheet, f);

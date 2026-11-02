@@ -14,6 +14,7 @@ import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.role.Roles;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.sheet.SheetArchive;
+import net.officefloor.hq.app.statement.Statements;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Service;
@@ -28,9 +29,11 @@ import org.springframework.stereotype.Service;
  * contact and aliases, and their claims with their status, dates, notes, frozen figures, logs and comments, listed in
  * the order they were. Each claim that had a number takes the other sheet's next one, in the order the claims were
  * opened (by the sheet's today when each was opened, then the order they were added); a correction or split names its
- * claim's new number when that claim came along (none otherwise). Statement bindings are lost (the statement count
- * starts at 0) and references, locks and settle batches are not carried. They leave this sheet entirely: patron links,
- * pool memberships, holds, closed periods' totals, statements and watches are dropped.
+ * claim's new number when that claim came along (none otherwise). Each claim keeps any figure a statement bound it to,
+ * and their statements go with them: the receiving person's statement count is their own plus these, and their last
+ * statement stays theirs (or, having none, becomes the transferred person's). References, locks and settle batches are
+ * not carried. They leave this sheet entirely: patron links, pool memberships, holds, closed periods' totals and
+ * watches are dropped.
  */
 @Service
 public class PersonTransferrer {
@@ -44,9 +47,11 @@ public class PersonTransferrer {
     private final SheetArchive archive;
     private final Audit audit;
     private final Rollup rollup;
+    private final Statements statements;
 
     public PersonTransferrer(JdbcTemplate jdbc, People people, Aliases aliases, Claims claims,
-            ClaimStatusChanger changer, Roles roles, SheetArchive archive, Audit audit, Rollup rollup) {
+            ClaimStatusChanger changer, Roles roles, SheetArchive archive, Audit audit, Rollup rollup,
+            Statements statements) {
         this.jdbc = jdbc;
         this.people = people;
         this.aliases = aliases;
@@ -56,6 +61,7 @@ public class PersonTransferrer {
         this.archive = archive;
         this.audit = audit;
         this.rollup = rollup;
+        this.statements = statements;
     }
 
     /** Transfers the person to the sheet {@code to}, writing nothing when it is refused. */
@@ -160,6 +166,9 @@ public class PersonTransferrer {
             }
         }
 
+        // Statements go with them, the receiving person's last staying theirs.
+        statements.move(sheet, f, to, t);
+
         // They leave this sheet entirely.
         if (!moved.isEmpty()) {
             String in = moved.keySet().stream().map(String::valueOf).collect(Collectors.joining(","));
@@ -172,7 +181,6 @@ public class PersonTransferrer {
         jdbc.update("DELETE FROM patron WHERE sheet = ? AND (person_id = ? OR patron_id = ?)", sheet, f, f);
         jdbc.update("DELETE FROM pool_member WHERE sheet = ? AND person_id = ?", sheet, f);
         jdbc.update("DELETE FROM period_person_total WHERE sheet = ? AND person = ?", sheet, f);
-        jdbc.update("DELETE FROM statement WHERE sheet = ? AND person = ?", sheet, f);
         jdbc.update("DELETE FROM person_hold WHERE person_id = ?", f);
         jdbc.update("DELETE FROM person_retirement WHERE person_id = ?", f);
         jdbc.update("DELETE FROM watch WHERE sheet = ? AND person_id = ?", sheet, f);
@@ -219,12 +227,11 @@ public class PersonTransferrer {
     }
 
     /**
-     * Copies the claim to the person on the other sheet, listed as its newest, unbound from any statement, unnumbered
-     * and with no reference, lock or settle batch; returns the copy's id.
+     * Copies the claim to the person on the other sheet, listed as its newest, keeping any figure a statement bound it
+     * to, unnumbered and with no reference, lock or settle batch; returns the copy's id.
      */
     private long copyClaim(List<String> columns, String sheet, long claim, String to, long person) {
-        Map<String, String> set = Map.of("SHEET", "?", "PERSON", "?", "STATED", "FALSE", "STATED_DUE", "NULL",
-                "NUMBER_ON_SHEET", "NULL", "PERIOD_NUMBER", "NULL", "REF", "NULL", "LOCKED_BY", "NULL", "BATCH", "NULL",
+        Map<String, String> set = Map.of("SHEET", "?", "PERSON", "?", "NUMBER_ON_SHEET", "NULL", "PERIOD_NUMBER", "NULL", "REF", "NULL", "LOCKED_BY", "NULL", "BATCH", "NULL",
                 "LISTED", "(SELECT COALESCE(MAX(l.listed), 0) + 1 FROM claim l WHERE l.sheet = ?)");
         String select = columns.stream().map((c) -> set.getOrDefault(c, "c." + c)).collect(Collectors.joining(", "));
         List<Object> args = new ArrayList<>();

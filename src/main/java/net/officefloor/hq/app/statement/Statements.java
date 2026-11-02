@@ -22,9 +22,10 @@ public class Statements {
     /** Per person on the sheet with a statement: the count, and the last one's due-total and date (the date it was taken as of, else the sheet's today then). */
     public List<StatementSummary> list(String sheet) {
         return jdbc.query("""
-                SELECT s.person, c.taken, s.due_total, COALESCE(s.as_of, s.taken_on) AS stated_on FROM statement s
-                JOIN (SELECT person, COUNT(*) AS taken, MAX(id) AS last FROM statement WHERE sheet = ? GROUP BY person) c
-                  ON s.id = c.last
+                SELECT s.person, (SELECT COUNT(*) FROM statement c WHERE c.sheet = s.sheet AND c.person = s.person)
+                  AS taken, s.due_total, COALESCE(s.as_of, s.taken_on) AS stated_on FROM statement s
+                WHERE s.sheet = ? AND NOT EXISTS (SELECT 1 FROM statement o WHERE o.sheet = s.sheet
+                  AND o.person = s.person AND (o.seq > s.seq OR (o.seq = s.seq AND o.id > s.id)))
                 ORDER BY s.person""", (rs, i) -> {
             BigDecimal due = rs.getBigDecimal("due_total");
             return new StatementSummary(rs.getLong("person"), rs.getInt("taken"),
@@ -38,13 +39,26 @@ public class Statements {
      * taken now).
      */
     public void add(String sheet, long person, BigDecimal dueTotal, LocalDate takenOn, LocalDate asOf) {
-        jdbc.update("INSERT INTO statement (sheet, person, due_total, taken_on, as_of) VALUES (?, ?, ?, ?, ?)", sheet,
-                person, dueTotal, Date.valueOf(takenOn), asOf == null ? null : Date.valueOf(asOf));
+        jdbc.update("INSERT INTO statement (sheet, person, due_total, taken_on, as_of, seq) VALUES (?, ?, ?, ?, ?,"
+                + " (SELECT COALESCE(MAX(s.seq), 0) + 1 FROM statement s WHERE s.sheet = ? AND s.person = ?))", sheet,
+                person, dueTotal, Date.valueOf(takenOn), asOf == null ? null : Date.valueOf(asOf), sheet, person);
+    }
+
+    /**
+     * Moves the person's statements to the person {@code into} on the sheet {@code to}, keeping their order. When
+     * that person has statements of their own, the moved ones are placed before them, so their last stays theirs.
+     */
+    public void move(String sheet, long person, String to, long into) {
+        Long shift = jdbc.queryForObject("SELECT (SELECT MIN(seq) FROM statement WHERE sheet = ? AND person = ?)"
+                + " - (SELECT MAX(seq) FROM statement WHERE sheet = ? AND person = ?) - 1", Long.class, to, into, sheet,
+                person);
+        jdbc.update("UPDATE statement SET sheet = ?, person = ?, seq = seq + ? WHERE sheet = ? AND person = ?", to, into,
+                shift == null ? 0L : shift, sheet, person);
     }
 
     /** The person's last statement, if they have one. */
     public Optional<Taken> last(String sheet, long person) {
-        return jdbc.query("SELECT id, due_total FROM statement WHERE sheet = ? AND person = ? ORDER BY id DESC LIMIT 1",
+        return jdbc.query("SELECT id, due_total FROM statement WHERE sheet = ? AND person = ? ORDER BY seq DESC, id DESC LIMIT 1",
                 (rs, i) -> new Taken(rs.getLong("id"), rs.getBigDecimal("due_total")), sheet, person)
                 .stream().findFirst();
     }
