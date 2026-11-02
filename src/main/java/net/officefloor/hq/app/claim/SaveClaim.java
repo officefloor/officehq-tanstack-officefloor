@@ -29,8 +29,8 @@ public class SaveClaim {
         LocalDate date = input.date() != null ? input.date() : sheets.today(id);
         repository.update(id, cid, input.amount(), date, input.note());
         Claim saved = new Claim(cid, pid, ClaimRepository.money(input.amount()), date.toString(), input.note());
-        audit.record("claim-edit sheet=" + id + " by=" + by + " claim=" + cid + " person=" + pid
-                + " amount=" + saved.amount() + " date=" + saved.date() + " note=" + saved.note());
+        audit.record("CLAIM_EDITED sheet=" + id + " by=" + by + " person=" + repository.personName(id, pid)
+                + " amount=" + saved.amount() + " date=" + saved.date());
         claim.set(saved);
     }
 }

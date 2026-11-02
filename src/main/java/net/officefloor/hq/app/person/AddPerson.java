@@ -27,8 +27,8 @@ public class AddPerson {
         } catch (DuplicateKeyException e) {
             throw new BadRequestException("name is already in use");
         }
-        audit.record("person-add sheet=" + id + " by=" + by + " person=" + added.id()
-                + " grade=" + added.grade() + " name=" + added.name());
+        audit.record("PERSON_ADDED sheet=" + id + " by=" + by + " name=" + added.name()
+                + " grade=" + added.grade());
         person.set(added);
     }
 }

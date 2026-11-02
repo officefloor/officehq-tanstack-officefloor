@@ -27,8 +27,8 @@ public class AddClaim {
         }
         LocalDate date = input.date() != null ? input.date() : sheets.today(id);
         Claim added = repository.add(id, pid, input.amount(), date, input.note());
-        audit.record("claim-add sheet=" + id + " by=" + by + " claim=" + added.id() + " person=" + pid
-                + " amount=" + added.amount() + " date=" + added.date() + " note=" + added.note());
+        audit.record("CLAIM_ADDED sheet=" + id + " by=" + by + " person=" + repository.personName(id, pid)
+                + " amount=" + added.amount() + " date=" + added.date());
         claim.set(added);
     }
 }

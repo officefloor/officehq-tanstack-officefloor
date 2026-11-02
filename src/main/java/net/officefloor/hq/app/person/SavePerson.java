@@ -34,8 +34,8 @@ public class SavePerson {
         if (!updated) {
             throw new BadRequestException("no such person");
         }
-        audit.record("person-edit sheet=" + id + " by=" + by + " person=" + pid
-                + " grade=" + saved.grade() + " name=" + saved.name());
+        audit.record("PERSON_EDITED sheet=" + id + " by=" + by + " name=" + saved.name()
+                + " grade=" + saved.grade());
         person.set(saved);
     }
 }

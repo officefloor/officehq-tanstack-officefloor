@@ -34,6 +34,12 @@ public class ClaimRepository {
                 sheetId);
     }
 
+    /** The name of a person on the sheet. */
+    public String personName(String sheetId, long personId) {
+        return jdbc.queryForObject("SELECT name FROM person WHERE sheet_id = ? AND id = ?",
+                String.class, sheetId, personId);
+    }
+
     /** The person (on the sheet) a claim belongs to; null when the sheet has no such claim. */
     public Long personOf(String sheetId, long claimId) {
         List<Long> found = jdbc.queryForList("SELECT person_id FROM claim WHERE sheet_id = ? AND id = ?",
