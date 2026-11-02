@@ -15,7 +15,8 @@ import { Fig } from '../locale/Fig';
 type Draft = { grade: Grade; pct: string; from: string; to: string };
 const EMPTY: Draft = { grade: 'A', pct: '', from: '', to: '' };
 
-// The sheet's rates: each grade's rate in force on the sheet's today (n/a when none), every rate with its
+// The sheet's rates: each grade's rate in force on the sheet's today (n/a when none), a calendar of each grade's rate
+// on the first day of each month of today's calendar year (n/a when none), every rate with its
 // from-date (a blank from-date applies from the start) and to-date (a blank one has no end), and a form that sets one, replacing the rate already
 // there for that grade and from-date as a new version (each row shows its version count; the newest is in force).
 function Rates({ sheet, user }: { sheet: string; user: string }) {
@@ -23,6 +24,9 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
   const { data: rates = [] } = useRates(sheet);
   const today = useSheetToday(sheet);
   const [draft, setDraft] = useState<Draft>(EMPTY);
+  // The rate calendar: each month (yyyy-MM) of the sheet's today's calendar year, read on its first day.
+  const year = today?.slice(0, 4);
+  const months = year ? Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`) : [];
 
   const save = useMutation({
     mutationFn: (body: Draft) => postJson<Rate[]>(byUser(ratesPath(sheet), user), body),
@@ -165,6 +169,28 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
           ))}
         </tbody>
       </table>
+      {months.length > 0 && (
+        <table>
+          <thead>
+            <tr>
+              <th>Grade</th>
+              {months.map((m) => (
+                <th key={m}>{m}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {GRADES.map((g) => (
+              <tr key={g}>
+                <td>{g}</td>
+                {months.map((m) => (
+                  <td key={m} data-testid={`rate-month-${g}-${m}`}><Fig>{rateOf(rates, g, `${m}-01`) ?? 'n/a'}</Fig></td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
       <table>
         <thead>
           <tr>

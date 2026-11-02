@@ -106,14 +106,17 @@ public class Pools {
     private record Ordered(int position, PoolMember member) {
     }
 
-    /** Adds each crew as a pool: its lead first, then its members in the order added, at {@link #crewShares}. */
+    /** Adds each crew as a pool: its lead (when it still has one) first, then its members in the order added, at {@link #crewShares}. */
     private void crewPools(String sheet, Map<String, List<Ordered>> members) {
         Map<String, List<PoolMember>> crews = new LinkedHashMap<>();
         jdbc.query("SELECT c.name, c.lead_id, p.name AS person_name, p.retired_from FROM crew c"
-                + " JOIN person p ON p.sheet = c.sheet AND p.id = c.lead_id WHERE c.sheet = ? ORDER BY c.position",
+                + " LEFT JOIN person p ON p.sheet = c.sheet AND p.id = c.lead_id WHERE c.sheet = ? ORDER BY c.position",
                 (rs) -> {
                     List<PoolMember> list = new ArrayList<>();
-                    list.add(crewMember(rs, "lead_id"));
+                    // A crew whose lead has gone (e.g. transferred away) is still a pool, of its members only.
+                    if (rs.getString("person_name") != null) {
+                        list.add(crewMember(rs, "lead_id"));
+                    }
                     crews.put(rs.getString("name"), list);
                 }, sheet);
         jdbc.query("SELECT m.crew, m.person_id, p.name AS person_name, p.retired_from FROM crew_member m"

@@ -21,9 +21,12 @@ public class Crews {
     public List<Crew> list(String sheet) {
         Map<String, CrewMember> leads = new LinkedHashMap<>();
         jdbc.query("SELECT c.name, c.lead_id, p.name AS lead_name FROM crew c"
-                + " JOIN person p ON p.sheet = c.sheet AND p.id = c.lead_id WHERE c.sheet = ? ORDER BY c.position",
+                + " LEFT JOIN person p ON p.sheet = c.sheet AND p.id = c.lead_id WHERE c.sheet = ? ORDER BY c.position",
                 (rs) -> {
-                    leads.put(rs.getString("name"), new CrewMember(rs.getLong("lead_id"), rs.getString("lead_name")));
+                    // A crew whose lead has gone from the sheet (e.g. transferred away) is still listed, with no lead.
+                    String lead = rs.getString("lead_name");
+                    leads.put(rs.getString("name"),
+                            lead == null ? new CrewMember(0, "") : new CrewMember(rs.getLong("lead_id"), lead));
                 }, sheet);
         Map<String, List<CrewMember>> members = new LinkedHashMap<>();
         leads.keySet().forEach((name) -> members.put(name, new ArrayList<>()));
