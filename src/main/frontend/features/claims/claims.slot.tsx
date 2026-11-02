@@ -46,7 +46,6 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   const people = usePeople(sheetId);
   const rates = useRates(sheetId);
   const settings = useSettings(sheetId).data;
-  const floor = settings?.floor;
   const today = useSheetToday(sheetId).data?.today;
   const periods = usePeriods(sheetId);
   const queryClient = useQueryClient();
@@ -215,7 +214,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                 <td data-testid="claim-period">{periodOf(periods.data, c.date)?.name ?? ''}</td>
                 <td data-testid="claim-note">{c.note}</td>
                 <td data-testid="claim-due">
-                  {claimDueNow(c, claims.data, rateFor(rates.data, gradeOn(person, c.date), c.date), floor, settings, today)}
+                  {claimDueNow(c, claims.data, rateFor(rates.data, gradeOn(person, c.date), c.date), settings, today)}
                 </td>
                 <td data-testid="claim-due-by">{c.dueBy}</td>
                 <td data-testid="claim-overdue">

@@ -25,39 +25,74 @@ public class SettingsRepository {
         return known != null && known > 0;
     }
 
-    /** The sheet's settings and roles, roles by user name. */
+    /** The sheet's settings and roles, roles by user name: each dated setting as in force on the sheet's
+     *  today, and every value recorded for each, by key. */
     public Settings load(String sheetId) {
         List<Role> roles = jdbc.query("SELECT user_name, role FROM sheet_role WHERE sheet_id = ? ORDER BY user_name",
                 (rs, i) -> new Role(rs.getString("user_name"), rs.getString("role")), sheetId);
+        LocalDate today = today(sheetId);
         BigDecimal limit = clerkLimit(sheetId);
+        BigDecimal cap = cap(sheetId);
         LocalDate policy = policyDate(sheetId);
         LocalDate numbering = periodNumberingFrom(sheetId);
-        return new Settings(limit == null ? null : money(limit), money(floor(sheetId)), terms(sheetId),
-                money(latePct(sheetId)), roles, policy == null ? null : policy.toString(),
-                numbering == null ? null : numbering.toString(), gradeTerms(sheetId),
-                cap(sheetId) == null ? null : money(cap(sheetId)));
+        return new Settings(limit == null ? null : money(limit), money(floor(sheetId, today)), terms(sheetId, today),
+                money(latePct(sheetId, today)), roles, policy == null ? null : policy.toString(),
+                numbering == null ? null : numbering.toString(), gradeTerms(sheetId, today),
+                cap == null ? null : money(cap), dated(sheetId));
     }
 
-    /** The sheet's clerk limit; null when it has none. */
+    /** The sheet's today; the real date when there is no such sheet. */
+    private LocalDate today(String sheetId) {
+        List<Date> found = jdbc.query("SELECT today FROM sheet WHERE id = ?", (rs, i) -> rs.getDate("today"), sheetId);
+        return found.isEmpty() || found.get(0) == null ? LocalDate.now() : found.get(0).toLocalDate();
+    }
+
+    /** The value of a dated setting in force on a date: the one recorded with the latest from-date on or
+     *  before it (a list holding null when that one is blank); an empty list when none is recorded then. */
+    private List<String> on(String sheetId, String key, LocalDate date) {
+        List<String> found = new java.util.ArrayList<>();
+        jdbc.query("SELECT setting FROM setting_value WHERE sheet_id = ? AND setting_key = ? AND from_date <= ?"
+                + " ORDER BY from_date DESC LIMIT 1",
+                (org.springframework.jdbc.core.RowCallbackHandler) rs -> found.add(rs.getString("setting")),
+                sheetId, key, Date.valueOf(date));
+        return found;
+    }
+
+    /** Record a dated setting's value from a date (null for blank), replacing one recorded from that date. */
+    public void record(String sheetId, String key, LocalDate from, String value) {
+        jdbc.update("MERGE INTO setting_value (sheet_id, setting_key, from_date, setting) KEY (sheet_id, setting_key, from_date)"
+                + " VALUES (?, ?, ?, ?)", sheetId, key, Date.valueOf(from), value);
+    }
+
+    /** Every value recorded for each dated setting, by key, each oldest from-date first. */
+    public Map<String, List<DatedValue>> dated(String sheetId) {
+        Map<String, List<DatedValue>> dated = new LinkedHashMap<>();
+        jdbc.query("SELECT setting_key, from_date, setting FROM setting_value WHERE sheet_id = ? ORDER BY setting_key, from_date",
+                (org.springframework.jdbc.core.RowCallbackHandler) rs -> dated
+                        .computeIfAbsent(rs.getString("setting_key"), k -> new java.util.ArrayList<>())
+                        .add(new DatedValue(rs.getDate("from_date").toLocalDate().toString(), rs.getString("setting"))),
+                sheetId);
+        return dated;
+    }
+
+    /** The sheet's clerk limit in force on its today; null when it has none. */
     public BigDecimal clerkLimit(String sheetId) {
-        List<BigDecimal> found = jdbc.query("SELECT clerk_limit FROM sheet WHERE id = ?",
-                (rs, i) -> rs.getBigDecimal("clerk_limit"), sheetId);
-        return found.isEmpty() ? null : found.get(0);
+        List<String> found = on(sheetId, "clerk-limit", today(sheetId));
+        return found.isEmpty() || found.get(0) == null ? null : new BigDecimal(found.get(0));
     }
 
-    public void setClerkLimit(String sheetId, BigDecimal limit) {
-        jdbc.update("UPDATE sheet SET clerk_limit = ? WHERE id = ?", limit, sheetId);
+    public void setClerkLimit(String sheetId, LocalDate from, BigDecimal limit) {
+        record(sheetId, "clerk-limit", from, limit == null ? null : money(limit));
     }
 
-    /** The sheet's cap: the most a person's due-total can be; null when it has none. */
+    /** The sheet's cap in force on its today: the most a person's due-total can be; null when it has none. */
     public BigDecimal cap(String sheetId) {
-        List<BigDecimal> found = jdbc.query("SELECT cap FROM sheet WHERE id = ?",
-                (rs, i) -> rs.getBigDecimal("cap"), sheetId);
-        return found.isEmpty() ? null : found.get(0);
+        List<String> found = on(sheetId, "cap", today(sheetId));
+        return found.isEmpty() || found.get(0) == null ? null : new BigDecimal(found.get(0));
     }
 
-    public void setCap(String sheetId, BigDecimal cap) {
-        jdbc.update("UPDATE sheet SET cap = ? WHERE id = ?", cap, sheetId);
+    public void setCap(String sheetId, LocalDate from, BigDecimal cap) {
+        record(sheetId, "cap", from, cap == null ? null : money(cap));
     }
 
     /** A due-total held to the cap: at most the cap when there is one. */
@@ -65,57 +100,57 @@ public class SettingsRepository {
         return cap != null && total.compareTo(cap) > 0 ? cap.setScale(2) : total;
     }
 
-    /** The sheet's floor: the least a live due can be; 1.00 unless set otherwise. */
-    public BigDecimal floor(String sheetId) {
-        List<BigDecimal> found = jdbc.query("SELECT floor FROM sheet WHERE id = ?",
-                (rs, i) -> rs.getBigDecimal("floor"), sheetId);
-        return found.isEmpty() || found.get(0) == null ? BigDecimal.ONE : found.get(0);
+    /** The sheet's floor in force on a date: the least a live due can be; 1.00 before any is recorded. */
+    public BigDecimal floor(String sheetId, LocalDate date) {
+        List<String> found = on(sheetId, "floor", date);
+        return found.isEmpty() || found.get(0) == null ? BigDecimal.ONE.setScale(2) : new BigDecimal(found.get(0)).setScale(2);
     }
 
-    public void setFloor(String sheetId, BigDecimal floor) {
-        jdbc.update("UPDATE sheet SET floor = ? WHERE id = ?", floor, sheetId);
+    public void setFloor(String sheetId, LocalDate from, BigDecimal floor) {
+        record(sheetId, "floor", from, money(floor));
     }
 
-    /** The sheet's terms: the days after a claim's date that it is due by; 14 unless set otherwise. */
-    public int terms(String sheetId) {
-        List<Integer> found = jdbc.query("SELECT terms FROM sheet WHERE id = ?",
-                (rs, i) -> rs.getInt("terms"), sheetId);
-        return found.isEmpty() ? 14 : found.get(0);
+    /** The sheet's terms in force on a date: the days after a claim's date that it is due by; 14 before
+     *  any are recorded. */
+    public int terms(String sheetId, LocalDate date) {
+        List<String> found = on(sheetId, "terms", date);
+        return found.isEmpty() || found.get(0) == null ? 14 : Integer.parseInt(found.get(0));
     }
 
-    public void setTerms(String sheetId, int terms) {
-        jdbc.update("UPDATE sheet SET terms = ? WHERE id = ?", terms, sheetId);
+    public void setTerms(String sheetId, LocalDate from, int terms) {
+        record(sheetId, "terms", from, String.valueOf(terms));
     }
 
-    /** Each grade's own terms on the sheet, by grade, in grade order. */
-    public Map<String, Integer> gradeTerms(String sheetId) {
+    /** A grade's own terms in force on a date; null when it has none then (it uses the sheet's terms). */
+    public Integer gradeTerms(String sheetId, String grade, LocalDate date) {
+        List<String> found = on(sheetId, "terms-" + grade, date);
+        return found.isEmpty() || found.get(0) == null ? null : Integer.valueOf(found.get(0));
+    }
+
+    /** Each grade's own terms in force on a date, by grade, in grade order. */
+    public Map<String, Integer> gradeTerms(String sheetId, LocalDate date) {
         Map<String, Integer> terms = new LinkedHashMap<>();
-        jdbc.query("SELECT grade, terms FROM grade_terms WHERE sheet_id = ? ORDER BY grade",
-                (org.springframework.jdbc.core.RowCallbackHandler) rs -> terms.put(rs.getString("grade"), rs.getInt("terms")),
-                sheetId);
+        for (String grade : List.of("A", "B", "C")) {
+            Integer own = gradeTerms(sheetId, grade, date);
+            if (own != null) terms.put(grade, own);
+        }
         return terms;
     }
 
-    /** Set a grade's own terms; null removes them, the grade then using the sheet's terms. */
-    public void setGradeTerms(String sheetId, String grade, Integer terms) {
-        if (terms == null) {
-            jdbc.update("DELETE FROM grade_terms WHERE sheet_id = ? AND grade = ?", sheetId, grade);
-        } else {
-            jdbc.update("MERGE INTO grade_terms (sheet_id, grade, terms) KEY (sheet_id, grade) VALUES (?, ?, ?)",
-                    sheetId, grade, terms);
-        }
+    /** Set a grade's own terms from a date; null leaves the grade using the sheet's terms from then. */
+    public void setGradeTerms(String sheetId, String grade, LocalDate from, Integer terms) {
+        record(sheetId, "terms-" + grade, from, terms == null ? null : String.valueOf(terms));
     }
 
-    /** The sheet's late percent: what an overdue claim's due gains, of its figure, for every full 30 days
-     *  it is overdue; 0.00 unless set otherwise. */
-    public BigDecimal latePct(String sheetId) {
-        List<BigDecimal> found = jdbc.query("SELECT late_pct FROM sheet WHERE id = ?",
-                (rs, i) -> rs.getBigDecimal("late_pct"), sheetId);
-        return found.isEmpty() || found.get(0) == null ? BigDecimal.ZERO : found.get(0);
+    /** The sheet's late percent in force on a date: what an overdue claim's due gains, of its figure, for
+     *  every full 30 days it is overdue; 0.00 before any is recorded. */
+    public BigDecimal latePct(String sheetId, LocalDate date) {
+        List<String> found = on(sheetId, "late-pct", date);
+        return found.isEmpty() || found.get(0) == null ? BigDecimal.ZERO.setScale(2) : new BigDecimal(found.get(0)).setScale(2);
     }
 
-    public void setLatePct(String sheetId, BigDecimal pct) {
-        jdbc.update("UPDATE sheet SET late_pct = ? WHERE id = ?", pct, sheetId);
+    public void setLatePct(String sheetId, LocalDate from, BigDecimal pct) {
+        record(sheetId, "late-pct", from, money(pct));
     }
 
     /** The sheet's policy date; null when blank (the sheet's today is then the policy date). */

@@ -16,7 +16,6 @@ export function usePersonPeriodDueTotals(sheetId: string): Map<number, Map<strin
   const people = usePeople(sheetId);
   const rates = useRates(sheetId);
   const settings = useSettings(sheetId).data;
-  const floor = settings?.floor;
   const today = useSheetToday(sheetId).data?.today;
   const holds = holdsById(people.data);
   const totals = new Map<number, Map<string, string>>();
@@ -31,7 +30,7 @@ export function usePersonPeriodDueTotals(sheetId: string): Map<number, Map<strin
           : sumDues(
               own
                 .filter((c) => p.from <= c.date && c.date <= p.to)
-                .map((c) => claimDueNow(c, claims.data, rateFor(rates.data, gradeOn(person, c.date), c.date), floor, settings, today)),
+                .map((c) => claimDueNow(c, claims.data, rateFor(rates.data, gradeOn(person, c.date), c.date), settings, today)),
             ),
       );
     }

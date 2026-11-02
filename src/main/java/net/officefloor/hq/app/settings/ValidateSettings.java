@@ -16,7 +16,8 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  3650; the late percent is 0.00 or more with up to two decimals; the policy date is a date
  *  (yyyy-mm-dd), blank meaning the sheet's today; the period
  *  numbering from-date is a date, blank meaning off; a grade's (A, B or C) terms are like the sheet's, blank
- *  meaning the grade uses the sheet's terms; the cap is 0.00 or more with up to two decimals, blank meaning none. A setting left out is not changed. */
+ *  meaning the grade uses the sheet's terms; the cap is 0.00 or more with up to two decimals, blank meaning none. A from-date given for a
+ *  setting with a figure is a date; blank is the sheet's today. A setting left out is not changed. */
 public class ValidateSettings {
     private static final Pattern MONEY = Pattern.compile("\\d{1,9}(\\.\\d{1,2})?|\\.\\d{1,2}");
     private static final List<String> GRADES = List.of("A", "B", "C");
@@ -76,12 +77,33 @@ public class ValidateSettings {
                 throw new BadRequestException("period numbering from must be a date (yyyy-mm-dd)");
             }
         }
+        Map<String, LocalDate> from = new LinkedHashMap<>();
+        Map<String, String> froms = request == null || request.from() == null ? Map.of() : request.from();
+        for (Map.Entry<String, String> given : froms.entrySet()) {
+            String key = given.getKey();
+            String date = given.getValue() == null ? "" : given.getValue().trim();
+            if (date.isEmpty()) continue;
+            boolean saved = switch (key) {
+                case "clerk-limit" -> limit != null;
+                case "floor" -> floor != null;
+                case "terms" -> terms != null;
+                case "late-pct" -> latePct != null;
+                case "cap" -> cap != null;
+                default -> key.startsWith("terms-") && gradeTerms.containsKey(key.substring(6));
+            };
+            if (!saved) continue;
+            try {
+                from.put(key, LocalDate.parse(date));
+            } catch (DateTimeParseException e) {
+                throw new BadRequestException("from-date for " + key + " must be a date (yyyy-mm-dd)");
+            }
+        }
         settings.set(new SettingsInput(limit != null,
                 limit == null || limit.isEmpty() ? null : new BigDecimal(limit).setScale(2),
                 floor != null, floor == null ? null : new BigDecimal(floor).setScale(2),
                 terms != null, terms == null ? null : Integer.parseInt(terms),
                 latePct != null, latePct == null ? null : new BigDecimal(latePct).setScale(2),
                 policy != null, policyDate, numbering != null, numberingFrom, gradeTerms,
-                cap != null, cap == null || cap.isEmpty() ? null : new BigDecimal(cap).setScale(2)));
+                cap != null, cap == null || cap.isEmpty() ? null : new BigDecimal(cap).setScale(2), from));
     }
 }

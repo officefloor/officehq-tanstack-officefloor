@@ -12,9 +12,28 @@ export type Role = { user: string; role: string };
  *  when blank, meaning off: while set and the sheet's today is on or after it, a claim opened is
  *  numbered within its period), and each grade's own terms, by grade (a grade not listed uses the sheet's
  *  terms; a claim's due-by is fixed from them when it is created), and its cap (two decimals; null means
- *  none: a person's due-total is at most it). */
+ *  none: a person's due-total is at most it). Those with a figure are as in force on the sheet's today when
+ *  loaded; `dated` is every value recorded for each of them, by key (clerk-limit, floor, terms, terms-<grade>,
+ *  late-pct, cap), oldest from-date first. */
 export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; roles: Role[]; policyDate: string | null; periodNumberingFrom: string | null;
-  gradeTerms: Record<string, number>; cap: string | null };
+  gradeTerms: Record<string, number>; cap: string | null; dated: Record<string, DatedValue[]> };
+
+/** A value a dated setting has from a date (yyyy-mm-dd); null when blank. */
+export type DatedValue = { from: string; value: string | null };
+
+/** The value each dated setting starts with, before its first from-date; a key not listed has none. */
+const STARTING: Record<string, string> = { floor: '1.00', 'late-pct': '0.00', terms: '14' };
+
+/** The value of a dated setting in force on a date: the one recorded with the latest from-date on or
+ *  before it, else the setting's starting value; null when blank or there is none. */
+export function settingOn(settings: Settings | undefined, key: string, date: string | undefined): string | null {
+  let value: string | null = STARTING[key] ?? null;
+  if (date === undefined) return value;
+  for (const d of settings?.dated?.[key] ?? []) {
+    if (d.from <= date) value = d.value;
+  }
+  return value;
+}
 
 export function settingsKey(sheetId: string) {
   return ['sheet', sheetId, 'settings'];

@@ -3,7 +3,8 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useSingleFlight } from '../../query/useSingleFlight';
 import { SheetBody } from '../../slots/defs/sheetBody';
-import { settingsKey, useSettings, type Settings } from './useSettings';
+import { useSheetToday } from '../today/useSheetToday';
+import { settingOn, settingsKey, useSettings, type Settings } from './useSettings';
 
 /** The sheet's settings: its clerk limit (a clerk settles a claim only when its due is at or below
  *  it; blank is no limit), its floor (the least a live due can be), its terms (the days after
@@ -14,9 +15,31 @@ import { settingsKey, useSettings, type Settings } from './useSettings';
  *  <period>-<n>, or X-<n> in no period; blank is off), each grade's own terms (blank is the sheet's
  *  terms), its cap (the most a person's due-total can be; blank is none), and the role (clerk or steward)
  *  assigned to each user name. Saving saves each setting whose field was entered (focused or typed
- *  in, even when left blank); the others stay as they are. */
+ *  in, even when left blank); the others stay as they are. A setting with a figure (the clerk limit, the
+ *  floor, the terms, each grade's terms, the late percent and the cap) is saved from its from-date, blank
+ *  meaning the sheet's today; each shows the value in force on the sheet's today. */
 /** The grades a person can have, each of which can have its own terms. */
 const GRADES = ['A', 'B', 'C'];
+
+/** The from-date field of a setting with a figure: blank is the sheet's today. */
+function FromInput({ settingKey, from, setFrom, onChange }: { settingKey: string; from: Record<string, string>;
+  setFrom: (f: (v: Record<string, string>) => Record<string, string>) => void; onChange: () => void }) {
+  return (
+    <label>
+      from{' '}
+      <input
+        data-testid={`setting-${settingKey}-from`}
+        placeholder="yyyy-mm-dd"
+        value={from[settingKey] ?? ''}
+        onChange={(e) => {
+          const value = e.target.value;
+          setFrom((v) => ({ ...v, [settingKey]: value }));
+          onChange();
+        }}
+      />
+    </label>
+  );
+}
 
 function SettingsPanel({ sheetId }: { sheetId: string }) {
   const settings = useSettings(sheetId);
@@ -29,12 +52,14 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
   const [policyDate, setPolicyDate] = useState<string | null>(null);
   const [numberingFrom, setNumberingFrom] = useState<string | null>(null);
   const [cap, setCap] = useState<string | null>(null);
+  const [from, setFrom] = useState<Record<string, string>>({});
+  const today = useSheetToday(sheetId).data?.today;
   const [user, setUser] = useState('');
   const [role, setRole] = useState('');
 
   const saveOnce = useSingleFlight();
   const save = useMutation({
-    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null }) =>
+    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string> }) =>
       postJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, f),
     onSuccess: (saved) => {
       setLimit(null);
@@ -45,6 +70,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
       setPolicyDate(null);
       setNumberingFrom(null);
       setCap(null);
+      setFrom({});
       queryClient.setQueryData(settingsKey(sheetId), saved);
     },
   });
@@ -68,7 +94,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           e.preventDefault();
           saveOnce(() => {
             save.reset();
-            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap });
+            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap, from });
           });
         }}
       >
@@ -85,6 +111,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
             }}
           />
         </label>{' '}
+        <FromInput settingKey="clerk-limit" from={from} setFrom={setFrom} onChange={() => save.reset()} />{' '}
         <label>
           Floor{' '}
           <input
@@ -98,6 +125,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
             }}
           />
         </label>{' '}
+        <FromInput settingKey="floor" from={from} setFrom={setFrom} onChange={() => save.reset()} />{' '}
         <label>
           Terms (days){' '}
           <input
@@ -111,6 +139,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
             }}
           />
         </label>{' '}
+        <FromInput settingKey="terms" from={from} setFrom={setFrom} onChange={() => save.reset()} />{' '}
         {GRADES.map((g) => (
           <label key={g}>
             Terms {g} (days){' '}
@@ -124,6 +153,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
                 save.reset();
               }}
             />{' '}
+            <FromInput settingKey={`terms-${g}`} from={from} setFrom={setFrom} onChange={() => save.reset()} />{' '}
           </label>
         ))}
         <label>
@@ -139,6 +169,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
             }}
           />
         </label>{' '}
+        <FromInput settingKey="late-pct" from={from} setFrom={setFrom} onChange={() => save.reset()} />{' '}
         <label>
           Policy date{' '}
           <input
@@ -178,22 +209,23 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
             }}
           />
         </label>{' '}
+        <FromInput settingKey="cap" from={from} setFrom={setFrom} onChange={() => save.reset()} />{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>{' '}
-        Current: clerk limit <strong data-testid="setting-clerk-limit-current">{settings.data?.clerkLimit ?? ''}</strong>,
-        floor <strong data-testid="setting-floor-current">{settings.data?.floor ?? ''}</strong>,
-        terms <strong data-testid="setting-terms-current">{settings.data?.terms ?? ''}</strong>,
+        Current: clerk limit <strong data-testid="setting-clerk-limit-current">{settingOn(settings.data, 'clerk-limit', today) ?? ''}</strong>,
+        floor <strong data-testid="setting-floor-current">{settingOn(settings.data, 'floor', today) ?? ''}</strong>,
+        terms <strong data-testid="setting-terms-current">{settingOn(settings.data, 'terms', today) ?? ''}</strong>,
         {GRADES.map((g) => (
           <span key={g}>
-            terms {g} <strong data-testid={`setting-terms-${g}-current`}>{settings.data?.gradeTerms?.[g] ?? ''}</strong>,{' '}
+            terms {g} <strong data-testid={`setting-terms-${g}-current`}>{settingOn(settings.data, `terms-${g}`, today) ?? ''}</strong>,{' '}
           </span>
         ))}
-        late % <strong data-testid="setting-late-pct-current">{settings.data?.latePct ?? ''}</strong>,
+        late % <strong data-testid="setting-late-pct-current">{settingOn(settings.data, 'late-pct', today) ?? ''}</strong>,
         policy date <strong data-testid="setting-policy-date-current">{settings.data?.policyDate ?? ''}</strong>,
         period numbering from{' '}
         <strong data-testid="setting-period-numbering-from-current">{settings.data?.periodNumberingFrom ?? ''}</strong>,
-        cap <strong data-testid="setting-cap-current">{settings.data?.cap ?? ''}</strong>
+        cap <strong data-testid="setting-cap-current">{settingOn(settings.data, 'cap', today) ?? ''}</strong>
         {save.isError && <p data-testid="settings-error">{save.error.message}</p>}
       </form>
       <form

@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import net.officefloor.hq.app.settings.SettingsRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -41,9 +42,11 @@ public class ClaimRepository {
             + " ORDER BY r.from_date DESC NULLS LAST LIMIT 1)";
 
     private final JdbcTemplate jdbc;
+    private final SettingsRepository settings;
 
-    public ClaimRepository(JdbcTemplate jdbc) {
+    public ClaimRepository(JdbcTemplate jdbc, SettingsRepository settings) {
         this.jdbc = jdbc;
+        this.settings = settings;
     }
 
     public boolean personExists(String sheetId, long personId) {
@@ -121,7 +124,7 @@ public class ClaimRepository {
     /** A claim's due now: its amount at the rate, in force on the claim's date, for the grade its person
      *  had on that date
      *  (the one with the latest from-date on or before it; an undated rate applies from the beginning
-     *  of time; none applies when the claim's date is after that rate's to-date), rounded to two decimals by the claim's rounding (see {@link #rounding}), and at least the sheet's floor (a correction's, a
+     *  of time; none applies when the claim's date is after that rate's to-date), rounded to two decimals by the claim's rounding (see {@link #rounding}), and at least the sheet's floor in force on the claim's date (a correction's, a
      *  negative amount's, has no floor); null when no rate applies. */
     public BigDecimal due(String sheetId, Claim claim) {
         List<BigDecimal> pct = jdbc.queryForList("SELECT a.pct FROM " + RATE_ON + " a"
@@ -130,7 +133,7 @@ public class ClaimRepository {
         if (pct.isEmpty()) return null;
         BigDecimal due = new BigDecimal(claim.amount()).multiply(pct.get(0)).movePointLeft(2)
                 .setScale(2, rounding(sheetId, claim));
-        return new BigDecimal(claim.amount()).signum() < 0 ? due : due.max(floor(sheetId));
+        return new BigDecimal(claim.amount()).signum() < 0 ? due : due.max(settings.floor(sheetId, LocalDate.parse(claim.date())));
     }
 
     /** How a claim's live figures round: half up when the claim is dated before the sheet's policy date
@@ -150,12 +153,6 @@ public class ClaimRepository {
                 : RoundingMode.HALF_EVEN;
     }
 
-    /** The sheet's floor: the least a live due can be (two decimals). */
-    public BigDecimal floor(String sheetId) {
-        List<BigDecimal> found = jdbc.queryForList("SELECT floor FROM sheet WHERE id = ?", BigDecimal.class, sheetId);
-        return found.isEmpty() || found.get(0) == null ? BigDecimal.ONE.setScale(2) : found.get(0).setScale(2);
-    }
-
     /** A claim's figure now: the due fixed when it was settled, else the one its last statement bound
      *  it to (not while PENDING; none when it bound it to n/a), else its live due; null when it has none. */
     public BigDecimal figure(String sheetId, Claim claim) {
@@ -166,7 +163,7 @@ public class ClaimRepository {
     }
 
     /** A claim's due now: its figure, plus, while it is overdue (OPEN or PENDING and its due-by — fixed when it was
-     *  created — before the sheet's today), the sheet's late percent of that figure for every full
+     *  created — before the sheet's today), the sheet's late percent in force on the claim's date of that figure for every full
      *  30 days it is overdue, rounded to two decimals by the claim's rounding. A statement never binds the charge:
      *  it keeps following the sheet's today until settling freezes it in. A correction (a negative amount)
      *  has no late charge. Null when it has no figure. */
@@ -175,12 +172,11 @@ public class ClaimRepository {
         if (figure == null || !claim.open() || new BigDecimal(claim.amount()).signum() < 0) {
             return figure;
         }
-        List<Object[]> found = jdbc.query("SELECT today, late_pct FROM sheet WHERE id = ?",
-                (rs, i) -> new Object[] { rs.getDate("today").toLocalDate(), rs.getBigDecimal("late_pct") }, sheetId);
+        List<Date> found = jdbc.queryForList("SELECT today FROM sheet WHERE id = ?", Date.class, sheetId);
         if (found.isEmpty()) return figure;
-        LocalDate today = (LocalDate) found.get(0)[0];
+        LocalDate today = found.get(0).toLocalDate();
         LocalDate dueBy = LocalDate.parse(claim.dueBy());
-        BigDecimal pct = (BigDecimal) found.get(0)[1];
+        BigDecimal pct = settings.latePct(sheetId, LocalDate.parse(claim.date()));
         long periods = dueBy.isBefore(today) ? ChronoUnit.DAYS.between(dueBy, today) / 30 : 0;
         if (periods == 0 || pct == null || pct.signum() == 0) return figure;
         BigDecimal charge = figure.multiply(pct).multiply(BigDecimal.valueOf(periods)).movePointLeft(2)
@@ -245,14 +241,13 @@ public class ClaimRepository {
         return n != null && n > 0;
     }
 
-    /** The due-by of a claim created now for a person with a date: the date plus the terms of the grade the
-     *  person has on it, else the sheet's terms. */
+    /** The due-by of a claim created now for a person with a date: the date plus the terms, in force on it,
+     *  of the grade the person has on it, else the sheet's terms in force on it. */
     public LocalDate dueBy(String sheetId, long personId, LocalDate date) {
-        List<Integer> own = jdbc.queryForList("SELECT t.terms FROM grade_terms t WHERE t.sheet_id = ? AND t.grade = "
-                + GRADE_ON, Integer.class, sheetId, sheetId, personId, date.toString());
-        if (!own.isEmpty()) return date.plusDays(own.get(0));
-        List<Integer> sheet = jdbc.queryForList("SELECT terms FROM sheet WHERE id = ?", Integer.class, sheetId);
-        return date.plusDays(sheet.isEmpty() ? 14 : sheet.get(0));
+        List<String> grade = jdbc.queryForList("SELECT " + GRADE_ON + " FROM DUAL", String.class, sheetId, personId,
+                date.toString());
+        Integer own = grade.isEmpty() || grade.get(0) == null ? null : settings.gradeTerms(sheetId, grade.get(0), date);
+        return date.plusDays(own != null ? own : settings.terms(sheetId, date));
     }
 
     public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects) {
