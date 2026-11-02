@@ -1,0 +1,58 @@
+diff --git a/src/main/java/net/officefloor/hq/app/person/MergeGrade.java b/src/main/java/net/officefloor/hq/app/person/MergeGrade.java
+index aa8aa006..5a23b1de 100644
+--- a/src/main/java/net/officefloor/hq/app/person/MergeGrade.java
++++ b/src/main/java/net/officefloor/hq/app/person/MergeGrade.java
+@@ -15,7 +15,9 @@ import org.springframework.web.bind.annotation.RequestParam;
+ /**
+  * A steward merges a grade into another: every person whose grade in force on the sheet's today is the merged grade is
+  * given the other from the sheet's today, in list order (by position), exactly as the person form would, each with its
+- * own PERSON_EDITED and rollup lines after the GRADE_MERGED line, then the rollup lines of the whole merge. Refused before anything is written for anyone but a
++ * own PERSON_EDITED and rollup lines after the GRADE_MERGED line; then every grade record of theirs on the merged grade,
++ * whatever its from-date, becomes the other (so all their claims use its rates, terms and thresholds; frozen and
++ * statement-bound figures stay as they are), then the rollup lines of the whole merge. Refused before anything is written for anyone but a
+  * steward, a grade not the sheet's, the same grade twice, or a retired grade to give anyone.
+  */
+ public class MergeGrade {
+@@ -50,6 +52,8 @@ public class MergeGrade {
+                             current.terms() == null ? "" : current.terms().toString(),
+                             current.contact() == null ? "" : current.contact(), null),
+                     people, clock, audit, rollup);
++            // The merge is retroactive: every grade record of theirs on the merged grade becomes the other.
++            people.regrade(current.id(), from, into);
+         }
+         // Then the figures the merge as a whole moved.
+         rollup.record(sheet, user, before);
+diff --git a/src/main/java/net/officefloor/hq/app/person/People.java b/src/main/java/net/officefloor/hq/app/person/People.java
+index b850a441..495c7341 100644
+--- a/src/main/java/net/officefloor/hq/app/person/People.java
++++ b/src/main/java/net/officefloor/hq/app/person/People.java
+@@ -214,6 +214,11 @@ public class People {
+         }
+     }
+ 
++    /** Turns every grade record of the person on the grade into the other grade, whatever its from-date. */
++    public void regrade(long id, String grade, String into) {
++        jdbc.update("UPDATE person_grade SET grade = ? WHERE person_id = ? AND grade = ?", into, id, grade);
++    }
++
+     /** Sets the person's own terms from the beginning of time (null: none). */
+     public void setTerms(long id, Integer terms) {
+         jdbc.update("UPDATE person SET terms = ? WHERE id = ?", terms, id);
+diff --git a/tmp_e2e/run.log b/tmp_e2e/run.log
+deleted file mode 100644
+index c013a803..00000000
+--- a/tmp_e2e/run.log
++++ /dev/null
+@@ -1,12 +0,0 @@
+-Picked up JAVA_TOOL_OPTIONS: -Djava.io.tmpdir=/home/daniel/ui-work/runs/202610271-to/tmp
+-
+-Running 4 tests using 1 worker
+-
+-  ✓  1 [chromium] › acceptance.spec.ts:6:7 › preview date › preview date (22.6s)
+-  ✓  2 [chromium] › acceptance.spec.ts:255:7 › preview date › preview date scenario 1 (41.5s)
+-  ✓  3 [chromium] › acceptance.spec.ts:714:7 › preview date › preview date scenario 2 (1.4m)
+-  ✓  4 [chromium] › acceptance.spec.ts:1329:7 › preview date › preview date scenario 3 (16.9s)
+-
+-  Slow test file: [chromium] › acceptance.spec.ts (2.8m)
+-  Consider splitting slow test files to speed up parallel execution
+-  4 passed (2.8m)
