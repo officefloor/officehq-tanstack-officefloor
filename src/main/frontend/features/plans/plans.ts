@@ -3,9 +3,10 @@ import { getJson } from '../../api/http';
 
 /** A person's plan: an amount (two decimals), from `start` every `every` days (or, when `day` is set,
  *  monthly on that day of the month) to `end` (yyyy-MM-dd), and how many
- *  claims it has `generated` so far. */
+ *  claims it has `generated` so far, and its `nextDates`: the first five plan dates after the sheet's
+ *  today and on or before the end. */
 export type Plan = { id: number; person: number; amount: string; start: string; every: number; end: string; generated: number;
-  day: number | null };
+  day: number | null; nextDates: string[] };
 
 export const plansKey = (sheet: string) => ['plans', sheet] as const;
 

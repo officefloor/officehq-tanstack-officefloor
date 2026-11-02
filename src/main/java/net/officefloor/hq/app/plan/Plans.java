@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.sql.Date;
 import java.time.LocalDate;
 import java.util.List;
+import net.officefloor.hq.app.sheet.SheetClock;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -12,22 +13,34 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class Plans {
 
-    private static final RowMapper<Plan> ROW = (rs, i) -> new Plan(rs.getLong("id"), rs.getLong("person_id"),
-            rs.getBigDecimal("amount").setScale(2).toPlainString(), rs.getDate("start_date").toLocalDate().toString(),
-            rs.getInt("every_days"), rs.getDate("end_date").toLocalDate().toString(), rs.getInt("generated"),
-            (Integer) rs.getObject("month_day"));
+    private static RowMapper<Plan> row(LocalDate today) {
+        return (rs, i) -> {
+            LocalDate start = rs.getDate("start_date").toLocalDate();
+            LocalDate end = rs.getDate("end_date").toLocalDate();
+            int every = rs.getInt("every_days");
+            Integer day = (Integer) rs.getObject("month_day");
+            List<String> next = Plan.dates(start, every, day, today, end, Plan.NEXT).stream()
+                    .map(LocalDate::toString).toList();
+            return new Plan(rs.getLong("id"), rs.getLong("person_id"),
+                    rs.getBigDecimal("amount").setScale(2).toPlainString(), start.toString(), every, end.toString(),
+                    rs.getInt("generated"), day, next);
+        };
+    }
 
     private final JdbcTemplate jdbc;
 
-    public Plans(JdbcTemplate jdbc) {
+    private final SheetClock clock;
+
+    public Plans(JdbcTemplate jdbc, SheetClock clock) {
         this.jdbc = jdbc;
+        this.clock = clock;
     }
 
-    /** Every plan on the sheet, in the order added. */
+    /** Every plan on the sheet, in the order added, with its next dates after the sheet's today. */
     public List<Plan> list(String sheet) {
         return jdbc.query("SELECT p.id, p.person_id, p.amount, p.start_date, p.every_days, p.end_date, p.month_day,"
                 + " (SELECT COUNT(*) FROM plan_claim c WHERE c.plan_id = p.id) AS generated"
-                + " FROM plan p WHERE p.sheet = ? ORDER BY p.id", ROW, sheet);
+                + " FROM plan p WHERE p.sheet = ? ORDER BY p.id", row(clock.today(sheet)), sheet);
     }
 
     /** Adds a plan running every {@code every} days, or, when {@code day} is not null, monthly on that day. */

@@ -2,8 +2,6 @@ package net.officefloor.hq.app.plan;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.YearMonth;
-import java.util.ArrayList;
 import java.util.List;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.ClaimInput;
@@ -64,23 +62,8 @@ public class GeneratePlans {
         response.send(new GeneratedPlans(made, claims.list(sheet), plans.list(sheet)));
     }
 
-    /** The plan's dates up to {@code last}: the start then every N days, or, for a monthly plan, its day in every
-     *  month from the start's month (on the month's last day when shorter), leaving out any before the start. */
+    /** The plan's dates up to {@code last}. */
     private static List<LocalDate> planDates(Plan plan, LocalDate last) {
-        LocalDate start = LocalDate.parse(plan.start());
-        List<LocalDate> dates = new ArrayList<>();
-        if (plan.day() == null) {
-            for (LocalDate day = start; !day.isAfter(last); day = day.plusDays(plan.every())) {
-                dates.add(day);
-            }
-            return dates;
-        }
-        for (YearMonth month = YearMonth.from(start); !month.atDay(1).isAfter(last); month = month.plusMonths(1)) {
-            LocalDate day = month.atDay(Math.min(plan.day(), month.lengthOfMonth()));
-            if (!day.isBefore(start) && !day.isAfter(last)) {
-                dates.add(day);
-            }
-        }
-        return dates;
+        return Plan.dates(LocalDate.parse(plan.start()), plan.every(), plan.day(), null, last, Integer.MAX_VALUE);
     }
 }

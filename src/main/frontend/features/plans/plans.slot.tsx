@@ -20,7 +20,7 @@ function PlansHeader() {
   return <th>Plans</th>;
 }
 
-// A person's plans, each with how many claims it has made so far, and the form adding one: an amount (0.00 or more,
+// A person's plans, each with how many claims it has made so far and its next five dates after the sheet's today, and the form adding one: an amount (0.00 or more,
 // up to two decimals), a start date (blank: the sheet's today), every N days (a whole number, at least 1) or monthly
 // on a day of the month (1 to 31, filled instead of every), and an end date not before the start. The server refuses anything else.
 function PersonPlans({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
@@ -58,7 +58,8 @@ function PersonPlans({ sheet, user, person }: { sheet: string; user: string; per
           <li key={p.id} data-testid={`plan-row-${p.id}`}>
             {p.amount} from {p.start} {p.day != null ? `monthly on day ${p.day}` : `every ${p.every} days`} to {p.end};
             made{' '}
-            <span data-testid="plan-generated">{p.generated}</span>
+            <span data-testid="plan-generated">{p.generated}</span>; next{' '}
+            <span data-testid="plan-next-dates">{p.nextDates.join(', ')}</span>
           </li>
         ))}
       </ul>
