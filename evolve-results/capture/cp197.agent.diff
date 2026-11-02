@@ -1,0 +1,110 @@
+diff --git a/src/main/frontend/features/activity/activity.slot.tsx b/src/main/frontend/features/activity/activity.slot.tsx
+new file mode 100644
+index 00000000..fa9bd3fd
+--- /dev/null
++++ b/src/main/frontend/features/activity/activity.slot.tsx
+@@ -0,0 +1,35 @@
++import { useState } from 'react';
++import { SheetPanels } from '../../slots/defs/sheetPanels';
++import { useActivity } from './activity';
++
++// The sheet's activity: how many of each event every user has in the sheet's audit file, by user then event. It reads
++// the file as it stands at each press; while a press is being read the old lines are gone.
++function Activity({ sheet }: { sheet: string; user: string }) {
++  const [press, setPress] = useState(0);
++  const { data: lines, isSuccess, isFetching, isError } = useActivity(sheet, press);
++
++  return (
++    <section>
++      <h2>Activity</h2>
++      <button type="button" data-testid="activity-show" onClick={() => setPress((p) => p + 1)}>
++        Show
++      </button>
++      {isError && (
++        <span data-testid="activity-error" role="alert">
++          {' '}The activity could not be read.
++        </span>
++      )}
++      {isSuccess && !isFetching && (
++        <ul>
++          {lines.map((line) => (
++            <li key={line} data-testid="activity-line">
++              <code>{line}</code>
++            </li>
++          ))}
++        </ul>
++      )}
++    </section>
++  );
++}
++
++export const contribution = SheetPanels.fill({ order: 101, Component: Activity });
+diff --git a/src/main/frontend/features/activity/activity.ts b/src/main/frontend/features/activity/activity.ts
+new file mode 100644
+index 00000000..8d8f72e3
+--- /dev/null
++++ b/src/main/frontend/features/activity/activity.ts
+@@ -0,0 +1,17 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++
++export const activityKey = (sheet: string, press: number) => ['activity', sheet, press] as const;
++
++export const activityPath = (sheet: string) => `/api/sheets/${encodeURIComponent(sheet)}/activity`;
++
++/** The sheet's activity lines ("<user> <EVENT> <count>", by user then event), read from the audit file at each press
++ *  of the show button. Nothing is read until it is pressed. */
++export function useActivity(sheet: string, press: number) {
++  return useQuery({
++    queryKey: activityKey(sheet, press),
++    queryFn: () => getJson<string[]>(activityPath(sheet)),
++    enabled: press > 0,
++    gcTime: 0,
++  });
++}
+diff --git a/src/main/java/net/officefloor/hq/app/audit/RespondWithActivity.java b/src/main/java/net/officefloor/hq/app/audit/RespondWithActivity.java
+new file mode 100644
+index 00000000..f724d1a0
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/audit/RespondWithActivity.java
+@@ -0,0 +1,32 @@
++package net.officefloor.hq.app.audit;
++
++import java.util.ArrayList;
++import java.util.List;
++import java.util.Map;
++import java.util.TreeMap;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/**
++ * Responds with the sheet's activity: for every user and every event in the sheet's audit lines, one line
++ * "<user> <EVENT> <count>", sorted by user then event. A line's event is its first word, its user its by= field. It
++ * reads the file; it records nothing.
++ */
++public class RespondWithActivity {
++
++    public void respond(@PathVariable("sheet") String sheet, Audit audit, ObjectResponse<List<String>> response) {
++        Map<String, Map<String, Integer>> counts = new TreeMap<>();
++        for (String line : audit.lines(sheet)) {
++            String[] parts = line.split(" ", 4);
++            if (parts.length < 3 || !parts[2].startsWith("by=")) {
++                continue;
++            }
++            String user = parts[2].substring("by=".length());
++            counts.computeIfAbsent(user, u -> new TreeMap<>()).merge(parts[0], 1, Integer::sum);
++        }
++        List<String> lines = new ArrayList<>();
++        counts.forEach((user, events) -> events.forEach((event, n) -> lines.add(user + " " + event + " " + n)));
++        response.send(lines);
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheet}/activity.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheet}/activity.GET.yml
+new file mode 100644
+index 00000000..448c0429
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheet}/activity.GET.yml
+@@ -0,0 +1,2 @@
++respond:
++  class: net.officefloor.hq.app.audit.RespondWithActivity
