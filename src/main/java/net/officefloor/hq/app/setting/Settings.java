@@ -140,14 +140,14 @@ public class Settings {
     public static final String DEFAULT_FISCAL_START_MONTH = "1";
 
     /** The actions whose roles the permission matrix sets, each under the key perm-<action>. */
-    public static final List<String> PERMISSIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
+    public static final List<String> PERMISSIONS = List.of("open", "settle", "void", "reassign", "close", "reopen", "today");
 
     /** The key of an action's permitted roles (a comma separated list of roles); blank: its standing rule. */
     public static String perm(String action) {
         return "perm-" + action;
     }
 
-    /** The roles that may take the action under the standing rule: reassign and reopen a steward, the rest any. */
+    /** The roles that may take the action under the standing rule: reassign and reopen a steward, the rest (today, changing the sheet's today, too) any but a viewer. */
     public static String defaultPerm(String action) {
         return "reassign".equals(action) || "reopen".equals(action) ? "steward" : "clerk,steward";
     }

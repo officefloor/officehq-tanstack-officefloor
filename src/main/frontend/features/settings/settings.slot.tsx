@@ -28,7 +28,7 @@ import { Fig } from '../locale/Fig';
 // when it went to REVIEW) plus the review SLA (whole days, not dated; blank means none) is before the sheet's today is late for review. Each setting that carries a figure (all but the policy date and the period numbering
 // from-date) has a from-date beside it: its value is recorded from that date (blank: the sheet's today), keeping the
 // values recorded from other dates, and each shows the value in force on the sheet's today. The permission matrix gives,
-// for each of open, settle, void, reassign, close and reopen, the roles that may take it (comma separated); blank keeps
+// for each of open, settle, void, reassign, close, reopen and today (changing the sheet's today), the roles that may take it (comma separated); blank keeps
 // its standing rule (reassign and reopen by a steward, the rest by a clerk or a steward). The grace days (whole days,
 // not dated; blank turns it off): a today change closes each open period whose to-date plus them is before the new today.
 // The entry date (not dated; blank turns it off): while set, a new claim with a blank date takes it in place of the sheet's today.

@@ -116,6 +116,22 @@ public class Pools {
         String added = asAt == null ? "" : " AND (added_on IS NULL OR added_on <= ?)";
         Object[] args = asAt == null ? new Object[] { sheet } : new Object[] { sheet, at };
         Map<String, List<Ordered>> members = new LinkedHashMap<>();
+        // As of a past day, a person's retirement is the one the sheet held then: from the rows kept when its today
+        // moved past the day (a retirement recorded later does not count), else the one it holds now.
+        Map<Long, Date> retiredThen = new HashMap<>();
+        boolean kept = false;
+        if (asAt != null) {
+            List<Long> snapshot = jdbc.queryForList("SELECT id FROM sheet_snapshot WHERE sheet = ? AND from_today <= ?"
+                    + " AND to_today > ? ORDER BY id LIMIT 1", Long.class, sheet, at, at);
+            if (!snapshot.isEmpty()) {
+                kept = true;
+                jdbc.query("SELECT id, retired_from FROM person__asof WHERE snapshot_id = ?",
+                        (rs) -> {
+                            retiredThen.put(rs.getLong("id"), rs.getDate("retired_from"));
+                        }, snapshot.get(0));
+            }
+        }
+        boolean fromKept = kept;
         jdbc.query("SELECT name FROM pool WHERE sheet = ?" + added + " ORDER BY position",
                 (rs) -> {
                     members.put(rs.getString("name"), new ArrayList<>());
@@ -127,7 +143,9 @@ public class Pools {
                 (rs) -> {
                     List<Ordered> list = members.get(rs.getString("pool"));
                     if (list != null) {
-                        Date retired = rs.getDate("retired_from");
+                        long id = rs.getLong("person_id");
+                        Date retired = fromKept && retiredThen.containsKey(id) ? retiredThen.get(id)
+                                : rs.getDate("retired_from");
                         list.add(new Ordered(rs.getInt("position"), new PoolMember(rs.getLong("person_id"), null,
                                 rs.getString("name"), rs.getBigDecimal("share").setScale(2).toPlainString(),
                                 retired != null && (at == null || !retired.after(at)), dateOf(rs, "from_date"),
