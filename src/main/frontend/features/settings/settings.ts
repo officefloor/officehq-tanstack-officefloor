@@ -21,11 +21,12 @@ import { hundredths } from '../rates/rates';
  *  And the pot (two decimals; '' for none, not dated): what each balanced pool shares out among its members.
  *  And the parent sheet's id ('' for none, not dated): where the sheet has no rate in force for a grade on a date, the
  *  parent's is used, then its parent's, up to three levels up.
+ *  And the fiscal start month (1 to 12, not dated): the month a fiscal year starts in.
  *  And, for each dated key (every one that carries a figure), its values as recorded, by from-date. */
 export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string;
   termsA: string; termsB: string; termsC: string; cap: string;
   proofThreshold: string; noteThreshold: string; graceDays: string; entryDate: string; graceA: string; graceB: string; graceC: string;
-  proofThresholdA: string; proofThresholdB: string; proofThresholdC: string; pot: string; parent: string; perms: Partial<Record<PermAction, string>>; dated: Partial<Record<SettingKey, DatedValue[]>> };
+  proofThresholdA: string; proofThresholdB: string; proofThresholdC: string; pot: string; parent: string; fiscalStartMonth: string; perms: Partial<Record<PermAction, string>>; dated: Partial<Record<SettingKey, DatedValue[]>> };
 
 /** A dated setting's value as recorded: in force from its from-date (yyyy-MM-dd). */
 export type DatedValue = { from: string; value: string };
@@ -35,7 +36,7 @@ export type DatedCents = (date: string) => bigint;
 
 /** Whether a setting is dated: every one that carries a figure is but the pot; the policy, period numbering and entry dates and the grace days are not. */
 export function isDated(key: SettingKey): boolean {
-  return key !== 'policy-date' && key !== 'period-numbering-from' && key !== 'grace-days' && key !== 'entry-date' && key !== 'pot' && key !== 'parent' && !key.startsWith('perm-');
+  return key !== 'policy-date' && key !== 'period-numbering-from' && key !== 'grace-days' && key !== 'entry-date' && key !== 'pot' && key !== 'parent' && key !== 'fiscal-start-month' && !key.startsWith('perm-');
 }
 
 /** The figure in force on a date: the value of the latest from-date on or before it, before every from-date (or
@@ -54,7 +55,7 @@ function datedCents(values: DatedValue[] | undefined, start: string): DatedCents
 
 /** A setting's key as the server names it, with the field of {@link Settings} that shows it. */
 export type SettingKey = 'clerk-limit' | 'floor' | 'terms' | 'late-pct' | 'policy-date' | 'period-numbering-from'
-  | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'cap' | 'proof-threshold' | 'note-threshold' | 'grace-days' | 'entry-date' | 'pot' | 'parent' | `perm-${PermAction}`;
+  | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'cap' | 'proof-threshold' | 'note-threshold' | 'grace-days' | 'entry-date' | 'pot' | 'parent' | 'fiscal-start-month' | `perm-${PermAction}`;
 
 /** The actions whose roles the permission matrix sets, each with its standing rule (used while its entry is blank). */
 export const PERMISSIONS = [
@@ -114,6 +115,12 @@ export function useSettings(sheet: string) {
 export function useFloorCents(sheet: string): DatedCents {
   const { data } = useSettings(sheet);
   return datedCents(data?.dated?.floor, DEFAULT_FLOOR);
+}
+
+/** The month (1 to 12) the sheet's fiscal year starts in; 1 unless set. */
+export function useFiscalStartMonth(sheet: string): number {
+  const { data } = useSettings(sheet);
+  return Number(data?.fiscalStartMonth || '1');
 }
 
 /** The sheet's cap in hundredths: the most a person's due-total is; undefined when there is none. */

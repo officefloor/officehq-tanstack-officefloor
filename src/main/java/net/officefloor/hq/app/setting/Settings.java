@@ -79,6 +79,13 @@ public class Settings {
      *  the sheet's own settings, so a sheet shown as of a date keeps it); blank: none. */
     public static final String PARENT = "parent";
 
+    /** The month (1 to 12, not dated) a fiscal year starts in; unset: 1. A fiscal year is named FY<yyyy> by the calendar
+     *  year its first day falls in. */
+    public static final String FISCAL_START_MONTH = "fiscal-start-month";
+
+    /** The fiscal start month a sheet starts with. */
+    public static final String DEFAULT_FISCAL_START_MONTH = "1";
+
     /** The actions whose roles the permission matrix sets, each under the key perm-<action>. */
     public static final List<String> PERMISSIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
 
@@ -104,7 +111,8 @@ public class Settings {
     /** Whether the key is dated: every setting that carries a figure is but the pot; the policy, period numbering and entry dates, the grace days and the parent are not. */
     public static boolean dated(String key) {
         return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key)
-                && !ENTRY_DATE.equals(key) && !POT.equals(key) && !PARENT.equals(key) && !key.startsWith("perm-");
+                && !ENTRY_DATE.equals(key) && !POT.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
+                && !key.startsWith("perm-");
     }
 
     /** The from-date an undated setting's one value is kept under. */
@@ -288,6 +296,12 @@ public class Settings {
         return pot.isEmpty() ? null : new BigDecimal(pot);
     }
 
+    /** The month (1 to 12) the sheet's fiscal year starts in. */
+    public int fiscalStartMonth(String sheet) {
+        String month = get(sheet, FISCAL_START_MONTH);
+        return Integer.parseInt(month.isEmpty() ? DEFAULT_FISCAL_START_MONTH : month);
+    }
+
     /** The id of the sheet's parent, or "" when it has none. */
     public String parent(String sheet) {
         List<String> found = jdbc.queryForList("SELECT parent FROM sheet_parent WHERE child = ?", String.class, sheet);
@@ -355,6 +369,7 @@ public class Settings {
                 get(sheet, GRACE_DAYS), on(sheet, NOTE_THRESHOLD, today), get(sheet, ENTRY_DATE),
                 on(sheet, gradeGrace("A"), today), on(sheet, gradeGrace("B"), today), on(sheet, gradeGrace("C"), today),
                 on(sheet, gradeProofThreshold("A"), today), on(sheet, gradeProofThreshold("B"), today),
-                on(sheet, gradeProofThreshold("C"), today), get(sheet, POT), parent(sheet));
+                on(sheet, gradeProofThreshold("C"), today), get(sheet, POT), parent(sheet),
+                Integer.toString(fiscalStartMonth(sheet)));
     }
 }

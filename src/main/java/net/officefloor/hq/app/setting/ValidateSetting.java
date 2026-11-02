@@ -63,7 +63,7 @@ public class ValidateSetting {
         if (!Settings.CLERK_LIMIT.equals(key) && !Settings.CAP.equals(key) && !Settings.PROOF_THRESHOLD.equals(key) && !Settings.NOTE_THRESHOLD.equals(key) && !Settings.FLOOR.equals(key) && !Settings.TERMS.equals(key)
                 && !Settings.LATE_PCT.equals(key) && !Settings.POLICY_DATE.equals(key)
                 && !Settings.PERIOD_NUMBERING_FROM.equals(key) && !Settings.GRACE_DAYS.equals(key) && !Settings.ENTRY_DATE.equals(key)
-                && !Settings.POT.equals(key) && !Settings.PARENT.equals(key)
+                && !Settings.POT.equals(key) && !Settings.PARENT.equals(key) && !Settings.FISCAL_START_MONTH.equals(key)
                 && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeTerms(g).equals(key))
                 && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeGrace(g).equals(key))
                 && Settings.GRADES.stream().noneMatch((g) -> Settings.gradeProofThreshold(g).equals(key))
@@ -116,6 +116,14 @@ public class ValidateSetting {
                 }
             }
             return new SettingInput(key, value);
+        }
+        // The fiscal start month is a month, 1 to 12; anything else (blank too) is refused.
+        if (Settings.FISCAL_START_MONTH.equals(key)) {
+            int month = DAYS.matcher(value).matches() ? Integer.parseInt(value) : 0;
+            if (month < 1 || month > 12) {
+                throw new InvalidSettingException("The fiscal start month must be a month, 1 to 12");
+            }
+            return new SettingInput(key, Integer.toString(month));
         }
         // The parent is a sheet id, checked against the sheets by the caller; blank means none.
         if (Settings.PARENT.equals(key)) {

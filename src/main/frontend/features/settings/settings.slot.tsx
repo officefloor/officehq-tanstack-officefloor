@@ -33,6 +33,7 @@ import type { PermAction, SettingKey, Settings as SheetSettings } from './settin
 // The pot (two decimals, not dated; blank means none): what each balanced pool shares out among its members.
 // The parent (a sheet id, not dated; blank means none): where the sheet has no rate in force for a grade on a date,
 // the parent's is used, then its parent's, up to three levels up.
+// The fiscal start month (1 to 12, not dated; 1 unless set): the month each fiscal year starts in.
 function Settings({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();
   const { data } = useSettings(sheet);
@@ -49,6 +50,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
   const [entryDate, setEntryDate] = useState('');
   const [pot, setPot] = useState('');
   const [parent, setParent] = useState('');
+  const [fiscalStartMonth, setFiscalStartMonth] = useState('');
   const [gradeTerms, setGradeTerms] = useState<Record<string, string>>({});
   const [gradeGrace, setGradeGrace] = useState<Record<string, string>>({});
   const [gradeProofThreshold, setGradeProofThreshold] = useState<Record<string, string>>({});
@@ -87,6 +89,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       setEntryDate('');
       setPot('');
       setParent('');
+      setFiscalStartMonth('');
       setGradeTerms({});
       setGradeGrace({});
       setGradeProofThreshold({});
@@ -128,7 +131,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
       ...(Object.fromEntries(PERMISSIONS.map(({ action }) => [`perm-${action}`, perms[action] ?? ''])) as Record<`perm-${PermAction}`, string>), 'clerk-limit': clerkLimit, floor, terms, 'late-pct': latePct, 'policy-date': policyDate,
       'period-numbering-from': periodNumberingFrom, 'terms-A': gradeTerms.A ?? '', 'terms-B': gradeTerms.B ?? '',
       'terms-C': gradeTerms.C ?? '', cap, 'proof-threshold': proofThreshold, 'note-threshold': noteThreshold,
-      'grace-days': graceDays, 'entry-date': entryDate, pot, parent, 'grace-A': gradeGrace.A ?? '', 'grace-B': gradeGrace.B ?? '',
+      'grace-days': graceDays, 'entry-date': entryDate, pot, parent, 'fiscal-start-month': fiscalStartMonth, 'grace-A': gradeGrace.A ?? '', 'grace-B': gradeGrace.B ?? '',
       'grace-C': gradeGrace.C ?? '', 'proof-threshold-A': gradeProofThreshold.A ?? '',
       'proof-threshold-B': gradeProofThreshold.B ?? '', 'proof-threshold-C': gradeProofThreshold.C ?? '' };
     const keys: SettingKey[] = changed.length === 0 ? ['clerk-limit'] : changed;
@@ -397,6 +400,20 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
           />
         </label>{' '}
         now <span data-testid="setting-parent-current">{data?.parent ?? ''}</span>{' '}
+        <label>
+          Fiscal year starts in month{' '}
+          <input
+            data-testid="setting-fiscal-start-month"
+            placeholder="1 to 12"
+            value={fiscalStartMonth}
+            onChange={(e) => {
+              setFiscalStartMonth(e.target.value);
+              touch('fiscal-start-month');
+            }}
+            onFocus={() => touch('fiscal-start-month')}
+          />
+        </label>{' '}
+        now <span data-testid="setting-fiscal-start-month-current">{data?.fiscalStartMonth ?? ''}</span>{' '}
         {PERMISSIONS.map(({ action, standing }) => (
           <span key={action}>
             <label>
@@ -422,7 +439,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
         </button>
         {save.isError && (
           <span data-testid="settings-error" role="alert">
-            {' '}The clerk limit, the cap, the proof threshold (the sheet's and each grade's), the note threshold, the floor, the late percent and the pot must be 0.00 or more with up to two decimals, the terms (the sheet's and each grade's) and each grade's grace a whole number of days, the policy date, the period numbering from-date, the entry date and each from-date dates, each action's roles clerk or steward (comma separated), or blank; the parent a sheet that has been loaded, not this sheet nor one that has it as an ancestor, or blank.
+            {' '}The clerk limit, the cap, the proof threshold (the sheet's and each grade's), the note threshold, the floor, the late percent and the pot must be 0.00 or more with up to two decimals, the terms (the sheet's and each grade's) and each grade's grace a whole number of days, the policy date, the period numbering from-date, the entry date and each from-date dates, each action's roles clerk or steward (comma separated), or blank; the parent a sheet that has been loaded, not this sheet nor one that has it as an ancestor, or blank; the fiscal start month a month, 1 to 12.
           </span>
         )}
       </form>

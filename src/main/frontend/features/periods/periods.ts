@@ -29,6 +29,17 @@ export const periodsPath = (sheet: string) => `/api/sheets/${encodeURIComponent(
 /** Where monthly periods are generated between two dates. */
 export const generatePeriodsPath = (sheet: string) => `${periodsPath(sheet)}/generate`;
 
+/** Where a fiscal year's twelve monthly periods are generated. */
+export const generateFiscalYearPath = (sheet: string) => `${periodsPath(sheet)}/generate-fy`;
+
+/** The fiscal year a date (yyyy-MM-dd) falls in, named FY<yyyy> by the calendar year its first day falls in, for a
+ *  fiscal year starting in the month (1 to 12). */
+export function fiscalYearOf(date: string, startMonth: number): string {
+  const year = Number(date.slice(0, 4));
+  const month = Number(date.slice(5, 7));
+  return `FY${month >= startMonth ? year : year - 1}`;
+}
+
 /** How many periods a generate made, with every period on the sheet after it. */
 export type Generated = { made: number; periods: Period[] };
 

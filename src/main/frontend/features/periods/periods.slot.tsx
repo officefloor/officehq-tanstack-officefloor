@@ -7,10 +7,12 @@ import { byUser } from '../session/session';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { usePeople } from '../people/people';
 import { twoDecimals, useRates } from '../rates/rates';
-import { useFloorCents } from '../settings/settings';
+import { useFiscalStartMonth, useFloorCents } from '../settings/settings';
 import { useClaims, useLate } from '../claims/claims';
 import {
   closePeriodPath,
+  fiscalYearOf,
+  generateFiscalYearPath,
   generatePeriodsPath,
   periodDueCents,
   shownDueTotal,
@@ -26,7 +28,8 @@ import type { Generated, Period } from './periods';
 // that close, soft-close and reopen it. The server refuses closing a period already closed, soft-closing one already
 // closed or soft-closed, and reopening one neither; and any of them by a role the permission matrix does not allow;
 // the row shows that error until its next action.
-function PeriodRow({ sheet, user, period, dueCents }: { sheet: string; user: string; period: Period; dueCents: bigint }) {
+// It also shows the fiscal year its from-date falls in.
+function PeriodRow({ sheet, user, period, dueCents, fiscalStart }: { sheet: string; user: string; period: Period; dueCents: bigint; fiscalStart: number }) {
   const queryClient = useQueryClient();
   const close = useMutation({
     mutationFn: () => postJson<Period[]>(byUser(closePeriodPath(sheet, period.name), user), {}),
@@ -52,6 +55,7 @@ function PeriodRow({ sheet, user, period, dueCents }: { sheet: string; user: str
       <td data-testid="period-to">{period.to}</td>
       <td data-testid="period-due-total">{shownDueTotal(period, dueCents)}</td>
       <td data-testid="period-closed">{period.closed ? 'yes' : period.soft ? 'soft' : 'no'}</td>
+      <td data-testid="period-fy">{fiscalYearOf(period.from, fiscalStart)}</td>
       <td>
         <button
           type="button"
@@ -116,16 +120,24 @@ type Range = { from: string; to: string };
 const NO_RANGE: Range = { from: '', to: '' };
 
 // Generates one period per calendar month from the from-date's month to the to-date's, named yyyy-mm; the server leaves
-// out a month whose name is already a period or that overlaps one, and refuses a to-date before the from-date. Shows how
-// many were made.
+// out a month whose name is already a period or that overlaps one, and refuses a to-date before the from-date. The
+// fiscal year entry generates that fiscal year's twelve months (from the sheet's fiscal start month in that year) the
+// same way, and the server refuses a year that is not yyyy. Both share the one count of how many were made, and error.
+type GenerateBody = { path: 'range'; range: Range } | { path: 'fy'; year: string };
+
 function GeneratePeriods({ sheet, user }: { sheet: string; user: string }) {
   const queryClient = useQueryClient();
   const [range, setRange] = useState<Range>(NO_RANGE);
+  const [year, setYear] = useState('');
   const generate = useMutation({
-    mutationFn: (body: Range) => postJson<Generated>(byUser(generatePeriodsPath(sheet), user), body),
+    mutationFn: (body: GenerateBody) =>
+      body.path === 'range'
+        ? postJson<Generated>(byUser(generatePeriodsPath(sheet), user), body.range)
+        : postJson<Generated>(byUser(generateFiscalYearPath(sheet), user), { year: body.year }),
     onSuccess: (result) => {
       queryClient.setQueryData(periodsKey(sheet), result.periods);
       setRange(NO_RANGE);
+      setYear('');
     },
   });
   const send = useSubmitOnce(generate);
@@ -137,43 +149,67 @@ function GeneratePeriods({ sheet, user }: { sheet: string; user: string }) {
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    send(range);
+    send({ path: 'range', range });
+  };
+
+  const submitYear = (e: FormEvent) => {
+    e.preventDefault();
+    send({ path: 'fy', year });
   };
 
   return (
-    <form onSubmit={submit}>
-      <label>
-        Generate monthly from{' '}
-        <input
-          data-testid="period-generate-from"
-          placeholder="yyyy-mm-dd (blank: today)"
-          value={range.from}
-          onChange={(e) => change({ from: e.target.value })}
-        />
-      </label>{' '}
-      <label>
-        to{' '}
-        <input
-          data-testid="period-generate-to"
-          placeholder="yyyy-mm-dd"
-          value={range.to}
-          onChange={(e) => change({ to: e.target.value })}
-        />
-      </label>{' '}
-      <button type="submit" data-testid="period-generate" disabled={generate.isPending}>
-        Generate periods
-      </button>
-      {generate.isSuccess && (
-        <>
-          {' '}Made <strong data-testid="period-generated">{generate.data.made}</strong>
-        </>
-      )}
-      {generate.isError && (
-        <span data-testid="period-generate-error" role="alert">
-          {' '}Nothing was made: generating needs valid from and to dates, the to on or after the from.
-        </span>
-      )}
-    </form>
+    <>
+      <form onSubmit={submit}>
+        <label>
+          Generate monthly from{' '}
+          <input
+            data-testid="period-generate-from"
+            placeholder="yyyy-mm-dd (blank: today)"
+            value={range.from}
+            onChange={(e) => change({ from: e.target.value })}
+          />
+        </label>{' '}
+        <label>
+          to{' '}
+          <input
+            data-testid="period-generate-to"
+            placeholder="yyyy-mm-dd"
+            value={range.to}
+            onChange={(e) => change({ to: e.target.value })}
+          />
+        </label>{' '}
+        <button type="submit" data-testid="period-generate" disabled={generate.isPending}>
+          Generate periods
+        </button>
+        {generate.isSuccess && (
+          <>
+            {' '}Made <strong data-testid="period-generated">{generate.data.made}</strong>
+          </>
+        )}
+        {generate.isError && (
+          <span data-testid="period-generate-error" role="alert">
+            {' '}Nothing was made: generating needs valid from and to dates, the to on or after the from, or a fiscal year (yyyy).
+          </span>
+        )}
+      </form>
+      <form onSubmit={submitYear}>
+        <label>
+          Generate fiscal year{' '}
+          <input
+            data-testid="period-generate-fy-year"
+            placeholder="yyyy"
+            value={year}
+            onChange={(e) => {
+              setYear(e.target.value);
+              generate.reset();
+            }}
+          />
+        </label>{' '}
+        <button type="submit" data-testid="period-generate-fy" disabled={generate.isPending}>
+          Generate fiscal year
+        </button>
+      </form>
+    </>
   );
 }
 
@@ -188,6 +224,7 @@ function Periods({ sheet, user }: { sheet: string; user: string }) {
   const { data: rates = [] } = useRates(sheet);
   const floor = useFloorCents(sheet);
   const late = useLate(sheet);
+  const fiscalStart = useFiscalStartMonth(sheet);
   const [draft, setDraft] = useState<Draft>(EMPTY);
 
   const save = useMutation({
@@ -255,12 +292,13 @@ function Periods({ sheet, user }: { sheet: string; user: string }) {
             <th>To</th>
             <th>Due total</th>
             <th>Closed</th>
+            <th>Fiscal year</th>
             <th></th>
           </tr>
         </thead>
         <tbody>
           {periods.map((p) => (
-            <PeriodRow key={p.name} sheet={sheet} user={user} period={p} dueCents={totals.get(p.name) ?? 0n} />
+            <PeriodRow key={p.name} sheet={sheet} user={user} period={p} dueCents={totals.get(p.name) ?? 0n} fiscalStart={fiscalStart} />
           ))}
         </tbody>
       </table>
