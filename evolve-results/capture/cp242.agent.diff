@@ -1,0 +1,136 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 89dc5ab7..bb2357a2 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -1232,8 +1232,16 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
+       queryClient.setQueryData(claimsKey(sheet), updated);
+       setDraft(EMPTY);
+     },
++    // A refused save of the editor closes it: the user's lock is released and the form goes back to adding, the
++    // refusal still showing until the form is changed or submitted again.
++    onError: (_error, { id }) => {
++      if (id === null) return;
++      closedRefused.current = true;
++      unlock.mutate(id);
++    },
+   });
+   const send = useSubmitOnce(save);
++  const closedRefused = useRef(false);
+   // A DRAFT claim from a template: its amount and note as they are now, dated like a claim with no date; refused,
+   // like the form, through claim-form-error.
+   const { data: templates = [] } = useTemplates(sheet);
+@@ -1258,13 +1266,15 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
+         ? EMPTY
+         : { amount: locked.amount, date: locked.date, note: locked.note, corrects: locked.corrects ?? '', ref: locked.ref ?? '', tags: locked.tags.join(', ') },
+     );
+-    save.reset();
++    if (closedRefused.current) closedRefused.current = false;
++    else save.reset();
+     // Only a move to another claim (or none) refills the form; the draft typed meanwhile is the user's.
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [editing]);
+ 
+   const change = (next: Partial<Draft>) => {
+     setDraft((d) => ({ ...d, ...next }));
++    closedRefused.current = false;
+     save.reset();
+     fromTemplate.reset();
+   };
+@@ -1282,6 +1292,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
+ 
+   const submit = (e: FormEvent) => {
+     e.preventDefault();
++    closedRefused.current = false;
+     // The server refuses an amount that is not a number with up to two decimals, a bad date, or a negative amount
+     // (a correction) that does not name a SETTLED claim of this person by number, or a
+     // reference already used on the sheet (ignoring case).
+diff --git a/src/main/frontend/features/people/timeline.slot.tsx b/src/main/frontend/features/people/timeline.slot.tsx
+new file mode 100644
+index 00000000..f11d2ca8
+--- /dev/null
++++ b/src/main/frontend/features/people/timeline.slot.tsx
+@@ -0,0 +1,59 @@
++import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
++import type { Person } from './people';
++import { useClaims, type Claim } from '../claims/claims';
++
++function TimelineHeader() {
++  return <th>Timeline</th>;
++}
++
++// The kinds of line, in the order they are listed within one date.
++const GRADE = 0;
++const CLAIM = 1;
++const HOLD = 2;
++const RETIRED = 3;
++const UNRETIRED = 4;
++
++type Line = { date: string; kind: number; text: string };
++
++/** The person's timeline: one line per dated thing about them (a grade from a from-date — the one from the beginning
++ *  of time has none —, a claim of theirs, whatever its status, a hold, a retirement past or current, an unretirement),
++ *  by date, and within a date grades, then claims, then holds, then retirements, then unretirements, each kind by its
++ *  line's text. */
++export function timeline(person: Person, claims: Claim[]): string[] {
++  const lines: Line[] = [];
++  for (const g of person.grades) {
++    if (g.from !== null) lines.push({ date: g.from, kind: GRADE, text: `grade ${g.grade}` });
++  }
++  for (const c of claims.filter((c) => c.person === person.id)) {
++    lines.push({ date: c.date, kind: CLAIM, text: `claim ${c.amount} ${c.status}` });
++  }
++  for (const h of person.holds) {
++    lines.push({ date: h.from, kind: HOLD, text: h.to === null ? 'hold' : `hold to ${h.to}` });
++  }
++  for (const r of person.retirements) {
++    lines.push({ date: r.from, kind: RETIRED, text: 'retired' });
++    lines.push({ date: r.to, kind: UNRETIRED, text: 'unretired' });
++  }
++  if (person.retiredFrom !== null) lines.push({ date: person.retiredFrom, kind: RETIRED, text: 'retired' });
++  return lines
++    .sort((a, b) => a.date.localeCompare(b.date) || a.kind - b.kind || (a.text < b.text ? -1 : a.text > b.text ? 1 : 0))
++    .map((l) => `${l.date} ${l.text}`);
++}
++
++function PersonTimeline({ sheet, person }: { sheet: string; user: string; person: Person }) {
++  const { data: claims = [] } = useClaims(sheet);
++  return (
++    <td>
++      {timeline(person, claims).map((line, i) => (
++        <div key={i} data-testid="person-timeline-line">
++          {line}
++        </div>
++      ))}
++    </td>
++  );
++}
++
++export const contributions = [
++  PersonColumnHeaders.fill({ order: 85, Component: TimelineHeader }),
++  PersonColumns.fill({ order: 85, Component: PersonTimeline }),
++];
+diff --git a/tmp_e2e/build.log b/tmp_e2e/build.log
+new file mode 100644
+index 00000000..52411d03
+--- /dev/null
++++ b/tmp_e2e/build.log
+@@ -0,0 +1 @@
++Picked up JAVA_TOOL_OPTIONS: -Djava.io.tmpdir=/home/daniel/ui-work/runs/202610271-to/tmp
+diff --git a/tmp_e2e/run.log b/tmp_e2e/run.log
+new file mode 100644
+index 00000000..2bbad7f1
+--- /dev/null
++++ b/tmp_e2e/run.log
+@@ -0,0 +1,12 @@
++Picked up JAVA_TOOL_OPTIONS: -Djava.io.tmpdir=/home/daniel/ui-work/runs/202610271-to/tmp
++
++Running 4 tests using 1 worker
++
++  ✓  1 [chromium] › acceptance.spec.ts:6:7 › person timeline › person timeline (16.0s)
++  ✓  2 [chromium] › acceptance.spec.ts:47:7 › person timeline › person timeline scenario 1 (33.8s)
++  ✓  3 [chromium] › acceptance.spec.ts:534:7 › person timeline › person timeline scenario 2 (51.6s)
++  ✓  4 [chromium] › acceptance.spec.ts:1322:7 › person timeline › person timeline scenario 3 (31.4s)
++
++  Slow test file: [chromium] › acceptance.spec.ts (2.2m)
++  Consider splitting slow test files to speed up parallel execution
++  4 passed (2.2m)
