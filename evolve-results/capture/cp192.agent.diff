@@ -1,0 +1,108 @@
+diff --git a/src/main/frontend/features/crews/crews.slot.tsx b/src/main/frontend/features/crews/crews.slot.tsx
+index 15fa3bb0..356ac552 100644
+--- a/src/main/frontend/features/crews/crews.slot.tsx
++++ b/src/main/frontend/features/crews/crews.slot.tsx
+@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { byUser } from '../session/session';
+-import { usePeople } from '../people/people';
++import { shownName, usePeople } from '../people/people';
+ import { usePersonDueCentsOf } from '../claims/claims';
+ import { twoDecimals } from '../rates/rates';
+ import { SheetPanels } from '../../slots/defs/sheetPanels';
+@@ -39,10 +39,12 @@ function CrewRow({ sheet, user, crew }: { sheet: string; user: string; crew: Cre
+   };
+ 
+   const due = crewDueCents(crew, people, dueOf);
++  const lead = people.find((p) => p.id === crew.lead.person);
++  const leadName = lead ? shownName(lead) : crew.lead.name;
+ 
+   return (
+     <li data-testid={`crew-row-${crew.name}`}>
+-      <strong>{crew.name}</strong> — lead <span data-testid="crew-lead">{crew.lead.name}</span>, due total{' '}
++      <strong>{crew.name}</strong> — lead <span data-testid="crew-lead">{leadName}</span>, due total{' '}
+       <span data-testid="crew-due-total"><Fig>{twoDecimals(due)}</Fig></span>
+       <ul>
+         {crew.members.map((m) => (
+diff --git a/src/main/frontend/features/patrons/patrons.slot.tsx b/src/main/frontend/features/patrons/patrons.slot.tsx
+index bc2ae1ee..243a18a1 100644
+--- a/src/main/frontend/features/patrons/patrons.slot.tsx
++++ b/src/main/frontend/features/patrons/patrons.slot.tsx
+@@ -5,7 +5,7 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { byUser } from '../session/session';
+ import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
+ import { useShown } from '../columns/columns';
+-import { peoplePath, usePeople } from '../people/people';
++import { peoplePath, shownName, usePeople } from '../people/people';
+ import type { Person } from '../people/people';
+ import { recentSettledCents, useClaims } from '../claims/claims';
+ import { twoDecimals } from '../rates/rates';
+@@ -58,7 +58,7 @@ function PersonPatrons({ sheet, user, person }: { sheet: string; user: string; p
+   const named = mine.map((p, i) => ({ patron: p, share: shares[i] }));
+   const names = [...named]
+     .sort((a, b) => a.patron.name.localeCompare(b.patron.name))
+-    .map((n) => `${n.patron.name} ${twoDecimals(n.share)}`);
++    .map((n) => `${shownName(n.patron)} ${twoDecimals(n.share)}`);
+   const backing = roundHundredths(
+     named.reduce((sum, n) => sum + recentSettledCents(claims, n.patron, today) * n.share, 0n),
+   );
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index 71f559f8..c46cf6d8 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -6,7 +6,7 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { byUser } from '../session/session';
+ import { SheetPanels } from '../../slots/defs/sheetPanels';
+ import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
+-import { GRADES, isRetired, peopleKey, peoplePath, usePeople, useShowRetired } from './people';
++import { GRADES, isRetired, peopleKey, peoplePath, shownName, usePeople, useShowRetired } from './people';
+ import type { Grade, Person } from './people';
+ import { SORT_KEYS, useSorted, useSortBy } from './sort';
+ import type { SortKey } from './sort';
+@@ -284,7 +284,7 @@ function People({ sheet, user }: { sheet: string; user: string }) {
+         <tbody>
+           {people.map((p) => (
+             <tr key={p.id} data-testid={`person-row-${p.id}`}>
+-              <td data-testid="person-name">{p.name}</td>
++              <td data-testid="person-name">{shownName(p)}</td>
+               <td data-testid="person-grade">{p.grade}</td>
+               {shown('terms') && <td data-testid="person-terms">{termsText(p)}</td>}
+               {shown('contact') && <td data-testid="person-contact">{p.contact ?? ''}</td>}
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index 760b0093..2e039df6 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -54,6 +54,10 @@ export type Person = {
+   flagged: boolean;
+ };
+ 
++/** A person's name as the screen shows it: "<name> (<grade in force on the sheet's today>)". Exports, audit lines,
++ *  the import and paste boxes and the selects of names keep the plain name. */
++export const shownName = (p: Person) => `${p.name} (${p.grade})`;
++
+ /** The person's grade in force on a date (yyyy-MM-dd): the one whose from-date is the latest on or before it. */
+ export function gradeOn(person: Person, date: string): Grade | undefined {
+   let found: GradeFrom | undefined;
+diff --git a/src/main/frontend/features/search/search.slot.tsx b/src/main/frontend/features/search/search.slot.tsx
+index 130247ce..2608e4a1 100644
+--- a/src/main/frontend/features/search/search.slot.tsx
++++ b/src/main/frontend/features/search/search.slot.tsx
+@@ -1,7 +1,7 @@
+ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+ import { getJson } from '../../api/http';
+ import { SheetPanels } from '../../slots/defs/sheetPanels';
+-import { usePeople } from '../people/people';
++import { shownName, usePeople } from '../people/people';
+ import { useAliases } from '../aliases/aliases';
+ import { useClaims, usePersonDueCentsOf } from '../claims/claims';
+ import { useRates, showDue } from '../rates/rates';
+@@ -27,7 +27,7 @@ function SheetMatches({ sheet, text, report }: { sheet: string; text: string; re
+               p.name.toLowerCase().includes(needle) ||
+               aliases.some((a) => a.person === p.id && a.alias.toLowerCase().includes(needle)),
+           )
+-          .map((p) => `${sheet} ${p.name} ${showDue(dueOf(p))}`)
++          .map((p) => `${sheet} ${shownName(p)} ${showDue(dueOf(p))}`)
+       : null;
+   const key = lines === null ? null : JSON.stringify(lines);
+   useEffect(() => {
