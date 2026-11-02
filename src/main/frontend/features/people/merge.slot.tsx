@@ -68,7 +68,46 @@ function PersonMerge({ sheet, user, person }: { sheet: string; user: string; per
   );
 }
 
+// The button that undoes the last merge into this person, bringing the merged person back at the end of the list with
+// the claims that came from them and their own aliases. The server refuses anyone but the steward who made the merge,
+// any day but the sheet's today it was made, and a person with no merge to undo; everything is re-read as for a merge.
+function PersonMergeUndo({ sheet, user, person }: { sheet: string; user: string; person: Person }) {
+  const queryClient = useQueryClient();
+  const undo = useMutation({
+    mutationKey: personActionKey(sheet, person.id),
+    mutationFn: () => postJson<Person[]>(byUser(`${peoplePath(sheet)}/${person.id}/merge-undo`, user), {}),
+    onSuccess: async (updated) => {
+      await queryClient.invalidateQueries({
+        predicate: (q) => q.queryKey.includes(sheet) && q.queryKey[0] !== 'sheet' && q.queryKey[0] !== 'people',
+      });
+      queryClient.setQueryData(peopleKey(sheet), updated);
+    },
+  });
+  const act = useSubmitOnce(undo);
+  const latest = useIsLatest(personActionKey(sheet, person.id), undo.submittedAt);
+
+  return (
+    <td>
+      <button
+        type="button"
+        data-testid="person-merge-undo"
+        disabled={undo.isPending}
+        onClick={() => act(undefined)}
+      >
+        Undo merge
+      </button>
+      {undo.isError && latest && (
+        <span data-testid="person-error" role="alert">
+          {' '}Only the steward who merged into this person may undo the last merge, on the day it was made.
+        </span>
+      )}
+    </td>
+  );
+}
+
 export const contributions = [
   PersonColumnHeaders.fill({ order: 70, Component: MergeHeader }),
   PersonColumns.fill({ order: 70, Component: PersonMerge }),
+  PersonColumnHeaders.fill({ order: 71, Component: MergeHeader }),
+  PersonColumns.fill({ order: 71, Component: PersonMergeUndo }),
 ];
