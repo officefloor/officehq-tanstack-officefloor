@@ -1,0 +1,97 @@
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index 3077c368..ede24737 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -15,7 +15,8 @@ import { Fig } from '../locale/Fig';
+ type Draft = { grade: Grade; pct: string; from: string; to: string };
+ const EMPTY: Draft = { grade: 'A', pct: '', from: '', to: '' };
+ 
+-// The sheet's rates: each grade's rate in force on the sheet's today (n/a when none), every rate with its
++// The sheet's rates: each grade's rate in force on the sheet's today (n/a when none), a calendar of each grade's rate
++// on the first day of each month of today's calendar year (n/a when none), every rate with its
+ // from-date (a blank from-date applies from the start) and to-date (a blank one has no end), and a form that sets one, replacing the rate already
+ // there for that grade and from-date as a new version (each row shows its version count; the newest is in force).
+ function Rates({ sheet, user }: { sheet: string; user: string }) {
+@@ -23,6 +24,9 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
+   const { data: rates = [] } = useRates(sheet);
+   const today = useSheetToday(sheet);
+   const [draft, setDraft] = useState<Draft>(EMPTY);
++  // The rate calendar: each month (yyyy-MM) of the sheet's today's calendar year, read on its first day.
++  const year = today?.slice(0, 4);
++  const months = year ? Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`) : [];
+ 
+   const save = useMutation({
+     mutationFn: (body: Draft) => postJson<Rate[]>(byUser(ratesPath(sheet), user), body),
+@@ -165,6 +169,28 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
+           ))}
+         </tbody>
+       </table>
++      {months.length > 0 && (
++        <table>
++          <thead>
++            <tr>
++              <th>Grade</th>
++              {months.map((m) => (
++                <th key={m}>{m}</th>
++              ))}
++            </tr>
++          </thead>
++          <tbody>
++            {GRADES.map((g) => (
++              <tr key={g}>
++                <td>{g}</td>
++                {months.map((m) => (
++                  <td key={m} data-testid={`rate-month-${g}-${m}`}><Fig>{rateOf(rates, g, `${m}-01`) ?? 'n/a'}</Fig></td>
++                ))}
++              </tr>
++            ))}
++          </tbody>
++        </table>
++      )}
+       <table>
+         <thead>
+           <tr>
+diff --git a/src/main/java/net/officefloor/hq/app/crew/Crews.java b/src/main/java/net/officefloor/hq/app/crew/Crews.java
+index 3e7e8387..d830fb21 100644
+--- a/src/main/java/net/officefloor/hq/app/crew/Crews.java
++++ b/src/main/java/net/officefloor/hq/app/crew/Crews.java
+@@ -21,9 +21,12 @@ public class Crews {
+     public List<Crew> list(String sheet) {
+         Map<String, CrewMember> leads = new LinkedHashMap<>();
+         jdbc.query("SELECT c.name, c.lead_id, p.name AS lead_name FROM crew c"
+-                + " JOIN person p ON p.sheet = c.sheet AND p.id = c.lead_id WHERE c.sheet = ? ORDER BY c.position",
++                + " LEFT JOIN person p ON p.sheet = c.sheet AND p.id = c.lead_id WHERE c.sheet = ? ORDER BY c.position",
+                 (rs) -> {
+-                    leads.put(rs.getString("name"), new CrewMember(rs.getLong("lead_id"), rs.getString("lead_name")));
++                    // A crew whose lead has gone from the sheet (e.g. transferred away) is still listed, with no lead.
++                    String lead = rs.getString("lead_name");
++                    leads.put(rs.getString("name"),
++                            lead == null ? new CrewMember(0, "") : new CrewMember(rs.getLong("lead_id"), lead));
+                 }, sheet);
+         Map<String, List<CrewMember>> members = new LinkedHashMap<>();
+         leads.keySet().forEach((name) -> members.put(name, new ArrayList<>()));
+diff --git a/src/main/java/net/officefloor/hq/app/pool/Pools.java b/src/main/java/net/officefloor/hq/app/pool/Pools.java
+index 5ed5b45d..7d46558f 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/Pools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/Pools.java
+@@ -106,14 +106,17 @@ public class Pools {
+     private record Ordered(int position, PoolMember member) {
+     }
+ 
+-    /** Adds each crew as a pool: its lead first, then its members in the order added, at {@link #crewShares}. */
++    /** Adds each crew as a pool: its lead (when it still has one) first, then its members in the order added, at {@link #crewShares}. */
+     private void crewPools(String sheet, Map<String, List<Ordered>> members) {
+         Map<String, List<PoolMember>> crews = new LinkedHashMap<>();
+         jdbc.query("SELECT c.name, c.lead_id, p.name AS person_name, p.retired_from FROM crew c"
+-                + " JOIN person p ON p.sheet = c.sheet AND p.id = c.lead_id WHERE c.sheet = ? ORDER BY c.position",
++                + " LEFT JOIN person p ON p.sheet = c.sheet AND p.id = c.lead_id WHERE c.sheet = ? ORDER BY c.position",
+                 (rs) -> {
+                     List<PoolMember> list = new ArrayList<>();
+-                    list.add(crewMember(rs, "lead_id"));
++                    // A crew whose lead has gone (e.g. transferred away) is still a pool, of its members only.
++                    if (rs.getString("person_name") != null) {
++                        list.add(crewMember(rs, "lead_id"));
++                    }
+                     crews.put(rs.getString("name"), list);
+                 }, sheet);
+         jdbc.query("SELECT m.crew, m.person_id, p.name AS person_name, p.retired_from FROM crew_member m"
