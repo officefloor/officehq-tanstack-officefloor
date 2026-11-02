@@ -64,6 +64,7 @@ function Periods({ sheetId }: { sheetId: string }) {
         </button>
         {save.isError && <p data-testid="period-form-error">{save.error.message}</p>}
       </form>
+      <GeneratePeriods sheetId={sheetId} />
       <table data-testid="periods-list">
         <thead>
           <tr>
@@ -83,6 +84,60 @@ function Periods({ sheetId }: { sheetId: string }) {
       </table>
       {periods.isError && <p data-testid="periods-error">{periods.error.message}</p>}
     </section>
+  );
+}
+
+/** Generate monthly periods: one per calendar month from the from-date's month to the to-date's month
+ *  (a blank from-date is the sheet's today), each named yyyy-mm, leaving out a month already named or
+ *  overlapping a period. Shows how many were made (gone while it runs); a to-date before the
+ *  from-date is refused with an error. */
+function GeneratePeriods({ sheetId }: { sheetId: string }) {
+  const queryClient = useQueryClient();
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const submitOnce = useSingleFlight();
+  const generate = useMutation({
+    mutationFn: (f: { from: string; to: string }) =>
+      postJson<{ made: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/period-generate`, f),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
+    },
+  });
+
+  const field = (set: (v: string) => void) => (e: ChangeEvent<HTMLInputElement>) => {
+    set(e.target.value);
+    generate.reset();
+  };
+
+  return (
+    <form
+      data-testid="period-generate-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        submitOnce(() => {
+          generate.reset();
+          return generate.mutateAsync({ from, to });
+        });
+      }}
+    >
+      <label>
+        Generate from{' '}
+        <input type="text" placeholder="yyyy-mm-dd" data-testid="period-generate-from" value={from} onChange={field(setFrom)} />
+      </label>{' '}
+      <label>
+        To <input type="text" placeholder="yyyy-mm-dd" data-testid="period-generate-to" value={to} onChange={field(setTo)} />
+      </label>{' '}
+      <button type="submit" data-testid="period-generate" disabled={generate.isPending}>
+        Generate monthly periods
+      </button>
+      {generate.isSuccess && (
+        <>
+          {' '}
+          Made <strong data-testid="period-generated">{generate.data.made}</strong>
+        </>
+      )}
+      {generate.isError && <p data-testid="period-generate-error">{generate.error.message}</p>}
+    </form>
   );
 }
 
