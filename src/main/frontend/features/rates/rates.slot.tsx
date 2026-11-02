@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
-import { claimed, useClaims } from '../claims/useClaims';
+import { counts, useClaims } from '../claims/useClaims';
 import { GRADES, usePeople } from '../people/usePeople';
 import { useSheetToday } from '../today/useSheetToday';
 import { due, rateFor, ratesKey, sumDues, useRates, type Rate } from './useRates';
@@ -117,8 +117,9 @@ function Rates({ sheetId }: { sheetId: string }) {
   );
 }
 
-/** Each person's due-total, by person id: their claimed times their grade's rate in force on the
- *  sheet's today, divided by 100, rounded half up; 'n/a' when no rate for their grade is in force. */
+/** Each person's due-total, by person id: the sum of the figures of their claims that count (a
+ *  settled claim's frozen due, else its live due), skipping those with none; 'n/a' when no rate for
+ *  their grade is in force on the sheet's today and no settled claim of theirs keeps a figure. */
 function useDueTotals(sheetId: string): Map<number, string> {
   const people = usePeople(sheetId);
   const claims = useClaims(sheetId);
@@ -126,8 +127,11 @@ function useDueTotals(sheetId: string): Map<number, string> {
   const today = useSheetToday(sheetId);
   const totals = new Map<number, string>();
   for (const p of people.data ?? []) {
-    const mine = (claims.data ?? []).filter((c) => c.personId === p.id);
-    totals.set(p.id, due(claimed(mine), rateFor(rates.data, p.grade, today.data?.today)));
+    const counting = (claims.data ?? []).filter((c) => c.personId === p.id && counts(c));
+    const rated = rateFor(rates.data, p.grade, today.data?.today) !== undefined;
+    totals.set(p.id, rated || counting.some((c) => c.due !== null)
+      ? sumDues(counting.map((c) => c.due ?? due(c.amount, rateFor(rates.data, p.grade, c.date))))
+      : 'n/a');
   }
   return totals;
 }

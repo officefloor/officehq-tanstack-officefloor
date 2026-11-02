@@ -71,7 +71,7 @@ public class ClaimRepository {
 
     /** A claim's due now: its amount at the rate for its person's grade in force on the claim's date
      *  (the one with the latest from-date on or before it; an undated rate applies from the beginning
-     *  of time), rounded half up to two decimals; null when no rate applies. */
+     *  of time), rounded half to even to two decimals; null when no rate applies. */
     public BigDecimal due(String sheetId, Claim claim) {
         List<BigDecimal> pct = jdbc.queryForList("SELECT r.pct FROM rate r JOIN person p ON p.sheet_id = r.sheet_id"
                 + " AND p.grade = r.grade WHERE p.sheet_id = ? AND p.id = ?"
@@ -79,7 +79,7 @@ public class ClaimRepository {
                 + " ORDER BY r.from_date DESC NULLS LAST LIMIT 1", BigDecimal.class, sheetId,
                 claim.personId(), claim.date());
         return pct.isEmpty() ? null
-                : new BigDecimal(claim.amount()).multiply(pct.get(0)).movePointLeft(2).setScale(2, RoundingMode.HALF_UP);
+                : new BigDecimal(claim.amount()).multiply(pct.get(0)).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
     }
 
     /** Fix a settled claim's due. */
