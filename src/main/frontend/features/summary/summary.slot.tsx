@@ -5,9 +5,7 @@ import { usePeriodDueTotals } from '../periods/usePeriodDueTotals';
 import { usePeriods } from '../periods/usePeriods';
 import { useDueTotals } from '../rates/useDueTotals';
 import { sumDues } from '../rates/useRates';
-
-/** The statuses the summary counts; no claim is PENDING today, so its count stays 0. */
-const STATUSES: string[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'];
+import { countWithStatus, STATUSES } from './statusCounts';
 
 /** The sheet's summary, worked out from the same figures the lists show: per grade, how many people
  *  have it on the sheet's today (retired people left out) and their due-totals added up (skipping
@@ -72,7 +70,7 @@ function Summary({ sheetId }: { sheetId: string }) {
             <tr key={s}>
               <td>{s}</td>
               <td data-testid={`summary-status-${s}-count`}>
-                {(claims.data ?? []).filter((c) => c.status === s).length}
+                {countWithStatus(claims.data, s)}
               </td>
             </tr>
           ))}
