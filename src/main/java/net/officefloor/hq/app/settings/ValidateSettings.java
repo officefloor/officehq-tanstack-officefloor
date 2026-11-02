@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  3650; the late percent is 0.00 or more with up to two decimals; the policy date is a date
  *  (yyyy-mm-dd), blank meaning the sheet's today; the period
  *  numbering from-date is a date, blank meaning off; a grade's (A, B or C) terms are like the sheet's, blank
- *  meaning the grade uses the sheet's terms; the cap is 0.00 or more with up to two decimals, blank meaning none; the proof threshold likewise. A from-date given for a
+ *  meaning the grade uses the sheet's terms; the cap is 0.00 or more with up to two decimals, blank meaning none; the proof threshold and the note threshold likewise. A from-date given for a
  *  setting with a figure is a date; blank is the sheet's today. A permission matrix entry (open, settle, void, reassign, close or reopen) is a comma separated
  *  list of roles (clerk, steward), blank keeping the standing rule. The grace days are a whole number of days, 0 to 3650, blank meaning off. A setting left out is not changed. */
 public class ValidateSettings {
@@ -62,6 +62,10 @@ public class ValidateSettings {
         String proof = request == null || request.proofThreshold() == null ? null : request.proofThreshold().trim();
         if (proof != null && !proof.isEmpty() && !MONEY.matcher(proof).matches()) {
             throw new BadRequestException("proof threshold must be 0.00 or more with up to two decimals");
+        }
+        String note = request == null || request.noteThreshold() == null ? null : request.noteThreshold().trim();
+        if (note != null && !note.isEmpty() && !MONEY.matcher(note).matches()) {
+            throw new BadRequestException("note threshold must be 0.00 or more with up to two decimals");
         }
         String grace = request == null || request.graceDays() == null ? null : request.graceDays().trim();
         if (grace != null && !grace.isEmpty() && (!TERMS.matcher(grace).matches() || Integer.parseInt(grace) > 3650)) {
@@ -122,6 +126,7 @@ public class ValidateSettings {
                 case "late-pct" -> latePct != null;
                 case "cap" -> cap != null;
                 case "proof-threshold" -> proof != null;
+                case "note-threshold" -> note != null;
                 default -> key.startsWith("terms-") && gradeTerms.containsKey(key.substring(6));
             };
             if (!saved) continue;
@@ -139,6 +144,7 @@ public class ValidateSettings {
                 policy != null, policyDate, numbering != null, numberingFrom, gradeTerms,
                 cap != null, cap == null || cap.isEmpty() ? null : new BigDecimal(cap).setScale(2), from,
                 proof != null, proof == null || proof.isEmpty() ? null : new BigDecimal(proof).setScale(2), permissions,
-                grace != null, grace == null || grace.isEmpty() ? null : Integer.parseInt(grace)));
+                grace != null, grace == null || grace.isEmpty() ? null : Integer.parseInt(grace),
+                note != null, note == null || note.isEmpty() ? null : new BigDecimal(note).setScale(2)));
     }
 }

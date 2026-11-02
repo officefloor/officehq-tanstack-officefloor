@@ -14,14 +14,15 @@ import { settingOn, settingsKey, useSettings, type Settings } from './useSetting
  *  (while set and the sheet's today is on or after it, a claim opened is numbered within its period,
  *  <period>-<n>, or X-<n> in no period; blank is off), each grade's own terms (blank is the sheet's
  *  terms), its cap (the most a person's due-total can be; blank is none), its proof threshold (a claim whose due is
- *  above the one in force on its date cannot be settled or approved without a proof; blank is none), its permission matrix (for each of open, settle, void,
+ *  above the one in force on its date cannot be settled or approved without a proof; blank is none), its note threshold (a claim
+ *  whose due is above the one in force on its date cannot be opened with an empty note; blank is none), its permission matrix (for each of open, settle, void,
  *  reassign, close and reopen, the roles that may do it, comma separated; blank keeps the standing rule; not dated), its grace days (changing the
  *  sheet's today closes each open period whose to-date plus them is before the new today; blank is off; not dated), and the role (clerk, steward or viewer — a viewer changes nothing)
  *  assigned to each user name, and the delegations of the steward role (a steward delegates it to a user from a
  *  from-date, blank the sheet's today, to a to-date, inclusive; while the sheet's today is inside it the user acts
  *  as a steward). Saving saves each setting whose field was entered (focused or typed
  *  in, even when left blank); the others stay as they are. A setting with a figure (the clerk limit, the
- *  floor, the terms, each grade's terms, the late percent, the cap and the proof threshold) is saved from its from-date, blank
+ *  floor, the terms, each grade's terms, the late percent, the cap, the proof threshold and the note threshold) is saved from its from-date, blank
  *  meaning the sheet's today; each shows the value in force on the sheet's today. */
 /** The grades a person can have, each of which can have its own terms. */
 const GRADES = ['A', 'B', 'C'];
@@ -61,6 +62,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
   const [numberingFrom, setNumberingFrom] = useState<string | null>(null);
   const [cap, setCap] = useState<string | null>(null);
   const [proofThreshold, setProofThreshold] = useState<string | null>(null);
+  const [noteThreshold, setNoteThreshold] = useState<string | null>(null);
   const [from, setFrom] = useState<Record<string, string>>({});
   const [permissions, setPermissions] = useState<Record<string, string>>({});
   const [graceDays, setGraceDays] = useState<string | null>(null);
@@ -74,7 +76,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
 
   const saveOnce = useSingleFlight();
   const save = useMutation({
-    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null; permissions: Record<string, string>; graceDays: string | null }) =>
+    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null; noteThreshold: string | null; permissions: Record<string, string>; graceDays: string | null }) =>
       postJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, f),
     onSuccess: (saved) => {
       setLimit(null);
@@ -86,6 +88,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
       setNumberingFrom(null);
       setCap(null);
       setProofThreshold(null);
+      setNoteThreshold(null);
       setFrom({});
       setPermissions({});
       setGraceDays(null);
@@ -124,7 +127,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           e.preventDefault();
           saveOnce(() => {
             save.reset();
-            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap, from, proofThreshold, permissions, graceDays });
+            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap, from, proofThreshold, noteThreshold, permissions, graceDays });
           });
         }}
       >
@@ -254,6 +257,20 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           />
         </label>{' '}
         <FromInput settingKey="proof-threshold" from={from} setFrom={setFrom} onChange={() => save.reset()} />{' '}
+        <label>
+          Note threshold{' '}
+          <input
+            data-testid="setting-note-threshold"
+            inputMode="decimal"
+            value={noteThreshold ?? ''}
+            onFocus={() => setNoteThreshold((v) => v ?? '')}
+            onChange={(e) => {
+              setNoteThreshold(e.target.value);
+              save.reset();
+            }}
+          />
+        </label>{' '}
+        <FromInput settingKey="note-threshold" from={from} setFrom={setFrom} onChange={() => save.reset()} />{' '}
         {PERM_ACTIONS.map((a) => (
           <label key={a}>
             Who may {a}{' '}
@@ -298,7 +315,8 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
         period numbering from{' '}
         <strong data-testid="setting-period-numbering-from-current">{settings.data?.periodNumberingFrom ?? ''}</strong>,
         cap <strong data-testid="setting-cap-current">{settingOn(settings.data, 'cap', today) ?? ''}</strong>,
-        proof threshold <strong data-testid="setting-proof-threshold-current">{settingOn(settings.data, 'proof-threshold', today) ?? ''}</strong>
+        proof threshold <strong data-testid="setting-proof-threshold-current">{settingOn(settings.data, 'proof-threshold', today) ?? ''}</strong>,
+        note threshold <strong data-testid="setting-note-threshold-current">{settingOn(settings.data, 'note-threshold', today) ?? ''}</strong>
         {PERM_ACTIONS.map((a) => (
           <span key={a}>
             , may {a} <strong data-testid={`setting-perm-${a}-current`}>{settings.data?.permissions?.[a] ?? ''}</strong>

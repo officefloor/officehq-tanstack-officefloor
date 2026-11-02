@@ -68,6 +68,12 @@ public class SaveSettings {
                     + (input.proofThreshold() == null ? "" : SettingsRepository.money(input.proofThreshold()))
                     + given(input, "proof-threshold"));
         }
+        if (input.setsNoteThreshold()) {
+            repository.setNoteThreshold(id, from(input, "note-threshold", today), input.noteThreshold());
+            audit.record(prefix + "note-threshold value="
+                    + (input.noteThreshold() == null ? "" : SettingsRepository.money(input.noteThreshold()))
+                    + given(input, "note-threshold"));
+        }
         if (input.setsGraceDays()) {
             repository.setGraceDays(id, input.graceDays());
             audit.record(prefix + "grace-days value=" + (input.graceDays() == null ? "" : input.graceDays()));

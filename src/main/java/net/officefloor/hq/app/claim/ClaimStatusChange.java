@@ -86,6 +86,15 @@ final class ClaimStatusChange {
         if (event.equals("CLAIM_REJECTED") && why.isEmpty()) {
             throw new BadRequestException("give a reason to reject the claim");
         }
+        // A claim whose due is above the note threshold in force on its date cannot be opened with an empty
+        // note ('n/a' is above none).
+        if (to.equals("OPEN") && found.status().equals("DRAFT") && (found.note() == null || found.note().trim().isEmpty())) {
+            BigDecimal threshold = settings.noteThreshold(id, LocalDate.parse(found.date()));
+            BigDecimal now = repository.dueNow(id, found);
+            if (threshold != null && now != null && now.compareTo(threshold) > 0) {
+                throw new BadRequestException("a claim with a due above the note threshold needs a note to be opened");
+            }
+        }
         // A claim whose due is above the proof threshold in force on its date cannot be settled or approved
         // without a proof ('n/a' is above none); this is decided before the clerk limit.
         if (to.equals("SETTLED") && found.proofs() == 0) {

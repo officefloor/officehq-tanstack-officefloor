@@ -121,6 +121,17 @@ public class SettingsRepository {
         record(sheetId, "proof-threshold", from, threshold == null ? null : money(threshold));
     }
 
+    /** The sheet's note threshold in force on a date: a claim of that date whose due is above it cannot be
+     *  opened with an empty note; null when it has none. */
+    public BigDecimal noteThreshold(String sheetId, LocalDate date) {
+        List<String> found = on(sheetId, "note-threshold", date);
+        return found.isEmpty() || found.get(0) == null ? null : new BigDecimal(found.get(0));
+    }
+
+    public void setNoteThreshold(String sheetId, LocalDate from, BigDecimal threshold) {
+        record(sheetId, "note-threshold", from, threshold == null ? null : money(threshold));
+    }
+
     /** A due-total held to the cap: at most the cap when there is one. */
     public static BigDecimal capped(BigDecimal total, BigDecimal cap) {
         return cap != null && total.compareTo(cap) > 0 ? cap.setScale(2) : total;
