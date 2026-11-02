@@ -6,11 +6,11 @@ import { PERSON_ROW_SPAN, PersonCells, PersonColumnHead, PersonDetail } from '..
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { gradeOn, heldIds, usePeople } from '../people/usePeople';
 import { periodOf, usePeriods } from '../periods/usePeriods';
-import { due, rateFor, useRates } from '../rates/useRates';
-import { dueBy, dueNow, isOverdue } from '../overdue/useOverdue';
+import { rateFor, useRates } from '../rates/useRates';
+import { claimDueNow, dueBy, isOverdue } from '../overdue/useOverdue';
 import { useSettings } from '../settings/useSettings';
 import { useSheetToday } from '../today/useSheetToday';
-import { claimed, claimsKey, fixedDue, useClaims, type Claim } from './useClaims';
+import { claimed, claimsKey, useClaims, type Claim } from './useClaims';
 
 /** A person's claimed: the sum of their counted (OPEN or SETTLED; only SETTLED while held) claims' amounts. */
 function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: number }) {
@@ -177,7 +177,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                 <td data-testid="claim-period">{periodOf(periods.data, c.date)?.name ?? ''}</td>
                 <td data-testid="claim-note">{c.note}</td>
                 <td data-testid="claim-due">
-                  {dueNow(c, fixedDue(c) ?? due(c.amount, rateFor(rates.data, gradeOn(person, c.date), c.date), floor), settings, today)}
+                  {claimDueNow(c, claims.data, rateFor(rates.data, gradeOn(person, c.date), c.date), floor, settings, today)}
                 </td>
                 <td data-testid="claim-due-by">{terms === undefined ? '' : dueBy(c.date, terms)}</td>
                 <td data-testid="claim-overdue">

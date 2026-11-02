@@ -1,6 +1,8 @@
 package net.officefloor.hq.app.settings;
 
 import java.math.BigDecimal;
+import java.sql.Date;
+import java.time.LocalDate;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -26,8 +28,9 @@ public class SettingsRepository {
         List<Role> roles = jdbc.query("SELECT user_name, role FROM sheet_role WHERE sheet_id = ? ORDER BY user_name",
                 (rs, i) -> new Role(rs.getString("user_name"), rs.getString("role")), sheetId);
         BigDecimal limit = clerkLimit(sheetId);
+        LocalDate policy = policyDate(sheetId);
         return new Settings(limit == null ? null : money(limit), money(floor(sheetId)), terms(sheetId),
-                money(latePct(sheetId)), roles);
+                money(latePct(sheetId)), roles, policy == null ? null : policy.toString());
     }
 
     /** The sheet's clerk limit; null when it has none. */
@@ -73,6 +76,18 @@ public class SettingsRepository {
 
     public void setLatePct(String sheetId, BigDecimal pct) {
         jdbc.update("UPDATE sheet SET late_pct = ? WHERE id = ?", pct, sheetId);
+    }
+
+    /** The sheet's policy date; null when blank (the sheet's today is then the policy date). */
+    public LocalDate policyDate(String sheetId) {
+        List<Date> found = jdbc.query("SELECT policy_date FROM sheet WHERE id = ?",
+                (rs, i) -> rs.getDate("policy_date"), sheetId);
+        return found.isEmpty() || found.get(0) == null ? null : found.get(0).toLocalDate();
+    }
+
+    public void setPolicyDate(String sheetId, LocalDate policyDate) {
+        jdbc.update("UPDATE sheet SET policy_date = ? WHERE id = ?", policyDate == null ? null : Date.valueOf(policyDate),
+                sheetId);
     }
 
     /** The role a user name holds on the sheet: clerk unless set otherwise. */

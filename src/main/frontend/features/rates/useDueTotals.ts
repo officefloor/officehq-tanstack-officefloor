@@ -1,9 +1,9 @@
 import { counts, fixedDue, useClaims } from '../claims/useClaims';
-import { dueNow } from '../overdue/useOverdue';
+import { claimDueNow } from '../overdue/useOverdue';
 import { gradeOn, heldIds, usePeople } from '../people/usePeople';
 import { useSettings } from '../settings/useSettings';
 import { useSheetToday } from '../today/useSheetToday';
-import { due, rateFor, sumDues, useRates } from './useRates';
+import { rateFor, sumDues, useRates } from './useRates';
 
 /** Each person's due-total, by person id: the sum of the figures of their claims that count (a held
  *  person's OPEN claims left out; a settled claim's frozen due, else the figure their last statement
@@ -23,7 +23,7 @@ export function useDueTotals(sheetId: string): Map<number, string> {
     const counting = (claims.data ?? []).filter((c) => c.personId === p.id && counts(c, held));
     const rated = rateFor(rates.data, p.grade, today.data?.today) !== undefined;
     const dues = counting.map((c) =>
-      dueNow(c, fixedDue(c) ?? due(c.amount, rateFor(rates.data, gradeOn(p, c.date), c.date), floor), settings, today.data?.today));
+      claimDueNow(c, claims.data, rateFor(rates.data, gradeOn(p, c.date), c.date), floor, settings, today.data?.today));
     totals.set(p.id, rated || counting.some((c) => fixedDue(c) !== null) || dues.some((d) => d !== 'n/a')
       ? sumDues(dues)
       : 'n/a');

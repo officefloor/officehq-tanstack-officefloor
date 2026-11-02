@@ -48,12 +48,12 @@ function money(cents: bigint): string {
 }
 
 /** A due: an amount (two decimals) times a rate (a two-decimal percent), divided by 100, rounded
- *  half to even to two decimals, and at least the sheet's floor (two decimals; none while it is not
+ *  half up (when `halfUp`) or half to even to two decimals, and at least the sheet's floor (two decimals; none while it is not
  *  loaded; a correction, a negative amount, has no floor); 'n/a' when there is no rate. Worked in
  *  whole numbers, so exact. */
-export function due(amount: string, pct: string | undefined, floor: string | undefined): string {
+export function due(amount: string, pct: string | undefined, floor: string | undefined, halfUp: boolean): string {
   if (pct === undefined) return 'n/a';
-  let cents = percentOf(amount, pct, 1n);
+  let cents = percentOf(amount, pct, 1n, halfUp);
   if (floor !== undefined && !isCorrection(amount) && cents < hundredths(floor)) cents = hundredths(floor);
   return money(cents);
 }
@@ -64,22 +64,22 @@ export function isCorrection(amount: string): boolean {
 }
 
 /** An amount (two decimals) times a rate (a two-decimal percent) times a whole number, divided by
- *  100, rounded half to even, in hundredths (a negative amount rounds as its size does, then takes
+ *  100, rounded half up (when `halfUp`, away from zero) or half to even, in hundredths (a negative amount rounds as its size does, then takes
  *  its sign back). */
-function percentOf(amount: string, pct: string, times: bigint): bigint {
+function percentOf(amount: string, pct: string, times: bigint, halfUp: boolean): bigint {
   const signed = hundredths(amount) * hundredths(pct) * times; // in 1/1_000_000 of a unit
   const product = signed < 0n ? -signed : signed;
   const rest = product % 10000n;
   let cents = product / 10000n;
-  if (rest > 5000n || (rest === 5000n && cents % 2n === 1n)) cents += 1n;
+  if (rest > 5000n || (rest === 5000n && (halfUp || cents % 2n === 1n))) cents += 1n;
   return signed < 0n ? -cents : cents;
 }
 
 /** A figure (two decimals) with a late charge added on top: the late percent (two decimals) of the
  *  figure for each of `periods` full 30 days, rounded like a due; 'n/a' stays 'n/a'. */
-export function withCharge(figure: string, latePct: string, periods: number): string {
+export function withCharge(figure: string, latePct: string, periods: number, halfUp: boolean): string {
   if (figure === 'n/a' || periods <= 0) return figure;
-  return money(hundredths(figure) + percentOf(figure, latePct, BigInt(periods)));
+  return money(hundredths(figure) + percentOf(figure, latePct, BigInt(periods), halfUp));
 }
 
 /** Dues added up, skipping 'n/a'. */

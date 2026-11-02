@@ -38,6 +38,11 @@ public class SaveSettings {
             audit.record("SETTING_CHANGED sheet=" + id + " by=" + by + " key=late-pct value="
                     + SettingsRepository.money(input.latePct()));
         }
+        if (input.setsPolicyDate()) {
+            repository.setPolicyDate(id, input.policyDate());
+            audit.record("SETTING_CHANGED sheet=" + id + " by=" + by + " key=policy-date value="
+                    + (input.policyDate() == null ? "" : input.policyDate().toString()));
+        }
         rollup.record(id, by, before);
         settings.set(repository.load(id));
     }

@@ -80,7 +80,7 @@ public class ClaimRepository {
     /** A claim's due now: its amount at the rate, in force on the claim's date, for the grade its person
      *  had on that date
      *  (the one with the latest from-date on or before it; an undated rate applies from the beginning
-     *  of time), rounded half to even to two decimals, and at least the sheet's floor (a correction's, a
+     *  of time), rounded to two decimals by the claim's rounding (see {@link #rounding}), and at least the sheet's floor (a correction's, a
      *  negative amount's, has no floor); null when no rate applies. */
     public BigDecimal due(String sheetId, Claim claim) {
         List<BigDecimal> pct = jdbc.queryForList("SELECT r.pct FROM rate r WHERE r.sheet_id = ? AND r.grade = "
@@ -89,8 +89,25 @@ public class ClaimRepository {
                 sheetId, claim.personId(), claim.date(), claim.date());
         if (pct.isEmpty()) return null;
         BigDecimal due = new BigDecimal(claim.amount()).multiply(pct.get(0)).movePointLeft(2)
-                .setScale(2, RoundingMode.HALF_EVEN);
+                .setScale(2, rounding(sheetId, claim));
         return new BigDecimal(claim.amount()).signum() < 0 ? due : due.max(floor(sheetId));
+    }
+
+    /** How a claim's live figures round: half up when the claim is dated before the sheet's policy date
+     *  (blank meaning the sheet's today), else half to even. A correction rounds by the date of the
+     *  claim it corrects (its person's claim with that number), not its own. */
+    public RoundingMode rounding(String sheetId, Claim claim) {
+        String date = claim.date();
+        if (claim.corrects() != null) {
+            List<Date> corrected = jdbc.queryForList("SELECT claim_date FROM claim WHERE sheet_id = ? AND person_id = ?"
+                    + " AND claim_no = ? ORDER BY id LIMIT 1", Date.class, sheetId, claim.personId(), claim.corrects());
+            if (!corrected.isEmpty()) date = corrected.get(0).toLocalDate().toString();
+        }
+        List<Date> policy = jdbc.queryForList("SELECT COALESCE(policy_date, today) FROM sheet WHERE id = ?",
+                Date.class, sheetId);
+        if (policy.isEmpty()) return RoundingMode.HALF_EVEN;
+        return LocalDate.parse(date).isBefore(policy.get(0).toLocalDate()) ? RoundingMode.HALF_UP
+                : RoundingMode.HALF_EVEN;
     }
 
     /** The sheet's floor: the least a live due can be (two decimals). */
@@ -109,7 +126,7 @@ public class ClaimRepository {
 
     /** A claim's due now: its figure, plus, while it is overdue (OPEN and its due-by — its date plus the
      *  sheet's terms — before the sheet's today), the sheet's late percent of that figure for every full
-     *  30 days it is overdue, rounded half to even to two decimals. A statement never binds the charge:
+     *  30 days it is overdue, rounded to two decimals by the claim's rounding. A statement never binds the charge:
      *  it keeps following the sheet's today until settling freezes it in. A correction (a negative amount)
      *  has no late charge. Null when it has no figure. */
     public BigDecimal dueNow(String sheetId, Claim claim) {
@@ -127,7 +144,7 @@ public class ClaimRepository {
         long periods = dueBy.isBefore(today) ? ChronoUnit.DAYS.between(dueBy, today) / 30 : 0;
         if (periods == 0 || pct == null || pct.signum() == 0) return figure;
         BigDecimal charge = figure.multiply(pct).multiply(BigDecimal.valueOf(periods)).movePointLeft(2)
-                .setScale(2, RoundingMode.HALF_EVEN);
+                .setScale(2, rounding(sheetId, claim));
         return figure.add(charge);
     }
 
