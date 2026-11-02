@@ -15,7 +15,7 @@ import { settingOn, settingsKey, useSettings, type Settings } from './useSetting
  *  <period>-<n>, or X-<n> in no period; blank is off), each grade's own terms (blank is the sheet's
  *  terms), its cap (the most a person's due-total can be; blank is none), its proof threshold (a claim whose due is
  *  above the one in force on its date cannot be settled or approved without a proof; blank is none), its permission matrix (for each of open, settle, void,
- *  reassign, close and reopen, the roles that may do it, comma separated; blank keeps the standing rule; not dated), and the role (clerk or steward)
+ *  reassign, close and reopen, the roles that may do it, comma separated; blank keeps the standing rule; not dated), and the role (clerk, steward or viewer — a viewer changes nothing)
  *  assigned to each user name. Saving saves each setting whose field was entered (focused or typed
  *  in, even when left blank); the others stay as they are. A setting with a figure (the clerk limit, the
  *  floor, the terms, each grade's terms, the late percent, the cap and the proof threshold) is saved from its from-date, blank
@@ -297,7 +297,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           Role{' '}
           <input
             data-testid="role-form-role"
-            placeholder="clerk or steward"
+            placeholder="clerk, steward or viewer"
             value={role}
             onChange={(e) => {
               setRole(e.target.value);

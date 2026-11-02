@@ -13,6 +13,8 @@ import org.springframework.stereotype.Repository;
 public class SettingsRepository {
     public static final String CLERK = "clerk";
     public static final String STEWARD = "steward";
+    /** A viewer sees everything and changes nothing. */
+    public static final String VIEWER = "viewer";
     /** The actions the permission matrix covers, in the order shown. */
     public static final List<String> PERMISSION_ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
 

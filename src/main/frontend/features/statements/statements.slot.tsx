@@ -3,6 +3,7 @@ import { postJson } from '../../api/http';
 import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
 import { claimsKey } from '../claims/useClaims';
 import { peopleKey, usePeople, type Person } from '../people/usePeople';
+import { usePersonRowAction } from '../people/usePersonRowAction';
 
 /** A person's statements: how many have been taken, the last one's due-total and date (blank before
  *  the first), and a button that takes one. Taking a statement records their due-total and binds each
@@ -22,6 +23,7 @@ function PersonStatement({ sheetId, personId }: { sheetId: string; personId: num
       ]);
     },
   });
+  const announce = usePersonRowAction(sheetId, personId, take.reset);
 
   return (
     <>
@@ -34,6 +36,7 @@ function PersonStatement({ sheetId, personId }: { sheetId: string; personId: num
           data-testid="person-statement"
           disabled={take.isPending}
           onClick={() => {
+            announce();
             take.reset();
             take.mutate();
           }}

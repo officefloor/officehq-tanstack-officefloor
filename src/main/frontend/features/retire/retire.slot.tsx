@@ -4,6 +4,7 @@ import { postJson } from '../../api/http';
 import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { peopleKey, usePeople, type Person } from '../people/usePeople';
+import { usePersonRowAction } from '../people/usePersonRowAction';
 import { useShowRetired } from './useShowRetired';
 
 /** A person's retirement: whether they are retired and from when, and a date (blank: the sheet's
@@ -23,6 +24,7 @@ function PersonRetire({ sheetId, personId }: { sheetId: string; personId: number
       await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
     },
   });
+  const announce = usePersonRowAction(sheetId, personId, retire.reset);
 
   return (
     <>
@@ -44,6 +46,7 @@ function PersonRetire({ sheetId, personId }: { sheetId: string; personId: number
           data-testid="person-retire"
           disabled={retire.isPending}
           onClick={() => {
+            announce();
             retire.reset();
             retire.mutate(date);
           }}
