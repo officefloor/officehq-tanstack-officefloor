@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, postJson, putJson } from '../../api/http';
@@ -41,8 +41,9 @@ const QUICK_EMPTY: Quick = { name: '', amount: '' };
 
 // The quick-add bar: a name and an amount make a draft claim dated the sheet's today with an empty
 // note, for the person of that name (ignoring case), who is first added with the sheet's default grade when not on the
-// sheet. The server checks every rule before writing, so a refusal adds no one.
-function QuickAdd({ sheet, user }: { sheet: string; user: string }) {
+// sheet. The server checks every rule before writing, so a refusal adds no one. The person the claim went to is
+// reported to the list, which shows them until the sheet is re-loaded.
+function QuickAdd({ sheet, user, onAdded }: { sheet: string; user: string; onAdded: (person: number) => void }) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<Quick>(QUICK_EMPTY);
 
@@ -52,9 +53,11 @@ function QuickAdd({ sheet, user }: { sheet: string; user: string }) {
         byUser(`/api/sheets/${encodeURIComponent(sheet)}/quick-add`, user),
         body,
       ),
-    onSuccess: (updated) => {
+    onSuccess: (updated, body) => {
       queryClient.setQueryData(peopleKey(sheet), updated.people);
       queryClient.setQueryData(claimsKey(sheet), updated.claims);
+      const to = updated.people.find((p) => p.name.trim().toLowerCase() === body.name.trim().toLowerCase());
+      if (to) onAdded(to.id);
       setDraft(QUICK_EMPTY);
     },
   });
@@ -122,8 +125,14 @@ function People({ sheet, user }: { sheet: string; user: string }) {
   // until their role and the crews are known, so a row they may not see never flashes up.
   const { data: role } = useUserRole(sheet, user);
   const { data: crews } = useCrews(sheet);
+  // The people this user just quick-added to on this screen show too, so the claim they added is seen, until the
+  // sheet is re-loaded.
+  const [quickAdded, setQuickAdded] = useState<number[]>([]);
+  useEffect(() => setQuickAdded([]), [sheet]);
   const restricted = role === undefined || role.role === 'restricted';
-  const visible = restricted ? (role && crews ? restrictedTo(user, everyone, crews) : new Set<number>()) : null;
+  const visible = restricted
+    ? new Set<number>([...(role && crews ? restrictedTo(user, everyone, crews) : []), ...quickAdded])
+    : null;
   const listed = visible === null ? unretired : unretired.filter((p) => visible.has(p.id));
   // The rows as this user's screen sorts them; list order itself is unchanged.
   const people = useSorted(sheet, listed);
@@ -267,7 +276,7 @@ function People({ sheet, user }: { sheet: string; user: string }) {
           </span>
         )}
       </form>
-      <QuickAdd sheet={sheet} user={user} />
+      <QuickAdd sheet={sheet} user={user} onAdded={(id) => setQuickAdded((ids) => [...ids, id])} />
       <label>
         <input
           type="checkbox"

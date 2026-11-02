@@ -25,6 +25,7 @@ import {
   overdueCents,
   agedCents,
   splitDueCents,
+  scoreOf,
   personDueCents,
   uncappedPersonDueCents,
   useClaims,
@@ -53,6 +54,7 @@ function ClaimedHeader({ sheet, user }: { sheet: string; user: string }) {
       <th>Due 61+ days</th>
       <th>Settled total</th>
       <th>Open total</th>
+      <th>Score</th>
       <th>Claims</th>
     </>
   );
@@ -1095,6 +1097,7 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
       <td data-testid="person-aged-61"><Fig>{twoDecimals(aged.over60)}</Fig></td>
       <td data-testid="person-settled-total"><Fig>{twoDecimals(split.settled)}</Fig></td>
       <td data-testid="person-open-total"><Fig>{twoDecimals(split.open)}</Fig></td>
+      <td data-testid="person-score">{scoreOf(split.settled, lateClaims.count).toString()}</td>
       <td>
         <form onSubmit={submit}>
           <input

@@ -343,6 +343,18 @@ export function splitDueCents(
   return split;
 }
 
+/** A person's score: their settled-total (in hundredths) divided by 100, minus 5 for every overdue claim of theirs
+ *  that counts, rounded half to even to a whole number. */
+export function scoreOf(settledCents: bigint, overdueCount: number): bigint {
+  // In ten-thousandths of the score: hundredths divided by 100 is ten-thousandths of a whole.
+  const scaled = settledCents - 50000n * BigInt(overdueCount);
+  const abs = scaled < 0n ? -scaled : scaled;
+  let quotient = abs / 10000n;
+  const remainder = abs % 10000n;
+  if (remainder > 5000n || (remainder === 5000n && quotient % 2n === 1n)) quotient += 1n;
+  return scaled < 0n ? -quotient : quotient;
+}
+
 /** A person's recent settled figure: the sum of their SETTLED claims' frozen figures dated within the 90 days up to
  *  and including the sheet's today (today and the 89 days before it); a claim settled with no figure adds nothing. */
 export function recentSettledCents(claims: Claim[], person: Person, today: string | undefined): bigint {
