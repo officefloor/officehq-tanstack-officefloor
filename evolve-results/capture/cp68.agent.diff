@@ -1,0 +1,46 @@
+diff --git a/src/main/frontend/features/patrons/patrons.slot.tsx b/src/main/frontend/features/patrons/patrons.slot.tsx
+index 7d1b824db..f8bf838c0 100644
+--- a/src/main/frontend/features/patrons/patrons.slot.tsx
++++ b/src/main/frontend/features/patrons/patrons.slot.tsx
+@@ -3,16 +3,24 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
+ import { patronsKey, usePatrons, usePeople, type Person } from '../people/usePeople';
+-import { useDueTotals } from '../rates/useDueTotals';
++import { useClaims } from '../claims/useClaims';
+ import { sumDues } from '../rates/useRates';
++import { useSheetToday } from '../today/useSheetToday';
++
++/** The first day (yyyy-mm-dd) of the 90 days up to and including a day. */
++function windowStart(today: string): string {
++  return new Date(Date.parse(`${today}T00:00:00Z`) - 89 * 86_400_000).toISOString().slice(0, 10);
++}
+ 
+ /** A person's patrons: the other people on the sheet they have named (names sorted, comma and space
+- *  separated), their backing (their patrons' due-totals added up, skipping 'n/a'; 0.00 with none),
++ *  separated), their backing (the due frozen when each of their patrons' SETTLED claims dated within the 90 days up
++ *  to and including the sheet's today was settled, added up; 0.00 with none),
+  *  and a picker that names one more. Naming themselves, or a patron twice, is refused. */
+ function PersonPatrons({ sheetId, personId }: { sheetId: string; personId: number }) {
+   const people = usePeople(sheetId);
+   const patrons = usePatrons(sheetId);
+-  const totals = useDueTotals(sheetId);
++  const claims = useClaims(sheetId);
++  const today = useSheetToday(sheetId).data?.today;
+   const queryClient = useQueryClient();
+   const [chosen, setChosen] = useState('');
+ 
+@@ -21,7 +29,12 @@ function PersonPatrons({ sheetId, personId }: { sheetId: string; personId: numbe
+     .map((x) => people.data?.find((p) => p.id === x.patronId))
+     .filter((p): p is Person => p !== undefined);
+   const names = named.map((p) => p.name).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+-  const backing = sumDues(named.map((p) => totals.get(p.id) ?? 'n/a'));
++  const from = today === undefined ? undefined : windowStart(today);
++  const patronIds = new Set(named.map((p) => p.id));
++  const backing = sumDues((claims.data ?? [])
++    .filter((c) => patronIds.has(c.personId) && c.status === 'SETTLED' && c.due !== null
++      && from !== undefined && today !== undefined && c.date >= from && c.date <= today)
++    .map((c) => c.due as string));
+ 
+   const add = useMutation({
+     mutationFn: (patronId: number) =>
