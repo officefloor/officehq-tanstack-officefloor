@@ -29,9 +29,10 @@ export function fixedDue(c: Claim): string | null {
   return c.due ?? (c.stated ? c.statedDue : null);
 }
 
-/** Whether a claim counts toward claimed and every total: only OPEN and SETTLED claims do. */
-export function counts(c: Claim): boolean {
-  return c.status === 'OPEN' || c.status === 'SETTLED';
+/** Whether a claim counts toward claimed and every live total, given the ids of the people on hold:
+ *  only OPEN and SETTLED claims do, and a held person's OPEN claims do not. */
+export function counts(c: Claim, held: ReadonlySet<number>): boolean {
+  return c.status === 'SETTLED' || (c.status === 'OPEN' && !held.has(c.personId));
 }
 
 export function claimsKey(sheetId: string) {
@@ -47,9 +48,9 @@ export function useClaims(sheetId: string) {
   });
 }
 
-/** The sum of the amounts of those of these claims that count, with two decimals (added up in
- *  cents, so no rounding drift). */
-export function claimed(claims: Claim[]): string {
-  const cents = claims.filter(counts).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
+/** The sum of the amounts of those of these claims that count (given the ids of the people on hold),
+ *  with two decimals (added up in cents, so no rounding drift). */
+export function claimed(claims: Claim[], held: ReadonlySet<number>): string {
+  const cents = claims.filter((c) => counts(c, held)).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
   return (cents / 100).toFixed(2);
 }

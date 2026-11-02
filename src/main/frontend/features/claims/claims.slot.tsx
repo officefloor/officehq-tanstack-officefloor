@@ -4,15 +4,20 @@ import { postJson } from '../../api/http';
 import { useSingleFlight } from '../../query/useSingleFlight';
 import { PERSON_ROW_SPAN, PersonCells, PersonColumnHead, PersonDetail } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
-import { usePeople } from '../people/usePeople';
+import { heldIds, usePeople } from '../people/usePeople';
 import { periodOf, usePeriods } from '../periods/usePeriods';
 import { due, rateFor, useRates } from '../rates/useRates';
 import { claimed, claimsKey, fixedDue, useClaims, type Claim } from './useClaims';
 
-/** A person's claimed: the sum of their counted (OPEN or SETTLED) claims' amounts. */
+/** A person's claimed: the sum of their counted (OPEN or SETTLED; only SETTLED while held) claims' amounts. */
 function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: number }) {
   const claims = useClaims(sheetId);
-  return <td data-testid="person-claimed">{claimed((claims.data ?? []).filter((c) => c.personId === personId))}</td>;
+  const people = usePeople(sheetId);
+  return (
+    <td data-testid="person-claimed">
+      {claimed((claims.data ?? []).filter((c) => c.personId === personId), heldIds(people.data))}
+    </td>
+  );
 }
 
 type ClaimAction = 'open' | 'settle' | 'void';
@@ -194,9 +199,10 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
 /** The sheet's claimed-total: everyone's claimed added up. */
 function ClaimedTotal({ sheetId }: { sheetId: string }) {
   const claims = useClaims(sheetId);
+  const people = usePeople(sheetId);
   return (
     <p>
-      Claimed total: <strong data-testid="rollup-claimed-total">{claimed(claims.data ?? [])}</strong>
+      Claimed total: <strong data-testid="rollup-claimed-total">{claimed(claims.data ?? [], heldIds(people.data))}</strong>
     </p>
   );
 }

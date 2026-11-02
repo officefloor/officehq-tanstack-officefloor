@@ -4,7 +4,7 @@ import { postJson } from '../../api/http';
 import { useSingleFlight } from '../../query/useSingleFlight';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { counts, fixedDue, useClaims } from '../claims/useClaims';
-import { usePeople } from '../people/usePeople';
+import { heldIds, usePeople } from '../people/usePeople';
 import { due, rateFor, sumDues, useRates } from '../rates/useRates';
 import { periodOf, periodsKey, usePeriods, type Period } from './usePeriods';
 
@@ -43,9 +43,10 @@ function Periods({ sheetId }: { sheetId: string }) {
   const dueTotal = (p: Period) => {
     if (p.closed && p.closedTotal !== null) return p.closedTotal;
     const grades = new Map((people.data ?? []).map((person) => [person.id, person.grade]));
+    const held = heldIds(people.data);
     return sumDues(
       (claims.data ?? [])
-        .filter((c) => counts(c) && periodOf([p], c.date) !== undefined)
+        .filter((c) => counts(c, held) && periodOf([p], c.date) !== undefined)
         .map((c) => fixedDue(c) ?? due(c.amount, rateFor(rates.data, grades.get(c.personId), c.date))),
     );
   };

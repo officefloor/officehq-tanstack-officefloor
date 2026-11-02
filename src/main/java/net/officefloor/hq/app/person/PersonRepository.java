@@ -3,7 +3,9 @@ package net.officefloor.hq.app.person;
 import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.time.LocalDate;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import net.officefloor.hq.app.BadRequestException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -13,12 +15,13 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PersonRepository {
 
-    private static final String COLUMNS = "id, name, grade, version, statement_count, stated_total, statement_date, retired_from";
+    private static final String COLUMNS = "id, name, grade, version, statement_count, stated_total, statement_date, retired_from, held";
 
     private static final RowMapper<Person> ROW = (rs, i) -> new Person(rs.getLong("id"), rs.getString("name"),
             rs.getString("grade"), rs.getLong("version"), rs.getLong("statement_count"), rs.getString("stated_total"),
             rs.getDate("statement_date") == null ? null : rs.getDate("statement_date").toLocalDate().toString(),
-            rs.getDate("retired_from") == null ? null : rs.getDate("retired_from").toLocalDate().toString());
+            rs.getDate("retired_from") == null ? null : rs.getDate("retired_from").toLocalDate().toString(),
+            rs.getBoolean("held"));
 
     private final JdbcTemplate jdbc;
 
@@ -54,6 +57,16 @@ public class PersonRepository {
         jdbc.update("UPDATE person SET retired_from = ? WHERE id = ? AND sheet_id = ?", Date.valueOf(from), id, sheetId);
     }
 
+    /** Put a person on hold, or take them off it. */
+    public void hold(String sheetId, long id, boolean held) {
+        jdbc.update("UPDATE person SET held = ? WHERE id = ? AND sheet_id = ?", held, id, sheetId);
+    }
+
+    /** The ids of the sheet's people who are on hold. */
+    public Set<Long> heldIds(String sheetId) {
+        return new HashSet<>(jdbc.queryForList("SELECT id FROM person WHERE sheet_id = ? AND held", Long.class, sheetId));
+    }
+
     /** Refuse a claim of the person dated after the date they are retired from. */
     public void claimAllowed(String sheetId, long id, LocalDate date) throws BadRequestException {
         Person p = find(sheetId, id);
@@ -87,7 +100,7 @@ public class PersonRepository {
             ps.setString(3, grade);
             return ps;
         }, keys);
-        return new Person(keys.getKey().longValue(), name, grade, 1, 0, null, null, null);
+        return new Person(keys.getKey().longValue(), name, grade, 1, 0, null, null, null, false);
     }
 
     /** Whether the sheet has this person. */

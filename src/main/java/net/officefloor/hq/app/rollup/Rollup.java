@@ -59,7 +59,7 @@ public class Rollup {
                 BigDecimal due = BigDecimal.ZERO.setScale(2);
                 boolean fixed = false;
                 for (Claim c : all) {
-                    if (c.personId() != p.id() || !c.counts()) continue;
+                    if (c.personId() != p.id() || !c.counts(p.held())) continue;
                     claimed = claimed.add(new BigDecimal(c.amount()));
                     fixed |= c.due() != null || (c.stated() && c.statedDue() != null);
                     BigDecimal figure = claims.figure(sheetId, c);

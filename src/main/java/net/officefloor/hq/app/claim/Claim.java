@@ -13,6 +13,12 @@ public record Claim(long id, long personId, String amount, String date, String n
         return status.equals("OPEN") || status.equals("SETTLED");
     }
 
+    /** Whether the claim counts toward live totals (claimed, due-totals, a period's total) when its
+     *  person is or is not on hold: a held person's OPEN claims do not; SETTLED claims always do. */
+    public boolean counts(boolean held) {
+        return status.equals("SETTLED") || (!held && status.equals("OPEN"));
+    }
+
     /** The audit field a numbered claim adds at the end of its lines: " number=<n>", or "" when it has none. */
     static String auditNumber(Long number) {
         return number == null ? "" : " number=" + number;
