@@ -156,6 +156,22 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
     },
   });
   const addComment = useSubmitOnce(commentMutation);
+  // A DRAFT claim takes a line (label, quantity, unit amount) typed beside the Add line button; its amount becomes the
+  // lines' total. The server refuses a claim that is not a DRAFT, one due inside a closed period, or one another user's editor holds.
+  const [lineLabel, setLineLabel] = useState('');
+  const [lineQty, setLineQty] = useState('');
+  const [lineUnit, setLineUnit] = useState('');
+  const lineMutation = useMutation({
+    mutationFn: (line: { label: string; qty: string; unit: string }) =>
+      postJson<Claim[]>(byUser(`${claimsPath(sheet)}/${claim.id}/line`, user), line),
+    onSuccess: (updated) => {
+      setLineLabel('');
+      setLineQty('');
+      setLineUnit('');
+      queryClient.setQueryData(claimsKey(sheet), updated);
+    },
+  });
+  const addLine = useSubmitOnce(lineMutation);
   // An OPEN claim splits off an amount, typed beside the Split button, into a new OPEN claim.
   const [splitAmount, setSplitAmount] = useState('');
   const splitMutation = useMutation({
@@ -278,6 +294,8 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           inlineMutation.reset();
             proofMutation.reset();
             commentMutation.reset();
+            lineMutation.reset();
+          lineMutation.reset();
             act(change);
           }}
         >
@@ -326,6 +344,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           inlineMutation.reset();
           proofMutation.reset();
           commentMutation.reset();
+          lineMutation.reset();
           act('reject');
         }}
       >
@@ -355,6 +374,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           splitMutation.reset();
           proofMutation.reset();
           commentMutation.reset();
+          lineMutation.reset();
           inlineMutation.reset();
           saveInline(inlineAmount);
         }}
@@ -375,6 +395,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           inlineMutation.reset();
           proofMutation.reset();
           commentMutation.reset();
+          lineMutation.reset();
           clearEditError();
           if (claim.status !== 'DRAFT' || periodOf(periods, claim.dueBy)?.closed || (claim.lockedBy !== null && claim.lockedBy !== user)) {
             setEditRefused(true);
@@ -419,6 +440,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           inlineMutation.reset();
           proofMutation.reset();
           commentMutation.reset();
+          lineMutation.reset();
           reassign(Number(moveTo));
         }}
       >
@@ -439,6 +461,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           inlineMutation.reset();
           proofMutation.reset();
           commentMutation.reset();
+          lineMutation.reset();
           resettle(undefined);
         }}
       >
@@ -468,6 +491,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           resettleMutation.reset();
           proofMutation.reset();
           commentMutation.reset();
+          lineMutation.reset();
           splitMutation.reset();
           inlineMutation.reset();
           redateMutation.reset();
@@ -490,6 +514,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           redateMutation.reset();
           proofMutation.reset();
           commentMutation.reset();
+          lineMutation.reset();
           splitMutation.reset();
           inlineMutation.reset();
           remindMutation.reset();
@@ -520,6 +545,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           remindMutation.reset();
           proofMutation.reset();
           commentMutation.reset();
+          lineMutation.reset();
           splitMutation.reset();
           inlineMutation.reset();
           redate(redateTo);
@@ -551,6 +577,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           redateMutation.reset();
           proofMutation.reset();
           commentMutation.reset();
+          lineMutation.reset();
           split(splitAmount);
         }}
       >
@@ -563,6 +590,7 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
         onChange={(e) => {
           setCommentText(e.target.value);
           commentMutation.reset();
+          lineMutation.reset();
         }}
       />{' '}
       <button
@@ -581,10 +609,60 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
           splitMutation.reset();
           inlineMutation.reset();
           commentMutation.reset();
+          lineMutation.reset();
           addComment(commentText);
         }}
       >
         Comment
+      </button>{' '}
+      <input
+        data-testid="claim-line-label"
+        placeholder="line label"
+        value={lineLabel}
+        onChange={(e) => {
+          setLineLabel(e.target.value);
+          lineMutation.reset();
+        }}
+      />{' '}
+      <input
+        data-testid="claim-line-qty"
+        placeholder="qty"
+        value={lineQty}
+        onChange={(e) => {
+          setLineQty(e.target.value);
+          lineMutation.reset();
+        }}
+      />{' '}
+      <input
+        data-testid="claim-line-unit"
+        placeholder="unit amount"
+        value={lineUnit}
+        onChange={(e) => {
+          setLineUnit(e.target.value);
+          lineMutation.reset();
+        }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="claim-line-add"
+        disabled={lineMutation.isPending}
+        onClick={() => {
+          clearEditError();
+          status.reset();
+          move.reset();
+          resettleMutation.reset();
+          deferMutation.reset();
+          remindMutation.reset();
+          redateMutation.reset();
+          proofMutation.reset();
+          splitMutation.reset();
+          inlineMutation.reset();
+          commentMutation.reset();
+          lineMutation.reset();
+          addLine({ label: lineLabel, qty: lineQty, unit: lineUnit });
+        }}
+      >
+        Add line
       </button>{' '}
       {editing && (
         <button type="button" data-testid="claim-cancel" onClick={onCancel}>
@@ -602,6 +680,13 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
         {claim.comments.map((comment, i) => (
           <li key={i} data-testid="claim-comments-line">
             {comment.by} on {comment.on}: {comment.text}
+          </li>
+        ))}
+      </ul>
+      <ul>
+        {claim.lines.map((line, i) => (
+          <li key={i} data-testid="claim-lines-line">
+            {line.label} {line.qty} x {line.unit}
           </li>
         ))}
       </ul>
@@ -644,6 +729,11 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
       {commentMutation.isError && (
         <span data-testid="claim-error" role="alert">
           {' '}This comment cannot be added: it may not be empty, and a viewer, an archived sheet or the as-of view changes nothing.
+        </span>
+      )}
+      {lineMutation.isError && (
+        <span data-testid="claim-error" role="alert">
+          {' '}This line cannot be added: it needs a label, a whole quantity of at least 1 and a unit amount with up to two decimals, and only a DRAFT outside a closed period takes one, not while another user has its editor open.
         </span>
       )}
       {splitMutation.isError && (

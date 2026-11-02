@@ -123,7 +123,7 @@ public class PersonTransferrer {
             t = arrive(sheet, f, to, theirAliases);
         }
 
-        // Claims, in the order they were listed, each with its log, comments and void reason.
+        // Claims, in the order they were listed, each with its log, comments, lines and void reason.
         List<String> claimColumns = columns("CLAIM");
         Map<Long, Long> moved = new LinkedHashMap<>();
         for (Long claim : jdbc.queryForList("SELECT id FROM claim WHERE sheet = ? AND person = ? ORDER BY listed, id",
@@ -134,6 +134,8 @@ public class PersonTransferrer {
                     + " on_date, due FROM claim_log WHERE sheet = ? AND claim = ? ORDER BY id", to, copy, sheet, claim);
             jdbc.update("INSERT INTO claim_comment (sheet, claim, by_user, on_date, text) SELECT ?, ?, by_user, on_date,"
                     + " text FROM claim_comment WHERE sheet = ? AND claim = ? ORDER BY id", to, copy, sheet, claim);
+            jdbc.update("INSERT INTO claim_line (sheet, claim, label, qty, unit) SELECT ?, ?, label, qty, unit"
+                    + " FROM claim_line WHERE sheet = ? AND claim = ? ORDER BY id", to, copy, sheet, claim);
             jdbc.update("INSERT INTO claim_void (sheet, claim, reason) SELECT ?, ?, reason FROM claim_void"
                     + " WHERE sheet = ? AND claim = ?", to, copy, sheet, claim);
         }
@@ -174,6 +176,7 @@ public class PersonTransferrer {
             String in = moved.keySet().stream().map(String::valueOf).collect(Collectors.joining(","));
             jdbc.update("DELETE FROM claim_log WHERE sheet = ? AND claim IN (" + in + ")", sheet);
             jdbc.update("DELETE FROM claim_comment WHERE sheet = ? AND claim IN (" + in + ")", sheet);
+            jdbc.update("DELETE FROM claim_line WHERE sheet = ? AND claim IN (" + in + ")", sheet);
             jdbc.update("DELETE FROM claim_void WHERE sheet = ? AND claim IN (" + in + ")", sheet);
             jdbc.update("DELETE FROM claim WHERE sheet = ? AND id IN (" + in + ")", sheet);
         }

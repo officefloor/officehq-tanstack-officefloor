@@ -21,7 +21,7 @@ import org.springframework.stereotype.Service;
  * Clones the sheet to another id; only a steward may, and only to a sheet never used. The clone gets this sheet's
  * today, settings (its parent among them), roles, rates, holidays, void reasons, templates, people (with their grades,
  * terms, contacts, aliases, holds, retirements and patrons, listed as they are), pools, periods (all open) and claims
- * (status, frozen figures, dates, notes, logs and comments, listed as they are). Each claim that had a number takes the
+ * (status, frozen figures, dates, notes, logs, comments and lines, listed as they are). Each claim that had a number takes the
  * clone's next one by the clone's own numbering, in the order the claims were opened (by the sheet's today when each
  * was opened, then the order they were copied: by person, then as listed); a correction or split names its claim's new
  * number. Statements are not copied (no claim is bound to one), nor are locks, settle batches, watches, delegations,
@@ -114,7 +114,7 @@ public class SheetCloner {
         }
         copy("POOL_SUB", Map.of("SHEET", to), "sheet = ?", sheet);
 
-        // The claims, by person then as listed, each with its log, comments and void reason; unbound from any
+        // The claims, by person then as listed, each with its log, comments, lines and void reason; unbound from any
         // statement, unnumbered, and with no lock or settle batch.
         Map<Long, Long> copied = new LinkedHashMap<>();
         for (Map.Entry<Long, Long> p : people.entrySet()) {
@@ -134,6 +134,7 @@ public class SheetCloner {
                 copy("CLAIM_LOG", Map.of("SHEET", to, "CLAIM", copy), "sheet = ? AND claim = ? ORDER BY id", sheet, claim);
                 copy("CLAIM_COMMENT", Map.of("SHEET", to, "CLAIM", copy), "sheet = ? AND claim = ? ORDER BY id", sheet,
                         claim);
+                copy("CLAIM_LINE", Map.of("SHEET", to, "CLAIM", copy), "sheet = ? AND claim = ? ORDER BY id", sheet, claim);
                 copy("CLAIM_VOID", Map.of("SHEET", to, "CLAIM", copy), "sheet = ? AND claim = ?", sheet, claim);
             }
         }

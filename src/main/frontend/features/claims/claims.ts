@@ -82,7 +82,12 @@ export type Claim = {
   batch: number | null;
   /** Its comments, in the order written. */
   comments: ClaimComment[];
+  /** Its lines, in the order added: with any, its amount is their quantities times unit amounts added up. */
+  lines: ClaimLine[];
 };
+
+/** One line of a claim: its label, quantity (a whole number) and unit amount (two decimals). */
+export type ClaimLine = { label: string; qty: number; unit: string };
 
 /** One comment on a claim: the user who wrote it, the sheet's today then (yyyy-MM-dd), and its text. */
 export type ClaimComment = { by: string; on: string; text: string };

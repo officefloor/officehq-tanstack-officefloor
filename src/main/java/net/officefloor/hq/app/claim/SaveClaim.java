@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.claim;
 
 import net.officefloor.hq.app.Audit;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import net.officefloor.hq.app.period.Periods;
 import net.officefloor.hq.app.person.People;
@@ -21,6 +22,10 @@ public class SaveClaim {
         // Only a draft may be edited: an open claim is voided and a new one added instead.
         if (claim.status() != ClaimStatus.DRAFT) {
             throw new InvalidClaimException("A " + claim.status() + " claim cannot be edited; only a DRAFT can");
+        }
+        // A claim with lines has the lines' total for its amount: an edit may not type another.
+        if (!claim.lines().isEmpty() && input.amount().compareTo(new BigDecimal(claim.amount())) != 0) {
+            throw new InvalidClaimException("A claim with lines has their total for its amount");
         }
         Person owner = people.find(sheet, claim.person());
         if (owner.retiredBefore(input.date())) {

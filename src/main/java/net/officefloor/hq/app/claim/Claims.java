@@ -37,7 +37,7 @@ public class Claims {
             rs.getString("locked_by"), rs.getBoolean("late_entry"),
             rs.getDate("reminded_on") == null ? null : rs.getDate("reminded_on").toLocalDate().toString(),
             rs.getString("ref"), tagList(rs.getString("tags")), tagList(rs.getString("tags_ever")), List.of(),
-            rs.getObject("batch", Integer.class));
+            rs.getObject("batch", Integer.class), List.of());
 
     /** The tags kept as comma separated text (empty for none). */
     private static List<String> tagList(String kept) {
@@ -72,17 +72,53 @@ public class Claims {
 
     private static final String COMMENTS = "SELECT claim, by_user, on_date, text FROM claim_comment WHERE sheet = ?";
 
+    private static final String LINES = "SELECT claim, label, qty, unit FROM claim_line WHERE sheet = ?";
+
     /** Every claim on the sheet, newest first. */
     public List<Claim> list(String sheet) {
-        return withComments(withLogs(sheet, jdbc.query(COLUMNS + " WHERE claim.sheet = ? ORDER BY claim.listed DESC, claim.id DESC", ROW, sheet),
-                jdbc.query(LOG + " ORDER BY id", LOG_ROW, sheet)), jdbc.query(COMMENTS + " ORDER BY id", COMMENT_ROW, sheet));
+        return withLines(withComments(withLogs(sheet, jdbc.query(COLUMNS + " WHERE claim.sheet = ? ORDER BY claim.listed DESC, claim.id DESC", ROW, sheet),
+                jdbc.query(LOG + " ORDER BY id", LOG_ROW, sheet)), jdbc.query(COMMENTS + " ORDER BY id", COMMENT_ROW, sheet)),
+                jdbc.query(LINES + " ORDER BY id", LINE_ROW, sheet));
     }
 
     public Claim find(String sheet, long id) {
         List<Claim> found = jdbc.query(COLUMNS + " WHERE claim.sheet = ? AND claim.id = ?", ROW, sheet, id);
         return found.isEmpty() ? null
-                : withComments(withLogs(sheet, found, jdbc.query(LOG + " AND claim = ? ORDER BY id", LOG_ROW, sheet, id)),
-                        jdbc.query(COMMENTS + " AND claim = ? ORDER BY id", COMMENT_ROW, sheet, id)).get(0);
+                : withLines(withComments(withLogs(sheet, found, jdbc.query(LOG + " AND claim = ? ORDER BY id", LOG_ROW, sheet, id)),
+                        jdbc.query(COMMENTS + " AND claim = ? ORDER BY id", COMMENT_ROW, sheet, id)),
+                        jdbc.query(LINES + " AND claim = ? ORDER BY id", LINE_ROW, sheet, id)).get(0);
+    }
+
+    private record Lined(long claim, ClaimLine line) {
+    }
+
+    private static final RowMapper<Lined> LINE_ROW = (rs, i) -> new Lined(rs.getLong("claim"),
+            new ClaimLine(rs.getString("label"), rs.getInt("qty"),
+                    rs.getBigDecimal("unit").setScale(2, RoundingMode.UNNECESSARY).toPlainString()));
+
+    /** The claims, each with its own lines (in the order added). */
+    private static List<Claim> withLines(List<Claim> found, List<Lined> lined) {
+        Map<Long, List<ClaimLine>> lines = new HashMap<>();
+        for (Lined l : lined) {
+            lines.computeIfAbsent(l.claim(), k -> new ArrayList<>()).add(l.line());
+        }
+        return found.stream().map(c -> c.withLines(lines.getOrDefault(c.id(), List.of()))).toList();
+    }
+
+    /**
+     * Adds a line to a draft claim not locked by another user's editor, setting its amount to the lines' total and
+     * recording the user as its last editor; conditional on the amount read, so a concurrent change is refused: false
+     * when it is no longer a draft with that amount, or another user's editor holds it.
+     */
+    public boolean addLine(String sheet, long id, String user, BigDecimal was, BigDecimal total, String label, int qty,
+            BigDecimal unit) {
+        if (jdbc.update("UPDATE claim SET amount = ?, edited_by = ? WHERE sheet = ? AND id = ? AND status = 'DRAFT'"
+                + " AND amount = ? AND (locked_by IS NULL OR locked_by = ?)", total, user, sheet, id, was, user) != 1) {
+            return false;
+        }
+        jdbc.update("INSERT INTO claim_line (sheet, claim, label, qty, unit) VALUES (?, ?, ?, ?, ?)", sheet, id, label,
+                qty, unit);
+        return true;
     }
 
     private record Commented(long claim, ClaimComment comment) {
