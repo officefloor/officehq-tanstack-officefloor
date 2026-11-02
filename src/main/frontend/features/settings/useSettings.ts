@@ -19,10 +19,15 @@ export type Role = { user: string; role: string };
  *  (open, settle, void, reassign, close, reopen): the roles that may take it, comma separated; an action not listed
  *  keeps the standing rule (open, settle, void and close by clerk and steward; reassign and reopen by steward).
  *  `graceDays` is the days after a period's to-date it is left open (null when blank: off; not dated): changing the
- *  sheet's today closes each open period lapsed past them. */
+ *  sheet's today closes each open period lapsed past them. `delegations` is each delegation of the steward role
+ *  made on the sheet, oldest first. */
 export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; roles: Role[]; policyDate: string | null; periodNumberingFrom: string | null;
   gradeTerms: Record<string, number>; cap: string | null; dated: Record<string, DatedValue[]>;
-  permissions: Record<string, string>; graceDays: number | null };
+  permissions: Record<string, string>; graceDays: number | null; delegations: Delegation[] };
+
+/** A steward's (`by`) delegation of the steward role to a user, from a date to a date (yyyy-mm-dd, inclusive):
+ *  while the sheet's today is inside it the user acts as a steward. */
+export type Delegation = { user: string; by: string; from: string; to: string };
 
 /** A value a dated setting has from a date (yyyy-mm-dd); null when blank. */
 export type DatedValue = { from: string; value: string | null };

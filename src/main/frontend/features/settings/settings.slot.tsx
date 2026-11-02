@@ -17,7 +17,9 @@ import { settingOn, settingsKey, useSettings, type Settings } from './useSetting
  *  above the one in force on its date cannot be settled or approved without a proof; blank is none), its permission matrix (for each of open, settle, void,
  *  reassign, close and reopen, the roles that may do it, comma separated; blank keeps the standing rule; not dated), its grace days (changing the
  *  sheet's today closes each open period whose to-date plus them is before the new today; blank is off; not dated), and the role (clerk, steward or viewer — a viewer changes nothing)
- *  assigned to each user name. Saving saves each setting whose field was entered (focused or typed
+ *  assigned to each user name, and the delegations of the steward role (a steward delegates it to a user from a
+ *  from-date, blank the sheet's today, to a to-date, inclusive; while the sheet's today is inside it the user acts
+ *  as a steward). Saving saves each setting whose field was entered (focused or typed
  *  in, even when left blank); the others stay as they are. A setting with a figure (the clerk limit, the
  *  floor, the terms, each grade's terms, the late percent, the cap and the proof threshold) is saved from its from-date, blank
  *  meaning the sheet's today; each shows the value in force on the sheet's today. */
@@ -66,6 +68,10 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
   const [user, setUser] = useState('');
   const [role, setRole] = useState('');
 
+  const [delegateUser, setDelegateUser] = useState('');
+  const [delegateFrom, setDelegateFrom] = useState('');
+  const [delegateTo, setDelegateTo] = useState('');
+
   const saveOnce = useSingleFlight();
   const save = useMutation({
     mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null; permissions: Record<string, string>; graceDays: string | null }) =>
@@ -94,6 +100,18 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
     onSuccess: (saved) => {
       setUser('');
       setRole('');
+      queryClient.setQueryData(settingsKey(sheetId), saved);
+    },
+  });
+
+  const delegateOnce = useSingleFlight();
+  const delegate = useMutation({
+    mutationFn: (f: { user: string; from: string; to: string }) =>
+      postJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/delegations`, f),
+    onSuccess: (saved) => {
+      setDelegateUser('');
+      setDelegateFrom('');
+      setDelegateTo('');
       queryClient.setQueryData(settingsKey(sheetId), saved);
     },
   });
@@ -343,6 +361,63 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           ))}
         </tbody>
       </table>
+      <form
+        data-testid="delegate-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          delegateOnce(() => {
+            delegate.reset();
+            return delegate.mutateAsync({ user: delegateUser, from: delegateFrom, to: delegateTo });
+          });
+        }}
+      >
+        <label>
+          Delegate steward to{' '}
+          <input
+            data-testid="delegate-user"
+            value={delegateUser}
+            onChange={(e) => {
+              setDelegateUser(e.target.value);
+              delegate.reset();
+            }}
+          />
+        </label>{' '}
+        <label>
+          from{' '}
+          <input
+            data-testid="delegate-from"
+            placeholder="yyyy-mm-dd"
+            value={delegateFrom}
+            onChange={(e) => {
+              setDelegateFrom(e.target.value);
+              delegate.reset();
+            }}
+          />
+        </label>{' '}
+        <label>
+          to{' '}
+          <input
+            data-testid="delegate-to"
+            placeholder="yyyy-mm-dd"
+            value={delegateTo}
+            onChange={(e) => {
+              setDelegateTo(e.target.value);
+              delegate.reset();
+            }}
+          />
+        </label>{' '}
+        <button type="submit" data-testid="delegate-submit" disabled={delegate.isPending}>
+          Delegate
+        </button>
+        {delegate.isError && <p data-testid="delegate-error">{delegate.error.message}</p>}
+      </form>
+      <ul data-testid="delegations-list">
+        {(settings.data?.delegations ?? []).map((d, i) => (
+          <li key={i} data-testid="delegate-line">
+            {d.user} acts as steward for {d.by}, {d.from} to {d.to}
+          </li>
+        ))}
+      </ul>
       {settings.isError && <p data-testid="settings-load-error">{settings.error.message}</p>}
     </section>
   );

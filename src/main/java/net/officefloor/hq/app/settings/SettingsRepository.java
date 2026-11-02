@@ -42,11 +42,12 @@ public class SettingsRepository {
         return new Settings(limit == null ? null : money(limit), money(floor(sheetId, today)), terms(sheetId, today),
                 money(latePct(sheetId, today)), roles, policy == null ? null : policy.toString(),
                 numbering == null ? null : numbering.toString(), gradeTerms(sheetId, today),
-                cap == null ? null : money(cap), dated(sheetId), permissions(sheetId), graceDays(sheetId));
+                cap == null ? null : money(cap), dated(sheetId), permissions(sheetId), graceDays(sheetId),
+                delegations(sheetId));
     }
 
     /** The sheet's today; the real date when there is no such sheet. */
-    private LocalDate today(String sheetId) {
+    public LocalDate today(String sheetId) {
         List<Date> found = jdbc.query("SELECT today FROM sheet WHERE id = ?", (rs, i) -> rs.getDate("today"), sheetId);
         return found.isEmpty() || found.get(0) == null ? LocalDate.now() : found.get(0).toLocalDate();
     }
@@ -203,8 +204,14 @@ public class SettingsRepository {
         jdbc.update("UPDATE sheet SET grace_days = ? WHERE id = ?", days, sheetId);
     }
 
-    /** The role a user name holds on the sheet: clerk unless set otherwise. */
+    /** The role a user name acts in on the sheet: steward while a delegation to them covers the sheet's today,
+     *  else their own role. */
     public String role(String sheetId, String user) {
+        return delegator(sheetId, user) != null ? STEWARD : ownRole(sheetId, user);
+    }
+
+    /** The role a user name holds on the sheet itself: clerk unless set otherwise. */
+    public String ownRole(String sheetId, String user) {
         List<String> found = jdbc.query("SELECT role FROM sheet_role WHERE sheet_id = ? AND user_name = ?",
                 (rs, i) -> rs.getString("role"), sheetId, user);
         return found.isEmpty() ? CLERK : found.get(0);
@@ -213,6 +220,28 @@ public class SettingsRepository {
     public void setRole(String sheetId, String user, String role) {
         jdbc.update("MERGE INTO sheet_role (sheet_id, user_name, role) KEY (sheet_id, user_name) VALUES (?, ?, ?)",
                 sheetId, user, role);
+    }
+
+    /** The steward whose delegation to the user covers the sheet's today (the latest made, when several do);
+     *  null when none does. */
+    public String delegator(String sheetId, String user) {
+        List<String> found = jdbc.query("SELECT by_user FROM delegation WHERE sheet_id = ? AND user_name = ?"
+                + " AND from_date <= ? AND to_date >= ? ORDER BY id DESC LIMIT 1",
+                (rs, i) -> rs.getString("by_user"), sheetId, user, Date.valueOf(today(sheetId)), Date.valueOf(today(sheetId)));
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    public void delegate(String sheetId, String user, String by, LocalDate from, LocalDate to) {
+        jdbc.update("INSERT INTO delegation (sheet_id, user_name, by_user, from_date, to_date) VALUES (?, ?, ?, ?, ?)",
+                sheetId, user, by, Date.valueOf(from), Date.valueOf(to));
+    }
+
+    /** The delegations made on the sheet, oldest first. */
+    public List<Delegation> delegations(String sheetId) {
+        return jdbc.query("SELECT user_name, by_user, from_date, to_date FROM delegation WHERE sheet_id = ? ORDER BY id",
+                (rs, i) -> new Delegation(rs.getString("user_name"), rs.getString("by_user"),
+                        rs.getDate("from_date").toLocalDate().toString(), rs.getDate("to_date").toLocalDate().toString()),
+                sheetId);
     }
 
     /** The permission matrix entries set on the sheet, by action, each a comma separated list of roles; an
