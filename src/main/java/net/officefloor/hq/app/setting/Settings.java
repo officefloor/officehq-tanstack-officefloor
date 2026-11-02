@@ -224,8 +224,8 @@ public class Settings {
         }
         Date date = dated(key) && from != null ? Date.valueOf(from) : UNDATED;
         if (POLICY_KEYS.contains(key)) {
-            jdbc.update("INSERT INTO policy_version (sheet, setting_key, from_date) VALUES (?, ?, ?)", sheet, key,
-                    date.equals(UNDATED) ? null : date);
+            jdbc.update("INSERT INTO policy_version (sheet, setting_key, from_date, setting_value) VALUES (?, ?, ?, ?)", sheet,
+                    key, date.equals(UNDATED) ? null : date, value);
         }
         jdbc.update("MERGE INTO setting (sheet, setting_key, from_date, setting_value) KEY (sheet, setting_key, from_date)"
                 + " VALUES (?, ?, ?, ?)", sheet, key, date, value);
@@ -513,6 +513,16 @@ public class Settings {
         }, sheet);
     }
 
+    /** Each policy version, in the order made: its from-date, and the key and value its change set. */
+    public List<PolicyVersion> policyChanges(String sheet) {
+        return jdbc.query("SELECT from_date, setting_key, setting_value FROM policy_version WHERE sheet = ? ORDER BY id",
+                (rs, i) -> {
+                    Date from = rs.getDate(1);
+                    return new PolicyVersion(from == null ? "" : from.toLocalDate().toString(), rs.getString(2),
+                            rs.getString(3));
+                }, sheet);
+    }
+
     /** The settings in force on the sheet's today, with every dated key's recorded values. */
     public SettingsResponse all(String sheet) {
         LocalDate today = clock.today(sheet);
@@ -536,6 +546,6 @@ public class Settings {
                 on(sheet, REVIEW_THRESHOLD, today), get(sheet, ESCALATE_AFTER), get(sheet, REVIEW_SLA), get(sheet, PROOF_KINDS),
                 get(sheet, DEFAULT_GRADE), on(sheet, gradeClerkLimit("A"), today), on(sheet, gradeClerkLimit("B"), today),
                 on(sheet, gradeClerkLimit("C"), today), get(sheet, SCORE_MID), get(sheet, SCORE_HIGH), get(sheet, SCORE_LOG), get(sheet, MAX_OPEN), get(sheet, PENDING_SLA),
-                policyVersions(sheet));
+                policyVersions(sheet), policyChanges(sheet));
     }
 }

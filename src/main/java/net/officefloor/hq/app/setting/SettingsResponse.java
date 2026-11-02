@@ -18,7 +18,8 @@ import java.util.Map;
  * bands (whole numbers), each "" for none. And the score log switch, "on" or "" for off. And the
  * maximum of open claims per person (a whole number), or "" for none. And the pending SLA (a whole number of days), or
  * "" for none. And the from-date of each policy version, in the order made (yyyy-MM-dd, or "" for none: it counts
- * always); the current policy version is their count.
+ * always); the current policy version is their count. And each policy version, in the order made, with the key and
+ * value its change set.
  */
 public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
         String periodNumberingFrom, String termsA, String termsB, String termsC, String cap,
@@ -27,5 +28,5 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
         String proofThresholdA, String proofThresholdB, String proofThresholdC, String pot, String parent,
         String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla, String proofKinds, String defaultGrade,
         String clerkLimitA, String clerkLimitB, String clerkLimitC, String scoreMid, String scoreHigh, String scoreLog, String maxOpen, String pendingSla,
-        List<String> policyVersions) {
+        List<String> policyVersions, List<PolicyVersion> policyChanges) {
 }

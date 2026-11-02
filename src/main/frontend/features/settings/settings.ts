@@ -38,12 +38,16 @@ import { hundredths } from '../rates/rates';
  *  And, for each dated key (every one that carries a figure), its values as recorded, by from-date.
  *  And the from-date of each policy version (yyyy-MM-dd; '' for none: it counts always), in the order made: the policy
  *  settings (the rounding mode, the floor, the cap, the terms, the late percent and the clerk limit) are versioned
- *  together, every change to one of them a new version numbered from 1; the current version is their count. */
+ *  together, every change to one of them a new version numbered from 1; the current version is their count. And each
+ *  policy version, in the order made, with the key and value its change set. */
+/** A policy version: its from-date (yyyy-MM-dd; '' for none), and the policy setting its change set and the value. */
+export type PolicyVersion = { from: string; key: string; value: string };
+
 export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string; periodNumberingFrom: string;
   termsA: string; termsB: string; termsC: string; cap: string;
   proofThreshold: string; noteThreshold: string; reviewThreshold: string; graceDays: string; escalateAfter: string; entryDate: string; graceA: string; graceB: string; graceC: string;
   proofThresholdA: string; proofThresholdB: string; proofThresholdC: string; pot: string; parent: string; fiscalStartMonth: string; alertThreshold: string; rounding: string; reviewSla: string; pendingSla: string; maxOpen: string; proofKinds: string; defaultGrade: string;
-  clerkLimitA: string; clerkLimitB: string; clerkLimitC: string; scoreMid: string; scoreHigh: string; scoreLog: string; policyVersions: string[]; perms: Partial<Record<PermAction, string>>; dated: Partial<Record<SettingKey, DatedValue[]>> };
+  clerkLimitA: string; clerkLimitB: string; clerkLimitC: string; scoreMid: string; scoreHigh: string; scoreLog: string; policyVersions: string[]; policyChanges?: PolicyVersion[]; perms: Partial<Record<PermAction, string>>; dated: Partial<Record<SettingKey, DatedValue[]>> };
 
 /** A dated setting's value as recorded: in force from its from-date (yyyy-MM-dd). */
 export type DatedValue = { from: string; value: string };
