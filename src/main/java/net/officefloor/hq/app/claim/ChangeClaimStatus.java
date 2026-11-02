@@ -1,10 +1,13 @@
 package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.BadRequestException;
 import net.officefloor.hq.app.CurrentUser;
+import net.officefloor.hq.app.period.PeriodGuard;
+import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.server.http.ServerHttpConnection;
@@ -14,7 +17,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class ChangeClaimStatus {
     public void change(@PathVariable("sheetId") String sheetId, @PathVariable("claimId") String claimId,
             @PathVariable("action") String action, ServerHttpConnection connection, ClaimRepository repository,
-            Audit audit, Rollup rollup, Out<Claim> claim) throws BadRequestException {
+            PeriodRepository periods, Audit audit, Rollup rollup, Out<Claim> claim) throws BadRequestException {
         String by = CurrentUser.require(connection);
         String id = sheetId == null ? "" : sheetId.trim();
         long cid;
@@ -36,6 +39,7 @@ public class ChangeClaimStatus {
         if (found == null) {
             throw new BadRequestException("no such claim");
         }
+        PeriodGuard.open(periods, id, LocalDate.parse(found.date()));
         // Four eyes: whoever opened a claim cannot settle it.
         if (to.equals("SETTLED") && found.status().equals("OPEN") && by.equals(found.openedBy())) {
             throw new BadRequestException("the user who opened a claim cannot settle it");

@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.period;
 
+import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.time.LocalDate;
@@ -13,7 +14,11 @@ import org.springframework.stereotype.Repository;
 public class PeriodRepository {
 
     private static final RowMapper<Period> ROW = (rs, i) -> new Period(rs.getLong("id"), rs.getString("name"),
-            rs.getDate("from_date").toLocalDate().toString(), rs.getDate("to_date").toLocalDate().toString());
+            rs.getDate("from_date").toLocalDate().toString(), rs.getDate("to_date").toLocalDate().toString(),
+            rs.getBoolean("closed"), rs.getBigDecimal("closed_total") == null ? null
+                    : rs.getBigDecimal("closed_total").setScale(2).toPlainString());
+
+    private static final String COLUMNS = "id, name, from_date, to_date, closed, closed_total";
 
     private final JdbcTemplate jdbc;
 
@@ -29,8 +34,28 @@ public class PeriodRepository {
 
     /** The sheet's periods, by from-date. */
     public List<Period> list(String sheetId) {
-        return jdbc.query("SELECT id, name, from_date, to_date FROM period WHERE sheet_id = ? ORDER BY from_date",
+        return jdbc.query("SELECT " + COLUMNS + " FROM period WHERE sheet_id = ? ORDER BY from_date",
                 ROW, sheetId);
+    }
+
+    /** The sheet's period of this name (exactly); null when there is none. */
+    public Period find(String sheetId, String name) {
+        List<Period> found = jdbc.query("SELECT " + COLUMNS + " FROM period WHERE sheet_id = ? AND name = ?", ROW,
+                sheetId, name);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** The name of the sheet's closed period whose dates contain a date; null when none does. */
+    public String closedOn(String sheetId, LocalDate on) {
+        List<String> found = jdbc.queryForList("SELECT name FROM period WHERE sheet_id = ? AND closed"
+                + " AND from_date <= ? AND to_date >= ?", String.class, sheetId, Date.valueOf(on), Date.valueOf(on));
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** Close a period, fixing its due-total. */
+    public void close(String sheetId, long periodId, BigDecimal total) {
+        jdbc.update("UPDATE period SET closed = TRUE, closed_total = ? WHERE id = ? AND sheet_id = ?", total,
+                periodId, sheetId);
     }
 
     /** Whether the sheet has a period of this name, without regard to case. */
@@ -59,6 +84,6 @@ public class PeriodRepository {
             ps.setDate(4, Date.valueOf(to));
             return ps;
         }, keys);
-        return new Period(keys.getKey().longValue(), name, from.toString(), to.toString());
+        return new Period(keys.getKey().longValue(), name, from.toString(), to.toString(), false, null);
     }
 }

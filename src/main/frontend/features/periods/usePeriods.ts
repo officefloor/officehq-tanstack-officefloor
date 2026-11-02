@@ -2,8 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 
 /** A sheet's period: its name (unique on the sheet) and its from- and to-date (yyyy-mm-dd), both
- *  inclusive. No two periods of a sheet overlap. */
-export type Period = { id: number; name: string; from: string; to: string };
+ *  inclusive, whether it is closed, and the due-total fixed when it was closed (null while open). No two
+ *  periods of a sheet overlap. */
+export type Period = { id: number; name: string; from: string; to: string; closed: boolean; closedTotal: string | null };
 
 export function periodsKey(sheetId: string) {
   return ['sheet', sheetId, 'periods'];
