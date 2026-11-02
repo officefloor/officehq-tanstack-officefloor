@@ -6,7 +6,7 @@ import { PERSON_ROW_SPAN, PersonCells, PersonColumnHead, PersonDetail } from '..
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { usePeople } from '../people/usePeople';
 import { due, rateFor, useRates } from '../rates/useRates';
-import { claimed, claimsKey, useClaims, type Claim } from './useClaims';
+import { claimed, claimsKey, fixedDue, useClaims, type Claim } from './useClaims';
 
 /** A person's claimed: the sum of their counted (OPEN or SETTLED) claims' amounts. */
 function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: number }) {
@@ -90,8 +90,8 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   };
 
   const mine = (claims.data ?? []).filter((c) => c.personId === personId);
-  // A claim's due: the one fixed when it was settled, else its amount at the rate for its person's
-  // grade in force on its date ('n/a' when none applies).
+  // A claim's due: the one fixed when it was settled, else the one its last statement bound it to,
+  // else its amount at the rate for its person's grade in force on its date ('n/a' when none applies).
   const grade = people.data?.find((p) => p.id === personId)?.grade;
 
   return (
@@ -136,7 +136,8 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                 <td data-testid="claim-amount">{c.amount}</td>
                 <td data-testid="claim-date">{c.date}</td>
                 <td data-testid="claim-note">{c.note}</td>
-                <td data-testid="claim-due">{c.due ?? due(c.amount, rateFor(rates.data, grade, c.date))}</td>
+                <td data-testid="claim-due">{fixedDue(c) ?? due(c.amount, rateFor(rates.data, grade, c.date))}</td>
+                <td data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</td>
                 <td data-testid="claim-status">{c.status}</td>
                 <td data-testid="claim-opened-by">{c.openedBy ?? ''}</td>
                 <td>

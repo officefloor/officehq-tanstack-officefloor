@@ -15,13 +15,13 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no, settled_due, opened_by";
+    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no, settled_due, opened_by, stated, stated_due";
 
     private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getLong("person_id"),
             money(rs.getBigDecimal("amount")), rs.getDate("claim_date").toLocalDate().toString(),
             rs.getString("note"), rs.getString("status"),
             rs.getObject("claim_no", Long.class), dueOf(rs.getBigDecimal("settled_due")),
-            rs.getString("opened_by"));
+            rs.getString("opened_by"), rs.getBoolean("stated"), dueOf(rs.getBigDecimal("stated_due")));
 
     private final JdbcTemplate jdbc;
 
@@ -88,6 +88,34 @@ public class ClaimRepository {
                 : new BigDecimal(claim.amount()).multiply(pct.get(0)).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
     }
 
+    /** A claim's figure now: the due fixed when it was settled, else the one its last statement bound
+     *  it to, else its live due; null when it has none. */
+    public BigDecimal figure(String sheetId, Claim claim) {
+        if (claim.due() != null) return new BigDecimal(claim.due());
+        if (claim.stated() && claim.statedDue() != null) return new BigDecimal(claim.statedDue());
+        return due(sheetId, claim);
+    }
+
+    /** Whether a rate for the person's grade is in force on a date. */
+    public boolean rated(String sheetId, long personId, LocalDate on) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM rate r JOIN person p ON p.sheet_id = r.sheet_id"
+                + " AND p.grade = r.grade WHERE p.sheet_id = ? AND p.id = ?"
+                + " AND (r.from_date IS NULL OR r.from_date <= ?)", Integer.class, sheetId, personId, Date.valueOf(on));
+        return n != null && n > 0;
+    }
+
+    /** Bind a claim to a figure (stated), or unbind it (not stated, live again). */
+    public void bind(String sheetId, long claimId, boolean stated, BigDecimal figure) {
+        jdbc.update("UPDATE claim SET stated = ?, stated_due = ? WHERE id = ? AND sheet_id = ?", stated, figure,
+                claimId, sheetId);
+    }
+
+    /** A person's claims on the sheet. */
+    public List<Claim> ofPerson(String sheetId, long personId) {
+        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY id DESC",
+                ROW, sheetId, personId);
+    }
+
     /** Fix a settled claim's due. */
     public void settleDue(String sheetId, long claimId, BigDecimal due) {
         jdbc.update("UPDATE claim SET settled_due = ? WHERE id = ? AND sheet_id = ?", due, claimId, sheetId);
@@ -112,7 +140,7 @@ public class ClaimRepository {
             ps.setString(5, note);
             return ps;
         }, keys);
-        return new Claim(keys.getKey().longValue(), personId, money(amount), date.toString(), note, "DRAFT", null, null, null);
+        return new Claim(keys.getKey().longValue(), personId, money(amount), date.toString(), note, "DRAFT", null, null, null, false, null);
     }
 
     /** Change a claim's amount, date and note; false when the sheet has no such claim. */

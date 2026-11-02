@@ -54,17 +54,18 @@ public class ChangeClaimStatus {
             repository.clearNumber(id, cid);
             number = null;
         }
-        // Settling fixes the claim's due as it is now ('n/a' when its grade has no rate, which stays live).
+        // Settling fixes the claim's due as it is now: the figure its last statement bound it to, else its
+        // live due ('n/a' when its grade has no rate, which stays live).
         String due = null;
         String settledDue = "";
         if (to.equals("SETTLED")) {
-            BigDecimal now = repository.due(id, found);
+            BigDecimal now = repository.figure(id, found);
             repository.settleDue(id, cid, now);
             due = ClaimRepository.dueOf(now);
             settledDue = " due=" + (due == null ? "n/a" : due);
         }
         Claim changed = new Claim(found.id(), found.personId(), found.amount(), found.date(), found.note(), to,
-                number, due, openedBy);
+                number, due, openedBy, found.stated(), found.statedDue());
         audit.record(event + " sheet=" + id + " by=" + by + " person=" + repository.personName(id, found.personId())
                 + " amount=" + changed.amount() + " date=" + changed.date() + Claim.auditNumber(had) + settledDue);
         claim.set(changed);

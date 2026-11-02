@@ -1,13 +1,22 @@
 package net.officefloor.hq.app.person;
 
+import java.sql.Date;
 import java.sql.PreparedStatement;
+import java.time.LocalDate;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
 
 @Repository
 public class PersonRepository {
+
+    private static final String COLUMNS = "id, name, grade, version, statement_count, stated_total, statement_date";
+
+    private static final RowMapper<Person> ROW = (rs, i) -> new Person(rs.getLong("id"), rs.getString("name"),
+            rs.getString("grade"), rs.getLong("version"), rs.getLong("statement_count"), rs.getString("stated_total"),
+            rs.getDate("statement_date") == null ? null : rs.getDate("statement_date").toLocalDate().toString());
 
     private final JdbcTemplate jdbc;
 
@@ -22,9 +31,20 @@ public class PersonRepository {
 
     /** The sheet's people in the order they were added. */
     public List<Person> list(String sheetId) {
-        return jdbc.query("SELECT id, name, grade, version FROM person WHERE sheet_id = ? ORDER BY id",
-                (rs, i) -> new Person(rs.getLong("id"), rs.getString("name"), rs.getString("grade"),
-                        rs.getLong("version")), sheetId);
+        return jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? ORDER BY id", ROW, sheetId);
+    }
+
+    /** A person on the sheet; null when the sheet has no such person. */
+    public Person find(String sheetId, long id) {
+        List<Person> found = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND id = ?", ROW,
+                sheetId, id);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** Record a statement taken of a person: one more, with its due-total and date. */
+    public void stated(String sheetId, long id, String total, LocalDate date) {
+        jdbc.update("UPDATE person SET statement_count = statement_count + 1, stated_total = ?, statement_date = ?"
+                + " WHERE id = ? AND sheet_id = ?", total, Date.valueOf(date), id, sheetId);
     }
 
     /** Whether another person on the sheet (other than {@code exceptId}; 0 for none) already has this name, ignoring case. */
@@ -45,7 +65,7 @@ public class PersonRepository {
             ps.setString(3, grade);
             return ps;
         }, keys);
-        return new Person(keys.getKey().longValue(), name, grade, 1);
+        return new Person(keys.getKey().longValue(), name, grade, 1, 0, null, null);
     }
 
     /** Whether the sheet has this person. */

@@ -7,7 +7,8 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 /** A claim: its amount with two decimals, its date (yyyy-mm-dd), its note, its status, its number on
  *  the sheet (given when it is opened; null while a draft and once void) and the due fixed when it was
  *  settled (null unless settled while its grade had a rate: its due is then live, from the rates), and
- *  who opened it (null until it is opened). */
+ *  who opened it (null until it is opened), whether its person's last statement bound it, and the figure
+ *  it was bound to (null when not bound, or bound with no figure: its due then stays live). */
 export type Claim = {
   id: number;
   personId: number;
@@ -18,7 +19,15 @@ export type Claim = {
   number: number | null;
   due: string | null;
   openedBy: string | null;
+  stated: boolean;
+  statedDue: string | null;
 };
+
+/** A claim's fixed figure: the due frozen when it was settled, else the one its last statement bound
+ *  it to; null when its due is live. */
+export function fixedDue(c: Claim): string | null {
+  return c.due ?? (c.stated ? c.statedDue : null);
+}
 
 /** Whether a claim counts toward claimed and every total: only OPEN and SETTLED claims do. */
 export function counts(c: Claim): boolean {

@@ -42,7 +42,7 @@ public class SavePerson {
         if (!updated) {
             throw new ConflictException("someone else has saved this person; showing their current values");
         }
-        Person saved = new Person(pid, request.name(), request.grade(), version + 1);
+        Person saved = repository.find(id, pid);
         audit.record("PERSON_EDITED sheet=" + id + " by=" + by + " name=" + saved.name()
                 + " grade=" + saved.grade());
         person.set(saved);
