@@ -10,6 +10,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.Claim;
+import net.officefloor.hq.app.claim.ClaimShare;
 import net.officefloor.hq.app.claim.Claims;
 import net.officefloor.hq.app.claim.Late;
 import net.officefloor.hq.app.person.InvalidPersonException;
@@ -27,7 +28,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /**
- * Takes a statement of the person: records their due-total now (late charges included), binds each of their
+ * Takes a statement of the person: records their due-total now (late charges included; their parts of claims shared
+ * with them counted in, and the parts of theirs shared with others left out, as the rollup counts them), binds each of their
  * counting claims to the due it shows now (late charge included; a claim already bound keeps its figure) and
  * unbinds the rest. The due-total is n/a
  * when their grade has no rate on the sheet's today, unless a
@@ -59,8 +61,6 @@ public class TakeStatement {
         Dated floor = state.floorDated();
         Late late = state.late(on);
         List<Claim> past = state.claimsOf(person.id(), on);
-        boolean na = Rate.on(sheetRates, then.grade(), on) == null
-                && past.stream().noneMatch((c) -> then.counts(c) && then.figureApartFrom(c, on, sheetRates, floor));
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         Map<Long, BigDecimal> bound = new HashMap<>();
         for (Claim claim : past) {
@@ -68,9 +68,34 @@ public class TakeStatement {
                 // The statement binds the due as shown, late charge included: it no longer follows the sheet's today.
                 BigDecimal due = claim.due(sheetRates, then.gradeOn(claim.date()), floor, late);
                 bound.put(claim.id(), due);
-                total = due == null ? total : total.add(due);
+                // The holders' parts of a shared claim count for them, not for its own person (as the rollup counts them).
+                total = due == null ? total : total.add(due.subtract(claim.sharedPart(due)));
             }
         }
+        // The person's parts of the claims shared with them, counted as their own persons count them.
+        boolean holdsPart = false;
+        for (Claim claim : state.claims()) {
+            if (claim.person() == person.id() || claim.shares() == null) {
+                continue;
+            }
+            Person owner = state.person(claim.person(), on);
+            Claim shown = claim.on(on);
+            if (owner == null || !owner.counts(shown)) {
+                continue;
+            }
+            for (ClaimShare share : shown.shares()) {
+                if (share.person() != person.id()) {
+                    continue;
+                }
+                BigDecimal due = shown.due(sheetRates, owner.gradeOn(shown.date()), floor, late);
+                if (due != null) {
+                    holdsPart = true;
+                    total = total.add(share.partOf(due));
+                }
+            }
+        }
+        boolean na = !holdsPart && Rate.on(sheetRates, then.grade(), on) == null
+                && past.stream().noneMatch((c) -> then.counts(c) && then.figureApartFrom(c, on, sheetRates, floor));
         Map<Long, Claim> mine = claims.list(sheet).stream().filter((c) -> c.person() == person.id())
                 .collect(Collectors.toMap(Claim::id, Function.identity()));
         for (Claim claim : mine.values()) {

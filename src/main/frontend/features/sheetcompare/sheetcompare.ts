@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { GRADES, isRetired, usePeople, type Grade } from '../people/people';
-import { useSheet } from '../sheet/sheet';
+import { useSheet, useSheetToday } from '../sheet/sheet';
 import { useRates } from '../rates/rates';
 import { useFloorCents, useSettings } from '../settings/settings';
 import { personDueCents, useClaims, useLate } from '../claims/claims';
@@ -26,7 +26,7 @@ export function useGradeDue(sheet: string): { ready: boolean; due: Record<Grade,
   const claimsQ = useClaims(sheet);
   const ratesQ = useRates(sheet);
   const settingsQ = useSettings(sheet);
-  const today = sheetQ.data?.today;
+  const today = useSheetToday(sheet);
   const floor = useFloorCents(sheet);
   const capOf = useCapCentsOf(sheet);
   const late = useLate(sheet);

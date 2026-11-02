@@ -13,7 +13,7 @@ import { getJson } from '../api/http';
 // Loading a sheet re-reads its notes, people and claims before the sheet shows as loaded, so the lists on screen are
 // the store's as they stand, never the lists cached from an earlier load (or none at all while a read is still on its way).
 export const Route = createFileRoute('/')({
-  loaderDeps: ({ search }) => ({ sheet: (search as Record<string, unknown>).sheet, asof: (search as Record<string, unknown>).asof }),
+  loaderDeps: ({ search }) => ({ sheet: (search as Record<string, unknown>).sheet, asof: (search as Record<string, unknown>).asof, preview: (search as Record<string, unknown>).preview }),
   loader: async ({ context, deps }) => {
     if (typeof deps.sheet === 'string' && deps.sheet) {
       // A failed read shows through the panel's own query; it never stops the sheet loading.
