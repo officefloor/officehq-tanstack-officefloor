@@ -5,6 +5,7 @@ import { useRates } from '../rates/rates';
 import { useFloorCents } from '../settings/settings';
 import { useClaims, useLate } from '../claims/claims';
 import { personPeriodDueCents, shownPersonDueTotal, usePeriods } from './periods';
+import { Fig } from '../locale/Fig';
 
 function PeriodHeaders({ sheet }: { sheet: string; user: string }) {
   const { data: periods = [] } = usePeriods(sheet);
@@ -34,7 +35,7 @@ function PersonPeriods({ sheet, person }: { sheet: string; user: string; person:
     <>
       {periods.map((p) => (
         <td key={p.name} data-testid={`person-period-${p.name}-due-total`}>
-          {shownPersonDueTotal(p, person.id, totals.get(p.name)?.get(person.id) ?? 0n)}
+          <Fig>{shownPersonDueTotal(p, person.id, totals.get(p.name)?.get(person.id) ?? 0n)}</Fig>
         </td>
       ))}
     </>

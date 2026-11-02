@@ -11,6 +11,8 @@ import net.officefloor.hq.app.holiday.Holidays;
 import net.officefloor.hq.app.period.Periods;
 import net.officefloor.hq.app.person.People;
 import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.role.Role;
+import net.officefloor.hq.app.role.Roles;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.hq.app.sheet.SheetClock;
@@ -22,15 +24,16 @@ import org.springframework.web.bind.annotation.RequestParam;
  * For every plan on the sheet, in the order added, adds a DRAFT claim of the plan's amount, dated that day with an
  * empty note, for each plan date (the start, then every N days; or a monthly plan's day in each month) up to the end and the sheet's today that has none
  * yet, as the claim form's BuildClaim adds one. A date the form would refuse (due inside a closed period, or after the
- * person's retirement) is skipped, and tried again next time.
+ * person's retirement) is skipped, and tried again next time. A viewer's generate makes none.
  */
 public class GeneratePlans {
     public void generate(@PathVariable("sheet") String sheet, @RequestParam("user") String user, Plans plans,
             People people, Claims claims, Periods periods, Settings settings, Holidays holidays, SheetClock clock,
-            ClaimLog log, Audit audit, Rollup rollup, ObjectResponse<GeneratedPlans> response) {
+            ClaimLog log, Audit audit, Rollup rollup, Roles roles, ObjectResponse<GeneratedPlans> response) {
         LocalDate today = clock.today(sheet);
         int made = 0;
-        for (Plan plan : plans.list(sheet)) {
+        boolean viewer = Role.VIEWER.equals(roles.of(sheet, user));
+        for (Plan plan : viewer ? List.<Plan>of() : plans.list(sheet)) {
             Person person = people.find(sheet, plan.person());
             if (person == null) {
                 continue;

@@ -23,6 +23,7 @@ import {
   usePeriods,
 } from './periods';
 import type { Generated, Period } from './periods';
+import { Fig } from '../locale/Fig';
 
 // One period with its due-total (fixed once closed or soft-closed) and closed flag (yes, soft or no), and the buttons
 // that close, soft-close and reopen it. The server refuses closing a period already closed, soft-closing one already
@@ -53,10 +54,10 @@ function PeriodRow({ sheet, user, period, dueCents, fiscalStart }: { sheet: stri
       <td data-testid="period-name">{period.name}</td>
       <td data-testid="period-from">{period.from}</td>
       <td data-testid="period-to">{period.to}</td>
-      <td data-testid="period-due-total">{shownDueTotal(period, dueCents)}</td>
+      <td data-testid="period-due-total"><Fig>{shownDueTotal(period, dueCents)}</Fig></td>
       <td data-testid="period-closed">{period.closed ? 'yes' : period.soft ? 'soft' : 'no'}</td>
       <td data-testid="period-fy">{fiscalYearOf(period.from, fiscalStart)}</td>
-      <td data-testid="period-cap">{period.cap ?? ''}</td>
+      <td data-testid="period-cap"><Fig>{period.cap ?? ''}</Fig></td>
       <td>
         <button
           type="button"

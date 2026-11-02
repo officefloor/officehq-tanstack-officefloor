@@ -23,9 +23,10 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * A viewer sees every screen and changes nothing: every write to a sheet (POST or PUT) by a user the sheet makes
  * a viewer is refused with a 400 before any step runs, so nothing is written nor audited. The bulk actions are let
  * through: they refuse each selected item themselves (the claim status rules refuse a viewer), reporting 0 done; so is
- * a viewer's bulk grade and bulk retire, which change no one.
+ * a viewer's bulk grade and bulk retire, which change no one, and a viewer's generate of planned claims, which makes none.
  * An archived sheet refuses every write the same way, whoever makes it. So does a screen showing the sheet as of a
  * date (?asOf=), bulk actions included: nothing changes while the as-of date is set.
+ * A user's own locale is not a change to the sheet: anyone may choose theirs, whatever the sheet.
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
@@ -37,7 +38,11 @@ public class ViewerGuard extends OncePerRequestFilter {
     private static final Set<String> BULK = Set.of("/claims/bulk-open", "/claims/bulk-settle");
 
     /** The writes that report a count, so a viewer's press goes through and changes no one (still refused when archived). */
-    private static final Set<String> VIEWER_COUNTED = Set.of("/people/bulk-grade", "/people/bulk-retire");
+    private static final Set<String> VIEWER_COUNTED = Set.of("/people/bulk-grade", "/people/bulk-retire",
+            "/plans/generate");
+
+    /** The user's own locale: how the screen shows the sheet to them, never a change to it. */
+    private static final String LOCALE = "/locale";
 
     private final Roles roles;
     private final SheetArchive archive;
@@ -52,6 +57,11 @@ public class ViewerGuard extends OncePerRequestFilter {
             throws ServletException, IOException {
         String method = request.getMethod();
         String user = request.getParameter("user");
+        Matcher own = SHEET_WRITE.matcher(request.getRequestURI().substring(request.getContextPath().length()));
+        if (own.matches() && LOCALE.equals(own.group(2))) {
+            chain.doFilter(request, response);
+            return;
+        }
         if (("POST".equals(method) || "PUT".equals(method)) && request.getParameter(AsOfView.PARAM) != null
                 && SHEET_WRITE.matcher(request.getRequestURI().substring(request.getContextPath().length())).matches()) {
             response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Nothing changes while the sheet is shown as of a date");

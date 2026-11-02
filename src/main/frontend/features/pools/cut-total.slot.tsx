@@ -3,6 +3,7 @@ import { SheetPanels } from '../../slots/defs/sheetPanels';
 import type { Person } from '../people/people';
 import { hundredths, twoDecimals } from '../rates/rates';
 import { usePools, type Pool } from './pools';
+import { Fig } from '../locale/Fig';
 
 /** A person's cut total in hundredths: their cuts across every pool they are a member of, a pool that shows no cut
  *  adding nothing. */
@@ -33,14 +34,14 @@ function CutTotalHeader() {
 
 function PersonCutTotal({ sheet, person }: { sheet: string; user: string; person: Person }) {
   const { data: pools = [] } = usePools(sheet);
-  return <td data-testid="person-cut-total">{twoDecimals(personCutCents(pools, person.id))}</td>;
+  return <td data-testid="person-cut-total"><Fig>{twoDecimals(personCutCents(pools, person.id))}</Fig></td>;
 }
 
 function SheetCutTotal({ sheet }: { sheet: string; user: string }) {
   const { data: pools = [] } = usePools(sheet);
   return (
     <p>
-      Cut total: <strong data-testid="rollup-cut-total">{twoDecimals(sheetCutCents(pools))}</strong>
+      Cut total: <strong data-testid="rollup-cut-total"><Fig>{twoDecimals(sheetCutCents(pools))}</Fig></strong>
     </p>
   );
 }

@@ -8,6 +8,7 @@ import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { poolsKey } from '../pools/pools';
 import { GRADE_GRACE, GRADE_PROOF_THRESHOLD, GRADE_TERMS, PERMISSIONS, isDated, settingsKey, settingsPath, useSettings } from './settings';
 import type { PermAction, SettingKey, Settings as SheetSettings } from './settings';
+import { Fig } from '../locale/Fig';
 
 // The sheet's settings: each value in force, and a form that changes it. The clerk limit is the most due
 // a clerk may settle (two decimals); blank means no limit. The floor is the least a claim's live due is (two
@@ -164,7 +165,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
           />
         </label>{' '}
         {from('clerk-limit')}
-        now <span data-testid="setting-clerk-limit-current">{data?.clerkLimit ?? ''}</span>{' '}
+        now <span data-testid="setting-clerk-limit-current"><Fig>{data?.clerkLimit ?? ''}</Fig></span>{' '}
         <label>
           Cap{' '}
           <input
@@ -180,7 +181,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
           />
         </label>{' '}
         {from('cap')}
-        now <span data-testid="setting-cap-current">{data?.cap ?? ''}</span>{' '}
+        now <span data-testid="setting-cap-current"><Fig>{data?.cap ?? ''}</Fig></span>{' '}
         <label>
           Proof threshold{' '}
           <input
@@ -196,7 +197,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
           />
         </label>{' '}
         {from('proof-threshold')}
-        now <span data-testid="setting-proof-threshold-current">{data?.proofThreshold ?? ''}</span>{' '}
+        now <span data-testid="setting-proof-threshold-current"><Fig>{data?.proofThreshold ?? ''}</Fig></span>{' '}
         <label>
           Note threshold{' '}
           <input
@@ -212,7 +213,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
           />
         </label>{' '}
         {from('note-threshold')}
-        now <span data-testid="setting-note-threshold-current">{data?.noteThreshold ?? ''}</span>{' '}
+        now <span data-testid="setting-note-threshold-current"><Fig>{data?.noteThreshold ?? ''}</Fig></span>{' '}
         <label>
           Review threshold{' '}
           <input
@@ -228,7 +229,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
           />
         </label>{' '}
         {from('review-threshold')}
-        now <span data-testid="setting-review-threshold-current">{data?.reviewThreshold ?? ''}</span>{' '}
+        now <span data-testid="setting-review-threshold-current"><Fig>{data?.reviewThreshold ?? ''}</Fig></span>{' '}
         <label>
           Floor{' '}
           <input
@@ -242,7 +243,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
           />
         </label>{' '}
         {from('floor')}
-        now <span data-testid="setting-floor-current">{data?.floor ?? ''}</span>{' '}
+        now <span data-testid="setting-floor-current"><Fig>{data?.floor ?? ''}</Fig></span>{' '}
         <label>
           Rounding mode{' '}
           <input
@@ -258,7 +259,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
           />
         </label>{' '}
         {from('rounding')}
-        now <span data-testid="setting-rounding-current">{data?.rounding ?? ''}</span>{' '}
+        now <span data-testid="setting-rounding-current"><Fig>{data?.rounding ?? ''}</Fig></span>{' '}
         <label>
           Terms (days){' '}
           <input
@@ -272,7 +273,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
           />
         </label>{' '}
         {from('terms')}
-        now <span data-testid="setting-terms-current">{data?.terms ?? ''}</span>{' '}
+        now <span data-testid="setting-terms-current"><Fig>{data?.terms ?? ''}</Fig></span>{' '}
         {GRADE_TERMS.map(({ grade, key, field }) => (
           <span key={key}>
             <label>
@@ -291,7 +292,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
               />
             </label>{' '}
             {from(key)}
-            now <span data-testid={`setting-${key}-current`}>{data?.[field] ?? ''}</span>{' '}
+            now <span data-testid={`setting-${key}-current`}><Fig>{data?.[field] ?? ''}</Fig></span>{' '}
           </span>
         ))}
         {GRADE_GRACE.map(({ grade, key, field }) => (
@@ -312,7 +313,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
               />
             </label>{' '}
             {from(key)}
-            now <span data-testid={`setting-${key}-current`}>{data?.[field] ?? ''}</span>{' '}
+            now <span data-testid={`setting-${key}-current`}><Fig>{data?.[field] ?? ''}</Fig></span>{' '}
           </span>
         ))}
         {GRADE_PROOF_THRESHOLD.map(({ grade, key, field }) => (
@@ -333,7 +334,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
               />
             </label>{' '}
             {from(key)}
-            now <span data-testid={`setting-${key}-current`}>{data?.[field] ?? ''}</span>{' '}
+            now <span data-testid={`setting-${key}-current`}><Fig>{data?.[field] ?? ''}</Fig></span>{' '}
           </span>
         ))}
         <label>
@@ -349,7 +350,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
           />
         </label>{' '}
         {from('late-pct')}
-        now <span data-testid="setting-late-pct-current">{data?.latePct ?? ''}</span>{' '}
+        now <span data-testid="setting-late-pct-current"><Fig>{data?.latePct ?? ''}</Fig></span>{' '}
         <label>
           Policy date{' '}
           <input
@@ -365,7 +366,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
             onFocus={() => touch('policy-date')}
           />
         </label>{' '}
-        now <span data-testid="setting-policy-date-current">{data?.policyDate ?? ''}</span>{' '}
+        now <span data-testid="setting-policy-date-current"><Fig>{data?.policyDate ?? ''}</Fig></span>{' '}
         <label>
           Period numbering from{' '}
           <input
@@ -380,7 +381,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
             onFocus={() => touch('period-numbering-from')}
           />
         </label>{' '}
-        now <span data-testid="setting-period-numbering-from-current">{data?.periodNumberingFrom ?? ''}</span>{' '}
+        now <span data-testid="setting-period-numbering-from-current"><Fig>{data?.periodNumberingFrom ?? ''}</Fig></span>{' '}
         <label>
           Grace days{' '}
           <input
@@ -395,7 +396,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
             onFocus={() => touch('grace-days')}
           />
         </label>{' '}
-        now <span data-testid="setting-grace-days-current">{data?.graceDays ?? ''}</span>{' '}
+        now <span data-testid="setting-grace-days-current"><Fig>{data?.graceDays ?? ''}</Fig></span>{' '}
         <label>
           Entry date{' '}
           <input
@@ -410,7 +411,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
             onFocus={() => touch('entry-date')}
           />
         </label>{' '}
-        now <span data-testid="setting-entry-date-current">{data?.entryDate ?? ''}</span>{' '}
+        now <span data-testid="setting-entry-date-current"><Fig>{data?.entryDate ?? ''}</Fig></span>{' '}
         <label>
           Pot{' '}
           <input
@@ -425,7 +426,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
             onFocus={() => touch('pot')}
           />
         </label>{' '}
-        now <span data-testid="setting-pot-current">{data?.pot ?? ''}</span>{' '}
+        now <span data-testid="setting-pot-current"><Fig>{data?.pot ?? ''}</Fig></span>{' '}
         <label>
           Parent sheet{' '}
           <input
@@ -440,7 +441,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
             onFocus={() => touch('parent')}
           />
         </label>{' '}
-        now <span data-testid="setting-parent-current">{data?.parent ?? ''}</span>{' '}
+        now <span data-testid="setting-parent-current"><Fig>{data?.parent ?? ''}</Fig></span>{' '}
         <label>
           Fiscal year starts in month{' '}
           <input
@@ -454,7 +455,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
             onFocus={() => touch('fiscal-start-month')}
           />
         </label>{' '}
-        now <span data-testid="setting-fiscal-start-month-current">{data?.fiscalStartMonth ?? ''}</span>{' '}
+        now <span data-testid="setting-fiscal-start-month-current"><Fig>{data?.fiscalStartMonth ?? ''}</Fig></span>{' '}
         <label>
           Alert threshold{' '}
           <input
@@ -469,7 +470,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
             onFocus={() => touch('alert-threshold')}
           />
         </label>{' '}
-        now <span data-testid="setting-alert-threshold-current">{data?.alertThreshold ?? ''}</span>{' '}
+        now <span data-testid="setting-alert-threshold-current"><Fig>{data?.alertThreshold ?? ''}</Fig></span>{' '}
         {PERMISSIONS.map(({ action, standing }) => (
           <span key={action}>
             <label>
@@ -487,7 +488,7 @@ function Settings({ sheet, user }: { sheet: string; user: string }) {
                 onFocus={() => touch(`perm-${action}`)}
               />
             </label>{' '}
-            now <span data-testid={`setting-perm-${action}-current`}>{data?.perms?.[action] ?? ''}</span>{' '}
+            now <span data-testid={`setting-perm-${action}-current`}><Fig>{data?.perms?.[action] ?? ''}</Fig></span>{' '}
           </span>
         ))}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>

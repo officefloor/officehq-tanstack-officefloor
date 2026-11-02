@@ -5,6 +5,7 @@ import { twoDecimals } from '../rates/rates';
 import { useSheetTotals } from '../claims/claims';
 import { useFamily } from './consolidated';
 import { LiveFigures } from '../../query/live';
+import { Fig } from '../locale/Fig';
 
 type Figures = { people: number; due: bigint; overdue: bigint };
 
@@ -41,8 +42,8 @@ function Consolidated({ sheet }: { sheet: string; user: string }) {
         ))}
       </LiveFigures.Provider>
       Consolidated: people <strong data-testid="consolidated-people-count">{people}</strong>, due total{' '}
-      <strong data-testid="consolidated-due-total">{twoDecimals(due)}</strong>, overdue total{' '}
-      <strong data-testid="consolidated-overdue-total">{twoDecimals(overdue)}</strong>
+      <strong data-testid="consolidated-due-total"><Fig>{twoDecimals(due)}</Fig></strong>, overdue total{' '}
+      <strong data-testid="consolidated-overdue-total"><Fig>{twoDecimals(overdue)}</Fig></strong>
     </p>
   );
 }

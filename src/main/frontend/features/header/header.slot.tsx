@@ -13,6 +13,7 @@ import {
   useLate,
   useSheetTotals,
 } from '../claims/claims';
+import { Fig } from '../locale/Fig';
 
 // The signed-in user's own figures: the due-total and overdue-total of the person whose name or an alias is the
 // user's name (as names are compared: without regard to case), as their row shows them; none when there is none.
@@ -58,19 +59,19 @@ function Header({ sheet, user }: { sheet: string; user: string }) {
       ))}
       <span>
         {' '}
-        Due total: <strong data-testid="header-due-total">{twoDecimals(due)}</strong>
+        Due total: <strong data-testid="header-due-total"><Fig>{twoDecimals(due)}</Fig></strong>
       </span>
       <span>
         {' '}
-        Overdue total: <strong data-testid="header-overdue-total">{twoDecimals(overdue.cents)}</strong>
+        Overdue total: <strong data-testid="header-overdue-total"><Fig>{twoDecimals(overdue.cents)}</Fig></strong>
       </span>
       <span>
         {' '}
-        My due total: <strong data-testid="my-due-total">{my.due}</strong>
+        My due total: <strong data-testid="my-due-total"><Fig>{my.due}</Fig></strong>
       </span>
       <span>
         {' '}
-        My overdue total: <strong data-testid="my-overdue-total">{my.overdue}</strong>
+        My overdue total: <strong data-testid="my-overdue-total"><Fig>{my.overdue}</Fig></strong>
       </span>
     </header>
   );

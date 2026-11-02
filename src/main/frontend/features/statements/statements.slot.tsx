@@ -10,6 +10,7 @@ import type { Person } from '../people/people';
 import { claimsKey } from '../claims/claims';
 import { statementsKey, useStatements } from './statements';
 import type { StatementSummary } from './statements';
+import { Fig } from '../locale/Fig';
 
 function StatementHeader() {
   return (
@@ -59,7 +60,7 @@ function PersonStatements({ sheet, user, person }: { sheet: string; user: string
   return (
     <>
       <td data-testid="person-statement-count">{mine?.count ?? 0}</td>
-      <td data-testid="person-stated-total">{mine?.lastDueTotal ?? ''}</td>
+      <td data-testid="person-stated-total"><Fig>{mine?.lastDueTotal ?? ''}</Fig></td>
       <td data-testid="person-statement-date">{mine?.lastDate ?? ''}</td>
       <td>
         <input

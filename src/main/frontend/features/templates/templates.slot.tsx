@@ -6,6 +6,7 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { byUser } from '../session/session';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { templatesKey, templatesPath, useTemplates, type ClaimTemplate } from './templates';
+import { Fig } from '../locale/Fig';
 
 type Draft = { name: string; amount: string; note: string };
 const EMPTY: Draft = { name: '', amount: '', note: '' };
@@ -57,7 +58,7 @@ function Templates({ sheet, user }: { sheet: string; user: string }) {
         {templates.map((t) => (
           <li key={t.name} data-testid={`template-row-${t.name}`}>
             <span data-testid="template-name">{t.name}</span>{' '}
-            <span data-testid="template-amount">{t.amount}</span>{' '}
+            <span data-testid="template-amount"><Fig>{t.amount}</Fig></span>{' '}
             <span data-testid="template-note">{t.note}</span>
           </li>
         ))}

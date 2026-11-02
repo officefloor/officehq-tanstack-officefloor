@@ -11,6 +11,7 @@ import { twoDecimals } from '../rates/rates';
 import { useSheetToday } from '../sheet/sheet';
 import { patronsKey, shareCents, usePatrons } from './patrons';
 import type { Patron } from './patrons';
+import { Fig } from '../locale/Fig';
 
 /** A figure in ten-thousandths of a hundredth (hundredths times a share in hundredths of a percent) as hundredths,
  *  rounded half to even. */
@@ -73,7 +74,7 @@ function PersonPatrons({ sheet, user, person }: { sheet: string; user: string; p
   return (
     <>
       <td data-testid="person-patrons">{names.join(', ')}</td>
-      <td data-testid="person-backing">{twoDecimals(backing)}</td>
+      <td data-testid="person-backing"><Fig>{twoDecimals(backing)}</Fig></td>
       <td>
         <select
           data-testid="person-patron-select"

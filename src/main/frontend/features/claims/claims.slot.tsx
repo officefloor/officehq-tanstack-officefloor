@@ -31,6 +31,7 @@ import type { Claim, ClaimStatusChange } from './claims';
 import { selectClaim, useSelectedClaims } from './selection';
 import { useVoidReasons, voidReasonsKey } from '../voidreasons/voidreasons';
 import { useTemplates } from '../templates/templates';
+import { Fig } from '../locale/Fig';
 
 type Draft = { amount: string; date: string; note: string; corrects: string; ref: string; tags: string };
 const EMPTY: Draft = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
@@ -230,10 +231,10 @@ function ClaimRow({ sheet, user, claim, rates, grade, editing, onCancel }: {
         checked={selected}
         onChange={(e) => selectClaim(sheet, claim.id, e.target.checked)}
       />{' '}
-      <span data-testid="claim-amount">{claim.amount}</span>{' '}
+      <span data-testid="claim-amount"><Fig>{claim.amount}</Fig></span>{' '}
       <span data-testid="claim-date">{claim.date}</span>{' '}
       <span data-testid="claim-note">{claim.note}</span>{' '}
-      due <span data-testid="claim-due">{showDue(claimDueCents(claim, claimRateOf(rates, grade, claim), floor, late))}</span>{' '}
+      due <span data-testid="claim-due"><Fig>{showDue(claimDueCents(claim, claimRateOf(rates, grade, claim), floor, late))}</Fig></span>{' '}
       due by <span data-testid="claim-due-by">{claim.dueBy}</span>{' '}
       overdue <span data-testid="claim-overdue">{overdue(claim, late) ? 'yes' : 'no'}</span>{' '}
       <span data-testid="claim-status">{claim.status}</span>{' '}
@@ -847,16 +848,16 @@ function PersonClaims({ sheet, user, person }: { sheet: string; user: string; pe
 
   return (
     <>
-      <td data-testid="person-claimed">{claimed(counted(claims, [person]))}</td>
-      <td data-testid="person-due-total">{showDue(personDueCents(claims, rates, person, today, floor, late, cap))}</td>
-      <td data-testid="person-excess">{twoDecimals(excess)}</td>
+      <td data-testid="person-claimed"><Fig>{claimed(counted(claims, [person]))}</Fig></td>
+      <td data-testid="person-due-total"><Fig>{showDue(personDueCents(claims, rates, person, today, floor, late, cap))}</Fig></td>
+      <td data-testid="person-excess"><Fig>{twoDecimals(excess)}</Fig></td>
       <td data-testid="person-overdue-count">{lateClaims.count}</td>
-      <td data-testid="person-overdue-total">{twoDecimals(lateClaims.cents)}</td>
-      <td data-testid="person-aged-0-30">{twoDecimals(aged.upTo30)}</td>
-      <td data-testid="person-aged-31-60">{twoDecimals(aged.upTo60)}</td>
-      <td data-testid="person-aged-61">{twoDecimals(aged.over60)}</td>
-      <td data-testid="person-settled-total">{twoDecimals(split.settled)}</td>
-      <td data-testid="person-open-total">{twoDecimals(split.open)}</td>
+      <td data-testid="person-overdue-total"><Fig>{twoDecimals(lateClaims.cents)}</Fig></td>
+      <td data-testid="person-aged-0-30"><Fig>{twoDecimals(aged.upTo30)}</Fig></td>
+      <td data-testid="person-aged-31-60"><Fig>{twoDecimals(aged.upTo60)}</Fig></td>
+      <td data-testid="person-aged-61"><Fig>{twoDecimals(aged.over60)}</Fig></td>
+      <td data-testid="person-settled-total"><Fig>{twoDecimals(split.settled)}</Fig></td>
+      <td data-testid="person-open-total"><Fig>{twoDecimals(split.open)}</Fig></td>
       <td>
         <form onSubmit={submit}>
           <input

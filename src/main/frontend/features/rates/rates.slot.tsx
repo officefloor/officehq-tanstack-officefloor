@@ -10,6 +10,7 @@ import { useSheetToday } from '../sheet/sheet';
 import type { Grade } from '../people/people';
 import { rateOf, ratePreviewPath, ratesKey, ratesPath, useRates } from './rates';
 import type { Rate, RatePreview } from './rates';
+import { Fig } from '../locale/Fig';
 
 type Draft = { grade: Grade; pct: string; from: string; to: string };
 const EMPTY: Draft = { grade: 'A', pct: '', from: '', to: '' };
@@ -139,7 +140,7 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
         {preview.data && (
           <span>
             {' '}Claims changed: <span data-testid="rate-preview-count">{preview.data.count}</span>, difference:{' '}
-            <span data-testid="rate-preview-diff">{preview.data.diff}</span>
+            <span data-testid="rate-preview-diff"><Fig>{preview.data.diff}</Fig></span>
           </span>
         )}
         {preview.isError && (
@@ -159,7 +160,7 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
           {GRADES.map((g) => (
             <tr key={g}>
               <td>{g}</td>
-              <td data-testid={`rate-current-${g}`}>{rateOf(rates, g, today) ?? 'n/a'}</td>
+              <td data-testid={`rate-current-${g}`}><Fig>{rateOf(rates, g, today) ?? 'n/a'}</Fig></td>
             </tr>
           ))}
         </tbody>
@@ -181,7 +182,7 @@ function Rates({ sheet, user }: { sheet: string; user: string }) {
               <td data-testid="rate-from">{r.from ?? 'start'}</td>
               <td data-testid="rate-to">{r.to ?? ''}</td>
               <td>
-                <span data-testid="rate-pct">{r.pct}</span>
+                <span data-testid="rate-pct"><Fig>{r.pct}</Fig></span>
               </td>
               <td data-testid="rate-version">{r.version ?? 1}</td>
             </tr>

@@ -7,6 +7,7 @@ import { byUser } from '../session/session';
 import { usePeople } from '../people/people';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { poolMembersPath, poolsKey, poolsPath, usePools, type Pool } from './pools';
+import { Fig } from '../locale/Fig';
 
 // One pool's row: its members with their shares and cuts of the pot, its total share and whether it is balanced, and a form that adds
 // a member chosen from the sheet's people or its other pools (pool:<name>).
@@ -50,7 +51,7 @@ function PoolRow({ sheet, user, pool, pools }: { sheet: string; user: string; po
 
   return (
     <li data-testid={`pool-row-${pool.name}`}>
-      <strong>{pool.name}</strong> — total share <span data-testid="pool-total-share">{pool.totalShare}</span>,
+      <strong>{pool.name}</strong> — total share <span data-testid="pool-total-share"><Fig>{pool.totalShare}</Fig></span>,
       balanced <span data-testid="pool-balanced">{pool.balanced ? 'yes' : 'no'}</span>
       <ul>
         {pool.members.map((m) => (
@@ -58,10 +59,10 @@ function PoolRow({ sheet, user, pool, pools }: { sheet: string; user: string; po
             key={m.memberPool !== null ? `pool:${m.memberPool}` : m.person}
             data-testid={`pool-member-${pool.name}-${m.memberPool !== null ? `pool-${m.memberPool}` : m.person}`}
           >
-            {m.name} <span data-testid="pool-share">{m.share}</span>%{m.retired ? ' (retired)' : ''}
+            {m.name} <span data-testid="pool-share"><Fig>{m.share}</Fig></span>%{m.retired ? ' (retired)' : ''}
             {m.from || m.to ? ` (${m.from || '…'} to ${m.to || '…'})` : ''}
             {m.current ? '' : ' (not current)'}, cut{' '}
-            <span data-testid="pool-cut">{m.cut}</span>
+            <span data-testid="pool-cut"><Fig>{m.cut}</Fig></span>
           </li>
         ))}
       </ul>

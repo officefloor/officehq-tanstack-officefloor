@@ -6,6 +6,7 @@ import { useCapCents, useFloorCents } from '../settings/settings';
 import { CLAIM_STATUSES, isActive, personDueCents, statusCount, useClaims, useLate } from '../claims/claims';
 import { useVoidReasons } from '../voidreasons/voidreasons';
 import { classicPeriodDueCents, periodDueCents, shownDueTotal, usePeriods } from '../periods/periods';
+import { Fig } from '../locale/Fig';
 
 // The sheet at a glance, figured exactly as the lists figure it. Per grade: the people on it today (retired ones
 // excluded), their due-totals added up (an n/a due-total adds nothing) and how many of them are active. Per period: its due-total, as its row shows
@@ -58,7 +59,7 @@ function Summary({ sheet }: { sheet: string; user: string }) {
               <tr key={g}>
                 <td>{g}</td>
                 <td data-testid={`summary-grade-${g}-count`}>{onGrade.length}</td>
-                <td data-testid={`summary-grade-${g}-due-total`}>{twoDecimals(due)}</td>
+                <td data-testid={`summary-grade-${g}-due-total`}><Fig>{twoDecimals(due)}</Fig></td>
                 <td data-testid={`summary-grade-${g}-active`}>{onGrade.filter((p) => isActive(claims, p, today)).length}</td>
               </tr>
             );
@@ -77,8 +78,8 @@ function Summary({ sheet }: { sheet: string; user: string }) {
           {periods.map((p) => (
             <tr key={p.name}>
               <td>{p.name}</td>
-              <td data-testid={`summary-period-${p.name}-due-total`}>{shownDueTotal(p, periodTotals.get(p.name) ?? 0n)}</td>
-              <td data-testid={`summary-period-${p.name}-change`}>{periodChanges.get(p.name)}</td>
+              <td data-testid={`summary-period-${p.name}-due-total`}><Fig>{shownDueTotal(p, periodTotals.get(p.name) ?? 0n)}</Fig></td>
+              <td data-testid={`summary-period-${p.name}-change`}><Fig>{periodChanges.get(p.name)}</Fig></td>
             </tr>
           ))}
         </tbody>
@@ -111,13 +112,13 @@ function Summary({ sheet }: { sheet: string; user: string }) {
           {periods.map((p) => (
             <tr key={p.name}>
               <td>{p.name}</td>
-              <td data-testid={`classic-period-${p.name}-due-total`}>{shownDueTotal(p, classicTotals.get(p.name) ?? 0n)}</td>
+              <td data-testid={`classic-period-${p.name}-due-total`}><Fig>{shownDueTotal(p, classicTotals.get(p.name) ?? 0n)}</Fig></td>
             </tr>
           ))}
         </tbody>
       </table>
       <p>
-        Due total: <strong data-testid="classic-due-total">{twoDecimals(classicDue)}</strong>
+        Due total: <strong data-testid="classic-due-total"><Fig>{twoDecimals(classicDue)}</Fig></strong>
       </p>
       <table>
         <thead>
