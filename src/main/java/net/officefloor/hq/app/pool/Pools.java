@@ -43,7 +43,8 @@ public class Pools {
      * has its cut there as its pot (none when that pool is unbalanced or has none). A person with a hold in force on
      * the sheet's today gets no cut, their share spread over the other members with a cut, and so does a retired
      * person, whose share still counts in the total share. A member whose membership dates do not include the sheet's
-     * today is left out entirely: not in the total share, no cut.
+     * today is left out entirely: not in the total share, no cut. Each crew is also a pool, after the pools added, of its
+     * name: its lead and then its members in the order added, at equal shares (see {@link #crewShares}).
      */
     public List<Pool> list(String sheet) {
         LocalDate now = clock.today(sheet);
@@ -64,6 +65,7 @@ public class Pools {
                                 current(rs, now), "")));
                     }
                 }, sheet);
+        crewPools(sheet, members);
         Map<String, String> parents = new HashMap<>();
         jdbc.query("SELECT pool, member, share, position, from_date, to_date FROM pool_sub WHERE sheet = ?",
                 (rs) -> {
@@ -102,6 +104,61 @@ public class Pools {
     }
 
     private record Ordered(int position, PoolMember member) {
+    }
+
+    /** Adds each crew as a pool: its lead first, then its members in the order added, at {@link #crewShares}. */
+    private void crewPools(String sheet, Map<String, List<Ordered>> members) {
+        Map<String, List<PoolMember>> crews = new LinkedHashMap<>();
+        jdbc.query("SELECT c.name, c.lead_id, p.name AS person_name, p.retired_from FROM crew c"
+                + " JOIN person p ON p.sheet = c.sheet AND p.id = c.lead_id WHERE c.sheet = ? ORDER BY c.position",
+                (rs) -> {
+                    List<PoolMember> list = new ArrayList<>();
+                    list.add(crewMember(rs, "lead_id"));
+                    crews.put(rs.getString("name"), list);
+                }, sheet);
+        jdbc.query("SELECT m.crew, m.person_id, p.name AS person_name, p.retired_from FROM crew_member m"
+                + " JOIN person p ON p.sheet = m.sheet AND p.id = m.person_id WHERE m.sheet = ? ORDER BY m.position",
+                (rs) -> {
+                    List<PoolMember> list = crews.get(rs.getString("crew"));
+                    if (list != null) {
+                        list.add(crewMember(rs, "person_id"));
+                    }
+                }, sheet);
+        crews.forEach((name, list) -> {
+            if (members.containsKey(name)) {
+                return;
+            }
+            List<BigDecimal> shares = crewShares(list.size());
+            List<Ordered> ordered = new ArrayList<>();
+            for (int i = 0; i < list.size(); i++) {
+                PoolMember m = list.get(i);
+                ordered.add(new Ordered(i, new PoolMember(m.person(), null, m.name(), shares.get(i).toPlainString(),
+                        m.retired(), "", "", true, "")));
+            }
+            members.put(name, ordered);
+        });
+    }
+
+    private static PoolMember crewMember(ResultSet rs, String id) throws SQLException {
+        return new PoolMember(rs.getLong(id), null, rs.getString("person_name"), "", rs.getDate("retired_from") != null,
+                "", "", true, "");
+    }
+
+    /**
+     * Shares for a crew of this many (lead first), as patrons' shares are: 100.00 split equally, each rounded half to
+     * even to two decimals, with the remainder (100.00 less the shares added up) on the first, the lead.
+     */
+    static List<BigDecimal> crewShares(int count) {
+        List<BigDecimal> shares = new ArrayList<>();
+        if (count == 0) {
+            return shares;
+        }
+        BigDecimal each = FULL.divide(BigDecimal.valueOf(count), 2, RoundingMode.HALF_EVEN);
+        for (int i = 0; i < count; i++) {
+            shares.add(each);
+        }
+        shares.set(0, each.add(FULL.subtract(each.multiply(BigDecimal.valueOf(count)))));
+        return shares;
     }
 
     /** The date in the column, or "" when none. */
@@ -200,9 +257,21 @@ public class Pools {
         return m.current() && (m.memberPool() != null || !(m.retired() || held.contains(m.person())));
     }
 
-    /** Whether the sheet has a pool of this name. */
+    /** Whether the sheet has a pool of this name, one added or a crew. */
     public boolean has(String sheet, String name) {
+        return hasAdded(sheet, name) || isCrew(sheet, name);
+    }
+
+    /** Whether the sheet has a pool of this name that was added as a pool (not a crew). */
+    public boolean hasAdded(String sheet, String name) {
         Integer found = jdbc.queryForObject("SELECT COUNT(*) FROM pool WHERE sheet = ? AND name = ?", Integer.class,
+                sheet, name);
+        return found != null && found > 0;
+    }
+
+    /** Whether the pool of this name is a crew, its members the crew's. */
+    public boolean isCrew(String sheet, String name) {
+        Integer found = jdbc.queryForObject("SELECT COUNT(*) FROM crew WHERE sheet = ? AND name = ?", Integer.class,
                 sheet, name);
         return found != null && found > 0;
     }

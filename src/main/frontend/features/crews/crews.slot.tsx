@@ -10,6 +10,7 @@ import { twoDecimals } from '../rates/rates';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import { crewDueCents, crewMembersPath, crewsKey, crewsPath, useCrews, type Crew } from './crews';
 import { Fig } from '../locale/Fig';
+import { poolsKey } from '../pools/pools';
 
 // One crew's row: its lead, its members, its due-total (the lead's and the members' due-totals added up, an n/a one
 // skipped), and a form that adds a member chosen from the sheet's people.
@@ -24,6 +25,8 @@ function CrewRow({ sheet, user, crew }: { sheet: string; user: string; crew: Cre
       postJson<Crew[]>(byUser(crewMembersPath(sheet), user), body),
     onSuccess: (updated) => {
       queryClient.setQueryData(crewsKey(sheet), updated);
+      // Each crew is also a pool, its members the crew's.
+      void queryClient.invalidateQueries({ queryKey: poolsKey(sheet) });
       setMember('');
     },
   });
@@ -90,6 +93,8 @@ function Crews({ sheet, user }: { sheet: string; user: string }) {
       postJson<Crew[]>(byUser(crewsPath(sheet), user), body),
     onSuccess: (updated) => {
       queryClient.setQueryData(crewsKey(sheet), updated);
+      // Each crew is also a pool, its members the crew's.
+      void queryClient.invalidateQueries({ queryKey: poolsKey(sheet) });
       setName('');
       setLead('');
     },

@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RequestParam;
  * most 100.00); refused for an unknown pool or person, a person already in the pool, or a bad share. A pool member is
  * also refused when it is already a member of a pool, when the pool would contain itself through any chain, or when
  * the chain of pools would be more than three deep. The membership may carry a from-date and a to-date (each optional);
- * a to-date before the from-date is refused.
+ * a to-date before the from-date is refused. A crew's pool takes no members this way: its members are the crew's.
  */
 public class AddPoolMember {
 
@@ -31,6 +31,9 @@ public class AddPoolMember {
             throws InvalidPoolException {
         if (request == null || request.pool() == null || !pools.has(sheet, request.pool())) {
             throw new InvalidPoolException("No such pool");
+        }
+        if (pools.isCrew(sheet, request.pool())) {
+            throw new InvalidPoolException(request.pool() + " is a crew: its members are the crew's");
         }
         String sub = request.memberPool() == null ? null : request.memberPool().trim();
         Person person = sub != null || request.person() == null ? null : people.find(sheet, request.person());
