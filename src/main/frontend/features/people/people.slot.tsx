@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
+import { PersonCells, PersonColumnHead, PersonDetail } from '../../slots/defs/personRow';
 import { GRADES, peopleKey, usePeople, type Person } from './usePeople';
 
 /** The sheet's people: a form that adds a person, or edits one when their editor is open, and the
- *  list of everyone in the order they were added. */
+ *  list of everyone in the order they were added. Each person is a <tbody> so features can add
+ *  cells and rows of their own to it (slots/defs/personRow). */
 function People({ sheetId }: { sheetId: string }) {
   const people = usePeople(sheetId);
   const queryClient = useQueryClient();
@@ -96,22 +98,25 @@ function People({ sheetId }: { sheetId: string }) {
           <tr>
             <th>Name</th>
             <th>Grade</th>
+            <PersonColumnHead.Slot sheetId={sheetId} />
             <th />
           </tr>
         </thead>
-        <tbody>
-          {(people.data ?? []).map((p) => (
-            <tr key={p.id} data-testid={`person-row-${p.id}`}>
+        {(people.data ?? []).map((p) => (
+          <tbody key={p.id} data-testid={`person-row-${p.id}`}>
+            <tr>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>
+              <PersonCells.Slot sheetId={sheetId} personId={p.id} />
               <td>
                 <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => openEditor(p)}>
                   Edit
                 </button>
               </td>
             </tr>
-          ))}
-        </tbody>
+            <PersonDetail.Slot sheetId={sheetId} personId={p.id} />
+          </tbody>
+        ))}
       </table>
       {people.isError && <p data-testid="people-error">{people.error.message}</p>}
     </section>
