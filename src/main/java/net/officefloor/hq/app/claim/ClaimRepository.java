@@ -166,8 +166,9 @@ public class ClaimRepository {
     }
 
     /** A claim's due now: its figure, plus, while it is overdue (OPEN or PENDING and its due-by — fixed when it was
-     *  created — before the sheet's today), the sheet's late percent in force on the claim's date of that figure for every full
-     *  30 days it is overdue, rounded to two decimals by the claim's rounding. A statement never binds the charge:
+     *  created — before the sheet's today), for every full 30 days it is overdue, the sheet's
+     *  late percent in force on that boundary date (the due-by plus 30, 60, 90 ... days) of that figure, each rounded to two
+     *  decimals by the claim's rounding, the charges added up (a boundary whose percent is 0.00 adds nothing). A statement never binds the charge:
      *  it keeps following the sheet's today until settling freezes it in. A correction (a negative amount)
      *  has no late charge, nor does a deferred claim (it is not overdue). Null when it has no figure. */
     public BigDecimal dueNow(String sheetId, Claim claim) {
@@ -179,12 +180,16 @@ public class ClaimRepository {
         if (found.isEmpty()) return figure;
         LocalDate today = found.get(0).toLocalDate();
         LocalDate dueBy = LocalDate.parse(claim.dueBy());
-        BigDecimal pct = settings.latePct(sheetId, LocalDate.parse(claim.date()));
         long periods = dueBy.isBefore(today) ? ChronoUnit.DAYS.between(dueBy, today) / 30 : 0;
-        if (periods == 0 || pct == null || pct.signum() == 0) return figure;
-        BigDecimal charge = figure.multiply(pct).multiply(BigDecimal.valueOf(periods)).movePointLeft(2)
-                .setScale(2, rounding(sheetId, claim));
-        return figure.add(charge);
+        if (periods == 0) return figure;
+        RoundingMode rounding = rounding(sheetId, claim);
+        BigDecimal due = figure;
+        for (long n = 1; n <= periods; n++) {
+            BigDecimal pct = settings.latePct(sheetId, dueBy.plusDays(30 * n));
+            if (pct == null || pct.signum() == 0) continue;
+            due = due.add(figure.multiply(pct).movePointLeft(2).setScale(2, rounding));
+        }
+        return due;
     }
 
     /** Whether the rate that would apply to a claim (for the grade its person had on its date, the one

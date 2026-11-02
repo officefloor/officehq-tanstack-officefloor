@@ -23,17 +23,23 @@ export function roundsHalfUp(c: Claim, claims: Claim[] | undefined, settings: Se
 }
 
 /** A claim's due now: its figure (a settled claim's frozen due, else the one its last statement
- *  bound it to, else its floored live due), plus, while it is overdue, the sheet's late percent in force on
- *  the claim's date of
- *  that figure for every full 30 days it is overdue, rounded like a due. The charge is never bound by
+ *  bound it to, else its floored live due), plus, while it is overdue, for every full 30 days it is overdue
+ *  the sheet's late percent in force on that boundary date (the due-by plus 30, 60, 90 ... days) of
+ *  that figure, each rounded like a due, the charges added up. The charge is never bound by
  *  a statement: it follows the sheet's today until settling freezes it in. A correction (a negative
  *  amount) has no late charge. Just the figure until the settings and the sheet's today are loaded. */
 export function dueNow(c: Claim, figure: string, settings: Settings | undefined, today: string | undefined, halfUp: boolean): string {
   if (settings === undefined || today === undefined || !isOverdue(c, today) || isCorrection(c.amount)) {
     return figure;
   }
-  const days = (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${c.dueBy}T00:00:00Z`)) / 86_400_000;
-  return withCharge(figure, settingOn(settings, 'late-pct', c.date) ?? '0.00', Math.floor(days / 30), halfUp);
+  const dueBy = Date.parse(`${c.dueBy}T00:00:00Z`);
+  const periods = Math.floor((Date.parse(`${today}T00:00:00Z`) - dueBy) / 86_400_000 / 30);
+  const pcts: string[] = [];
+  for (let n = 1; n <= periods; n++) {
+    const boundary = new Date(dueBy + n * 30 * 86_400_000).toISOString().slice(0, 10);
+    pcts.push(settingOn(settings, 'late-pct', boundary) ?? '0.00');
+  }
+  return withCharge(figure, pcts, halfUp);
 }
 
 /** A claim's due now (see `dueNow`) from its fixed figure, else its live due at this rate (a
