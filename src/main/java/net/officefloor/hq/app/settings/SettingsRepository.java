@@ -53,7 +53,7 @@ public class SettingsRepository {
                 money(latePct(sheetId, today)), roles, policy == null ? null : policy.toString(),
                 numbering == null ? null : numbering.toString(), gradeTerms(sheetId, today),
                 cap == null ? null : money(cap), dated(sheetId), permissions(sheetId), graceDays(sheetId),
-                delegations(sheetId), entry == null ? null : entry.toString());
+                delegations(sheetId), entry == null ? null : entry.toString(), holidays(sheetId));
     }
 
     /** The sheet's today; the real date when there is no such sheet. */
@@ -268,6 +268,25 @@ public class SettingsRepository {
     public void delegate(String sheetId, String user, String by, LocalDate from, LocalDate to) {
         jdbc.update("INSERT INTO delegation (sheet_id, user_name, by_user, from_date, to_date) VALUES (?, ?, ?, ?, ?)",
                 sheetId, user, by, Date.valueOf(from), Date.valueOf(to));
+    }
+
+    /** The sheet's holidays (yyyy-MM-dd), earliest first. */
+    public List<String> holidays(String sheetId) {
+        return jdbc.query("SELECT holiday_date FROM holiday WHERE sheet_id = ? ORDER BY holiday_date",
+                (rs, i) -> rs.getDate("holiday_date").toLocalDate().toString(), sheetId);
+    }
+
+    public void addHoliday(String sheetId, LocalDate date) {
+        jdbc.update("INSERT INTO holiday (sheet_id, holiday_date) VALUES (?, ?)", sheetId, Date.valueOf(date));
+    }
+
+    /** The date, else the next day after it that is not one of the sheet's holidays. */
+    public LocalDate pastHolidays(String sheetId, LocalDate date) {
+        java.util.Set<String> holidays = new java.util.HashSet<>(holidays(sheetId));
+        while (holidays.contains(date.toString())) {
+            date = date.plusDays(1);
+        }
+        return date;
     }
 
     /** The delegations made on the sheet, oldest first. */

@@ -21,7 +21,7 @@ import { settingOn, settingsKey, useSettings, type Settings } from './useSetting
  *  quick-add bar, a pasted line with a blank date and a correction — instead of the sheet's today; blank is off; not dated), and the role (clerk, steward or viewer — a viewer changes nothing)
  *  assigned to each user name, and the delegations of the steward role (a steward delegates it to a user from a
  *  from-date, blank the sheet's today, to a to-date, inclusive; while the sheet's today is inside it the user acts
- *  as a steward). Saving saves each setting whose field was entered (focused or typed
+ *  as a steward), and the sheet's holidays (a date already on the list is refused). Saving saves each setting whose field was entered (focused or typed
  *  in, even when left blank); the others stay as they are. A setting with a figure (the clerk limit, the
  *  floor, the terms, each grade's terms, the late percent, the cap, the proof threshold and the note threshold) is saved from its from-date, blank
  *  meaning the sheet's today; each shows the value in force on the sheet's today. */
@@ -76,6 +76,8 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
   const [delegateFrom, setDelegateFrom] = useState('');
   const [delegateTo, setDelegateTo] = useState('');
 
+  const [holidayDate, setHolidayDate] = useState('');
+
   const saveOnce = useSingleFlight();
   const save = useMutation({
     mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null; noteThreshold: string | null; permissions: Record<string, string>; graceDays: string | null; entryDate: string | null }) =>
@@ -118,6 +120,16 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
       setDelegateUser('');
       setDelegateFrom('');
       setDelegateTo('');
+      queryClient.setQueryData(settingsKey(sheetId), saved);
+    },
+  });
+
+  const holidayOnce = useSingleFlight();
+  const addHoliday = useMutation({
+    mutationFn: (f: { date: string }) =>
+      postJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/holidays`, f),
+    onSuccess: (saved) => {
+      setHolidayDate('');
       queryClient.setQueryData(settingsKey(sheetId), saved);
     },
   });
@@ -450,6 +462,40 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
         {(settings.data?.delegations ?? []).map((d, i) => (
           <li key={i} data-testid="delegate-line">
             {d.user} acts as steward for {d.by}, {d.from} to {d.to}
+          </li>
+        ))}
+      </ul>
+      <form
+        data-testid="holiday-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          holidayOnce(() => {
+            addHoliday.reset();
+            return addHoliday.mutateAsync({ date: holidayDate });
+          });
+        }}
+      >
+        <label>
+          Holiday{' '}
+          <input
+            data-testid="holiday-date"
+            placeholder="yyyy-mm-dd"
+            value={holidayDate}
+            onChange={(e) => {
+              setHolidayDate(e.target.value);
+              addHoliday.reset();
+            }}
+          />
+        </label>{' '}
+        <button type="submit" data-testid="holiday-add" disabled={addHoliday.isPending}>
+          Add holiday
+        </button>
+        {addHoliday.isError && <p data-testid="holiday-error">{addHoliday.error.message}</p>}
+      </form>
+      <ul data-testid="holidays-list">
+        {(settings.data?.holidays ?? []).map((d) => (
+          <li key={d} data-testid={`holiday-row-${d}`}>
+            {d}
           </li>
         ))}
       </ul>

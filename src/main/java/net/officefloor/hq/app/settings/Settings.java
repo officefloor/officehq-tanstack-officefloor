@@ -16,9 +16,10 @@ import java.util.List;
  *  open (null when blank: off; not dated): changing the sheet's today closes each open period lapsed past them.
  *  {@code delegations} is each delegation of the steward role made on the sheet, oldest first.
  *  {@code entryDate} is the sheet's entry date (yyyy-MM-dd; null when blank: off; not dated): while set, it is the
- *  default date of a new claim instead of the sheet's today. */
+ *  default date of a new claim instead of the sheet's today. {@code holidays} is the sheet's holidays (yyyy-MM-dd),
+ *  earliest first: a claim's due-by, fixed when it is created, that falls on one is moved to the next day that is not one. */
 public record Settings(String clerkLimit, String floor, int terms, String latePct, List<Role> roles, String policyDate,
         String periodNumberingFrom, java.util.Map<String, Integer> gradeTerms, String cap,
         java.util.Map<String, List<DatedValue>> dated, java.util.Map<String, String> permissions, Integer graceDays,
-        List<Delegation> delegations, String entryDate) {
+        List<Delegation> delegations, String entryDate, List<String> holidays) {
 }

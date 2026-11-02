@@ -309,12 +309,13 @@ public class ClaimRepository {
     }
 
     /** The due-by of a claim created now for a person with a date: the date plus the person's own terms,
-     *  else the terms, in force on it, of the grade the person has on it, else the sheet's terms in force on it. */
+     *  else the terms, in force on it, of the grade the person has on it, else the sheet's terms in force on it;
+     *  moved past the sheet's holidays (to the next day that is not one). */
     public LocalDate dueBy(String sheetId, long personId, LocalDate date) {
         List<Integer> mine = jdbc.queryForList("SELECT terms FROM person WHERE sheet_id = ? AND id = ?", Integer.class,
                 sheetId, personId);
         if (!mine.isEmpty() && mine.get(0) != null) {
-            return date.plusDays(mine.get(0));
+            return settings.pastHolidays(sheetId, date.plusDays(mine.get(0)));
         }
         List<String> grade = jdbc.queryForList("SELECT " + GRADE_ON + " FROM DUAL", String.class, sheetId, personId,
                 date.toString());
@@ -322,10 +323,11 @@ public class ClaimRepository {
     }
 
     /** The due-by of a claim created now with a date for a person of a grade (null when none) with no terms of their
-     *  own: the date plus the grade's terms in force on it, else the sheet's terms in force on it. */
+     *  own: the date plus the grade's terms in force on it, else the sheet's terms in force on it; moved past the
+     *  sheet's holidays (to the next day that is not one). */
     public LocalDate dueByOfGrade(String sheetId, String grade, LocalDate date) {
         Integer own = grade == null ? null : settings.gradeTerms(sheetId, grade, date);
-        return date.plusDays(own != null ? own : settings.terms(sheetId, date));
+        return settings.pastHolidays(sheetId, date.plusDays(own != null ? own : settings.terms(sheetId, date)));
     }
 
     public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects) {
