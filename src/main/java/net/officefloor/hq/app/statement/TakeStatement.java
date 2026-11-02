@@ -17,9 +17,9 @@ import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.web.bind.annotation.PathVariable;
 
 /** Take a person's statement: record their due-total now, and bind each claim of theirs that counts (a
- *  person's open (OPEN or PENDING) claims dated within a hold do not, unless already bound) to the figure it has now (a settled claim keeps its frozen due); a
+ *  person's open (OPEN or PENDING) claims dated within a hold do not, unless already bound) to the figure it has now — its rate figure, not floored (a settled claim keeps its frozen due); a
  *  claim with no figure because the rate that would apply to it has ended is bound to n/a; a
- *  claim that does not count is unbound (live again). A late charge is never bound: it keeps following
+ *  claim that does not count is unbound (live again). A late charge is never bound, nor is the floor: they keep following
  *  the sheet's today. The due-total is as shown: the sum of the counting claims' dues now (late charges
  *  included), skipping those with none; 'n/a' when no rate for the grade they have on the sheet's today
  *  is in force then and no counting claim has a fixed figure or a due (at the grade it was claimed under); at

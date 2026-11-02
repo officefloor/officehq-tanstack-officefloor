@@ -160,9 +160,9 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   };
 
   const mine = (claims.data ?? []).filter((c) => c.personId === personId);
-  // A claim's due: the one fixed when it was settled, else the one its last statement bound it to,
-  // else its amount at the rate in force on its date for the grade its person had on that date, at least the sheet's floor
-  // ('n/a' when none applies), with its late charge while it is overdue.
+  // A claim's due: the one fixed when it was settled, else the greater of the floor in force on its date and its
+  // figure (the rate figure its last statement bound it to, else its amount at the rate in force on its date for the
+  // grade its person had on that date; 'n/a' when none applies) plus its late charge while it is overdue.
   const person = people.data?.find((p) => p.id === personId);
 
   return (

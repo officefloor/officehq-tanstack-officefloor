@@ -127,8 +127,9 @@ public class ClaimRepository {
     /** A claim's due now: its amount at the rate, in force on the claim's date, for the grade its person
      *  had on that date
      *  (the one with the latest from-date on or before it; an undated rate applies from the beginning
-     *  of time; none applies when the claim's date is after that rate's to-date), rounded to two decimals by the claim's rounding (see {@link #rounding}), and at least the sheet's floor in force on the claim's date (a correction's, a
-     *  negative amount's, has no floor); null when no rate applies. */
+     *  of time; none applies when the claim's date is after that rate's to-date), rounded to two decimals by the claim's
+     *  rounding (see {@link #rounding}) — the rate figure, not floored: the floor is applied last, in {@link #dueNow};
+     *  null when no rate applies. */
     public BigDecimal due(String sheetId, Claim claim) {
         List<BigDecimal> pct = jdbc.queryForList("SELECT a.pct FROM " + RATE_ON + " a"
                 + " WHERE a.to_date IS NULL OR a.to_date >= CAST(? AS DATE)", BigDecimal.class, sheetId,
@@ -136,7 +137,7 @@ public class ClaimRepository {
         if (pct.isEmpty()) return null;
         BigDecimal due = new BigDecimal(claim.amount()).multiply(pct.get(0)).movePointLeft(2)
                 .setScale(2, rounding(sheetId, claim));
-        return new BigDecimal(claim.amount()).signum() < 0 ? due : due.max(settings.floor(sheetId, LocalDate.parse(claim.date())));
+        return due;
     }
 
     /** How a claim's live figures round: half up when the claim is dated before the sheet's policy date
@@ -157,7 +158,7 @@ public class ClaimRepository {
     }
 
     /** A claim's figure now: the due fixed when it was settled, else the one its last statement bound
-     *  it to (not while PENDING; none when it bound it to n/a), else its live due; null when it has none. */
+     *  it to (not while PENDING; none when it bound it to n/a), else its live rate figure (not floored); null when it has none. */
     public BigDecimal figure(String sheetId, Claim claim) {
         if (claim.due() != null) return new BigDecimal(claim.due());
         if (claim.bound() && claim.statedNa()) return null;
@@ -165,31 +166,39 @@ public class ClaimRepository {
         return due(sheetId, claim);
     }
 
-    /** A claim's due now: its figure, plus, while it is overdue (OPEN or PENDING and its due-by — fixed when it was
-     *  created — before the sheet's today), for every full 30 days it is overdue, the sheet's
-     *  late percent in force on that boundary date (the due-by plus 30, 60, 90 ... days) of that figure, each rounded to two
-     *  decimals by the claim's rounding, the charges added up (a boundary whose percent is 0.00 adds nothing). A statement never binds the charge:
-     *  it keeps following the sheet's today until settling freezes it in. A correction (a negative amount)
-     *  has no late charge, nor does a deferred claim (it is not overdue). Null when it has no figure. */
+    /** A claim's due now: a settled claim's frozen due; else the greater of the sheet's floor in force on the
+     *  claim's date and its figure (the one its last statement bound it to, else its live rate figure) plus, while it
+     *  is overdue (OPEN or PENDING and its due-by — fixed when it was created — before the sheet's today), for every
+     *  full 30 days it is overdue, the sheet's late percent in force on that boundary date (the due-by plus 30, 60,
+     *  90 ... days) of that figure, each rounded to two decimals by the claim's rounding, the charges added up (a
+     *  boundary whose percent is 0.00 adds nothing). A statement never binds the charge: it keeps following the
+     *  sheet's today until settling freezes it in. A correction (a negative amount) has no floor and no late charge,
+     *  nor does a deferred claim have a charge (it is not overdue). Null when it has no figure. */
     public BigDecimal dueNow(String sheetId, Claim claim) {
+        if (claim.due() != null) return new BigDecimal(claim.due());
         BigDecimal figure = figure(sheetId, claim);
-        if (figure == null || !claim.open() || claim.deferred() || new BigDecimal(claim.amount()).signum() < 0) {
-            return figure;
-        }
+        if (figure == null || new BigDecimal(claim.amount()).signum() < 0) return figure;
+        BigDecimal due = figure.add(lateCharge(sheetId, claim, figure));
+        return due.max(settings.floor(sheetId, LocalDate.parse(claim.date())));
+    }
+
+    /** The late charge on a claim's figure now (see {@link #dueNow}); zero when it is not overdue. */
+    private BigDecimal lateCharge(String sheetId, Claim claim, BigDecimal figure) {
+        BigDecimal charge = BigDecimal.ZERO.setScale(2);
+        if (!claim.open() || claim.deferred()) return charge;
         List<Date> found = jdbc.queryForList("SELECT today FROM sheet WHERE id = ?", Date.class, sheetId);
-        if (found.isEmpty()) return figure;
+        if (found.isEmpty()) return charge;
         LocalDate today = found.get(0).toLocalDate();
         LocalDate dueBy = LocalDate.parse(claim.dueBy());
         long periods = dueBy.isBefore(today) ? ChronoUnit.DAYS.between(dueBy, today) / 30 : 0;
-        if (periods == 0) return figure;
+        if (periods == 0) return charge;
         RoundingMode rounding = rounding(sheetId, claim);
-        BigDecimal due = figure;
         for (long n = 1; n <= periods; n++) {
             BigDecimal pct = settings.latePct(sheetId, dueBy.plusDays(30 * n));
             if (pct == null || pct.signum() == 0) continue;
-            due = due.add(figure.multiply(pct).movePointLeft(2).setScale(2, rounding));
+            charge = charge.add(figure.multiply(pct).movePointLeft(2).setScale(2, rounding));
         }
-        return due;
+        return charge;
     }
 
     /** Whether the rate that would apply to a claim (for the grade its person had on its date, the one

@@ -48,15 +48,18 @@ export function money(cents: bigint): string {
   return `${cents < 0n ? '-' : ''}${abs / 100n}.${(abs % 100n).toString().padStart(2, '0')}`;
 }
 
-/** A due: an amount (two decimals) times a rate (a two-decimal percent), divided by 100, rounded
- *  half up (when `halfUp`) or half to even to two decimals, and at least the sheet's floor (two decimals; none while it is not
- *  loaded; a correction, a negative amount, has no floor); 'n/a' when there is no rate. Worked in
- *  whole numbers, so exact. */
-export function due(amount: string, pct: string | undefined, floor: string | undefined, halfUp: boolean): string {
+/** A rate figure: an amount (two decimals) times a rate (a two-decimal percent), divided by 100, rounded
+ *  half up (when `halfUp`) or half to even to two decimals — not floored (see `atLeast`); 'n/a' when there is
+ *  no rate. Worked in whole numbers, so exact. */
+export function due(amount: string, pct: string | undefined, halfUp: boolean): string {
   if (pct === undefined) return 'n/a';
-  let cents = percentOf(amount, pct, 1n, halfUp);
-  if (floor !== undefined && !isCorrection(amount) && cents < hundredths(floor)) cents = hundredths(floor);
-  return money(cents);
+  return money(percentOf(amount, pct, 1n, halfUp));
+}
+
+/** A figure (two decimals) raised to at least a floor (two decimals; none when undefined); 'n/a' stays 'n/a'. */
+export function atLeast(figure: string, floor: string | undefined): string {
+  if (figure === 'n/a' || floor === undefined || hundredths(figure) >= hundredths(floor)) return figure;
+  return money(hundredths(floor));
 }
 
 /** Whether an amount (two decimals) is a correction's: below zero. */

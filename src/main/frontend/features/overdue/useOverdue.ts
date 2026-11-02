@@ -1,6 +1,6 @@
 import { counts, fixedDue, isDeferred, isOpen, useClaims, type Claim } from '../claims/useClaims';
 import { gradeOn, holdsById, usePeople } from '../people/usePeople';
-import { due, isCorrection, rateFor, sumDues, useRates, withCharge } from '../rates/useRates';
+import { atLeast, due, isCorrection, rateFor, sumDues, useRates, withCharge } from '../rates/useRates';
 import { settingOn, useSettings, type Settings } from '../settings/useSettings';
 import { useSheetToday } from '../today/useSheetToday';
 
@@ -22,35 +22,36 @@ export function roundsHalfUp(c: Claim, claims: Claim[] | undefined, settings: Se
   return (corrected?.date ?? c.date) < policy;
 }
 
-/** A claim's due now: its figure (a settled claim's frozen due, else the one its last statement
- *  bound it to, else its floored live due), plus, while it is overdue, for every full 30 days it is overdue
- *  the sheet's late percent in force on that boundary date (the due-by plus 30, 60, 90 ... days) of
- *  that figure, each rounded like a due, the charges added up. The charge is never bound by
- *  a statement: it follows the sheet's today until settling freezes it in. A correction (a negative
- *  amount) has no late charge. Just the figure until the settings and the sheet's today are loaded. */
-export function dueNow(c: Claim, figure: string, settings: Settings | undefined, today: string | undefined, halfUp: boolean): string {
-  if (settings === undefined || today === undefined || !isOverdue(c, today) || isCorrection(c.amount)) {
-    return figure;
-  }
-  const dueBy = Date.parse(`${c.dueBy}T00:00:00Z`);
-  const periods = Math.floor((Date.parse(`${today}T00:00:00Z`) - dueBy) / 86_400_000 / 30);
+/** A claim's due now: a settled claim's frozen due; else the greater of the floor (two decimals; none while
+ *  it is not loaded) and its figure (the one its last statement bound it to, else its live rate figure) plus,
+ *  while it is overdue, for every full 30 days it is overdue the sheet's late percent in force on that boundary
+ *  date (the due-by plus 30, 60, 90 ... days) of that figure, each rounded like a due, the charges added up. The
+ *  charge is never bound by a statement: it follows the sheet's today until settling freezes it in. A correction
+ *  (a negative amount) has no floor and no late charge. No charge until the settings and the sheet's today are loaded. */
+export function dueNow(c: Claim, figure: string, floor: string | undefined, settings: Settings | undefined,
+  today: string | undefined, halfUp: boolean): string {
+  if (c.due !== null || figure === 'n/a' || isCorrection(c.amount)) return figure;
   const pcts: string[] = [];
-  for (let n = 1; n <= periods; n++) {
-    const boundary = new Date(dueBy + n * 30 * 86_400_000).toISOString().slice(0, 10);
-    pcts.push(settingOn(settings, 'late-pct', boundary) ?? '0.00');
+  if (settings !== undefined && today !== undefined && isOverdue(c, today)) {
+    const dueBy = Date.parse(`${c.dueBy}T00:00:00Z`);
+    const periods = Math.floor((Date.parse(`${today}T00:00:00Z`) - dueBy) / 86_400_000 / 30);
+    for (let n = 1; n <= periods; n++) {
+      const boundary = new Date(dueBy + n * 30 * 86_400_000).toISOString().slice(0, 10);
+      pcts.push(settingOn(settings, 'late-pct', boundary) ?? '0.00');
+    }
   }
-  return withCharge(figure, pcts, halfUp);
+  return atLeast(withCharge(figure, pcts, halfUp), floor);
 }
 
-/** A claim's due now (see `dueNow`) from its fixed figure, else its live due at this rate (a
- *  two-decimal percent; undefined when none applies) and the floor in force on its date, every rounding by
+/** A claim's due now (see `dueNow`) from its fixed figure, else its live rate figure at this rate (a
+ *  two-decimal percent; undefined when none applies), with the floor in force on its date, every rounding by
  *  the claim's policy (see `roundsHalfUp`) — the other claims on the sheet are what a correction is looked up in.
  *  No floor until the settings are loaded. */
 export function claimDueNow(c: Claim, claims: Claim[] | undefined, pct: string | undefined,
   settings: Settings | undefined, today: string | undefined): string {
   const up = roundsHalfUp(c, claims, settings, today);
   const floor = settings === undefined ? undefined : settingOn(settings, 'floor', c.date) ?? undefined;
-  return dueNow(c, fixedDue(c) ?? due(c.amount, pct, floor, up), settings, today, up);
+  return dueNow(c, fixedDue(c) ?? due(c.amount, pct, up), floor, settings, today, up);
 }
 
 /** Each person's overdue figures, by person id: how many of their claims that count are overdue, and
