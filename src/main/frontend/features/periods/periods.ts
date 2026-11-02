@@ -40,6 +40,9 @@ export const generatePeriodsPath = (sheet: string) => `${periodsPath(sheet)}/gen
 /** Where a fiscal year's twelve monthly periods are generated. */
 export const generateFiscalYearPath = (sheet: string) => `${periodsPath(sheet)}/generate-fy`;
 
+/** Where a fiscal year is rolled over into the next. */
+export const rolloverPath = (sheet: string) => `${periodsPath(sheet)}/rollover`;
+
 /** Where a calendar year's four quarterly periods are generated. */
 export const generateQuartersPath = (sheet: string) => `${periodsPath(sheet)}/generate-quarters`;
 
