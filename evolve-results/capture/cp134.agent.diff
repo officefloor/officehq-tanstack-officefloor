@@ -1,0 +1,106 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index e61f0707..fdb46eae 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -446,3 +446,14 @@ export function useMonthDueTotals(sheet: string): { month: string; cents: bigint
+   }
+   return [...totals].map(([month, cents]) => ({ month, cents }));
+ }
++
++/** Each person's due-total as their row shows it (see {@link personDueCents}): undefined when n/a. */
++export function usePersonDueCentsOf(sheet: string): (person: Person) => bigint | undefined {
++  const { data: all = [] } = useClaims(sheet);
++  const { data: rates = [] } = useRates(sheet);
++  const today = useSheetToday(sheet);
++  const floor = useFloorCents(sheet);
++  const late = useLate(sheet);
++  const cap = useCapCents(sheet);
++  return (person) => personDueCents(all, rates, person, today, floor, late, cap);
++}
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index 0f2c2c05..1e062b0c 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -8,6 +8,8 @@ import { SheetPanels } from '../../slots/defs/sheetPanels';
+ import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
+ import { GRADES, isRetired, peopleKey, peoplePath, usePeople, useShowRetired } from './people';
+ import type { Grade, Person } from './people';
++import { SORT_KEYS, useSorted, useSortBy } from './sort';
++import type { SortKey } from './sort';
+ import { claimsKey } from '../claims/claims';
+ import type { Claim } from '../claims/claims';
+ 
+@@ -85,7 +87,10 @@ function People({ sheet, user }: { sheet: string; user: string }) {
+   const { data: everyone = [] } = usePeople(sheet);
+   const [showRetired, setShowRetired] = useShowRetired();
+   // Retired people have no row at all unless "show retired" is on; their claims still count in every total.
+-  const people = showRetired ? everyone : everyone.filter((p) => !isRetired(p));
++  const listed = showRetired ? everyone : everyone.filter((p) => !isRetired(p));
++  // The rows as this user's screen sorts them; list order itself is unchanged.
++  const people = useSorted(sheet, listed);
++  const [sortBy, setSortBy] = useSortBy();
+   const [draft, setDraft] = useState<Draft>(EMPTY);
+   const [editing, setEditing] = useState<{ id: number; version: number } | null>(null);
+ 
+@@ -225,6 +230,20 @@ function People({ sheet, user }: { sheet: string; user: string }) {
+           onChange={(e) => setShowRetired(e.target.checked || undefined)}
+         />{' '}
+         Show retired
++      </label>{' '}
++      <label>
++        Sort by{' '}
++        <select
++          data-testid="sort-by"
++          value={sortBy}
++          onChange={(e) => setSortBy(e.target.value === 'added' ? undefined : (e.target.value as SortKey))}
++        >
++          {SORT_KEYS.map((k) => (
++            <option key={k} value={k}>
++              {k}
++            </option>
++          ))}
++        </select>
+       </label>
+       <table>
+         <thead>
+diff --git a/src/main/frontend/features/people/sort.ts b/src/main/frontend/features/people/sort.ts
+new file mode 100644
+index 00000000..973a579b
+--- /dev/null
++++ b/src/main/frontend/features/people/sort.ts
+@@ -0,0 +1,35 @@
++import { asString, useSearchParam } from '../../url/useSearchParam';
++import { byNameKey } from '../aliases/aliases';
++import { usePersonDueCentsOf } from '../claims/claims';
++import type { Person } from './people';
++
++export type SortKey = 'added' | 'name' | 'grade' | 'due-total';
++export const SORT_KEYS: SortKey[] = ['added', 'name', 'grade', 'due-total'];
++
++const asSortKey = (raw: unknown): SortKey => {
++  const s = asString(raw);
++  return (SORT_KEYS as string[]).includes(s) ? (s as SortKey) : 'added';
++};
++
++/** How this user's screen orders the people list: list order ("added") until changed, kept in the URL. It changes
++ *  only what the screen shows — positions, the rollup lines and every action in list order are unaffected. */
++export const useSortBy = () => useSearchParam('sort', asSortKey);
++
++/** The people (in list order) as the screen shows them: sorted by the key, equal keys keeping list order; by name as
++ *  names are compared, by grade A to C, by due-total smallest first with n/a last. */
++export function useSorted(sheet: string, people: Person[]): Person[] {
++  const [sortBy] = useSortBy();
++  const dueOf = usePersonDueCentsOf(sheet);
++  if (sortBy === 'name') return [...people].sort((a, b) => byNameKey(a.name, b.name));
++  if (sortBy === 'grade') return [...people].sort((a, b) => (a.grade < b.grade ? -1 : a.grade > b.grade ? 1 : 0));
++  if (sortBy === 'due-total') {
++    const due = new Map(people.map((p) => [p.id, dueOf(p)]));
++    return [...people].sort((a, b) => {
++      const x = due.get(a.id);
++      const y = due.get(b.id);
++      if (x === undefined || y === undefined) return x === y ? 0 : x === undefined ? 1 : -1;
++      return x < y ? -1 : x > y ? 1 : 0;
++    });
++  }
++  return people;
++}
