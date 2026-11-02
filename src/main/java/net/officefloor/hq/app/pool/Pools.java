@@ -41,8 +41,9 @@ public class Pools {
      * Every pool on the sheet in the order added, its members (people and pools) in the order added, each with their
      * cut of the pool's pot: a pool that is a member of none has the sheet's pot; a pool that is a member of another
      * has its cut there as its pot (none when that pool is unbalanced or has none). A person with a hold in force on
-     * the sheet's today gets no cut, their share spread over the other members with a cut. A member whose membership
-     * dates do not include the sheet's today is left out entirely: not in the total share, no cut.
+     * the sheet's today gets no cut, their share spread over the other members with a cut, and so does a retired
+     * person, whose share still counts in the total share. A member whose membership dates do not include the sheet's
+     * today is left out entirely: not in the total share, no cut.
      */
     public List<Pool> list(String sheet) {
         LocalDate now = clock.today(sheet);
@@ -80,7 +81,7 @@ public class Pools {
             List<PoolMember> list = ordered.stream().map(Ordered::member).toList();
             BigDecimal total = BigDecimal.ZERO.setScale(2);
             for (PoolMember m : list) {
-                if (!m.retired() && m.current()) {
+                if (m.current()) {
                     total = total.add(new BigDecimal(m.share()));
                 }
             }
@@ -145,9 +146,13 @@ public class Pools {
      * The members each with their cut of the pot: the pot times their share over the shares of the members with a cut
      * (neither retired nor held), half to even to two decimals (a retired or held member's 0.00); the remainder, the
      * pot less the cuts, goes to the member with a cut with the largest share, the earliest added on a tie, so the cuts
-     * total the pot (each 0.00 when no member has a cut).
+     * total the pot (each 0.00 when no member has a cut). A pool whose every member within their dates is retired
+     * shows no cuts.
      */
     private static List<PoolMember> cut(List<PoolMember> members, BigDecimal pot, Set<Long> held) {
+        if (members.stream().filter(PoolMember::current).allMatch(PoolMember::retired)) {
+            return members;
+        }
         BigDecimal shares = BigDecimal.ZERO.setScale(2);
         int largest = -1;
         for (int i = 0; i < members.size(); i++) {
