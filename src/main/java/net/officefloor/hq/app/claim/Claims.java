@@ -234,11 +234,11 @@ public class Claims {
     /**
      * Re-fixes the due-by of every claim on the sheet that is not SETTLED or VOID and whose due-by is on or after the
      * date: the terms-th business day after its date, with the terms it was fixed with, skipping weekends and the
-     * holidays given.
+     * holidays given. A due-by a steward set directly stays as set.
      */
     public void refixDueBy(String sheet, LocalDate from, Set<LocalDate> holidays) {
         List<Fixed> fixed = jdbc.query("SELECT id, claimed_on, due_terms FROM claim WHERE sheet = ?"
-                + " AND status NOT IN ('SETTLED', 'VOID') AND due_by >= ?",
+                + " AND status NOT IN ('SETTLED', 'VOID') AND due_by >= ? AND due_by_set = FALSE",
                 (rs, i) -> new Fixed(rs.getLong("id"), rs.getDate("claimed_on").toLocalDate(), rs.getInt("due_terms")),
                 sheet, Date.valueOf(from));
         for (Fixed claim : fixed) {
@@ -373,6 +373,15 @@ public class Claims {
     public boolean redate(String sheet, long id, ClaimStatus status, LocalDate was, LocalDate date) {
         return jdbc.update("UPDATE claim SET claimed_on = ? WHERE sheet = ? AND id = ? AND status = ? AND claimed_on = ?",
                 Date.valueOf(date), sheet, id, status.name(), Date.valueOf(was)) == 1;
+    }
+
+    /**
+     * Sets the claim's due-by directly, so it stays as set; conditional on the status and due-by read: false when the
+     * claim no longer has them.
+     */
+    public boolean setDueBy(String sheet, long id, ClaimStatus status, LocalDate was, LocalDate dueBy) {
+        return jdbc.update("UPDATE claim SET due_by = ?, due_by_set = TRUE WHERE sheet = ? AND id = ? AND status = ? AND due_by = ?",
+                Date.valueOf(dueBy), sheet, id, status.name(), Date.valueOf(was)) == 1;
     }
 
     /** Moves the claim from one status to another: false when it no longer has the status it was read with. */
