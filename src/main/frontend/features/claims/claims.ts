@@ -4,7 +4,7 @@ import { gradeOn, setAsideOn, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { dueCents, hundredths, claimRateOf, rateOf, twoDecimals, useRates, type Rate } from '../rates/rates';
 import { useSheet, useSheetToday } from '../sheet/sheet';
-import { useCapCentsOf } from '../pools/pools';
+import { personCutCents, useCapCentsOf, usePools } from '../pools/pools';
 import { useFloorCents, useGraceDays, useLatePctCents, usePolicyDate, useRoundingMode, type DatedCents, type RoundingModeOn } from '../settings/settings';
 
 /** Where a claim is in its life: DRAFT -> OPEN -> SETTLED, or DRAFT/OPEN/PENDING -> VOID. A clerk's settle of a
@@ -544,15 +544,18 @@ export function trimmedSum(figures: bigint[]): bigint {
 /** The sheet's totals: its claimed-total (everyone's counted claims added up,
  *  corrections left out), its due-total (everyone's due-total
  *  added up, skipping the people whose due-total is n/a, trimmed — see trimmedSum), and how many of the counted claims
- *  are overdue, with their total (each person's overdue-total, trimmed), and its settled-total and open-total. */
+ *  are overdue, with their total (each person's overdue-total, trimmed), and its settled-total, open-total and cut
+ *  total (each person's, trimmed). */
 export function useSheetTotals(sheet: string): {
   claimed: string;
   due: bigint;
   overdue: { count: number; cents: bigint };
-  /** Each person's figures before trimming: the due-totals that are not n/a, and everyone's overdue-total. */
-  figures: { due: bigint[]; overdue: bigint[] };
+  /** Each person's figures before trimming: the due-totals that are not n/a, and everyone's overdue-total,
+   *  settled-total, open-total and cut total. */
+  figures: { due: bigint[]; overdue: bigint[]; settled: bigint[]; open: bigint[]; cut: bigint[] };
   settled: bigint;
   open: bigint;
+  cut: bigint;
   aged: { upTo30: bigint; upTo60: bigint; over60: bigint };
 } {
   const { data: all = [] } = useClaims(sheet);
@@ -562,21 +565,26 @@ export function useSheetTotals(sheet: string): {
   const floor = useFloorCents(sheet);
   const late = useLate(sheet);
   const capOf = useCapCentsOf(sheet);
+  const { data: pools = [] } = usePools(sheet);
   const dues = people
     .map((p) => personDueCents(all, rates, p, today, floor, late, capOf(p), people))
     .filter((cents): cents is bigint => cents !== undefined);
   const due = trimmedSum(dues);
   const overdue = overdueCents(all, people, rates, late, floor);
   const perPerson = people.map((p) => overdueCents(all, [p], rates, late, floor).cents);
-  // The settled-total and open-total: everyone's added up, not trimmed.
+  // The settled-total, open-total and cut total: everyone's, trimmed.
   const split = people.map((p) => splitDueCents(all, rates, p, floor, late, people));
+  const settled = split.map((x) => x.settled);
+  const open = split.map((x) => x.open);
+  const cut = people.map((p) => personCutCents(pools, p.id));
   return {
     claimed: claimed(claimedCounted(all, people)),
     due,
     overdue: { count: overdue.count, cents: trimmedSum(perPerson) },
-    figures: { due: dues, overdue: perPerson },
-    settled: split.reduce((s, x) => s + x.settled, 0n),
-    open: split.reduce((s, x) => s + x.open, 0n),
+    figures: { due: dues, overdue: perPerson, settled, open, cut },
+    settled: trimmedSum(settled),
+    open: trimmedSum(open),
+    cut: trimmedSum(cut),
     // The age buckets: everyone's added up, not trimmed.
     aged: people
       .map((p) => agedCents(all, p, rates, late, floor))

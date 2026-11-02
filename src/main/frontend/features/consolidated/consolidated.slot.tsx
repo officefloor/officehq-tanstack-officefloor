@@ -17,6 +17,10 @@ type Figures = {
   /** Each person's due-total that is not n/a, and everyone's overdue-total, untrimmed. */
   due: bigint[];
   overdue: bigint[];
+  /** Everyone's settled-total, open-total and cut total, untrimmed. */
+  settled: bigint[];
+  open: bigint[];
+  cut: bigint[];
   /** The sheet's grades, in order, and per grade the due-totals of the people on it. */
   codes: Grade[];
   grades: Record<Grade, bigint>;
@@ -56,12 +60,25 @@ function SheetFigures({ sheet, report }: { sheet: string; report: (sheet: string
     names,
     figures.due.map(String),
     figures.overdue.map(String),
+    figures.settled.map(String),
+    figures.open.map(String),
+    figures.cut.map(String),
     codes,
     codes.map((g) => grades[g].toString()),
     CLAIM_STATUSES.map((s) => statuses[s]),
   ]);
   useEffect(
-    () => report(sheet, { people: names, due: figures.due, overdue: figures.overdue, codes, grades, statuses }),
+    () => report(sheet, {
+        people: names,
+        due: figures.due,
+        overdue: figures.overdue,
+        settled: figures.settled,
+        open: figures.open,
+        cut: figures.cut,
+        codes,
+        grades,
+        statuses,
+      }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [sheet, report, key],
   );
@@ -70,7 +87,7 @@ function SheetFigures({ sheet, report }: { sheet: string; report: (sheet: string
 
 // The consolidated figures over the sheet and all its descendants (see useFamily): the people, each counted once across
 // the tree (people whose names or aliases match, as names are compared, are one person); the due-total and the
-// overdue-total, every person's figure over the whole tree added up and trimmed once (see trimmedSum); and the
+// overdue-total, the settled-total, the open-total and the cut total, every person's figure over the whole tree added up and trimmed once (see trimmedSum); and the
 // per-grade due-totals and the per-status claim counts of each sheet, added up. A sheet with no children shows its own. While the screen shows the sheet as of a
 // date, every sheet of the tree is read as it stood at the end of that date, with the date for its today.
 // How many distinct people there are among them, each given by their names: those sharing a name, directly or through
@@ -100,6 +117,9 @@ function Consolidated({ sheet }: { sheet: string; user: string }) {
   const people = distinctPeople(shown.flatMap((f) => f.people));
   const due = trimmedSum(shown.flatMap((f) => f.due));
   const overdue = trimmedSum(shown.flatMap((f) => f.overdue));
+  const settled = trimmedSum(shown.flatMap((f) => f.settled));
+  const open = trimmedSum(shown.flatMap((f) => f.open));
+  const cut = trimmedSum(shown.flatMap((f) => f.cut));
   // This sheet's grades, then any other grade of the tree, each once.
   const own = useGradeCodes(sheet);
   const codes = [...new Set([...own, ...shown.flatMap((f) => f.codes)])];
@@ -124,6 +144,10 @@ function Consolidated({ sheet }: { sheet: string; user: string }) {
           , {s} claims <strong data-testid={`consolidated-status-${s}-count`}>{statusClaims(s)}</strong>
         </span>
       ))}
+      , settled total{' '}
+      <strong data-testid="consolidated-settled-total"><Fig>{twoDecimals(settled)}</Fig></strong>, open total{' '}
+      <strong data-testid="consolidated-open-total"><Fig>{twoDecimals(open)}</Fig></strong>, cut total{' '}
+      <strong data-testid="consolidated-cut-total"><Fig>{twoDecimals(cut)}</Fig></strong>
     </p>
   );
 }

@@ -1,20 +1,10 @@
 import { PersonColumnHeaders, PersonColumns } from '../../slots/defs/personRow';
 import { SheetPanels } from '../../slots/defs/sheetPanels';
 import type { Person } from '../people/people';
-import { hundredths, twoDecimals } from '../rates/rates';
-import { personCutCents, usePools, type Pool } from './pools';
+import { twoDecimals } from '../rates/rates';
+import { personCutCents, usePools } from './pools';
+import { useSheetTotals } from '../claims/claims';
 import { Fig } from '../locale/Fig';
-
-/** The sheet's cut total in hundredths: every person's cut total added up. */
-function sheetCutCents(pools: Pool[]): bigint {
-  let cents = 0n;
-  for (const pool of pools) {
-    for (const m of pool.members) {
-      if (m.memberPool === null && m.cut !== '') cents += hundredths(m.cut);
-    }
-  }
-  return cents;
-}
 
 function CutTotalHeader() {
   return <th>Cut total</th>;
@@ -25,11 +15,12 @@ function PersonCutTotal({ sheet, person }: { sheet: string; user: string; person
   return <td data-testid="person-cut-total"><Fig>{twoDecimals(personCutCents(pools, person.id))}</Fig></td>;
 }
 
+// The sheet's cut total: every person's cut total, trimmed (see useSheetTotals).
 function SheetCutTotal({ sheet }: { sheet: string; user: string }) {
-  const { data: pools = [] } = usePools(sheet);
+  const { cut } = useSheetTotals(sheet);
   return (
     <p>
-      Cut total: <strong data-testid="rollup-cut-total"><Fig>{twoDecimals(sheetCutCents(pools))}</Fig></strong>
+      Cut total: <strong data-testid="rollup-cut-total"><Fig>{twoDecimals(cut)}</Fig></strong>
     </p>
   );
 }
