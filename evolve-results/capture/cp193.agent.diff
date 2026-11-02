@@ -1,0 +1,74 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index fef23015..d33ab03e 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -430,6 +430,7 @@ export function useSheetTotals(sheet: string): {
+   overdue: { count: number; cents: bigint };
+   settled: bigint;
+   open: bigint;
++  aged: { upTo30: bigint; upTo60: bigint; over60: bigint };
+ } {
+   const { data: all = [] } = useClaims(sheet);
+   const { data: people = [] } = usePeople(sheet);
+@@ -453,6 +454,13 @@ export function useSheetTotals(sheet: string): {
+     overdue: { count: overdue.count, cents: trimmedSum(perPerson) },
+     settled: split.reduce((s, x) => s + x.settled, 0n),
+     open: split.reduce((s, x) => s + x.open, 0n),
++    // The age buckets: everyone's added up, not trimmed.
++    aged: people
++      .map((p) => agedCents(all, p, rates, late, floor))
++      .reduce(
++        (s, x) => ({ upTo30: s.upTo30 + x.upTo30, upTo60: s.upTo60 + x.upTo60, over60: s.over60 + x.over60 }),
++        { upTo30: 0n, upTo60: 0n, over60: 0n },
++      ),
+   };
+ }
+ 
+diff --git a/src/main/frontend/features/claims/rollup.slot.tsx b/src/main/frontend/features/claims/rollup.slot.tsx
+index 4c33c98e..5d4edde5 100644
+--- a/src/main/frontend/features/claims/rollup.slot.tsx
++++ b/src/main/frontend/features/claims/rollup.slot.tsx
+@@ -3,11 +3,11 @@ import { twoDecimals } from '../rates/rates';
+ import { useMonthDueTotals, useSheetTotals, useTagDueTotals } from './claims';
+ import { Fig } from '../locale/Fig';
+ 
+-// The sheet's claimed-total, due-total, overdue count and total, and settled-total and open-total (see useSheetTotals),
++// The sheet's claimed-total, due-total, overdue count and total, settled-total and open-total, and age buckets (see useSheetTotals),
+ // the due-total of each tag ever used on the sheet or carried by a person on it (see useTagDueTotals), and the due-total of each month any claim
+ // is dated in (see useMonthDueTotals).
+ function ClaimedTotal({ sheet }: { sheet: string; user: string }) {
+-  const { claimed, due, overdue, settled, open } = useSheetTotals(sheet);
++  const { claimed, due, overdue, settled, open, aged } = useSheetTotals(sheet);
+   const tags = useTagDueTotals(sheet);
+   const months = useMonthDueTotals(sheet);
+   return (
+@@ -26,6 +26,11 @@ function ClaimedTotal({ sheet }: { sheet: string; user: string }) {
+         Settled total: <strong data-testid="rollup-settled-total"><Fig>{twoDecimals(settled)}</Fig></strong>, open total{' '}
+         <strong data-testid="rollup-open-total"><Fig>{twoDecimals(open)}</Fig></strong>
+       </p>
++      <p>
++        Due by age: 0 to 30 days <strong data-testid="rollup-aged-0-30"><Fig>{twoDecimals(aged.upTo30)}</Fig></strong>, 31 to 60{' '}
++        <strong data-testid="rollup-aged-31-60"><Fig>{twoDecimals(aged.upTo60)}</Fig></strong>, 61 or more{' '}
++        <strong data-testid="rollup-aged-61"><Fig>{twoDecimals(aged.over60)}</Fig></strong>
++      </p>
+       {tags.length > 0 && (
+         <ul>
+           {tags.map(({ tag, cents }) => (
+diff --git a/tmp_e2e/run.log b/tmp_e2e/run.log
+deleted file mode 100644
+index 34af4b59..00000000
+--- a/tmp_e2e/run.log
++++ /dev/null
+@@ -1,12 +0,0 @@
+-Picked up JAVA_TOOL_OPTIONS: -Djava.io.tmpdir=/home/daniel/ui-work/runs/202610271-to/tmp
+-
+-Running 4 tests using 1 worker
+-
+-  ✓  1 [chromium] › acceptance.spec.ts:6:7 › default grade › default grade (9.7s)
+-  ✓  2 [chromium] › acceptance.spec.ts:101:7 › default grade › default grade scenario 1 (24.5s)
+-  ✓  3 [chromium] › acceptance.spec.ts:476:7 › default grade › default grade scenario 2 (29.7s)
+-  ✓  4 [chromium] › acceptance.spec.ts:1060:7 › default grade › default grade scenario 3 (39.2s)
+-
+-  Slow test file: [chromium] › acceptance.spec.ts (1.7m)
+-  Consider splitting slow test files to speed up parallel execution
+-  4 passed (1.7m)
