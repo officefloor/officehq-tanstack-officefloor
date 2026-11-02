@@ -16,6 +16,7 @@ import {
   useSheetTotals,
 } from '../claims/claims';
 import { Fig } from '../locale/Fig';
+import { useWatches } from '../watches/watches';
 
 // The person who is the signed-in user: the one whose name or an alias is the user's name (as names are compared:
 // without regard to case); none when there is none.
@@ -61,6 +62,20 @@ function useMyCrewTotal(sheet: string, user: string): string {
   return twoDecimals(led.reduce((sum, c) => sum + crewDueCents(c, people, dueOf), 0n));
 }
 
+// The signed-in user's watched total: the due-totals of the people the user watches, as their rows show them, added
+// up (an n/a one adds nothing); 0.00 when the user watches no one.
+function useWatchedTotal(sheet: string, user: string): string {
+  const { data: people = [] } = usePeople(sheet);
+  const { data: watched = [] } = useWatches(sheet, user);
+  const dueOf = usePersonDueCentsOf(sheet);
+  let due = 0n;
+  for (const person of people.filter((p) => watched.includes(p.id))) {
+    const cents = dueOf(person);
+    if (cents !== undefined) due += cents;
+  }
+  return twoDecimals(due);
+}
+
 // The REVIEW claims assigned to the signed-in user to review (users compared without regard to case).
 function useMyReviews(sheet: string, user: string): number {
   const { data: claims = [] } = useClaims(sheet);
@@ -71,7 +86,8 @@ function useMyReviews(sheet: string, user: string): number {
 // The sheet's counters, shown at all times above everything else. Each repeats a figure figured elsewhere, from the
 // same helpers: the people on the sheet (retired ones included), the claims per status (as the summary counts them),
 // the sheet's due-total and overdue-total (as the rollup shows them), and the user's own figures (see useMyTotals and
-// useMyCrewTotal), and the REVIEW claims assigned to the user (see useMyReviews).
+// useMyCrewTotal), the REVIEW claims assigned to the user (see useMyReviews), and the due-totals of the people the
+// user watches (see useWatchedTotal).
 function Header({ sheet, user }: { sheet: string; user: string }) {
   const { data: people = [] } = usePeople(sheet);
   const { data: claims = [] } = useClaims(sheet);
@@ -79,6 +95,7 @@ function Header({ sheet, user }: { sheet: string; user: string }) {
   const my = useMyTotals(sheet, user);
   const myCrew = useMyCrewTotal(sheet, user);
   const myReviews = useMyReviews(sheet, user);
+  const watchedTotal = useWatchedTotal(sheet, user);
   return (
     <header>
       <span>
@@ -113,6 +130,10 @@ function Header({ sheet, user }: { sheet: string; user: string }) {
       <span>
         {' '}
         My reviews: <strong data-testid="my-reviews-count">{myReviews}</strong>
+      </span>
+      <span>
+        {' '}
+        Watched due total: <strong data-testid="watched-due-total"><Fig>{watchedTotal}</Fig></strong>
       </span>
     </header>
   );
