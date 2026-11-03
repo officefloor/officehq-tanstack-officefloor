@@ -11,7 +11,7 @@ import { claimDueNow, isOverdue } from '../overdue/useOverdue';
 import { useSignedInUser } from '../session/useSession';
 import { useSettings } from '../settings/useSettings';
 import { useSheetToday } from '../today/useSheetToday';
-import { claimed, claimsKey, isDeferred, useClaims, type Claim } from './useClaims';
+import { claimed, claimsKey, isDeferred, shownTags, useClaims, type Claim } from './useClaims';
 import { useClaimSelection } from './useClaimSelection';
 
 /** A person's claimed: the sum of their counted (OPEN, PENDING or SETTLED; an open one dated within a hold only when a statement binds it; not a deferred one) claims' amounts. */
@@ -63,6 +63,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   const [note, setNote] = useState('');
   const [corrects, setCorrects] = useState('');
   const [ref, setRef] = useState('');
+  const [tags, setTags] = useState('');
   const [reasons, setReasons] = useState<Record<number, string>>({});
   const [targets, setTargets] = useState<Record<number, string>>({});
   const [deferDates, setDeferDates] = useState<Record<number, string>>({});
@@ -77,6 +78,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
     setNote('');
     setCorrects('');
     setRef('');
+    setTags('');
   };
 
   // Mark a claim's editor lock as held (or not) by this user in the cached list, ahead of the re-read.
@@ -92,14 +94,15 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
     setNote(c.note);
     setCorrects(c.corrects === null ? '' : String(c.corrects));
     setRef(c.ref ?? '');
+    setTags(shownTags(c.tags));
   };
 
   const submitOnce = useSingleFlight();
   const save = useMutation({
-    mutationFn: (f: { id: number | null; amount: string; date: string; note: string; corrects: string; ref: string }) => {
+    mutationFn: (f: { id: number | null; amount: string; date: string; note: string; corrects: string; ref: string; tags: string }) => {
       const sheet = `/api/sheets/${encodeURIComponent(sheetId)}`;
       const path = f.id === null ? `${sheet}/people/${personId}/claims` : `${sheet}/claims/${f.id}`;
-      return postJson<Claim>(path, { amount: f.amount, date: f.date, note: f.note, corrects: f.corrects, ref: f.ref });
+      return postJson<Claim>(path, { amount: f.amount, date: f.date, note: f.note, corrects: f.corrects, ref: f.ref, tags: f.tags });
     },
     onSuccess: async (_, f) => {
       if (f.id !== null) markLock(f.id, null);
@@ -153,7 +156,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   });
 
   // A claim's amount changed on its row: saved as the claim's editor would save it, keeping its date, note and
-  // corrects and reference, so the server applies the same rules (and writes CLAIM_EDITED); a refusal shows on that claim's row.
+  // corrects, reference and tags, so the server applies the same rules (and writes CLAIM_EDITED); a refusal shows on that claim's row.
   const inline = useMutation({
     mutationFn: (f: { claim: Claim; amount: string }) =>
       postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${f.claim.id}`, {
@@ -162,6 +165,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
         note: f.claim.note,
         corrects: f.claim.corrects === null ? '' : String(f.claim.corrects),
         ref: f.claim.ref ?? '',
+        tags: f.claim.tags ?? '',
       }),
     onSuccess: (_, f) => {
       setInlineAmounts((m) => ({ ...m, [f.claim.id]: '' }));
@@ -228,7 +232,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
       return;
     }
     setRefused(null);
-    const before = { editing, amount, date, note, corrects, ref };
+    const before = { editing, amount, date, note, corrects, ref, tags };
     fillForm(c);
     lock.mutate(
       { id: c.id, action: 'lock' },
@@ -241,6 +245,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
           setNote(before.note);
           setCorrects(before.corrects);
           setRef(before.ref);
+          setTags(before.tags);
         },
       },
     );
@@ -283,7 +288,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
             setRefused(null);
             submitOnce(() => {
               save.reset();
-              return save.mutateAsync({ id: editing, amount, date, note, corrects, ref });
+              return save.mutateAsync({ id: editing, amount, date, note, corrects, ref, tags });
             });
           }}
         >
@@ -316,6 +321,9 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
           <label>
             Ref <input data-testid="claim-form-ref" value={ref} onChange={field(setRef)} />
           </label>{' '}
+          <label>
+            Tags <input data-testid="claim-form-tags" placeholder="comma separated" value={tags} onChange={field(setTags)} />
+          </label>{' '}
           <button type="submit" data-testid="claim-form-submit" disabled={save.isPending || (lock.isPending && lock.variables?.action === 'lock')}>
             {editing === null ? 'Add claim' : 'Save claim'}
           </button>
@@ -347,6 +355,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                 </td>
                 <td data-testid="claim-corrects">{c.corrects ?? ''}</td>
                 <td data-testid="claim-ref">{c.ref ?? ''}</td>
+                <td data-testid="claim-tags">{shownTags(c.tags)}</td>
                 <td data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</td>
                 <td data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</td>
                 <td data-testid="claim-status">{c.status}</td>

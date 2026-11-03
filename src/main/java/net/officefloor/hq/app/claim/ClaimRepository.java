@@ -20,7 +20,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no, settled_due, opened_by, stated, stated_due, corrects, due_by, stated_na, deferred_until, proofs, split_from, late_entry, reminded, ref,"
+    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no, settled_due, opened_by, stated, stated_due, corrects, due_by, stated_na, deferred_until, proofs, split_from, late_entry, reminded, ref, tags,"
             + " (status = 'OPEN' AND deferred_until IS NOT NULL AND deferred_until > (SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id)) AS deferred";
 
     private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getLong("person_id"),
@@ -34,7 +34,7 @@ public class ClaimRepository {
             rs.getBoolean("deferred"), rs.getInt("proofs"), rs.getString("split_from"),
             rs.getBoolean("late_entry"),
             rs.getDate("reminded") == null ? null : rs.getDate("reminded").toLocalDate().toString(),
-            rs.getString("ref"));
+            rs.getString("ref"), rs.getString("tags"));
 
     /** The grade a person (sheet, person id) has on a date: the one with the latest from-date on
      *  or before it, the first one they were given applying from the beginning of time. */
@@ -355,14 +355,18 @@ public class ClaimRepository {
         return add(sheetId, personId, amount, date, note, corrects, null);
     }
 
-    /** Add a draft claim with an external reference (null: none). */
     public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects, String ref) {
+        return add(sheetId, personId, amount, date, note, corrects, ref, null);
+    }
+
+    /** Add a draft claim with an external reference (null: none) and tags (see {@link Claim#tags(String)}; null: none). */
+    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects, String ref, String tags) {
         LocalDate dueBy = dueBy(sheetId, personId, date);
         boolean late = lateEntry(sheetId, dueBy);
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(c -> {
             PreparedStatement ps = c.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, late_entry, ref) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, late_entry, ref, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
@@ -373,11 +377,13 @@ public class ClaimRepository {
             ps.setDate(7, Date.valueOf(dueBy));
             ps.setBoolean(8, late);
             ps.setString(9, ref);
+            ps.setString(10, tags);
             return ps;
         }, keys);
         kept(sheetId, keys.getKey().longValue(), true);
+        used(sheetId, tags);
         return new Claim(keys.getKey().longValue(), personId, money(amount), date.toString(), note, "DRAFT", null, null, null, false, null, corrects,
-                dueBy.toString(), false, null, false, 0, null, late, null, ref);
+                dueBy.toString(), false, null, false, 0, null, late, null, ref, tags);
     }
 
     /** Whether a claim added now with a due-by is a late entry: the due-by falls in a soft-closed period of the sheet. */
@@ -389,7 +395,7 @@ public class ClaimRepository {
 
     /** Split an amount off an OPEN claim: the claim keeps the rest of its amount and is unbound from its last
      *  statement (live again); a new OPEN claim of the same person with the split-off amount, the same date and
-     *  note, opened by {@code by}, with its due-by fixed now and the original's number as split-from, is added
+     *  note and tags, opened by {@code by}, with its due-by fixed now and the original's number as split-from, is added
      *  (unnumbered: the caller numbers it; a late entry when its due-by falls in a soft-closed period). The new claim's id, or null when the sheet has no such OPEN claim. */
     public Long split(String sheetId, Claim claim, BigDecimal amount, String by) {
         BigDecimal rest = new BigDecimal(claim.amount()).subtract(amount);
@@ -404,8 +410,8 @@ public class ClaimRepository {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(c -> {
             PreparedStatement ps = c.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, due_by, status, opened_by, split_from, late_entry)"
-                            + " VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, due_by, status, opened_by, split_from, late_entry, tags)"
+                            + " VALUES (?, ?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setLong(2, claim.personId());
@@ -416,18 +422,35 @@ public class ClaimRepository {
             ps.setString(7, by);
             ps.setString(8, claim.number());
             ps.setBoolean(9, late);
+            ps.setString(10, claim.tags());
             return ps;
         }, keys);
         kept(sheetId, keys.getKey().longValue(), true);
         return keys.getKey().longValue();
     }
 
-    /** Change a DRAFT claim's amount, date, note, the number it corrects and its external reference (null: none);
-     *  false when the sheet has no such draft claim. */
-    public boolean update(String sheetId, long claimId, BigDecimal amount, LocalDate date, String note, String corrects, String ref) {
-        return kept(sheetId, claimId, jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ? WHERE id = ?"
-                + " AND sheet_id = ? AND status = 'DRAFT'",
-                amount, Date.valueOf(date), note, corrects, ref, claimId, sheetId) > 0);
+    /** Change a DRAFT claim's amount, date, note, the number it corrects, its external reference (null: none) and
+     *  its tags (null: none); false when the sheet has no such draft claim. */
+    public boolean update(String sheetId, long claimId, BigDecimal amount, LocalDate date, String note, String corrects, String ref,
+            String tags) {
+        boolean changed = kept(sheetId, claimId, jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ?,"
+                + " tags = ? WHERE id = ? AND sheet_id = ? AND status = 'DRAFT'",
+                amount, Date.valueOf(date), note, corrects, ref, tags, claimId, sheetId) > 0);
+        if (changed) used(sheetId, tags);
+        return changed;
+    }
+
+    /** Note tags (comma separated; null: none) as used on the sheet: each stays in {@link #tagsUsed} from now on. */
+    private void used(String sheetId, String tags) {
+        if (tags == null) return;
+        for (String tag : tags.split(",")) {
+            jdbc.update("MERGE INTO sheet_tag (sheet_id, tag) KEY (sheet_id, tag) VALUES (?, ?)", sheetId, tag);
+        }
+    }
+
+    /** Every tag ever used on the sheet, sorted. */
+    public List<String> tagsUsed(String sheetId) {
+        return jdbc.queryForList("SELECT tag FROM sheet_tag WHERE sheet_id = ? ORDER BY tag", String.class, sheetId);
     }
 
     /** Whether an external reference is already used by a claim on the sheet other than {@code exceptId} (null: any),

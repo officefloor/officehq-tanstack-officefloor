@@ -145,7 +145,7 @@ final class ClaimStatusChange {
         repository.log(id, cid, by);
         Claim changed = new Claim(found.id(), found.personId(), found.amount(), found.date(), found.note(), to,
                 number, due, openedBy, found.stated(), found.statedDue(), found.corrects(), found.dueBy(),
-                found.statedNa(), found.deferredUntil(), found.deferred(), found.proofs(), found.splitFrom(), found.lateEntry(), found.reminded(), found.ref());
+                found.statedNa(), found.deferredUntil(), found.deferred(), found.proofs(), found.splitFrom(), found.lateEntry(), found.reminded(), found.ref(), found.tags());
         audit.record(event + " sheet=" + id + " by=" + by + " person=" + repository.personName(id, found.personId())
                 + " amount=" + changed.amount() + " date=" + changed.date() + Claim.auditNumber(number) + tail);
         // A settled (or approved) claim's watchers are told, after the claim's own line and before the rollup.
@@ -172,7 +172,7 @@ final class ClaimStatusChange {
         }
         PeriodGuard.open(periods, id, LocalDate.parse(found.dueBy()));
         Claim live = new Claim(found.id(), found.personId(), found.amount(), found.date(), found.note(), "OPEN",
-                found.number(), null, found.openedBy(), false, null, found.corrects(), found.dueBy(), false, null, false, found.proofs(), found.splitFrom(), found.lateEntry(), found.reminded(), found.ref());
+                found.number(), null, found.openedBy(), false, null, found.corrects(), found.dueBy(), false, null, false, found.proofs(), found.splitFrom(), found.lateEntry(), found.reminded(), found.ref(), found.tags());
         BigDecimal now = repository.dueNow(id, live);
         Rollup.Snapshot before = rollup.take(id);
         repository.settleDue(id, cid, now);
@@ -181,7 +181,7 @@ final class ClaimStatusChange {
         String due = ClaimRepository.dueOf(now);
         Claim changed = new Claim(found.id(), found.personId(), found.amount(), found.date(), found.note(),
                 found.status(), found.number(), due, found.openedBy(), found.stated(), found.statedDue(),
-                found.corrects(), found.dueBy(), found.statedNa(), found.deferredUntil(), found.deferred(), found.proofs(), found.splitFrom(), found.lateEntry(), found.reminded(), found.ref());
+                found.corrects(), found.dueBy(), found.statedNa(), found.deferredUntil(), found.deferred(), found.proofs(), found.splitFrom(), found.lateEntry(), found.reminded(), found.ref(), found.tags());
         audit.record("CLAIM_RESETTLED sheet=" + id + " by=" + by + " person=" + repository.personName(id, found.personId())
                 + " amount=" + changed.amount() + " date=" + changed.date() + Claim.auditNumber(found.number())
                 + " old=" + old + " new=" + (due == null ? "n/a" : due));

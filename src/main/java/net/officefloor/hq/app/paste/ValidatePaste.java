@@ -50,7 +50,7 @@ public class ValidatePaste {
                 }
             }
             try {
-                lines.add(new PasteLine(name, new ClaimInput(ClaimInput.signedAmount(amount), on, note, null, ref)));
+                lines.add(new PasteLine(name, new ClaimInput(ClaimInput.signedAmount(amount), on, note, null, ref, null)));
             } catch (BadRequestException e) {
                 throw new BadRequestException("line " + n + ": " + e.getMessage());
             }

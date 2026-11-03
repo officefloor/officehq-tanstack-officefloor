@@ -7,8 +7,8 @@ import net.officefloor.hq.app.BadRequestException;
 
 /** A validated claim form: the amount (negative for a correction), the date ({@code null} when left blank:
  *  the sheet's today), the note, and the number of the claim a correction corrects ({@code null} when left blank), and its external reference (trimmed;
- *  {@code null} when left blank). */
-public record ClaimInput(BigDecimal amount, LocalDate date, String note, String corrects, String ref) {
+ *  {@code null} when left blank), and its tags (see {@link Claim#tags(String)}; {@code null} when none). */
+public record ClaimInput(BigDecimal amount, LocalDate date, String note, String corrects, String ref, String tags) {
 
     private static final Pattern SIGNED = Pattern.compile("-?(\\d+(\\.\\d{1,2})?|\\.\\d{1,2})");
 

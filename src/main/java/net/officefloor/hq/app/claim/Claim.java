@@ -16,11 +16,12 @@ import net.officefloor.hq.app.person.Hold;
  *  cannot be settled and a statement leaves it unbound), and how many proofs it has been given, and, for a claim
  *  split off another, the number of the claim it was split from (null otherwise), and whether it was a late entry
  *  (added while the period its due-by falls in was soft-closed), and the last day (the sheet's today then) a reminder
- *  was written for it (null when never reminded), and its external reference (null when none). */
+ *  was written for it (null when never reminded), and its external reference (null when none), and its tags (lower-case, sorted and
+ *  comma separated, with no spaces; null when none). */
 public record Claim(long id, long personId, String amount, String date, String note, String status,
         String number, String due, String openedBy, boolean stated, String statedDue, String corrects,
         String dueBy, boolean statedNa, String deferredUntil, boolean deferred, int proofs, String splitFrom,
-        boolean lateEntry, String reminded, String ref) {
+        boolean lateEntry, String reminded, String ref, String tags) {
 
     /** Whether the claim is open: OPEN, or PENDING (handled like OPEN everywhere but its statement binding). */
     public boolean open() {
@@ -47,7 +48,7 @@ public record Claim(long id, long personId, String amount, String date, String n
         if (statusThen == null) return false;
         boolean deferredNow = statusThen.equals("OPEN") && deferredUntil != null && today != null && today.compareTo(deferredUntil) < 0;
         Claim then = new Claim(id, personId, amount, date, note, statusThen, number, due, openedBy, stated, statedDue,
-                corrects, dueBy, statedNa, deferredUntil, deferredNow, proofs, splitFrom, lateEntry, reminded, ref);
+                corrects, dueBy, statedNa, deferredUntil, deferredNow, proofs, splitFrom, lateEntry, reminded, ref, tags);
         return then.counts(open() ? holds : List.of());
     }
 
@@ -70,5 +71,22 @@ public record Claim(long id, long personId, String amount, String date, String n
     /** The audit field a claim with an external reference adds at the end of CLAIM_ADDED: " ref=<reference>", or "" when it has none. */
     public static String auditRef(String ref) {
         return ref == null ? "" : " ref=" + ref;
+    }
+
+    /** The audit field a claim with tags adds at the end of CLAIM_ADDED: " tags=<comma separated, sorted>", or "" when it has none. */
+    public static String auditTags(String tags) {
+        return tags == null ? "" : " tags=" + tags;
+    }
+
+    /** Typed tags as a claim keeps them: split on commas, each trimmed and lower-cased, blanks and repeats
+     *  dropped, sorted and joined with commas; null when none is left. */
+    public static String tags(String typed) {
+        if (typed == null) return null;
+        java.util.TreeSet<String> set = new java.util.TreeSet<>();
+        for (String t : typed.split(",")) {
+            String tag = t.trim().toLowerCase(java.util.Locale.ROOT);
+            if (!tag.isEmpty()) set.add(tag);
+        }
+        return set.isEmpty() ? null : String.join(",", set);
     }
 }

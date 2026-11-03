@@ -20,7 +20,8 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
  *  the date it is deferred until (null when it was never deferred: see `isDeferred`), and how many proofs it has,
  *  and, for a claim split off another, the number of the claim it was split from (null otherwise), and the user
  *  whose open editor locks it for everyone else (null when it is not locked), and the last day (the sheet's today
- *  then) a reminder was written for it (null when never reminded). */
+ *  then) a reminder was written for it (null when never reminded), and its tags (lower-case, sorted and comma separated
+ *  with no spaces; null when none). */
 export type Claim = {
   id: number;
   personId: number;
@@ -42,6 +43,7 @@ export type Claim = {
   lateEntry: boolean;
   reminded: string | null;
   ref: string | null;
+  tags: string | null;
   log: string[];
   lockedBy: string | null;
 };
@@ -118,6 +120,21 @@ export function useClaims(sheetId: string) {
       }));
     },
   });
+}
+
+/** Every tag ever used on the sheet, sorted. Kept under the claims' key, so whatever re-reads the claims
+ *  re-reads these too. */
+export function useTagsUsed(sheetId: string) {
+  return useQuery({
+    queryKey: [...claimsKey(sheetId), 'tags'],
+    queryFn: async () =>
+      (await getJson<{ tags: string[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/claims`)).tags,
+  });
+}
+
+/** A claim's tags as the screen shows them: sorted, comma and space separated ('' when none). */
+export function shownTags(tags: string | null): string {
+  return tags === null ? '' : tags.split(',').join(', ');
 }
 
 /** The sum of the amounts of those of these claims that count (given the people's holds by person id and
