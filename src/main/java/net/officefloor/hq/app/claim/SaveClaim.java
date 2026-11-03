@@ -43,8 +43,8 @@ public class SaveClaim {
         people.claimAllowed(id, found.personId(), date);
         input.checkCorrection(repository, id, found.personId());
         input.checkRef(repository, id, cid);
-        // A draft's due-by follows its date: changing the date fixes the due-by afresh from the new one.
-        String dueBy = date.toString().equals(found.date()) ? found.dueBy() : repository.dueBy(id, found.personId(), date).toString();
+        // A claim's due-by is fixed when it is created: editing its date leaves it as it is.
+        String dueBy = found.dueBy();
         Rollup.Snapshot before = rollup.take(id);
         if (!repository.update(id, cid, input.amount(), date, LocalDate.parse(dueBy), input.note(), input.corrects(), input.ref(), input.tags())) {
             throw new BadRequestException("only a DRAFT claim can be edited");

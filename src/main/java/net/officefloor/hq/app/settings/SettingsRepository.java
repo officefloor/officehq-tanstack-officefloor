@@ -292,6 +292,21 @@ public class SettingsRepository {
         return found;
     }
 
+    /** A sheet's descendants: the sheets naming it as their parent, their children and so on, nearer first,
+     *  each once and never the sheet itself. */
+    public List<String> descendants(String sheetId) {
+        List<String> found = new java.util.ArrayList<>();
+        java.util.Deque<String> pending = new java.util.ArrayDeque<>(List.of(sheetId));
+        while (!pending.isEmpty()) {
+            for (String child : jdbc.queryForList("SELECT id FROM sheet WHERE parent_id = ? ORDER BY id", String.class, pending.poll())) {
+                if (child.equals(sheetId) || found.contains(child)) continue;
+                found.add(child);
+                pending.add(child);
+            }
+        }
+        return found;
+    }
+
     /** The sheets whose rates a sheet's grade falls back to, nearest first: its ancestors up to three levels up. */
     public List<String> rateAncestors(String sheetId) {
         List<String> found = lineage(sheetId);
