@@ -90,7 +90,7 @@ public class PeriodCloser {
                 e -> e.getValue().setScale(2).toPlainString(), (a, b) -> a, LinkedHashMap::new)), personCarried.entrySet().stream().collect(Collectors.toMap(e -> Long.toString(e.getKey()),
                 e -> e.getValue().setScale(2).toPlainString(), (a, b) -> a, LinkedHashMap::new)), soft, found.cap(),
                 openings.entrySet().stream().collect(Collectors.toMap(e -> Long.toString(e.getKey()),
-                e -> e.getValue().setScale(2).toPlainString(), (a, b) -> a, LinkedHashMap::new)));
+                e -> e.getValue().setScale(2).toPlainString(), (a, b) -> a, LinkedHashMap::new)), found.locked());
     }
 
     /** Close, by the sheet's grace days (none when blank), every open (not closed nor soft-closed) period whose to-date plus the grace days is

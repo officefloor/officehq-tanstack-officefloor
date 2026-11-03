@@ -20,9 +20,10 @@ public class PeriodRepository {
             rs.getDate("from_date").toLocalDate().toString(), rs.getDate("to_date").toLocalDate().toString(),
             rs.getBoolean("closed"), rs.getBigDecimal("closed_total") == null ? null
                     : rs.getBigDecimal("closed_total").setScale(2).toPlainString(), Map.of(), Map.of(),
-            rs.getBoolean("soft_closed"), (Integer) rs.getObject("claim_cap", Integer.class), Map.of());
+            rs.getBoolean("soft_closed"), (Integer) rs.getObject("claim_cap", Integer.class), Map.of(),
+            rs.getBoolean("locked"));
 
-    private static final String COLUMNS = "id, name, from_date, to_date, closed, closed_total, soft_closed, claim_cap";
+    private static final String COLUMNS = "id, name, from_date, to_date, closed, closed_total, soft_closed, claim_cap, locked";
 
     private final JdbcTemplate jdbc;
 
@@ -63,7 +64,7 @@ public class PeriodRepository {
                 }, sheetId);
         return periods.stream().map(p -> new Period(p.id(), p.name(), p.from(), p.to(), p.closed(), p.closedTotal(),
                 totals.getOrDefault(p.id(), Map.of()), carried.getOrDefault(p.id(), Map.of()), p.softClosed(), p.cap(),
-                openings.getOrDefault(p.id(), Map.of()))).toList();
+                openings.getOrDefault(p.id(), Map.of()), p.locked())).toList();
     }
 
     /** Each person's opening balance for a period, by person id (only those with one). */
@@ -120,6 +121,11 @@ public class PeriodRepository {
                 sheetId);
     }
 
+    /** Lock or unlock a period. */
+    public void setLocked(String sheetId, long periodId, boolean locked) {
+        jdbc.update("UPDATE period SET locked = ? WHERE id = ? AND sheet_id = ?", locked, periodId, sheetId);
+    }
+
     /** Whether the sheet has a period of this name, without regard to case. */
     public boolean named(String sheetId, String name) {
         Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM period WHERE sheet_id = ? AND name_key = LOWER(?)",
@@ -170,6 +176,6 @@ public class PeriodRepository {
             }
             return ps;
         }, keys);
-        return new Period(keys.getKey().longValue(), name, from.toString(), to.toString(), false, null, Map.of(), Map.of(), false, cap, Map.of());
+        return new Period(keys.getKey().longValue(), name, from.toString(), to.toString(), false, null, Map.of(), Map.of(), false, cap, Map.of(), false);
     }
 }

@@ -26,12 +26,15 @@ public class ReopenPeriod {
         if (!settings.allows(id, "reopen", by)) {
             throw new BadRequestException("a " + settings.role(id, by) + " cannot reopen a period");
         }
+        if (found.locked()) {
+            throw new BadRequestException("the period " + found.name() + " is locked");
+        }
         if (!found.closed() && !found.softClosed()) {
             throw new BadRequestException("the period " + found.name() + " is not closed");
         }
         repository.reopen(id, found.id());
         audit.record("PERIOD_REOPENED sheet=" + id + " by=" + by + " period=" + found.name());
         period.set(new Period(found.id(), found.name(), found.from(), found.to(), false, null, java.util.Map.of(), java.util.Map.of(), false, found.cap(),
-                repository.list(id).stream().filter(p -> p.id() == found.id()).findFirst().map(Period::personOpenings).orElse(java.util.Map.of())));
+                repository.list(id).stream().filter(p -> p.id() == found.id()).findFirst().map(Period::personOpenings).orElse(java.util.Map.of()), false));
     }
 }

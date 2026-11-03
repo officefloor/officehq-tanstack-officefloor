@@ -6,7 +6,7 @@ import { getJson } from '../../api/http';
  *  person's due-total for it fixed then, by person id (empty while open), and each person's carried figure for it fixed then,
  *  by person id (empty while open), and whether it is soft-closed (its figures fixed as when closed,
  *  while claims dated in it can still be changed), and its cap on each person's OPEN or PENDING claims in it (null for none), and each person's opening balance for it (the amounts
- *  pasted for it, added up), by person id (only those with one). No two periods of a sheet overlap. */
+ *  pasted for it, added up), by person id (only those with one), and whether it is locked (a locked period cannot be reopened). No two periods of a sheet overlap. */
 export type Period = {
   id: number;
   name: string;
@@ -19,6 +19,7 @@ export type Period = {
   softClosed: boolean;
   cap: number | null;
   personOpenings: Record<string, string>;
+  locked: boolean;
 };
 
 export function periodsKey(sheetId: string) {

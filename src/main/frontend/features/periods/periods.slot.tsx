@@ -13,7 +13,7 @@ import { useFigure } from '../locale/useLocale';
  *  inclusive, overlapping no other period, and an optional cap on each person's open claims in it), and each period with its due-total: the figures of the
  *  claims that count whose due-by falls in it (a settled claim's frozen due, else the figure its last
  *  statement bound it to, else its live due, with its late charge while overdue), skipping those with none — fixed once it is closed —
- *  and whether it is closed (soft for a soft-closed one), with buttons that close and soft-close it. */
+ *  and whether it is closed (soft for a soft-closed one) and locked, with buttons that close, soft-close, lock and unlock it. */
 function Periods({ sheetId }: { sheetId: string }) {
   const periods = usePeriods(sheetId);
   const dueTotals = usePeriodDueTotals(sheetId);
@@ -83,6 +83,7 @@ function Periods({ sheetId }: { sheetId: string }) {
             <th>Closed</th>
             <th>Fiscal year</th>
             <th>Cap</th>
+            <th>Locked</th>
             <th />
           </tr>
         </thead>
@@ -180,8 +181,8 @@ function GeneratePeriods({ sheetId }: { sheetId: string }) {
 }
 
 /** One period's row; closing it fixes its due-total, soft-closing it fixes its figures while its claims can still be
- *  changed, reopening it (a steward only) makes it live again.
- *  A refused close or reopen shows its error, cleared when the next action on the row is taken. */
+ *  changed, reopening it (a steward only) makes it live again; locking it (a steward only) keeps it from being reopened until unlocked.
+ *  A refused close, reopen, lock or unlock shows its error, cleared when the next action on the row is taken. */
 function PeriodRow({ sheetId, period: p, dueTotal, fiscalYear }: { sheetId: string; period: Period; dueTotal: string; fiscalYear: string }) {
   const fig = useFigure();
   const queryClient = useQueryClient();
@@ -216,12 +217,34 @@ function PeriodRow({ sheetId, period: p, dueTotal, fiscalYear }: { sheetId: stri
       await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
     },
   });
-  const error = close.error ?? softClose.error ?? reopen.error;
+  const lock = useMutation({
+    mutationFn: () =>
+      postJson<Period>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/periods/${encodeURIComponent(p.name)}/lock`,
+        {},
+      ),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
+    },
+  });
+  const unlock = useMutation({
+    mutationFn: () =>
+      postJson<Period>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/periods/${encodeURIComponent(p.name)}/unlock`,
+        {},
+      ),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
+    },
+  });
+  const error = close.error ?? softClose.error ?? reopen.error ?? lock.error ?? unlock.error;
   const act = (m: { mutateAsync: () => Promise<Period> }) =>
     closeOnce(() => {
       close.reset();
       softClose.reset();
       reopen.reset();
+      lock.reset();
+      unlock.reset();
       return m.mutateAsync();
     });
 
@@ -234,6 +257,7 @@ function PeriodRow({ sheetId, period: p, dueTotal, fiscalYear }: { sheetId: stri
       <td data-testid="period-closed">{p.closed ? 'yes' : p.softClosed ? 'soft' : 'no'}</td>
       <td data-testid="period-fy">{fiscalYear}</td>
       <td data-testid="period-cap">{fig(p.cap ?? '')}</td>
+      <td data-testid="period-locked">{p.locked ? 'yes' : 'no'}</td>
       <td>
         <button
           type="button"
@@ -258,6 +282,22 @@ function PeriodRow({ sheetId, period: p, dueTotal, fiscalYear }: { sheetId: stri
           onClick={() => act(reopen)}
         >
           Reopen
+        </button>{' '}
+        <button
+          type="button"
+          data-testid="period-lock"
+          disabled={lock.isPending}
+          onClick={() => act(lock)}
+        >
+          Lock
+        </button>{' '}
+        <button
+          type="button"
+          data-testid="period-unlock"
+          disabled={unlock.isPending}
+          onClick={() => act(unlock)}
+        >
+          Unlock
         </button>
         {error && <span data-testid="period-error">{error.message}</span>}
       </td>
