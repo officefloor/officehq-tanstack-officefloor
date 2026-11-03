@@ -30,14 +30,18 @@ public class PersonRepository {
             + " AND t.from_date <= (SELECT s.today FROM sheet s WHERE s.id = person.sheet_id) ORDER BY t.from_date DESC LIMIT 1)"
             + " ELSE person.terms END) AS terms";
 
-    private static final String COLUMNS = "id, name, " + GRADE_TODAY + ", version, statement_count, stated_total, statement_date, retired_from, " + TERMS_TODAY + ", contact, origin_sheet, tags";
+    /** The reason of the person's flag while it is in force: the sheet's today on or before its until-date. */
+    private static final String FLAG_TODAY = "(CASE WHEN person.flag_until >= (SELECT s.today FROM sheet s WHERE s.id = person.sheet_id)"
+            + " THEN person.flag_reason END) AS flag";
+
+    private static final String COLUMNS = "id, name, " + GRADE_TODAY + ", version, statement_count, stated_total, statement_date, retired_from, " + TERMS_TODAY + ", contact, origin_sheet, tags, " + FLAG_TODAY;
 
     private static final RowMapper<Person> ROW = (rs, i) -> new Person(rs.getLong("id"), rs.getString("name"),
             rs.getString("grade"), rs.getLong("version"), rs.getLong("statement_count"), rs.getString("stated_total"),
             rs.getDate("statement_date") == null ? null : rs.getDate("statement_date").toLocalDate().toString(),
             rs.getDate("retired_from") == null ? null : rs.getDate("retired_from").toLocalDate().toString(),
             false, List.of(), List.of(), (Integer) rs.getObject("terms", Integer.class), rs.getString("contact"),
-            rs.getString("origin_sheet"), List.of(), rs.getString("tags"), List.of(), List.of());
+            rs.getString("origin_sheet"), List.of(), rs.getString("tags"), List.of(), List.of(), rs.getString("flag"));
 
     /** The position after the last person's on the sheet being inserted into (the end of its list). */
     private static final String NEXT_POSITION = "(SELECT COALESCE(MAX(q.list_position), 0) + 1 FROM person q WHERE q.sheet_id = sheet.id)";
@@ -212,6 +216,11 @@ public class PersonRepository {
         history.retire(sheetId, id, null);
     }
 
+    /** Flag a person with a reason until a date (inclusive). */
+    public void flag(String sheetId, long id, String reason, LocalDate until) {
+        jdbc.update("UPDATE person SET flag_reason = ?, flag_until = ? WHERE sheet_id = ? AND id = ?", reason, until, sheetId, id);
+    }
+
     /** Put a person on hold from a from-date to a to-date (null: open-ended). */
     public void hold(String sheetId, long id, LocalDate from, LocalDate to) {
         jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date, held_on)"
@@ -351,7 +360,7 @@ public class PersonRepository {
         }, keys);
         long id = keys.getKey().longValue();
         grade(sheetId, id, grade, null);
-        return new Person(id, name, grade, 1, 0, null, null, null, false, List.of(new GradeFrom(grade, null)), List.of(), terms, contact, null, List.of(), null, List.of(), List.of());
+        return new Person(id, name, grade, 1, 0, null, null, null, false, List.of(new GradeFrom(grade, null)), List.of(), terms, contact, null, List.of(), null, List.of(), List.of(), null);
     }
 
     /** Swap two people's places in the sheet's list. */

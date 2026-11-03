@@ -10,7 +10,8 @@ import { useReader } from '../../api/readNow';
  *  days (null when they have none: their grade's, else the sheet's, apply); their contact (null when they have none); their tags (sorted, comma separated; null when none);
  *  the sheet they were transferred from (null when they were not transferred here); their past retirements,
  *  oldest first; their snapshots, one per SNAPSHOT written for them, oldest first; their statements still standing,
- *  oldest first by date (those a merge or transfer brought over among them). */
+ *  oldest first by date (those a merge or transfer brought over among them); the reason of their flag while it is in
+ *  force (the sheet's today on or before its until-date; null otherwise). */
 export type Person = {
   id: number;
   name: string;
@@ -30,6 +31,7 @@ export type Person = {
   retirements: Retirement[];
   snapshots: SnapshotLine[];
   statements: StatementLine[];
+  flag: string | null;
 };
 
 /** One of a person's snapshots: the day being left (yyyy-mm-dd; null when the sheet had no today) and their

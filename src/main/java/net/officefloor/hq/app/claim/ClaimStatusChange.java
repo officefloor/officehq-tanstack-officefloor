@@ -74,6 +74,11 @@ public final class ClaimStatusChange {
         if ((act.equals("open") || act.equals("settle") || act.equals("void")) && !settings.allows(id, act, by)) {
             throw new BadRequestException("a " + settings.role(id, by) + " cannot " + act + " a claim");
         }
+        // While its person's flag is in force only a steward opens a claim (alone, in bulk or by a paste).
+        if (act.equals("open") && !settings.role(id, by).equals(SettingsRepository.STEWARD)
+                && repository.flagged(id, found.personId())) {
+            throw new BadRequestException("only a steward can open a claim of a flagged person");
+        }
         // Only a steward reviews a REVIEW claim, making it OPEN.
         if (act.equals("review") && !settings.role(id, by).equals(SettingsRepository.STEWARD)) {
             throw new BadRequestException("only a steward can review a claim");

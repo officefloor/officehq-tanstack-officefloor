@@ -942,4 +942,11 @@ public class ClaimRepository {
     static String dueOf(BigDecimal due) {
         return due == null ? null : money(due);
     }
+
+    /** Whether a person's flag is in force: the sheet's today on or before its until-date. */
+    public boolean flagged(String sheetId, long personId) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM person WHERE sheet_id = ? AND id = ? AND flag_until"
+                + " >= (SELECT s.today FROM sheet s WHERE s.id = person.sheet_id)", Integer.class, sheetId, personId);
+        return n != null && n > 0;
+    }
 }

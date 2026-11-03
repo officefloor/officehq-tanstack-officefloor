@@ -11,31 +11,33 @@ import java.util.List;
  *  statement, then count in no live total), and their own terms in days in force on the sheet's today (null when they have none), and their contact (null when they have none), and the sheet they were
  *  transferred from (null when they were not transferred here), and their past retirements (oldest first), and their tags (as {@link net.officefloor.hq.app.claim.Claim#tags(String)} keeps them; null when none),
  *  and their snapshots (one per SNAPSHOT line written for them, oldest first), and their statements still standing
- *  (by date, oldest first; those a merge or transfer brought over among them). */
+ *  (by date, oldest first; those a merge or transfer brought over among them), and the reason of their flag while it is
+ *  in force (the sheet's today on or before its until-date; null otherwise). */
 public record Person(long id, String name, String grade, long version, long statementCount,
         String statedTotal, String statementDate, String retiredFrom, boolean held, List<GradeFrom> grades,
         List<Hold> holds, Integer terms, String contact, String origin,
-        List<Retirement> retirements, String tags, List<SnapshotLine> snapshots, List<StatementLine> statements) {
+        List<Retirement> retirements, String tags, List<SnapshotLine> snapshots, List<StatementLine> statements,
+        String flag) {
 
     public Person withGrades(List<GradeFrom> grades) {
-        return new Person(id, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom, held, grades, holds, terms, contact, origin, retirements, tags, snapshots, statements);
+        return new Person(id, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom, held, grades, holds, terms, contact, origin, retirements, tags, snapshots, statements, flag);
     }
 
     public Person withHolds(List<Hold> holds) {
         return new Person(id, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom,
-                !holds.isEmpty(), grades, holds, terms, contact, origin, retirements, tags, snapshots, statements);
+                !holds.isEmpty(), grades, holds, terms, contact, origin, retirements, tags, snapshots, statements, flag);
     }
 
     public Person withRetirements(List<Retirement> retirements) {
-        return new Person(id, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom, held, grades, holds, terms, contact, origin, retirements, tags, snapshots, statements);
+        return new Person(id, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom, held, grades, holds, terms, contact, origin, retirements, tags, snapshots, statements, flag);
     }
 
     public Person withSnapshots(List<SnapshotLine> snapshots) {
-        return new Person(id, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom, held, grades, holds, terms, contact, origin, retirements, tags, snapshots, statements);
+        return new Person(id, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom, held, grades, holds, terms, contact, origin, retirements, tags, snapshots, statements, flag);
     }
 
     public Person withStatements(List<StatementLine> statements) {
-        return new Person(id, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom, held, grades, holds, terms, contact, origin, retirements, tags, snapshots, statements);
+        return new Person(id, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom, held, grades, holds, terms, contact, origin, retirements, tags, snapshots, statements, flag);
     }
 
     public boolean retired() {
