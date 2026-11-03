@@ -1,0 +1,131 @@
+diff --git a/src/main/frontend/features/consolidated/consolidated.slot.tsx b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+index 045d9a80e..59a938c1e 100644
+--- a/src/main/frontend/features/consolidated/consolidated.slot.tsx
++++ b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+@@ -1,5 +1,5 @@
+ import { useEffect, useState } from 'react';
+-import { useQuery, useQueryClient } from '@tanstack/react-query';
++import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { useOverdue } from '../overdue/useOverdue';
+@@ -9,6 +9,7 @@ import { useDueTotals } from '../rates/useDueTotals';
+ import { hundredths, money, sumDues, trimmedSum } from '../rates/useRates';
+ import { countWithStatus, STATUSES } from '../summary/statusCounts';
+ import { useFigure } from '../locale/useLocale';
++import { useDescendants } from './useDescendants';
+ 
+ /** One sheet's figures: its people (retired included), each as the names they go by (their name and aliases, as
+  *  names are compared: ignoring case), joined by '\t' within a person and '\n' between people; each person's
+@@ -17,20 +18,6 @@ import { useFigure } from '../locale/useLocale';
+  *  date as its today. */
+ type Figures = { people: string; due: string; overdue: string; grades: string; statuses: string };
+ 
+-/** The sheet's descendants (the sheets naming it as their parent, theirs, and so on), re-read from the store.
+- *  Their own cached reads are dropped first, so each is re-read from the store too. */
+-function useDescendants(sheetId: string) {
+-  const queryClient = useQueryClient();
+-  return useQuery({
+-    queryKey: ['sheet', sheetId, 'descendants'],
+-    queryFn: async () => {
+-      const { sheets } = await getJson<{ sheets: string[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/descendants`);
+-      for (const id of sheets) queryClient.removeQueries({ queryKey: ['sheet', id] });
+-      return sheets;
+-    },
+-  });
+-}
+-
+ /** How names are compared: ignoring case (and surrounding spaces). */
+ const nameKey = (name: string) => name.trim().toLowerCase();
+ 
+diff --git a/src/main/frontend/features/consolidated/useDescendants.ts b/src/main/frontend/features/consolidated/useDescendants.ts
+new file mode 100644
+index 000000000..47a44e504
+--- /dev/null
++++ b/src/main/frontend/features/consolidated/useDescendants.ts
+@@ -0,0 +1,16 @@
++import { useQuery, useQueryClient } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++
++/** The sheet's descendants (the sheets naming it as their parent, theirs, and so on), re-read from the store.
++ *  Their own cached reads are dropped first, so each is re-read from the store too. */
++export function useDescendants(sheetId: string) {
++  const queryClient = useQueryClient();
++  return useQuery({
++    queryKey: ['sheet', sheetId, 'descendants'],
++    queryFn: async () => {
++      const { sheets } = await getJson<{ sheets: string[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/descendants`);
++      for (const id of sheets) queryClient.removeQueries({ queryKey: ['sheet', id] });
++      return sheets;
++    },
++  });
++}
+diff --git a/src/main/frontend/features/dashboard/dashboard.slot.tsx b/src/main/frontend/features/dashboard/dashboard.slot.tsx
+index 5b7aaaa93..081769080 100644
+--- a/src/main/frontend/features/dashboard/dashboard.slot.tsx
++++ b/src/main/frontend/features/dashboard/dashboard.slot.tsx
+@@ -1,27 +1,51 @@
++import { useEffect, useState } from 'react';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { useClaims } from '../claims/useClaims';
++import { useDescendants } from '../consolidated/useDescendants';
+ import { roleOf, useSettings } from '../settings/useSettings';
+ import { useSheetToday } from '../today/useSheetToday';
+ import { useOverdue } from '../overdue/useOverdue';
+ 
+-/** A steward's dashboard: how many claims on the sheet are PENDING, how many are in REVIEW, and how many
+- *  that count are overdue (see `useOverdue`). Empty for a user who does not act as a steward. Under an
+- *  as-of date every read is as the sheet stood then, so the counts and the role are those of that day. */
+-function Dashboard({ sheetId, user }: { sheetId: string; user: string }) {
++/** One sheet's dashboard counts: its claims PENDING, in REVIEW, and overdue (see `useOverdue`). */
++type Counts = { pending: number; review: number; late: number };
++
++/** Works out one sheet's counts and hands them up once its claims are read; shows nothing. */
++function SheetCounts({ sheetId, onCounts }: { sheetId: string; onCounts: (id: string, c: Counts) => void }) {
+   const claims = useClaims(sheetId).data;
++  const overdue = useOverdue(sheetId);
++  const loaded = claims !== undefined;
++  const pending = (claims ?? []).filter((c) => c.status === 'PENDING').length;
++  const review = (claims ?? []).filter((c) => c.status === 'REVIEW').length;
++  const late = [...overdue.values()].reduce((n, f) => n + f.count, 0);
++  useEffect(() => {
++    if (loaded) onCounts(sheetId, { pending, review, late });
++  }, [sheetId, loaded, pending, review, late, onCounts]);
++  return null;
++}
++
++/** A steward's dashboard: how many claims over the sheet and all its descendants are PENDING, how many are in
++ *  REVIEW, and how many that count are overdue (see `useOverdue`, each sheet by its own today). Empty for a user
++ *  who does not act as a steward on the sheet. Under an as-of date every read is as the sheet stood then, so the
++ *  counts and the role are those of that day. */
++function Dashboard({ sheetId, user }: { sheetId: string; user: string }) {
+   const settings = useSettings(sheetId).data;
+   const today = useSheetToday(sheetId).data?.today;
+-  const overdue = useOverdue(sheetId);
+-  const shown = claims !== undefined && settings !== undefined && today !== undefined
+-    && roleOf(settings, user, today) === 'steward';
+-  const pending = shown ? String(claims.filter((c) => c.status === 'PENDING').length) : '';
+-  const review = shown ? String(claims.filter((c) => c.status === 'REVIEW').length) : '';
+-  const late = shown ? String([...overdue.values()].reduce((n, f) => n + f.count, 0)) : '';
++  const descendants = useDescendants(sheetId);
++  const [counts, setCounts] = useState<Record<string, Counts>>({});
++  const [onCounts] = useState(() => (id: string, c: Counts) => setCounts((all) => ({ ...all, [id]: c })));
++  const sheets = [sheetId, ...(descendants.data ?? [])];
++  const got = sheets.map((id) => counts[id]);
++  const shown = descendants.data !== undefined && got.every((c) => c !== undefined)
++    && settings !== undefined && today !== undefined && roleOf(settings, user, today) === 'steward';
++  const total = (pick: (c: Counts) => number) => (shown ? String(got.reduce((n, c) => n + pick(c!), 0)) : '');
+   return (
+     <p data-testid="dashboard">
+-      Steward dashboard: pending <strong data-testid="dash-pending-count">{pending}</strong>,
+-      review <strong data-testid="dash-review-count">{review}</strong>,
+-      overdue <strong data-testid="dash-overdue-count">{late}</strong>
++      {sheets.map((id) => (
++        <SheetCounts key={id} sheetId={id} onCounts={onCounts} />
++      ))}
++      Steward dashboard: pending <strong data-testid="dash-pending-count">{total((c) => c.pending)}</strong>,
++      review <strong data-testid="dash-review-count">{total((c) => c.review)}</strong>,
++      overdue <strong data-testid="dash-overdue-count">{total((c) => c.late)}</strong>
+     </p>
+   );
+ }
