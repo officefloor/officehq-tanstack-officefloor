@@ -1,0 +1,54 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index a157d1ac5..68765b3ad 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -120,17 +120,45 @@ public class ClaimRepository {
+         kept(sheetId, claimId, jdbc.update("UPDATE claim SET void_reason = ? WHERE id = ? AND sheet_id = ?", reason, claimId, sheetId) > 0);
+     }
+ 
+-    /** Give an opened claim the sheet's next number. The sheet's row stays locked until the
+-     *  transaction commits, so two claims opened at once get consecutive numbers. */
++    /** Give an opened claim the next number of its sheet's tree: one after the last number given on any sheet of
++     *  the tree (the sheet's topmost ancestor and all its descendants). The tree's sheet rows stay locked until the
++     *  transaction commits, so two claims opened at once anywhere in the tree get consecutive numbers. */
+     public String number(String sheetId, long claimId) {
+-        jdbc.update("UPDATE sheet SET claim_number = claim_number + 1 WHERE id = ?", sheetId);
+-        Long next = jdbc.queryForObject("SELECT claim_number FROM sheet WHERE id = ?", Long.class, sheetId);
++        List<String> tree = tree(sheetId);
++        String in = String.join(",", java.util.Collections.nCopies(tree.size(), "?"));
++        jdbc.update("UPDATE sheet SET claim_number = claim_number WHERE id IN (" + in + ")", tree.toArray());
++        Long last = jdbc.queryForObject("SELECT MAX(claim_number) FROM sheet WHERE id IN (" + in + ")",
++                Long.class, tree.toArray());
++        long next = (last == null ? 0 : last) + 1;
++        jdbc.update("UPDATE sheet SET claim_number = ? WHERE id = ?", next, sheetId);
+         String number = String.valueOf(next);
+         jdbc.update("UPDATE claim SET claim_no = ? WHERE id = ? AND sheet_id = ?", number, claimId, sheetId);
+         kept(sheetId, claimId, true);
+         return number;
+     }
+ 
++    /** The sheets of the sheet's tree, sorted: its topmost ancestor (following parents) and all that one's
++     *  descendants, the sheet itself always among them. */
++    private List<String> tree(String sheetId) {
++        String root = sheetId;
++        java.util.Set<String> seen = new java.util.HashSet<>(List.of(sheetId));
++        for (String at = parentOf(root); at != null && seen.add(at); at = parentOf(at)) root = at;
++        java.util.Set<String> found = new java.util.TreeSet<>(List.of(root));
++        java.util.Deque<String> pending = new java.util.ArrayDeque<>(List.of(root));
++        while (!pending.isEmpty()) {
++            for (String child : jdbc.queryForList("SELECT id FROM sheet WHERE parent_id = ?", String.class, pending.poll())) {
++                if (found.add(child)) pending.add(child);
++            }
++        }
++        found.add(sheetId);
++        return new ArrayList<>(found);
++    }
++
++    private String parentOf(String sheetId) {
++        List<String> found = jdbc.queryForList("SELECT parent_id FROM sheet WHERE id = ?", String.class, sheetId);
++        return found.isEmpty() ? null : found.get(0);
++    }
++
+     /** Whether claims opened now are numbered per period: the sheet's period numbering from-date is set
+      *  and its today is on or after it. */
+     public boolean numbersPerPeriod(String sheetId) {
