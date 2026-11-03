@@ -1,0 +1,161 @@
+diff --git a/src/main/frontend/features/inlinegrade/inlineGrade.slot.tsx b/src/main/frontend/features/inlinegrade/inlineGrade.slot.tsx
+new file mode 100644
+index 000000000..e539f36bb
+--- /dev/null
++++ b/src/main/frontend/features/inlinegrade/inlineGrade.slot.tsx
+@@ -0,0 +1,67 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
++import { claimsKey } from '../claims/useClaims';
++import { GRADES, peopleKey, usePeople, type Person } from '../people/usePeople';
++import { usePersonRowAction } from '../people/usePersonRowAction';
++
++/** A grade select on the person's row (showing their grade until another is chosen) and a button that
++ *  records the chosen grade from the sheet's today, exactly as the person form would. */
++function PersonInlineGrade({ sheetId, personId }: { sheetId: string; personId: number }) {
++  const people = usePeople(sheetId);
++  const queryClient = useQueryClient();
++  const p = people.data?.find((x) => x.id === personId);
++  const [chosen, setChosen] = useState<string | null>(null);
++  const grade = chosen ?? p?.grade ?? 'A';
++
++  const save = useMutation({
++    mutationFn: (body: { grade: string }) =>
++      postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/grade`, body),
++    onSuccess: () => setChosen(null),
++    onSettled: async () => {
++      await Promise.all([
++        queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
++        queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
++      ]);
++    },
++  });
++  const announce = usePersonRowAction(sheetId, personId, save.reset);
++
++  return (
++    <td>
++      <select
++        data-testid="person-inline-grade"
++        value={grade}
++        onChange={(e) => {
++          setChosen(e.target.value);
++          save.reset();
++        }}
++      >
++        {GRADES.map((g) => (
++          <option key={g} value={g}>
++            {g}
++          </option>
++        ))}
++      </select>{' '}
++      <button
++        type="button"
++        data-testid="person-inline-grade-save"
++        disabled={save.isPending || !p}
++        onClick={() => {
++          announce();
++          save.reset();
++          save.mutate({ grade });
++        }}
++      >
++        Save grade
++      </button>
++      {save.isError && <span data-testid="person-error">{save.error.message}</span>}
++    </td>
++  );
++}
++
++export const contributions = [
++  PersonColumnHead.fill({ order: 2.5, Component: () => <th>Set grade</th> }),
++  PersonCells.fill({ order: 2.5, Component: PersonInlineGrade }),
++];
+diff --git a/src/main/java/net/officefloor/hq/app/person/GradePerson.java b/src/main/java/net/officefloor/hq/app/person/GradePerson.java
+new file mode 100644
+index 000000000..33b7ae5de
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/GradePerson.java
+@@ -0,0 +1,55 @@
++package net.officefloor.hq.app.person;
++
++import java.util.Set;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.ConflictException;
++import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.server.http.ServerHttpConnection;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Give a person the grade chosen on their row from the sheet's today, exactly as the person form would save
++ *  it with their own name, terms and contact: leaving the grade in force on the sheet's today as it is records
++ *  no grade. Writes PERSON_EDITED and its rollup lines, and moves the person's version on, so an editor
++ *  opened before it is refused as stale. */
++public class GradePerson {
++    private static final Set<String> GRADES = Set.of("A", "B", "C");
++
++    public void grade(@PathVariable("sheetId") String sheetId, @PathVariable("personId") String personId,
++            @RequestBody GradeRequest request, ServerHttpConnection connection, PersonRepository repository,
++            SheetRepository sheets, Audit audit, Rollup rollup, Out<Person> person)
++            throws BadRequestException, ConflictException {
++        String by = CurrentUser.require(connection);
++        String id = sheetId == null ? "" : sheetId.trim();
++        long pid;
++        try {
++            pid = Long.parseLong(personId == null ? "" : personId.trim());
++        } catch (NumberFormatException e) {
++            throw new BadRequestException("no such person");
++        }
++        Person current = repository.find(id, pid);
++        if (current == null) {
++            throw new BadRequestException("no such person");
++        }
++        String grade = request == null || request.grade() == null ? "" : request.grade().trim();
++        if (!GRADES.contains(grade)) {
++            throw new BadRequestException("grade must be A, B or C");
++        }
++        boolean regrade = !grade.equals(current.grade());
++        Rollup.Snapshot before = rollup.take(id);
++        if (!repository.update(id, pid, current.version(), current.name(), current.terms())) {
++            throw new ConflictException("someone else has saved this person; showing their current values");
++        }
++        if (regrade) {
++            repository.grade(id, pid, grade, sheets.today(id));
++        }
++        Person saved = repository.find(id, pid);
++        audit.record("PERSON_EDITED sheet=" + id + " by=" + by + " name=" + saved.name() + " grade=" + saved.grade());
++        rollup.record(id, by, before);
++        person.set(saved);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/GradeRequest.java b/src/main/java/net/officefloor/hq/app/person/GradeRequest.java
+new file mode 100644
+index 000000000..e70d80dd4
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/GradeRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** The grade chosen on a person's row (A, B or C). */
++public record GradeRequest(String grade) {
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/grade.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/grade.POST.yml
+new file mode 100644
+index 000000000..7af1fe333
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/grade.POST.yml
+@@ -0,0 +1,10 @@
++# Give a person a grade from the sheet's today, from their row, exactly as the person form would save it.
++guard:
++  class: net.officefloor.hq.app.settings.RefuseViewer
++  next: grade
++grade:
++  class: net.officefloor.hq.app.person.GradePerson
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPerson
