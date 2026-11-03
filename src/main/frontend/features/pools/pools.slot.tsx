@@ -7,7 +7,7 @@ import { usePeople, type Person } from '../people/usePeople';
 import { poolsKey, usePools, type Pool } from './usePools';
 import { useFigure } from '../locale/useLocale';
 
-/** One pool: its members with their shares and cuts of the sheet's pot, its total share and whether it is balanced, and a form that
+/** One pool: its members with their shares and cuts of the sheet's pot (now, and at the end of each period ended by the sheet's today), its total share and whether it is balanced, and a form that
  *  adds a member (a person on the sheet, or another pool as pool:<name>, a share percent and an optional from-date and
  *  to-date: a member whose dates do not include the sheet's today is left out of the pool). */
 function PoolRow({ sheetId, pool, pools, people }: { sheetId: string; pool: Pool; pools: Pool[]; people: Person[] }) {
@@ -46,6 +46,12 @@ function PoolRow({ sheetId, pool, pools, people }: { sheetId: string; pool: Pool
             <span data-testid="pool-member-name">{m.name}</span>{' '}
             <span data-testid="pool-share">{fig(m.share)}</span>{' '}
             <span data-testid="pool-cut">{fig(m.cut ?? '')}</span>
+            {Object.entries(m.periodCuts ?? {}).map(([period, cut]) => (
+              <span key={period}>
+                {' '}
+                {period} <span data-testid={`pool-cut-${period}`}>{fig(cut ?? '')}</span>
+              </span>
+            ))}
             {(m.from !== null || m.to !== null) && ` (${m.from ?? ''} – ${m.to ?? ''})`}
             {m.retired && ' (retired)'}
           </li>

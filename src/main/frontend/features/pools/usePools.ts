@@ -6,7 +6,9 @@ import { getJson } from '../../api/http';
  *  whatever the date: they get no cut, their share spread over the others, but it counts in the total share) and their cut of the pool's pot (two decimals; null when
  *  the pool is not balanced, has no pot or has only retired members: a pool that is a member of another has its cut there as its pot; null
  *  too for a member that is not current), the membership's from-date and to-date (null when not given) and whether
- *  they include the sheet's today (a member that is not current counts in neither the total share nor the balance). */
+ *  they include the sheet's today (a member that is not current counts in neither the total share nor the balance), and,
+ *  for every period whose to-date is on or before the sheet's today, by period name in from-date order, their cut as it
+ *  stood at the end of that period (null when they had none then). */
 export type PoolMember = {
   personId: number | null;
   pool: string | null;
@@ -17,6 +19,7 @@ export type PoolMember = {
   from: string | null;
   to: string | null;
   current: boolean;
+  periodCuts: Record<string, string | null>;
 };
 
 /** A pool: its name, its members in the order they were added, the total of their shares (two decimals),

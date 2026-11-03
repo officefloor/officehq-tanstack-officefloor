@@ -69,6 +69,11 @@ public class AsOfView {
     public <T> T read(ServerHttpConnection connection, String sheetId, Supplier<T> read) throws BadRequestException {
         LocalDate day = of(connection);
         if (day == null) return read.get();
+        return readAt(sheetId, day, read);
+    }
+
+    /** The read run against the sheet as it stood at the end of a day, the day standing in for its today. */
+    public <T> T readAt(String sheetId, LocalDate day, Supplier<T> read) {
         return transaction.execute(status -> {
             Map<String, List<Object[]>> rows = replay(sheetId, day);
             for (Map.Entry<String, List<Object[]>> e : rows.entrySet()) {
