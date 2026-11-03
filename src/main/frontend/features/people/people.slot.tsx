@@ -5,7 +5,10 @@ import { useSingleFlight } from '../../query/useSingleFlight';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { PersonCells, PersonColumnHead, PersonDetail } from '../../slots/defs/personRow';
 import { claimsKey, shownTags, type Claim } from '../claims/useClaims';
+import { useDueTotals } from '../rates/useDueTotals';
+import { hundredths } from '../rates/useRates';
 import { useShowRetired } from '../retire/useShowRetired';
+import { asString, useSearchParam } from '../../url/useSearchParam';
 import { GRADES, fetchPeople, peopleKey, usePeople, type Person } from './usePeople';
 
 /** The sheet's people: a form that adds a person, or edits one when their editor is open, and the
@@ -21,9 +24,45 @@ import { GRADES, fetchPeople, peopleKey, usePeople, type Person } from './usePeo
  *  refused edit closes the editor, leaving its error showing. Each person is a <tbody> so features can add
  *  cells and rows of their own to it (slots/defs/personRow). A quick-add bar takes a name and an amount
  *  and adds a draft claim for that person (adding them with grade A when the name is new) in one change. */
+const SORTS = ['added', 'name', 'grade', 'due-total'] as const;
+type SortKey = (typeof SORTS)[number];
+const asSort = (raw: unknown): SortKey => {
+  const s = asString(raw);
+  return (SORTS as readonly string[]).includes(s) ? (s as SortKey) : 'added';
+};
+
+/** Names compare trimmed and ignoring case. */
+const nameKey = (name: string) => name.trim().toLowerCase();
+
+/** The people in the order the screen shows them (URL key `sortBy`, this user's screen only): list order
+ *  ('added'), or by name (as names are compared), grade, or due-total (lowest first, 'n/a' last). The sort
+ *  is stable, so equal keys keep list order; it changes nothing else (positions, rollups, actions). */
+function sortPeople(people: Person[], by: SortKey, dueTotals: Map<number, string>): Person[] {
+  if (by === 'added') return people;
+  const cmp = (a: Person, b: Person): number => {
+    if (by === 'name') {
+      const x = nameKey(a.name);
+      const y = nameKey(b.name);
+      return x < y ? -1 : x > y ? 1 : 0;
+    }
+    if (by === 'grade') return a.grade < b.grade ? -1 : a.grade > b.grade ? 1 : 0;
+    const x = dueTotals.get(a.id);
+    const y = dueTotals.get(b.id);
+    const xn = x === undefined || x === 'n/a';
+    const yn = y === undefined || y === 'n/a';
+    if (xn || yn) return xn === yn ? 0 : xn ? 1 : -1;
+    const xc = hundredths(x);
+    const yc = hundredths(y);
+    return xc < yc ? -1 : xc > yc ? 1 : 0;
+  };
+  return [...people].sort(cmp);
+}
+
 function People({ sheetId }: { sheetId: string }) {
   const people = usePeople(sheetId);
   const [showRetired] = useShowRetired();
+  const [sortBy, setSortBy] = useSearchParam('sortBy', asSort);
+  const dueTotals = useDueTotals(sheetId);
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<number | null>(null);
   const [name, setName] = useState('');
@@ -263,6 +302,20 @@ function People({ sheetId }: { sheetId: string }) {
         </button>
         {quick.isError && <p data-testid="quick-error">{quick.error.message}</p>}
       </form>
+      <label>
+        Sort by{' '}
+        <select
+          data-testid="sort-by"
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value === 'added' ? undefined : (e.target.value as SortKey))}
+        >
+          {SORTS.map((k) => (
+            <option key={k} value={k}>
+              {k}
+            </option>
+          ))}
+        </select>
+      </label>
       <table data-testid="people-list">
         <thead>
           <tr>
@@ -275,7 +328,7 @@ function People({ sheetId }: { sheetId: string }) {
             <th />
           </tr>
         </thead>
-        {(people.data ?? []).filter((p) => showRetired || !p.retiredFrom).map((p) => (
+        {sortPeople((people.data ?? []).filter((p) => showRetired || !p.retiredFrom), sortBy, dueTotals).map((p) => (
           <tbody key={p.id} data-testid={`person-row-${p.id}`}>
             <tr>
               <td data-testid="person-name">{p.name}</td>
