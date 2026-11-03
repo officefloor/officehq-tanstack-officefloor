@@ -15,6 +15,7 @@ import { useTemplates } from '../templates/useTemplates';
 import { claimed, claimsKey, shownDeferred, shownTags, useClaims, useLastBatch, type Claim } from './useClaims';
 import { useClaimSelection } from './useClaimSelection';
 import { useFigure } from '../locale/useLocale';
+import { Col } from '../columns/useColumns';
 
 /** A person's claimed: the sum of their counted, non-correction (OPEN, PENDING or SETTLED; an open one dated within a hold only when a statement binds it; not a deferred one) claims' amounts. */
 function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: number }) {
@@ -23,9 +24,11 @@ function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: numbe
   const people = usePeople(sheetId);
   const today = useSheetToday(sheetId).data?.today;
   return (
-    <td data-testid="person-claimed">
-      {fig(claimed((claims.data ?? []).filter((c) => c.personId === personId), holdsById(people.data, today), today))}
-    </td>
+    <Col id="claimed">
+      <td data-testid="person-claimed">
+        {fig(claimed((claims.data ?? []).filter((c) => c.personId === personId), holdsById(people.data, today), today))}
+      </td>
+    </Col>
   );
 }
 
@@ -902,7 +905,7 @@ function ClaimedTotal({ sheetId }: { sheetId: string }) {
 }
 
 export const contributions = [
-  PersonColumnHead.fill({ order: 10, Component: () => <th>Claimed</th> }),
+  PersonColumnHead.fill({ order: 10, Component: () => <Col id="claimed"><th>Claimed</th></Col> }),
   PersonCells.fill({ order: 10, Component: PersonClaimed }),
   PersonDetail.fill({ order: 10, Component: PersonClaims }),
   SheetBody.fill({ order: 15, Component: BulkOpen }),

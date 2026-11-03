@@ -10,6 +10,7 @@ import { useDueTotals, useExcess, useSettledOpenTotals } from './useDueTotals';
 import { useRatePreview } from './useRatePreview';
 import { rateFor, ratesKey, sumDues, trimmedSum, useRates, type Rate } from './useRates';
 import { useFigure } from '../locale/useLocale';
+import { Col } from '../columns/useColumns';
 
 /** The sheet's rates for each grade: a form that sets one from an optional from-date (a new version of the
  *  grade's rate from that date, the one in force; blank is from the beginning of time) through an optional to-date
@@ -272,14 +273,14 @@ function RatePreview({ sheetId }: { sheetId: string }) {
 function PersonDueTotal({ sheetId, personId }: { sheetId: string; personId: number }) {
   const fig = useFigure();
   const totals = useDueTotals(sheetId);
-  return <td data-testid="person-due-total">{fig(totals.get(personId) ?? '')}</td>;
+  return <Col id="due-total"><td data-testid="person-due-total">{fig(totals.get(personId) ?? '')}</td></Col>;
 }
 
 /** A person's excess: how far the sum of their figures is above the sheet's cap. */
 function PersonExcess({ sheetId, personId }: { sheetId: string; personId: number }) {
   const fig = useFigure();
   const excess = useExcess(sheetId);
-  return <td data-testid="person-excess">{fig(excess.get(personId) ?? '')}</td>;
+  return <Col id="excess"><td data-testid="person-excess">{fig(excess.get(personId) ?? '')}</td></Col>;
 }
 
 /** A person's settled-total and open-total: the parts of their due-total (before the cap) from their
@@ -321,9 +322,9 @@ function DueTotal({ sheetId }: { sheetId: string }) {
 
 export const contributions = [
   SheetBody.fill({ order: 5, Component: ({ sheetId }) => <Rates sheetId={sheetId} /> }),
-  PersonColumnHead.fill({ order: 20, Component: () => <th>Due</th> }),
+  PersonColumnHead.fill({ order: 20, Component: () => <Col id="due-total"><th>Due</th></Col> }),
   PersonCells.fill({ order: 20, Component: PersonDueTotal }),
-  PersonColumnHead.fill({ order: 21, Component: () => <th>Excess</th> }),
+  PersonColumnHead.fill({ order: 21, Component: () => <Col id="excess"><th>Excess</th></Col> }),
   PersonCells.fill({ order: 21, Component: PersonExcess }),
   PersonColumnHead.fill({ order: 21.5, Component: () => <><th>Settled</th><th>Open</th></> }),
   PersonCells.fill({ order: 21.5, Component: PersonSettledOpen }),

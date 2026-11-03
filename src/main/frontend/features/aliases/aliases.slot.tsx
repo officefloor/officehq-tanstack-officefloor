@@ -4,6 +4,7 @@ import { postJson } from '../../api/http';
 import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
 import { peopleKey, useAliases, type Person } from '../people/usePeople';
 import { usePersonRowAction } from '../people/usePersonRowAction';
+import { Col } from '../columns/useColumns';
 
 /** Sort as names are compared: ignoring case. */
 function byName(a: string, b: string): number {
@@ -36,7 +37,7 @@ function PersonAliases({ sheetId, personId }: { sheetId: string; personId: numbe
 
   return (
     <>
-      <td data-testid="person-aliases">{names.join(', ')}</td>
+      <Col id="aliases"><td data-testid="person-aliases">{names.join(', ')}</td></Col>
       <td>
         <input
           type="text"
@@ -71,7 +72,7 @@ export const contributions = [
     order: 3,
     Component: () => (
       <>
-        <th>Aliases</th>
+        <Col id="aliases"><th>Aliases</th></Col>
         <th />
       </>
     ),

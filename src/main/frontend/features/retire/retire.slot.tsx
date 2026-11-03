@@ -7,6 +7,7 @@ import { peopleKey, usePeople, type Person } from '../people/usePeople';
 import { poolsKey } from '../pools/usePools';
 import { usePersonRowAction } from '../people/usePersonRowAction';
 import { useShowRetired } from './useShowRetired';
+import { Col } from '../columns/useColumns';
 
 /** A person's retirement: whether they are retired and from when, a line per past retirement (from to the
  *  day unretired), and a date (blank: the sheet's today) and button that retire them, and a button that
@@ -40,7 +41,7 @@ function PersonRetire({ sheetId, personId }: { sheetId: string; personId: number
 
   return (
     <>
-      <td data-testid="person-retired">{p?.retiredFrom ? 'yes' : 'no'}</td>
+      <Col id="retired"><td data-testid="person-retired">{p?.retiredFrom ? 'yes' : 'no'}</td></Col>
       <td data-testid="person-retired-from">{p?.retiredFrom ?? ''}</td>
       <td>
         {(p?.retirements ?? []).map((r, i) => (
@@ -108,7 +109,7 @@ export const contributions = [
     order: 40,
     Component: () => (
       <>
-        <th>Retired</th>
+        <Col id="retired"><th>Retired</th></Col>
         <th>Retired from</th>
         <th>Past retirements</th>
         <th />

@@ -6,6 +6,7 @@ import { claimsKey } from '../claims/useClaims';
 import { peopleKey, usePeople, type Person } from '../people/usePeople';
 import { usePersonRowAction } from '../people/usePersonRowAction';
 import { useFigure } from '../locale/useLocale';
+import { Col } from '../columns/useColumns';
 
 /** A person's statements: how many have been taken, the last one's due-total and date (blank before
  *  the first), and a button that takes one. Taking a statement records their due-total and binds each
@@ -54,9 +55,9 @@ function PersonStatement({ sheetId, personId }: { sheetId: string; personId: num
 
   return (
     <>
-      <td data-testid="person-statement-count">{p?.statementCount ?? 0}</td>
-      <td data-testid="person-stated-total">{fig(p?.statedTotal ?? '')}</td>
-      <td data-testid="person-statement-date">{p?.statementDate ?? ''}</td>
+      <Col id="statement-count"><td data-testid="person-statement-count">{p?.statementCount ?? 0}</td></Col>
+      <Col id="stated-total"><td data-testid="person-stated-total">{fig(p?.statedTotal ?? '')}</td></Col>
+      <Col id="statement-date"><td data-testid="person-statement-date">{p?.statementDate ?? ''}</td></Col>
       <td>
         <input
           type="text"
@@ -104,9 +105,9 @@ export const contributions = [
     order: 30,
     Component: () => (
       <>
-        <th>Statements</th>
-        <th>Stated total</th>
-        <th>Stated on</th>
+        <Col id="statement-count"><th>Statements</th></Col>
+        <Col id="stated-total"><th>Stated total</th></Col>
+        <Col id="statement-date"><th>Stated on</th></Col>
         <th />
       </>
     ),

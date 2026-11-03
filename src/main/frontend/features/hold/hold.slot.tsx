@@ -5,6 +5,7 @@ import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
 import { peopleKey, usePeople, type Person } from '../people/usePeople';
 import { poolsKey } from '../pools/usePools';
 import { usePersonRowAction } from '../people/usePersonRowAction';
+import { Col } from '../columns/useColumns';
 
 /** A person's holds: whether they have any, a line per hold (from – to), and a from-date (blank: the
  *  sheet's today), an optional to-date (blank: open-ended) and a button that adds a hold. Their open
@@ -32,7 +33,7 @@ function PersonHold({ sheetId, personId }: { sheetId: string; personId: number }
 
   return (
     <>
-      <td data-testid="person-hold">{p?.held ? 'yes' : 'no'}</td>
+      <Col id="hold"><td data-testid="person-hold">{p?.held ? 'yes' : 'no'}</td></Col>
       <td>
         {(p?.holds ?? []).map((h, i) => (
           <div key={i} data-testid="person-hold-line">
@@ -84,7 +85,7 @@ export const contributions = [
     order: 45,
     Component: () => (
       <>
-        <th>Held</th>
+        <Col id="hold"><th>Held</th></Col>
         <th>Holds</th>
         <th />
       </>

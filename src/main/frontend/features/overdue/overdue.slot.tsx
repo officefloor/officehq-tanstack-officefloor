@@ -3,6 +3,7 @@ import { SheetBody } from '../../slots/defs/sheetBody';
 import { trimmedSum } from '../rates/useRates';
 import { useOverdue } from './useOverdue';
 import { useFigure } from '../locale/useLocale';
+import { Col } from '../columns/useColumns';
 
 /** A person's overdue count and overdue-total: their claims that count and are overdue, and the sum
  *  of those claims' figures. */
@@ -11,8 +12,8 @@ function PersonOverdue({ sheetId, personId }: { sheetId: string; personId: numbe
   const figures = useOverdue(sheetId).get(personId);
   return (
     <>
-      <td data-testid="person-overdue-count">{figures?.count ?? ''}</td>
-      <td data-testid="person-overdue-total">{fig(figures?.total ?? '')}</td>
+      <Col id="overdue-count"><td data-testid="person-overdue-count">{figures?.count ?? ''}</td></Col>
+      <Col id="overdue-total"><td data-testid="person-overdue-total">{fig(figures?.total ?? '')}</td></Col>
     </>
   );
 }
@@ -33,8 +34,8 @@ function SheetOverdue({ sheetId }: { sheetId: string }) {
 export const contributions = [
   PersonColumnHead.fill({ order: 25, Component: () => (
     <>
-      <th>Overdue</th>
-      <th>Overdue total</th>
+      <Col id="overdue-count"><th>Overdue</th></Col>
+      <Col id="overdue-total"><th>Overdue total</th></Col>
     </>
   ) }),
   PersonCells.fill({ order: 25, Component: PersonOverdue }),

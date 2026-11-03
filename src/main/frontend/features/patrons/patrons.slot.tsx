@@ -7,6 +7,7 @@ import { useClaims } from '../claims/useClaims';
 import { hundredths, money, sumDues } from '../rates/useRates';
 import { useSheetToday } from '../today/useSheetToday';
 import { useFigure } from '../locale/useLocale';
+import { Col } from '../columns/useColumns';
 
 /** The first day (yyyy-mm-dd) of the 90 days up to and including a day. */
 function windowStart(today: string): string {
@@ -73,8 +74,8 @@ function PersonPatrons({ sheetId, personId }: { sheetId: string; personId: numbe
 
   return (
     <>
-      <td data-testid="person-patrons">{labels.join(', ')}</td>
-      <td data-testid="person-backing">{fig(backing)}</td>
+      <Col id="patrons"><td data-testid="person-patrons">{labels.join(', ')}</td></Col>
+      <Col id="backing"><td data-testid="person-backing">{fig(backing)}</td></Col>
       <td>
         <select
           data-testid="person-patron-select"
@@ -113,8 +114,8 @@ export const contributions = [
     order: 50,
     Component: () => (
       <>
-        <th>Patrons</th>
-        <th>Backing</th>
+        <Col id="patrons"><th>Patrons</th></Col>
+        <Col id="backing"><th>Backing</th></Col>
         <th />
       </>
     ),
