@@ -3,7 +3,7 @@ import { crewDue } from '../crews/crewDue';
 import { useCrews } from '../crews/useCrews';
 import { useClaims } from '../claims/useClaims';
 import { useOverdue } from '../overdue/useOverdue';
-import { useAliases, usePeople } from '../people/usePeople';
+import { useAliases, usePeople, useWatched } from '../people/usePeople';
 import { useDueTotals } from '../rates/useDueTotals';
 import { sumDues, trimmedSum } from '../rates/useRates';
 import { useSignedInUser } from '../session/useSession';
@@ -15,7 +15,8 @@ import { useFigure } from '../locale/useLocale';
  *  due-total and overdue-total (as the totals show them, trimmed); and the signed-in user's own figures: the
  *  due-total and overdue-total of the person whose name or an alias is the user's name (ignoring case), blank
  *  when there is no such person; and their crew total: the due-totals of the crews that person leads, added
- *  up, blank when they lead none; and how many REVIEW claims are assigned to them to review. */
+ *  up, blank when they lead none; how many REVIEW claims are assigned to them to review; and their watched
+ *  total: the due-totals of the people they watch, added up (0.00 when they watch no one). */
 function Header({ sheetId }: { sheetId: string }) {
   const fig = useFigure();
   const people = usePeople(sheetId);
@@ -32,6 +33,8 @@ function Header({ sheetId }: { sheetId: string }) {
   const led = mine === undefined ? [] : (crews.data ?? []).filter((c) => c.leadId === mine.id);
   const myReviews = me === '' ? 0 : (claims.data ?? []).filter((c) => c.status === 'REVIEW'
     && (c.reviewAssigned ?? '').trim().toLowerCase() === me).length;
+  const watched = useWatched(sheetId);
+  const watchedDue = sumDues((watched.data ?? []).map((id) => dueTotals.get(id) ?? 'n/a'));
   const myCrewDue = led.length === 0 ? '' : sumDues(led.map((c) => crewDue(c, dueTotals)));
   return (
     <header data-testid="header">
@@ -47,7 +50,8 @@ function Header({ sheetId }: { sheetId: string }) {
       due total <strong data-testid="my-due-total">{fig(mine === undefined ? '' : dueTotals.get(mine.id) ?? '')}</strong> · My
       overdue total <strong data-testid="my-overdue-total">{fig(mine === undefined ? '' : overdueById.get(mine.id)?.total ?? '')}</strong> · My
       crew due total <strong data-testid="my-crew-due-total">{fig(myCrewDue)}</strong> · My reviews{' '}
-      <strong data-testid="my-reviews-count">{myReviews}</strong>
+      <strong data-testid="my-reviews-count">{myReviews}</strong> · Watched due total{' '}
+      <strong data-testid="watched-due-total">{fig(watchedDue)}</strong>
     </header>
   );
 }
