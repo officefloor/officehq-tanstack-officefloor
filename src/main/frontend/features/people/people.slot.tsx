@@ -28,7 +28,8 @@ import { useVisiblePeople } from './useVisiblePeople';
  *  refused edit closes the editor, leaving its error showing. Each person is a <tbody> so features can add
  *  cells and rows of their own to it (slots/defs/personRow). A quick-add bar takes a name and an amount
  *  and adds a draft claim for that person (adding them with the sheet's default grade, A when blank, when the name is new) in one change.
- *  A restricted user's list shows only the people of their crews (see `useVisiblePeople`). */
+ *  A restricted user's list shows only the people of their crews (see `useVisiblePeople`), and the people
+ *  they added on this screen (by either form) until a sheet is loaded again. */
 const SORTS = ['added', 'name', 'grade', 'due-total'] as const;
 type SortKey = (typeof SORTS)[number];
 const asSort = (raw: unknown): SortKey => {
@@ -66,6 +67,10 @@ function sortPeople(people: Person[], by: SortKey, dueTotals: Map<number, string
 function People({ sheetId, user }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId);
   const visible = useVisiblePeople(sheetId, user, people.data);
+  // the people added on this screen since the sheet was loaded: listed even for a restricted user
+  const [addedHere, setAddedHere] = useState<{ sheetId: string; ids: ReadonlySet<number> }>({ sheetId, ids: new Set() });
+  if (addedHere.sheetId !== sheetId) setAddedHere({ sheetId, ids: new Set() });
+  const addHere = (id: number) => setAddedHere((a) => ({ sheetId: a.sheetId, ids: new Set([...a.ids, id]) }));
   const [showRetired] = useShowRetired();
   const [sortBy, setSortBy] = useSearchParam('sortBy', asSort);
   const dueTotals = useDueTotals(sheetId);
@@ -88,7 +93,8 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
         ? postJson<Person>(base, { name: f.name, grade: f.grade, terms: f.terms, termsFrom: f.termsFrom, contact: f.contact, tags: f.tags })
         : postJson<Person>(`${base}/${f.id}`, { name: f.name, grade: f.grade, gradeFrom: f.gradeFrom, terms: f.terms, termsFrom: f.termsFrom, contact: f.contact, tags: f.tags, version: f.version });
     },
-    onSuccess: async () => {
+    onSuccess: async (p, f) => {
+      if (f.id === null) addHere(p.id);
       setEditing(null);
       setName('');
       setGrade('A');
@@ -145,7 +151,8 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
   const quick = useMutation({
     mutationFn: (f: { name: string; amount: string }) =>
       postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/quick`, f),
-    onSuccess: async () => {
+    onSuccess: async (c) => {
+      addHere(c.personId);
       setQuickName('');
       setQuickAmount('');
       await Promise.all([
@@ -354,7 +361,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
             <th />
           </tr>
         </thead>
-        {sortPeople((people.data ?? []).filter((p) => (showRetired || !p.retiredFrom) && visible !== undefined && (visible === 'all' || visible.has(p.id))), sortBy, dueTotals).map((p) => (
+        {sortPeople((people.data ?? []).filter((p) => (showRetired || !p.retiredFrom) && (addedHere.ids.has(p.id) || (visible !== undefined && (visible === 'all' || visible.has(p.id))))), sortBy, dueTotals).map((p) => (
           <tbody key={p.id} data-testid={`person-row-${p.id}`}>
             <tr>
               <td data-testid="person-name">{shownName(p)}</td>
