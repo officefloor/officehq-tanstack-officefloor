@@ -1,0 +1,174 @@
+diff --git a/src/main/frontend/features/importpeople/importPeople.slot.tsx b/src/main/frontend/features/importpeople/importPeople.slot.tsx
+index 2d5abfee3..0b9d53b2c 100644
+--- a/src/main/frontend/features/importpeople/importPeople.slot.tsx
++++ b/src/main/frontend/features/importpeople/importPeople.slot.tsx
+@@ -6,15 +6,16 @@ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { peopleKey } from '../people/usePeople';
+ 
+ /** An import box: lines of name,grade,terms,contact (the last two may be absent or blank) each add a
+- *  person, in order, as the person form would. The server checks every line first: one refused line
+- *  (or a name or contact given twice) refuses the import and adds no one. Shows how many were added
++ *  person, in order, as the person form would; a line naming someone on the sheet (by name or alias)
++ *  updates them instead. The server checks every line first: one refused line (or a name or contact
++ *  given twice) refuses the import and changes no one. Shows how many were added and how many updated
+  *  (gone while it runs). */
+ function ImportPeople({ sheetId }: { sheetId: string }) {
+   const [text, setText] = useState('');
+   const queryClient = useQueryClient();
+   const submitOnce = useSingleFlight();
+   const importing = useMutation({
+-    mutationFn: (t: string) => postJson<{ added: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/import`, { text: t }),
++    mutationFn: (t: string) => postJson<{ added: number; updated: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/import`, { text: t }),
+     // The count shows as soon as the import is done; the new rows follow once re-read.
+     onSuccess: () => {
+       void queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+@@ -44,12 +45,13 @@ function ImportPeople({ sheetId }: { sheetId: string }) {
+         />
+       </label>{' '}
+       <button type="submit" data-testid="import-submit" disabled={importing.isPending}>
+-        Add people
++        Import people
+       </button>
+       {importing.isSuccess && (
+         <>
+           {' '}
+-          Added <strong data-testid="import-added">{importing.data.added}</strong>
++          Added <strong data-testid="import-added">{importing.data.added}</strong>, updated{' '}
++          <strong data-testid="import-updated">{importing.data.updated}</strong>
+         </>
+       )}
+       {importing.isError && <p data-testid="import-error">{importing.error.message}</p>}
+diff --git a/src/main/java/net/officefloor/hq/app/importing/ImportPeople.java b/src/main/java/net/officefloor/hq/app/importing/ImportPeople.java
+index ae4dc98d2..9b6265847 100644
+--- a/src/main/java/net/officefloor/hq/app/importing/ImportPeople.java
++++ b/src/main/java/net/officefloor/hq/app/importing/ImportPeople.java
+@@ -1,41 +1,96 @@
+ package net.officefloor.hq.app.importing;
+ 
++import java.time.LocalDate;
++import java.util.ArrayList;
++import java.util.HashSet;
++import java.util.List;
++import java.util.Set;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.CurrentUser;
+ import net.officefloor.hq.app.person.NewPerson;
++import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.person.PersonRequest;
+ import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.server.http.ServerHttpConnection;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+-/** Add a person per imported line, in order, as the person form does. One change: every line is checked
+- *  first, so a refused line adds no one and writes no audit record; otherwise each person is added and
+- *  written as PERSON_ADDED. */
++/** Add or update a person per imported line, in order. A line whose name is a person's name or alias on the
++ *  sheet (ignoring case) updates that person as the person form would save them with their own name: the
++ *  grade is recorded from the sheet's today (none when it is unchanged), and their terms and contact are set
++ *  when the line gives them; written as PERSON_EDITED. Any other line adds a person as the person form does,
++ *  written as PERSON_ADDED. One change: every line is checked first, so a refused line (or two lines naming
++ *  the same person) changes no one and writes no audit record. */
+ public class ImportPeople {
+     public void importPeople(@PathVariable("sheetId") String sheetId, @Val ImportInput input,
+-            ServerHttpConnection connection, PersonRepository repository, Audit audit, Rollup rollup,
+-            Out<ImportResult> result) throws BadRequestException {
++            ServerHttpConnection connection, PersonRepository repository, SheetRepository sheets, Audit audit,
++            Rollup rollup, Out<ImportResult> result) throws BadRequestException {
+         String by = CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
+         if (!repository.sheetExists(id)) {
+             throw new BadRequestException("no such sheet");
+         }
++        List<Person> matches = new ArrayList<>();
++        Set<Long> matched = new HashSet<>();
+         int n = 0;
+         for (PersonRequest person : input.people()) {
+             n++;
+             try {
+-                NewPerson.checkFree(repository, id, person);
++                Person current = repository.findByName(id, person.name());
++                if (current == null) {
++                    NewPerson.checkFree(repository, id, person);
++                } else {
++                    if (!matched.add(current.id())) {
++                        throw new BadRequestException(current.name() + " is given twice in the import");
++                    }
++                    if (!person.contact().isEmpty() && repository.contactTaken(id, person.contact(), current.id())) {
++                        throw new BadRequestException("contact is already in use");
++                    }
++                }
++                matches.add(current);
+             } catch (BadRequestException e) {
+                 throw new BadRequestException("line " + n + ": " + e.getMessage());
+             }
+         }
+-        for (PersonRequest person : input.people()) {
+-            NewPerson.add(repository, audit, rollup, id, by, person);
++        LocalDate today = sheets.today(id);
++        int added = 0;
++        int updated = 0;
++        for (int i = 0; i < input.people().size(); i++) {
++            PersonRequest person = input.people().get(i);
++            Person current = matches.get(i);
++            if (current == null) {
++                NewPerson.add(repository, audit, rollup, id, by, person);
++                added++;
++            } else {
++                update(repository, audit, rollup, id, by, today, current, person);
++                updated++;
++            }
++        }
++        result.set(new ImportResult(added, updated));
++    }
++
++    private static void update(PersonRepository repository, Audit audit, Rollup rollup, String id, String by,
++            LocalDate today, Person current, PersonRequest person) throws BadRequestException {
++        Integer terms = person.terms().isEmpty() ? current.terms() : Integer.valueOf(person.terms());
++        String contact = person.contact().isEmpty() ? current.contact() : person.contact();
++        boolean regrade = !person.grade().equals(current.grade());
++        boolean reterm = !java.util.Objects.equals(terms, current.terms());
++        boolean recontact = !java.util.Objects.equals(contact, current.contact());
++        Rollup.Snapshot before = rollup.take(id);
++        if (!repository.update(id, current.id(), current.version(), current.name(), terms, contact)) {
++            throw new BadRequestException("someone else has saved " + current.name() + "; import again");
++        }
++        if (regrade) {
++            repository.grade(id, current.id(), person.grade(), today);
+         }
+-        result.set(new ImportResult(input.people().size()));
++        Person saved = repository.find(id, current.id());
++        audit.record("PERSON_EDITED sheet=" + id + " by=" + by + " name=" + saved.name()
++                + " grade=" + saved.grade() + (reterm ? " terms=" + (terms == null ? "" : terms) : "")
++                + (recontact ? " contact=" + (contact == null ? "" : contact) : ""));
++        rollup.record(id, by, before);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/importing/ImportResult.java b/src/main/java/net/officefloor/hq/app/importing/ImportResult.java
+index 627437b8c..6b255cdf9 100644
+--- a/src/main/java/net/officefloor/hq/app/importing/ImportResult.java
++++ b/src/main/java/net/officefloor/hq/app/importing/ImportResult.java
+@@ -1,5 +1,5 @@
+ package net.officefloor.hq.app.importing;
+ 
+-/** How many people an import added. */
+-public record ImportResult(int added) {
++/** How many people an import added, and how many it updated. */
++public record ImportResult(int added, int updated) {
+ }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/import.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/import.POST.yml
+index e8f933f60..d0ca51a33 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/import.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/import.POST.yml
+@@ -1,5 +1,5 @@
+-# Import people: lines of name,grade,terms,contact, each added as the person form adds them. One change:
+-# if any line is refused (by the form's rules, or a name or contact given twice), no one is added.
++# Import people: lines of name,grade,terms,contact, each added as the person form adds them, or updating the
++# person on the sheet the name (or alias) matches. One change: if any line is refused, no one is changed.
+ guard:
+   class: net.officefloor.hq.app.settings.RefuseViewer
+   next: validate
