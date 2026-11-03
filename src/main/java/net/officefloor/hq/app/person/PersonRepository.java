@@ -486,9 +486,10 @@ public class PersonRepository {
 
         // A closed period's figure follows the claims.
         jdbc.update("UPDATE period_person_total t SET total = total + (SELECT f.total FROM period_person_total f"
-                + " WHERE f.period_id = t.period_id AND f.person_id = ?) WHERE t.sheet_id = ? AND t.person_id = ?"
+                + " WHERE f.period_id = t.period_id AND f.person_id = ?), carried = carried + (SELECT f.carried FROM"
+                + " period_person_total f WHERE f.period_id = t.period_id AND f.person_id = ?) WHERE t.sheet_id = ? AND t.person_id = ?"
                 + " AND EXISTS (SELECT 1 FROM period_person_total f WHERE f.period_id = t.period_id AND f.person_id = ?)",
-                fromId, sheetId, intoId, fromId);
+                fromId, fromId, sheetId, intoId, fromId);
         jdbc.update("DELETE FROM period_person_total t WHERE t.sheet_id = ? AND t.person_id = ? AND EXISTS (SELECT 1"
                 + " FROM period_person_total o WHERE o.period_id = t.period_id AND o.person_id = ?)", sheetId, fromId, intoId);
         jdbc.update("UPDATE period_person_total SET person_id = ? WHERE sheet_id = ? AND person_id = ?", intoId, sheetId, fromId);

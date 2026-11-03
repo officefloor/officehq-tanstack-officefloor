@@ -19,7 +19,7 @@ public class PeriodRepository {
     private static final RowMapper<Period> ROW = (rs, i) -> new Period(rs.getLong("id"), rs.getString("name"),
             rs.getDate("from_date").toLocalDate().toString(), rs.getDate("to_date").toLocalDate().toString(),
             rs.getBoolean("closed"), rs.getBigDecimal("closed_total") == null ? null
-                    : rs.getBigDecimal("closed_total").setScale(2).toPlainString(), Map.of(),
+                    : rs.getBigDecimal("closed_total").setScale(2).toPlainString(), Map.of(), Map.of(),
             rs.getBoolean("soft_closed"), (Integer) rs.getObject("claim_cap", Integer.class));
 
     private static final String COLUMNS = "id, name, from_date, to_date, closed, closed_total, soft_closed, claim_cap";
@@ -47,13 +47,16 @@ public class PeriodRepository {
         List<Period> periods = jdbc.query("SELECT " + COLUMNS + " FROM period WHERE sheet_id = ? ORDER BY from_date",
                 ROW, sheetId);
         Map<Long, Map<String, String>> totals = new HashMap<>();
-        jdbc.query("SELECT period_id, person_id, total FROM period_person_total WHERE sheet_id = ? ORDER BY person_id",
+        Map<Long, Map<String, String>> carried = new HashMap<>();
+        jdbc.query("SELECT period_id, person_id, total, carried FROM period_person_total WHERE sheet_id = ? ORDER BY person_id",
                 rs -> {
                     totals.computeIfAbsent(rs.getLong("period_id"), k -> new LinkedHashMap<>())
                             .put(Long.toString(rs.getLong("person_id")), rs.getBigDecimal("total").setScale(2).toPlainString());
+                    carried.computeIfAbsent(rs.getLong("period_id"), k -> new LinkedHashMap<>())
+                            .put(Long.toString(rs.getLong("person_id")), rs.getBigDecimal("carried").setScale(2).toPlainString());
                 }, sheetId);
         return periods.stream().map(p -> new Period(p.id(), p.name(), p.from(), p.to(), p.closed(), p.closedTotal(),
-                totals.getOrDefault(p.id(), Map.of()), p.softClosed(), p.cap())).toList();
+                totals.getOrDefault(p.id(), Map.of()), carried.getOrDefault(p.id(), Map.of()), p.softClosed(), p.cap())).toList();
     }
 
     /** The sheet's period of this name (exactly); null when there is none. */
@@ -70,18 +73,20 @@ public class PeriodRepository {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    /** Close (or soft-close) a period, fixing afresh its due-total and each person's due-total for it (by person id). */
-    public void close(String sheetId, long periodId, BigDecimal total, Map<Long, BigDecimal> personTotals, boolean soft) {
+    /** Close (or soft-close) a period, fixing afresh its due-total and each person's due-total and carried figure for
+     *  it (by person id). */
+    public void close(String sheetId, long periodId, BigDecimal total, Map<Long, BigDecimal> personTotals,
+            Map<Long, BigDecimal> personCarried, boolean soft) {
         jdbc.update("DELETE FROM period_person_total WHERE period_id = ? AND sheet_id = ?", periodId, sheetId);
         jdbc.update("UPDATE period SET closed = ?, soft_closed = ?, closed_total = ? WHERE id = ? AND sheet_id = ?",
                 !soft, soft, total, periodId, sheetId);
         for (Map.Entry<Long, BigDecimal> e : personTotals.entrySet()) {
-            jdbc.update("INSERT INTO period_person_total (period_id, sheet_id, person_id, total) VALUES (?, ?, ?, ?)",
-                    periodId, sheetId, e.getKey(), e.getValue());
+            jdbc.update("INSERT INTO period_person_total (period_id, sheet_id, person_id, total, carried) VALUES (?, ?, ?, ?, ?)",
+                    periodId, sheetId, e.getKey(), e.getValue(), personCarried.getOrDefault(e.getKey(), BigDecimal.ZERO));
         }
     }
 
-    /** Reopen a closed or soft-closed period, dropping its fixed due-total. */
+    /** Reopen a closed or soft-closed period, dropping its fixed due-total and figures. */
     public void reopen(String sheetId, long periodId) {
         jdbc.update("DELETE FROM period_person_total WHERE period_id = ? AND sheet_id = ?", periodId, sheetId);
         jdbc.update("UPDATE period SET closed = FALSE, soft_closed = FALSE, closed_total = NULL WHERE id = ? AND sheet_id = ?", periodId,
@@ -138,6 +143,6 @@ public class PeriodRepository {
             }
             return ps;
         }, keys);
-        return new Period(keys.getKey().longValue(), name, from.toString(), to.toString(), false, null, Map.of(), false, cap);
+        return new Period(keys.getKey().longValue(), name, from.toString(), to.toString(), false, null, Map.of(), Map.of(), false, cap);
     }
 }

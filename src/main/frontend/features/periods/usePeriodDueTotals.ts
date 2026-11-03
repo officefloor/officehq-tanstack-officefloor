@@ -55,7 +55,8 @@ export function usePeriodDueTotals(sheetId: string, byStatusNow = false): Map<st
 /** Each person's carried figure for each period, by person id then period name: the figures (as the
  *  period figures count them) of their claims that count whose due-by falls in a period ending before
  *  this one starts and that were still OPEN or PENDING at the end of this period's last day, by the
- *  status log (see `statusOn`). 0.00 when nothing is carried. */
+ *  status log (see `statusOn`). 0.00 when nothing is carried. The one fixed when the period was closed while it is
+ *  closed or soft-closed (0.00 for a person added since). */
 export function usePersonPeriodCarried(sheetId: string): Map<number, Map<string, string>> {
   const periods = usePeriods(sheetId);
   const claims = useClaims(sheetId);
@@ -72,15 +73,17 @@ export function usePersonPeriodCarried(sheetId: string): Map<number, Map<string,
       const earlier = (periods.data ?? []).filter((q) => q.to < p.from);
       byPeriod.set(
         p.name,
-        sumDues(
-          own
-            .filter((c) => earlier.some((q) => q.from <= c.dueBy && c.dueBy <= q.to))
-            .filter((c) => {
-              const status = statusOn(c, p.to);
-              return (status === 'OPEN' || status === 'PENDING') && countsOn(c, p.to, holds, today);
-            })
-            .map((c) => claimDueNow(c, claims.data, rateFor(rates.data, gradeOn(person, c.date), c.date, c.added), settings, today, gradeOn(person, c.date))),
-        ),
+        p.closed || p.softClosed
+          ? (p.personCarried[String(person.id)] ?? '0.00')
+          : sumDues(
+              own
+                .filter((c) => earlier.some((q) => q.from <= c.dueBy && c.dueBy <= q.to))
+                .filter((c) => {
+                  const status = statusOn(c, p.to);
+                  return (status === 'OPEN' || status === 'PENDING') && countsOn(c, p.to, holds, today);
+                })
+                .map((c) => claimDueNow(c, claims.data, rateFor(rates.data, gradeOn(person, c.date), c.date, c.added), settings, today, gradeOn(person, c.date))),
+            ),
       );
     }
     carried.set(person.id, byPeriod);

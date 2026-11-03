@@ -20,7 +20,9 @@ import org.springframework.stereotype.Service;
  *  due-by falls in it that count by the status they had at the end of its last day, a person's open (OPEN or PENDING) claims dated
  *  within one of their holds left out unless bound by a statement, skipping those with none), so later changes to
  *  rates do not alter it; and each person's due-total for it likewise, for every person on the sheet (0.00 for one
- *  with nothing in it). Writes PERIOD_CLOSED, ending auto=yes when closed by the sheet's grace days. */
+ *  with nothing in it), and each person's carried figure for it (their claims that count whose due-by falls in a
+ *  period ending before it starts and that were still OPEN or PENDING at the end of its last day, 0.00 for one with
+ *  none). Writes PERIOD_CLOSED, ending auto=yes when closed by the sheet's grace days. */
 @Service
 public class PeriodCloser {
 
@@ -52,26 +54,36 @@ public class PeriodCloser {
         Map<Long, List<Hold>> holds = new java.util.HashMap<>();
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         Map<Long, BigDecimal> personTotals = new LinkedHashMap<>();
+        Map<Long, BigDecimal> personCarried = new LinkedHashMap<>();
+        List<Period> earlier = periods.list(sheetId).stream().filter(q -> LocalDate.parse(q.to()).isBefore(from)).toList();
         for (Person p : people.list(sheetId)) {
             personTotals.put(p.id(), BigDecimal.ZERO.setScale(2));
+            personCarried.put(p.id(), BigDecimal.ZERO.setScale(2));
             holds.put(p.id(), p.liveHolds(today));
         }
         Map<Long, String> statusesThen = claims.statusesOn(sheetId, to);
         for (Claim c : claims.list(sheetId)) {
+            String then = statusesThen.get(c.id());
+            if (!c.countsAs(then, holds.getOrDefault(c.personId(), List.of()), today)) continue;
             LocalDate on = LocalDate.parse(c.dueBy());
-            if (on.isBefore(from) || on.isAfter(to)
-                    || !c.countsAs(statusesThen.get(c.id()), holds.getOrDefault(c.personId(), List.of()), today)) continue;
+            boolean in = !on.isBefore(from) && !on.isAfter(to);
+            boolean carried = (then.equals("OPEN") || then.equals("PENDING")) && earlier.stream()
+                    .anyMatch(q -> !on.isBefore(LocalDate.parse(q.from())) && !on.isAfter(LocalDate.parse(q.to())));
+            if (!in && !carried) continue;
             BigDecimal now = claims.dueNow(sheetId, c);
-            if (now != null) {
+            if (now == null) continue;
+            if (in) {
                 total = total.add(now);
                 personTotals.merge(c.personId(), now, BigDecimal::add);
             }
+            if (carried) personCarried.merge(c.personId(), now, BigDecimal::add);
         }
         String shown = total.setScale(2).toPlainString();
-        periods.close(sheetId, found.id(), total, personTotals, soft);
+        periods.close(sheetId, found.id(), total, personTotals, personCarried, soft);
         audit.record((soft ? "PERIOD_SOFT_CLOSED" : "PERIOD_CLOSED") + " sheet=" + sheetId + " by=" + by + " period=" + found.name() + " total=" + shown
                 + (auto ? " auto=yes" : ""));
         return new Period(found.id(), found.name(), found.from(), found.to(), !soft, shown, personTotals.entrySet().stream().collect(Collectors.toMap(e -> Long.toString(e.getKey()),
+                e -> e.getValue().setScale(2).toPlainString(), (a, b) -> a, LinkedHashMap::new)), personCarried.entrySet().stream().collect(Collectors.toMap(e -> Long.toString(e.getKey()),
                 e -> e.getValue().setScale(2).toPlainString(), (a, b) -> a, LinkedHashMap::new)), soft, found.cap());
     }
 
