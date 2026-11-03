@@ -131,8 +131,9 @@ public class PoolRepository {
      *  neither retired nor held on the sheet's today;
      *  each such member's cut is the pot times their share divided by the shares of the members with a cut added
      *  up, rounded half to even to two decimals (0.00 for any other member, and for every member when none has a
-     *  cut); the remainder, the pot minus the cuts added up, goes to the member with a cut with the largest share
-     *  (the earliest added on a tie), so the cuts total exactly the pot. */
+     *  cut); the remainder, the pot minus the cuts added up, goes to the member with the smallest non-zero cut
+     *  (the latest added on a tie; a member with no cut gets none), or when no cut is non-zero to the last member
+     *  with a share, so the cuts total exactly the pot. */
     private static List<PoolMember> cut(List<PoolMember> members, BigDecimal pot, Set<Long> held) {
         List<Boolean> withCut = new ArrayList<>();
         BigDecimal shares = BigDecimal.ZERO;
@@ -142,7 +143,8 @@ public class PoolRepository {
             if (has) shares = shares.add(new BigDecimal(m.share()));
         }
         List<BigDecimal> cuts = new ArrayList<>();
-        int largest = -1;
+        int smallest = -1;
+        int lastWithShare = -1;
         BigDecimal sum = BigDecimal.ZERO;
         for (int i = 0; i < members.size(); i++) {
             PoolMember m = members.get(i);
@@ -152,11 +154,13 @@ public class PoolRepository {
                     : BigDecimal.ZERO.setScale(2);
             cuts.add(cut);
             sum = sum.add(cut);
-            if (has && (largest < 0 || share.compareTo(new BigDecimal(members.get(largest).share())) > 0)) {
-                largest = i;
+            if (has && share.signum() > 0) lastWithShare = i;
+            if (has && cut.signum() != 0 && (smallest < 0 || cut.compareTo(cuts.get(smallest)) <= 0)) {
+                smallest = i;
             }
         }
-        if (largest >= 0) cuts.set(largest, cuts.get(largest).add(pot.subtract(sum)));
+        int to = smallest >= 0 ? smallest : lastWithShare;
+        if (to >= 0) cuts.set(to, cuts.get(to).add(pot.subtract(sum)));
         List<PoolMember> cut = new ArrayList<>();
         for (int i = 0; i < members.size(); i++) {
             PoolMember m = members.get(i);
