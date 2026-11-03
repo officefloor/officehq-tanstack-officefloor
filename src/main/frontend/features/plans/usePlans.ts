@@ -4,8 +4,11 @@ import { getJson } from '../../api/http';
 /** A plan's pause: from the day it was paused to the day it was resumed (null while still paused). */
 export type PlanPause = { from: string; to: string | null };
 
+/** A change of a plan's amount: the day it was made and the new amount (two decimals). */
+export type PlanChange = { on: string; amount: string };
+
 /** A person's plan: an amount (two decimals), a start date, every N days or monthly on a day of the month (the other null), an end date, how many claims it
- *  has made so far, whether it is paused now, and its pauses in the order made. */
+ *  has made so far, whether it is paused now, its pauses in the order made, and its amount changes, oldest first. */
 export type Plan = {
   id: number;
   personId: number;
@@ -17,6 +20,7 @@ export type Plan = {
   generated: number;
   paused: boolean;
   pauses: PlanPause[];
+  changes: PlanChange[];
 };
 
 export function plansKey(sheetId: string) {

@@ -54,10 +54,10 @@ public class PlanRepository {
             return ps;
         }, keys);
         return new Plan(keys.getKey().longValue(), personId, money(input.amount()), input.start().toString(),
-                input.every(), input.day(), input.end().toString(), 0, false, List.of());
+                input.every(), input.day(), input.end().toString(), 0, false, List.of(), List.of());
     }
 
-    /** The sheet's plans, in the order they were added, each with how many claims it has made and its pauses. */
+    /** The sheet's plans, in the order they were added, each with how many claims it has made, its pauses and its amount changes. */
     public List<Plan> list(String sheetId) {
         Map<Long, List<PlanPause>> pauses = new HashMap<>();
         jdbc.query("SELECT plan_id, paused_on, resumed_on FROM plan_pause WHERE sheet_id = ? ORDER BY id",
@@ -65,6 +65,12 @@ public class PlanRepository {
                     Date to = rs.getDate("resumed_on");
                     pauses.computeIfAbsent(rs.getLong("plan_id"), k -> new ArrayList<>()).add(new PlanPause(
                             rs.getDate("paused_on").toLocalDate().toString(), to == null ? null : to.toLocalDate().toString()));
+                }, sheetId);
+        Map<Long, List<PlanChange>> changes = new HashMap<>();
+        jdbc.query("SELECT plan_id, changed_on, amount FROM plan_change WHERE sheet_id = ? ORDER BY id",
+                rs -> {
+                    changes.computeIfAbsent(rs.getLong("plan_id"), k -> new ArrayList<>()).add(new PlanChange(
+                            rs.getDate("changed_on").toLocalDate().toString(), money(rs.getBigDecimal("amount"))));
                 }, sheetId);
         return jdbc.query("SELECT p.id, p.person_id, p.amount, p.start_date, p.every_days, p.day_of_month, p.end_date,"
                 + " (SELECT COUNT(*) FROM plan_claim c WHERE c.plan_id = p.id) AS generated"
@@ -75,7 +81,8 @@ public class PlanRepository {
                             rs.getDate("start_date").toLocalDate().toString(), rs.getObject("every_days", Integer.class),
                             rs.getObject("day_of_month", Integer.class),
                             rs.getDate("end_date").toLocalDate().toString(), rs.getInt("generated"),
-                            mine.stream().anyMatch(p -> p.to() == null), mine);
+                            mine.stream().anyMatch(p -> p.to() == null), mine,
+                            changes.getOrDefault(rs.getLong("id"), List.of()));
                 },
                 sheetId);
     }
@@ -107,6 +114,14 @@ public class PlanRepository {
     public void resume(long planId, LocalDate on) {
         jdbc.update("UPDATE plan_pause SET resumed_on = ? WHERE plan_id = ? AND resumed_on IS NULL", Date.valueOf(on),
                 planId);
+    }
+
+    /** Change the plan's amount from a day, keeping the change; answers the new amount (two decimals). */
+    public String changeAmount(String sheetId, long planId, LocalDate on, BigDecimal amount) {
+        jdbc.update("UPDATE plan SET amount = ? WHERE sheet_id = ? AND id = ?", amount, sheetId, planId);
+        jdbc.update("INSERT INTO plan_change (sheet_id, plan_id, changed_on, amount) VALUES (?, ?, ?, ?)", sheetId,
+                planId, Date.valueOf(on), amount);
+        return money(amount);
     }
 
     /** The dates a plan has already made a claim for. */

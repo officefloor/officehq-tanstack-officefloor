@@ -49,8 +49,9 @@ export function nextPlanDates(plan: Plan, today: string): string[] {
   return out;
 }
 
-/** One plan's row: its figures, next dates and whether it is paused, with buttons that pause and resume it. A
- *  refused pause or resume shows an error on the row, gone when the next one is pressed. */
+/** One plan's row: its figures, next dates and whether it is paused, with buttons that pause and resume it, an
+ *  entry that changes its amount from the sheet's today, and its amount changes, oldest first. A refused pause,
+ *  resume or change shows an error on the row, gone when the next one is pressed or the entry is changed. */
 function PlanRow({ sheetId, plan, today }: { sheetId: string; plan: Plan; today: string | undefined }) {
   const fig = useFigure();
   const queryClient = useQueryClient();
@@ -60,9 +61,25 @@ function PlanRow({ sheetId, plan, today }: { sheetId: string; plan: Plan; today:
       postJson<{ plans: Plan[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/plans/${plan.id}/${action}`, {}),
     onSuccess: (data) => queryClient.setQueryData(plansKey(sheetId), data.plans),
   });
+  const [amount, setAmount] = useState('');
+  const change = useMutation({
+    mutationFn: (value: string) =>
+      postJson<{ plans: Plan[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/plans/${plan.id}/amount`, { amount: value }),
+    onSuccess: (data) => {
+      setAmount('');
+      queryClient.setQueryData(plansKey(sheetId), data.plans);
+    },
+  });
+  const save = () =>
+    submitOnce(() => {
+      toggle.reset();
+      change.reset();
+      return change.mutateAsync(amount.trim());
+    });
   const press = (action: 'pause' | 'resume') =>
     submitOnce(() => {
       toggle.reset();
+      change.reset();
       return toggle.mutateAsync(action);
     });
   return (
@@ -82,7 +99,28 @@ function PlanRow({ sheetId, plan, today }: { sheetId: string; plan: Plan; today:
         <button type="button" data-testid="plan-resume" disabled={toggle.isPending} onClick={() => press('resume')}>
           Resume
         </button>
+        <input
+          type="text"
+          placeholder="new amount"
+          data-testid="plan-amount"
+          value={amount}
+          onChange={(e) => {
+            setAmount(e.target.value);
+            change.reset();
+          }}
+        />{' '}
+        <button type="button" data-testid="plan-amount-save" disabled={change.isPending} onClick={save}>
+          Save amount
+        </button>
         {toggle.isError && <span data-testid="plan-error">{toggle.error.message}</span>}
+        {change.isError && <span data-testid="plan-error">{change.error.message}</span>}
+      </td>
+      <td>
+        {(plan.changes ?? []).map((c, i) => (
+          <div key={i} data-testid="plan-change-line">
+            {c.on} amount={c.amount}
+          </div>
+        ))}
       </td>
     </tr>
   );
@@ -138,6 +176,7 @@ function PersonPlans({ sheetId, personId }: { sheetId: string; personId: number 
                 <th>Next dates</th>
                 <th>Paused</th>
                 <th></th>
+                <th>Changes</th>
               </tr>
             </thead>
             <tbody>
