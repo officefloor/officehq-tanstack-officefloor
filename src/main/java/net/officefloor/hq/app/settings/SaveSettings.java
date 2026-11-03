@@ -110,6 +110,11 @@ public class SaveSettings {
             repository.setFiscalStartMonth(id, input.fiscalStartMonth());
             audit.record(prefix + "fiscal-start-month value=" + input.fiscalStartMonth());
         }
+        if (input.setsAlertThreshold()) {
+            repository.setAlertThreshold(id, input.alertThreshold());
+            audit.record(prefix + "alert-threshold value="
+                    + (input.alertThreshold() == null ? "" : SettingsRepository.money(input.alertThreshold())));
+        }
         input.permissions().forEach((action, roles) -> {
             repository.setPermission(id, action, roles);
             audit.record(prefix + "perm-" + action + " value=" + roles);

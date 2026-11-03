@@ -50,12 +50,14 @@ public class SettingsRepository {
         LocalDate numbering = periodNumberingFrom(sheetId);
         LocalDate entry = entryDate(sheetId);
         BigDecimal pot = pot(sheetId);
+        BigDecimal alert = alertThreshold(sheetId);
         return new Settings(limit == null ? null : money(limit), money(floor(sheetId, today)), terms(sheetId, today),
                 money(latePct(sheetId, today)), roles, policy == null ? null : policy.toString(),
                 numbering == null ? null : numbering.toString(), gradeTerms(sheetId, today),
                 cap == null ? null : money(cap), dated(sheetId), permissions(sheetId), graceDays(sheetId),
                 delegations(sheetId), entry == null ? null : entry.toString(), holidays(sheetId),
-                voidReasons(sheetId), pot == null ? null : money(pot), parent(sheetId), fiscalStartMonth(sheetId));
+                voidReasons(sheetId), pot == null ? null : money(pot), parent(sheetId), fiscalStartMonth(sheetId),
+                alert == null ? null : money(alert));
     }
 
     /** The sheet's today; the real date when there is no such sheet. */
@@ -268,6 +270,17 @@ public class SettingsRepository {
 
     public void setPot(String sheetId, BigDecimal pot) {
         jdbc.update("UPDATE sheet SET pot = ? WHERE id = ?", pot, sheetId);
+    }
+
+    /** The sheet's alert threshold; null when blank (off). */
+    public BigDecimal alertThreshold(String sheetId) {
+        List<BigDecimal> found = jdbc.query("SELECT alert_threshold FROM sheet WHERE id = ?",
+                (rs, i) -> rs.getBigDecimal("alert_threshold"), sheetId);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    public void setAlertThreshold(String sheetId, BigDecimal threshold) {
+        jdbc.update("UPDATE sheet SET alert_threshold = ? WHERE id = ?", threshold, sheetId);
     }
 
     /** The month (1 to 12) the sheet's fiscal year starts in; 1 unless set. */
