@@ -52,6 +52,7 @@ export type Claim = {
   ref: string | null;
   tags: string | null;
   voidReason: string | null;
+  waived: boolean;
   log: string[];
   comments: string[];
   lines: string[];

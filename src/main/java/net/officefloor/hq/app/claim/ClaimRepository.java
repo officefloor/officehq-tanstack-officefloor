@@ -22,7 +22,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no, settled_due, opened_by, stated, stated_due, corrects, due_by, stated_na, deferred_until, proofs, split_from, late_entry, reminded, ref, tags, void_reason,"
+    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no, settled_due, opened_by, stated, stated_due, corrects, due_by, stated_na, deferred_until, proofs, split_from, late_entry, reminded, ref, tags, void_reason, waived,"
             + " (status = 'OPEN' AND deferred_until IS NOT NULL AND deferred_until > (SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id)) AS deferred";
 
     private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getLong("person_id"),
@@ -36,7 +36,7 @@ public class ClaimRepository {
             rs.getBoolean("deferred"), rs.getInt("proofs"), rs.getString("split_from"),
             rs.getBoolean("late_entry"),
             rs.getDate("reminded") == null ? null : rs.getDate("reminded").toLocalDate().toString(),
-            rs.getString("ref"), rs.getString("tags"), rs.getString("void_reason"));
+            rs.getString("ref"), rs.getString("tags"), rs.getString("void_reason"), rs.getBoolean("waived"));
 
     /** The grade a person (sheet, person id) has on a date: the one with the latest from-date on
      *  or before it, the first one they were given applying from the beginning of time. */
@@ -341,7 +341,7 @@ public class ClaimRepository {
     /** The late charge on a claim's figure now (see {@link #dueNow}); zero when it is not overdue. */
     private BigDecimal lateCharge(String sheetId, Claim claim, BigDecimal figure) {
         BigDecimal charge = BigDecimal.ZERO.setScale(2);
-        if (!claim.open() || claim.deferred()) return charge;
+        if (!claim.open() || claim.deferred() || claim.waived()) return charge;
         List<Date> found = jdbc.queryForList("SELECT today FROM sheet WHERE id = ?", Date.class, sheetId);
         if (found.isEmpty()) return charge;
         LocalDate today = found.get(0).toLocalDate();
@@ -469,9 +469,9 @@ public class ClaimRepository {
             jdbc.update(c -> {
                 PreparedStatement ps = c.prepareStatement("INSERT INTO claim (sheet_id, person_id, amount, claim_date, note,"
                         + " status, settled_due, opened_by, corrects, due_by, deferred_until, proofs, split_from, late_entry,"
-                        + " reminded, tags, void_reason, edited_by, stated, stated_due, stated_na) SELECT ?, ?, amount, claim_date, note,"
+                        + " reminded, tags, void_reason, edited_by, stated, stated_due, stated_na, waived) SELECT ?, ?, amount, claim_date, note,"
                         + " status, settled_due, opened_by, corrects, due_by, deferred_until, proofs, split_from, late_entry,"
-                        + " reminded, tags, void_reason, edited_by, stated, stated_due, stated_na FROM claim WHERE id = ? AND sheet_id = ?", new String[] { "id" });
+                        + " reminded, tags, void_reason, edited_by, stated, stated_due, stated_na, waived FROM claim WHERE id = ? AND sheet_id = ?", new String[] { "id" });
                 ps.setString(1, toSheet);
                 ps.setLong(2, toPersonId);
                 ps.setLong(3, claimId);
@@ -535,6 +535,12 @@ public class ClaimRepository {
             return null;
         }
         return jdbc.queryForObject("SELECT proofs FROM claim WHERE id = ? AND sheet_id = ?", Integer.class, claimId, sheetId);
+    }
+
+    /** Waive an OPEN or PENDING claim's late charge, only when it is not already waived; false when the sheet has no such claim. */
+    public boolean waive(String sheetId, long claimId) {
+        return kept(sheetId, claimId, jdbc.update("UPDATE claim SET waived = TRUE WHERE id = ? AND sheet_id = ?"
+                + " AND status IN ('OPEN', 'PENDING') AND NOT waived", claimId, sheetId) > 0);
     }
 
     /** Remind an OPEN or PENDING claim on the sheet's today, only when it was not already reminded that day;
@@ -680,7 +686,7 @@ public class ClaimRepository {
         kept(sheetId, keys.getKey().longValue(), true);
         used(sheetId, tags);
         return new Claim(keys.getKey().longValue(), personId, money(amount), date.toString(), note, "DRAFT", null, null, null, false, null, corrects,
-                dueBy.toString(), false, null, false, 0, null, late, null, ref, tags, null);
+                dueBy.toString(), false, null, false, 0, null, late, null, ref, tags, null, false);
     }
 
     /** Whether a claim added now with a due-by is a late entry: the due-by falls in a soft-closed period of the sheet. */

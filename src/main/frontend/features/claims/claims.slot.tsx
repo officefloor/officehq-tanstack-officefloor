@@ -32,7 +32,7 @@ function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: numbe
   );
 }
 
-type ClaimAction = 'open' | 'review' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | 'delete' | 'restore' | 'defer' | 'proof' | 'remind' | 'split' | 'redate' | 'comment' | 'line';
+type ClaimAction = 'open' | 'review' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | 'delete' | 'restore' | 'defer' | 'proof' | 'remind' | 'waive' | 'split' | 'redate' | 'comment' | 'line';
 
 /** A claim's status changes; the server refuses one its status does not allow, a settle by the user
  *  who opened the claim, and an approve or reject by anyone but a steward (an approve also by the
@@ -41,7 +41,7 @@ type ClaimAction = 'open' | 'review' | 'settle' | 'approve' | 'reject' | 'void' 
  *  A settle or approve of a claim whose due is above the proof threshold in force on its date is refused while it has no proof.
  *  An open of a claim whose due is above the review threshold in force on its date makes it REVIEW (no number yet); a review
  *  by a steward makes it OPEN, by anyone else is refused. */
-const ACTIONS: [Exclude<ClaimAction, 'defer' | 'proof' | 'remind' | 'split' | 'redate' | 'comment' | 'line'>, string][] = [
+const ACTIONS: [Exclude<ClaimAction, 'defer' | 'proof' | 'remind' | 'waive' | 'split' | 'redate' | 'comment' | 'line'>, string][] = [
   ['open', 'Open'],
   ['review', 'Review'],
   ['settle', 'Settle'],
@@ -468,6 +468,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                 <td data-testid="claim-tags">{shownTags(c.tags)}</td>
                 <td data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</td>
                 <td data-testid="claim-review-late">{c.reviewLate ? 'yes' : 'no'}</td>
+                <td data-testid="claim-waived">{c.waived ? 'yes' : 'no'}</td>
                 <td data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</td>
                 <td data-testid="claim-status">{c.status}</td>
                 <td data-testid="claim-batch">{c.batch ?? ''}</td>
@@ -597,6 +598,14 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                     onClick={() => act(c.id, 'remind')}
                   >
                     Remind
+                  </button>{' '}
+                  <button
+                    type="button"
+                    data-testid="claim-waive"
+                    disabled={action.isPending}
+                    onClick={() => act(c.id, 'waive')}
+                  >
+                    Waive late charge
                   </button>{' '}
                   <input
                     type="text"

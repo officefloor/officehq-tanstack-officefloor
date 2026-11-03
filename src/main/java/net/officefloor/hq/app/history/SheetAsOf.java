@@ -184,7 +184,7 @@ public record SheetAsOf(LocalDate day, Map<Long, Claim> claims, Map<Long, TreeMa
 
     private BigDecimal lateCharge(Claim claim, BigDecimal figure) {
         BigDecimal charge = BigDecimal.ZERO.setScale(2);
-        if (!claim.open() || claim.deferred()) return charge;
+        if (!claim.open() || claim.deferred() || claim.waived()) return charge;
         LocalDate dueBy = overdueFrom(claim);
         long periods = dueBy.isBefore(day) ? ChronoUnit.DAYS.between(dueBy, day) / 30 : 0;
         RoundingMode rounding = rounding(claim);
