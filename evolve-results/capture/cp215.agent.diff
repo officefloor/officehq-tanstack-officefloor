@@ -1,0 +1,175 @@
+diff --git a/src/main/frontend/features/compare/sheetCompare.slot.tsx b/src/main/frontend/features/compare/sheetCompare.slot.tsx
+new file mode 100644
+index 000000000..ea921d3ce
+--- /dev/null
++++ b/src/main/frontend/features/compare/sheetCompare.slot.tsx
+@@ -0,0 +1,90 @@
++import { type ReactNode, useState } from 'react';
++import { useQuery, useQueryClient } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { SheetBody } from '../../slots/defs/sheetBody';
++import { GRADES, usePeople } from '../people/usePeople';
++import { useDueTotals } from '../rates/useDueTotals';
++import { sumDues } from '../rates/useRates';
++
++/** Per grade, the due-totals of the people on it (retired left out) added up, as the sheet's summary shows them. */
++function useGradeDueTotals(sheetId: string): Map<string, string> | undefined {
++  const people = usePeople(sheetId);
++  const dueTotals = useDueTotals(sheetId);
++  if (people.data === undefined) return undefined;
++  const current = people.data.filter((p) => !p.retiredFrom);
++  return new Map(GRADES.map((g) => [g, sumDues(current.filter((p) => p.grade === g).map((p) => dueTotals.get(p.id) ?? 'n/a'))]));
++}
++
++/** Works out the other sheet's grade due-totals and shows them through `children` once they are read. */
++function OtherFigures({ sheetId, children }: { sheetId: string; children: (totals: Map<string, string>) => ReactNode }) {
++  const totals = useGradeDueTotals(sheetId);
++  return totals === undefined ? null : children(totals);
++}
++
++/** Whether the sheet exists in the store, re-read from it; asking never makes it. */
++function useSheetExists(sheetId: string, round: number) {
++  return useQuery({
++    queryKey: ['sheet', sheetId, 'exists', round],
++    queryFn: async () =>
++      (await getJson<{ exists: boolean }>(`/api/sheets/${encodeURIComponent(sheetId)}/exists`)).exists,
++    enabled: sheetId !== '',
++  });
++}
++
++/** Compares this sheet with another: a sheet id entry and a button listing, per grade of this sheet,
++ *  `<grade> <this sheet's summary due-total for it> <the other sheet's>` (0.00 for a grade the other sheet has no
++ *  one on); a sheet that does not exist gives no lines. The other sheet is re-read from the store on each press. */
++function SheetCompare({ sheetId }: { sheetId: string }) {
++  const queryClient = useQueryClient();
++  const mine = useGradeDueTotals(sheetId);
++  const [other, setOther] = useState('');
++  // The other sheet being read (re-read from the store whenever `round` moves on), and whether to show it.
++  const [reading, setReading] = useState<{ id: string; round: number }>({ id: '', round: 0 });
++  const [shown, setShown] = useState(false);
++  const exists = useSheetExists(reading.id, reading.round);
++
++  const read = (id: string) => {
++    if (id !== '' && id !== sheetId) queryClient.removeQueries({ queryKey: ['sheet', id] });
++    setReading((r) => ({ id, round: r.round + 1 }));
++  };
++
++  return (
++    <section>
++      <input
++        data-testid="compare-sheet"
++        value={other}
++        onChange={(e) => {
++          setOther(e.target.value);
++          setShown(false);
++          read(e.target.value.trim());
++        }}
++      />{' '}
++      <button
++        type="button"
++        data-testid="compare"
++        onClick={() => {
++          if (reading.id !== other.trim() || shown) read(other.trim());
++          setShown(true);
++        }}
++      >
++        Compare sheets
++      </button>
++      {reading.id !== '' && exists.data === true && mine !== undefined && (
++        <OtherFigures key={`${reading.id}#${reading.round}`} sheetId={reading.id}>
++          {(theirs) => (
++            <ul>
++              {shown &&
++                GRADES.map((g) => (
++                  <li key={g} data-testid="compare-line">
++                    {[g, mine.get(g) ?? '0.00', theirs.get(g) ?? '0.00'].join(' ')}
++                  </li>
++                ))}
++            </ul>
++          )}
++        </OtherFigures>
++      )}
++    </section>
++  );
++}
++
++export const contribution = SheetBody.fill({ order: 44, Component: ({ sheetId }) => <SheetCompare sheetId={sheetId} /> });
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/LoadSheetExists.java b/src/main/java/net/officefloor/hq/app/sheet/LoadSheetExists.java
+new file mode 100644
+index 000000000..30748425d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/LoadSheetExists.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.server.http.ServerHttpConnection;
++import org.springframework.web.bind.annotation.PathVariable;
++
++public class LoadSheetExists {
++    public void load(@PathVariable("sheetId") String sheetId, ServerHttpConnection connection,
++            SheetRepository repository, Out<SheetExists> exists) throws BadRequestException {
++        CurrentUser.require(connection);
++        String id = sheetId == null ? "" : sheetId.trim();
++        exists.set(new SheetExists(!id.isEmpty() && repository.exists(id)));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheetExists.java b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheetExists.java
+new file mode 100644
+index 000000000..a23e6cd26
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheetExists.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithSheetExists {
++    public void respond(@Val SheetExists exists, ObjectResponse<SheetExists> response) {
++        response.send(exists);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetExists.java b/src/main/java/net/officefloor/hq/app/sheet/SheetExists.java
+new file mode 100644
+index 000000000..a8a8b20f4
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetExists.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.sheet;
++
++/** Whether a sheet with an id exists in the store (it is never made by asking). */
++public record SheetExists(boolean exists) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+index 3241a540b..6973cd37e 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+@@ -29,6 +29,12 @@ public class SheetRepository {
+         return new Sheet(id, today(id).toString(), archived(id));
+     }
+ 
++    /** Whether a sheet with this id was ever made (loading an id makes it). */
++    public boolean exists(String id) {
++        Integer known = jdbc.queryForObject("SELECT COUNT(*) FROM sheet WHERE id = ?", Integer.class, id);
++        return known != null && known > 0;
++    }
++
+     /** The sheet's today: the date every date decision and default in the sheet uses. */
+     public LocalDate today(String id) {
+         Date today = jdbc.queryForObject("SELECT today FROM sheet WHERE id = ?", Date.class, id);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/exists.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/exists.GET.yml
+new file mode 100644
+index 000000000..6443170d5
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/exists.GET.yml
+@@ -0,0 +1,7 @@
++# Whether the sheet exists in the store; asking never makes it.
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheetExists
++  govern: [ readonly-transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.sheet.RespondWithSheetExists
