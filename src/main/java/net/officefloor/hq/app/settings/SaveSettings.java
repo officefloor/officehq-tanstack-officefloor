@@ -117,6 +117,10 @@ public class SaveSettings {
             repository.setProofKinds(id, input.proofKinds());
             audit.record(prefix + "proof-kinds value=" + (input.proofKinds() == null ? "" : input.proofKinds()));
         }
+        if (input.setsDefaultGrade()) {
+            repository.setDefaultGrade(id, input.defaultGrade());
+            audit.record(prefix + "default-grade value=" + (input.defaultGrade() == null ? "" : input.defaultGrade()));
+        }
         if (input.setsEntryDate()) {
             repository.setEntryDate(id, input.entryDate());
             audit.record(prefix + "entry-date value=" + (input.entryDate() == null ? "" : input.entryDate().toString()));

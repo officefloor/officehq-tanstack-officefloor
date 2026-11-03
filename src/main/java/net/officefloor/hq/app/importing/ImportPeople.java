@@ -13,6 +13,7 @@ import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.person.PersonRequest;
 import net.officefloor.hq.app.rollup.Rollup;
+import net.officefloor.hq.app.settings.SettingsRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
@@ -23,11 +24,11 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  sheet (ignoring case) updates that person as the person form would save them with their own name: the
  *  grade is recorded from the sheet's today (none when it is unchanged), and their terms and contact are set
  *  when the line gives them; written as PERSON_EDITED. Any other line adds a person as the person form does,
- *  written as PERSON_ADDED. One change: every line is checked first, so a refused line (or two lines naming
+ *  written as PERSON_ADDED. A line with a blank grade takes the sheet's default grade (A when it has none). One change: every line is checked first, so a refused line (or two lines naming
  *  the same person) changes no one and writes no audit record. */
 public class ImportPeople {
     public void importPeople(@PathVariable("sheetId") String sheetId, @Val ImportInput input,
-            ServerHttpConnection connection, PersonRepository repository, SheetRepository sheets, Audit audit,
+            ServerHttpConnection connection, PersonRepository repository, SheetRepository sheets, SettingsRepository settings, Audit audit,
             Rollup rollup, Out<ImportResult> result) throws BadRequestException {
         String by = CurrentUser.require(connection);
         String id = sheetId == null ? "" : sheetId.trim();
@@ -56,11 +57,15 @@ public class ImportPeople {
                 throw new BadRequestException("line " + n + ": " + e.getMessage());
             }
         }
+        String defaultGrade = settings.defaultGrade(id);
         LocalDate today = sheets.today(id);
         int added = 0;
         int updated = 0;
         for (int i = 0; i < input.people().size(); i++) {
             PersonRequest person = input.people().get(i);
+            if (person.grade().isEmpty()) {
+                person = person.withGrade(defaultGrade);
+            }
             Person current = matches.get(i);
             if (current == null) {
                 NewPerson.add(repository, audit, rollup, id, by, person);

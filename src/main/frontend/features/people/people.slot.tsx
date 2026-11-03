@@ -26,7 +26,7 @@ import { Col } from '../columns/useColumns';
  *  the save is refused (409) and the editor shows their current values, at their current version; any other
  *  refused edit closes the editor, leaving its error showing. Each person is a <tbody> so features can add
  *  cells and rows of their own to it (slots/defs/personRow). A quick-add bar takes a name and an amount
- *  and adds a draft claim for that person (adding them with grade A when the name is new) in one change. */
+ *  and adds a draft claim for that person (adding them with the sheet's default grade, A when blank, when the name is new) in one change. */
 const SORTS = ['added', 'name', 'grade', 'due-total'] as const;
 type SortKey = (typeof SORTS)[number];
 const asSort = (raw: unknown): SortKey => {

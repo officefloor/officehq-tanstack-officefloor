@@ -57,7 +57,8 @@ public class SettingsRepository {
                 cap == null ? null : money(cap), dated(sheetId), permissions(sheetId), graceDays(sheetId),
                 delegations(sheetId), entry == null ? null : entry.toString(), holidays(sheetId),
                 voidReasons(sheetId), pot == null ? null : money(pot), parent(sheetId), fiscalStartMonth(sheetId),
-                alert == null ? null : money(alert), escalateAfter(sheetId), reviewSla(sheetId), proofKinds(sheetId));
+                alert == null ? null : money(alert), escalateAfter(sheetId), reviewSla(sheetId), proofKinds(sheetId),
+                storedDefaultGrade(sheetId));
     }
 
     /** The sheet's today; the real date when there is no such sheet. */
@@ -424,6 +425,23 @@ public class SettingsRepository {
 
     public void setProofKinds(String sheetId, String kinds) {
         jdbc.update("UPDATE sheet SET proof_kinds = ? WHERE id = ?", kinds, sheetId);
+    }
+
+    /** The sheet's default grade as set; null when blank (A). */
+    public String storedDefaultGrade(String sheetId) {
+        List<String> found = jdbc.query("SELECT default_grade FROM sheet WHERE id = ?",
+                (rs, i) -> rs.getString("default_grade"), sheetId);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** The grade a new person takes when none is given: the sheet's default grade, A when blank. */
+    public String defaultGrade(String sheetId) {
+        String grade = storedDefaultGrade(sheetId);
+        return grade == null ? "A" : grade;
+    }
+
+    public void setDefaultGrade(String sheetId, String grade) {
+        jdbc.update("UPDATE sheet SET default_grade = ? WHERE id = ?", grade, sheetId);
     }
 
     /** The role a user name acts in on the sheet: steward while a delegation to them covers the sheet's today,

@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  numbering from-date is a date, blank meaning off; a grade's (A, B or C) terms are like the sheet's, blank
  *  meaning the grade uses the sheet's terms; the cap is 0.00 or more with up to two decimals, blank meaning none; the proof threshold and the note threshold likewise. A from-date given for a
  *  setting with a figure is a date; blank is the sheet's today. A permission matrix entry (open, settle, void, reassign, close or reopen) is a comma separated
- *  list of roles (clerk, steward), blank keeping the standing rule. The grace days are a whole number of days, 0 to 3650, blank meaning off. The entry date is a date, blank meaning off. A grade's grace days are a whole number of days, 0 to 3650, blank meaning none. A grade's proof threshold is like the sheet's, blank meaning none. The pot is 0.00 or more with up to two decimals, blank meaning none. The parent is a sheet id, blank meaning none (checked when saved). The fiscal year start month is a month, 1 to 12. The alert threshold is 0.00 or more with up to two decimals, blank meaning off. The rounding mode is half-up or half-even, blank meaning none. The escalation gap is a whole number of days, 0 to 3650, blank meaning off. A setting left out is not changed. */
+ *  list of roles (clerk, steward), blank keeping the standing rule. The grace days are a whole number of days, 0 to 3650, blank meaning off. The entry date is a date, blank meaning off. A grade's grace days are a whole number of days, 0 to 3650, blank meaning none. A grade's proof threshold is like the sheet's, blank meaning none. The pot is 0.00 or more with up to two decimals, blank meaning none. The parent is a sheet id, blank meaning none (checked when saved). The fiscal year start month is a month, 1 to 12. The alert threshold is 0.00 or more with up to two decimals, blank meaning off. The rounding mode is half-up or half-even, blank meaning none. The escalation gap is a whole number of days, 0 to 3650, blank meaning off. The default grade is A, B or C, blank meaning A. A setting left out is not changed. */
 public class ValidateSettings {
     private static final Pattern MONEY = Pattern.compile("\\d{1,9}(\\.\\d{1,2})?|\\.\\d{1,2}");
     private static final List<String> GRADES = List.of("A", "B", "C");
@@ -142,6 +142,10 @@ public class ValidateSettings {
             }
             kinds = String.join(",", listed);
         }
+        String defaultGrade = request == null || request.defaultGrade() == null ? null : request.defaultGrade().trim();
+        if (defaultGrade != null && !defaultGrade.isEmpty() && !GRADES.contains(defaultGrade)) {
+            throw new BadRequestException("default grade must be A, B or C");
+        }
         String policy = request == null || request.policyDate() == null ? null : request.policyDate().trim();
         LocalDate policyDate = null;
         if (policy != null && !policy.isEmpty()) {
@@ -239,6 +243,7 @@ public class ValidateSettings {
                 review != null, review == null || review.isEmpty() ? null : new BigDecimal(review).setScale(2),
                 escalate != null, escalate == null || escalate.isEmpty() ? null : Integer.parseInt(escalate),
                 sla != null, sla == null || sla.isEmpty() ? null : Integer.parseInt(sla),
-                kinds != null, kinds == null || kinds.isEmpty() ? null : kinds));
+                kinds != null, kinds == null || kinds.isEmpty() ? null : kinds,
+                defaultGrade != null, defaultGrade == null || defaultGrade.isEmpty() ? null : defaultGrade));
     }
 }

@@ -510,7 +510,7 @@ public class PersonRepository {
     /** Merge one person into another: the merged name and aliases become the other's aliases (name first); the
      *  merged person's patrons are added to the other's (not themselves, no repeats), anyone naming the merged
      *  person names the other instead (no repeats); pool memberships move to the other (shares added, at most
-     *  100.00, when the other is already a member); closed periods' figures are added to the other's. Their
+     *  100.00, when the other is already a member), as do crew leads and crew memberships (no repeats); closed periods' figures are added to the other's. Their
      *  statements are joined to the other's (see {@link #joinStatements}); their holds, past retirements, snapshots, grades, watchers and contact go with them, their plans move to the other, and the merged person leaves the sheet.
      *  Their claims must already have been moved. */
     public void merge(String sheetId, long fromId, long intoId) {
@@ -544,6 +544,17 @@ public class PersonRepository {
                 + " pool_member o WHERE o.sheet_id = m.sheet_id AND o.pool_name = m.pool_name AND o.person_id = ?)",
                 sheetId, fromId, intoId);
         jdbc.update("UPDATE pool_member SET person_id = ? WHERE sheet_id = ? AND person_id = ?", intoId, sheetId, fromId);
+
+        // Crews follow too: a crew the merged person leads is led by the other (who leaves its members), and their
+        // crew memberships move to the other where the other is not already in that crew.
+        jdbc.update("UPDATE crew SET lead_id = ? WHERE sheet_id = ? AND lead_id = ?", intoId, sheetId, fromId);
+        jdbc.update("DELETE FROM crew_member m WHERE m.sheet_id = ? AND m.person_id = ? AND EXISTS (SELECT 1 FROM crew c"
+                + " WHERE c.sheet_id = m.sheet_id AND c.name = m.crew_name AND c.lead_id = ?)", sheetId, intoId, intoId);
+        jdbc.update("DELETE FROM crew_member m WHERE m.sheet_id = ? AND m.person_id = ? AND (EXISTS (SELECT 1 FROM"
+                + " crew_member o WHERE o.sheet_id = m.sheet_id AND o.crew_name = m.crew_name AND o.person_id = ?)"
+                + " OR EXISTS (SELECT 1 FROM crew c WHERE c.sheet_id = m.sheet_id AND c.name = m.crew_name AND c.lead_id = ?))",
+                sheetId, fromId, intoId, intoId);
+        jdbc.update("UPDATE crew_member SET person_id = ? WHERE sheet_id = ? AND person_id = ?", intoId, sheetId, fromId);
 
         // A closed period's figure follows the claims.
         jdbc.update("UPDATE period_person_total t SET total = total + (SELECT f.total FROM period_person_total f"
