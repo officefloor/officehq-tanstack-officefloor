@@ -1,0 +1,187 @@
+diff --git a/src/main/frontend/features/people/usePeople.ts b/src/main/frontend/features/people/usePeople.ts
+index 3be95a77c..64750b38d 100644
+--- a/src/main/frontend/features/people/usePeople.ts
++++ b/src/main/frontend/features/people/usePeople.ts
+@@ -7,7 +7,8 @@ import { useReader } from '../../api/readNow';
+  *  taken, and the last one's due-total and date (null before the first); the date they are retired
+  *  from (null when not retired); their holds, oldest first, and whether they have any (their open (OPEN or PENDING)
+  *  claims dated within a hold, unless bound by a statement, then count in no live total); their own terms in
+- *  days (null when they have none: their grade's, else the sheet's, apply); their contact (null when they have none). */
++ *  days (null when they have none: their grade's, else the sheet's, apply); their contact (null when they have none);
++ *  the sheet they were transferred from (null when they were not transferred here). */
+ export type Person = {
+   id: number;
+   name: string;
+@@ -22,6 +23,7 @@ export type Person = {
+   holds: Hold[];
+   terms: number | null;
+   contact: string | null;
++  origin: string | null;
+ };
+ 
+ /** One of a person's holds: from its from-date to its to-date (yyyy-mm-dd, both inclusive; a null
+diff --git a/src/main/frontend/features/transfer/transfer.slot.tsx b/src/main/frontend/features/transfer/transfer.slot.tsx
+index d2501d101..60273b384 100644
+--- a/src/main/frontend/features/transfer/transfer.slot.tsx
++++ b/src/main/frontend/features/transfer/transfer.slot.tsx
+@@ -2,7 +2,7 @@ import { useState } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
+-import type { Person } from '../people/usePeople';
++import { usePeople, type Person } from '../people/usePeople';
+ import { usePersonRowAction } from '../people/usePersonRowAction';
+ 
+ /** A steward transfers a person to another sheet by id: an entry for the sheet id and a transfer button. The
+@@ -51,7 +51,16 @@ function PersonTransfer({ sheetId, personId }: { sheetId: string; personId: numb
+   );
+ }
+ 
++/** The sheet a person was transferred from (blank for anyone added on this sheet). */
++function PersonOrigin({ sheetId, personId }: { sheetId: string; personId: number }) {
++  const people = usePeople(sheetId);
++  const p = people.data?.find((x) => x.id === personId);
++  return <td data-testid="person-origin">{p?.origin ?? ''}</td>;
++}
++
+ export const contributions = [
++  PersonColumnHead.fill({ order: 55, Component: () => <th>From sheet</th> }),
++  PersonCells.fill({ order: 55, Component: PersonOrigin }),
+   PersonColumnHead.fill({ order: 56, Component: () => <th>Transfer</th> }),
+   PersonCells.fill({ order: 56, Component: PersonTransfer }),
+ ];
+diff --git a/src/main/java/net/officefloor/hq/app/audit/LoadAuditLines.java b/src/main/java/net/officefloor/hq/app/audit/LoadAuditLines.java
+index d0e06f7c5..89f2f18b8 100644
+--- a/src/main/java/net/officefloor/hq/app/audit/LoadAuditLines.java
++++ b/src/main/java/net/officefloor/hq/app/audit/LoadAuditLines.java
+@@ -1,19 +1,35 @@
+ package net.officefloor.hq.app.audit;
+ 
++import java.util.ArrayList;
++import java.util.List;
++import java.util.Locale;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.server.http.ServerHttpConnection;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
++/** The sheet's audit lines, newest first. Filtered by the name of a person transferred here, the lines about
++ *  them from the sheet they came from follow (newest first, exactly as the file holds them). */
+ public class LoadAuditLines {
+     public void load(@PathVariable("sheetId") String sheetId,
+             @RequestParam(value = "name", required = false) String name, ServerHttpConnection connection,
+-            Audit audit, Out<AuditLines> lines) throws BadRequestException {
++            Audit audit, PersonRepository people, Out<AuditLines> lines) throws BadRequestException {
+         CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
+-        lines.set(new AuditLines(audit.read(id, name)));
++        List<String> found = new ArrayList<>(audit.read(id, name));
++        String who = name == null ? "" : name.trim();
++        if (!who.isEmpty()) {
++            Person person = people.findByName(id, who);
++            if (person != null && person.origin() != null
++                    && person.name().trim().toLowerCase(Locale.ROOT).equals(who.toLowerCase(Locale.ROOT))) {
++                found.addAll(audit.read(person.origin(), who));
++            }
++        }
++        lines.set(new AuditLines(found));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 18134849a..619e680dd 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -8,18 +8,19 @@ import java.util.List;
+  *  and the last one's due-total and date (both null before the first), and the date they are retired
+  *  from (null when not retired; any date set means retired at once), and their holds (oldest first) and
+  *  whether they have any (their open (OPEN or PENDING) claims dated within a hold, unless bound by a
+- *  statement, then count in no live total), and their own terms in days (null when they have none), and their contact (null when they have none). */
++ *  statement, then count in no live total), and their own terms in days (null when they have none), and their contact (null when they have none), and the sheet they were
++ *  transferred from (null when they were not transferred here). */
+ public record Person(long id, String name, String grade, long version, long statementCount,
+         String statedTotal, String statementDate, String retiredFrom, boolean held, List<GradeFrom> grades,
+-        List<Hold> holds, Integer terms, String contact) {
++        List<Hold> holds, Integer terms, String contact, String origin) {
+ 
+     public Person withGrades(List<GradeFrom> grades) {
+-        return new Person(id, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom, held, grades, holds, terms, contact);
++        return new Person(id, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom, held, grades, holds, terms, contact, origin);
+     }
+ 
+     public Person withHolds(List<Hold> holds) {
+         return new Person(id, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom,
+-                !holds.isEmpty(), grades, holds, terms, contact);
++                !holds.isEmpty(), grades, holds, terms, contact, origin);
+     }
+ 
+     public boolean retired() {
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index fbc81cd93..ec7722af3 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -22,13 +22,14 @@ public class PersonRepository {
+             + " AND (g.from_date IS NULL OR g.from_date <= (SELECT s.today FROM sheet s WHERE s.id = person.sheet_id))"
+             + " ORDER BY g.from_date DESC NULLS LAST LIMIT 1) AS grade";
+ 
+-    private static final String COLUMNS = "id, name, " + GRADE_TODAY + ", version, statement_count, stated_total, statement_date, retired_from, terms, contact";
++    private static final String COLUMNS = "id, name, " + GRADE_TODAY + ", version, statement_count, stated_total, statement_date, retired_from, terms, contact, origin_sheet";
+ 
+     private static final RowMapper<Person> ROW = (rs, i) -> new Person(rs.getLong("id"), rs.getString("name"),
+             rs.getString("grade"), rs.getLong("version"), rs.getLong("statement_count"), rs.getString("stated_total"),
+             rs.getDate("statement_date") == null ? null : rs.getDate("statement_date").toLocalDate().toString(),
+             rs.getDate("retired_from") == null ? null : rs.getDate("retired_from").toLocalDate().toString(),
+-            false, List.of(), List.of(), (Integer) rs.getObject("terms", Integer.class), rs.getString("contact"));
++            false, List.of(), List.of(), (Integer) rs.getObject("terms", Integer.class), rs.getString("contact"),
++            rs.getString("origin_sheet"));
+ 
+     /** The position after the last person's on the sheet being inserted into (the end of its list). */
+     private static final String NEXT_POSITION = "(SELECT COALESCE(MAX(q.list_position), 0) + 1 FROM person q WHERE q.sheet_id = sheet.id)";
+@@ -268,7 +269,7 @@ public class PersonRepository {
+         }, keys);
+         long id = keys.getKey().longValue();
+         grade(sheetId, id, grade, null);
+-        return new Person(id, name, grade, 1, 0, null, null, null, false, List.of(new GradeFrom(grade, null)), List.of(), terms, contact);
++        return new Person(id, name, grade, 1, 0, null, null, null, false, List.of(new GradeFrom(grade, null)), List.of(), terms, contact, null);
+     }
+ 
+     /** Swap two people's places in the sheet's list. */
+@@ -306,20 +307,21 @@ public class PersonRepository {
+ 
+     /** Copy a person onto another sheet, as added there on its today: their name, the grade they were first given,
+      *  every grade they were given (with its from-date), their terms, contact and aliases (in the order they were
+-     *  added), with no statements; the new person's id. Their claims are moved by the caller. */
++     *  added), with no statements, and the sheet they came from; the new person's id. Their claims are moved by the caller. */
+     public long transferIn(String fromSheet, long id, String toSheet) {
+         GeneratedKeyHolder keys = new GeneratedKeyHolder();
+         jdbc.update(c -> {
+             PreparedStatement ps = c.prepareStatement(
+-                    "INSERT INTO person (sheet_id, name, grade, terms, contact, added_on, list_position)"
++                    "INSERT INTO person (sheet_id, name, grade, terms, contact, added_on, list_position, origin_sheet)"
+                             + " SELECT ?, p.name, p.grade, p.terms, p.contact, (SELECT s.today FROM sheet s WHERE s.id = ?),"
+-                            + " (SELECT COALESCE(MAX(q.list_position), 0) + 1 FROM person q WHERE q.sheet_id = ?)"
++                            + " (SELECT COALESCE(MAX(q.list_position), 0) + 1 FROM person q WHERE q.sheet_id = ?), ?"
+                             + " FROM person p WHERE p.id = ? AND p.sheet_id = ?", new String[] { "id" });
+             ps.setString(1, toSheet);
+             ps.setString(2, toSheet);
+             ps.setString(3, toSheet);
+-            ps.setLong(4, id);
+-            ps.setString(5, fromSheet);
++            ps.setString(4, fromSheet);
++            ps.setLong(5, id);
++            ps.setString(6, fromSheet);
+             return ps;
+         }, keys);
+         long arrived = keys.getKey().longValue();
+diff --git a/src/main/resources/db/migration/V69__person_origin.sql b/src/main/resources/db/migration/V69__person_origin.sql
+new file mode 100644
+index 000000000..a1d3655f9
+--- /dev/null
++++ b/src/main/resources/db/migration/V69__person_origin.sql
+@@ -0,0 +1,2 @@
++-- The sheet a transferred person came from (null for anyone added on this sheet).
++ALTER TABLE person ADD COLUMN origin_sheet VARCHAR(255);
