@@ -49,14 +49,17 @@ export function gradeOn(person: Person | undefined, on: string): string | undefi
 /** One of a person's patrons: another person on the same sheet, by id. */
 export type Patron = { personId: number; patronId: number };
 
+/** One of a person's aliases: another name they are known by on the sheet. */
+export type Alias = { personId: number; alias: string };
+
 export const GRADES = ['A', 'B', 'C'] as const;
 
 export function peopleKey(sheetId: string) {
   return ['sheet', sheetId, 'people'];
 }
 
-/** The sheet's people, the patrons they have named and the people the signed-in user watches, as the store holds them. */
-type PeopleBody = { people: Person[]; patrons: Patron[]; watched: number[] };
+/** The sheet's people, the patrons they have named, the people the signed-in user watches and their aliases, as the store holds them. */
+type PeopleBody = { people: Person[]; patrons: Patron[]; watched: number[]; aliases: Alias[] };
 
 function peopleBody(sheetId: string): Promise<PeopleBody> {
   return getJson<PeopleBody>(`/api/sheets/${encodeURIComponent(sheetId)}/people`);
@@ -76,6 +79,18 @@ export function usePatrons(sheetId: string) {
   return useQuery({
     queryKey: patronsKey(sheetId),
     queryFn: async () => (await peopleBody(sheetId)).patrons,
+  });
+}
+
+export function aliasesKey(sheetId: string) {
+  return [...peopleKey(sheetId), 'aliases'];
+}
+
+/** Every alias on the sheet, re-read from the store. */
+export function useAliases(sheetId: string) {
+  return useQuery({
+    queryKey: aliasesKey(sheetId),
+    queryFn: async () => (await peopleBody(sheetId)).aliases ?? [],
   });
 }
 

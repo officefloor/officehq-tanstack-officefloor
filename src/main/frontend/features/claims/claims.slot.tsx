@@ -11,7 +11,7 @@ import { claimDueNow, isOverdue } from '../overdue/useOverdue';
 import { useSignedInUser } from '../session/useSession';
 import { roleOf, useSettings } from '../settings/useSettings';
 import { useSheetToday } from '../today/useSheetToday';
-import { claimed, claimsKey, isDeferred, shownTags, useClaims, useLastBatch, type Claim } from './useClaims';
+import { claimed, claimsKey, shownDeferred, shownTags, useClaims, useLastBatch, type Claim } from './useClaims';
 import { useClaimSelection } from './useClaimSelection';
 
 /** A person's claimed: the sum of their counted (OPEN, PENDING or SETTLED; an open one dated within a hold only when a statement binds it; not a deferred one) claims' amounts. */
@@ -369,7 +369,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                 <td data-testid="claim-proofs">{c.proofs}</td>
                 <td data-testid="claim-reminded">{c.reminded ?? ''}</td>
                 <td data-testid="claim-split-from">{c.splitFrom ?? ''}</td>
-                <td data-testid="claim-deferred">{isDeferred(c, today) ? 'yes' : 'no'}</td>
+                <td data-testid="claim-deferred">{shownDeferred(c, today) ? 'yes' : 'no'}</td>
                 <td data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</td>
                 <td data-testid="claim-log">
                   {c.log.map((line, i) => (

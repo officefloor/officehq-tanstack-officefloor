@@ -66,6 +66,12 @@ export function fixedDue(c: Claim): string | null {
   return c.statedNa ? 'n/a' : c.statedDue;
 }
 
+/** Whether a claim is shown as deferred: the date it is deferred until is after the sheet's today, whatever
+ *  its status now (a deferral is kept when the claim leaves OPEN). Only `isDeferred` acts on totals. */
+export function shownDeferred(c: Claim, today: string | undefined): boolean {
+  return c.deferredUntil !== null && today !== undefined && today < c.deferredUntil;
+}
+
 /** Whether a claim is deferred now: it is OPEN and the date it is deferred until is after the sheet's
  *  today. Until today reaches that date it counts in no total, is not overdue and cannot be settled. */
 export function isDeferred(c: Claim, today: string | undefined): boolean {

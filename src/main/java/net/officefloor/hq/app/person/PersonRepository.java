@@ -149,18 +149,21 @@ public class PersonRepository {
         }
     }
 
-    /** Whether another person on the sheet (other than {@code exceptId}; 0 for none) already has this name, ignoring case. */
+    /** Whether another person on the sheet (other than {@code exceptId}; 0 for none) already has this name,
+     *  or anyone on the sheet has it as an alias, ignoring case. */
     public boolean nameTaken(String sheetId, String name, long exceptId) {
         Integer taken = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND LOWER(name) = LOWER(?) AND id <> ?",
-                Integer.class, sheetId, name, exceptId);
+                "SELECT (SELECT COUNT(*) FROM person WHERE sheet_id = ? AND LOWER(name) = LOWER(?) AND id <> ?)"
+                        + " + (SELECT COUNT(*) FROM person_alias WHERE sheet_id = ? AND LOWER(alias) = LOWER(?))",
+                Integer.class, sheetId, name, exceptId, sheetId, name);
         return taken != null && taken > 0;
     }
 
-    /** The person on the sheet with this name, ignoring case; null when there is none. */
+    /** The person on the sheet with this name or alias, ignoring case; null when there is none. */
     public Person findByName(String sheetId, String name) {
-        List<Person> found = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND LOWER(name) = LOWER(?)",
-                ROW, sheetId, name);
+        List<Person> found = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND (LOWER(name) = LOWER(?)"
+                + " OR id IN (SELECT a.person_id FROM person_alias a WHERE a.sheet_id = ? AND LOWER(a.alias) = LOWER(?)))"
+                + " ORDER BY id", ROW, sheetId, name, sheetId, name);
         return found.isEmpty() ? null : found.get(0);
     }
 

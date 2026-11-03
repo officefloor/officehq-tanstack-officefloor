@@ -9,9 +9,9 @@ import org.springframework.web.bind.annotation.PathVariable;
 
 public class LoadPeople {
     public void load(@PathVariable("sheetId") String sheetId, ServerHttpConnection connection,
-            PersonRepository repository, PatronRepository patrons, WatchRepository watches, AsOfView view, Out<People> people) throws BadRequestException {
+            PersonRepository repository, PatronRepository patrons, WatchRepository watches, AliasRepository aliases, AsOfView view, Out<People> people) throws BadRequestException {
         String by = CurrentUser.require(connection);
         String id = sheetId == null ? "" : sheetId.trim();
-        people.set(view.read(connection, id, () -> new People(repository.list(id), patrons.list(id), watches.watched(id, by))));
+        people.set(view.read(connection, id, () -> new People(repository.list(id), patrons.list(id), watches.watched(id, by), aliases.list(id))));
     }
 }
