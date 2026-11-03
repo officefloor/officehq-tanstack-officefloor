@@ -1,0 +1,113 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimReassign.java b/src/main/java/net/officefloor/hq/app/claim/ClaimReassign.java
+index 10e83d3a3..4f27a0f79 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimReassign.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimReassign.java
+@@ -62,7 +62,7 @@ final class ClaimReassign {
+         if (!found.status().equals("DRAFT")) {
+             number = repository.numbersPerPeriod(id)
+                     ? repository.numberInPeriod(id, found.id(), LocalDate.parse(found.dueBy()))
+-                    : repository.number(id, found.id());
++                    : repository.number(id, found.id(), LocalDate.parse(found.dueBy()));
+         }
+         Claim moved = new Claim(found.id(), to, found.amount(), found.date(), found.note(), found.status(),
+                 number, found.due(), found.openedBy(), false, null, found.corrects(), found.dueBy(), false,
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 990b3c14c..1dfb88ab2 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -120,18 +120,27 @@ public class ClaimRepository {
+         kept(sheetId, claimId, jdbc.update("UPDATE claim SET void_reason = ? WHERE id = ? AND sheet_id = ?", reason, claimId, sheetId) > 0);
+     }
+ 
+-    /** Give an opened claim the next number of its sheet's tree: one after the last number given on any sheet of
+-     *  the tree (the sheet's topmost ancestor and all its descendants). The tree's sheet rows stay locked until the
+-     *  transaction commits, so two claims opened at once anywhere in the tree get consecutive numbers. */
+-    public String number(String sheetId, long claimId) {
++    /** Give an opened claim the next number of its sheet's tree within the fiscal year its due-by ({@code date})
++     *  falls in, FY<yyyy>-<n>: one after the last number given in that fiscal year on any sheet of the tree (the
++     *  sheet's topmost ancestor and all its descendants). The fiscal year follows the sheet's fiscal start month.
++     *  The tree's sheet rows stay locked until the transaction commits, so two claims opened at once anywhere in
++     *  the tree get consecutive numbers. */
++    public String number(String sheetId, long claimId, LocalDate date) {
+         List<String> tree = tree(sheetId);
+         String in = String.join(",", java.util.Collections.nCopies(tree.size(), "?"));
+         jdbc.update("UPDATE sheet SET claim_number = claim_number WHERE id IN (" + in + ")", tree.toArray());
+-        Long last = jdbc.queryForObject("SELECT MAX(claim_number) FROM sheet WHERE id IN (" + in + ")",
+-                Long.class, tree.toArray());
++        Integer startMonth = jdbc.queryForObject("SELECT fiscal_start_month FROM sheet WHERE id = ?", Integer.class, sheetId);
++        int year = date.getMonthValue() >= (startMonth == null ? 1 : startMonth) ? date.getYear() : date.getYear() - 1;
++        String key = "FY" + year;
++        List<Object> args = new ArrayList<>(tree);
++        args.add(key);
++        Long last = jdbc.queryForObject("SELECT MAX(last_no) FROM claim_sequence WHERE sheet_id IN (" + in + ")"
++                + " AND seq_key = ?", Long.class, args.toArray());
+         long next = (last == null ? 0 : last) + 1;
+-        jdbc.update("UPDATE sheet SET claim_number = ? WHERE id = ?", next, sheetId);
+-        String number = String.valueOf(next);
++        if (jdbc.update("UPDATE claim_sequence SET last_no = ? WHERE sheet_id = ? AND seq_key = ?", next, sheetId, key) == 0) {
++            jdbc.update("INSERT INTO claim_sequence (sheet_id, seq_key, last_no) VALUES (?, ?, ?)", sheetId, key, next);
++        }
++        String number = key + "-" + next;
+         jdbc.update("UPDATE claim SET claim_no = ? WHERE id = ? AND sheet_id = ?", number, claimId, sheetId);
+         kept(sheetId, claimId, true);
+         return number;
+@@ -433,7 +442,7 @@ public class ClaimRepository {
+         Map<String, String> numbers = new LinkedHashMap<>();
+         for (Object[] c : numbered) {
+             long arrived = moved.get((Long) c[0]);
+-            numbers.put((String) c[1], perPeriod ? numberInPeriod(toSheet, arrived, (LocalDate) c[2]) : number(toSheet, arrived));
++            numbers.put((String) c[1], perPeriod ? numberInPeriod(toSheet, arrived, (LocalDate) c[2]) : number(toSheet, arrived, (LocalDate) c[2]));
+         }
+         for (Long arrived : moved.values()) {
+             Map<String, Object> was = jdbc.queryForMap("SELECT corrects, split_from FROM claim WHERE id = ?", arrived);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimSplit.java b/src/main/java/net/officefloor/hq/app/claim/ClaimSplit.java
+index fecbe88d9..49773af62 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimSplit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimSplit.java
+@@ -45,7 +45,7 @@ final class ClaimSplit {
+         }
+         String number = repository.numbersPerPeriod(id)
+                 ? repository.numberInPeriod(id, nid, LocalDate.parse(repository.find(id, nid).dueBy()))
+-                : repository.number(id, nid);
++                : repository.number(id, nid, LocalDate.parse(repository.find(id, nid).dueBy()));
+         repository.log(id, nid, by);
+         Claim kept = repository.find(id, cid);
+         Claim added = repository.find(id, nid);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+index 96e522f9c..b3821d697 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+@@ -162,7 +162,7 @@ final class ClaimStatusChange {
+         if (found.status().equals("DRAFT") && to.equals("OPEN")) {
+             number = repository.numbersPerPeriod(id)
+                     ? repository.numberInPeriod(id, cid, LocalDate.parse(found.dueBy()))
+-                    : repository.number(id, cid);
++                    : repository.number(id, cid, LocalDate.parse(found.dueBy()));
+             repository.openedBy(id, cid, by);
+             openedBy = by;
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+index 400180538..c85d71f07 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+@@ -179,7 +179,7 @@ public class SheetCloner {
+         Map<String, String> numbers = new LinkedHashMap<>();
+         for (Object[] c : numbered) {
+             long made = (Long) c[0];
+-            numbers.put(wasOfCopy.get(made), perPeriod ? claims.numberInPeriod(to, made, (LocalDate) c[1]) : claims.number(to, made));
++            numbers.put(wasOfCopy.get(made), perPeriod ? claims.numberInPeriod(to, made, (LocalDate) c[1]) : claims.number(to, made, (LocalDate) c[1]));
+         }
+         for (Long made : copied.values()) {
+             Map<String, Object> links = jdbc.queryForMap("SELECT corrects, split_from FROM claim WHERE id = ?", made);
+diff --git a/src/main/resources/db/migration/V78__fiscal_year_numbering.sql b/src/main/resources/db/migration/V78__fiscal_year_numbering.sql
+new file mode 100644
+index 000000000..ba1af2307
+--- /dev/null
++++ b/src/main/resources/db/migration/V78__fiscal_year_numbering.sql
+@@ -0,0 +1,6 @@
++-- Sheet-wide numbering restarts each fiscal year: a claim opened (when not numbered per period) is numbered
++-- FY<yyyy>-<n>, counting from 1 within the fiscal year (by the opening sheet's fiscal start month) its due-by falls
++-- in, the sequence shared across the sheet's tree. Each sheet's last number given in a fiscal year is kept in
++-- claim_sequence under seq_key 'FY<yyyy>'; the tree's next is one after the largest of those. Numbers already
++-- given stay; sheet.claim_number is no longer advanced.
++SELECT 1;
