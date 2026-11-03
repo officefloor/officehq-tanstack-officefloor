@@ -1,0 +1,77 @@
+diff --git a/src/main/frontend/features/dashboard/dashboard.slot.tsx b/src/main/frontend/features/dashboard/dashboard.slot.tsx
+new file mode 100644
+index 000000000..5b7aaaa93
+--- /dev/null
++++ b/src/main/frontend/features/dashboard/dashboard.slot.tsx
+@@ -0,0 +1,32 @@
++import { SheetBody } from '../../slots/defs/sheetBody';
++import { useClaims } from '../claims/useClaims';
++import { roleOf, useSettings } from '../settings/useSettings';
++import { useSheetToday } from '../today/useSheetToday';
++import { useOverdue } from '../overdue/useOverdue';
++
++/** A steward's dashboard: how many claims on the sheet are PENDING, how many are in REVIEW, and how many
++ *  that count are overdue (see `useOverdue`). Empty for a user who does not act as a steward. Under an
++ *  as-of date every read is as the sheet stood then, so the counts and the role are those of that day. */
++function Dashboard({ sheetId, user }: { sheetId: string; user: string }) {
++  const claims = useClaims(sheetId).data;
++  const settings = useSettings(sheetId).data;
++  const today = useSheetToday(sheetId).data?.today;
++  const overdue = useOverdue(sheetId);
++  const shown = claims !== undefined && settings !== undefined && today !== undefined
++    && roleOf(settings, user, today) === 'steward';
++  const pending = shown ? String(claims.filter((c) => c.status === 'PENDING').length) : '';
++  const review = shown ? String(claims.filter((c) => c.status === 'REVIEW').length) : '';
++  const late = shown ? String([...overdue.values()].reduce((n, f) => n + f.count, 0)) : '';
++  return (
++    <p data-testid="dashboard">
++      Steward dashboard: pending <strong data-testid="dash-pending-count">{pending}</strong>,
++      review <strong data-testid="dash-review-count">{review}</strong>,
++      overdue <strong data-testid="dash-overdue-count">{late}</strong>
++    </p>
++  );
++}
++
++export const contribution = SheetBody.fill({
++  order: 36,
++  Component: ({ sheetId, user }) => <Dashboard sheetId={sheetId} user={user} />,
++});
+diff --git a/src/main/frontend/features/statements/statements.slot.tsx b/src/main/frontend/features/statements/statements.slot.tsx
+index 63fa0897c..f74602b89 100644
+--- a/src/main/frontend/features/statements/statements.slot.tsx
++++ b/src/main/frontend/features/statements/statements.slot.tsx
+@@ -13,7 +13,7 @@ import { Col } from '../columns/useColumns';
+  *  of their counting claims to the figure it has then (unbinding the rest), until the next one; a
+  *  steward can cancel the last one, its claims going live again. A date beside the button takes the
+  *  statement as of that date (on or before the sheet's today; blank: now); it is cleared once that statement is
+- *  taken or refused. Below, one line per statement still standing (oldest first, by date), as its date and
++ *  taken or refused. Below, one line per statement still standing (in the order taken, oldest first), as its date and
+  *  due-total. */
+ function PersonStatement({ sheetId, personId }: { sheetId: string; personId: number }) {
+   const fig = useFigure();
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index cf6928ce1..758e55e3c 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -75,7 +75,7 @@ public class PersonRepository {
+                     snapshots.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(snapshot(rs));
+                 }, sheetId);
+         Map<Long, List<StatementLine>> statements = new HashMap<>();
+-        jdbc.query("SELECT person_id, statement_date, due_total FROM person_statement WHERE sheet_id = ? ORDER BY statement_date, seq",
++        jdbc.query("SELECT person_id, statement_date, due_total FROM person_statement WHERE sheet_id = ? ORDER BY person_id, seq",
+                 rs -> {
+                     statements.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(statementLine(rs));
+                 }, sheetId);
+@@ -101,10 +101,10 @@ public class PersonRepository {
+         return new StatementLine(rs.getDate("statement_date").toLocalDate().toString(), rs.getString("due_total"));
+     }
+ 
+-    /** A person's statements still standing, by date (oldest first; taken order among those of one date). */
++    /** A person's statements still standing, in the order taken (oldest first). */
+     public List<StatementLine> statements(String sheetId, long id) {
+         return jdbc.query("SELECT statement_date, due_total FROM person_statement WHERE sheet_id = ? AND person_id = ?"
+-                + " ORDER BY statement_date, seq", (rs, i) -> statementLine(rs), sheetId, id);
++                + " ORDER BY person_id, seq", (rs, i) -> statementLine(rs), sheetId, id);
+     }
+ 
+     /** Keep a snapshot of a person: their due-total as it stood on the day being left. */
