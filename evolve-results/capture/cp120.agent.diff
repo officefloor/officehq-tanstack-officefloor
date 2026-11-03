@@ -1,0 +1,321 @@
+diff --git a/src/main/frontend/api/readNow.ts b/src/main/frontend/api/readNow.ts
+new file mode 100644
+index 000000000..a1a5f75db
+--- /dev/null
++++ b/src/main/frontend/api/readNow.ts
+@@ -0,0 +1,14 @@
++import { createContext, useContext } from 'react';
++import { getJson, getJsonNow } from './http';
++
++/** Set to true around components that must show the sheet as the store holds it now while the screen shows it as
++ *  of a date: the shared read hooks then answer as of now, under keys of their own. */
++export const ReadNow = createContext(false);
++
++/** How a shared read hook reads: its getter, and its query key (suffixed when it reads now under an as-of date). */
++export function useReader(): { get: <T>(path: string) => Promise<T>; key: (key: unknown[]) => unknown[] } {
++  const now = useContext(ReadNow);
++  return now
++    ? { get: getJsonNow, key: (key) => [...key, 'read-now'] }
++    : { get: getJson, key: (key) => key };
++}
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index 9a0bd96e0..7182babbe 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -1,5 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
++import { useReader } from '../../api/readNow';
+ import { heldOn, type Hold } from '../people/usePeople';
+ 
+ /** A claim's status: DRAFT -> OPEN -> SETTLED; a clerk's settle above the clerk limit goes to PENDING
+@@ -116,10 +117,11 @@ export function claimsKey(sheetId: string) {
+ 
+ /** Every claim on the sheet, newest first. */
+ export function useClaims(sheetId: string) {
++  const read = useReader();
+   return useQuery({
+-    queryKey: claimsKey(sheetId),
++    queryKey: read.key(claimsKey(sheetId)),
+     queryFn: async () => {
+-      const res = await getJson<{
++      const res = await read.get<{
+         claims: Omit<Claim, 'log' | 'comments' | 'lockedBy' | 'batch'>[];
+         logs: Record<string, string[]>;
+         locks: Record<string, string>;
+diff --git a/src/main/frontend/features/consolidated/consolidated.slot.tsx b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+index a3f16c2d6..1db01d5fe 100644
+--- a/src/main/frontend/features/consolidated/consolidated.slot.tsx
++++ b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+@@ -1,14 +1,16 @@
+ import { useEffect, useState } from 'react';
+ import { useQuery, useQueryClient } from '@tanstack/react-query';
+ import { getJson, getJsonNow } from '../../api/http';
++import { ReadNow } from '../../api/readNow';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { useOverdue } from '../overdue/useOverdue';
+ import { peopleKey, type Person } from '../people/usePeople';
+ import { useDueTotals } from '../rates/useDueTotals';
+ import { hundredths, money, trimmedSum } from '../rates/useRates';
++import { asString, useSearchParam } from '../../url/useSearchParam';
+ 
+-/** One sheet's figures: its people as the store holds them now (retired included; not as of the screen's as-of
+- *  date), and its due-total and overdue-total as its header shows them. */
++/** One sheet's figures, as the store holds it now (not as of the screen's as-of date): its people (retired
++ *  included), and its due-total and overdue-total as its header shows them with no as-of date. */
+ type Figures = { people: number; due: string; overdue: string };
+ 
+ /** The sheet's descendants (the sheets naming it as their parent, theirs, and so on), re-read from the store.
+@@ -52,12 +54,15 @@ function Consolidated({ sheetId }: { sheetId: string }) {
+   const [onFigures] = useState(() => (id: string, f: Figures) => setFigures((all) => ({ ...all, [id]: f })));
+   const sheets = [sheetId, ...(descendants.data ?? [])];
+   const shown = sheets.map((id) => figures[id]).filter((f): f is Figures => f !== undefined);
++  const [asOf] = useSearchParam('asOf', asString);
+   const sum = (pick: (f: Figures) => string) => money(shown.reduce((s, f) => s + hundredths(pick(f)), 0n));
+   return (
+     <p data-testid="consolidated">
+-      {sheets.map((id) => (
+-        <SheetFigures key={id} sheetId={id} onFigures={onFigures} />
+-      ))}
++      <ReadNow.Provider value={asOf !== ''}>
++        {sheets.map((id) => (
++          <SheetFigures key={id} sheetId={id} onFigures={onFigures} />
++        ))}
++      </ReadNow.Provider>
+       Consolidated: people <strong data-testid="consolidated-people-count">{shown.reduce((n, f) => n + f.people, 0)}</strong>
+       {' '}· due total <strong data-testid="consolidated-due-total">{sum((f) => f.due)}</strong>
+       {' '}· overdue total <strong data-testid="consolidated-overdue-total">{sum((f) => f.overdue)}</strong>
+diff --git a/src/main/frontend/features/hold/hold.slot.tsx b/src/main/frontend/features/hold/hold.slot.tsx
+index 7a8165f50..d84effd33 100644
+--- a/src/main/frontend/features/hold/hold.slot.tsx
++++ b/src/main/frontend/features/hold/hold.slot.tsx
+@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
+ import { peopleKey, usePeople, type Person } from '../people/usePeople';
++import { poolsKey } from '../pools/usePools';
+ import { usePersonRowAction } from '../people/usePersonRowAction';
+ 
+ /** A person's holds: whether they have any, a line per hold (from – to), and a from-date (blank: the
+@@ -23,6 +24,8 @@ function PersonHold({ sheetId, personId }: { sheetId: string; personId: number }
+       setFrom('');
+       setTo('');
+       await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
++      // A hold in force on the sheet's today takes the person's cuts from the pools.
++      void queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
+     },
+   });
+   const announce = usePersonRowAction(sheetId, personId, hold.reset);
+diff --git a/src/main/frontend/features/people/usePeople.ts b/src/main/frontend/features/people/usePeople.ts
+index 21a22e97a..3be95a77c 100644
+--- a/src/main/frontend/features/people/usePeople.ts
++++ b/src/main/frontend/features/people/usePeople.ts
+@@ -1,5 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
++import { useReader } from '../../api/readNow';
+ 
+ /** A person: `grade` is the one in force on the sheet's today, `grades` every grade they have been
+  *  given, oldest first; `version` goes up by one each time they are saved. Their statements: how many have been
+@@ -62,13 +63,13 @@ export function peopleKey(sheetId: string) {
+  *  people whose name or an alias is already a name or alias on another sheet of the tree, as the store holds them. */
+ type PeopleBody = { people: Person[]; patrons: Patron[]; watched: number[]; aliases: Alias[]; clashing: number[] };
+ 
+-function peopleBody(sheetId: string): Promise<PeopleBody> {
+-  return getJson<PeopleBody>(`/api/sheets/${encodeURIComponent(sheetId)}/people`);
++function peopleBody(sheetId: string, get: <T>(path: string) => Promise<T> = getJson): Promise<PeopleBody> {
++  return get<PeopleBody>(`/api/sheets/${encodeURIComponent(sheetId)}/people`);
+ }
+ 
+ /** Read the sheet's people from the store. */
+-export async function fetchPeople(sheetId: string): Promise<Person[]> {
+-  return (await peopleBody(sheetId)).people;
++export async function fetchPeople(sheetId: string, get?: <T>(path: string) => Promise<T>): Promise<Person[]> {
++  return (await peopleBody(sheetId, get)).people;
+ }
+ 
+ export function patronsKey(sheetId: string) {
+@@ -133,8 +134,9 @@ export function retiredOn(person: Person, today: string | undefined): boolean {
+ 
+ /** The sheet's people, in list order. */
+ export function usePeople(sheetId: string) {
++  const read = useReader();
+   return useQuery({
+-    queryKey: peopleKey(sheetId),
+-    queryFn: () => fetchPeople(sheetId),
++    queryKey: read.key(peopleKey(sheetId)),
++    queryFn: () => fetchPeople(sheetId, read.get),
+   });
+ }
+diff --git a/src/main/frontend/features/rates/useRates.ts b/src/main/frontend/features/rates/useRates.ts
+index d500d9ecd..db5fb70c0 100644
+--- a/src/main/frontend/features/rates/useRates.ts
++++ b/src/main/frontend/features/rates/useRates.ts
+@@ -1,5 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
++import { useReader } from '../../api/readNow';
+ 
+ /** A grade's rate: a percent with two decimals, in force from its from-date (yyyy-mm-dd; null when it
+  *  applies from the beginning of time) through its to-date (null when it has no end). `level` is the sheet it
+@@ -13,10 +14,11 @@ export function ratesKey(sheetId: string) {
+ /** The sheet's rates (level 0), by grade then from-date (an undated rate first); a grade with no rate is not
+  *  listed. Then those of the sheets its grades fall back to, nearest first (level 1 its parent, up to 3). */
+ export function useRates(sheetId: string) {
++  const read = useReader();
+   return useQuery({
+-    queryKey: ratesKey(sheetId),
++    queryKey: read.key(ratesKey(sheetId)),
+     queryFn: async () => {
+-      const got = await getJson<{ rates: Rate[]; inherited: Rate[][] }>(`/api/sheets/${encodeURIComponent(sheetId)}/rates`);
++      const got = await read.get<{ rates: Rate[]; inherited: Rate[][] }>(`/api/sheets/${encodeURIComponent(sheetId)}/rates`);
+       return [
+         ...got.rates.map((r) => ({ ...r, level: 0 })),
+         ...(got.inherited ?? []).flatMap((rates, i) => rates.map((r) => ({ ...r, level: i + 1 }))),
+diff --git a/src/main/frontend/features/settings/useSettings.ts b/src/main/frontend/features/settings/useSettings.ts
+index 284864e8b..196212582 100644
+--- a/src/main/frontend/features/settings/useSettings.ts
++++ b/src/main/frontend/features/settings/useSettings.ts
+@@ -1,5 +1,5 @@
+ import { useQuery } from '@tanstack/react-query';
+-import { getJson } from '../../api/http';
++import { useReader } from '../../api/readNow';
+ 
+ /** The role a user name holds on the sheet: clerk or steward. A name not listed is a clerk. */
+ export type Role = { user: string; role: string };
+@@ -67,8 +67,9 @@ export function settingsKey(sheetId: string) {
+ }
+ 
+ export function useSettings(sheetId: string) {
++  const read = useReader();
+   return useQuery({
+-    queryKey: settingsKey(sheetId),
+-    queryFn: () => getJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`),
++    queryKey: read.key(settingsKey(sheetId)),
++    queryFn: () => read.get<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`),
+   });
+ }
+diff --git a/src/main/frontend/features/today/useSheetToday.ts b/src/main/frontend/features/today/useSheetToday.ts
+index 40027ff52..27423806c 100644
+--- a/src/main/frontend/features/today/useSheetToday.ts
++++ b/src/main/frontend/features/today/useSheetToday.ts
+@@ -1,13 +1,14 @@
+ import { useQuery } from '@tanstack/react-query';
+-import { getJson } from '../../api/http';
++import { useReader } from '../../api/readNow';
+ 
+ export type SheetToday = { id: string; today: string; archived: boolean };
+ 
+ /** The sheet's today (yyyy-mm-dd), and whether it is archived. Every date decision and default date in a sheet uses this,
+  *  never the browser's clock. */
+ export function useSheetToday(sheetId: string) {
++  const read = useReader();
+   return useQuery({
+-    queryKey: ['sheet', sheetId, 'today'],
+-    queryFn: () => getJson<SheetToday>(`/api/sheets/${encodeURIComponent(sheetId)}/today`),
++    queryKey: read.key(['sheet', sheetId, 'today']),
++    queryFn: () => read.get<SheetToday>(`/api/sheets/${encodeURIComponent(sheetId)}/today`),
+   });
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+index 89e91091d..f39f72b5b 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+@@ -4,9 +4,11 @@ import java.math.BigDecimal;
+ import java.math.RoundingMode;
+ import java.util.ArrayList;
+ import java.util.HashMap;
++import java.util.HashSet;
+ import java.util.LinkedHashMap;
+ import java.util.List;
+ import java.util.Map;
++import java.util.Set;
+ import org.springframework.dao.DuplicateKeyException;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+@@ -114,20 +116,39 @@ public class PoolRepository {
+         return found.isEmpty() ? null : found.get(0);
+     }
+ 
+-    /** Each member's cut of the pot: the pot times their share divided by 100, rounded half to even to two
+-     *  decimals (0.00 for a retired member); the remainder, the pot minus the cuts added up, goes to the member
+-     *  with the largest share (the earliest added on a tie), so the cuts total exactly the pot. */
+-    private static List<PoolMember> cut(List<PoolMember> members, BigDecimal pot) {
++    /** The ids of the sheet's people with a hold in force on the sheet's today (a hold whose dates include it). */
++    private Set<Long> heldToday(String sheetId) {
++        return new HashSet<>(jdbc.queryForList("SELECT DISTINCT h.person_id FROM person_hold h"
++                + " JOIN sheet s ON s.id = h.sheet_id WHERE h.sheet_id = ?"
++                + " AND (h.from_date IS NULL OR h.from_date <= COALESCE(s.today, CURRENT_DATE))"
++                + " AND (h.to_date IS NULL OR h.to_date >= COALESCE(s.today, CURRENT_DATE))", Long.class, sheetId));
++    }
++
++    /** Each member's cut of the pot. A member with a cut is one neither retired nor held on the sheet's today;
++     *  each such member's cut is the pot times their share divided by the shares of the members with a cut added
++     *  up, rounded half to even to two decimals (0.00 for any other member, and for every member when none has a
++     *  cut); the remainder, the pot minus the cuts added up, goes to the member with a cut with the largest share
++     *  (the earliest added on a tie), so the cuts total exactly the pot. */
++    private static List<PoolMember> cut(List<PoolMember> members, BigDecimal pot, Set<Long> held) {
++        List<Boolean> withCut = new ArrayList<>();
++        BigDecimal shares = BigDecimal.ZERO;
++        for (PoolMember m : members) {
++            boolean has = !m.retired() && (m.personId() == null || !held.contains(m.personId()));
++            withCut.add(has);
++            if (has) shares = shares.add(new BigDecimal(m.share()));
++        }
+         List<BigDecimal> cuts = new ArrayList<>();
+         int largest = -1;
+         BigDecimal sum = BigDecimal.ZERO;
+         for (int i = 0; i < members.size(); i++) {
+             PoolMember m = members.get(i);
+-            BigDecimal share = m.retired() ? BigDecimal.ZERO : new BigDecimal(m.share());
+-            BigDecimal cut = pot.multiply(share).divide(HUNDRED, 2, RoundingMode.HALF_EVEN);
++            boolean has = withCut.get(i) && shares.signum() > 0;
++            BigDecimal share = has ? new BigDecimal(m.share()) : BigDecimal.ZERO;
++            BigDecimal cut = has ? pot.multiply(share).divide(shares, 2, RoundingMode.HALF_EVEN)
++                    : BigDecimal.ZERO.setScale(2);
+             cuts.add(cut);
+             sum = sum.add(cut);
+-            if (!m.retired() && (largest < 0 || share.compareTo(new BigDecimal(members.get(largest).share())) > 0)) {
++            if (has && (largest < 0 || share.compareTo(new BigDecimal(members.get(largest).share())) > 0)) {
+                 largest = i;
+             }
+         }
+@@ -167,17 +188,18 @@ public class PoolRepository {
+             }
+         }, sheetId);
+         BigDecimal sheetPot = pot(sheetId);
++        Set<Long> held = heldToday(sheetId);
+         Map<String, Pool> done = new HashMap<>();
+         List<Pool> pools = new ArrayList<>();
+         for (String name : members.keySet()) {
+-            pools.add(resolve(name, members, parents, sheetPot, done));
++            pools.add(resolve(name, members, parents, sheetPot, held, done));
+         }
+         return pools;
+     }
+ 
+     /** The named pool with its cuts, resolving the pool above it first for its pot. */
+     private static Pool resolve(String name, Map<String, List<PoolMember>> members, Map<String, String> parents,
+-            BigDecimal sheetPot, Map<String, Pool> done) {
++            BigDecimal sheetPot, Set<Long> held, Map<String, Pool> done) {
+         Pool known = done.get(name);
+         if (known != null) return known;
+         BigDecimal pot = sheetPot;
+@@ -185,7 +207,7 @@ public class PoolRepository {
+         if (parent != null) {
+             pot = null;
+             if (members.containsKey(parent)) {
+-                for (PoolMember m : resolve(parent, members, parents, sheetPot, done).members()) {
++                for (PoolMember m : resolve(parent, members, parents, sheetPot, held, done).members()) {
+                     if (name.equals(m.pool()) && m.cut() != null) pot = new BigDecimal(m.cut());
+                 }
+             }
+@@ -194,7 +216,7 @@ public class PoolRepository {
+         BigDecimal total = of.stream().filter(m -> !m.retired()).map(m -> new BigDecimal(m.share()))
+                 .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
+         boolean balanced = total.compareTo(HUNDRED) == 0;
+-        Pool pool = new Pool(name, balanced && pot != null ? cut(of, pot) : of, total.toPlainString(), balanced);
++        Pool pool = new Pool(name, balanced && pot != null ? cut(of, pot, held) : of, total.toPlainString(), balanced);
+         done.put(name, pool);
+         return pool;
+     }
