@@ -120,18 +120,27 @@ public class ClaimRepository {
         kept(sheetId, claimId, jdbc.update("UPDATE claim SET void_reason = ? WHERE id = ? AND sheet_id = ?", reason, claimId, sheetId) > 0);
     }
 
-    /** Give an opened claim the next number of its sheet's tree: one after the last number given on any sheet of
-     *  the tree (the sheet's topmost ancestor and all its descendants). The tree's sheet rows stay locked until the
-     *  transaction commits, so two claims opened at once anywhere in the tree get consecutive numbers. */
-    public String number(String sheetId, long claimId) {
+    /** Give an opened claim the next number of its sheet's tree within the fiscal year its due-by ({@code date})
+     *  falls in, FY<yyyy>-<n>: one after the last number given in that fiscal year on any sheet of the tree (the
+     *  sheet's topmost ancestor and all its descendants). The fiscal year follows the sheet's fiscal start month.
+     *  The tree's sheet rows stay locked until the transaction commits, so two claims opened at once anywhere in
+     *  the tree get consecutive numbers. */
+    public String number(String sheetId, long claimId, LocalDate date) {
         List<String> tree = tree(sheetId);
         String in = String.join(",", java.util.Collections.nCopies(tree.size(), "?"));
         jdbc.update("UPDATE sheet SET claim_number = claim_number WHERE id IN (" + in + ")", tree.toArray());
-        Long last = jdbc.queryForObject("SELECT MAX(claim_number) FROM sheet WHERE id IN (" + in + ")",
-                Long.class, tree.toArray());
+        Integer startMonth = jdbc.queryForObject("SELECT fiscal_start_month FROM sheet WHERE id = ?", Integer.class, sheetId);
+        int year = date.getMonthValue() >= (startMonth == null ? 1 : startMonth) ? date.getYear() : date.getYear() - 1;
+        String key = "FY" + year;
+        List<Object> args = new ArrayList<>(tree);
+        args.add(key);
+        Long last = jdbc.queryForObject("SELECT MAX(last_no) FROM claim_sequence WHERE sheet_id IN (" + in + ")"
+                + " AND seq_key = ?", Long.class, args.toArray());
         long next = (last == null ? 0 : last) + 1;
-        jdbc.update("UPDATE sheet SET claim_number = ? WHERE id = ?", next, sheetId);
-        String number = String.valueOf(next);
+        if (jdbc.update("UPDATE claim_sequence SET last_no = ? WHERE sheet_id = ? AND seq_key = ?", next, sheetId, key) == 0) {
+            jdbc.update("INSERT INTO claim_sequence (sheet_id, seq_key, last_no) VALUES (?, ?, ?)", sheetId, key, next);
+        }
+        String number = key + "-" + next;
         jdbc.update("UPDATE claim SET claim_no = ? WHERE id = ? AND sheet_id = ?", number, claimId, sheetId);
         kept(sheetId, claimId, true);
         return number;
@@ -433,7 +442,7 @@ public class ClaimRepository {
         Map<String, String> numbers = new LinkedHashMap<>();
         for (Object[] c : numbered) {
             long arrived = moved.get((Long) c[0]);
-            numbers.put((String) c[1], perPeriod ? numberInPeriod(toSheet, arrived, (LocalDate) c[2]) : number(toSheet, arrived));
+            numbers.put((String) c[1], perPeriod ? numberInPeriod(toSheet, arrived, (LocalDate) c[2]) : number(toSheet, arrived, (LocalDate) c[2]));
         }
         for (Long arrived : moved.values()) {
             Map<String, Object> was = jdbc.queryForMap("SELECT corrects, split_from FROM claim WHERE id = ?", arrived);

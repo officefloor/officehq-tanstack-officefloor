@@ -179,7 +179,7 @@ public class SheetCloner {
         Map<String, String> numbers = new LinkedHashMap<>();
         for (Object[] c : numbered) {
             long made = (Long) c[0];
-            numbers.put(wasOfCopy.get(made), perPeriod ? claims.numberInPeriod(to, made, (LocalDate) c[1]) : claims.number(to, made));
+            numbers.put(wasOfCopy.get(made), perPeriod ? claims.numberInPeriod(to, made, (LocalDate) c[1]) : claims.number(to, made, (LocalDate) c[1]));
         }
         for (Long made : copied.values()) {
             Map<String, Object> links = jdbc.queryForMap("SELECT corrects, split_from FROM claim WHERE id = ?", made);

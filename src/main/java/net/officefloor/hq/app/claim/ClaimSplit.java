@@ -45,7 +45,7 @@ final class ClaimSplit {
         }
         String number = repository.numbersPerPeriod(id)
                 ? repository.numberInPeriod(id, nid, LocalDate.parse(repository.find(id, nid).dueBy()))
-                : repository.number(id, nid);
+                : repository.number(id, nid, LocalDate.parse(repository.find(id, nid).dueBy()));
         repository.log(id, nid, by);
         Claim kept = repository.find(id, cid);
         Claim added = repository.find(id, nid);

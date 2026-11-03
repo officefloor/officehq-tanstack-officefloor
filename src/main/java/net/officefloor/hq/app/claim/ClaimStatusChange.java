@@ -162,7 +162,7 @@ final class ClaimStatusChange {
         if (found.status().equals("DRAFT") && to.equals("OPEN")) {
             number = repository.numbersPerPeriod(id)
                     ? repository.numberInPeriod(id, cid, LocalDate.parse(found.dueBy()))
-                    : repository.number(id, cid);
+                    : repository.number(id, cid, LocalDate.parse(found.dueBy()));
             repository.openedBy(id, cid, by);
             openedBy = by;
         }

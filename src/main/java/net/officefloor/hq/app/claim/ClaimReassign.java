@@ -62,7 +62,7 @@ final class ClaimReassign {
         if (!found.status().equals("DRAFT")) {
             number = repository.numbersPerPeriod(id)
                     ? repository.numberInPeriod(id, found.id(), LocalDate.parse(found.dueBy()))
-                    : repository.number(id, found.id());
+                    : repository.number(id, found.id(), LocalDate.parse(found.dueBy()));
         }
         Claim moved = new Claim(found.id(), to, found.amount(), found.date(), found.note(), found.status(),
                 number, found.due(), found.openedBy(), false, null, found.corrects(), found.dueBy(), false,
