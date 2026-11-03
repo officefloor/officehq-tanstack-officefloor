@@ -4,6 +4,8 @@ import { postJson } from '../../api/http';
 import { useSingleFlight } from '../../query/useSingleFlight';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useSheetToday } from '../today/useSheetToday';
+import { claimsKey } from '../claims/useClaims';
+import { peopleKey } from '../people/usePeople';
 import { settingOn, settingsKey, useSettings, type Settings } from './useSettings';
 
 /** The sheet's settings: its clerk limit (a clerk settles a claim only when its due is at or below
@@ -136,6 +138,9 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
     onSuccess: (saved) => {
       setHolidayDate('');
       queryClient.setQueryData(settingsKey(sheetId), saved);
+      // A new holiday re-fixes the due-by of the claims on or after it, which can move people's figures.
+      void queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+      void queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
     },
   });
 

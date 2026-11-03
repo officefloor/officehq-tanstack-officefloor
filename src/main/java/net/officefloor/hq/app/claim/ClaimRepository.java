@@ -386,6 +386,39 @@ public class ClaimRepository {
         return settings.businessDaysAfter(sheetId, date, own != null ? own : settings.terms(sheetId, date));
     }
 
+    /** Re-fix, after a holiday is added to the sheet, the due-by of each claim not SETTLED or VOID whose due-by is on
+     *  or after it: the terms-th business day after its date over the sheet's holidays now, for the terms it was fixed
+     *  with (the business days from its date to its due-by over the holidays before, {@code before}). A claim whose
+     *  due-by moves is kept in the history. */
+    public void refixDueBy(String sheetId, java.util.Set<String> before, LocalDate holiday) {
+        java.util.Set<String> now = new java.util.HashSet<>(before);
+        now.add(holiday.toString());
+        List<Object[]> open = jdbc.query("SELECT id, claim_date, due_by FROM claim WHERE sheet_id = ?"
+                + " AND status NOT IN ('SETTLED', 'VOID') AND due_by >= ? ORDER BY id",
+                (rs, i) -> new Object[] { rs.getLong("id"), rs.getDate("claim_date").toLocalDate(),
+                        rs.getDate("due_by").toLocalDate() }, sheetId, Date.valueOf(holiday));
+        for (Object[] c : open) {
+            LocalDate date = (LocalDate) c[1];
+            LocalDate old = (LocalDate) c[2];
+            LocalDate fixed = SettingsRepository.businessDaysAfter(now, date, businessDaysBetween(before, date, old));
+            if (fixed.equals(old)) continue;
+            jdbc.update("UPDATE claim SET due_by = ? WHERE id = ? AND sheet_id = ?", Date.valueOf(fixed), c[0], sheetId);
+            history.claim(sheetId, (Long) c[0]);
+        }
+    }
+
+    /** The business days (not a Saturday, Sunday or one of the holidays) after a date up to and including another. */
+    private static int businessDaysBetween(java.util.Set<String> holidays, LocalDate from, LocalDate to) {
+        int days = 0;
+        for (LocalDate d = from.plusDays(1); !d.isAfter(to); d = d.plusDays(1)) {
+            java.time.DayOfWeek day = d.getDayOfWeek();
+            if (day != java.time.DayOfWeek.SATURDAY && day != java.time.DayOfWeek.SUNDAY && !holidays.contains(d.toString())) {
+                days++;
+            }
+        }
+        return days;
+    }
+
     public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects) {
         return add(sheetId, personId, amount, date, note, corrects, null);
     }
