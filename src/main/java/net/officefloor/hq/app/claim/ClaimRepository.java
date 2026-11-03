@@ -321,6 +321,18 @@ public class ClaimRepository {
                 + " AND status IN ('DRAFT', 'OPEN', 'PENDING')", personId, claimId, sheetId) > 0);
     }
 
+    /** Move every claim of one person to another (a merge): each keeps its number and date, loses any figure a
+     *  statement bound it to, and is listed after the other's claims in the order it was added. */
+    public void moveAll(String sheetId, long fromId, long intoId) {
+        List<Long> ids = jdbc.queryForList("SELECT id FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY id",
+                Long.class, sheetId, fromId);
+        for (Long claimId : ids) {
+            kept(sheetId, claimId, jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL,"
+                    + " stated_na = FALSE, listed = NEXT VALUE FOR claim_listed_seq WHERE id = ? AND sheet_id = ?",
+                    intoId, claimId, sheetId) > 0);
+        }
+    }
+
     /** Defer an OPEN claim until a date; false when the sheet has no such OPEN claim. */
     public boolean defer(String sheetId, long claimId, LocalDate until) {
         return kept(sheetId, claimId, jdbc.update("UPDATE claim SET deferred_until = ? WHERE id = ? AND sheet_id = ? AND status = 'OPEN'",
