@@ -144,10 +144,10 @@ public class ClaimRepository {
         kept(sheetId, claimId, jdbc.update("UPDATE claim SET void_reason = ? WHERE id = ? AND sheet_id = ?", reason, claimId, sheetId) > 0);
     }
 
-    /** Give an opened claim the next number of its sheet's tree within the fiscal year its due-by ({@code date})
+    /** Give a settled claim the next number of its sheet's tree within the fiscal year its due-by ({@code date})
      *  falls in, FY<yyyy>-<n>: one after the last number given in that fiscal year on any sheet of the tree (the
      *  sheet's topmost ancestor and all its descendants). The fiscal year follows the sheet's fiscal start month.
-     *  The tree's sheet rows stay locked until the transaction commits, so two claims opened at once anywhere in
+     *  The tree's sheet rows stay locked until the transaction commits, so two claims settled at once anywhere in
      *  the tree get consecutive numbers. */
     public String number(String sheetId, long claimId, LocalDate date) {
         List<String> tree = tree(sheetId);
@@ -192,7 +192,7 @@ public class ClaimRepository {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    /** Whether claims opened now are numbered per period: the sheet's period numbering from-date is set
+    /** Whether claims settled now are numbered per period: the sheet's period numbering from-date is set
      *  and its today is on or after it. */
     public boolean numbersPerPeriod(String sheetId) {
         Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM sheet WHERE id = ? AND period_numbering_from IS NOT NULL"
@@ -200,9 +200,9 @@ public class ClaimRepository {
         return n != null && n > 0;
     }
 
-    /** Give an opened claim the next number in the sequence of the period its due-by ({@code date}) falls in,
+    /** Give a settled claim the next number in the sequence of the period its due-by ({@code date}) falls in,
      *  <period name>-<n>, or X-<n> when it is in no period. The sheet's row is locked first, so two
-     *  claims opened at once get consecutive numbers. */
+     *  claims settled at once get consecutive numbers. */
     public String numberInPeriod(String sheetId, long claimId, LocalDate date) {
         jdbc.update("UPDATE sheet SET claim_number = claim_number WHERE id = ?", sheetId);
         List<Object[]> period = periodOn(sheetId, date);
@@ -719,7 +719,7 @@ public class ClaimRepository {
     /** Split an amount off an OPEN claim: the claim keeps the rest of its amount and is unbound from its last
      *  statement (live again); a new OPEN claim of the same person with the split-off amount, the same date and
      *  note and tags, opened by {@code by}, with its due-by fixed now and the original's number as split-from, is added
-     *  (unnumbered: the caller numbers it; a late entry when its due-by falls in a soft-closed period). The new claim's id, or null when the sheet has no such OPEN claim. */
+     *  (unnumbered until it is settled; a late entry when its due-by falls in a soft-closed period). The new claim's id, or null when the sheet has no such OPEN claim. */
     public Long split(String sheetId, Claim claim, BigDecimal amount, String by) {
         BigDecimal rest = new BigDecimal(claim.amount()).subtract(amount);
         if (jdbc.update("UPDATE claim SET amount = ?, stated = FALSE, stated_due = NULL, stated_na = FALSE"

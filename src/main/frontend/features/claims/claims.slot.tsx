@@ -39,7 +39,7 @@ type ClaimAction = 'open' | 'review' | 'settle' | 'approve' | 'reject' | 'void' 
  *  user who opened the claim), a re-settle by anyone but a steward or of a claim not SETTLED, and a void of a SETTLED claim by anyone but a steward, more than 7 days after its settlement or in a closed period. A reject takes the reason typed on the claim's row.
  *  A delete moves a DRAFT claim (not in a closed period) to DELETED, where it counts nowhere; a restore makes it a DRAFT again, only on the sheet-today it was deleted.
  *  A settle or approve of a claim whose due is above the proof threshold in force on its date is refused while it has no proof.
- *  An open of a claim whose due is above the review threshold in force on its date makes it REVIEW (no number yet); a review
+ *  An open of a claim whose due is above the review threshold in force on its date makes it REVIEW; a claim gets its number only when settled or approved; a review
  *  by a steward makes it OPEN, by anyone else is refused. */
 const ACTIONS: [Exclude<ClaimAction, 'defer' | 'proof' | 'remind' | 'waive' | 'hold' | 'split' | 'settle-part' | 'redate' | 'comment' | 'line'>, string][] = [
   ['open', 'Open'],

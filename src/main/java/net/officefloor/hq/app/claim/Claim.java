@@ -4,7 +4,7 @@ import java.util.List;
 import net.officefloor.hq.app.person.Hold;
 
 /** A claim of a person on a sheet: its amount with two decimals, its date (ISO yyyy-MM-dd), note and status
- *  (DRAFT, OPEN, PENDING — a clerk's settle above the clerk limit, awaiting a steward — SETTLED, VOID or DELETED — a deleted DRAFT, counted nowhere), its number on the sheet (a sheet-wide 1, 2, ... or, under period numbering, <period>-<n> or X-<n>; null while a draft; a voided claim keeps the one it had), and the due fixed when it was settled
+ *  (DRAFT, OPEN, PENDING — a clerk's settle above the clerk limit, awaiting a steward — SETTLED, VOID or DELETED — a deleted DRAFT, counted nowhere), its number on the sheet (a sheet-wide 1, 2, ... or, under period numbering, <period>-<n> or X-<n>; given when it is settled or approved, so null while DRAFT, REVIEW, OPEN or PENDING, unless numbered on opening before; a voided claim keeps the one it had), and the due fixed when it was settled
  *  (null unless settled with a rate; its due is then worked out live from the rates), and who opened it
  *  (null until it is opened), whether its person's last statement bound it, and the figure it was bound to
  *  (null when not bound, or bound with no figure: its due then stays live), and, for a correction (a negative

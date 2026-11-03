@@ -11,9 +11,8 @@ import net.officefloor.hq.app.settings.SettingsRepository;
 
 /** A claim's move to another person, shared by the single and the bulk reassign: only a role the sheet's
  *  permission matrix allows (by default a steward) may; only a DRAFT, OPEN or PENDING claim, outside a closed
- *  period, and not to a person retired from before its date. The claim keeps its date and takes the next number in
- *  the sequence it would be numbered in now (the sheet's, or its period's), its old number never used again (a
- *  DRAFT, having none, gets none); it loses any figure a statement bound it to and is listed as its new person's
+ *  period, and not to a person retired from before its date. The claim keeps its date and its number (one not yet
+ *  settled has none: it is numbered when settled); it loses any figure a statement bound it to and is listed as its new person's
  *  newest claim. Every check is made before anything is written, so a refusal writes nothing to the store or the audit. */
 final class ClaimReassign {
     private ClaimReassign() {
@@ -59,11 +58,6 @@ final class ClaimReassign {
             throw new BadRequestException("a " + found.status() + " claim cannot be reassigned");
         }
         String number = found.number();
-        if (!found.status().equals("DRAFT")) {
-            number = repository.numbersPerPeriod(id)
-                    ? repository.numberInPeriod(id, found.id(), LocalDate.parse(found.dueBy()))
-                    : repository.number(id, found.id(), LocalDate.parse(found.dueBy()));
-        }
         Claim moved = new Claim(found.id(), to, found.amount(), found.date(), found.note(), found.status(),
                 number, found.due(), found.openedBy(), false, null, found.corrects(), found.dueBy(), false,
                 found.deferredUntil(), found.deferred(), found.proofs(), found.splitFrom(), found.lateEntry(), found.reminded(), found.ref(), found.tags(), found.voidReason(), found.waived(), found.photos(), found.held());

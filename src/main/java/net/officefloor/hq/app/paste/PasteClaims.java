@@ -34,8 +34,8 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  A line naming a date and note that match one of the person's claims as they stood before the paste (not VOID or
  *  DELETED; never a claim the paste itself added) updates the newest such DRAFT to the line's amount instead
  *  (CLAIM_EDITED when it changes) and opens it; a line whose matches hold no DRAFT is refused. Every line is checked
- *  first by the claim form's rules; each claim is then opened exactly as its open button would, numbered in paste
- *  order. One change: any refusal (a line's, or an open's) refuses the whole paste — the store is rolled back and
+ *  first by the claim form's rules; each claim is then opened exactly as its open button would, in paste order
+ *  (unnumbered until settled). One change: any refusal (a line's, or an open's) refuses the whole paste — the store is rolled back and
  *  no audit record is written. */
 public class PasteClaims {
     private record Checked(Person person, PasteLine line, LocalDate date, Claim draft) {

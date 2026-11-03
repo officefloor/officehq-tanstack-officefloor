@@ -246,10 +246,12 @@ public final class ClaimStatusChange {
         if (to.equals("REVIEW")) {
             repository.reviewDay(id, cid);
         }
-        // Opening gives the sheet's next number; a rejected claim keeps its own; a voided claim keeps the number it had (never reused).
+        // Settling (or approving) gives the next number in its sequence, by the due-by that places it now; a claim
+        // numbered before (opened when claims were numbered on opening) keeps its own; a voided claim keeps the number
+        // it had (never reused); an OPEN, PENDING or REVIEW claim has none.
         String number = found.number();
         String openedBy = found.openedBy();
-        if ((found.status().equals("DRAFT") || found.status().equals("REVIEW")) && to.equals("OPEN")) {
+        if (to.equals("SETTLED") && number == null) {
             number = repository.numbersPerPeriod(id)
                     ? repository.numberInPeriod(id, cid, LocalDate.parse(found.dueBy()))
                     : repository.number(id, cid, LocalDate.parse(found.dueBy()));
