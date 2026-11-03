@@ -13,7 +13,8 @@ import { GRADES, fetchPeople, peopleKey, usePeople, type Person } from './usePeo
  *  with the grade in force on the sheet's today. An edit records the form's grade from its from-date
  *  (blank: the sheet's today); the first grade a person is given applies from the beginning of time.
  *  A person may have their own terms (days; blank for none), shown on their row: a claim's due-by is fixed
- *  from them when it is created, ahead of their grade's and the sheet's terms.
+ *  from them when it is created, ahead of their grade's and the sheet's terms. A person may have a contact
+ *  (stored trimmed and lower-cased; blank for none), shown on their row; another person's contact is refused.
  *  The editor remembers the version of the person it loaded; when someone else has saved them since,
  *  the save is refused (409) and the editor shows their current values, at their current version; any other
  *  refused edit closes the editor, leaving its error showing. Each person is a <tbody> so features can add
@@ -28,15 +29,16 @@ function People({ sheetId }: { sheetId: string }) {
   const [grade, setGrade] = useState<string>('A');
   const [gradeFrom, setGradeFrom] = useState('');
   const [terms, setTerms] = useState('');
+  const [contact, setContact] = useState('');
   const [version, setVersion] = useState<number | null>(null);
 
   const submitOnce = useSingleFlight();
   const save = useMutation({
-    mutationFn: (f: { id: number | null; name: string; grade: string; gradeFrom: string; terms: string; version: number | null }) => {
+    mutationFn: (f: { id: number | null; name: string; grade: string; gradeFrom: string; terms: string; contact: string; version: number | null }) => {
       const base = `/api/sheets/${encodeURIComponent(sheetId)}/people`;
       return f.id === null
-        ? postJson<Person>(base, { name: f.name, grade: f.grade, terms: f.terms })
-        : postJson<Person>(`${base}/${f.id}`, { name: f.name, grade: f.grade, gradeFrom: f.gradeFrom, terms: f.terms, version: f.version });
+        ? postJson<Person>(base, { name: f.name, grade: f.grade, terms: f.terms, contact: f.contact })
+        : postJson<Person>(`${base}/${f.id}`, { name: f.name, grade: f.grade, gradeFrom: f.gradeFrom, terms: f.terms, contact: f.contact, version: f.version });
     },
     onSuccess: async () => {
       setEditing(null);
@@ -44,6 +46,7 @@ function People({ sheetId }: { sheetId: string }) {
       setGrade('A');
       setGradeFrom('');
       setTerms('');
+      setContact('');
       setVersion(null);
       await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
     },
@@ -56,6 +59,7 @@ function People({ sheetId }: { sheetId: string }) {
         setGrade('A');
         setGradeFrom('');
         setTerms('');
+        setContact('');
         setVersion(null);
         return;
       }
@@ -69,6 +73,7 @@ function People({ sheetId }: { sheetId: string }) {
         setName(current.name);
         setGrade(current.grade);
         setTerms(current.terms === null ? '' : String(current.terms));
+        setContact(current.contact ?? '');
         setVersion(current.version);
       }
     },
@@ -97,6 +102,7 @@ function People({ sheetId }: { sheetId: string }) {
     setGrade(p.grade);
     setGradeFrom('');
     setTerms(p.terms === null ? '' : String(p.terms));
+    setContact(p.contact ?? '');
     setVersion(p.version);
   };
 
@@ -107,6 +113,7 @@ function People({ sheetId }: { sheetId: string }) {
     setGrade('A');
     setGradeFrom('');
     setTerms('');
+    setContact('');
     setVersion(null);
   };
 
@@ -118,7 +125,7 @@ function People({ sheetId }: { sheetId: string }) {
           e.preventDefault();
           submitOnce(() => {
             save.reset();
-            return save.mutateAsync({ id: editing, name, grade, gradeFrom, terms, version });
+            return save.mutateAsync({ id: editing, name, grade, gradeFrom, terms, contact, version });
           });
         }}
       >
@@ -169,6 +176,17 @@ function People({ sheetId }: { sheetId: string }) {
             value={terms}
             onChange={(e) => {
               setTerms(e.target.value);
+              save.reset();
+            }}
+          />
+        </label>{' '}
+        <label>
+          Contact{' '}
+          <input
+            data-testid="person-form-contact"
+            value={contact}
+            onChange={(e) => {
+              setContact(e.target.value);
               save.reset();
             }}
           />
@@ -229,6 +247,7 @@ function People({ sheetId }: { sheetId: string }) {
             <th>Name</th>
             <th>Grade</th>
             <th>Terms</th>
+            <th>Contact</th>
             <PersonColumnHead.Slot sheetId={sheetId} />
             <th />
           </tr>
@@ -239,6 +258,7 @@ function People({ sheetId }: { sheetId: string }) {
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>
               <td data-testid="person-terms">{p.terms ?? ''}</td>
+              <td data-testid="person-contact">{p.contact ?? ''}</td>
               <PersonCells.Slot sheetId={sheetId} personId={p.id} />
               <td>
                 <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => openEditor(p)}>

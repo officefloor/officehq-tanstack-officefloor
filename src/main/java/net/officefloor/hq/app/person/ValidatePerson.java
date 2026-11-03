@@ -10,7 +10,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 /** Bind the person form: a name is required (trimmed; unique on the sheet, checked when saved), the grade
  *  must be A, B or C, and a from-date is yyyy-mm-dd (blank for the sheet's today), and the terms
- *  a whole number of days from 0 to 3650 (blank for none). */
+ *  a whole number of days from 0 to 3650 (blank for none), and the contact is trimmed and
+ *  lower-cased (blank for none; unique on the sheet, checked when saved). */
 public class ValidatePerson {
     private static final Set<String> GRADES = Set.of("A", "B", "C");
     private static final Pattern TERMS = Pattern.compile("\\d{1,4}");
@@ -36,7 +37,8 @@ public class ValidatePerson {
         if (!terms.isEmpty() && (!TERMS.matcher(terms).matches() || Integer.parseInt(terms) > 3650)) {
             throw new BadRequestException("terms must be a whole number of days from 0 to 3650");
         }
+        String contact = request.contact() == null ? "" : request.contact().trim().toLowerCase(java.util.Locale.ROOT);
         person.set(new PersonRequest(name, grade, request.version(), from,
-                terms.isEmpty() ? "" : String.valueOf(Integer.parseInt(terms))));
+                terms.isEmpty() ? "" : String.valueOf(Integer.parseInt(terms)), contact));
     }
 }

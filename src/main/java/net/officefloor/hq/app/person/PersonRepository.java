@@ -22,13 +22,13 @@ public class PersonRepository {
             + " AND (g.from_date IS NULL OR g.from_date <= (SELECT s.today FROM sheet s WHERE s.id = person.sheet_id))"
             + " ORDER BY g.from_date DESC NULLS LAST LIMIT 1) AS grade";
 
-    private static final String COLUMNS = "id, name, " + GRADE_TODAY + ", version, statement_count, stated_total, statement_date, retired_from, terms";
+    private static final String COLUMNS = "id, name, " + GRADE_TODAY + ", version, statement_count, stated_total, statement_date, retired_from, terms, contact";
 
     private static final RowMapper<Person> ROW = (rs, i) -> new Person(rs.getLong("id"), rs.getString("name"),
             rs.getString("grade"), rs.getLong("version"), rs.getLong("statement_count"), rs.getString("stated_total"),
             rs.getDate("statement_date") == null ? null : rs.getDate("statement_date").toLocalDate().toString(),
             rs.getDate("retired_from") == null ? null : rs.getDate("retired_from").toLocalDate().toString(),
-            false, List.of(), List.of(), (Integer) rs.getObject("terms", Integer.class));
+            false, List.of(), List.of(), (Integer) rs.getObject("terms", Integer.class), rs.getString("contact"));
 
     private final JdbcTemplate jdbc;
     private final HistoryRepository history;
@@ -164,22 +164,35 @@ public class PersonRepository {
         return found.isEmpty() ? null : found.get(0);
     }
 
+    /** Whether another person on the sheet (other than {@code exceptId}; 0 for none) already has this contact. */
+    public boolean contactTaken(String sheetId, String contact, long exceptId) {
+        Integer taken = jdbc.queryForObject("SELECT COUNT(*) FROM person WHERE sheet_id = ? AND contact = ? AND id <> ?",
+                Integer.class, sheetId, contact, exceptId);
+        return taken != null && taken > 0;
+    }
+
     public Person add(String sheetId, String name, String grade, Integer terms) {
+        return add(sheetId, name, grade, terms, null);
+    }
+
+    /** Add a person with their own terms and contact (each null: none). */
+    public Person add(String sheetId, String name, String grade, Integer terms, String contact) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(c -> {
             PreparedStatement ps = c.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade, terms, added_on)"
-                            + " SELECT ?, ?, ?, ?, today FROM sheet WHERE id = ?", new String[] { "id" });
+                    "INSERT INTO person (sheet_id, name, grade, terms, contact, added_on)"
+                            + " SELECT ?, ?, ?, ?, ?, today FROM sheet WHERE id = ?", new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setString(2, name);
             ps.setString(3, grade);
             ps.setObject(4, terms, java.sql.Types.INTEGER);
-            ps.setString(5, sheetId);
+            ps.setString(5, contact);
+            ps.setString(6, sheetId);
             return ps;
         }, keys);
         long id = keys.getKey().longValue();
         grade(sheetId, id, grade, null);
-        return new Person(id, name, grade, 1, 0, null, null, null, false, List.of(new GradeFrom(grade, null)), List.of(), terms);
+        return new Person(id, name, grade, 1, 0, null, null, null, false, List.of(new GradeFrom(grade, null)), List.of(), terms, contact);
     }
 
     /** Whether the sheet has this person. */
@@ -189,11 +202,17 @@ public class PersonRepository {
         return known != null && known > 0;
     }
 
-    /** Change a person's name and own terms (null: none), if they are still at {@code version}, moving them to the next version;
-     *  false when the sheet has no such person at that version. Their grades are given by {@link #grade}. */
     public boolean update(String sheetId, long id, long version, String name, Integer terms) {
         return jdbc.update(
                 "UPDATE person SET name = ?, terms = ?, version = version + 1 WHERE id = ? AND sheet_id = ? AND version = ?",
                 name, terms, id, sheetId, version) > 0;
+    }
+
+    /** Change a person's name, own terms and contact (each null: none), if they are still at {@code version}, moving them to the next version;
+     *  false when the sheet has no such person at that version. Their grades are given by {@link #grade}. */
+    public boolean update(String sheetId, long id, long version, String name, Integer terms, String contact) {
+        return jdbc.update(
+                "UPDATE person SET name = ?, terms = ?, contact = ?, version = version + 1 WHERE id = ? AND sheet_id = ? AND version = ?",
+                name, terms, contact, id, sheetId, version) > 0;
     }
 }

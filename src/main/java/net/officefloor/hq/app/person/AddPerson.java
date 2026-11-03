@@ -22,16 +22,21 @@ public class AddPerson {
         if (repository.nameTaken(id, request.name(), 0)) {
             throw new BadRequestException("name is already in use");
         }
+        String contact = request.contact().isEmpty() ? null : request.contact();
+        if (contact != null && repository.contactTaken(id, contact, 0)) {
+            throw new BadRequestException("contact is already in use");
+        }
         Rollup.Snapshot before = rollup.take(id);
         Person added;
         try {
             added = repository.add(id, request.name(), request.grade(),
-                    request.terms().isEmpty() ? null : Integer.valueOf(request.terms()));
+                    request.terms().isEmpty() ? null : Integer.valueOf(request.terms()), contact);
         } catch (DuplicateKeyException e) {
             throw new BadRequestException("name is already in use");
         }
         audit.record("PERSON_ADDED sheet=" + id + " by=" + by + " name=" + added.name()
-                + " grade=" + added.grade() + (added.terms() == null ? "" : " terms=" + added.terms()));
+                + " grade=" + added.grade() + (added.terms() == null ? "" : " terms=" + added.terms())
+                + (added.contact() == null ? "" : " contact=" + added.contact()));
         rollup.record(id, by, before);
         person.set(added);
     }
