@@ -6,7 +6,7 @@ import net.officefloor.hq.app.BadRequestException;
 import net.officefloor.hq.app.period.PeriodGuard;
 import net.officefloor.hq.app.period.PeriodRepository;
 
-/** Raise a claim's proofs count by one: not a SETTLED or VOID claim, nor one in a closed period. Every check is
+/** Raise a claim's proofs count by one: not a SETTLED, VOID or DELETED claim, nor one in a closed period. Every check is
  *  made before anything is written, so a refusal writes nothing to the store or the audit. */
 final class ClaimProof {
     private ClaimProof() {
@@ -18,7 +18,7 @@ final class ClaimProof {
         if (found == null) {
             throw new BadRequestException("no such claim");
         }
-        if (found.status().equals("SETTLED") || found.status().equals("VOID")) {
+        if (found.status().equals("SETTLED") || found.status().equals("VOID") || found.status().equals("DELETED")) {
             throw new BadRequestException("a " + found.status() + " claim cannot be given a proof");
         }
         PeriodGuard.open(periods, id, LocalDate.parse(found.dueBy()));

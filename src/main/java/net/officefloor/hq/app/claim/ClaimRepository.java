@@ -423,11 +423,11 @@ public class ClaimRepository {
                 Date.valueOf(until), claimId, sheetId) > 0);
     }
 
-    /** Raise a claim's proofs count by one, only when it is not SETTLED or VOID; the count now, or null when the
+    /** Raise a claim's proofs count by one, only when it is not SETTLED, VOID or DELETED; the count now, or null when the
      *  sheet has no such claim in those statuses. */
     public Integer addProof(String sheetId, long claimId) {
         if (jdbc.update("UPDATE claim SET proofs = proofs + 1 WHERE id = ? AND sheet_id = ?"
-                + " AND status NOT IN ('SETTLED', 'VOID')", claimId, sheetId) == 0) {
+                + " AND status NOT IN ('SETTLED', 'VOID', 'DELETED')", claimId, sheetId) == 0) {
             return null;
         }
         return jdbc.queryForObject("SELECT proofs FROM claim WHERE id = ? AND sheet_id = ?", Integer.class, claimId, sheetId);
@@ -707,6 +707,14 @@ public class ClaimRepository {
                 + " JOIN sheet s ON s.id = l.sheet_id WHERE l.sheet_id = ? AND l.claim_id = ? AND l.status = 'SETTLED'"
                 + " ORDER BY l.id DESC LIMIT 1", (rs, i) -> rs.getLong("days"), sheetId, claimId);
         return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** Whether a claim's status log last records it DELETED on the sheet's today. */
+    public boolean deletedToday(String sheetId, long claimId) {
+        List<Long> found = jdbc.query("SELECT DATEDIFF('DAY', l.on_date, s.today) AS days FROM claim_log l"
+                + " JOIN sheet s ON s.id = l.sheet_id WHERE l.sheet_id = ? AND l.claim_id = ? AND l.status = 'DELETED'"
+                + " ORDER BY l.id DESC LIMIT 1", (rs, i) -> rs.getLong("days"), sheetId, claimId);
+        return !found.isEmpty() && found.get(0) == 0;
     }
 
     /** The status logs of the sheet's claims, by claim id: each a line per status it has had, oldest first,

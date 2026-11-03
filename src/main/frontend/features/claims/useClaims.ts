@@ -4,8 +4,8 @@ import { heldOn, type Hold } from '../people/usePeople';
 
 /** A claim's status: DRAFT -> OPEN -> SETTLED; a clerk's settle above the clerk limit goes to PENDING
  *  instead, which a steward approves (SETTLED) or rejects (OPEN again); a DRAFT, OPEN or PENDING claim
- *  can become VOID. */
-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
+ *  can become VOID; a DRAFT can be DELETED (counted nowhere) and restored to DRAFT on the day it was deleted. */
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED';
 
 /** A claim: its amount with two decimals, its date (yyyy-mm-dd), its note, its status, its number on
  *  the sheet (given when it is opened: 1, 2, ... or, under period numbering, <period>-<n> or X-<n>; null while a draft and once void) and the due fixed when it was
