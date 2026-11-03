@@ -8,18 +8,19 @@ import java.util.List;
  *  and the last one's due-total and date (both null before the first), and the date they are retired
  *  from (null when not retired; any date set means retired at once), and their holds (oldest first) and
  *  whether they have any (their open (OPEN or PENDING) claims dated within a hold, unless bound by a
- *  statement, then count in no live total), and their own terms in days (null when they have none), and their contact (null when they have none). */
+ *  statement, then count in no live total), and their own terms in days (null when they have none), and their contact (null when they have none), and the sheet they were
+ *  transferred from (null when they were not transferred here). */
 public record Person(long id, String name, String grade, long version, long statementCount,
         String statedTotal, String statementDate, String retiredFrom, boolean held, List<GradeFrom> grades,
-        List<Hold> holds, Integer terms, String contact) {
+        List<Hold> holds, Integer terms, String contact, String origin) {
 
     public Person withGrades(List<GradeFrom> grades) {
-        return new Person(id, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom, held, grades, holds, terms, contact);
+        return new Person(id, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom, held, grades, holds, terms, contact, origin);
     }
 
     public Person withHolds(List<Hold> holds) {
         return new Person(id, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom,
-                !holds.isEmpty(), grades, holds, terms, contact);
+                !holds.isEmpty(), grades, holds, terms, contact, origin);
     }
 
     public boolean retired() {

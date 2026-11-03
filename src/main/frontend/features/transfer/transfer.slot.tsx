@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
-import type { Person } from '../people/usePeople';
+import { usePeople, type Person } from '../people/usePeople';
 import { usePersonRowAction } from '../people/usePersonRowAction';
 
 /** A steward transfers a person to another sheet by id: an entry for the sheet id and a transfer button. The
@@ -51,7 +51,16 @@ function PersonTransfer({ sheetId, personId }: { sheetId: string; personId: numb
   );
 }
 
+/** The sheet a person was transferred from (blank for anyone added on this sheet). */
+function PersonOrigin({ sheetId, personId }: { sheetId: string; personId: number }) {
+  const people = usePeople(sheetId);
+  const p = people.data?.find((x) => x.id === personId);
+  return <td data-testid="person-origin">{p?.origin ?? ''}</td>;
+}
+
 export const contributions = [
+  PersonColumnHead.fill({ order: 55, Component: () => <th>From sheet</th> }),
+  PersonCells.fill({ order: 55, Component: PersonOrigin }),
   PersonColumnHead.fill({ order: 56, Component: () => <th>Transfer</th> }),
   PersonCells.fill({ order: 56, Component: PersonTransfer }),
 ];

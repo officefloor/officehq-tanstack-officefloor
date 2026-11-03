@@ -22,13 +22,14 @@ public class PersonRepository {
             + " AND (g.from_date IS NULL OR g.from_date <= (SELECT s.today FROM sheet s WHERE s.id = person.sheet_id))"
             + " ORDER BY g.from_date DESC NULLS LAST LIMIT 1) AS grade";
 
-    private static final String COLUMNS = "id, name, " + GRADE_TODAY + ", version, statement_count, stated_total, statement_date, retired_from, terms, contact";
+    private static final String COLUMNS = "id, name, " + GRADE_TODAY + ", version, statement_count, stated_total, statement_date, retired_from, terms, contact, origin_sheet";
 
     private static final RowMapper<Person> ROW = (rs, i) -> new Person(rs.getLong("id"), rs.getString("name"),
             rs.getString("grade"), rs.getLong("version"), rs.getLong("statement_count"), rs.getString("stated_total"),
             rs.getDate("statement_date") == null ? null : rs.getDate("statement_date").toLocalDate().toString(),
             rs.getDate("retired_from") == null ? null : rs.getDate("retired_from").toLocalDate().toString(),
-            false, List.of(), List.of(), (Integer) rs.getObject("terms", Integer.class), rs.getString("contact"));
+            false, List.of(), List.of(), (Integer) rs.getObject("terms", Integer.class), rs.getString("contact"),
+            rs.getString("origin_sheet"));
 
     /** The position after the last person's on the sheet being inserted into (the end of its list). */
     private static final String NEXT_POSITION = "(SELECT COALESCE(MAX(q.list_position), 0) + 1 FROM person q WHERE q.sheet_id = sheet.id)";
@@ -268,7 +269,7 @@ public class PersonRepository {
         }, keys);
         long id = keys.getKey().longValue();
         grade(sheetId, id, grade, null);
-        return new Person(id, name, grade, 1, 0, null, null, null, false, List.of(new GradeFrom(grade, null)), List.of(), terms, contact);
+        return new Person(id, name, grade, 1, 0, null, null, null, false, List.of(new GradeFrom(grade, null)), List.of(), terms, contact, null);
     }
 
     /** Swap two people's places in the sheet's list. */
@@ -306,20 +307,21 @@ public class PersonRepository {
 
     /** Copy a person onto another sheet, as added there on its today: their name, the grade they were first given,
      *  every grade they were given (with its from-date), their terms, contact and aliases (in the order they were
-     *  added), with no statements; the new person's id. Their claims are moved by the caller. */
+     *  added), with no statements, and the sheet they came from; the new person's id. Their claims are moved by the caller. */
     public long transferIn(String fromSheet, long id, String toSheet) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(c -> {
             PreparedStatement ps = c.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade, terms, contact, added_on, list_position)"
+                    "INSERT INTO person (sheet_id, name, grade, terms, contact, added_on, list_position, origin_sheet)"
                             + " SELECT ?, p.name, p.grade, p.terms, p.contact, (SELECT s.today FROM sheet s WHERE s.id = ?),"
-                            + " (SELECT COALESCE(MAX(q.list_position), 0) + 1 FROM person q WHERE q.sheet_id = ?)"
+                            + " (SELECT COALESCE(MAX(q.list_position), 0) + 1 FROM person q WHERE q.sheet_id = ?), ?"
                             + " FROM person p WHERE p.id = ? AND p.sheet_id = ?", new String[] { "id" });
             ps.setString(1, toSheet);
             ps.setString(2, toSheet);
             ps.setString(3, toSheet);
-            ps.setLong(4, id);
-            ps.setString(5, fromSheet);
+            ps.setString(4, fromSheet);
+            ps.setLong(5, id);
+            ps.setString(6, fromSheet);
             return ps;
         }, keys);
         long arrived = keys.getKey().longValue();
