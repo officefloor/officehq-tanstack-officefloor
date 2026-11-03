@@ -1,0 +1,143 @@
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index 16be54233..2d619c30e 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -7,6 +7,7 @@ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { GRADES } from '../people/usePeople';
+ import { useSheetToday } from '../today/useSheetToday';
+ import { useDueTotals, useExcess, useSettledOpenTotals } from './useDueTotals';
++import { useRatePreview } from './useRatePreview';
+ import { rateFor, ratesKey, sumDues, trimmedSum, useRates, type Rate } from './useRates';
+ 
+ /** The sheet's rates for each grade: a form that sets one from an optional from-date (replacing the
+@@ -134,11 +135,83 @@ function Rates({ sheetId }: { sheetId: string }) {
+           </span>
+         ))}
+       </p>
++      <RatePreview sheetId={sheetId} />
+       {rates.isError && <p data-testid="rates-error">{rates.error.message}</p>}
+     </section>
+   );
+ }
+ 
++/** A preview of a candidate rate for a grade (see `useRatePreview`): how many claims would show a different
++ *  due and the sum of the differences. Nothing is saved. The result is cleared when the form changes. */
++function RatePreview({ sheetId }: { sheetId: string }) {
++  const preview = useRatePreview(sheetId);
++  const [grade, setGrade] = useState<string>('A');
++  const [pct, setPct] = useState('');
++  const [result, setResult] = useState<{ count: number; diff: string } | null>(null);
++  const [error, setError] = useState<string | null>(null);
++  const clear = () => {
++    setResult(null);
++    setError(null);
++  };
++
++  return (
++    <form
++      data-testid="rate-preview-form"
++      onSubmit={(e) => {
++        e.preventDefault();
++        clear();
++        try {
++          const r = preview(grade, pct);
++          setTimeout(() => setResult(r), 0);
++        } catch (err) {
++          setError((err as Error).message);
++        }
++      }}
++    >
++      <label>
++        Preview grade{' '}
++        <select
++          data-testid="rate-preview-grade"
++          value={grade}
++          onChange={(e) => {
++            setGrade(e.target.value);
++            clear();
++          }}
++        >
++          {GRADES.map((g) => (
++            <option key={g} value={g}>
++              {g}
++            </option>
++          ))}
++        </select>
++      </label>{' '}
++      <label>
++        Rate %{' '}
++        <input
++          data-testid="rate-preview-pct"
++          inputMode="decimal"
++          value={pct}
++          onChange={(e) => {
++            setPct(e.target.value);
++            clear();
++          }}
++        />
++      </label>{' '}
++      <button type="submit" data-testid="rate-preview">
++        Preview
++      </button>
++      {result !== null && (
++        <span>
++          {' '}
++          Would change <strong data-testid="rate-preview-count">{result.count}</strong> claims by{' '}
++          <strong data-testid="rate-preview-diff">{result.diff}</strong>
++        </span>
++      )}
++      {error !== null && <p data-testid="rate-preview-error">{error}</p>}
++    </form>
++  );
++}
++
+ function PersonDueTotal({ sheetId, personId }: { sheetId: string; personId: number }) {
+   const totals = useDueTotals(sheetId);
+   return <td data-testid="person-due-total">{totals.get(personId) ?? ''}</td>;
+diff --git a/src/main/frontend/features/rates/useRatePreview.ts b/src/main/frontend/features/rates/useRatePreview.ts
+new file mode 100644
+index 000000000..5ff22921b
+--- /dev/null
++++ b/src/main/frontend/features/rates/useRatePreview.ts
+@@ -0,0 +1,41 @@
++import { isOpen, useClaims } from '../claims/useClaims';
++import { claimDueNow } from '../overdue/useOverdue';
++import { gradeOn, usePeople } from '../people/usePeople';
++import { useSettings } from '../settings/useSettings';
++import { useSheetToday } from '../today/useSheetToday';
++import { hundredths, money, rateFor, useRates } from './useRates';
++
++/** A candidate rate's percent: 0.00 or more with up to two decimals (below 100000), as the rate form takes it. */
++const PCT = /^(\d{1,5}(\.\d{1,2})?|\.\d{1,2})$/;
++
++/** What a candidate rate would change: how many open (OPEN or PENDING) claims of people on the grade (the grade
++ *  they had on the claim's date) would show a different due now were that rate the grade's on every date, and
++ *  the sum of new due minus current due. A claim a statement binds keeps its figure; a settled one is not open.
++ *  Returns a function computing it from the sheet as loaded; it throws on a bad percent. Saves nothing. */
++export function useRatePreview(sheetId: string): (grade: string, pct: string) => { count: number; diff: string } {
++  const people = usePeople(sheetId).data;
++  const claims = useClaims(sheetId).data;
++  const rates = useRates(sheetId).data;
++  const settings = useSettings(sheetId).data;
++  const today = useSheetToday(sheetId).data?.today;
++  return (grade, pct) => {
++    const candidate = pct.trim();
++    if (candidate === '') throw new Error('rate is required');
++    if (!PCT.test(candidate)) throw new Error('rate must be a percent of 0.00 or more with up to two decimals');
++    const asPct = money(hundredths(candidate.startsWith('.') ? `0${candidate}` : candidate));
++    let count = 0;
++    let diff = 0n;
++    for (const c of claims ?? []) {
++      if (!isOpen(c)) continue;
++      const p = (people ?? []).find((x) => x.id === c.personId);
++      const g = gradeOn(p, c.date);
++      if (g !== grade) continue;
++      const now = claimDueNow(c, claims, rateFor(rates, g, c.date), settings, today, g);
++      const next = claimDueNow(c, claims, asPct, settings, today, g);
++      if (now === next) continue;
++      count++;
++      diff += (next === 'n/a' ? 0n : hundredths(next)) - (now === 'n/a' ? 0n : hundredths(now));
++    }
++    return { count, diff: money(diff) };
++  };
++}
