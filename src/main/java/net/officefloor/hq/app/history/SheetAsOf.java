@@ -11,6 +11,7 @@ import java.util.TreeMap;
 import java.util.function.Function;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.person.Hold;
+import net.officefloor.hq.app.settings.SettingsRepository;
 
 /** A sheet as it stood at the end of a day: what the changes made while the sheet's today was on or
  *  before that day left (see {@link HistoryRepository#asOf}). The day stands in for the sheet's today in
@@ -111,14 +112,18 @@ public record SheetAsOf(LocalDate day, Map<Long, Claim> claims, Map<Long, TreeMa
         return new BigDecimal(claim.amount()).multiply(rate.pct()).movePointLeft(2).setScale(2, rounding(claim));
     }
 
-    /** How a claim's figures rounded then: half up when dated before the policy date (blank: the day), else
-     *  half to even; a correction by the date of the claim it corrects. */
+    /** How a claim's figures rounded then: by the rounding mode in force on its date when there was one; else
+     *  half up when dated before the policy date (blank: the day), else half to even; a correction by the date
+     *  of the claim it corrects. */
     private RoundingMode rounding(Claim claim) {
         String date = claim.date();
         if (claim.corrects() != null) {
             String corrected = correctedDate.apply(claim);
             if (corrected != null) date = corrected;
         }
+        List<String> mode = setting("rounding", LocalDate.parse(date));
+        RoundingMode set = mode.isEmpty() ? null : SettingsRepository.roundingMode(mode.get(0));
+        if (set != null) return set;
         LocalDate policy = policyDate != null ? policyDate : day;
         return LocalDate.parse(date).isBefore(policy) ? RoundingMode.HALF_UP : RoundingMode.HALF_EVEN;
     }

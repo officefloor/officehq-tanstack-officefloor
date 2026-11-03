@@ -241,7 +241,8 @@ public class ClaimRepository {
         return due;
     }
 
-    /** How a claim's live figures round: half up when the claim is dated before the sheet's policy date
+    /** How a claim's live figures round: by the sheet's rounding mode in force on the claim's date (half-up or
+     *  half-even) when there is one; else half up when the claim is dated before the sheet's policy date
      *  (blank meaning the sheet's today), else half to even. A correction rounds by the date of the
      *  claim it corrects (its person's claim with that number), not its own. */
     public RoundingMode rounding(String sheetId, Claim claim) {
@@ -251,6 +252,10 @@ public class ClaimRepository {
                     + " AND claim_no = ? ORDER BY id LIMIT 1", Date.class, sheetId, claim.personId(), claim.corrects());
             if (!corrected.isEmpty()) date = corrected.get(0).toLocalDate().toString();
         }
+        List<String> mode = jdbc.queryForList("SELECT setting FROM setting_value WHERE sheet_id = ? AND setting_key = 'rounding'"
+                + " AND from_date <= ? ORDER BY from_date DESC LIMIT 1", String.class, sheetId, Date.valueOf(LocalDate.parse(date)));
+        RoundingMode set = mode.isEmpty() ? null : SettingsRepository.roundingMode(mode.get(0));
+        if (set != null) return set;
         List<Date> policy = jdbc.queryForList("SELECT COALESCE(policy_date, today) FROM sheet WHERE id = ?",
                 Date.class, sheetId);
         if (policy.isEmpty()) return RoundingMode.HALF_EVEN;

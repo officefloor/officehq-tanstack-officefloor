@@ -19,7 +19,9 @@ import { settingOn, settingsKey, useSettings, type Settings } from './useSetting
  *  <period>-<n>, or X-<n> in no period; blank is off), each grade's own terms (blank is the sheet's
  *  terms), its cap (the most a person's due-total can be; blank is none), its proof threshold (a claim whose due is
  *  above the one in force on its date cannot be settled or approved without a proof; blank is none), its note threshold (a claim
- *  whose due is above the one in force on its date cannot be opened with an empty note; blank is none), its permission matrix (for each of open, settle, void,
+ *  whose due is above the one in force on its date cannot be opened with an empty note; blank is none), its rounding mode
+ *  (half-up or half-even: a claim whose date has one in force rounds its live figures by it instead of by the policy date;
+ *  blank is none), its permission matrix (for each of open, settle, void,
  *  reassign, close and reopen, the roles that may do it, comma separated; blank keeps the standing rule; not dated), its grace days (changing the
  *  sheet's today closes each open period whose to-date plus them is before the new today; blank is off; not dated), its entry date (while set, the default date of a new claim — the claim form, the
  *  quick-add bar, a pasted line with a blank date and a correction — instead of the sheet's today; blank is off; not dated), its pot (two
@@ -31,7 +33,7 @@ import { settingOn, settingsKey, useSettings, type Settings } from './useSetting
  *  from-date, blank the sheet's today, to a to-date, inclusive; while the sheet's today is inside it the user acts
  *  as a steward), and the sheet's holidays (a date already on the list is refused). Saving saves each setting whose field was entered (focused or typed
  *  in, even when left blank); the others stay as they are. A setting with a figure (the clerk limit, the
- *  floor, the terms, each grade's terms, the late percent, the cap, the proof threshold and the note threshold) is saved from its from-date, blank
+ *  floor, the terms, each grade's terms, the late percent, the cap, the proof threshold, the note threshold and the rounding mode) is saved from its from-date, blank
  *  meaning the sheet's today; each shows the value in force on the sheet's today. */
 /** The grades a person can have, each of which can have its own terms. */
 const GRADES = ['A', 'B', 'C'];
@@ -82,6 +84,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
   const [parent, setParent] = useState<string | null>(null);
   const [fiscalStartMonth, setFiscalStartMonth] = useState<string | null>(null);
   const [alertThreshold, setAlertThreshold] = useState<string | null>(null);
+  const [rounding, setRounding] = useState<string | null>(null);
   const today = useSheetToday(sheetId).data?.today;
   const [user, setUser] = useState('');
   const [role, setRole] = useState('');
@@ -95,7 +98,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
 
   const saveOnce = useSingleFlight();
   const save = useMutation({
-    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null; noteThreshold: string | null; permissions: Record<string, string>; graceDays: string | null; entryDate: string | null; gradeGrace: Record<string, string>; gradeProofThreshold: Record<string, string>; pot: string | null; parent: string | null; fiscalStartMonth: string | null; alertThreshold: string | null }) =>
+    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null; noteThreshold: string | null; permissions: Record<string, string>; graceDays: string | null; entryDate: string | null; gradeGrace: Record<string, string>; gradeProofThreshold: Record<string, string>; pot: string | null; parent: string | null; fiscalStartMonth: string | null; alertThreshold: string | null; rounding: string | null }) =>
       postJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, f),
     onSuccess: (saved) => {
       setLimit(null);
@@ -118,11 +121,15 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
       setParent(null);
       setFiscalStartMonth(null);
       setAlertThreshold(null);
+      setRounding(null);
       queryClient.setQueryData(settingsKey(sheetId), saved);
       // The pot is shared out as the cuts of the balanced pools.
       void queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
       // A grade with no rate of its own falls back to the parent sheets' rates.
       void queryClient.invalidateQueries({ queryKey: ratesKey(sheetId) });
+      // The rounding mode changes how the claims' live figures round.
+      void queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+      void queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
     },
   });
 
@@ -183,7 +190,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           e.preventDefault();
           saveOnce(() => {
             save.reset();
-            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap, from, proofThreshold, noteThreshold, permissions, graceDays, entryDate, gradeGrace, gradeProofThreshold: gradeProof, pot, parent, fiscalStartMonth, alertThreshold });
+            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap, from, proofThreshold, noteThreshold, permissions, graceDays, entryDate, gradeGrace, gradeProofThreshold: gradeProof, pot, parent, fiscalStartMonth, alertThreshold, rounding });
           });
         }}
       >
@@ -359,6 +366,20 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           />
         </label>{' '}
         <FromInput settingKey="note-threshold" from={from} setFrom={setFrom} onChange={() => save.reset()} />{' '}
+        <label>
+          Rounding mode{' '}
+          <input
+            data-testid="setting-rounding"
+            placeholder="half-up or half-even"
+            value={rounding ?? ''}
+            onFocus={() => setRounding((v) => v ?? '')}
+            onChange={(e) => {
+              setRounding(e.target.value);
+              save.reset();
+            }}
+          />
+        </label>{' '}
+        <FromInput settingKey="rounding" from={from} setFrom={setFrom} onChange={() => save.reset()} />{' '}
         {PERM_ACTIONS.map((a) => (
           <label key={a}>
             Who may {a}{' '}
@@ -479,6 +500,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           </span>
         ))}
         note threshold <strong data-testid="setting-note-threshold-current">{settingOn(settings.data, 'note-threshold', today) ?? ''}</strong>
+        , rounding <strong data-testid="setting-rounding-current">{settingOn(settings.data, 'rounding', today) ?? ''}</strong>
         {PERM_ACTIONS.map((a) => (
           <span key={a}>
             , may {a} <strong data-testid={`setting-perm-${a}-current`}>{settings.data?.permissions?.[a] ?? ''}</strong>

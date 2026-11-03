@@ -155,6 +155,23 @@ public class SettingsRepository {
         record(sheetId, "note-threshold", from, threshold == null ? null : money(threshold));
     }
 
+    /** The sheet's rounding mode in force on a date (half-up or half-even); null when it has none. */
+    public String rounding(String sheetId, LocalDate date) {
+        List<String> found = on(sheetId, "rounding", date);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    public void setRounding(String sheetId, LocalDate from, String mode) {
+        record(sheetId, "rounding", from, mode);
+    }
+
+    /** The rounding a rounding mode setting names (half-up or half-even); null for none (blank). */
+    public static java.math.RoundingMode roundingMode(String mode) {
+        if ("half-up".equals(mode)) return java.math.RoundingMode.HALF_UP;
+        if ("half-even".equals(mode)) return java.math.RoundingMode.HALF_EVEN;
+        return null;
+    }
+
     /** A due-total held to the cap: at most the cap when there is one. */
     public static BigDecimal capped(BigDecimal total, BigDecimal cap) {
         return cap != null && total.compareTo(cap) > 0 ? cap.setScale(2) : total;

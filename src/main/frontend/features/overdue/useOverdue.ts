@@ -18,17 +18,22 @@ export function isOverdue(c: Claim, today: string, settings: Settings | undefine
   return isOpen(c) && !isDeferred(c, today) && overdueFrom(c, settings, grade) < today;
 }
 
-/** Whether a claim's live figures (its rate step and late charge) round half up: when the claim is
+/** Whether a claim's live figures (its rate step and late charge) round half up: by the sheet's rounding
+ *  mode in force on the claim's date (half-up or half-even) when there is one; else when the claim is
  *  dated before the sheet's policy date (blank meaning the sheet's today); else they round half to
  *  even. A correction rounds by the date of the claim it corrects (its person's claim with that
  *  number), not its own. Half to even until the settings and the sheet's today are loaded. */
 export function roundsHalfUp(c: Claim, claims: Claim[] | undefined, settings: Settings | undefined, today: string | undefined): boolean {
-  const policy = settings === undefined ? undefined : settings.policyDate ?? today;
-  if (policy === undefined) return false;
   const corrected = c.corrects === null
     ? undefined
     : (claims ?? []).find((o) => o.personId === c.personId && o.number === c.corrects);
-  return (corrected?.date ?? c.date) < policy;
+  const date = corrected?.date ?? c.date;
+  const mode = settingOn(settings, 'rounding', date);
+  if (mode === 'half-up') return true;
+  if (mode === 'half-even') return false;
+  const policy = settings === undefined ? undefined : settings.policyDate ?? today;
+  if (policy === undefined) return false;
+  return date < policy;
 }
 
 /** A claim's due now: a settled claim's frozen due; else the greater of the floor (two decimals; none while

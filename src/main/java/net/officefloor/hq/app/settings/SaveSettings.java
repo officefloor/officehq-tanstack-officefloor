@@ -90,6 +90,11 @@ public class SaveSettings {
                     + (input.noteThreshold() == null ? "" : SettingsRepository.money(input.noteThreshold()))
                     + given(input, "note-threshold"));
         }
+        if (input.setsRounding()) {
+            repository.setRounding(id, from(input, "rounding", today), input.rounding());
+            audit.record(prefix + "rounding value=" + (input.rounding() == null ? "" : input.rounding())
+                    + given(input, "rounding"));
+        }
         if (input.setsGraceDays()) {
             repository.setGraceDays(id, input.graceDays());
             audit.record(prefix + "grace-days value=" + (input.graceDays() == null ? "" : input.graceDays()));
