@@ -1,4 +1,4 @@
-import { countsOn, useClaims } from '../claims/useClaims';
+import { counts, countsOn, useClaims } from '../claims/useClaims';
 import { claimDueNow } from '../overdue/useOverdue';
 import { gradeOn, holdsById, usePeople } from '../people/usePeople';
 import { rateFor, sumDues, useRates } from '../rates/useRates';
@@ -9,8 +9,9 @@ import { usePeriods } from './usePeriods';
 /** Each person's due-total for each period, by person id then period name: the figures of their claims
  *  whose due-by falls in it that count by the status they had at the end of its last day (see `countsOn`) (a settled claim's frozen due, else the figure its last statement
  *  bound it to, else its live due, with its late charge while overdue), skipping those with none — the
- *  one fixed when the period was closed while it is closed or soft-closed (0.00 for a person added since). */
-export function usePersonPeriodDueTotals(sheetId: string): Map<number, Map<string, string>> {
+ *  one fixed when the period was closed while it is closed or soft-closed (0.00 for a person added since).
+ *  With `byStatusNow`, an open period counts each claim by the status it has now (see `counts`) instead. */
+export function usePersonPeriodDueTotals(sheetId: string, byStatusNow = false): Map<number, Map<string, string>> {
   const periods = usePeriods(sheetId);
   const claims = useClaims(sheetId);
   const people = usePeople(sheetId);
@@ -29,7 +30,7 @@ export function usePersonPeriodDueTotals(sheetId: string): Map<number, Map<strin
           ? (p.personTotals[String(person.id)] ?? '0.00')
           : sumDues(
               own
-                .filter((c) => p.from <= c.dueBy && c.dueBy <= p.to && countsOn(c, p.to, holds, today))
+                .filter((c) => p.from <= c.dueBy && c.dueBy <= p.to && (byStatusNow ? counts(c, holds, today) : countsOn(c, p.to, holds, today)))
                 .map((c) => claimDueNow(c, claims.data, rateFor(rates.data, gradeOn(person, c.date), c.date), settings, today, gradeOn(person, c.date))),
             ),
       );
@@ -39,10 +40,11 @@ export function usePersonPeriodDueTotals(sheetId: string): Map<number, Map<strin
   return totals;
 }
 
-/** Each period's due-total, by period name: the sum of the people's due-totals for it. */
-export function usePeriodDueTotals(sheetId: string): Map<string, string> {
+/** Each period's due-total, by period name: the sum of the people's due-totals for it (with `byStatusNow`,
+ *  the classic figure counting each claim by its status now). */
+export function usePeriodDueTotals(sheetId: string, byStatusNow = false): Map<string, string> {
   const periods = usePeriods(sheetId);
-  const perPerson = [...usePersonPeriodDueTotals(sheetId).values()];
+  const perPerson = [...usePersonPeriodDueTotals(sheetId, byStatusNow).values()];
   const totals = new Map<string, string>();
   for (const p of periods.data ?? []) {
     totals.set(p.name, sumDues(perPerson.map((byPeriod) => byPeriod.get(p.name) ?? '0.00')));
