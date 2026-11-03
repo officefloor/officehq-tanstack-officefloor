@@ -1,0 +1,386 @@
+diff --git a/src/main/frontend/features/people/usePeople.ts b/src/main/frontend/features/people/usePeople.ts
+index 64750b38d..458d8b9f1 100644
+--- a/src/main/frontend/features/people/usePeople.ts
++++ b/src/main/frontend/features/people/usePeople.ts
+@@ -8,7 +8,8 @@ import { useReader } from '../../api/readNow';
+  *  from (null when not retired); their holds, oldest first, and whether they have any (their open (OPEN or PENDING)
+  *  claims dated within a hold, unless bound by a statement, then count in no live total); their own terms in
+  *  days (null when they have none: their grade's, else the sheet's, apply); their contact (null when they have none);
+- *  the sheet they were transferred from (null when they were not transferred here). */
++ *  the sheet they were transferred from (null when they were not transferred here); their past retirements,
++ *  oldest first. */
+ export type Person = {
+   id: number;
+   name: string;
+@@ -24,8 +25,13 @@ export type Person = {
+   terms: number | null;
+   contact: string | null;
+   origin: string | null;
++  retirements: Retirement[];
+ };
+ 
++/** One of a person's past retirements: from the date they were retired from to the sheet's today when they
++ *  were unretired (yyyy-mm-dd). No claim of theirs may be dated after its from and before its to. */
++export type Retirement = { from: string; to: string };
++
+ /** One of a person's holds: from its from-date to its to-date (yyyy-mm-dd, both inclusive; a null
+  *  from-date is the beginning of time, a null to-date open-ended). */
+ export type Hold = { from: string | null; to: string | null };
+diff --git a/src/main/frontend/features/retire/retire.slot.tsx b/src/main/frontend/features/retire/retire.slot.tsx
+index 058fdab89..e524b8158 100644
+--- a/src/main/frontend/features/retire/retire.slot.tsx
++++ b/src/main/frontend/features/retire/retire.slot.tsx
+@@ -4,12 +4,15 @@ import { postJson } from '../../api/http';
+ import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { peopleKey, usePeople, type Person } from '../people/usePeople';
++import { poolsKey } from '../pools/usePools';
+ import { usePersonRowAction } from '../people/usePersonRowAction';
+ import { useShowRetired } from './useShowRetired';
+ 
+-/** A person's retirement: whether they are retired and from when, and a date (blank: the sheet's
+- *  today) and button that retire them. A person with a date set counts as retired at once; no claim
+- *  of theirs may be dated after it, and the list leaves them out unless "show retired" is on. */
++/** A person's retirement: whether they are retired and from when, a line per past retirement (from to the
++ *  day unretired), and a date (blank: the sheet's today) and button that retire them, and a button that
++ *  unretires them on the sheet's today (refused for anyone not retired). A person with a date set counts as
++ *  retired at once; no claim of theirs may be dated after it (nor after a past retirement's from and before
++ *  its to), and the list leaves them out unless "show retired" is on. */
+ function PersonRetire({ sheetId, personId }: { sheetId: string; personId: number }) {
+   const people = usePeople(sheetId);
+   const queryClient = useQueryClient();
+@@ -26,10 +29,26 @@ function PersonRetire({ sheetId, personId }: { sheetId: string; personId: number
+   });
+   const announce = usePersonRowAction(sheetId, personId, retire.reset);
+ 
++  const unretire = useMutation({
++    mutationFn: () => postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/unretire`, {}),
++    onSuccess: async () => {
++      await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
++      void queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
++    },
++  });
++  const announceUnretire = usePersonRowAction(sheetId, personId, unretire.reset);
++
+   return (
+     <>
+       <td data-testid="person-retired">{p?.retiredFrom ? 'yes' : 'no'}</td>
+       <td data-testid="person-retired-from">{p?.retiredFrom ?? ''}</td>
++      <td>
++        {(p?.retirements ?? []).map((r, i) => (
++          <div key={i} data-testid="person-retirement-line">
++            {r.from} to {r.to}
++          </div>
++        ))}
++      </td>
+       <td>
+         <input
+           type="text"
+@@ -52,8 +71,21 @@ function PersonRetire({ sheetId, personId }: { sheetId: string; personId: number
+           }}
+         >
+           Retire
++        </button>{' '}
++        <button
++          type="button"
++          data-testid="person-unretire"
++          disabled={unretire.isPending}
++          onClick={() => {
++            announceUnretire();
++            unretire.reset();
++            unretire.mutate();
++          }}
++        >
++          Unretire
+         </button>
+         {retire.isError && <span data-testid="person-error">{retire.error.message}</span>}
++        {unretire.isError && <span data-testid="person-error">{unretire.error.message}</span>}
+       </td>
+     </>
+   );
+@@ -78,6 +110,7 @@ export const contributions = [
+       <>
+         <th>Retired</th>
+         <th>Retired from</th>
++        <th>Past retirements</th>
+         <th />
+       </>
+     ),
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 619e680dd..97c823da4 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -9,18 +9,23 @@ import java.util.List;
+  *  from (null when not retired; any date set means retired at once), and their holds (oldest first) and
+  *  whether they have any (their open (OPEN or PENDING) claims dated within a hold, unless bound by a
+  *  statement, then count in no live total), and their own terms in days (null when they have none), and their contact (null when they have none), and the sheet they were
+- *  transferred from (null when they were not transferred here). */
++ *  transferred from (null when they were not transferred here), and their past retirements (oldest first). */
+ public record Person(long id, String name, String grade, long version, long statementCount,
+         String statedTotal, String statementDate, String retiredFrom, boolean held, List<GradeFrom> grades,
+-        List<Hold> holds, Integer terms, String contact, String origin) {
++        List<Hold> holds, Integer terms, String contact, String origin,
++        List<Retirement> retirements) {
+ 
+     public Person withGrades(List<GradeFrom> grades) {
+-        return new Person(id, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom, held, grades, holds, terms, contact, origin);
++        return new Person(id, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom, held, grades, holds, terms, contact, origin, retirements);
+     }
+ 
+     public Person withHolds(List<Hold> holds) {
+         return new Person(id, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom,
+-                !holds.isEmpty(), grades, holds, terms, contact, origin);
++                !holds.isEmpty(), grades, holds, terms, contact, origin, retirements);
++    }
++
++    public Person withRetirements(List<Retirement> retirements) {
++        return new Person(id, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom, held, grades, holds, terms, contact, origin, retirements);
+     }
+ 
+     public boolean retired() {
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index ec7722af3..6c1e23663 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -29,7 +29,7 @@ public class PersonRepository {
+             rs.getDate("statement_date") == null ? null : rs.getDate("statement_date").toLocalDate().toString(),
+             rs.getDate("retired_from") == null ? null : rs.getDate("retired_from").toLocalDate().toString(),
+             false, List.of(), List.of(), (Integer) rs.getObject("terms", Integer.class), rs.getString("contact"),
+-            rs.getString("origin_sheet"));
++            rs.getString("origin_sheet"), List.of());
+ 
+     /** The position after the last person's on the sheet being inserted into (the end of its list). */
+     private static final String NEXT_POSITION = "(SELECT COALESCE(MAX(q.list_position), 0) + 1 FROM person q WHERE q.sheet_id = sheet.id)";
+@@ -56,8 +56,24 @@ public class PersonRepository {
+                     grades.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(gradeFrom(rs));
+                 }, sheetId);
+         Map<Long, List<Hold>> holds = holds(sheetId);
++        Map<Long, List<Retirement>> retirements = new HashMap<>();
++        jdbc.query("SELECT person_id, from_date, to_date FROM person_retirement WHERE sheet_id = ? ORDER BY id",
++                rs -> {
++                    retirements.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(retirement(rs));
++                }, sheetId);
+         return people.stream().map(p -> p.withGrades(grades.getOrDefault(p.id(), List.of()))
+-                .withHolds(holds.getOrDefault(p.id(), List.of()))).toList();
++                .withHolds(holds.getOrDefault(p.id(), List.of()))
++                .withRetirements(retirements.getOrDefault(p.id(), List.of()))).toList();
++    }
++
++    private static Retirement retirement(java.sql.ResultSet rs) throws java.sql.SQLException {
++        return new Retirement(rs.getDate("from_date").toLocalDate().toString(), rs.getDate("to_date").toLocalDate().toString());
++    }
++
++    /** A person's past retirements, oldest first. */
++    public List<Retirement> retirements(String sheetId, long id) {
++        return jdbc.query("SELECT from_date, to_date FROM person_retirement WHERE sheet_id = ? AND person_id = ? ORDER BY id",
++                (rs, i) -> retirement(rs), sheetId, id);
+     }
+ 
+     private static Hold hold(java.sql.ResultSet rs) throws java.sql.SQLException {
+@@ -107,7 +123,8 @@ public class PersonRepository {
+     public Person find(String sheetId, long id) {
+         List<Person> found = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND id = ?", ROW,
+                 sheetId, id);
+-        return found.isEmpty() ? null : found.get(0).withGrades(grades(sheetId, id)).withHolds(holds(sheetId, id));
++        return found.isEmpty() ? null : found.get(0).withGrades(grades(sheetId, id)).withHolds(holds(sheetId, id))
++                .withRetirements(retirements(sheetId, id));
+     }
+ 
+     /** Record a statement taken of a person: one more, with its due-total and date. */
+@@ -138,6 +155,15 @@ public class PersonRepository {
+         history.retire(sheetId, id, from);
+     }
+ 
++    /** Unretire a person on a day: they are no longer retired, and their retirement from {@code from} is kept
++     *  as a past one to that day. */
++    public void unretire(String sheetId, long id, LocalDate from, LocalDate on) {
++        jdbc.update("UPDATE person SET retired_from = NULL WHERE id = ? AND sheet_id = ?", id, sheetId);
++        jdbc.update("INSERT INTO person_retirement (sheet_id, person_id, from_date, to_date) VALUES (?, ?, ?, ?)",
++                sheetId, id, Date.valueOf(from), Date.valueOf(on));
++        history.retire(sheetId, id, null);
++    }
++
+     /** Put a person on hold from a from-date to a to-date (null: open-ended). */
+     public void hold(String sheetId, long id, LocalDate from, LocalDate to) {
+         jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date, held_on)"
+@@ -145,12 +171,20 @@ public class PersonRepository {
+                 sheetId, id, Date.valueOf(from), to == null ? null : Date.valueOf(to), sheetId);
+     }
+ 
+-    /** Refuse a claim of the person dated after the date they are retired from. */
++    /** Refuse a claim of the person dated after the date they are retired from, or after the from-date and
++     *  before the to-date of one of their past retirements. */
+     public void claimAllowed(String sheetId, long id, LocalDate date) throws BadRequestException {
+         Person p = find(sheetId, id);
+         if (p != null && p.retiredFrom() != null && date.isAfter(LocalDate.parse(p.retiredFrom()))) {
+             throw new BadRequestException(p.name() + " is retired from " + p.retiredFrom());
+         }
++        if (p != null) {
++            for (Retirement r : p.retirements()) {
++                if (date.isAfter(LocalDate.parse(r.from())) && date.isBefore(LocalDate.parse(r.to()))) {
++                    throw new BadRequestException(p.name() + " was retired from " + r.from() + " to " + r.to());
++                }
++            }
++        }
+     }
+ 
+     /** Whether another person on the sheet (other than {@code exceptId}; 0 for none) already has this name,
+@@ -269,7 +303,7 @@ public class PersonRepository {
+         }, keys);
+         long id = keys.getKey().longValue();
+         grade(sheetId, id, grade, null);
+-        return new Person(id, name, grade, 1, 0, null, null, null, false, List.of(new GradeFrom(grade, null)), List.of(), terms, contact, null);
++        return new Person(id, name, grade, 1, 0, null, null, null, false, List.of(new GradeFrom(grade, null)), List.of(), terms, contact, null, List.of());
+     }
+ 
+     /** Swap two people's places in the sheet's list. */
+@@ -334,13 +368,14 @@ public class PersonRepository {
+     }
+ 
+     /** Take a person off the sheet entirely: their patron links (both ways), pool memberships, closed periods'
+-     *  figures, watchers, holds, statements, grades and aliases go with them. Their claims must already be gone. */
++     *  figures, watchers, holds, past retirements, statements, grades and aliases go with them. Their claims must already be gone. */
+     public void remove(String sheetId, long id) {
+         jdbc.update("DELETE FROM patron WHERE sheet_id = ? AND (person_id = ? OR patron_id = ?)", sheetId, id, id);
+         jdbc.update("DELETE FROM pool_member WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, id);
++        jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+         jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+         jdbc.update("DELETE FROM person_alias WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+@@ -351,7 +386,7 @@ public class PersonRepository {
+      *  merged person's patrons are added to the other's (not themselves, no repeats), anyone naming the merged
+      *  person names the other instead (no repeats); pool memberships move to the other (shares added, at most
+      *  100.00, when the other is already a member); closed periods' figures are added to the other's. Their
+-     *  statements, holds, grades, watchers and contact go with them, and the merged person leaves the sheet.
++     *  statements, holds, past retirements, grades, watchers and contact go with them, and the merged person leaves the sheet.
+      *  Their claims must already have been moved. */
+     public void merge(String sheetId, long fromId, long intoId) {
+         String name = jdbc.queryForObject("SELECT name FROM person WHERE id = ? AND sheet_id = ?", String.class, fromId, sheetId);
+@@ -396,6 +431,7 @@ public class PersonRepository {
+ 
+         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
+         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
++        jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
+         jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
+         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
+         jdbc.update("DELETE FROM person WHERE id = ? AND sheet_id = ?", fromId, sheetId);
+diff --git a/src/main/java/net/officefloor/hq/app/person/Retirement.java b/src/main/java/net/officefloor/hq/app/person/Retirement.java
+new file mode 100644
+index 000000000..e265e5e7f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/Retirement.java
+@@ -0,0 +1,6 @@
++package net.officefloor.hq.app.person;
++
++/** One of a person's past retirements: from the date they were retired from to the sheet's today when they
++ *  were unretired (yyyy-mm-dd). No claim of theirs may be dated after its from-date and before its to-date. */
++public record Retirement(String from, String to) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/UnretirePerson.java b/src/main/java/net/officefloor/hq/app/person/UnretirePerson.java
+new file mode 100644
+index 000000000..601aa604c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/UnretirePerson.java
+@@ -0,0 +1,41 @@
++package net.officefloor.hq.app.person;
++
++import java.time.LocalDate;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.server.http.ServerHttpConnection;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Unretire a retired person on the sheet's today: they are no longer retired, and the retirement is kept as a
++ *  past one, from the date they were retired from to that day. Refused for anyone not retired. */
++public class UnretirePerson {
++    public void unretire(@PathVariable("sheetId") String sheetId, @PathVariable("personId") String personId,
++            ServerHttpConnection connection, PersonRepository repository, SheetRepository sheets, Audit audit,
++            Rollup rollup, Out<Person> person) throws BadRequestException {
++        String by = CurrentUser.require(connection);
++        String id = sheetId == null ? "" : sheetId.trim();
++        long pid;
++        try {
++            pid = Long.parseLong(personId == null ? "" : personId.trim());
++        } catch (NumberFormatException e) {
++            throw new BadRequestException("no such person");
++        }
++        Person found = repository.find(id, pid);
++        if (found == null) {
++            throw new BadRequestException("no such person");
++        }
++        if (!found.retired()) {
++            throw new BadRequestException(found.name() + " is not retired");
++        }
++        LocalDate on = sheets.today(id);
++        Rollup.Snapshot before = rollup.take(id);
++        repository.unretire(id, pid, LocalDate.parse(found.retiredFrom()), on);
++        audit.record("PERSON_UNRETIRED sheet=" + id + " by=" + by + " name=" + found.name() + " on=" + on);
++        rollup.record(id, by, before);
++        person.set(repository.find(id, pid));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/pool/LoadPools.java b/src/main/java/net/officefloor/hq/app/pool/LoadPools.java
+index 7fb984ed2..6c10a79d1 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/LoadPools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/LoadPools.java
+@@ -2,15 +2,16 @@ package net.officefloor.hq.app.pool;
+ 
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.hq.app.history.AsOfView;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.server.http.ServerHttpConnection;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ public class LoadPools {
+     public void load(@PathVariable("sheetId") String sheetId, ServerHttpConnection connection,
+-            PoolRepository repository, Out<Pools> pools) throws BadRequestException {
++            PoolRepository repository, AsOfView view, Out<Pools> pools) throws BadRequestException {
+         CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
+-        pools.set(new Pools(repository.list(id)));
++        pools.set(view.read(connection, id, () -> new Pools(repository.list(id))));
+     }
+ }
+diff --git a/src/main/resources/db/migration/V71__person_retirement.sql b/src/main/resources/db/migration/V71__person_retirement.sql
+new file mode 100644
+index 000000000..cfe21f21f
+--- /dev/null
++++ b/src/main/resources/db/migration/V71__person_retirement.sql
+@@ -0,0 +1,13 @@
++-- A person's past retirements: each ran from its from-date (the date they were retired from) to its to-date
++-- (the sheet's today when they were unretired). A person may have several over time, kept oldest first (by id).
++-- No claim of theirs may be dated after the from-date and before the to-date of any of them.
++CREATE TABLE person_retirement (
++    id        BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id  VARCHAR(200) NOT NULL REFERENCES sheet (id),
++    person_id BIGINT       NOT NULL REFERENCES person (id),
++    from_date DATE         NOT NULL,
++    to_date   DATE         NOT NULL
++);
++CREATE INDEX person_retirement_person ON person_retirement (person_id, id);
++-- An unretirement is kept in the history as a retirement from no date (not retired from then on).
++ALTER TABLE retire_history ALTER COLUMN retired_from SET NULL;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/unretire.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/unretire.POST.yml
+new file mode 100644
+index 000000000..e0622500f
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/unretire.POST.yml
+@@ -0,0 +1,10 @@
++# Unretire a retired person on the sheet's today; the retirement is kept as a past one (from - the day unretired).
++guard:
++  class: net.officefloor.hq.app.settings.RefuseViewer
++  next: unretire
++unretire:
++  class: net.officefloor.hq.app.person.UnretirePerson
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPerson
