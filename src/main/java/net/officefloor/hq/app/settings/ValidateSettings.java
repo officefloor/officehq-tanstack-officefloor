@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.BadRequestException;
+import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
@@ -129,6 +130,18 @@ public class ValidateSettings {
         if (sla != null && !sla.isEmpty() && (!TERMS.matcher(sla).matches() || Integer.parseInt(sla) > 3650)) {
             throw new BadRequestException("review SLA must be a whole number of days from 0 to 3650");
         }
+        String kinds = request == null || request.proofKinds() == null ? null : request.proofKinds().trim();
+        if (kinds != null && !kinds.isEmpty()) {
+            java.util.List<String> listed = new java.util.ArrayList<>();
+            for (String k : kinds.split(",", -1)) {
+                String kind = k.trim();
+                if (!Claim.PROOF_KINDS.contains(kind)) {
+                    throw new BadRequestException("proof kinds must be a comma separated list of receipt and photo");
+                }
+                if (!listed.contains(kind)) listed.add(kind);
+            }
+            kinds = String.join(",", listed);
+        }
         String policy = request == null || request.policyDate() == null ? null : request.policyDate().trim();
         LocalDate policyDate = null;
         if (policy != null && !policy.isEmpty()) {
@@ -225,6 +238,7 @@ public class ValidateSettings {
                 rounding != null, rounding == null || rounding.isEmpty() ? null : rounding,
                 review != null, review == null || review.isEmpty() ? null : new BigDecimal(review).setScale(2),
                 escalate != null, escalate == null || escalate.isEmpty() ? null : Integer.parseInt(escalate),
-                sla != null, sla == null || sla.isEmpty() ? null : Integer.parseInt(sla)));
+                sla != null, sla == null || sla.isEmpty() ? null : Integer.parseInt(sla),
+                kinds != null, kinds == null || kinds.isEmpty() ? null : kinds));
     }
 }

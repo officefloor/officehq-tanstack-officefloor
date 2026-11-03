@@ -87,6 +87,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
   const [graceDays, setGraceDays] = useState<string | null>(null);
   const [escalateAfter, setEscalateAfter] = useState<string | null>(null);
   const [reviewSla, setReviewSla] = useState<string | null>(null);
+  const [proofKinds, setProofKinds] = useState<string | null>(null);
   const [entryDate, setEntryDate] = useState<string | null>(null);
   const [pot, setPot] = useState<string | null>(null);
   const [parent, setParent] = useState<string | null>(null);
@@ -106,7 +107,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
 
   const saveOnce = useSingleFlight();
   const save = useMutation({
-    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null; noteThreshold: string | null; permissions: Record<string, string>; graceDays: string | null; entryDate: string | null; gradeGrace: Record<string, string>; gradeProofThreshold: Record<string, string>; pot: string | null; parent: string | null; fiscalStartMonth: string | null; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null; escalateAfter: string | null; reviewSla: string | null }) =>
+    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null; noteThreshold: string | null; permissions: Record<string, string>; graceDays: string | null; entryDate: string | null; gradeGrace: Record<string, string>; gradeProofThreshold: Record<string, string>; pot: string | null; parent: string | null; fiscalStartMonth: string | null; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null; escalateAfter: string | null; reviewSla: string | null; proofKinds: string | null }) =>
       postJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, f),
     onSuccess: (saved) => {
       setLimit(null);
@@ -127,6 +128,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
       setGraceDays(null);
       setEscalateAfter(null);
       setReviewSla(null);
+      setProofKinds(null);
       setEntryDate(null);
       setPot(null);
       setParent(null);
@@ -201,7 +203,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           e.preventDefault();
           saveOnce(() => {
             save.reset();
-            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap, from, proofThreshold, noteThreshold, permissions, graceDays, entryDate, gradeGrace, gradeProofThreshold: gradeProof, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter, reviewSla });
+            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap, from, proofThreshold, noteThreshold, permissions, graceDays, entryDate, gradeGrace, gradeProofThreshold: gradeProof, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter, reviewSla, proofKinds });
           });
         }}
       >
@@ -460,6 +462,19 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           />
         </label>{' '}
         <label>
+          Proof kinds{' '}
+          <input
+            data-testid="setting-proof-kinds"
+            placeholder="receipt,photo"
+            value={proofKinds ?? ''}
+            onFocus={() => setProofKinds((v) => v ?? '')}
+            onChange={(e) => {
+              setProofKinds(e.target.value);
+              save.reset();
+            }}
+          />
+        </label>{' '}
+        <label>
           Entry date{' '}
           <input
             data-testid="setting-entry-date"
@@ -561,6 +576,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
         , grace days <strong data-testid="setting-grace-days-current">{fig(settings.data?.graceDays ?? '')}</strong>
         , escalate after <strong data-testid="setting-escalate-after-current">{fig(settings.data?.escalateAfter ?? '')}</strong>
         , review SLA <strong data-testid="setting-review-sla-current">{fig(settings.data?.reviewSla ?? '')}</strong>
+        , proof kinds <strong data-testid="setting-proof-kinds-current">{fig(settings.data?.proofKinds ?? '')}</strong>
         , entry date <strong data-testid="setting-entry-date-current">{fig(settings.data?.entryDate ?? '')}</strong>
         , pot <strong data-testid="setting-pot-current">{fig(settings.data?.pot ?? '')}</strong>
         , parent <strong data-testid="setting-parent-current">{fig(settings.data?.parent ?? '')}</strong>

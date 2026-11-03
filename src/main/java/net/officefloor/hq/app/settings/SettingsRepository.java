@@ -57,7 +57,7 @@ public class SettingsRepository {
                 cap == null ? null : money(cap), dated(sheetId), permissions(sheetId), graceDays(sheetId),
                 delegations(sheetId), entry == null ? null : entry.toString(), holidays(sheetId),
                 voidReasons(sheetId), pot == null ? null : money(pot), parent(sheetId), fiscalStartMonth(sheetId),
-                alert == null ? null : money(alert), escalateAfter(sheetId), reviewSla(sheetId));
+                alert == null ? null : money(alert), escalateAfter(sheetId), reviewSla(sheetId), proofKinds(sheetId));
     }
 
     /** The sheet's today; the real date when there is no such sheet. */
@@ -396,6 +396,17 @@ public class SettingsRepository {
 
     public void setReviewSla(String sheetId, Integer days) {
         jdbc.update("UPDATE sheet SET review_sla = ? WHERE id = ?", days, sheetId);
+    }
+
+    /** The sheet's proof kinds, a comma separated list of receipt and photo; null when blank (none). */
+    public String proofKinds(String sheetId) {
+        List<String> found = jdbc.query("SELECT proof_kinds FROM sheet WHERE id = ?",
+                (rs, i) -> rs.getString("proof_kinds"), sheetId);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    public void setProofKinds(String sheetId, String kinds) {
+        jdbc.update("UPDATE sheet SET proof_kinds = ? WHERE id = ?", kinds, sheetId);
     }
 
     /** The role a user name acts in on the sheet: steward while a delegation to them covers the sheet's today,

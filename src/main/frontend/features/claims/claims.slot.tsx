@@ -120,6 +120,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   const [splitAmounts, setSplitAmounts] = useState<Record<number, string>>({});
   const [newDates, setNewDates] = useState<Record<number, string>>({});
   const [comments, setComments] = useState<Record<number, string>>({});
+  const [proofKinds, setProofKinds] = useState<Record<number, string>>({});
   const [lineFields, setLineFields] = useState<Record<number, { label: string; qty: string; unit: string }>>({});
   const [inlineAmounts, setInlineAmounts] = useState<Record<number, string>>({});
 
@@ -195,8 +196,8 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   // or adding the line (label, quantity, unit amount) typed on its row to a DRAFT one (its amount becomes its lines' total);
   // a refusal shows on that claim's row.
   const action = useMutation({
-    mutationFn: (a: { id: number; action: ClaimAction; reason: string; until: string; amount: string; date: string; text: string; label: string; qty: string; unit: string }) =>
-      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${a.id}/${a.action}`, { reason: a.reason, until: a.until, amount: a.amount, date: a.date, text: a.text, label: a.label, qty: a.qty, unit: a.unit }),
+    mutationFn: (a: { id: number; action: ClaimAction; reason: string; until: string; amount: string; date: string; text: string; label: string; qty: string; unit: string; kind: string }) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${a.id}/${a.action}`, { reason: a.reason, until: a.until, amount: a.amount, date: a.date, text: a.text, label: a.label, qty: a.qty, unit: a.unit, kind: a.kind }),
     onSuccess: (changed, a) => {
       if (a.action === 'reject') setReasons((r) => ({ ...r, [a.id]: '' }));
       if (a.action === 'void') setVoidReasons((r) => ({ ...r, [a.id]: '' }));
@@ -204,6 +205,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
       if (a.action === 'split') setSplitAmounts((m) => ({ ...m, [a.id]: '' }));
       if (a.action === 'redate') setNewDates((d) => ({ ...d, [a.id]: '' }));
       if (a.action === 'comment') setComments((m) => ({ ...m, [a.id]: '' }));
+      if (a.action === 'proof') setProofKinds((m) => ({ ...m, [a.id]: '' }));
       if (a.action === 'line') setLineFields((m) => ({ ...m, [a.id]: { label: '', qty: '', unit: '' } }));
       // An open editor of the claim takes the amount its lines now add up to.
       if (a.action === 'line' && editing === a.id) setAmount(changed.amount);
@@ -278,6 +280,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
       label: a === 'line' ? lineFields[id]?.label ?? '' : '',
       qty: a === 'line' ? (lineFields[id]?.qty ?? '').trim() : '',
       unit: a === 'line' ? (lineFields[id]?.unit ?? '').trim() : '',
+      kind: a === 'proof' ? proofKinds[id] ?? '' : '',
     });
   };
 
@@ -474,6 +477,8 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                 <td data-testid="claim-batch">{c.batch ?? ''}</td>
                 <td data-testid="claim-opened-by">{c.openedBy ?? ''}</td>
                 <td data-testid="claim-proofs">{c.proofs}</td>
+                <td data-testid="claim-proofs-receipt">{c.proofs - c.photos}</td>
+                <td data-testid="claim-proofs-photo">{c.photos}</td>
                 <td data-testid="claim-reminded">{c.reminded ?? ''}</td>
                 <td data-testid="claim-split-from">{c.splitFrom ?? ''}</td>
                 <td data-testid="claim-deferred">{shownDeferred(c, today) ? 'yes' : 'no'}</td>
@@ -583,6 +588,18 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                       {label}
                     </button>
                   ))}
+                  <select
+                    data-testid="claim-proof-kind"
+                    value={proofKinds[c.id] ?? ''}
+                    onChange={(e) => {
+                      setProofKinds((m) => ({ ...m, [c.id]: e.target.value }));
+                      if (action.variables?.id === c.id) action.reset();
+                    }}
+                  >
+                    <option value="">(receipt)</option>
+                    <option value="receipt">receipt</option>
+                    <option value="photo">photo</option>
+                  </select>{' '}
                   <button
                     type="button"
                     data-testid="claim-proof"

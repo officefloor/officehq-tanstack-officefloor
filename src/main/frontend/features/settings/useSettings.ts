@@ -33,12 +33,14 @@ export type Role = { user: string; role: string };
  *  due-total goes from at or below it to above it is written an ALERT line. `escalateAfter` is the sheet's escalation
  *  gap in days (null when blank: off; not dated): reminding a claim whose previous reminder was at least that many days
  *  before the sheet's today escalates it, once per claim ever. `reviewSla` is the sheet's review SLA in days (null when
- *  blank: none; not dated): a REVIEW claim whose review day plus it is before the sheet's today is review-late. */
+ *  blank: none; not dated): a REVIEW claim whose review day plus it is before the sheet's today is review-late.
+ *  `proofKinds` is the sheet's proof kinds (a comma separated list of receipt and photo; null when blank: none; not
+ *  dated): a claim above the proof threshold needs a proof of each listed kind to be settled or approved. */
 export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; roles: Role[]; policyDate: string | null; periodNumberingFrom: string | null;
   gradeTerms: Record<string, number>; cap: string | null; dated: Record<string, DatedValue[]>;
   permissions: Record<string, string>; graceDays: number | null; delegations: Delegation[];
   entryDate: string | null; holidays: string[]; voidReasons: string[]; pot: string | null;
-  parent: string | null; fiscalStartMonth: number; alertThreshold: string | null; escalateAfter: number | null; reviewSla: number | null };
+  parent: string | null; fiscalStartMonth: number; alertThreshold: string | null; escalateAfter: number | null; reviewSla: number | null; proofKinds: string | null };
 
 /** A steward's (`by`) delegation of the steward role to a user, from a date to a date (yyyy-mm-dd, inclusive):
  *  while the sheet's today is inside it the user acts as a steward. */

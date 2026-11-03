@@ -140,12 +140,20 @@ public final class ClaimStatusChange {
         }
         // A claim whose due is above the proof threshold in force on its date (its person's grade's then when one
         // is set, else the sheet's) cannot be settled or approved without a proof ('n/a' is above none); this is
-        // decided before the clerk limit.
-        if (to.equals("SETTLED") && found.proofs() == 0) {
+        // decided before the clerk limit. While the sheet has proof kinds, such a claim needs a proof of each.
+        String kinds = settings.proofKinds(id);
+        if (to.equals("SETTLED") && (found.proofs() == 0 || kinds != null)) {
             BigDecimal threshold = settings.proofThreshold(id, repository.gradeOn(id, found), LocalDate.parse(found.date()));
             BigDecimal now = repository.dueNow(id, found);
             if (threshold != null && now != null && now.compareTo(threshold) > 0) {
-                throw new BadRequestException("a claim with a due above the proof threshold needs a proof to be settled");
+                if (found.proofs() == 0) {
+                    throw new BadRequestException("a claim with a due above the proof threshold needs a proof to be settled");
+                }
+                for (String kind : kinds.split(",")) {
+                    if (found.proofs(kind) == 0) {
+                        throw new BadRequestException("a claim with a due above the proof threshold needs a " + kind + " proof to be settled");
+                    }
+                }
             }
         }
         // A clerk settles outright only a claim whose due is within the sheet's clerk limit ('n/a' is within
@@ -223,7 +231,7 @@ public final class ClaimStatusChange {
         Claim changed = new Claim(found.id(), found.personId(), found.amount(), found.date(), found.note(), to,
                 number, due, openedBy, found.stated(), found.statedDue(), found.corrects(), found.dueBy(),
                 found.statedNa(), found.deferredUntil(), found.deferred(), found.proofs(), found.splitFrom(), found.lateEntry(), found.reminded(), found.ref(), found.tags(),
-                voidReason != null ? voidReason : found.voidReason(), found.waived());
+                voidReason != null ? voidReason : found.voidReason(), found.waived(), found.photos());
         if (found.status().equals("REVIEW") && to.equals("OPEN")) {
             audit.record("CLAIM_REVIEWED sheet=" + id + " by=" + by + " person=" + repository.personName(id, found.personId())
                     + " amount=" + changed.amount() + " date=" + changed.date());
@@ -254,7 +262,7 @@ public final class ClaimStatusChange {
         }
         PeriodGuard.open(periods, id, LocalDate.parse(found.dueBy()));
         Claim live = new Claim(found.id(), found.personId(), found.amount(), found.date(), found.note(), "OPEN",
-                found.number(), null, found.openedBy(), false, null, found.corrects(), found.dueBy(), false, null, false, found.proofs(), found.splitFrom(), found.lateEntry(), found.reminded(), found.ref(), found.tags(), found.voidReason(), found.waived());
+                found.number(), null, found.openedBy(), false, null, found.corrects(), found.dueBy(), false, null, false, found.proofs(), found.splitFrom(), found.lateEntry(), found.reminded(), found.ref(), found.tags(), found.voidReason(), found.waived(), found.photos());
         BigDecimal now = repository.dueNow(id, live);
         Rollup.Snapshot before = rollup.take(id);
         repository.settleDue(id, cid, now);
@@ -263,7 +271,7 @@ public final class ClaimStatusChange {
         String due = ClaimRepository.dueOf(now);
         Claim changed = new Claim(found.id(), found.personId(), found.amount(), found.date(), found.note(),
                 found.status(), found.number(), due, found.openedBy(), found.stated(), found.statedDue(),
-                found.corrects(), found.dueBy(), found.statedNa(), found.deferredUntil(), found.deferred(), found.proofs(), found.splitFrom(), found.lateEntry(), found.reminded(), found.ref(), found.tags(), found.voidReason(), found.waived());
+                found.corrects(), found.dueBy(), found.statedNa(), found.deferredUntil(), found.deferred(), found.proofs(), found.splitFrom(), found.lateEntry(), found.reminded(), found.ref(), found.tags(), found.voidReason(), found.waived(), found.photos());
         audit.record("CLAIM_RESETTLED sheet=" + id + " by=" + by + " person=" + repository.personName(id, found.personId())
                 + " amount=" + changed.amount() + " date=" + changed.date() + Claim.auditNumber(found.number())
                 + " old=" + old + " new=" + (due == null ? "n/a" : due));

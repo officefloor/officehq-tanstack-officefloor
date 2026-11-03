@@ -19,7 +19,7 @@ export type ClaimStatus = 'DRAFT' | 'REVIEW' | 'OPEN' | 'PENDING' | 'SETTLED' | 
  *  sheet's terms), and its status log: a line per status it has had, oldest first, as
  *  "<STATUS> by <user> on <date> due=<due>" with the sheet's today and its due at that moment, and whether
  *  its last statement bound it to n/a (the rate that would apply to it had ended: its due stays n/a), and
- *  the date it is deferred until (null when it was never deferred: see `isDeferred`), and how many proofs it has,
+ *  the date it is deferred until (null when it was never deferred: see `isDeferred`), and how many proofs it has (and how many of them are photos: the rest are receipts),
  *  and, for a claim split off another, the number of the claim it was split from (null otherwise), and the user
  *  whose open editor locks it for everyone else (null when it is not locked), and the last day (the sheet's today
  *  then) a reminder was written for it (null when never reminded), and its tags (lower-case, sorted and comma separated
@@ -46,6 +46,7 @@ export type Claim = {
   statedNa: boolean;
   deferredUntil: string | null;
   proofs: number;
+  photos: number;
   splitFrom: string | null;
   lateEntry: boolean;
   reminded: string | null;

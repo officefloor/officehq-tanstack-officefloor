@@ -77,7 +77,7 @@ public class ChangeClaimStatus {
             return;
         }
         if ("proof".equals(action == null ? "" : action.trim())) {
-            claim.set(ClaimProof.apply(id, cid, by, repository, periods, audit));
+            claim.set(ClaimProof.apply(id, cid, request == null ? null : request.kind(), by, repository, periods, audit));
             return;
         }
         claim.set(ClaimStatusChange.apply(id, cid, action,

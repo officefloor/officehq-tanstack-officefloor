@@ -29,11 +29,13 @@ import java.util.List;
  *  {@code escalateAfter} is the sheet's escalation gap in days (null when blank: off; not dated): reminding a claim
  *  whose previous reminder was at least that many days before the sheet's today escalates it, once per claim ever.
  *  {@code reviewSla} is the sheet's review SLA in days (null when blank: none; not dated): a REVIEW claim whose review
- *  day plus that many days is before the sheet's today is review-late. */
+ *  day plus that many days is before the sheet's today is review-late.
+ *  {@code proofKinds} is the sheet's proof kinds (a comma separated list of receipt and photo; null when blank: none;
+ *  not dated): a claim above the proof threshold needs a proof of each to be settled or approved. */
 public record Settings(String clerkLimit, String floor, int terms, String latePct, List<Role> roles, String policyDate,
         String periodNumberingFrom, java.util.Map<String, Integer> gradeTerms, String cap,
         java.util.Map<String, List<DatedValue>> dated, java.util.Map<String, String> permissions, Integer graceDays,
         List<Delegation> delegations, String entryDate, List<String> holidays, List<String> voidReasons,
         String pot, String parent, int fiscalStartMonth, String alertThreshold,
-        Integer escalateAfter, Integer reviewSla) {
+        Integer escalateAfter, Integer reviewSla, String proofKinds) {
 }

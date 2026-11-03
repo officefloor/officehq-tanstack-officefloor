@@ -22,5 +22,6 @@ public record SettingsInput(boolean setsClerkLimit, BigDecimal clerkLimit, boole
         boolean setsParent, String parent, boolean setsFiscalStartMonth, Integer fiscalStartMonth,
         boolean setsAlertThreshold, BigDecimal alertThreshold,
         boolean setsRounding, String rounding, boolean setsReviewThreshold, BigDecimal reviewThreshold,
-        boolean setsEscalateAfter, Integer escalateAfter, boolean setsReviewSla, Integer reviewSla) {
+        boolean setsEscalateAfter, Integer escalateAfter, boolean setsReviewSla, Integer reviewSla,
+        boolean setsProofKinds, String proofKinds) {
 }

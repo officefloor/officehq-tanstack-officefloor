@@ -22,7 +22,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no, settled_due, opened_by, stated, stated_due, corrects, due_by, stated_na, deferred_until, proofs, split_from, late_entry, reminded, ref, tags, void_reason, waived,"
+    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no, settled_due, opened_by, stated, stated_due, corrects, due_by, stated_na, deferred_until, proofs, split_from, late_entry, reminded, ref, tags, void_reason, waived, proofs_photo,"
             + " (status = 'OPEN' AND deferred_until IS NOT NULL AND deferred_until > (SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id)) AS deferred";
 
     private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getLong("person_id"),
@@ -36,7 +36,7 @@ public class ClaimRepository {
             rs.getBoolean("deferred"), rs.getInt("proofs"), rs.getString("split_from"),
             rs.getBoolean("late_entry"),
             rs.getDate("reminded") == null ? null : rs.getDate("reminded").toLocalDate().toString(),
-            rs.getString("ref"), rs.getString("tags"), rs.getString("void_reason"), rs.getBoolean("waived"));
+            rs.getString("ref"), rs.getString("tags"), rs.getString("void_reason"), rs.getBoolean("waived"), rs.getInt("proofs_photo"));
 
     /** The grade a person (sheet, person id) has on a date: the one with the latest from-date on
      *  or before it, the first one they were given applying from the beginning of time. */
@@ -472,9 +472,9 @@ public class ClaimRepository {
             jdbc.update(c -> {
                 PreparedStatement ps = c.prepareStatement("INSERT INTO claim (sheet_id, person_id, amount, claim_date, note,"
                         + " status, settled_due, opened_by, corrects, due_by, deferred_until, proofs, split_from, late_entry,"
-                        + " reminded, tags, void_reason, edited_by, stated, stated_due, stated_na, waived) SELECT ?, ?, amount, claim_date, note,"
+                        + " reminded, tags, void_reason, edited_by, stated, stated_due, stated_na, waived, proofs_photo) SELECT ?, ?, amount, claim_date, note,"
                         + " status, settled_due, opened_by, corrects, due_by, deferred_until, proofs, split_from, late_entry,"
-                        + " reminded, tags, void_reason, edited_by, stated, stated_due, stated_na, waived FROM claim WHERE id = ? AND sheet_id = ?", new String[] { "id" });
+                        + " reminded, tags, void_reason, edited_by, stated, stated_due, stated_na, waived, proofs_photo FROM claim WHERE id = ? AND sheet_id = ?", new String[] { "id" });
                 ps.setString(1, toSheet);
                 ps.setLong(2, toPersonId);
                 ps.setLong(3, claimId);
@@ -530,10 +530,11 @@ public class ClaimRepository {
                 Date.valueOf(until), claimId, sheetId) > 0);
     }
 
-    /** Raise a claim's proofs count by one, only when it is not SETTLED, VOID or DELETED; the count now, or null when the
+    /** Raise a claim's proofs count by one (and its photos count too, for a photo), only when it is not SETTLED, VOID or DELETED; the count now, or null when the
      *  sheet has no such claim in those statuses. */
-    public Integer addProof(String sheetId, long claimId) {
-        if (jdbc.update("UPDATE claim SET proofs = proofs + 1 WHERE id = ? AND sheet_id = ?"
+    public Integer addProof(String sheetId, long claimId, boolean photo) {
+        if (jdbc.update("UPDATE claim SET proofs = proofs + 1" + (photo ? ", proofs_photo = proofs_photo + 1" : "")
+                + " WHERE id = ? AND sheet_id = ?"
                 + " AND status NOT IN ('SETTLED', 'VOID', 'DELETED')", claimId, sheetId) == 0) {
             return null;
         }
@@ -689,7 +690,7 @@ public class ClaimRepository {
         kept(sheetId, keys.getKey().longValue(), true);
         used(sheetId, tags);
         return new Claim(keys.getKey().longValue(), personId, money(amount), date.toString(), note, "DRAFT", null, null, null, false, null, corrects,
-                dueBy.toString(), false, null, false, 0, null, late, null, ref, tags, null, false);
+                dueBy.toString(), false, null, false, 0, null, late, null, ref, tags, null, false, 0);
     }
 
     /** Whether a claim added now with a due-by is a late entry: the due-by falls in a soft-closed period of the sheet. */

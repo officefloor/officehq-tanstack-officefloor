@@ -105,7 +105,7 @@ public class HistoryRepository {
                             rs.getString("corrects"), local(rs.getDate("due_by")).toString(), rs.getBoolean("stated_na"),
                             deferredUntil == null ? null : deferredUntil.toString(),
                             status.equals("OPEN") && deferredUntil != null && deferredUntil.isAfter(day), 0, null, false, null, null, null, null,
-                            rs.getBoolean("waived")));
+                            rs.getBoolean("waived"), 0));
                 }, sheetId, on);
         Map<Long, TreeMap<LocalDate, String>> grades = new HashMap<>();
         jdbc.query("SELECT person_id, grade, from_date FROM grade_history WHERE sheet_id = ? AND on_date <= ? ORDER BY id",
