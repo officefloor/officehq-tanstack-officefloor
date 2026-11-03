@@ -34,8 +34,17 @@ export function useSettledOpenTotals(sheetId: string): Map<number, { settled: st
   return split;
 }
 
-/** Each person's due-total held to the cap, their excess over it, and its settled and open parts. */
-function useDueFigures(sheetId: string): Map<number, { total: string; excess: string; settled: string; open: string }> {
+/** Each person's score figures, by person id: the sum of the figures of their counting SETTLED claims that
+ *  correct nothing ('n/a' figures skipped). */
+export function useScoreSettled(sheetId: string): Map<number, string> {
+  const scored = new Map<number, string>();
+  for (const [id, f] of useDueFigures(sheetId)) scored.set(id, f.scored);
+  return scored;
+}
+
+/** Each person's due-total held to the cap, their excess over it, its settled and open parts, and the settled
+ *  figures their score counts. */
+function useDueFigures(sheetId: string): Map<number, { total: string; excess: string; settled: string; open: string; scored: string }> {
   const people = usePeople(sheetId);
   const claims = useClaims(sheetId);
   const rates = useRates(sheetId);
@@ -58,10 +67,10 @@ function dueFigures(
   rates: Rate[] | undefined,
   settings: Settings | undefined,
   today: string | undefined,
-): Map<number, { total: string; excess: string; settled: string; open: string }> {
+): Map<number, { total: string; excess: string; settled: string; open: string; scored: string }> {
   const holds = holdsById(people, today);
   const cap = settingOn(settings, 'cap', today);
-  const totals = new Map<number, { total: string; excess: string; settled: string; open: string }>();
+  const totals = new Map<number, { total: string; excess: string; settled: string; open: string; scored: string }>();
   for (const p of people ?? []) {
     const counting = (claims ?? []).filter((c) => c.personId === p.id && counts(c, holds, today));
     const rated = rateFor(rates, p.grade, today) !== undefined;
@@ -75,6 +84,7 @@ function dueFigures(
       excess: over ? money(hundredths(sum) - hundredths(cap)) : '0.00',
       settled: sumDues(dues.filter((_, i) => counting[i].status === 'SETTLED')),
       open: sumDues(dues.filter((_, i) => counting[i].status !== 'SETTLED')),
+      scored: sumDues(dues.filter((_, i) => counting[i].status === 'SETTLED' && counting[i].corrects === null)),
     });
   }
   return totals;

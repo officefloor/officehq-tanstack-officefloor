@@ -27,7 +27,7 @@ public class Rollup {
 
     /** A person's figures: claimed (two decimals), due-total (two decimals, or 'n/a') and overdue-total
      *  (two decimals: the sum of the dues now of their counting claims that are overdue, skipping those with none), and
-     *  score (the sum of the dues now of their counting SETTLED claims divided by 100, rounded half to even to a whole
+     *  score (the sum of the dues now of their counting SETTLED claims that correct nothing divided by 100, rounded half to even to a whole
      *  number, minus 5 for every counting claim of theirs that is overdue). */
     record Figures(String name, String claimed, String dueTotal, String overdueTotal, long score) {
         boolean same(Figures other) {
@@ -87,7 +87,7 @@ public class Rollup {
                     BigDecimal now = claims.dueNow(sheetId, c);
                     if (now != null) due = due.add(now);
                     if (now != null && claims.overdue(sheetId, c, today)) overdue = overdue.add(now);
-                    if (now != null && "SETTLED".equals(c.status())) settled = settled.add(now);
+                    if (now != null && "SETTLED".equals(c.status()) && c.corrects() == null) settled = settled.add(now);
                     if (claims.overdue(sheetId, c, today)) overdueCount++;
                     fixed |= now != null;
                 }
