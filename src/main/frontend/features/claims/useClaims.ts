@@ -41,6 +41,7 @@ export type Claim = {
   splitFrom: string | null;
   lateEntry: boolean;
   reminded: string | null;
+  ref: string | null;
   log: string[];
   lockedBy: string | null;
 };

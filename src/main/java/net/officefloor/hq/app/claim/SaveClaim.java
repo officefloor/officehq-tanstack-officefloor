@@ -42,15 +42,16 @@ public class SaveClaim {
         PeriodGuard.open(periods, id, LocalDate.parse(found.dueBy()));
         people.claimAllowed(id, found.personId(), date);
         input.checkCorrection(repository, id, found.personId());
+        input.checkRef(repository, id, cid);
         Rollup.Snapshot before = rollup.take(id);
-        if (!repository.update(id, cid, input.amount(), date, input.note(), input.corrects())) {
+        if (!repository.update(id, cid, input.amount(), date, input.note(), input.corrects(), input.ref())) {
             throw new BadRequestException("only a DRAFT claim can be edited");
         }
         repository.unlock(id, cid, by);
         long pid = found.personId();
         Claim saved = new Claim(cid, pid, ClaimRepository.money(input.amount()), date.toString(), input.note(),
                 found.status(), found.number(), found.due(), found.openedBy(), found.stated(), found.statedDue(), input.corrects(),
-                found.dueBy(), found.statedNa(), found.deferredUntil(), found.deferred(), found.proofs(), found.splitFrom(), found.lateEntry(), found.reminded());
+                found.dueBy(), found.statedNa(), found.deferredUntil(), found.deferred(), found.proofs(), found.splitFrom(), found.lateEntry(), found.reminded(), input.ref());
         audit.record("CLAIM_EDITED sheet=" + id + " by=" + by + " person=" + repository.personName(id, pid)
                 + " amount=" + saved.amount() + " date=" + saved.date() + Claim.auditNumber(saved.number()));
         rollup.record(id, by, before);

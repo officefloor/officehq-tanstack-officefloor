@@ -7,7 +7,7 @@ import { claimsKey } from '../claims/useClaims';
 import { peopleKey } from '../people/usePeople';
 
 /** A paste box: lines of name,amount,date,note (the note may hold commas; a blank date is the sheet's
- *  today) each add a draft claim, in order, for the person on the sheet with that name. The server checks
+ *  today; a note ending in " #<reference>" gives the claim that external reference) each add a draft claim, in order, for the person on the sheet with that name. The server checks
  *  every line first: one refused line refuses the paste and adds nothing. Shows how many were added
  *  (gone while it runs). */
 function PasteClaims({ sheetId }: { sheetId: string }) {

@@ -4,6 +4,8 @@ import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import net.officefloor.hq.app.BadRequestException;
 import net.officefloor.hq.app.claim.ClaimInput;
 import net.officefloor.plugin.variable.Out;
@@ -11,8 +13,11 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 /** Bind the paste box: each non-blank line is name,amount,date,note — the name is required (trimmed), the
  *  amount and date follow the claim form's rules (a blank date: the sheet's entry date, else its today), and the note is the rest
- *  of the line (it may hold commas, or be absent). A paste with no lines is refused. */
+ *  of the line (it may hold commas, or be absent); a note ending in " #<reference>" gives the claim that external reference. A paste with no lines is refused. */
 public class ValidatePaste {
+    /** A note ending in " #<reference>": the note before it, and the reference. */
+    private static final Pattern REF = Pattern.compile("(.*) #(\\S.*)");
+
     public void validate(@RequestBody PasteRequest request, Out<PasteInput> paste) throws BadRequestException {
         String text = request == null || request.text() == null ? "" : request.text();
         List<PasteLine> lines = new ArrayList<>();
@@ -27,6 +32,12 @@ public class ValidatePaste {
             String amount = f.length > 1 ? f[1].trim() : "";
             String date = f.length > 2 ? f[2].trim() : "";
             String note = f.length > 3 ? f[3].trim() : "";
+            String ref = null;
+            Matcher tail = REF.matcher(note);
+            if (tail.matches()) {
+                note = tail.group(1).trim();
+                ref = tail.group(2).trim();
+            }
             if (name.isEmpty()) {
                 throw new BadRequestException("line " + n + ": name is required");
             }
@@ -39,7 +50,7 @@ public class ValidatePaste {
                 }
             }
             try {
-                lines.add(new PasteLine(name, new ClaimInput(ClaimInput.signedAmount(amount), on, note, null)));
+                lines.add(new PasteLine(name, new ClaimInput(ClaimInput.signedAmount(amount), on, note, null, ref)));
             } catch (BadRequestException e) {
                 throw new BadRequestException("line " + n + ": " + e.getMessage());
             }

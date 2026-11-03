@@ -33,11 +33,12 @@ public class AddClaim {
         PeriodGuard.open(periods, id, repository.dueBy(id, pid, date));
         people.claimAllowed(id, pid, date);
         input.checkCorrection(repository, id, pid);
+        input.checkRef(repository, id, null);
         Rollup.Snapshot before = rollup.take(id);
-        Claim added = repository.add(id, pid, input.amount(), date, input.note(), input.corrects());
+        Claim added = repository.add(id, pid, input.amount(), date, input.note(), input.corrects(), input.ref());
         repository.log(id, added.id(), by);
         audit.record("CLAIM_ADDED sheet=" + id + " by=" + by + " person=" + repository.personName(id, pid)
-                + " amount=" + added.amount() + " date=" + added.date());
+                + " amount=" + added.amount() + " date=" + added.date() + Claim.auditRef(added.ref()));
         if (added.lateEntry()) {
             audit.record("LATE_ENTRY sheet=" + id + " by=" + by + " person=" + repository.personName(id, pid)
                     + " amount=" + added.amount() + " date=" + added.date());

@@ -6,8 +6,9 @@ import java.util.regex.Pattern;
 import net.officefloor.hq.app.BadRequestException;
 
 /** A validated claim form: the amount (negative for a correction), the date ({@code null} when left blank:
- *  the sheet's today), the note, and the number of the claim a correction corrects ({@code null} when left blank). */
-public record ClaimInput(BigDecimal amount, LocalDate date, String note, String corrects) {
+ *  the sheet's today), the note, and the number of the claim a correction corrects ({@code null} when left blank), and its external reference (trimmed;
+ *  {@code null} when left blank). */
+public record ClaimInput(BigDecimal amount, LocalDate date, String note, String corrects, String ref) {
 
     private static final Pattern SIGNED = Pattern.compile("-?(\\d+(\\.\\d{1,2})?|\\.\\d{1,2})");
 
@@ -34,6 +35,14 @@ public record ClaimInput(BigDecimal amount, LocalDate date, String note, String 
             throw new BadRequestException("amount must be a number with up to two decimals");
         }
         return new BigDecimal(amount).setScale(2);
+    }
+
+    /** Check the external reference against the sheet: one already used by another claim on it (other than
+     *  {@code exceptId}, null: none), comparing without regard to case, is refused. */
+    public void checkRef(ClaimRepository repository, String sheetId, Long exceptId) throws BadRequestException {
+        if (ref != null && repository.refUsed(sheetId, ref, exceptId)) {
+            throw new BadRequestException("reference " + ref + " is already used on the sheet");
+        }
     }
 
     /** Whether the amount is a correction's: below zero. */

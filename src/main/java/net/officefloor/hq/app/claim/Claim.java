@@ -16,11 +16,11 @@ import net.officefloor.hq.app.person.Hold;
  *  cannot be settled and a statement leaves it unbound), and how many proofs it has been given, and, for a claim
  *  split off another, the number of the claim it was split from (null otherwise), and whether it was a late entry
  *  (added while the period its due-by falls in was soft-closed), and the last day (the sheet's today then) a reminder
- *  was written for it (null when never reminded). */
+ *  was written for it (null when never reminded), and its external reference (null when none). */
 public record Claim(long id, long personId, String amount, String date, String note, String status,
         String number, String due, String openedBy, boolean stated, String statedDue, String corrects,
         String dueBy, boolean statedNa, String deferredUntil, boolean deferred, int proofs, String splitFrom,
-        boolean lateEntry, String reminded) {
+        boolean lateEntry, String reminded, String ref) {
 
     /** Whether the claim is open: OPEN, or PENDING (handled like OPEN everywhere but its statement binding). */
     public boolean open() {
@@ -47,7 +47,7 @@ public record Claim(long id, long personId, String amount, String date, String n
         if (statusThen == null) return false;
         boolean deferredNow = statusThen.equals("OPEN") && deferredUntil != null && today != null && today.compareTo(deferredUntil) < 0;
         Claim then = new Claim(id, personId, amount, date, note, statusThen, number, due, openedBy, stated, statedDue,
-                corrects, dueBy, statedNa, deferredUntil, deferredNow, proofs, splitFrom, lateEntry, reminded);
+                corrects, dueBy, statedNa, deferredUntil, deferredNow, proofs, splitFrom, lateEntry, reminded, ref);
         return then.counts(open() ? holds : List.of());
     }
 
@@ -65,5 +65,10 @@ public record Claim(long id, long personId, String amount, String date, String n
     /** The audit field a numbered claim adds at the end of its lines: " number=<n>", or "" when it has none. */
     static String auditNumber(String number) {
         return number == null ? "" : " number=" + number;
+    }
+
+    /** The audit field a claim with an external reference adds at the end of CLAIM_ADDED: " ref=<reference>", or "" when it has none. */
+    public static String auditRef(String ref) {
+        return ref == null ? "" : " ref=" + ref;
     }
 }

@@ -20,7 +20,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no, settled_due, opened_by, stated, stated_due, corrects, due_by, stated_na, deferred_until, proofs, split_from, late_entry, reminded,"
+    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no, settled_due, opened_by, stated, stated_due, corrects, due_by, stated_na, deferred_until, proofs, split_from, late_entry, reminded, ref,"
             + " (status = 'OPEN' AND deferred_until IS NOT NULL AND deferred_until > (SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id)) AS deferred";
 
     private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getLong("person_id"),
@@ -33,7 +33,8 @@ public class ClaimRepository {
             rs.getDate("deferred_until") == null ? null : rs.getDate("deferred_until").toLocalDate().toString(),
             rs.getBoolean("deferred"), rs.getInt("proofs"), rs.getString("split_from"),
             rs.getBoolean("late_entry"),
-            rs.getDate("reminded") == null ? null : rs.getDate("reminded").toLocalDate().toString());
+            rs.getDate("reminded") == null ? null : rs.getDate("reminded").toLocalDate().toString(),
+            rs.getString("ref"));
 
     /** The grade a person (sheet, person id) has on a date: the one with the latest from-date on
      *  or before it, the first one they were given applying from the beginning of time. */
@@ -351,12 +352,17 @@ public class ClaimRepository {
     }
 
     public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects) {
+        return add(sheetId, personId, amount, date, note, corrects, null);
+    }
+
+    /** Add a draft claim with an external reference (null: none). */
+    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects, String ref) {
         LocalDate dueBy = dueBy(sheetId, personId, date);
         boolean late = lateEntry(sheetId, dueBy);
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(c -> {
             PreparedStatement ps = c.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, late_entry) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, late_entry, ref) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
@@ -366,11 +372,12 @@ public class ClaimRepository {
             ps.setString(6, corrects);
             ps.setDate(7, Date.valueOf(dueBy));
             ps.setBoolean(8, late);
+            ps.setString(9, ref);
             return ps;
         }, keys);
         kept(sheetId, keys.getKey().longValue(), true);
         return new Claim(keys.getKey().longValue(), personId, money(amount), date.toString(), note, "DRAFT", null, null, null, false, null, corrects,
-                dueBy.toString(), false, null, false, 0, null, late, null);
+                dueBy.toString(), false, null, false, 0, null, late, null, ref);
     }
 
     /** Whether a claim added now with a due-by is a late entry: the due-by falls in a soft-closed period of the sheet. */
@@ -415,12 +422,20 @@ public class ClaimRepository {
         return keys.getKey().longValue();
     }
 
-    /** Change a DRAFT claim's amount, date, note and the number it corrects; false when the sheet has no
-     *  such draft claim. */
-    public boolean update(String sheetId, long claimId, BigDecimal amount, LocalDate date, String note, String corrects) {
-        return kept(sheetId, claimId, jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ? WHERE id = ?"
+    /** Change a DRAFT claim's amount, date, note, the number it corrects and its external reference (null: none);
+     *  false when the sheet has no such draft claim. */
+    public boolean update(String sheetId, long claimId, BigDecimal amount, LocalDate date, String note, String corrects, String ref) {
+        return kept(sheetId, claimId, jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ? WHERE id = ?"
                 + " AND sheet_id = ? AND status = 'DRAFT'",
-                amount, Date.valueOf(date), note, corrects, claimId, sheetId) > 0);
+                amount, Date.valueOf(date), note, corrects, ref, claimId, sheetId) > 0);
+    }
+
+    /** Whether an external reference is already used by a claim on the sheet other than {@code exceptId} (null: any),
+     *  comparing without regard to case. */
+    public boolean refUsed(String sheetId, String ref, Long exceptId) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND ref IS NOT NULL AND LOWER(ref) = LOWER(?)"
+                + " AND id <> ?", Integer.class, sheetId, ref, exceptId == null ? -1L : exceptId);
+        return n != null && n > 0;
     }
 
     /** Lock a claim for {@code by}'s editor, releasing any other claim of the same person {@code by} held;

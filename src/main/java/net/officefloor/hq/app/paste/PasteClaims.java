@@ -2,7 +2,10 @@ package net.officefloor.hq.app.paste;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.BadRequestException;
 import net.officefloor.hq.app.CurrentUser;
@@ -36,6 +39,7 @@ public class PasteClaims {
         }
         LocalDate entry = sheets.entryDate(id);
         List<Checked> checked = new ArrayList<>();
+        Set<String> refs = new HashSet<>();
         int n = 0;
         for (PasteLine line : input.lines()) {
             n++;
@@ -48,6 +52,10 @@ public class PasteClaims {
                 PeriodGuard.open(periods, id, claims.dueBy(id, person.id(), date));
                 people.claimAllowed(id, person.id(), date);
                 line.claim().checkCorrection(claims, id, person.id());
+                line.claim().checkRef(claims, id, null);
+                if (line.claim().ref() != null && !refs.add(line.claim().ref().toLowerCase(Locale.ROOT))) {
+                    throw new BadRequestException("reference " + line.claim().ref() + " is given twice in the paste");
+                }
                 checked.add(new Checked(person, line, date));
             } catch (BadRequestException e) {
                 throw new BadRequestException("line " + n + ": " + e.getMessage());
@@ -55,10 +63,10 @@ public class PasteClaims {
         }
         for (Checked c : checked) {
             Rollup.Snapshot before = rollup.take(id);
-            Claim added = claims.add(id, c.person().id(), c.line().claim().amount(), c.date(), c.line().claim().note(), null);
+            Claim added = claims.add(id, c.person().id(), c.line().claim().amount(), c.date(), c.line().claim().note(), null, c.line().claim().ref());
             claims.log(id, added.id(), by);
             audit.record("CLAIM_ADDED sheet=" + id + " by=" + by + " person=" + c.person().name()
-                    + " amount=" + added.amount() + " date=" + added.date());
+                    + " amount=" + added.amount() + " date=" + added.date() + Claim.auditRef(added.ref()));
             if (added.lateEntry()) {
                 audit.record("LATE_ENTRY sheet=" + id + " by=" + by + " person=" + c.person().name()
                         + " amount=" + added.amount() + " date=" + added.date());
