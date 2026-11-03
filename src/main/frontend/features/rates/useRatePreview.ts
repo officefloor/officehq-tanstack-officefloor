@@ -30,7 +30,7 @@ export function useRatePreview(sheetId: string): (grade: string, pct: string) =>
       const p = (people ?? []).find((x) => x.id === c.personId);
       const g = gradeOn(p, c.date);
       if (g !== grade) continue;
-      const now = claimDueNow(c, claims, rateFor(rates, g, c.date), settings, today, g);
+      const now = claimDueNow(c, claims, rateFor(rates, g, c.date, c.added), settings, today, g);
       const next = claimDueNow(c, claims, asPct, settings, today, g);
       if (now === next) continue;
       count++;

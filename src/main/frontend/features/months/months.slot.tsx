@@ -21,7 +21,7 @@ function MonthTotals({ sheetId }: { sheetId: string }) {
     if (!counts(c, holds, today)) continue;
     const person = people.data?.find((p) => p.id === c.personId);
     const grade = gradeOn(person, c.date);
-    dues.get(c.date.slice(0, 7))!.push(claimDueNow(c, claims.data, rateFor(rates.data, grade, c.date), settings, today, grade));
+    dues.get(c.date.slice(0, 7))!.push(claimDueNow(c, claims.data, rateFor(rates.data, grade, c.date, c.added), settings, today, grade));
   }
   return (
     <section data-testid="month-totals">

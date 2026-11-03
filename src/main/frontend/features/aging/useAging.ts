@@ -30,7 +30,7 @@ export function useAging(sheetId: string): Map<number, Aging> {
     for (const c of claims.data ?? []) {
       if (c.personId !== p.id || !isOpen(c) || !counts(c, holds, today)) continue;
       const age = ageDays(c.date, today);
-      const d = claimDueNow(c, claims.data, rateFor(rates.data, gradeOn(p, c.date), c.date), settings, today, gradeOn(p, c.date));
+      const d = claimDueNow(c, claims.data, rateFor(rates.data, gradeOn(p, c.date), c.date, c.added), settings, today, gradeOn(p, c.date));
       buckets[age <= 30 ? 0 : age <= 60 ? 1 : 2].push(d);
     }
     aging.set(p.id, { d0to30: sumDues(buckets[0]), d31to60: sumDues(buckets[1]), d61: sumDues(buckets[2]) });

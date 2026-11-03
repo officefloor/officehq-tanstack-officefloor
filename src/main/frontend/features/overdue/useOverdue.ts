@@ -88,7 +88,7 @@ export function useOverdue(sheetId: string): Map<number, { count: number; total:
     figures.set(p.id, {
       count: overdue.length,
       total: sumDues(overdue.map((c) =>
-        claimDueNow(c, claims.data, rateFor(rates.data, gradeOn(p, c.date), c.date), settings, today, gradeOn(p, c.date)))),
+        claimDueNow(c, claims.data, rateFor(rates.data, gradeOn(p, c.date), c.date, c.added), settings, today, gradeOn(p, c.date)))),
     });
   }
   return figures;

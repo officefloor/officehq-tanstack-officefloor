@@ -20,20 +20,22 @@ import net.officefloor.hq.app.settings.SettingsRepository;
  *
  *  @param claims        each claim's values then, by claim id (a claim added later is absent)
  *  @param grades        each person's grades then, by person id, each by from-date (null: from the beginning of time)
- *  @param rates         each grade's rates then, by grade, each by from-date
+ *  @param rates         each grade's rates then, by grade, each by from-date the rates set from it, in the order set
  *  @param settings      each dated setting's values then, by key, each by from-date
  *  @param policyDate    the policy date then (null: blank, the day itself)
  *  @param holds         each person's holds then, by person id
  *  @param retiredFrom   the date each person was retired from then, by person id (absent: not retired)
  *  @param correctedDate the date of a person's claim with a number (person id, number), for a correction's rounding
+ *  @param added         each claim's added number, by claim id (see V83__forward_only_rate.sql)
  */
 public record SheetAsOf(LocalDate day, Map<Long, Claim> claims, Map<Long, TreeMap<LocalDate, String>> grades,
-        Map<String, TreeMap<LocalDate, Rate>> rates, Map<String, TreeMap<LocalDate, String>> settings,
+        Map<String, TreeMap<LocalDate, List<Rate>>> rates, Map<String, TreeMap<LocalDate, String>> settings,
         LocalDate policyDate, Map<Long, List<Hold>> holds, Map<Long, String> retiredFrom,
-        Function<Claim, String> correctedDate) {
+        Function<Claim, String> correctedDate, Map<Long, Long> added) {
 
-    /** A rate then: its percent and to-date (null: with no end). */
-    public record Rate(BigDecimal pct, LocalDate to) {
+    /** A rate then: its percent and to-date (null: with no end), and, when forward-only, the claim-added number it
+     *  was set at (it applies only to claims with a higher one; null: to every claim). */
+    public record Rate(BigDecimal pct, LocalDate to, Long after) {
     }
 
     /** The minimum date, standing for "from the beginning of time" (a null from-date). */
@@ -69,10 +71,32 @@ public record SheetAsOf(LocalDate day, Map<Long, Claim> claims, Map<Long, TreeMa
         return latest(grades.get(personId), on);
     }
 
-    /** The rate that would apply then to a person on a date; null when there is none. */
+    /** The rate in force then for a person on a date, whatever claim it is for; null when there is none. */
     private Rate rateOn(long personId, LocalDate on) {
+        return rateOn(personId, on, null);
+    }
+
+    /** The rate that would apply then to a person on a date for a claim with an added number (null: any claim): of
+     *  the latest from-date on or before it with a rate set that applies to the claim, the last such set; null when
+     *  there is none. */
+    private Rate rateOn(long personId, LocalDate on, Long claimAdded) {
         String grade = gradeOn(personId, on);
-        return grade == null ? null : latest(rates.get(grade), on);
+        TreeMap<LocalDate, List<Rate>> dated = grade == null ? null : rates.get(grade);
+        if (dated == null) return null;
+        for (Map.Entry<LocalDate, List<Rate>> e = dated.floorEntry(on); e != null; e = dated.lowerEntry(e.getKey())) {
+            List<Rate> sets = e.getValue();
+            for (int i = sets.size() - 1; i >= 0; i--) {
+                Rate r = sets.get(i);
+                if (claimAdded == null || r.after() == null || r.after() < claimAdded) return r;
+            }
+        }
+        return null;
+    }
+
+    /** A claim's added number; the highest there is when unknown. */
+    private Long addedOf(Claim claim) {
+        Long n = added.get(claim.id());
+        return n == null ? Long.MAX_VALUE : n;
     }
 
     /** A dated setting's value then on a date: a list holding the value (null when blank), empty when none was recorded. */
@@ -107,7 +131,7 @@ public record SheetAsOf(LocalDate day, Map<Long, Claim> claims, Map<Long, TreeMa
     /** A claim's rate figure then, not floored; null when no rate applied. */
     public BigDecimal due(Claim claim) {
         LocalDate date = LocalDate.parse(claim.date());
-        Rate rate = rateOn(claim.personId(), date);
+        Rate rate = rateOn(claim.personId(), date, addedOf(claim));
         if (rate == null || (rate.to() != null && rate.to().isBefore(date))) return null;
         return new BigDecimal(claim.amount()).multiply(rate.pct()).movePointLeft(2).setScale(2, rounding(claim));
     }
@@ -175,7 +199,7 @@ public record SheetAsOf(LocalDate day, Map<Long, Claim> claims, Map<Long, TreeMa
     /** Whether the rate that would apply to a claim then had ended before its date. */
     public boolean rateEnded(Claim claim) {
         LocalDate date = LocalDate.parse(claim.date());
-        Rate rate = rateOn(claim.personId(), date);
+        Rate rate = rateOn(claim.personId(), date, addedOf(claim));
         return rate != null && rate.to() != null && rate.to().isBefore(date);
     }
 

@@ -51,14 +51,14 @@ public class SheetCloner {
                 + " WHERE sheet_id = ?", to, from);
         jdbc.update("INSERT INTO sheet_permission (sheet_id, action, roles) SELECT ?, action, roles FROM sheet_permission"
                 + " WHERE sheet_id = ?", to, from);
-        jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date, version) SELECT ?, grade, pct, from_date,"
-                + " to_date, version FROM rate WHERE sheet_id = ?", to, from);
-        jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, pct, to_date) SELECT ?, grade, from_date,"
-                + " version, pct, to_date FROM rate_version WHERE sheet_id = ?", to, from);
-        jdbc.query("SELECT grade, pct, from_date, to_date FROM rate WHERE sheet_id = ? ORDER BY grade, from_date NULLS FIRST",
+        jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date, version, after_seq) SELECT ?, grade, pct, from_date,"
+                + " to_date, version, after_seq FROM rate WHERE sheet_id = ?", to, from);
+        jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, pct, to_date, after_seq) SELECT ?, grade, from_date,"
+                + " version, pct, to_date, after_seq FROM rate_version WHERE sheet_id = ?", to, from);
+        jdbc.query("SELECT grade, pct, from_date, to_date, after_seq FROM rate WHERE sheet_id = ? ORDER BY grade, from_date NULLS FIRST",
                 rs -> {
                     history.rate(to, rs.getString("grade"), rs.getBigDecimal("pct"), local(rs.getDate("from_date")),
-                            local(rs.getDate("to_date")));
+                            local(rs.getDate("to_date")), rs.getObject("after_seq", Long.class));
                 }, to);
         jdbc.update("INSERT INTO holiday (sheet_id, holiday_date) SELECT ?, holiday_date FROM holiday WHERE sheet_id = ?", to, from);
         jdbc.update("INSERT INTO void_reason (sheet_id, position, reason) SELECT ?, position, reason FROM void_reason"
@@ -140,9 +140,9 @@ public class SheetCloner {
         jdbc.update(c -> {
             PreparedStatement ps = c.prepareStatement("INSERT INTO claim (sheet_id, person_id, amount, claim_date, note,"
                     + " status, settled_due, opened_by, corrects, due_by, deferred_until, proofs, split_from, late_entry,"
-                    + " reminded, ref, tags, void_reason, edited_by) SELECT ?, ?, amount, claim_date, note, status, settled_due,"
+                    + " reminded, ref, tags, void_reason, edited_by, added_seq) SELECT ?, ?, amount, claim_date, note, status, settled_due,"
                     + " opened_by, corrects, due_by, deferred_until, proofs, split_from, late_entry, reminded, ref, tags,"
-                    + " void_reason, edited_by FROM claim WHERE id = ? AND sheet_id = ?", new String[] { "id" });
+                    + " void_reason, edited_by, added_seq FROM claim WHERE id = ? AND sheet_id = ?", new String[] { "id" });
             ps.setString(1, to);
             ps.setLong(2, personId);
             ps.setLong(3, id);

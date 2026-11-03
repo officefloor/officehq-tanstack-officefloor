@@ -5,24 +5,34 @@ import { useReader } from '../../api/readNow';
 /** A grade's rate: a percent with two decimals, in force from its from-date (yyyy-mm-dd; null when it
  *  applies from the beginning of time) through its to-date (null when it has no end), and its `version`: how many versions the grade's rate from that
  *  from-date has had (this is the newest, the one in force). `level` is the sheet it
- *  is set on: 0 this sheet, 1 its parent, 2 the parent's parent, 3 the one above that. */
-export type Rate = { grade: string; pct: string; from: string | null; to: string | null; version?: number; level?: number };
+ *  is set on: 0 this sheet, 1 its parent, 2 the parent's parent, 3 the one above that. `after`: for a forward-only
+ *  rate (saved with a from-date on or after the sheet's today), the claim-added number it was saved at — it applies
+ *  only to claims added after it (see `Claim.added`); null when it applies to every claim. `superseded`: an older
+ *  version, kept only for the claims a newer forward-only version does not apply to (never shown, never in force). */
+export type Rate = {
+  grade: string; pct: string; from: string | null; to: string | null; version?: number; level?: number;
+  after?: number | null; superseded?: boolean;
+};
 
 export function ratesKey(sheetId: string) {
   return ['sheet', sheetId, 'rates'];
 }
 
 /** The sheet's rates (level 0), by grade then from-date (an undated rate first); a grade with no rate is not
- *  listed. Then those of the sheets its grades fall back to, nearest first (level 1 its parent, up to 3). */
+ *  listed. Then those of the sheets its grades fall back to, nearest first (level 1 its parent, up to 3). Then the
+ *  older (superseded) versions of all of them, for the claims they still apply to. */
 export function useRates(sheetId: string) {
   const read = useReader();
   return useQuery({
     queryKey: read.key(ratesKey(sheetId)),
     queryFn: async () => {
-      const got = await read.get<{ rates: Rate[]; inherited: Rate[][] }>(`/api/sheets/${encodeURIComponent(sheetId)}/rates`);
+      const got = await read.get<{ rates: Rate[]; inherited: Rate[][]; earlier: Rate[]; inheritedEarlier: Rate[][] }>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/rates`);
       return [
         ...got.rates.map((r) => ({ ...r, level: 0 })),
         ...(got.inherited ?? []).flatMap((rates, i) => rates.map((r) => ({ ...r, level: i + 1 }))),
+        ...(got.earlier ?? []).map((r) => ({ ...r, level: 0, superseded: true })),
+        ...(got.inheritedEarlier ?? []).flatMap((rates, i) => rates.map((r) => ({ ...r, level: i + 1, superseded: true }))),
       ];
     },
   });
@@ -31,14 +41,21 @@ export function useRates(sheetId: string) {
 /** The rate (a two-decimal percent) for a grade in force on a date (yyyy-mm-dd): on this sheet, the one with
  *  the latest from-date on or before it, an undated rate applying from the beginning of time, unless the date is
  *  after that rate's to-date; when this sheet has none in force, its parent's the same way, then the parent's
- *  parent's, up to three levels up; undefined when none applies. */
-export function rateFor(rates: Rate[] | undefined, grade: string | undefined, on: string | undefined): string | undefined {
+ *  parent's, up to three levels up; undefined when none applies.
+ *
+ *  Given a claim's added number (`added`, see `Claim.added`), the rate that claim takes: the same way, among only
+ *  the rate versions that apply to it — those that apply to every claim and the forward-only ones saved before it
+ *  was added — the newest of each from-date. Without one, the rate in force, whatever claim it is for. */
+export function rateFor(rates: Rate[] | undefined, grade: string | undefined, on: string | undefined,
+  added?: number): string | undefined {
   if (on === undefined) return undefined;
   for (let level = 0; level <= 3; level++) {
     let found: Rate | undefined;
     for (const r of rates ?? []) {
       if ((r.level ?? 0) !== level || r.grade !== grade || (r.from !== null && r.from > on)) continue;
-      if (found === undefined || (found.from ?? '') < (r.from ?? '')) found = r;
+      if (added === undefined ? r.superseded : r.after != null && r.after >= added) continue;
+      if (found === undefined || (found.from ?? '') < (r.from ?? '')
+        || ((found.from ?? '') === (r.from ?? '') && (found.version ?? 0) < (r.version ?? 0))) found = r;
     }
     if (found !== undefined && (found.to == null || found.to >= on)) return found.pct;
   }

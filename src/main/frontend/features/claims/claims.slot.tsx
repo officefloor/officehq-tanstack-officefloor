@@ -417,7 +417,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                 <td data-testid="claim-period">{periodOf(periods.data, c.dueBy)?.name ?? ''}</td>
                 <td data-testid="claim-note">{c.note}</td>
                 <td data-testid="claim-due">
-                  {claimDueNow(c, claims.data, rateFor(rates.data, gradeOn(person, c.date), c.date), settings, today, gradeOn(person, c.date))}
+                  {claimDueNow(c, claims.data, rateFor(rates.data, gradeOn(person, c.date), c.date, c.added), settings, today, gradeOn(person, c.date))}
                 </td>
                 <td data-testid="claim-due-by">{c.dueBy}</td>
                 <td data-testid="claim-overdue">

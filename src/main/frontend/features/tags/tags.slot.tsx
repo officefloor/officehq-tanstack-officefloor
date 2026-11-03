@@ -28,7 +28,7 @@ function TagTotals({ sheetId }: { sheetId: string }) {
     const person = people.data?.find((p) => p.id === c.personId);
     if ((c.tags === null && !person?.tags) || !counts(c, holds, today)) continue;
     const grade = gradeOn(person, c.date);
-    dues.set(c.id, claimDueNow(c, claims.data, rateFor(rates.data, grade, c.date), settings, today, grade));
+    dues.set(c.id, claimDueNow(c, claims.data, rateFor(rates.data, grade, c.date, c.added), settings, today, grade));
   }
   return (
     <section data-testid="tag-totals">

@@ -43,18 +43,21 @@ public class ClaimRepository {
     private static final String GRADE_ON = "(SELECT g.grade FROM person_grade g WHERE g.sheet_id = ? AND g.person_id = ?"
             + " AND (g.from_date IS NULL OR g.from_date <= CAST(? AS DATE)) ORDER BY g.from_date DESC NULLS LAST LIMIT 1)";
 
-    /** The rate that would apply on a date (sheet, then GRADE_ON's person and date, then the date):
-     *  the one for the person's grade with the latest from-date on or before it, an undated rate
-     *  applying from the beginning of time; at most one row, with its pct and to_date. */
-    private static final String RATE_ON = "(SELECT r.pct, r.to_date FROM rate r WHERE r.sheet_id = ? AND r.grade = "
-            + GRADE_ON + " AND (r.from_date IS NULL OR r.from_date <= CAST(? AS DATE))"
-            + " ORDER BY r.from_date DESC NULLS LAST LIMIT 1)";
-
     /** The rate a sheet has for a grade on a date (sheet, grade, then the date): the one with the latest
      *  from-date on or before it, an undated rate applying from the beginning of time; at most one row, with
      *  its pct and to_date. */
     private static final String RATE_FOR = "(SELECT r.pct, r.to_date FROM rate r WHERE r.sheet_id = ? AND r.grade = ?"
             + " AND (r.from_date IS NULL OR r.from_date <= CAST(? AS DATE)) ORDER BY r.from_date DESC NULLS LAST LIMIT 1)";
+
+    /** The rate a sheet's claim takes for a grade on a date (sheet, grade, the date, then the claim's added number):
+     *  as {@link #RATE_FOR}, among only the rate versions that apply to the claim — those that apply to every claim
+     *  and the forward-only ones saved before it was added — the newest version of each from-date; at most one row,
+     *  with its pct and to_date. */
+    private static final String CLAIM_RATE_FOR = "(SELECT r.pct, r.to_date FROM (SELECT sheet_id, grade, from_date, version,"
+            + " pct, to_date, after_seq FROM rate UNION ALL SELECT sheet_id, grade, from_date, version, pct, to_date, after_seq"
+            + " FROM rate_version) r WHERE r.sheet_id = ? AND r.grade = ?"
+            + " AND (r.from_date IS NULL OR r.from_date <= CAST(? AS DATE)) AND (r.after_seq IS NULL OR r.after_seq < ?)"
+            + " ORDER BY r.from_date DESC NULLS LAST, r.version DESC LIMIT 1)";
 
     private final JdbcTemplate jdbc;
     private final SettingsRepository settings;
@@ -234,7 +237,7 @@ public class ClaimRepository {
      *  rounding (see {@link #rounding}) — the rate figure, not floored: the floor is applied last, in {@link #dueNow};
      *  null when no rate applies. */
     public BigDecimal due(String sheetId, Claim claim) {
-        BigDecimal pct = rateInForce(sheetId, claim.personId(), LocalDate.parse(claim.date()));
+        BigDecimal pct = rateInForce(sheetId, claim.personId(), LocalDate.parse(claim.date()), added(sheetId, claim.id()));
         if (pct == null) return null;
         BigDecimal due = new BigDecimal(claim.amount()).multiply(pct).movePointLeft(2)
                 .setScale(2, rounding(sheetId, claim));
@@ -336,10 +339,30 @@ public class ClaimRepository {
     /** Whether the rate that would apply to a claim (for the grade its person had on its date, the one
      *  with the latest from-date on or before it) has ended before the claim's date. */
     public boolean rateEnded(String sheetId, Claim claim) {
-        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM " + RATE_ON + " a"
-                + " WHERE a.to_date < CAST(? AS DATE)", Integer.class, sheetId,
-                sheetId, claim.personId(), claim.date(), claim.date(), claim.date());
+        String grade = gradeOn(sheetId, claim);
+        if (grade == null) return false;
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM " + CLAIM_RATE_FOR + " a"
+                + " WHERE a.to_date < CAST(? AS DATE)", Integer.class, sheetId, grade, claim.date(),
+                added(sheetId, claim.id()), claim.date());
         return n != null && n > 0;
+    }
+
+    /** A claim's added number (see V83__forward_only_rate.sql): claims added later have higher ones; the highest
+     *  there is for a claim the sheet does not have (yet). */
+    public long added(String sheetId, long claimId) {
+        List<Long> found = jdbc.queryForList("SELECT added_seq FROM claim WHERE sheet_id = ? AND id = ?", Long.class,
+                sheetId, claimId);
+        return found.isEmpty() || found.get(0) == null ? Long.MAX_VALUE : found.get(0);
+    }
+
+    /** Each claim's added number on the sheet, by claim id. */
+    public Map<String, Long> added(String sheetId) {
+        Map<String, Long> added = new LinkedHashMap<>();
+        jdbc.query("SELECT id, added_seq FROM claim WHERE sheet_id = ?",
+                rs -> {
+                    added.put(String.valueOf(rs.getLong("id")), rs.getLong("added_seq"));
+                }, sheetId);
+        return added;
     }
 
     /** Whether a rate for the grade the person has on a date is in force on that date (not past its
@@ -352,6 +375,12 @@ public class ClaimRepository {
      *  {@link #RATE_FOR}) when it has one in force then (not past its to-date), else its parent sheet's for that
      *  grade and date, then the parent's parent's, up to three levels up; null when none is. */
     public BigDecimal rateInForce(String sheetId, long personId, LocalDate on) {
+        return rateInForce(sheetId, personId, on, null);
+    }
+
+    /** The rate (a percent) a claim takes: as {@link #rateInForce(String, long, LocalDate)} on its date, among only
+     *  the rates that apply to it (see {@link #CLAIM_RATE_FOR}; {@code added} is its added number, null for all). */
+    public BigDecimal rateInForce(String sheetId, long personId, LocalDate on, Long added) {
         List<String> grade = jdbc.queryForList("SELECT " + GRADE_ON + " FROM DUAL", String.class, sheetId,
                 personId, on.toString());
         if (grade.isEmpty() || grade.get(0) == null) return null;
@@ -359,9 +388,13 @@ public class ClaimRepository {
         chain.add(sheetId);
         chain.addAll(settings.rateAncestors(sheetId));
         for (String at : chain) {
-            List<BigDecimal> pct = jdbc.queryForList("SELECT a.pct FROM " + RATE_FOR + " a"
-                    + " WHERE a.to_date IS NULL OR a.to_date >= CAST(? AS DATE)", BigDecimal.class,
-                    at, grade.get(0), on.toString(), on.toString());
+            List<BigDecimal> pct = added == null
+                    ? jdbc.queryForList("SELECT a.pct FROM " + RATE_FOR + " a"
+                            + " WHERE a.to_date IS NULL OR a.to_date >= CAST(? AS DATE)", BigDecimal.class,
+                            at, grade.get(0), on.toString(), on.toString())
+                    : jdbc.queryForList("SELECT a.pct FROM " + CLAIM_RATE_FOR + " a"
+                            + " WHERE a.to_date IS NULL OR a.to_date >= CAST(? AS DATE)", BigDecimal.class,
+                            at, grade.get(0), on.toString(), added, on.toString());
             if (!pct.isEmpty()) return pct.get(0);
         }
         return null;

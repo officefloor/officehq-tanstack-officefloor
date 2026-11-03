@@ -15,6 +15,7 @@ public class LoadRates {
         CurrentUser.require(connection);
         String id = sheetId == null ? "" : sheetId.trim();
         rates.set(view.read(connection, id, () -> new Rates(repository.list(id),
-                settings.rateAncestors(id).stream().map(repository::list).toList())));
+                settings.rateAncestors(id).stream().map(repository::list).toList(), repository.earlier(id),
+                settings.rateAncestors(id).stream().map(repository::earlier).toList())));
     }
 }

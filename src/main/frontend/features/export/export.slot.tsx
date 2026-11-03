@@ -72,7 +72,7 @@ function ExportClaims({ sheetId }: { sheetId: string }) {
           c.number ?? '',
           c.date,
           c.amount,
-          claimDueNow(c, claims.data, rateFor(rates.data, grade, c.date), settings, today, grade),
+          claimDueNow(c, claims.data, rateFor(rates.data, grade, c.date, c.added), settings, today, grade),
           c.status,
           periodOf(periods.data, c.dueBy)?.name ?? '',
         ]);
