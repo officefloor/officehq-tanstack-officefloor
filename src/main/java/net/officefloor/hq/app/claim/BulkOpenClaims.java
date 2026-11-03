@@ -15,7 +15,7 @@ import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
-/** Open the selected claims together, in list order (people in the order they were added, each
+/** Open the selected claims together, in list order (people in list order, each
  *  person's claims newest first), each numbered as it is opened. A claim that cannot be opened (no
  *  such claim, not a DRAFT, dated in a closed period) is left as it is and counted as refused. */
 public class BulkOpenClaims {

@@ -78,14 +78,19 @@ public class ClaimRepository {
         return known != null && known > 0;
     }
 
-    /** The given claims as the sheet lists them: people in the order they were added, each person's claims
+    /** The given claims as the sheet lists them: people in list order (by their position), each person's claims
      *  newest first (a reassigned claim counts as its new person's newest); ids the sheet does not have are left out. */
     public List<Claim> inListOrder(String sheetId, Collection<Long> ids) {
         List<Claim> out = new ArrayList<>();
         for (Claim c : list(sheetId)) {
             if (ids.contains(c.id())) out.add(c);
         }
-        out.sort(Comparator.comparingLong(Claim::personId));
+        Map<Long, Integer> place = new java.util.HashMap<>();
+        for (Long pid : jdbc.queryForList("SELECT id FROM person WHERE sheet_id = ? ORDER BY list_position, id",
+                Long.class, sheetId)) {
+            place.put(pid, place.size());
+        }
+        out.sort(Comparator.comparingInt((Claim c) -> place.getOrDefault(c.personId(), Integer.MAX_VALUE)));
         return out;
     }
 

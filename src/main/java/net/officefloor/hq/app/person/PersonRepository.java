@@ -30,6 +30,9 @@ public class PersonRepository {
             rs.getDate("retired_from") == null ? null : rs.getDate("retired_from").toLocalDate().toString(),
             false, List.of(), List.of(), (Integer) rs.getObject("terms", Integer.class), rs.getString("contact"));
 
+    /** The position after the last person's on the sheet being inserted into (the end of its list). */
+    private static final String NEXT_POSITION = "(SELECT COALESCE(MAX(q.list_position), 0) + 1 FROM person q WHERE q.sheet_id = sheet.id)";
+
     private final JdbcTemplate jdbc;
     private final HistoryRepository history;
 
@@ -43,9 +46,9 @@ public class PersonRepository {
         return known != null && known > 0;
     }
 
-    /** The sheet's people in the order they were added. */
+    /** The sheet's people in list order (by their position; new people go to the end). */
     public List<Person> list(String sheetId) {
-        List<Person> people = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? ORDER BY id", ROW, sheetId);
+        List<Person> people = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? ORDER BY list_position, id", ROW, sheetId);
         Map<Long, List<GradeFrom>> grades = new HashMap<>();
         jdbc.query("SELECT person_id, grade, from_date FROM person_grade WHERE sheet_id = ? ORDER BY from_date NULLS FIRST",
                 rs -> {
@@ -253,8 +256,8 @@ public class PersonRepository {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(c -> {
             PreparedStatement ps = c.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade, terms, contact, added_on)"
-                            + " SELECT ?, ?, ?, ?, ?, today FROM sheet WHERE id = ?", new String[] { "id" });
+                    "INSERT INTO person (sheet_id, name, grade, terms, contact, added_on, list_position)"
+                            + " SELECT ?, ?, ?, ?, ?, today, " + NEXT_POSITION + " FROM sheet WHERE id = ?", new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setString(2, name);
             ps.setString(3, grade);
@@ -266,6 +269,18 @@ public class PersonRepository {
         long id = keys.getKey().longValue();
         grade(sheetId, id, grade, null);
         return new Person(id, name, grade, 1, 0, null, null, null, false, List.of(new GradeFrom(grade, null)), List.of(), terms, contact);
+    }
+
+    /** Swap two people's places in the sheet's list. */
+    public void swapPositions(String sheetId, long id, long otherId) {
+        Long mine = position(sheetId, id);
+        Long theirs = position(sheetId, otherId);
+        jdbc.update("UPDATE person SET list_position = ? WHERE id = ? AND sheet_id = ?", theirs, id, sheetId);
+        jdbc.update("UPDATE person SET list_position = ? WHERE id = ? AND sheet_id = ?", mine, otherId, sheetId);
+    }
+
+    private Long position(String sheetId, long id) {
+        return jdbc.queryForObject("SELECT list_position FROM person WHERE id = ? AND sheet_id = ?", Long.class, id, sheetId);
     }
 
     /** Whether the sheet has this person. */
@@ -296,13 +311,15 @@ public class PersonRepository {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(c -> {
             PreparedStatement ps = c.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade, terms, contact, added_on)"
-                            + " SELECT ?, p.name, p.grade, p.terms, p.contact, (SELECT s.today FROM sheet s WHERE s.id = ?)"
+                    "INSERT INTO person (sheet_id, name, grade, terms, contact, added_on, list_position)"
+                            + " SELECT ?, p.name, p.grade, p.terms, p.contact, (SELECT s.today FROM sheet s WHERE s.id = ?),"
+                            + " (SELECT COALESCE(MAX(q.list_position), 0) + 1 FROM person q WHERE q.sheet_id = ?)"
                             + " FROM person p WHERE p.id = ? AND p.sheet_id = ?", new String[] { "id" });
             ps.setString(1, toSheet);
             ps.setString(2, toSheet);
-            ps.setLong(3, id);
-            ps.setString(4, fromSheet);
+            ps.setString(3, toSheet);
+            ps.setLong(4, id);
+            ps.setString(5, fromSheet);
             return ps;
         }, keys);
         long arrived = keys.getKey().longValue();

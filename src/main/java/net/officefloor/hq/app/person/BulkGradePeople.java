@@ -15,7 +15,7 @@ import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
-/** Give the selected people a grade together, in list order (the order they were added), each exactly as
+/** Give the selected people a grade together, in list order (by their position), each exactly as
  *  the person form would save them with their own name and terms: the grade is recorded from the from-date
  *  (blank: the sheet's today), except that leaving the grade in force on the sheet's today as it is, with
  *  the from-date blank, records no grade; each writes PERSON_EDITED and its rollup lines. An id that is no

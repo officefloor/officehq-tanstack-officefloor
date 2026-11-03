@@ -18,7 +18,7 @@ import org.springframework.stereotype.Service;
 
 /** The sheet's figures as shown: each person's claimed, due-total and overdue-total, and the sheet's
  *  claimed-total, due-total and overdue-total. A change takes them before it writes, then after its own audit lines records one ROLLUP
- *  line per person whose figures moved (people in the order they were added; a new person counts as
+ *  line per person whose figures moved (people in list order; a new person counts as
  *  moved), then a TOTALS line when the sheet's totals moved. */
 @Service
 public class Rollup {
@@ -32,7 +32,7 @@ public class Rollup {
         }
     }
 
-    /** The figures of a sheet at one moment, people by id in the order they were added. */
+    /** The figures of a sheet at one moment, people by id in list order. */
     public record Snapshot(Map<Long, Figures> people, String claimedTotal, String dueTotal, String overdueTotal) {
     }
 
@@ -103,7 +103,7 @@ public class Rollup {
         return total;
     }
 
-    /** Record one SNAPSHOT line per person (in the order they were added) with their due-total as {@code before} had it,
+    /** Record one SNAPSHOT line per person (in list order) with their due-total as {@code before} had it,
      *  ending with for=<steward> when {@code by} made the change under that steward's delegation (null when not). */
     public void snapshot(String sheetId, String by, Snapshot before, String delegator) {
         for (Figures f : before.people().values()) {

@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 /** Settle the selected claims together, all or nothing: when any of them cannot be settled by the signed-in
  *  user (any refusal the single settle would give; going to PENDING is not one), none is settled, every one
- *  counts as refused and nothing is written. Otherwise each is settled in list order (people in the order they
+ *  counts as refused and nothing is written. Otherwise each is settled in list order (people in list order
  *  were added, each person's claims newest first) by exactly the rules of settling one claim (a claim a clerk
  *  sends to PENDING counts as settled); they are the sheet's next batch, each keeps its number, and after the
  *  claims' own lines BATCH_SETTLED batch=<n> count=<claims> total=<the frozen dues of those SETTLED> is written. */

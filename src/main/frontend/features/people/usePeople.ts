@@ -131,7 +131,7 @@ export function retiredOn(person: Person, today: string | undefined): boolean {
   return person.retiredFrom !== null && today !== undefined && person.retiredFrom <= today;
 }
 
-/** The sheet's people, in the order they were added. */
+/** The sheet's people, in list order. */
 export function usePeople(sheetId: string) {
   return useQuery({
     queryKey: peopleKey(sheetId),

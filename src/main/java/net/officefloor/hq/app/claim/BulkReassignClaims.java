@@ -15,7 +15,7 @@ import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
-/** Move the selected claims to one person together, in list order (people in the order they were added, each
+/** Move the selected claims to one person together, in list order (people in list order, each
  *  person's claims newest first), each by exactly the rules of moving one claim ({@link ClaimReassign}); a
  *  selected claim already that person's is re-listed as their newest. A claim that cannot be moved is left as
  *  it is and counted as refused. */

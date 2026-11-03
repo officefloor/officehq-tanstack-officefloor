@@ -9,7 +9,7 @@ import { useShowRetired } from '../retire/useShowRetired';
 import { GRADES, fetchPeople, peopleKey, usePeople, type Person } from './usePeople';
 
 /** The sheet's people: a form that adds a person, or edits one when their editor is open, and the
- *  list of everyone in the order they were added (retired people only when "show retired" is on), each
+ *  list of everyone in list order (by position; new people go to the end) (retired people only when "show retired" is on), each
  *  with the grade in force on the sheet's today. An edit records the form's grade from its from-date
  *  (blank: the sheet's today); the first grade a person is given applies from the beginning of time.
  *  A person may have their own terms (days; blank for none), shown on their row: a claim's due-by is fixed
