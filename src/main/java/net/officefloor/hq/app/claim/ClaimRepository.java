@@ -150,6 +150,17 @@ public class ClaimRepository {
                 Date.valueOf(date), claimId, sheetId) > 0);
     }
 
+    /** Record who last edited a claim. */
+    public void editedBy(String sheetId, long claimId, String by) {
+        jdbc.update("UPDATE claim SET edited_by = ? WHERE id = ? AND sheet_id = ?", by, claimId, sheetId);
+    }
+
+    /** Who last edited a claim; null when it was never edited. */
+    public String editedBy(String sheetId, long claimId) {
+        List<String> by = jdbc.queryForList("SELECT edited_by FROM claim WHERE id = ? AND sheet_id = ?", String.class, claimId, sheetId);
+        return by.isEmpty() ? null : by.get(0);
+    }
+
     /** Record who opened a claim. */
     public void openedBy(String sheetId, long claimId, String by) {
         jdbc.update("UPDATE claim SET opened_by = ? WHERE id = ? AND sheet_id = ?", by, claimId, sheetId);

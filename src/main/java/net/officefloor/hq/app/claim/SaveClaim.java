@@ -47,6 +47,7 @@ public class SaveClaim {
         if (!repository.update(id, cid, input.amount(), date, input.note(), input.corrects(), input.ref(), input.tags())) {
             throw new BadRequestException("only a DRAFT claim can be edited");
         }
+        repository.editedBy(id, cid, by);
         repository.unlock(id, cid, by);
         long pid = found.personId();
         Claim saved = new Claim(cid, pid, ClaimRepository.money(input.amount()), date.toString(), input.note(),

@@ -58,6 +58,11 @@ final class ClaimStatusChange {
         if (to.equals("SETTLED") && found.status().equals("OPEN") && by.equals(found.openedBy())) {
             throw new BadRequestException("the user who opened a claim cannot settle it");
         }
+        // Nor can whoever last edited it settle or approve it.
+        if (to.equals("SETTLED") && (found.status().equals("OPEN") || found.status().equals("PENDING"))
+                && by.equals(repository.editedBy(id, cid))) {
+            throw new BadRequestException("the user who last edited a claim cannot " + act + " it");
+        }
         // A deferred claim cannot be settled until the sheet's today reaches the date it is deferred until.
         if (to.equals("SETTLED") && found.deferred()) {
             throw new BadRequestException("a claim deferred until " + found.deferredUntil() + " cannot be settled");
