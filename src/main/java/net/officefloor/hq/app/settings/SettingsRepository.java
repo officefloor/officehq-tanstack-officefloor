@@ -53,7 +53,8 @@ public class SettingsRepository {
                 money(latePct(sheetId, today)), roles, policy == null ? null : policy.toString(),
                 numbering == null ? null : numbering.toString(), gradeTerms(sheetId, today),
                 cap == null ? null : money(cap), dated(sheetId), permissions(sheetId), graceDays(sheetId),
-                delegations(sheetId), entry == null ? null : entry.toString(), holidays(sheetId));
+                delegations(sheetId), entry == null ? null : entry.toString(), holidays(sheetId),
+                voidReasons(sheetId));
     }
 
     /** The sheet's today; the real date when there is no such sheet. */
@@ -290,6 +291,18 @@ public class SettingsRepository {
 
     public void addHoliday(String sheetId, LocalDate date) {
         jdbc.update("INSERT INTO holiday (sheet_id, holiday_date) VALUES (?, ?)", sheetId, Date.valueOf(date));
+    }
+
+    /** The sheet's void reasons, in the order they were added. */
+    public List<String> voidReasons(String sheetId) {
+        return jdbc.query("SELECT reason FROM void_reason WHERE sheet_id = ? ORDER BY position",
+                (rs, i) -> rs.getString("reason"), sheetId);
+    }
+
+    public void addVoidReason(String sheetId, String reason) {
+        jdbc.update("INSERT INTO void_reason (sheet_id, position, reason)"
+                + " VALUES (?, (SELECT COALESCE(MAX(position), 0) + 1 FROM void_reason WHERE sheet_id = ?), ?)",
+                sheetId, sheetId, reason);
     }
 
     /** The terms-th business day after a date on the sheet: counting forward from the day after it, skipping

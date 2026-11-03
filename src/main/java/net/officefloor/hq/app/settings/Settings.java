@@ -17,9 +17,11 @@ import java.util.List;
  *  {@code delegations} is each delegation of the steward role made on the sheet, oldest first.
  *  {@code entryDate} is the sheet's entry date (yyyy-MM-dd; null when blank: off; not dated): while set, it is the
  *  default date of a new claim instead of the sheet's today. {@code holidays} is the sheet's holidays (yyyy-MM-dd),
- *  earliest first: a claim's due-by, fixed when it is created, that falls on one is moved to the next day that is not one. */
+ *  earliest first: a claim's due-by, fixed when it is created, that falls on one is moved to the next day that is not one.
+ *  {@code voidReasons} is the sheet's void reasons, in the order they were added: while there is one, voiding a claim
+ *  needs one of them. */
 public record Settings(String clerkLimit, String floor, int terms, String latePct, List<Role> roles, String policyDate,
         String periodNumberingFrom, java.util.Map<String, Integer> gradeTerms, String cap,
         java.util.Map<String, List<DatedValue>> dated, java.util.Map<String, String> permissions, Integer graceDays,
-        List<Delegation> delegations, String entryDate, List<String> holidays) {
+        List<Delegation> delegations, String entryDate, List<String> holidays, List<String> voidReasons) {
 }

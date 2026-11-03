@@ -78,6 +78,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
   const [delegateTo, setDelegateTo] = useState('');
 
   const [holidayDate, setHolidayDate] = useState('');
+  const [voidReason, setVoidReason] = useState('');
 
   const saveOnce = useSingleFlight();
   const save = useMutation({
@@ -132,6 +133,16 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
       postJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/holidays`, f),
     onSuccess: (saved) => {
       setHolidayDate('');
+      queryClient.setQueryData(settingsKey(sheetId), saved);
+    },
+  });
+
+  const voidReasonOnce = useSingleFlight();
+  const addVoidReason = useMutation({
+    mutationFn: (f: { reason: string }) =>
+      postJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/void-reasons`, f),
+    onSuccess: (saved) => {
+      setVoidReason('');
       queryClient.setQueryData(settingsKey(sheetId), saved);
     },
   });
@@ -519,6 +530,39 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
         {(settings.data?.holidays ?? []).map((d) => (
           <li key={d} data-testid={`holiday-row-${d}`}>
             {d}
+          </li>
+        ))}
+      </ul>
+      <form
+        data-testid="void-reason-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          voidReasonOnce(() => {
+            addVoidReason.reset();
+            return addVoidReason.mutateAsync({ reason: voidReason });
+          });
+        }}
+      >
+        <label>
+          Void reason{' '}
+          <input
+            data-testid="void-reason-text"
+            value={voidReason}
+            onChange={(e) => {
+              setVoidReason(e.target.value);
+              addVoidReason.reset();
+            }}
+          />
+        </label>{' '}
+        <button type="submit" data-testid="void-reason-add" disabled={addVoidReason.isPending}>
+          Add void reason
+        </button>
+        {addVoidReason.isError && <p data-testid="void-reason-error">{addVoidReason.error.message}</p>}
+      </form>
+      <ul data-testid="void-reasons-list">
+        {(settings.data?.voidReasons ?? []).map((r) => (
+          <li key={r} data-testid={`void-reason-row-${r}`}>
+            {r}
           </li>
         ))}
       </ul>

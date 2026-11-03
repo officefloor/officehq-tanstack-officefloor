@@ -4,13 +4,15 @@ import { useClaims } from '../claims/useClaims';
 import { GRADES, usePeople } from '../people/usePeople';
 import { usePeriodDueTotals } from '../periods/usePeriodDueTotals';
 import { usePeriods } from '../periods/usePeriods';
+import { useSettings } from '../settings/useSettings';
 import { useDueTotals } from '../rates/useDueTotals';
 import { sumDues } from '../rates/useRates';
 import { countWithStatus, STATUSES } from './statusCounts';
 
 /** The sheet's summary, worked out from the same figures the lists show: per grade, how many people
  *  have it on the sheet's today (retired people left out) and their due-totals added up (skipping
- *  'n/a') and how many of them are active; per period, its due-total; per status, how many claims have it. */
+ *  'n/a') and how many of them are active; per period, its due-total; per status, how many claims have it; per void reason on the
+ *  sheet's list, how many VOID claims were voided with it. */
 function Summary({ sheetId }: { sheetId: string }) {
   const people = usePeople(sheetId);
   const claims = useClaims(sheetId);
@@ -18,6 +20,7 @@ function Summary({ sheetId }: { sheetId: string }) {
   const dueTotals = useDueTotals(sheetId);
   const periodTotals = usePeriodDueTotals(sheetId);
   const activeById = useActive(sheetId);
+  const voidReasons = useSettings(sheetId).data?.voidReasons ?? [];
   const current = (people.data ?? []).filter((p) => !p.retiredFrom);
   return (
     <section data-testid="summary">
@@ -77,6 +80,24 @@ function Summary({ sheetId }: { sheetId: string }) {
               <td>{s}</td>
               <td data-testid={`summary-status-${s}-count`}>
                 {countWithStatus(claims.data, s)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <table>
+        <thead>
+          <tr>
+            <th>Void reason</th>
+            <th>Claims</th>
+          </tr>
+        </thead>
+        <tbody>
+          {voidReasons.map((r) => (
+            <tr key={r}>
+              <td>{r}</td>
+              <td data-testid={`summary-void-${r}-count`}>
+                {(claims.data ?? []).filter((c) => c.status === 'VOID' && c.voidReason === r).length}
               </td>
             </tr>
           ))}

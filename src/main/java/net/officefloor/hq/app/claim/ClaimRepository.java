@@ -20,7 +20,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no, settled_due, opened_by, stated, stated_due, corrects, due_by, stated_na, deferred_until, proofs, split_from, late_entry, reminded, ref, tags,"
+    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no, settled_due, opened_by, stated, stated_due, corrects, due_by, stated_na, deferred_until, proofs, split_from, late_entry, reminded, ref, tags, void_reason,"
             + " (status = 'OPEN' AND deferred_until IS NOT NULL AND deferred_until > (SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id)) AS deferred";
 
     private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getLong("person_id"),
@@ -34,7 +34,7 @@ public class ClaimRepository {
             rs.getBoolean("deferred"), rs.getInt("proofs"), rs.getString("split_from"),
             rs.getBoolean("late_entry"),
             rs.getDate("reminded") == null ? null : rs.getDate("reminded").toLocalDate().toString(),
-            rs.getString("ref"), rs.getString("tags"));
+            rs.getString("ref"), rs.getString("tags"), rs.getString("void_reason"));
 
     /** The grade a person (sheet, person id) has on a date: the one with the latest from-date on
      *  or before it, the first one they were given applying from the beginning of time. */
@@ -89,6 +89,11 @@ public class ClaimRepository {
         args.addAll(from);
         return kept(sheetId, claimId, jdbc.update("UPDATE claim SET status = ? WHERE id = ? AND sheet_id = ? AND status IN (" + in + ")",
                 args.toArray()) > 0);
+    }
+
+    /** Record the reason a claim was voided with. */
+    public void voidReason(String sheetId, long claimId, String reason) {
+        kept(sheetId, claimId, jdbc.update("UPDATE claim SET void_reason = ? WHERE id = ? AND sheet_id = ?", reason, claimId, sheetId) > 0);
     }
 
     /** Give an opened claim the sheet's next number. The sheet's row stays locked until the
@@ -383,7 +388,7 @@ public class ClaimRepository {
         kept(sheetId, keys.getKey().longValue(), true);
         used(sheetId, tags);
         return new Claim(keys.getKey().longValue(), personId, money(amount), date.toString(), note, "DRAFT", null, null, null, false, null, corrects,
-                dueBy.toString(), false, null, false, 0, null, late, null, ref, tags);
+                dueBy.toString(), false, null, false, 0, null, late, null, ref, tags, null);
     }
 
     /** Whether a claim added now with a due-by is a late entry: the due-by falls in a soft-closed period of the sheet. */

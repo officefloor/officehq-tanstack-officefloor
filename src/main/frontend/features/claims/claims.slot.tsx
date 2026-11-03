@@ -65,6 +65,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   const [ref, setRef] = useState('');
   const [tags, setTags] = useState('');
   const [reasons, setReasons] = useState<Record<number, string>>({});
+  const [voidReasons, setVoidReasons] = useState<Record<number, string>>({});
   const [targets, setTargets] = useState<Record<number, string>>({});
   const [deferDates, setDeferDates] = useState<Record<number, string>>({});
   const [splitAmounts, setSplitAmounts] = useState<Record<number, string>>({});
@@ -136,6 +137,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
       postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${a.id}/${a.action}`, { reason: a.reason, until: a.until, amount: a.amount, date: a.date }),
     onSuccess: (_, a) => {
       if (a.action === 'reject') setReasons((r) => ({ ...r, [a.id]: '' }));
+      if (a.action === 'void') setVoidReasons((r) => ({ ...r, [a.id]: '' }));
       if (a.action === 'defer') setDeferDates((d) => ({ ...d, [a.id]: '' }));
       if (a.action === 'split') setSplitAmounts((m) => ({ ...m, [a.id]: '' }));
       if (a.action === 'redate') setNewDates((d) => ({ ...d, [a.id]: '' }));
@@ -202,7 +204,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
     action.mutate({
       id,
       action: a,
-      reason: a === 'reject' ? reasons[id] ?? '' : '',
+      reason: a === 'reject' ? reasons[id] ?? '' : a === 'void' ? voidReasons[id] ?? '' : '',
       until: a === 'defer' ? (deferDates[id] ?? '').trim() : '',
       amount: a === 'split' ? (splitAmounts[id] ?? '').trim() : '',
       date: a === 'redate' ? (newDates[id] ?? '').trim() : '',
@@ -382,6 +384,24 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                       setReasons((r) => ({ ...r, [c.id]: v }));
                     }}
                   />{' '}
+                  {(settings?.voidReasons ?? []).length > 0 && (
+                    <select
+                      data-testid="claim-void-reason"
+                      value={voidReasons[c.id] ?? ''}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setVoidReasons((r) => ({ ...r, [c.id]: v }));
+                        if (action.variables?.id === c.id) action.reset();
+                      }}
+                    >
+                      <option value="">void reason</option>
+                      {(settings?.voidReasons ?? []).map((r) => (
+                        <option key={r} value={r}>
+                          {r}
+                        </option>
+                      ))}
+                    </select>
+                  )}{' '}
                   {ACTIONS.map(([a, label]) => (
                     <button
                       key={a}

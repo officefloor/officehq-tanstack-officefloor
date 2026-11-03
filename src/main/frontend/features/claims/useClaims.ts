@@ -21,7 +21,8 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
  *  and, for a claim split off another, the number of the claim it was split from (null otherwise), and the user
  *  whose open editor locks it for everyone else (null when it is not locked), and the last day (the sheet's today
  *  then) a reminder was written for it (null when never reminded), and its tags (lower-case, sorted and comma separated
- *  with no spaces; null when none). */
+ *  with no spaces; null when none), and the reason it was voided with (one of the sheet's void reasons; null when none
+ *  was given). */
 export type Claim = {
   id: number;
   personId: number;
@@ -44,6 +45,7 @@ export type Claim = {
   reminded: string | null;
   ref: string | null;
   tags: string | null;
+  voidReason: string | null;
   log: string[];
   lockedBy: string | null;
 };

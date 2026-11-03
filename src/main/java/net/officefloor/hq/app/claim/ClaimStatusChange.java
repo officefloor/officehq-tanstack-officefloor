@@ -86,6 +86,20 @@ final class ClaimStatusChange {
         if (event.equals("CLAIM_REJECTED") && why.isEmpty()) {
             throw new BadRequestException("give a reason to reject the claim");
         }
+        // While the sheet has void reasons, a void needs one chosen from them; with none, a void takes no reason.
+        String voidReason = null;
+        if (to.equals("VOID")) {
+            List<String> reasons = settings.voidReasons(id);
+            if (!reasons.isEmpty()) {
+                if (why.isEmpty()) {
+                    throw new BadRequestException("choose a reason to void the claim");
+                }
+                if (!reasons.contains(why)) {
+                    throw new BadRequestException(why + " is not one of the sheet's void reasons");
+                }
+                voidReason = why;
+            }
+        }
         // A claim whose due is above the note threshold in force on its date cannot be opened with an empty
         // note ('n/a' is above none).
         if (to.equals("OPEN") && found.status().equals("DRAFT") && (found.note() == null || found.note().trim().isEmpty())) {
@@ -119,6 +133,9 @@ final class ClaimStatusChange {
         if (!repository.changeStatus(id, cid, from, to)) {
             throw new BadRequestException("a " + found.status() + " claim cannot be moved to " + to);
         }
+        if (voidReason != null) {
+            repository.voidReason(id, cid, voidReason);
+        }
         // Opening gives the sheet's next number; a rejected claim keeps its own; a voided claim keeps the number it had (never reused).
         String number = found.number();
         String openedBy = found.openedBy();
@@ -136,6 +153,9 @@ final class ClaimStatusChange {
         if (reversing) {
             tail = " reversed=" + (found.due() == null ? "n/a" : found.due());
         }
+        if (voidReason != null) {
+            tail += " reason=" + voidReason;
+        }
         if (to.equals("SETTLED")) {
             BigDecimal now = repository.dueNow(id, found);
             repository.settleDue(id, cid, now);
@@ -145,7 +165,8 @@ final class ClaimStatusChange {
         repository.log(id, cid, by);
         Claim changed = new Claim(found.id(), found.personId(), found.amount(), found.date(), found.note(), to,
                 number, due, openedBy, found.stated(), found.statedDue(), found.corrects(), found.dueBy(),
-                found.statedNa(), found.deferredUntil(), found.deferred(), found.proofs(), found.splitFrom(), found.lateEntry(), found.reminded(), found.ref(), found.tags());
+                found.statedNa(), found.deferredUntil(), found.deferred(), found.proofs(), found.splitFrom(), found.lateEntry(), found.reminded(), found.ref(), found.tags(),
+                voidReason != null ? voidReason : found.voidReason());
         audit.record(event + " sheet=" + id + " by=" + by + " person=" + repository.personName(id, found.personId())
                 + " amount=" + changed.amount() + " date=" + changed.date() + Claim.auditNumber(number) + tail);
         // A settled (or approved) claim's watchers are told, after the claim's own line and before the rollup.
@@ -172,7 +193,7 @@ final class ClaimStatusChange {
         }
         PeriodGuard.open(periods, id, LocalDate.parse(found.dueBy()));
         Claim live = new Claim(found.id(), found.personId(), found.amount(), found.date(), found.note(), "OPEN",
-                found.number(), null, found.openedBy(), false, null, found.corrects(), found.dueBy(), false, null, false, found.proofs(), found.splitFrom(), found.lateEntry(), found.reminded(), found.ref(), found.tags());
+                found.number(), null, found.openedBy(), false, null, found.corrects(), found.dueBy(), false, null, false, found.proofs(), found.splitFrom(), found.lateEntry(), found.reminded(), found.ref(), found.tags(), found.voidReason());
         BigDecimal now = repository.dueNow(id, live);
         Rollup.Snapshot before = rollup.take(id);
         repository.settleDue(id, cid, now);
@@ -181,7 +202,7 @@ final class ClaimStatusChange {
         String due = ClaimRepository.dueOf(now);
         Claim changed = new Claim(found.id(), found.personId(), found.amount(), found.date(), found.note(),
                 found.status(), found.number(), due, found.openedBy(), found.stated(), found.statedDue(),
-                found.corrects(), found.dueBy(), found.statedNa(), found.deferredUntil(), found.deferred(), found.proofs(), found.splitFrom(), found.lateEntry(), found.reminded(), found.ref(), found.tags());
+                found.corrects(), found.dueBy(), found.statedNa(), found.deferredUntil(), found.deferred(), found.proofs(), found.splitFrom(), found.lateEntry(), found.reminded(), found.ref(), found.tags(), found.voidReason());
         audit.record("CLAIM_RESETTLED sheet=" + id + " by=" + by + " person=" + repository.personName(id, found.personId())
                 + " amount=" + changed.amount() + " date=" + changed.date() + Claim.auditNumber(found.number())
                 + " old=" + old + " new=" + (due == null ? "n/a" : due));
