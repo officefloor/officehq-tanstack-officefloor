@@ -596,15 +596,17 @@ public class ClaimRepository {
     }
 
     /** The due-by of a claim created now for a person with a date: the terms-th business day after the date (skipping
-     *  Saturdays, Sundays and the sheet's holidays), for the person's own terms in force on it, else the terms, in force on it, of the
-     *  grade the person has on it, else the sheet's terms in force on it. */
+     *  Saturdays, Sundays and the sheet's holidays), for the terms in force on the day it is created (the sheet's today):
+     *  the person's own terms in force that day, else the terms, in force that day, of the grade the person has that day,
+     *  else the sheet's terms in force that day. */
     public LocalDate dueBy(String sheetId, long personId, LocalDate date) {
-        // the person's own terms in force on the date: the latest dated ones on or before it, else those from the beginning
+        LocalDate on = settings.today(sheetId);
+        // the person's own terms in force that day: the latest dated ones on or before it, else those from the beginning
         List<Integer> mine = new java.util.ArrayList<>();
         jdbc.query("SELECT terms FROM person_terms WHERE sheet_id = ? AND person_id = ? AND from_date <= ?"
                 + " ORDER BY from_date DESC LIMIT 1", rs -> {
                     mine.add((Integer) rs.getObject("terms", Integer.class));
-                }, sheetId, personId, Date.valueOf(date));
+                }, sheetId, personId, Date.valueOf(on));
         if (mine.isEmpty()) {
             mine.addAll(jdbc.queryForList("SELECT terms FROM person WHERE sheet_id = ? AND id = ?", Integer.class,
                     sheetId, personId));
@@ -613,16 +615,17 @@ public class ClaimRepository {
             return settings.businessDaysAfter(sheetId, date, mine.get(0));
         }
         List<String> grade = jdbc.queryForList("SELECT " + GRADE_ON + " FROM DUAL", String.class, sheetId, personId,
-                date.toString());
+                on.toString());
         return dueByOfGrade(sheetId, grade.isEmpty() ? null : grade.get(0), date);
     }
 
     /** The due-by of a claim created now with a date for a person of a grade (null when none) with no terms of their
      *  own: the terms-th business day after the date (skipping Saturdays, Sundays and the sheet's holidays), for the
-     *  grade's terms in force on it, else the sheet's terms in force on it. */
+     *  grade's terms in force on the day it is created (the sheet's today), else the sheet's terms in force that day. */
     public LocalDate dueByOfGrade(String sheetId, String grade, LocalDate date) {
-        Integer own = grade == null ? null : settings.gradeTerms(sheetId, grade, date);
-        return settings.businessDaysAfter(sheetId, date, own != null ? own : settings.terms(sheetId, date));
+        LocalDate on = settings.today(sheetId);
+        Integer own = grade == null ? null : settings.gradeTerms(sheetId, grade, on);
+        return settings.businessDaysAfter(sheetId, date, own != null ? own : settings.terms(sheetId, on));
     }
 
     /** Re-fix, after a holiday is added to the sheet, the due-by of each claim not SETTLED or VOID whose due-by is on

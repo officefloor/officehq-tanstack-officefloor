@@ -15,7 +15,7 @@ export type ClaimStatus = 'DRAFT' | 'REVIEW' | 'OPEN' | 'PENDING' | 'SETTLED' | 
  *  who opened it (null until it is opened), whether its person's last statement bound it, and the figure
  *  it was bound to (null when not bound, or bound with no figure: its due then stays live), and, for a
  *  correction (a negative amount), the number of the settled claim of the same person it corrects, and
- *  its due-by (yyyy-mm-dd), fixed when it was created from its person's own terms, else the terms of their grade then (else the
+ *  its due-by (yyyy-mm-dd), fixed when it was created from the terms in force that day (the sheet's today then): its person's own, else their grade's that day (else the
  *  sheet's terms), and its status log: a line per status it has had, oldest first, as
  *  "<STATUS> by <user> on <date> due=<due>" with the sheet's today and its due at that moment, and whether
  *  its last statement bound it to n/a (the rate that would apply to it had ended: its due stays n/a), and
