@@ -1,0 +1,596 @@
+diff --git a/src/main/frontend/features/aliases/aliases.slot.tsx b/src/main/frontend/features/aliases/aliases.slot.tsx
+index 1384ad6e2..136d4948e 100644
+--- a/src/main/frontend/features/aliases/aliases.slot.tsx
++++ b/src/main/frontend/features/aliases/aliases.slot.tsx
+@@ -4,6 +4,7 @@ import { postJson } from '../../api/http';
+ import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
+ import { peopleKey, useAliases, type Person } from '../people/usePeople';
+ import { usePersonRowAction } from '../people/usePersonRowAction';
++import { Col } from '../columns/useColumns';
+ 
+ /** Sort as names are compared: ignoring case. */
+ function byName(a: string, b: string): number {
+@@ -36,7 +37,7 @@ function PersonAliases({ sheetId, personId }: { sheetId: string; personId: numbe
+ 
+   return (
+     <>
+-      <td data-testid="person-aliases">{names.join(', ')}</td>
++      <Col id="aliases"><td data-testid="person-aliases">{names.join(', ')}</td></Col>
+       <td>
+         <input
+           type="text"
+@@ -71,7 +72,7 @@ export const contributions = [
+     order: 3,
+     Component: () => (
+       <>
+-        <th>Aliases</th>
++        <Col id="aliases"><th>Aliases</th></Col>
+         <th />
+       </>
+     ),
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 7ffbdba30..319e7b6ac 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -15,6 +15,7 @@ import { useTemplates } from '../templates/useTemplates';
+ import { claimed, claimsKey, shownDeferred, shownTags, useClaims, useLastBatch, type Claim } from './useClaims';
+ import { useClaimSelection } from './useClaimSelection';
+ import { useFigure } from '../locale/useLocale';
++import { Col } from '../columns/useColumns';
+ 
+ /** A person's claimed: the sum of their counted, non-correction (OPEN, PENDING or SETTLED; an open one dated within a hold only when a statement binds it; not a deferred one) claims' amounts. */
+ function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: number }) {
+@@ -23,9 +24,11 @@ function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: numbe
+   const people = usePeople(sheetId);
+   const today = useSheetToday(sheetId).data?.today;
+   return (
+-    <td data-testid="person-claimed">
+-      {fig(claimed((claims.data ?? []).filter((c) => c.personId === personId), holdsById(people.data, today), today))}
+-    </td>
++    <Col id="claimed">
++      <td data-testid="person-claimed">
++        {fig(claimed((claims.data ?? []).filter((c) => c.personId === personId), holdsById(people.data, today), today))}
++      </td>
++    </Col>
+   );
+ }
+ 
+@@ -902,7 +905,7 @@ function ClaimedTotal({ sheetId }: { sheetId: string }) {
+ }
+ 
+ export const contributions = [
+-  PersonColumnHead.fill({ order: 10, Component: () => <th>Claimed</th> }),
++  PersonColumnHead.fill({ order: 10, Component: () => <Col id="claimed"><th>Claimed</th></Col> }),
+   PersonCells.fill({ order: 10, Component: PersonClaimed }),
+   PersonDetail.fill({ order: 10, Component: PersonClaims }),
+   SheetBody.fill({ order: 15, Component: BulkOpen }),
+diff --git a/src/main/frontend/features/columns/columns.slot.tsx b/src/main/frontend/features/columns/columns.slot.tsx
+new file mode 100644
+index 000000000..b5557e882
+--- /dev/null
++++ b/src/main/frontend/features/columns/columns.slot.tsx
+@@ -0,0 +1,43 @@
++import { useRef } from 'react';
++import { useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { SheetBody } from '../../slots/defs/sheetBody';
++import { COLUMNS, columnsKey, useHiddenColumns, type UserColumns } from './useColumns';
++
++/** A checkbox per people-list column: which of them the signed-in user's screen shows. It is kept for the user,
++ *  whatever sheet is loaded, changes no figure, and writes no audit line. A tick shows at once; the saves go to
++ *  the store one after another, each with the whole choice, so the last one kept is the last one made. */
++function ColumnChooser({ user }: { user: string }) {
++  const hidden = useHiddenColumns();
++  const queryClient = useQueryClient();
++  const saving = useRef<Promise<unknown>>(Promise.resolve());
++
++  const toggle = (column: string, shown: boolean) => {
++    const current = queryClient.getQueryData<UserColumns>(columnsKey(user))?.hidden ?? [...hidden];
++    const next = COLUMNS.filter((c) => (c === column ? !shown : current.includes(c)));
++    queryClient.setQueryData<UserColumns>(columnsKey(user), { hidden: next });
++    saving.current = saving.current
++      .catch(() => undefined)
++      .then(() => postJson<UserColumns>('/api/columns', { hidden: next }))
++      .catch(() => queryClient.invalidateQueries({ queryKey: columnsKey(user) }));
++  };
++
++  return (
++    <fieldset data-testid="columns-chooser">
++      <legend>Columns</legend>
++      {COLUMNS.map((c) => (
++        <label key={c}>
++          <input
++            type="checkbox"
++            data-testid={`column-${c}`}
++            checked={!hidden.has(c)}
++            onChange={(e) => toggle(c, e.target.checked)}
++          />{' '}
++          {c}{' '}
++        </label>
++      ))}
++    </fieldset>
++  );
++}
++
++export const contribution = SheetBody.fill({ order: -19, Component: ({ user }) => <ColumnChooser user={user} /> });
+diff --git a/src/main/frontend/features/columns/useColumns.tsx b/src/main/frontend/features/columns/useColumns.tsx
+new file mode 100644
+index 000000000..8ed4d1e07
+--- /dev/null
++++ b/src/main/frontend/features/columns/useColumns.tsx
+@@ -0,0 +1,44 @@
++import type { ReactNode } from 'react';
++import { useQuery } from '@tanstack/react-query';
++import { getJsonNow } from '../../api/http';
++import { useSignedInUser } from '../session/useSession';
++
++/** The people-list columns a user may switch off, each named as its cell's `person-<column>` data-testid. */
++export const COLUMNS = [
++  'claimed',
++  'due-total',
++  'excess',
++  'statement-count',
++  'stated-total',
++  'statement-date',
++  'overdue-count',
++  'overdue-total',
++  'patrons',
++  'backing',
++  'hold',
++  'retired',
++  'terms',
++  'contact',
++  'aliases',
++] as const;
++export type Column = (typeof COLUMNS)[number];
++export type UserColumns = { hidden: string[] };
++
++/** The signed-in user's columns are theirs, not a sheet's: kept under its own key, not dropped when a sheet loads. */
++export const columnsKey = (user: string) => ['user', user, 'columns'];
++
++/** The columns the signed-in user switched off (none until they choose, and while it is being read). */
++export function useHiddenColumns(): ReadonlySet<string> {
++  const [user] = useSignedInUser();
++  const columns = useQuery({
++    queryKey: columnsKey(user),
++    queryFn: () => getJsonNow<UserColumns>('/api/columns'),
++    enabled: user !== '',
++  });
++  return new Set(columns.data?.hidden ?? []);
++}
++
++/** A people-list column's heading or cell: rendered only while the signed-in user has it switched on. */
++export function Col({ id, children }: { id: Column; children: ReactNode }) {
++  return useHiddenColumns().has(id) ? null : <>{children}</>;
++}
+diff --git a/src/main/frontend/features/hold/hold.slot.tsx b/src/main/frontend/features/hold/hold.slot.tsx
+index d84effd33..2fa021c48 100644
+--- a/src/main/frontend/features/hold/hold.slot.tsx
++++ b/src/main/frontend/features/hold/hold.slot.tsx
+@@ -5,6 +5,7 @@ import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
+ import { peopleKey, usePeople, type Person } from '../people/usePeople';
+ import { poolsKey } from '../pools/usePools';
+ import { usePersonRowAction } from '../people/usePersonRowAction';
++import { Col } from '../columns/useColumns';
+ 
+ /** A person's holds: whether they have any, a line per hold (from – to), and a from-date (blank: the
+  *  sheet's today), an optional to-date (blank: open-ended) and a button that adds a hold. Their open
+@@ -32,7 +33,7 @@ function PersonHold({ sheetId, personId }: { sheetId: string; personId: number }
+ 
+   return (
+     <>
+-      <td data-testid="person-hold">{p?.held ? 'yes' : 'no'}</td>
++      <Col id="hold"><td data-testid="person-hold">{p?.held ? 'yes' : 'no'}</td></Col>
+       <td>
+         {(p?.holds ?? []).map((h, i) => (
+           <div key={i} data-testid="person-hold-line">
+@@ -84,7 +85,7 @@ export const contributions = [
+     order: 45,
+     Component: () => (
+       <>
+-        <th>Held</th>
++        <Col id="hold"><th>Held</th></Col>
+         <th>Holds</th>
+         <th />
+       </>
+diff --git a/src/main/frontend/features/overdue/overdue.slot.tsx b/src/main/frontend/features/overdue/overdue.slot.tsx
+index 10cc03025..da725a7bd 100644
+--- a/src/main/frontend/features/overdue/overdue.slot.tsx
++++ b/src/main/frontend/features/overdue/overdue.slot.tsx
+@@ -3,6 +3,7 @@ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { trimmedSum } from '../rates/useRates';
+ import { useOverdue } from './useOverdue';
+ import { useFigure } from '../locale/useLocale';
++import { Col } from '../columns/useColumns';
+ 
+ /** A person's overdue count and overdue-total: their claims that count and are overdue, and the sum
+  *  of those claims' figures. */
+@@ -11,8 +12,8 @@ function PersonOverdue({ sheetId, personId }: { sheetId: string; personId: numbe
+   const figures = useOverdue(sheetId).get(personId);
+   return (
+     <>
+-      <td data-testid="person-overdue-count">{figures?.count ?? ''}</td>
+-      <td data-testid="person-overdue-total">{fig(figures?.total ?? '')}</td>
++      <Col id="overdue-count"><td data-testid="person-overdue-count">{figures?.count ?? ''}</td></Col>
++      <Col id="overdue-total"><td data-testid="person-overdue-total">{fig(figures?.total ?? '')}</td></Col>
+     </>
+   );
+ }
+@@ -33,8 +34,8 @@ function SheetOverdue({ sheetId }: { sheetId: string }) {
+ export const contributions = [
+   PersonColumnHead.fill({ order: 25, Component: () => (
+     <>
+-      <th>Overdue</th>
+-      <th>Overdue total</th>
++      <Col id="overdue-count"><th>Overdue</th></Col>
++      <Col id="overdue-total"><th>Overdue total</th></Col>
+     </>
+   ) }),
+   PersonCells.fill({ order: 25, Component: PersonOverdue }),
+diff --git a/src/main/frontend/features/patrons/patrons.slot.tsx b/src/main/frontend/features/patrons/patrons.slot.tsx
+index 66d5826ab..d6905bdcb 100644
+--- a/src/main/frontend/features/patrons/patrons.slot.tsx
++++ b/src/main/frontend/features/patrons/patrons.slot.tsx
+@@ -7,6 +7,7 @@ import { useClaims } from '../claims/useClaims';
+ import { hundredths, money, sumDues } from '../rates/useRates';
+ import { useSheetToday } from '../today/useSheetToday';
+ import { useFigure } from '../locale/useLocale';
++import { Col } from '../columns/useColumns';
+ 
+ /** The first day (yyyy-mm-dd) of the 90 days up to and including a day. */
+ function windowStart(today: string): string {
+@@ -73,8 +74,8 @@ function PersonPatrons({ sheetId, personId }: { sheetId: string; personId: numbe
+ 
+   return (
+     <>
+-      <td data-testid="person-patrons">{labels.join(', ')}</td>
+-      <td data-testid="person-backing">{fig(backing)}</td>
++      <Col id="patrons"><td data-testid="person-patrons">{labels.join(', ')}</td></Col>
++      <Col id="backing"><td data-testid="person-backing">{fig(backing)}</td></Col>
+       <td>
+         <select
+           data-testid="person-patron-select"
+@@ -113,8 +114,8 @@ export const contributions = [
+     order: 50,
+     Component: () => (
+       <>
+-        <th>Patrons</th>
+-        <th>Backing</th>
++        <Col id="patrons"><th>Patrons</th></Col>
++        <Col id="backing"><th>Backing</th></Col>
+         <th />
+       </>
+     ),
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index 6125d0286..ddc1aa220 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -10,6 +10,7 @@ import { hundredths } from '../rates/useRates';
+ import { useShowRetired } from '../retire/useShowRetired';
+ import { asString, useSearchParam } from '../../url/useSearchParam';
+ import { GRADES, fetchPeople, peopleKey, usePeople, type Person } from './usePeople';
++import { Col } from '../columns/useColumns';
+ 
+ /** The sheet's people: a form that adds a person, or edits one when their editor is open, and the
+  *  list of everyone in list order (by position; new people go to the end) (retired people only when "show retired" is on), each
+@@ -321,8 +322,8 @@ function People({ sheetId }: { sheetId: string }) {
+           <tr>
+             <th>Name</th>
+             <th>Grade</th>
+-            <th>Terms</th>
+-            <th>Contact</th>
++            <Col id="terms"><th>Terms</th></Col>
++            <Col id="contact"><th>Contact</th></Col>
+             <th>Tags</th>
+             <PersonColumnHead.Slot sheetId={sheetId} />
+             <th />
+@@ -333,8 +334,8 @@ function People({ sheetId }: { sheetId: string }) {
+             <tr>
+               <td data-testid="person-name">{p.name}</td>
+               <td data-testid="person-grade">{p.grade}</td>
+-              <td data-testid="person-terms">{p.terms ?? ''}</td>
+-              <td data-testid="person-contact">{p.contact ?? ''}</td>
++              <Col id="terms"><td data-testid="person-terms">{p.terms ?? ''}</td></Col>
++              <Col id="contact"><td data-testid="person-contact">{p.contact ?? ''}</td></Col>
+               <td data-testid="person-tags">{shownTags(p.tags)}</td>
+               <PersonCells.Slot sheetId={sheetId} personId={p.id} />
+               <td>
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index f64566504..94843af67 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -10,6 +10,7 @@ import { useDueTotals, useExcess, useSettledOpenTotals } from './useDueTotals';
+ import { useRatePreview } from './useRatePreview';
+ import { rateFor, ratesKey, sumDues, trimmedSum, useRates, type Rate } from './useRates';
+ import { useFigure } from '../locale/useLocale';
++import { Col } from '../columns/useColumns';
+ 
+ /** The sheet's rates for each grade: a form that sets one from an optional from-date (a new version of the
+  *  grade's rate from that date, the one in force; blank is from the beginning of time) through an optional to-date
+@@ -272,14 +273,14 @@ function RatePreview({ sheetId }: { sheetId: string }) {
+ function PersonDueTotal({ sheetId, personId }: { sheetId: string; personId: number }) {
+   const fig = useFigure();
+   const totals = useDueTotals(sheetId);
+-  return <td data-testid="person-due-total">{fig(totals.get(personId) ?? '')}</td>;
++  return <Col id="due-total"><td data-testid="person-due-total">{fig(totals.get(personId) ?? '')}</td></Col>;
+ }
+ 
+ /** A person's excess: how far the sum of their figures is above the sheet's cap. */
+ function PersonExcess({ sheetId, personId }: { sheetId: string; personId: number }) {
+   const fig = useFigure();
+   const excess = useExcess(sheetId);
+-  return <td data-testid="person-excess">{fig(excess.get(personId) ?? '')}</td>;
++  return <Col id="excess"><td data-testid="person-excess">{fig(excess.get(personId) ?? '')}</td></Col>;
+ }
+ 
+ /** A person's settled-total and open-total: the parts of their due-total (before the cap) from their
+@@ -321,9 +322,9 @@ function DueTotal({ sheetId }: { sheetId: string }) {
+ 
+ export const contributions = [
+   SheetBody.fill({ order: 5, Component: ({ sheetId }) => <Rates sheetId={sheetId} /> }),
+-  PersonColumnHead.fill({ order: 20, Component: () => <th>Due</th> }),
++  PersonColumnHead.fill({ order: 20, Component: () => <Col id="due-total"><th>Due</th></Col> }),
+   PersonCells.fill({ order: 20, Component: PersonDueTotal }),
+-  PersonColumnHead.fill({ order: 21, Component: () => <th>Excess</th> }),
++  PersonColumnHead.fill({ order: 21, Component: () => <Col id="excess"><th>Excess</th></Col> }),
+   PersonCells.fill({ order: 21, Component: PersonExcess }),
+   PersonColumnHead.fill({ order: 21.5, Component: () => <><th>Settled</th><th>Open</th></> }),
+   PersonCells.fill({ order: 21.5, Component: PersonSettledOpen }),
+diff --git a/src/main/frontend/features/retire/retire.slot.tsx b/src/main/frontend/features/retire/retire.slot.tsx
+index e524b8158..ead664daf 100644
+--- a/src/main/frontend/features/retire/retire.slot.tsx
++++ b/src/main/frontend/features/retire/retire.slot.tsx
+@@ -7,6 +7,7 @@ import { peopleKey, usePeople, type Person } from '../people/usePeople';
+ import { poolsKey } from '../pools/usePools';
+ import { usePersonRowAction } from '../people/usePersonRowAction';
+ import { useShowRetired } from './useShowRetired';
++import { Col } from '../columns/useColumns';
+ 
+ /** A person's retirement: whether they are retired and from when, a line per past retirement (from to the
+  *  day unretired), and a date (blank: the sheet's today) and button that retire them, and a button that
+@@ -40,7 +41,7 @@ function PersonRetire({ sheetId, personId }: { sheetId: string; personId: number
+ 
+   return (
+     <>
+-      <td data-testid="person-retired">{p?.retiredFrom ? 'yes' : 'no'}</td>
++      <Col id="retired"><td data-testid="person-retired">{p?.retiredFrom ? 'yes' : 'no'}</td></Col>
+       <td data-testid="person-retired-from">{p?.retiredFrom ?? ''}</td>
+       <td>
+         {(p?.retirements ?? []).map((r, i) => (
+@@ -108,7 +109,7 @@ export const contributions = [
+     order: 40,
+     Component: () => (
+       <>
+-        <th>Retired</th>
++        <Col id="retired"><th>Retired</th></Col>
+         <th>Retired from</th>
+         <th>Past retirements</th>
+         <th />
+diff --git a/src/main/frontend/features/statements/statements.slot.tsx b/src/main/frontend/features/statements/statements.slot.tsx
+index 3b3c1a647..d2a8b9555 100644
+--- a/src/main/frontend/features/statements/statements.slot.tsx
++++ b/src/main/frontend/features/statements/statements.slot.tsx
+@@ -6,6 +6,7 @@ import { claimsKey } from '../claims/useClaims';
+ import { peopleKey, usePeople, type Person } from '../people/usePeople';
+ import { usePersonRowAction } from '../people/usePersonRowAction';
+ import { useFigure } from '../locale/useLocale';
++import { Col } from '../columns/useColumns';
+ 
+ /** A person's statements: how many have been taken, the last one's due-total and date (blank before
+  *  the first), and a button that takes one. Taking a statement records their due-total and binds each
+@@ -54,9 +55,9 @@ function PersonStatement({ sheetId, personId }: { sheetId: string; personId: num
+ 
+   return (
+     <>
+-      <td data-testid="person-statement-count">{p?.statementCount ?? 0}</td>
+-      <td data-testid="person-stated-total">{fig(p?.statedTotal ?? '')}</td>
+-      <td data-testid="person-statement-date">{p?.statementDate ?? ''}</td>
++      <Col id="statement-count"><td data-testid="person-statement-count">{p?.statementCount ?? 0}</td></Col>
++      <Col id="stated-total"><td data-testid="person-stated-total">{fig(p?.statedTotal ?? '')}</td></Col>
++      <Col id="statement-date"><td data-testid="person-statement-date">{p?.statementDate ?? ''}</td></Col>
+       <td>
+         <input
+           type="text"
+@@ -104,9 +105,9 @@ export const contributions = [
+     order: 30,
+     Component: () => (
+       <>
+-        <th>Statements</th>
+-        <th>Stated total</th>
+-        <th>Stated on</th>
++        <Col id="statement-count"><th>Statements</th></Col>
++        <Col id="stated-total"><th>Stated total</th></Col>
++        <Col id="statement-date"><th>Stated on</th></Col>
+         <th />
+       </>
+     ),
+diff --git a/src/main/java/net/officefloor/hq/app/columns/ColumnsRepository.java b/src/main/java/net/officefloor/hq/app/columns/ColumnsRepository.java
+new file mode 100644
+index 000000000..5c81a0673
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/columns/ColumnsRepository.java
+@@ -0,0 +1,36 @@
++package net.officefloor.hq.app.columns;
++
++import java.util.Arrays;
++import java.util.List;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Repository;
++
++@Repository
++public class ColumnsRepository {
++
++    /** The people-list columns a user may switch off. */
++    public static final List<String> COLUMNS = List.of("claimed", "due-total", "excess", "statement-count",
++            "stated-total", "statement-date", "overdue-count", "overdue-total", "patrons", "backing", "hold",
++            "retired", "terms", "contact", "aliases");
++
++    private final JdbcTemplate jdbc;
++
++    public ColumnsRepository(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /** The columns the user switched off; none when they never chose. */
++    public List<String> hidden(String user) {
++        List<String> found = jdbc.queryForList("SELECT hidden FROM user_columns WHERE user_name = ?", String.class, user);
++        if (found.isEmpty() || found.get(0).isEmpty()) {
++            return List.of();
++        }
++        return Arrays.asList(found.get(0).split(","));
++    }
++
++    /** Keep the columns the user switched off. */
++    public void setHidden(String user, List<String> hidden) {
++        jdbc.update("MERGE INTO user_columns (user_name, hidden) KEY (user_name) VALUES (?, ?)", user,
++                String.join(",", hidden));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/columns/ColumnsRequest.java b/src/main/java/net/officefloor/hq/app/columns/ColumnsRequest.java
+new file mode 100644
+index 000000000..e43975935
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/columns/ColumnsRequest.java
+@@ -0,0 +1,6 @@
++package net.officefloor.hq.app.columns;
++
++import java.util.List;
++
++public record ColumnsRequest(List<String> hidden) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/columns/LoadColumns.java b/src/main/java/net/officefloor/hq/app/columns/LoadColumns.java
+new file mode 100644
+index 000000000..7f8c87eb8
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/columns/LoadColumns.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.columns;
++
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.server.http.ServerHttpConnection;
++
++/** The signed-in user's switched-off columns, re-read from the store. */
++public class LoadColumns {
++    public void load(ServerHttpConnection connection, ColumnsRepository repository, Out<UserColumns> columns)
++            throws BadRequestException {
++        String user = CurrentUser.require(connection);
++        columns.set(new UserColumns(repository.hidden(user)));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/columns/RespondWithColumns.java b/src/main/java/net/officefloor/hq/app/columns/RespondWithColumns.java
+new file mode 100644
+index 000000000..f1d8893e7
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/columns/RespondWithColumns.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.columns;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithColumns {
++    public void respond(@Val UserColumns columns, ObjectResponse<UserColumns> response) {
++        response.send(columns);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/columns/SaveColumns.java b/src/main/java/net/officefloor/hq/app/columns/SaveColumns.java
+new file mode 100644
+index 000000000..9e332f7ba
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/columns/SaveColumns.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app.columns;
++
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.server.http.ServerHttpConnection;
++
++/** Keep the signed-in user's switched-off columns. It changes only what their screen shows, so it writes no audit line. */
++public class SaveColumns {
++    public void save(@Val UserColumns columns, ServerHttpConnection connection, ColumnsRepository repository)
++            throws BadRequestException {
++        repository.setHidden(CurrentUser.require(connection), columns.hidden());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/columns/UserColumns.java b/src/main/java/net/officefloor/hq/app/columns/UserColumns.java
+new file mode 100644
+index 000000000..1dd6f3280
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/columns/UserColumns.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.columns;
++
++import java.util.List;
++
++/** The people-list columns a user has switched off on their screen. */
++public record UserColumns(List<String> hidden) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/columns/ValidateColumns.java b/src/main/java/net/officefloor/hq/app/columns/ValidateColumns.java
+new file mode 100644
+index 000000000..5dd7a5cfa
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/columns/ValidateColumns.java
+@@ -0,0 +1,19 @@
++package net.officefloor.hq.app.columns;
++
++import java.util.List;
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ValidateColumns {
++    public void validate(@RequestBody ColumnsRequest request, Out<UserColumns> columns) throws BadRequestException {
++        List<String> raw = request == null || request.hidden() == null ? List.of() : request.hidden();
++        for (String column : raw) {
++            if (!ColumnsRepository.COLUMNS.contains(column)) {
++                throw new BadRequestException("unknown column: " + column);
++            }
++        }
++        // Kept in the list's own order, each once.
++        columns.set(new UserColumns(ColumnsRepository.COLUMNS.stream().filter(raw::contains).toList()));
++    }
++}
+diff --git a/src/main/resources/db/migration/V85__user_columns.sql b/src/main/resources/db/migration/V85__user_columns.sql
+new file mode 100644
+index 000000000..205eea27d
+--- /dev/null
++++ b/src/main/resources/db/migration/V85__user_columns.sql
+@@ -0,0 +1,6 @@
++-- The people-list columns each user has switched off on their screen, kept by their signed-in name as a
++-- comma-separated list. A user with no row sees every column. Not a sheet's state: it has no sheet_id.
++CREATE TABLE user_columns (
++    user_name VARCHAR(255) PRIMARY KEY,
++    hidden VARCHAR(1000) NOT NULL
++);
+diff --git a/src/main/resources/officefloor/rest/api/columns.GET.yml b/src/main/resources/officefloor/rest/api/columns.GET.yml
+new file mode 100644
+index 000000000..73b414900
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/columns.GET.yml
+@@ -0,0 +1,7 @@
++# The people-list columns the signed-in user has switched off (none until they choose), re-read from the store.
++load:
++  class: net.officefloor.hq.app.columns.LoadColumns
++  govern: [ readonly-transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.columns.RespondWithColumns
+diff --git a/src/main/resources/officefloor/rest/api/columns.POST.yml b/src/main/resources/officefloor/rest/api/columns.POST.yml
+new file mode 100644
+index 000000000..8274f663f
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/columns.POST.yml
+@@ -0,0 +1,10 @@
++# Choose the people-list columns the signed-in user's screen leaves out; kept per user, no audit line.
++validate:
++  class: net.officefloor.hq.app.columns.ValidateColumns
++  next: save
++save:
++  class: net.officefloor.hq.app.columns.SaveColumns
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.columns.RespondWithColumns
