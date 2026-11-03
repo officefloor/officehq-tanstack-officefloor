@@ -29,6 +29,12 @@ public class SheetRepository {
         return new Sheet(id, today(id).toString(), archived(id));
     }
 
+    /** Whether a sheet with this id was ever made (loading an id makes it). */
+    public boolean exists(String id) {
+        Integer known = jdbc.queryForObject("SELECT COUNT(*) FROM sheet WHERE id = ?", Integer.class, id);
+        return known != null && known > 0;
+    }
+
     /** The sheet's today: the date every date decision and default in the sheet uses. */
     public LocalDate today(String id) {
         Date today = jdbc.queryForObject("SELECT today FROM sheet WHERE id = ?", Date.class, id);
