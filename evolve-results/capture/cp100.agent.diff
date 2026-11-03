@@ -1,0 +1,114 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkSettleClaims.java b/src/main/java/net/officefloor/hq/app/claim/BulkSettleClaims.java
+index 7ab539cd1..3fbc03ff4 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BulkSettleClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkSettleClaims.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.math.BigDecimal;
+ import java.util.ArrayList;
+ import java.util.LinkedHashSet;
+ import java.util.List;
+@@ -16,10 +17,12 @@ import net.officefloor.server.http.ServerHttpConnection;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+-/** Settle the selected claims together, in list order (people in the order they were added, each
+- *  person's claims newest first), each by exactly the rules of settling one claim: a claim a clerk sends
+- *  to PENDING counts as settled. A claim that cannot be settled is left as it is and counted as refused.
+- *  When at least one is settled, they are the sheet's next batch, and each keeps its number. */
++/** Settle the selected claims together, all or nothing: when any of them cannot be settled by the signed-in
++ *  user (any refusal the single settle would give; going to PENDING is not one), none is settled, every one
++ *  counts as refused and nothing is written. Otherwise each is settled in list order (people in the order they
++ *  were added, each person's claims newest first) by exactly the rules of settling one claim (a claim a clerk
++ *  sends to PENDING counts as settled); they are the sheet's next batch, each keeps its number, and after the
++ *  claims' own lines BATCH_SETTLED batch=<n> count=<claims> total=<the frozen dues of those SETTLED> is written. */
+ public class BulkSettleClaims {
+     public void settle(@PathVariable("sheetId") String sheetId, @RequestBody BulkSettleRequest request,
+             ServerHttpConnection connection, ClaimRepository repository, PeriodRepository periods,
+@@ -36,17 +39,31 @@ public class BulkSettleClaims {
+             throw new BadRequestException("select at least one claim");
+         }
+         List<Claim> found = repository.inListOrder(id, selected);
+-        int refused = selected.size() - found.size();
+-        List<Long> settled = new ArrayList<>();
++        boolean refusedAny = found.size() < selected.size();
+         for (Claim c : found) {
++            if (refusedAny) break;
+             try {
+-                ClaimStatusChange.apply(id, c.id(), "settle", by, repository, periods, settings, audit, rollup, watches);
+-                settled.add(c.id());
++                ClaimStatusChange.check(id, c.id(), "settle", by, repository, periods, settings);
+             } catch (BadRequestException e) {
+-                refused++;
++                refusedAny = true;
++            }
++        }
++        if (refusedAny) {
++            result.set(new BulkSettleResult(0, selected.size()));
++            return;
++        }
++        List<Long> settled = new ArrayList<>();
++        BigDecimal total = BigDecimal.ZERO.setScale(2);
++        for (Claim c : found) {
++            Claim changed = ClaimStatusChange.apply(id, c.id(), "settle", by, repository, periods, settings, audit, rollup, watches);
++            settled.add(c.id());
++            if ("SETTLED".equals(changed.status()) && changed.due() != null) {
++                total = total.add(new BigDecimal(changed.due()));
+             }
+         }
+-        if (!settled.isEmpty()) repository.batch(id, settled);
+-        result.set(new BulkSettleResult(settled.size(), refused));
++        int batch = repository.batch(id, settled);
++        audit.record("BATCH_SETTLED sheet=" + id + " by=" + by + " batch=" + batch + " count=" + settled.size()
++                + " total=" + total.toPlainString());
++        result.set(new BulkSettleResult(settled.size(), 0));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+index 6ab1a1924..96e522f9c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+@@ -24,6 +24,17 @@ final class ClaimStatusChange {
+ 
+     static Claim apply(String id, long cid, String action, String reason, String by, ClaimRepository repository,
+             PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup, WatchRepository watches) throws BadRequestException {
++        return apply(id, cid, action, reason, by, false, repository, periods, settings, audit, rollup, watches);
++    }
++
++    /** Make every check of the status change, writing nothing: throws the refusal the change would give. */
++    static void check(String id, long cid, String action, String by, ClaimRepository repository,
++            PeriodRepository periods, SettingsRepository settings) throws BadRequestException {
++        apply(id, cid, action, null, by, true, repository, periods, settings, null, null, null);
++    }
++
++    private static Claim apply(String id, long cid, String action, String reason, String by, boolean checkOnly, ClaimRepository repository,
++            PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup, WatchRepository watches) throws BadRequestException {
+         if (settings.archived(id)) {
+             throw new BadRequestException("the sheet is archived");
+         }
+@@ -135,6 +146,9 @@ final class ClaimStatusChange {
+                 event = "CLAIM_PENDING";
+             }
+         }
++        if (checkOnly) {
++            return null;
++        }
+         Rollup.Snapshot before = rollup.take(id);
+         if (!repository.changeStatus(id, cid, from, to)) {
+             throw new BadRequestException("a " + found.status() + " claim cannot be moved to " + to);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-settle.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-settle.POST.yml
+index 8fd06218d..b70d7fff1 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-settle.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-settle.POST.yml
+@@ -1,6 +1,7 @@
+-# Settle the selected claims together: each is settled in list order (people in the order they were
+-# added, each person's claims newest first) by the rules of a single settle (a claim sent to PENDING
+-# counts as settled); every other is left as it is. Answers how many were settled and how many refused.
++# Settle the selected claims together, all or nothing: when any would be refused by a single settle,
++# none is settled and all count as refused; otherwise each is settled in list order (people in the order
++# they were added, each person's claims newest first) by the rules of a single settle (a claim sent to
++# PENDING counts as settled), then BATCH_SETTLED is written. Answers how many were settled and refused.
+ guard:
+   class: net.officefloor.hq.app.history.RefuseAsOf
+   next: settle
