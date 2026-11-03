@@ -10,7 +10,7 @@ import java.time.LocalDate;
  *  permission matrix entries entered, by action (a comma separated list of roles; empty when blank: the standing rule), and the grace days (null when blank: off), and the note threshold
  *  scaled to two decimals (null for none), and the entry date (null when blank: off), and the grade grace days entered, by grade (in grade order; null when blank: none), and the grade proof thresholds entered, by
  *  grade, scaled to two decimals (in grade order; null when blank: none, the sheet's is then used), and the pot scaled to two decimals
- *  (null for none). */
+ *  (null for none), and the parent sheet's id (null when blank: none). */
 public record SettingsInput(boolean setsClerkLimit, BigDecimal clerkLimit, boolean setsFloor, BigDecimal floor, boolean setsTerms,
         Integer terms, boolean setsLatePct, BigDecimal latePct,
         boolean setsPolicyDate, LocalDate policyDate, boolean setsPeriodNumberingFrom, LocalDate periodNumberingFrom,
@@ -18,5 +18,6 @@ public record SettingsInput(boolean setsClerkLimit, BigDecimal clerkLimit, boole
         boolean setsProofThreshold, BigDecimal proofThreshold, java.util.Map<String, String> permissions,
         boolean setsGraceDays, Integer graceDays, boolean setsNoteThreshold, BigDecimal noteThreshold,
         boolean setsEntryDate, LocalDate entryDate, java.util.Map<String, Integer> gradeGrace,
-        java.util.Map<String, BigDecimal> gradeProofThreshold, boolean setsPot, BigDecimal pot) {
+        java.util.Map<String, BigDecimal> gradeProofThreshold, boolean setsPot, BigDecimal pot,
+        boolean setsParent, String parent) {
 }

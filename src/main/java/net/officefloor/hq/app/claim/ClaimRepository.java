@@ -50,6 +50,12 @@ public class ClaimRepository {
             + GRADE_ON + " AND (r.from_date IS NULL OR r.from_date <= CAST(? AS DATE))"
             + " ORDER BY r.from_date DESC NULLS LAST LIMIT 1)";
 
+    /** The rate a sheet has for a grade on a date (sheet, grade, then the date): the one with the latest
+     *  from-date on or before it, an undated rate applying from the beginning of time; at most one row, with
+     *  its pct and to_date. */
+    private static final String RATE_FOR = "(SELECT r.pct, r.to_date FROM rate r WHERE r.sheet_id = ? AND r.grade = ?"
+            + " AND (r.from_date IS NULL OR r.from_date <= CAST(? AS DATE)) ORDER BY r.from_date DESC NULLS LAST LIMIT 1)";
+
     private final JdbcTemplate jdbc;
     private final SettingsRepository settings;
     private final HistoryRepository history;
@@ -180,17 +186,15 @@ public class ClaimRepository {
     }
 
     /** A claim's due now: its amount at the rate, in force on the claim's date, for the grade its person
-     *  had on that date
+     *  had on that date, falling back to the parent sheets' (see {@link #rateInForce})
      *  (the one with the latest from-date on or before it; an undated rate applies from the beginning
      *  of time; none applies when the claim's date is after that rate's to-date), rounded to two decimals by the claim's
      *  rounding (see {@link #rounding}) — the rate figure, not floored: the floor is applied last, in {@link #dueNow};
      *  null when no rate applies. */
     public BigDecimal due(String sheetId, Claim claim) {
-        List<BigDecimal> pct = jdbc.queryForList("SELECT a.pct FROM " + RATE_ON + " a"
-                + " WHERE a.to_date IS NULL OR a.to_date >= CAST(? AS DATE)", BigDecimal.class, sheetId,
-                sheetId, claim.personId(), claim.date(), claim.date(), claim.date());
-        if (pct.isEmpty()) return null;
-        BigDecimal due = new BigDecimal(claim.amount()).multiply(pct.get(0)).movePointLeft(2)
+        BigDecimal pct = rateInForce(sheetId, claim.personId(), LocalDate.parse(claim.date()));
+        if (pct == null) return null;
+        BigDecimal due = new BigDecimal(claim.amount()).multiply(pct).movePointLeft(2)
                 .setScale(2, rounding(sheetId, claim));
         return due;
     }
@@ -294,10 +298,26 @@ public class ClaimRepository {
     /** Whether a rate for the grade the person has on a date is in force on that date (not past its
      *  to-date). */
     public boolean rated(String sheetId, long personId, LocalDate on) {
-        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM " + RATE_ON + " a"
-                + " WHERE a.to_date IS NULL OR a.to_date >= CAST(? AS DATE)", Integer.class, sheetId,
-                sheetId, personId, on.toString(), on.toString(), on.toString());
-        return n != null && n > 0;
+        return rateInForce(sheetId, personId, on) != null;
+    }
+
+    /** The rate (a percent) in force on a date for the grade the person has on that date: this sheet's (see
+     *  {@link #RATE_FOR}) when it has one in force then (not past its to-date), else its parent sheet's for that
+     *  grade and date, then the parent's parent's, up to three levels up; null when none is. */
+    public BigDecimal rateInForce(String sheetId, long personId, LocalDate on) {
+        List<String> grade = jdbc.queryForList("SELECT " + GRADE_ON + " FROM DUAL", String.class, sheetId,
+                personId, on.toString());
+        if (grade.isEmpty() || grade.get(0) == null) return null;
+        List<String> chain = new ArrayList<>();
+        chain.add(sheetId);
+        chain.addAll(settings.rateAncestors(sheetId));
+        for (String at : chain) {
+            List<BigDecimal> pct = jdbc.queryForList("SELECT a.pct FROM " + RATE_FOR + " a"
+                    + " WHERE a.to_date IS NULL OR a.to_date >= CAST(? AS DATE)", BigDecimal.class,
+                    at, grade.get(0), on.toString(), on.toString());
+            if (!pct.isEmpty()) return pct.get(0);
+        }
+        return null;
     }
 
     /** Bind a claim to a figure (stated; to n/a when {@code na}), or unbind it (not stated, live again). */

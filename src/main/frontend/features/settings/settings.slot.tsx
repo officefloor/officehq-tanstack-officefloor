@@ -7,6 +7,7 @@ import { useSheetToday } from '../today/useSheetToday';
 import { claimsKey } from '../claims/useClaims';
 import { peopleKey } from '../people/usePeople';
 import { poolsKey } from '../pools/usePools';
+import { ratesKey } from '../rates/useRates';
 import { settingOn, settingsKey, useSettings, type Settings } from './useSettings';
 
 /** The sheet's settings: its clerk limit (a clerk settles a claim only when its due is at or below
@@ -22,7 +23,9 @@ import { settingOn, settingsKey, useSettings, type Settings } from './useSetting
  *  reassign, close and reopen, the roles that may do it, comma separated; blank keeps the standing rule; not dated), its grace days (changing the
  *  sheet's today closes each open period whose to-date plus them is before the new today; blank is off; not dated), its entry date (while set, the default date of a new claim — the claim form, the
  *  quick-add bar, a pasted line with a blank date and a correction — instead of the sheet's today; blank is off; not dated), its pot (two
- *  decimals, shared out as the cuts of each balanced pool; blank is none; not dated), and the role (clerk, steward or viewer — a viewer changes nothing)
+ *  decimals, shared out as the cuts of each balanced pool; blank is none; not dated), its parent sheet (a grade with no
+ *  rate in force on a date takes the parent's, then the parent's parent's, up to three levels up; a sheet that has been
+ *  loaded, not this one nor one that has this one as an ancestor; blank is none; not dated), and the role (clerk, steward or viewer — a viewer changes nothing)
  *  assigned to each user name, and the delegations of the steward role (a steward delegates it to a user from a
  *  from-date, blank the sheet's today, to a to-date, inclusive; while the sheet's today is inside it the user acts
  *  as a steward), and the sheet's holidays (a date already on the list is refused). Saving saves each setting whose field was entered (focused or typed
@@ -75,6 +78,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
   const [graceDays, setGraceDays] = useState<string | null>(null);
   const [entryDate, setEntryDate] = useState<string | null>(null);
   const [pot, setPot] = useState<string | null>(null);
+  const [parent, setParent] = useState<string | null>(null);
   const today = useSheetToday(sheetId).data?.today;
   const [user, setUser] = useState('');
   const [role, setRole] = useState('');
@@ -88,7 +92,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
 
   const saveOnce = useSingleFlight();
   const save = useMutation({
-    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null; noteThreshold: string | null; permissions: Record<string, string>; graceDays: string | null; entryDate: string | null; gradeGrace: Record<string, string>; gradeProofThreshold: Record<string, string>; pot: string | null }) =>
+    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null; noteThreshold: string | null; permissions: Record<string, string>; graceDays: string | null; entryDate: string | null; gradeGrace: Record<string, string>; gradeProofThreshold: Record<string, string>; pot: string | null; parent: string | null }) =>
       postJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, f),
     onSuccess: (saved) => {
       setLimit(null);
@@ -108,9 +112,12 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
       setGraceDays(null);
       setEntryDate(null);
       setPot(null);
+      setParent(null);
       queryClient.setQueryData(settingsKey(sheetId), saved);
       // The pot is shared out as the cuts of the balanced pools.
       void queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
+      // A grade with no rate of its own falls back to the parent sheets' rates.
+      void queryClient.invalidateQueries({ queryKey: ratesKey(sheetId) });
     },
   });
 
@@ -162,13 +169,16 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
 
   return (
     <section data-testid="settings">
+      <p>
+        Parent sheet: <strong data-testid="sheet-parent">{settings.data?.parent ?? ''}</strong>
+      </p>
       <form
         data-testid="settings-form"
         onSubmit={(e) => {
           e.preventDefault();
           saveOnce(() => {
             save.reset();
-            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap, from, proofThreshold, noteThreshold, permissions, graceDays, entryDate, gradeGrace, gradeProofThreshold: gradeProof, pot });
+            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap, from, proofThreshold, noteThreshold, permissions, graceDays, entryDate, gradeGrace, gradeProofThreshold: gradeProof, pot, parent });
           });
         }}
       >
@@ -398,6 +408,18 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
             }}
           />
         </label>{' '}
+        <label>
+          Parent sheet{' '}
+          <input
+            data-testid="setting-parent"
+            value={parent ?? ''}
+            onFocus={() => setParent((v) => v ?? '')}
+            onChange={(e) => {
+              setParent(e.target.value);
+              save.reset();
+            }}
+          />
+        </label>{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>{' '}
@@ -434,6 +456,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
         , grace days <strong data-testid="setting-grace-days-current">{settings.data?.graceDays ?? ''}</strong>
         , entry date <strong data-testid="setting-entry-date-current">{settings.data?.entryDate ?? ''}</strong>
         , pot <strong data-testid="setting-pot-current">{settings.data?.pot ?? ''}</strong>
+        , parent <strong data-testid="setting-parent-current">{settings.data?.parent ?? ''}</strong>
         {save.isError && <p data-testid="settings-error">{save.error.message}</p>}
       </form>
       <form

@@ -7,10 +7,11 @@ package net.officefloor.hq.app.settings;
  *  {@code entryDate} is the entry date, blank meaning off. {@code gradeGrace} is each grade's grace days given, by grade
  *  (dated, from-date key grace-<grade>), blank meaning none. {@code gradeProofThreshold} is each grade's proof threshold
  *  given, by grade (dated, from-date key proof-threshold-<grade>), blank meaning none (the sheet's is then used).
- *  {@code pot} is the pot, blank meaning none (not dated). */
+ *  {@code pot} is the pot, blank meaning none (not dated). {@code parent} is the parent sheet's id, blank meaning none
+ *  (not dated). */
 public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom,
         java.util.Map<String, String> gradeTerms, String cap, java.util.Map<String, String> from,
         String proofThreshold, java.util.Map<String, String> permissions, String graceDays,
         String noteThreshold, String entryDate, java.util.Map<String, String> gradeGrace,
-        java.util.Map<String, String> gradeProofThreshold, String pot) {
+        java.util.Map<String, String> gradeProofThreshold, String pot, String parent) {
 }

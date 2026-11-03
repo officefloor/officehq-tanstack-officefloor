@@ -23,6 +23,13 @@ public class SaveSettings {
         if (!repository.sheetExists(id)) {
             throw new BadRequestException("no such sheet");
         }
+        if (input.setsParent() && input.parent() != null) {
+            if (input.parent().equals(id)) throw new BadRequestException("a sheet cannot be its own parent");
+            if (!repository.sheetExists(input.parent())) throw new BadRequestException("no such parent sheet");
+            if (repository.lineage(input.parent()).contains(id)) {
+                throw new BadRequestException("the parent sheet has this sheet as an ancestor");
+            }
+        }
         LocalDate today = sheets.today(id);
         Rollup.Snapshot before = rollup.take(id);
         String prefix = "SETTING_CHANGED sheet=" + id + " by=" + by + " key=";
@@ -94,6 +101,10 @@ public class SaveSettings {
         if (input.setsPot()) {
             repository.setPot(id, input.pot());
             audit.record(prefix + "pot value=" + (input.pot() == null ? "" : SettingsRepository.money(input.pot())));
+        }
+        if (input.setsParent()) {
+            repository.setParent(id, input.parent());
+            audit.record(prefix + "parent value=" + (input.parent() == null ? "" : input.parent()));
         }
         input.permissions().forEach((action, roles) -> {
             repository.setPermission(id, action, roles);

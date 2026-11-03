@@ -2,35 +2,44 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 
 /** A grade's rate: a percent with two decimals, in force from its from-date (yyyy-mm-dd; null when it
- *  applies from the beginning of time) through its to-date (null when it has no end). */
-export type Rate = { grade: string; pct: string; from: string | null; to: string | null };
+ *  applies from the beginning of time) through its to-date (null when it has no end). `level` is the sheet it
+ *  is set on: 0 this sheet, 1 its parent, 2 the parent's parent, 3 the one above that. */
+export type Rate = { grade: string; pct: string; from: string | null; to: string | null; level?: number };
 
 export function ratesKey(sheetId: string) {
   return ['sheet', sheetId, 'rates'];
 }
 
-/** The sheet's rates, by grade then from-date (an undated rate first); a grade with no rate is not
- *  listed. */
+/** The sheet's rates (level 0), by grade then from-date (an undated rate first); a grade with no rate is not
+ *  listed. Then those of the sheets its grades fall back to, nearest first (level 1 its parent, up to 3). */
 export function useRates(sheetId: string) {
   return useQuery({
     queryKey: ratesKey(sheetId),
-    queryFn: async () =>
-      (await getJson<{ rates: Rate[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/rates`)).rates,
+    queryFn: async () => {
+      const got = await getJson<{ rates: Rate[]; inherited: Rate[][] }>(`/api/sheets/${encodeURIComponent(sheetId)}/rates`);
+      return [
+        ...got.rates.map((r) => ({ ...r, level: 0 })),
+        ...(got.inherited ?? []).flatMap((rates, i) => rates.map((r) => ({ ...r, level: i + 1 }))),
+      ];
+    },
   });
 }
 
-/** The rate (a two-decimal percent) for a grade in force on a date (yyyy-mm-dd): the one with the
- *  latest from-date on or before it, an undated rate applying from the beginning of time; undefined
- *  when none applies, or the date is after that rate's to-date. */
+/** The rate (a two-decimal percent) for a grade in force on a date (yyyy-mm-dd): on this sheet, the one with
+ *  the latest from-date on or before it, an undated rate applying from the beginning of time, unless the date is
+ *  after that rate's to-date; when this sheet has none in force, its parent's the same way, then the parent's
+ *  parent's, up to three levels up; undefined when none applies. */
 export function rateFor(rates: Rate[] | undefined, grade: string | undefined, on: string | undefined): string | undefined {
   if (on === undefined) return undefined;
-  let found: Rate | undefined;
-  for (const r of rates ?? []) {
-    if (r.grade !== grade || (r.from !== null && r.from > on)) continue;
-    if (found === undefined || (found.from ?? '') < (r.from ?? '')) found = r;
+  for (let level = 0; level <= 3; level++) {
+    let found: Rate | undefined;
+    for (const r of rates ?? []) {
+      if ((r.level ?? 0) !== level || r.grade !== grade || (r.from !== null && r.from > on)) continue;
+      if (found === undefined || (found.from ?? '') < (r.from ?? '')) found = r;
+    }
+    if (found !== undefined && (found.to == null || found.to >= on)) return found.pct;
   }
-  if (found?.to != null && found.to < on) return undefined;
-  return found?.pct;
+  return undefined;
 }
 
 /** A two-decimal number as a whole count of hundredths ("12.50" -> 1250, "-0.30" -> -30). */

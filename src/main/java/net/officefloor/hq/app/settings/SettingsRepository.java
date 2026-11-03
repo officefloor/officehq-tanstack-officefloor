@@ -55,7 +55,7 @@ public class SettingsRepository {
                 numbering == null ? null : numbering.toString(), gradeTerms(sheetId, today),
                 cap == null ? null : money(cap), dated(sheetId), permissions(sheetId), graceDays(sheetId),
                 delegations(sheetId), entry == null ? null : entry.toString(), holidays(sheetId),
-                voidReasons(sheetId), pot == null ? null : money(pot));
+                voidReasons(sheetId), pot == null ? null : money(pot), parent(sheetId));
     }
 
     /** The sheet's today; the real date when there is no such sheet. */
@@ -268,6 +268,34 @@ public class SettingsRepository {
 
     public void setPot(String sheetId, BigDecimal pot) {
         jdbc.update("UPDATE sheet SET pot = ? WHERE id = ?", pot, sheetId);
+    }
+
+    /** The sheet's parent sheet id; null when blank (none). Not dated: read from the sheet as it is now, also on a
+     *  screen showing the sheet as of a date. */
+    public String parent(String sheetId) {
+        List<String> found = jdbc.query("SELECT parent_id FROM PUBLIC.sheet WHERE id = ?",
+                (rs, i) -> rs.getString("parent_id"), sheetId);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    public void setParent(String sheetId, String parent) {
+        jdbc.update("UPDATE sheet SET parent_id = ? WHERE id = ?", parent, sheetId);
+    }
+
+    /** A sheet's ancestors, nearest first: its parent, the parent's parent and so on, stopping at a sheet seen
+     *  before. */
+    public List<String> lineage(String sheetId) {
+        List<String> found = new java.util.ArrayList<>();
+        for (String at = parent(sheetId); at != null && !found.contains(at) && !at.equals(sheetId); at = parent(at)) {
+            found.add(at);
+        }
+        return found;
+    }
+
+    /** The sheets whose rates a sheet's grade falls back to, nearest first: its ancestors up to three levels up. */
+    public List<String> rateAncestors(String sheetId) {
+        List<String> found = lineage(sheetId);
+        return found.size() > 3 ? found.subList(0, 3) : found;
     }
 
     /** The sheet's grace days; null when blank (off). */
