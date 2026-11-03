@@ -1,0 +1,254 @@
+diff --git a/src/main/frontend/features/people/usePeople.ts b/src/main/frontend/features/people/usePeople.ts
+index d2b937549..282e57f87 100644
+--- a/src/main/frontend/features/people/usePeople.ts
++++ b/src/main/frontend/features/people/usePeople.ts
+@@ -9,7 +9,7 @@ import { useReader } from '../../api/readNow';
+  *  claims dated within a hold, unless bound by a statement, then count in no live total); their own terms in
+  *  days (null when they have none: their grade's, else the sheet's, apply); their contact (null when they have none); their tags (sorted, comma separated; null when none);
+  *  the sheet they were transferred from (null when they were not transferred here); their past retirements,
+- *  oldest first. */
++ *  oldest first; their snapshots, one per SNAPSHOT written for them, oldest first. */
+ export type Person = {
+   id: number;
+   name: string;
+@@ -27,8 +27,13 @@ export type Person = {
+   tags: string | null;
+   origin: string | null;
+   retirements: Retirement[];
++  snapshots: SnapshotLine[];
+ };
+ 
++/** One of a person's snapshots: the day being left (yyyy-mm-dd; null when the sheet had no today) and their
++ *  due-total as it stood then (two decimals, or 'n/a'). */
++export type SnapshotLine = { day: string | null; dueTotal: string };
++
+ /** One of a person's past retirements: from the date they were retired from to the sheet's today when they
+  *  were unretired (yyyy-mm-dd). No claim of theirs may be dated after its from and before its to. */
+ export type Retirement = { from: string; to: string };
+diff --git a/src/main/frontend/features/snapshots/snapshots.slot.tsx b/src/main/frontend/features/snapshots/snapshots.slot.tsx
+new file mode 100644
+index 000000000..535ed10e6
+--- /dev/null
++++ b/src/main/frontend/features/snapshots/snapshots.slot.tsx
+@@ -0,0 +1,23 @@
++import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
++import { usePeople } from '../people/usePeople';
++
++/** A person's snapshot lines: one per SNAPSHOT written for them (each change of the sheet's today), oldest
++ *  first, as the day being left and their due-total as it stood then. */
++function PersonSnapshots({ sheetId, personId }: { sheetId: string; personId: number }) {
++  const people = usePeople(sheetId);
++  const p = people.data?.find((x) => x.id === personId);
++  return (
++    <td>
++      {(p?.snapshots ?? []).map((s, i) => (
++        <div key={i} data-testid="person-snapshot-line">
++          {s.day ?? ''} {s.dueTotal}
++        </div>
++      ))}
++    </td>
++  );
++}
++
++export const contributions = [
++  PersonColumnHead.fill({ order: 57, Component: () => <th>Snapshots</th> }),
++  PersonCells.fill({ order: 57, Component: PersonSnapshots }),
++];
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 5e962aad7..b4903401d 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -9,23 +9,28 @@ import java.util.List;
+  *  from (null when not retired; any date set means retired at once), and their holds (oldest first) and
+  *  whether they have any (their open (OPEN or PENDING) claims dated within a hold, unless bound by a
+  *  statement, then count in no live total), and their own terms in days (null when they have none), and their contact (null when they have none), and the sheet they were
+- *  transferred from (null when they were not transferred here), and their past retirements (oldest first), and their tags (as {@link net.officefloor.hq.app.claim.Claim#tags(String)} keeps them; null when none). */
++ *  transferred from (null when they were not transferred here), and their past retirements (oldest first), and their tags (as {@link net.officefloor.hq.app.claim.Claim#tags(String)} keeps them; null when none),
++ *  and their snapshots (one per SNAPSHOT line written for them, oldest first). */
+ public record Person(long id, String name, String grade, long version, long statementCount,
+         String statedTotal, String statementDate, String retiredFrom, boolean held, List<GradeFrom> grades,
+         List<Hold> holds, Integer terms, String contact, String origin,
+-        List<Retirement> retirements, String tags) {
++        List<Retirement> retirements, String tags, List<SnapshotLine> snapshots) {
+ 
+     public Person withGrades(List<GradeFrom> grades) {
+-        return new Person(id, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom, held, grades, holds, terms, contact, origin, retirements, tags);
++        return new Person(id, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom, held, grades, holds, terms, contact, origin, retirements, tags, snapshots);
+     }
+ 
+     public Person withHolds(List<Hold> holds) {
+         return new Person(id, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom,
+-                !holds.isEmpty(), grades, holds, terms, contact, origin, retirements, tags);
++                !holds.isEmpty(), grades, holds, terms, contact, origin, retirements, tags, snapshots);
+     }
+ 
+     public Person withRetirements(List<Retirement> retirements) {
+-        return new Person(id, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom, held, grades, holds, terms, contact, origin, retirements, tags);
++        return new Person(id, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom, held, grades, holds, terms, contact, origin, retirements, tags, snapshots);
++    }
++
++    public Person withSnapshots(List<SnapshotLine> snapshots) {
++        return new Person(id, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom, held, grades, holds, terms, contact, origin, retirements, tags, snapshots);
+     }
+ 
+     public boolean retired() {
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index d81bf6a8b..7174b5084 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -29,7 +29,7 @@ public class PersonRepository {
+             rs.getDate("statement_date") == null ? null : rs.getDate("statement_date").toLocalDate().toString(),
+             rs.getDate("retired_from") == null ? null : rs.getDate("retired_from").toLocalDate().toString(),
+             false, List.of(), List.of(), (Integer) rs.getObject("terms", Integer.class), rs.getString("contact"),
+-            rs.getString("origin_sheet"), List.of(), rs.getString("tags"));
++            rs.getString("origin_sheet"), List.of(), rs.getString("tags"), List.of());
+ 
+     /** The position after the last person's on the sheet being inserted into (the end of its list). */
+     private static final String NEXT_POSITION = "(SELECT COALESCE(MAX(q.list_position), 0) + 1 FROM person q WHERE q.sheet_id = sheet.id)";
+@@ -61,9 +61,32 @@ public class PersonRepository {
+                 rs -> {
+                     retirements.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(retirement(rs));
+                 }, sheetId);
++        Map<Long, List<SnapshotLine>> snapshots = new HashMap<>();
++        jdbc.query("SELECT person_id, left_day, due_total FROM person_snapshot WHERE sheet_id = ? ORDER BY id",
++                rs -> {
++                    snapshots.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(snapshot(rs));
++                }, sheetId);
+         return people.stream().map(p -> p.withGrades(grades.getOrDefault(p.id(), List.of()))
+                 .withHolds(holds.getOrDefault(p.id(), List.of()))
+-                .withRetirements(retirements.getOrDefault(p.id(), List.of()))).toList();
++                .withRetirements(retirements.getOrDefault(p.id(), List.of()))
++                .withSnapshots(snapshots.getOrDefault(p.id(), List.of()))).toList();
++    }
++
++    private static SnapshotLine snapshot(java.sql.ResultSet rs) throws java.sql.SQLException {
++        return new SnapshotLine(rs.getDate("left_day") == null ? null : rs.getDate("left_day").toLocalDate().toString(),
++                rs.getString("due_total"));
++    }
++
++    /** A person's snapshots, oldest first. */
++    public List<SnapshotLine> snapshots(String sheetId, long id) {
++        return jdbc.query("SELECT left_day, due_total FROM person_snapshot WHERE sheet_id = ? AND person_id = ? ORDER BY id",
++                (rs, i) -> snapshot(rs), sheetId, id);
++    }
++
++    /** Keep a snapshot of a person: their due-total as it stood on the day being left. */
++    public void snapshot(String sheetId, long id, LocalDate day, String dueTotal) {
++        jdbc.update("INSERT INTO person_snapshot (sheet_id, person_id, left_day, due_total) VALUES (?, ?, ?, ?)",
++                sheetId, id, day == null ? null : Date.valueOf(day), dueTotal);
+     }
+ 
+     private static Retirement retirement(java.sql.ResultSet rs) throws java.sql.SQLException {
+@@ -124,7 +147,7 @@ public class PersonRepository {
+         List<Person> found = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND id = ?", ROW,
+                 sheetId, id);
+         return found.isEmpty() ? null : found.get(0).withGrades(grades(sheetId, id)).withHolds(holds(sheetId, id))
+-                .withRetirements(retirements(sheetId, id));
++                .withRetirements(retirements(sheetId, id)).withSnapshots(snapshots(sheetId, id));
+     }
+ 
+     /** Record a statement taken of a person: one more, with its due-total and date. */
+@@ -303,7 +326,7 @@ public class PersonRepository {
+         }, keys);
+         long id = keys.getKey().longValue();
+         grade(sheetId, id, grade, null);
+-        return new Person(id, name, grade, 1, 0, null, null, null, false, List.of(new GradeFrom(grade, null)), List.of(), terms, contact, null, List.of(), null);
++        return new Person(id, name, grade, 1, 0, null, null, null, false, List.of(new GradeFrom(grade, null)), List.of(), terms, contact, null, List.of(), null, List.of());
+     }
+ 
+     /** Swap two people's places in the sheet's list. */
+@@ -405,7 +428,7 @@ public class PersonRepository {
+     }
+ 
+     /** Take a person off the sheet entirely: their patron links (both ways), pool memberships, closed periods'
+-     *  figures, watchers, holds, past retirements, statements, grades, aliases and plans go with them. Their claims must already be gone. */
++     *  figures, watchers, holds, past retirements, snapshots, statements, grades, aliases and plans go with them. Their claims must already be gone. */
+     public void remove(String sheetId, long id) {
+         jdbc.update("DELETE FROM patron WHERE sheet_id = ? AND (person_id = ? OR patron_id = ?)", sheetId, id, id);
+         jdbc.update("DELETE FROM pool_member WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+@@ -413,6 +436,7 @@ public class PersonRepository {
+         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+         jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, id);
++        jdbc.update("DELETE FROM person_snapshot WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+         jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+         jdbc.update("DELETE FROM person_alias WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+@@ -426,7 +450,7 @@ public class PersonRepository {
+      *  merged person's patrons are added to the other's (not themselves, no repeats), anyone naming the merged
+      *  person names the other instead (no repeats); pool memberships move to the other (shares added, at most
+      *  100.00, when the other is already a member); closed periods' figures are added to the other's. Their
+-     *  statements are joined to the other's (see {@link #joinStatements}); their holds, past retirements, grades, watchers and contact go with them, their plans move to the other, and the merged person leaves the sheet.
++     *  statements are joined to the other's (see {@link #joinStatements}); their holds, past retirements, snapshots, grades, watchers and contact go with them, their plans move to the other, and the merged person leaves the sheet.
+      *  Their claims must already have been moved. */
+     public void merge(String sheetId, long fromId, long intoId) {
+         String name = jdbc.queryForObject("SELECT name FROM person WHERE id = ? AND sheet_id = ?", String.class, fromId, sheetId);
+@@ -472,6 +496,7 @@ public class PersonRepository {
+         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
+         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
+         jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
++        jdbc.update("DELETE FROM person_snapshot WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
+         joinStatements(sheetId, fromId, sheetId, intoId);
+         jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
+         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
+diff --git a/src/main/java/net/officefloor/hq/app/person/SnapshotLine.java b/src/main/java/net/officefloor/hq/app/person/SnapshotLine.java
+new file mode 100644
+index 000000000..e966003b2
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/SnapshotLine.java
+@@ -0,0 +1,6 @@
++package net.officefloor.hq.app.person;
++
++/** One of a person's snapshots: the day being left (yyyy-mm-dd; null when the sheet had no today) and their
++ *  due-total as it stood then (two decimals, or 'n/a'). */
++public record SnapshotLine(String day, String dueTotal) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 7c76f59ca..29d8a2ade 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -105,9 +105,12 @@ public class Rollup {
+     }
+ 
+     /** Record one SNAPSHOT line per person (in list order) with their due-total as {@code before} had it,
+-     *  ending with for=<steward> when {@code by} made the change under that steward's delegation (null when not). */
+-    public void snapshot(String sheetId, String by, Snapshot before, String delegator) {
+-        for (Figures f : before.people().values()) {
++     *  ending with for=<steward> when {@code by} made the change under that steward's delegation (null when not),
++     *  and keep it on the person with the day being left. */
++    public void snapshot(String sheetId, String by, Snapshot before, String delegator, LocalDate dayLeft) {
++        for (Map.Entry<Long, Figures> e : before.people().entrySet()) {
++            Figures f = e.getValue();
++            people.snapshot(sheetId, e.getKey(), dayLeft, f.dueTotal());
+             audit.record("SNAPSHOT sheet=" + sheetId + " by=" + by + " name=" + f.name() + " due-total=" + f.dueTotal()
+                     + (delegator == null ? "" : " for=" + delegator));
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SaveSheetToday.java b/src/main/java/net/officefloor/hq/app/sheet/SaveSheetToday.java
+index 37b14b029..c1eb738f8 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SaveSheetToday.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SaveSheetToday.java
+@@ -29,7 +29,7 @@ public class SaveSheetToday {
+             throw new BadRequestException("no such sheet");
+         }
+         if (!today.equals(was)) {
+-            rollup.snapshot(id, by, before, delegator);
++            rollup.snapshot(id, by, before, delegator, was);
+             claims.unlockAll(id);
+         }
+         closer.closeLapsed(id, by, today);
+diff --git a/src/main/resources/db/migration/V80__person_snapshot.sql b/src/main/resources/db/migration/V80__person_snapshot.sql
+new file mode 100644
+index 000000000..b3319b839
+--- /dev/null
++++ b/src/main/resources/db/migration/V80__person_snapshot.sql
+@@ -0,0 +1,10 @@
++-- A person's snapshots: one per SNAPSHOT line written for them, each with the day being left (the sheet's
++-- today before the change of today) and their due-total as it stood (two decimals, or 'n/a'), oldest first (by id).
++CREATE TABLE person_snapshot (
++    id        BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id  VARCHAR(200) NOT NULL REFERENCES sheet (id),
++    person_id BIGINT       NOT NULL REFERENCES person (id),
++    left_day  DATE,
++    due_total VARCHAR(20)  NOT NULL
++);
++CREATE INDEX person_snapshot_person ON person_snapshot (person_id, id);
