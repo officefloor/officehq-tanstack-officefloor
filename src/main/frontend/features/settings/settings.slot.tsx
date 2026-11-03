@@ -175,7 +175,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
         </label>{' '}
         <FromInput settingKey="floor" from={from} setFrom={setFrom} onChange={() => save.reset()} />{' '}
         <label>
-          Terms (days){' '}
+          Terms (business days){' '}
           <input
             data-testid="setting-terms"
             inputMode="numeric"
@@ -190,7 +190,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
         <FromInput settingKey="terms" from={from} setFrom={setFrom} onChange={() => save.reset()} />{' '}
         {GRADES.map((g) => (
           <label key={g}>
-            Terms {g} (days){' '}
+            Terms {g} (business days){' '}
             <input
               data-testid={`setting-terms-${g}`}
               inputMode="numeric"

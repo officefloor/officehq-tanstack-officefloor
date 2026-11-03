@@ -163,7 +163,7 @@ function People({ sheetId }: { sheetId: string }) {
           />
         </label>{' '}
         <label>
-          Terms (days){' '}
+          Terms (business days){' '}
           <input
             data-testid="person-form-terms"
             value={terms}

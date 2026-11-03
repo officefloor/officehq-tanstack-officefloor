@@ -148,7 +148,7 @@ public class SettingsRepository {
         record(sheetId, "floor", from, money(floor));
     }
 
-    /** The sheet's terms in force on a date: the days after a claim's date that it is due by; 14 before
+    /** The sheet's terms in force on a date: the business days after a claim's date that it is due by; 14 before
      *  any are recorded. */
     public int terms(String sheetId, LocalDate date) {
         List<String> found = on(sheetId, "terms", date);
@@ -280,11 +280,22 @@ public class SettingsRepository {
         jdbc.update("INSERT INTO holiday (sheet_id, holiday_date) VALUES (?, ?)", sheetId, Date.valueOf(date));
     }
 
-    /** The date, else the next day after it that is not one of the sheet's holidays. */
-    public LocalDate pastHolidays(String sheetId, LocalDate date) {
-        java.util.Set<String> holidays = new java.util.HashSet<>(holidays(sheetId));
-        while (holidays.contains(date.toString())) {
+    /** The terms-th business day after a date on the sheet: counting forward from the day after it, skipping
+     *  every Saturday, Sunday and holiday on the sheet; the date itself for terms 0. */
+    public LocalDate businessDaysAfter(String sheetId, LocalDate date, int terms) {
+        return businessDaysAfter(new java.util.HashSet<>(holidays(sheetId)), date, terms);
+    }
+
+    /** The terms-th business day after a date, skipping every Saturday, Sunday and one of the holidays (yyyy-MM-dd). */
+    public static LocalDate businessDaysAfter(java.util.Set<String> holidays, LocalDate date, int terms) {
+        int counted = 0;
+        while (counted < terms) {
             date = date.plusDays(1);
+            java.time.DayOfWeek day = date.getDayOfWeek();
+            if (day != java.time.DayOfWeek.SATURDAY && day != java.time.DayOfWeek.SUNDAY
+                    && !holidays.contains(date.toString())) {
+                counted++;
+            }
         }
         return date;
     }
