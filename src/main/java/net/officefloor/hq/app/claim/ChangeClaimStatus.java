@@ -4,6 +4,7 @@ import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.BadRequestException;
 import net.officefloor.hq.app.CurrentUser;
 import net.officefloor.hq.app.period.PeriodRepository;
+import net.officefloor.hq.app.history.AsOfView;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.person.WatchRepository;
 import net.officefloor.hq.app.rollup.Rollup;
@@ -19,7 +20,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 public class ChangeClaimStatus {
     public void change(@PathVariable("sheetId") String sheetId, @PathVariable("claimId") String claimId,
             @PathVariable("action") String action, @RequestBody ClaimActionRequest request, ServerHttpConnection connection, ClaimRepository repository,
-            PeriodRepository periods, SettingsRepository settings, SheetRepository sheets, Audit audit, Rollup rollup, WatchRepository watches, PersonRepository people, Out<Claim> claim) throws BadRequestException {
+            PeriodRepository periods, SettingsRepository settings, SheetRepository sheets, Audit audit, Rollup rollup, WatchRepository watches, PersonRepository people, AsOfView view, Out<Claim> claim) throws BadRequestException {
         String by = CurrentUser.require(connection);
         String id = sheetId == null ? "" : sheetId.trim();
         long cid;
@@ -87,6 +88,11 @@ public class ChangeClaimStatus {
         }
         if ("proof".equals(action == null ? "" : action.trim())) {
             claim.set(ClaimProof.apply(id, cid, request == null ? null : request.kind(), by, repository, periods, audit));
+            return;
+        }
+        if ("settle".equals(action == null ? "" : action.trim())) {
+            claim.set(ClaimStatusChange.settle(id, cid, request == null ? null : request.on(), by, view, repository, periods,
+                    settings, audit, rollup, watches));
             return;
         }
         claim.set(ClaimStatusChange.apply(id, cid, action,

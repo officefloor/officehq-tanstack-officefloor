@@ -117,6 +117,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   const [voidReasons, setVoidReasons] = useState<Record<number, string>>({});
   const [targets, setTargets] = useState<Record<number, string>>({});
   const [deferDates, setDeferDates] = useState<Record<number, string>>({});
+  const [settleDates, setSettleDates] = useState<Record<number, string>>({});
   const [splitAmounts, setSplitAmounts] = useState<Record<number, string>>({});
   const [settlePartAmounts, setSettlePartAmounts] = useState<Record<number, string>>({});
   const [newDates, setNewDates] = useState<Record<number, string>>({});
@@ -197,8 +198,8 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   // or adding the line (label, quantity, unit amount) typed on its row to a DRAFT one (its amount becomes its lines' total);
   // a refusal shows on that claim's row.
   const action = useMutation({
-    mutationFn: (a: { id: number; action: ClaimAction; reason: string; until: string; amount: string; date: string; text: string; label: string; qty: string; unit: string; kind: string }) =>
-      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${a.id}/${a.action}`, { reason: a.reason, until: a.until, amount: a.amount, date: a.date, text: a.text, label: a.label, qty: a.qty, unit: a.unit, kind: a.kind }),
+    mutationFn: (a: { id: number; action: ClaimAction; reason: string; until: string; amount: string; date: string; text: string; label: string; qty: string; unit: string; kind: string; on: string }) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${a.id}/${a.action}`, { reason: a.reason, until: a.until, amount: a.amount, date: a.date, text: a.text, label: a.label, qty: a.qty, unit: a.unit, kind: a.kind, on: a.on }),
     onSuccess: (changed, a) => {
       if (a.action === 'reject') setReasons((r) => ({ ...r, [a.id]: '' }));
       if (a.action === 'void') setVoidReasons((r) => ({ ...r, [a.id]: '' }));
@@ -212,7 +213,9 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
       // An open editor of the claim takes the amount its lines now add up to.
       if (a.action === 'line' && editing === a.id) setAmount(changed.amount);
     },
-    onSettled: async () => {
+    onSettled: async (_, __, a) => {
+      // A settle's as-of date is used once, went it through or not, so it never carries into the next settle.
+      if (a.action === 'settle') setSettleDates((d) => ({ ...d, [a.id]: '' }));
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
     },
   });
@@ -283,6 +286,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
       qty: a === 'line' ? (lineFields[id]?.qty ?? '').trim() : '',
       unit: a === 'line' ? (lineFields[id]?.unit ?? '').trim() : '',
       kind: a === 'proof' ? proofKinds[id] ?? '' : '',
+      on: a === 'settle' ? (settleDates[id] ?? '').trim() : '',
     });
   };
 
@@ -580,6 +584,17 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                       ))}
                     </select>
                   )}{' '}
+                  <input
+                    type="text"
+                    data-testid="claim-settle-date"
+                    placeholder="settle as of yyyy-mm-dd"
+                    value={settleDates[c.id] ?? ''}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setSettleDates((d) => ({ ...d, [c.id]: v }));
+                      if (action.variables?.id === c.id) action.reset();
+                    }}
+                  />{' '}
                   {ACTIONS.map(([a, label]) => (
                     <button
                       key={a}

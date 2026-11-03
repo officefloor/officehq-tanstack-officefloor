@@ -2,7 +2,9 @@ package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.List;
+import net.officefloor.hq.app.history.AsOfView;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.BadRequestException;
 import net.officefloor.hq.app.period.Period;
@@ -32,23 +34,39 @@ public final class ClaimStatusChange {
 
     static Claim apply(String id, long cid, String action, String reason, String by, ClaimRepository repository,
             PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup, WatchRepository watches) throws BadRequestException {
-        return apply(id, cid, action, reason, by, false, null, repository, periods, settings, audit, rollup, watches);
+        return apply(id, cid, action, reason, by, false, null, null, null, repository, periods, settings, audit, rollup, watches);
+    }
+
+    /** Settle a claim as of a date (null: as it is now): its due is frozen as it stood at the end of that day (see
+     *  {@link AsOfView}); a date after the sheet's today, or one before the claim existed, is refused. */
+    static Claim settle(String id, long cid, String on, String by, AsOfView view, ClaimRepository repository,
+            PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup, WatchRepository watches) throws BadRequestException {
+        String raw = on == null ? "" : on.trim();
+        LocalDate day = null;
+        if (!raw.isEmpty()) {
+            try {
+                day = LocalDate.parse(raw);
+            } catch (DateTimeParseException e) {
+                throw new BadRequestException("the settle date must be yyyy-mm-dd");
+            }
+        }
+        return apply(id, cid, "settle", null, by, false, null, day, view, repository, periods, settings, audit, rollup, watches);
     }
 
     /** Make every check of the status change, writing nothing: throws the refusal the change would give. */
     static void check(String id, long cid, String action, String by, ClaimRepository repository,
             PeriodRepository periods, SettingsRepository settings) throws BadRequestException {
-        apply(id, cid, action, null, by, true, null, repository, periods, settings, null, null, null);
+        apply(id, cid, action, null, by, true, null, null, null, repository, periods, settings, null, null, null);
     }
 
     /** Settle a claim split off {@code original} by a part-settle exactly as the settle button does, except that the
      *  four-eyes rules and the proof rule are judged on the original claim; with {@code checkOnly}, write nothing. */
     static Claim settlePart(String id, long cid, Claim original, String by, boolean checkOnly, ClaimRepository repository,
             PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup, WatchRepository watches) throws BadRequestException {
-        return apply(id, cid, "settle", null, by, checkOnly, original, repository, periods, settings, audit, rollup, watches);
+        return apply(id, cid, "settle", null, by, checkOnly, original, null, null, repository, periods, settings, audit, rollup, watches);
     }
 
-    private static Claim apply(String id, long cid, String action, String reason, String by, boolean checkOnly, Claim original, ClaimRepository repository,
+    private static Claim apply(String id, long cid, String action, String reason, String by, boolean checkOnly, Claim original, LocalDate on, AsOfView view, ClaimRepository repository,
             PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup, WatchRepository watches) throws BadRequestException {
         if (settings.archived(id)) {
             throw new BadRequestException("the sheet is archived");
@@ -199,6 +217,22 @@ public final class ClaimStatusChange {
                 event = "CLAIM_REVIEW";
             }
         }
+        // Settled as of a date: on or before the sheet's today, and only a claim that existed then; its due is the one
+        // it had at the end of that day, worked out as the as-of view does.
+        BigDecimal asOfDue = null;
+        if (on != null && to.equals("SETTLED")) {
+            if (on.isAfter(settings.today(id))) {
+                throw new BadRequestException("a claim cannot be settled as of a date after the sheet's today");
+            }
+            BigDecimal[] then = view.readAt(id, on, () -> {
+                Claim was = repository.find(id, cid);
+                return was == null ? null : new BigDecimal[] { repository.dueNow(id, was) };
+            });
+            if (then == null) {
+                throw new BadRequestException("the claim did not exist on " + on);
+            }
+            asOfDue = then[0];
+        }
         if (checkOnly) {
             return null;
         }
@@ -236,10 +270,13 @@ public final class ClaimStatusChange {
             tail += " reason=" + voidReason;
         }
         if (to.equals("SETTLED")) {
-            BigDecimal now = repository.dueNow(id, found);
+            BigDecimal now = on != null ? asOfDue : repository.dueNow(id, found);
             repository.settleDue(id, cid, now);
             due = ClaimRepository.dueOf(now);
             tail = " due=" + (due == null ? "n/a" : due);
+            if (on != null) {
+                tail += " on=" + on;
+            }
         }
         repository.log(id, cid, by);
         Claim changed = new Claim(found.id(), found.personId(), found.amount(), found.date(), found.note(), to,
