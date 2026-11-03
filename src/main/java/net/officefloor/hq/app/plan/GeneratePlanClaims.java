@@ -22,7 +22,8 @@ import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.web.bind.annotation.PathVariable;
 
 /** For every plan on the sheet, in the order they were added, make a DRAFT claim with the plan's amount for each
- *  plan date (the start, then every N days; or monthly on its day) up to the end and the sheet's today that has none yet, dated that day
+ *  plan date (the start, then every N days; or monthly on its day) up to the end and the sheet's today that has none yet and is not in one of
+ *  the plan's pauses (such a date is skipped for good), dated that day
  *  with an empty note, written as CLAIM_ADDED. Each is checked by the claim form's rules: a date the form refuses
  *  is skipped (nothing written) and tried again next time. Answers how many were made. A viewer's makes none
  *  (nothing written); an archived sheet refuses it. */
@@ -55,7 +56,7 @@ public class GeneratePlanClaims {
             LocalDate last = today != null && today.isBefore(end) ? today : end;
             BigDecimal amount = new BigDecimal(plan.amount());
             for (LocalDate on : dates(plan, last)) {
-                if (done.contains(on)) {
+                if (done.contains(on) || plan.skips(on)) {
                     continue;
                 }
                 try {

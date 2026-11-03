@@ -14,9 +14,15 @@ const DAY_MS = 86_400_000;
 
 const isoDay = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 
+/** Whether a plan date (yyyy-mm-dd) falls in one of the plan's pauses: on or after the day it was paused and
+ *  before the day it was resumed. Such a date is skipped. */
+function skipped(plan: Plan, on: string): boolean {
+  return (plan.pauses ?? []).some((p) => on >= p.from && (p.to == null || on < p.to));
+}
+
 /** A plan's first five dates after today and on or before its end, in order: the start then every N days, or
  *  (monthly) that day in every month from the start's month, falling on the month's last day when beyond it,
- *  those before the start left out — the same dates the generate makes. */
+ *  those before the start and those in one of its pauses left out — the same dates the generate makes. */
 export function nextPlanDates(plan: Plan, today: string): string[] {
   const out: string[] = [];
   const start = Date.parse(`${plan.start}T00:00:00Z`);
@@ -28,7 +34,7 @@ export function nextPlanDates(plan: Plan, today: string): string[] {
     if (step <= 0) return out;
     let on = start;
     if (on <= after) on += Math.floor((after - on) / step + 1) * step;
-    for (; on <= end && out.length < 5; on += step) out.push(isoDay(on));
+    for (; on <= end && out.length < 5; on += step) if (!skipped(plan, isoDay(on))) out.push(isoDay(on));
     return out;
   }
   const first = new Date(start);
@@ -38,16 +44,54 @@ export function nextPlanDates(plan: Plan, today: string): string[] {
     if (Date.UTC(y, mo, 1) > end) break;
     const last = new Date(Date.UTC(y, mo + 1, 0)).getUTCDate();
     const on = Date.UTC(y, mo, Math.min(plan.day, last));
-    if (on >= start && on > after && on <= end) out.push(isoDay(on));
+    if (on >= start && on > after && on <= end && !skipped(plan, isoDay(on))) out.push(isoDay(on));
   }
   return out;
 }
 
-/** A person's plans, each with how many claims it has made so far and its next five dates after the sheet's today, and a form that adds one: an amount, a
+/** One plan's row: its figures, next dates and whether it is paused, with buttons that pause and resume it. A
+ *  refused pause or resume shows an error on the row, gone when the next one is pressed. */
+function PlanRow({ sheetId, plan, today }: { sheetId: string; plan: Plan; today: string | undefined }) {
+  const fig = useFigure();
+  const queryClient = useQueryClient();
+  const submitOnce = useSingleFlight();
+  const toggle = useMutation({
+    mutationFn: (action: 'pause' | 'resume') =>
+      postJson<{ plans: Plan[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/plans/${plan.id}/${action}`, {}),
+    onSuccess: (data) => queryClient.setQueryData(plansKey(sheetId), data.plans),
+  });
+  const press = (action: 'pause' | 'resume') =>
+    submitOnce(() => {
+      toggle.reset();
+      return toggle.mutateAsync(action);
+    });
+  return (
+    <tr data-testid={`plan-row-${plan.id}`}>
+      <td data-testid="plan-amount-shown">{fig(plan.amount)}</td>
+      <td data-testid="plan-start">{plan.start}</td>
+      <td data-testid="plan-every">{plan.every ?? ''}</td>
+      <td data-testid="plan-day">{plan.day ?? ''}</td>
+      <td data-testid="plan-end">{plan.end}</td>
+      <td data-testid="plan-generated">{plan.generated}</td>
+      <td data-testid="plan-next-dates">{today ? nextPlanDates(plan, today).join(', ') : ''}</td>
+      <td data-testid="plan-paused">{plan.paused ? 'yes' : 'no'}</td>
+      <td>
+        <button type="button" data-testid="plan-pause" disabled={toggle.isPending} onClick={() => press('pause')}>
+          Pause
+        </button>{' '}
+        <button type="button" data-testid="plan-resume" disabled={toggle.isPending} onClick={() => press('resume')}>
+          Resume
+        </button>
+        {toggle.isError && <span data-testid="plan-error">{toggle.error.message}</span>}
+      </td>
+    </tr>
+  );
+}
+
+/** A person's plans, each with how many claims it has made so far and its next five dates after the sheet's today and whether it is paused, and a form that adds one: an amount, a
  *  start date, every N days (a whole number, at least 1) or a day of the month (1 to 31), and an end date not before the start. A refused plan
  *  shows an error on the row. */
 function PersonPlans({ sheetId, personId }: { sheetId: string; personId: number }) {
-  const fig = useFigure();
   const plans = usePlans(sheetId);
   const today = useSheetToday(sheetId).data?.today;
   const queryClient = useQueryClient();
@@ -92,19 +136,13 @@ function PersonPlans({ sheetId, personId }: { sheetId: string; personId: number 
                 <th>End</th>
                 <th>Generated</th>
                 <th>Next dates</th>
+                <th>Paused</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
               {mine.map((p) => (
-                <tr key={p.id} data-testid={`plan-row-${p.id}`}>
-                  <td data-testid="plan-amount-shown">{fig(p.amount)}</td>
-                  <td data-testid="plan-start">{p.start}</td>
-                  <td data-testid="plan-every">{p.every ?? ''}</td>
-                  <td data-testid="plan-day">{p.day ?? ''}</td>
-                  <td data-testid="plan-end">{p.end}</td>
-                  <td data-testid="plan-generated">{p.generated}</td>
-                  <td data-testid="plan-next-dates">{today ? nextPlanDates(p, today).join(', ') : ''}</td>
-                </tr>
+                <PlanRow key={p.id} sheetId={sheetId} plan={p} today={today} />
               ))}
             </tbody>
           </table>

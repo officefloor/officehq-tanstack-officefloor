@@ -6,9 +6,13 @@ import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.Types;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import net.officefloor.hq.app.BadRequestException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
@@ -50,19 +54,59 @@ public class PlanRepository {
             return ps;
         }, keys);
         return new Plan(keys.getKey().longValue(), personId, money(input.amount()), input.start().toString(),
-                input.every(), input.day(), input.end().toString(), 0);
+                input.every(), input.day(), input.end().toString(), 0, false, List.of());
     }
 
-    /** The sheet's plans, in the order they were added, each with how many claims it has made. */
+    /** The sheet's plans, in the order they were added, each with how many claims it has made and its pauses. */
     public List<Plan> list(String sheetId) {
+        Map<Long, List<PlanPause>> pauses = new HashMap<>();
+        jdbc.query("SELECT plan_id, paused_on, resumed_on FROM plan_pause WHERE sheet_id = ? ORDER BY id",
+                rs -> {
+                    Date to = rs.getDate("resumed_on");
+                    pauses.computeIfAbsent(rs.getLong("plan_id"), k -> new ArrayList<>()).add(new PlanPause(
+                            rs.getDate("paused_on").toLocalDate().toString(), to == null ? null : to.toLocalDate().toString()));
+                }, sheetId);
         return jdbc.query("SELECT p.id, p.person_id, p.amount, p.start_date, p.every_days, p.day_of_month, p.end_date,"
                 + " (SELECT COUNT(*) FROM plan_claim c WHERE c.plan_id = p.id) AS generated"
                 + " FROM plan p WHERE p.sheet_id = ? ORDER BY p.id",
-                (rs, i) -> new Plan(rs.getLong("id"), rs.getLong("person_id"), money(rs.getBigDecimal("amount")),
-                        rs.getDate("start_date").toLocalDate().toString(), rs.getObject("every_days", Integer.class),
-                        rs.getObject("day_of_month", Integer.class),
-                        rs.getDate("end_date").toLocalDate().toString(), rs.getInt("generated")),
+                (rs, i) -> {
+                    List<PlanPause> mine = pauses.getOrDefault(rs.getLong("id"), List.of());
+                    return new Plan(rs.getLong("id"), rs.getLong("person_id"), money(rs.getBigDecimal("amount")),
+                            rs.getDate("start_date").toLocalDate().toString(), rs.getObject("every_days", Integer.class),
+                            rs.getObject("day_of_month", Integer.class),
+                            rs.getDate("end_date").toLocalDate().toString(), rs.getInt("generated"),
+                            mine.stream().anyMatch(p -> p.to() == null), mine);
+                },
                 sheetId);
+    }
+
+    /** The sheet's plan with that id, its row locked so one pause or resume of it runs at a time; refused when there
+     *  is no such plan on the sheet. */
+    public Plan lockedPlan(String sheetId, String planId) throws BadRequestException {
+        long pid;
+        try {
+            pid = Long.parseLong(planId == null ? "" : planId.trim());
+        } catch (NumberFormatException e) {
+            throw new BadRequestException("no such plan");
+        }
+        if (jdbc.queryForList("SELECT id FROM plan WHERE sheet_id = ? AND id = ? FOR UPDATE", Long.class, sheetId, pid)
+                .isEmpty()) {
+            throw new BadRequestException("no such plan");
+        }
+        return list(sheetId).stream().filter(p -> p.id() == pid).findFirst()
+                .orElseThrow(() -> new BadRequestException("no such plan"));
+    }
+
+    /** Open a pause of the plan from a day. */
+    public void pause(String sheetId, long planId, LocalDate from) {
+        jdbc.update("INSERT INTO plan_pause (sheet_id, plan_id, paused_on) VALUES (?, ?, ?)", sheetId, planId,
+                Date.valueOf(from));
+    }
+
+    /** Close the plan's open pause on a day. */
+    public void resume(long planId, LocalDate on) {
+        jdbc.update("UPDATE plan_pause SET resumed_on = ? WHERE plan_id = ? AND resumed_on IS NULL", Date.valueOf(on),
+                planId);
     }
 
     /** The dates a plan has already made a claim for. */
