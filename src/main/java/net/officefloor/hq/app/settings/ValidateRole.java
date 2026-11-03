@@ -5,9 +5,10 @@ import net.officefloor.hq.app.BadRequestException;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
-/** Bind the role form: a user name (no spaces) and a role, clerk, steward or viewer. */
+/** Bind the role form: a user name (no spaces) and a role, clerk, steward, viewer or restricted. */
 public class ValidateRole {
-    private static final Set<String> ROLES = Set.of(SettingsRepository.CLERK, SettingsRepository.STEWARD, SettingsRepository.VIEWER);
+    private static final Set<String> ROLES = Set.of(SettingsRepository.CLERK, SettingsRepository.STEWARD, SettingsRepository.VIEWER,
+            SettingsRepository.RESTRICTED);
 
     public void validate(@RequestBody RoleRequest request, Out<Role> role) throws BadRequestException {
         String user = request == null || request.user() == null ? "" : request.user().trim();
@@ -19,7 +20,7 @@ public class ValidateRole {
             throw new BadRequestException("user must not contain spaces");
         }
         if (!ROLES.contains(name)) {
-            throw new BadRequestException("role must be clerk, steward or viewer");
+            throw new BadRequestException("role must be clerk, steward, viewer or restricted");
         }
         role.set(new Role(user, name));
     }

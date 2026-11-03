@@ -32,7 +32,8 @@ import { useFigure } from '../locale/useLocale';
  *  decimals, shared out as the cuts of each balanced pool; blank is none; not dated), its parent sheet (a grade with no
  *  rate in force on a date takes the parent's, then the parent's parent's, up to three levels up; a sheet that has been
  *  loaded, not this one nor one that has this one as an ancestor; blank is none; not dated), its fiscal year start month (1 to 12; not dated), its alert threshold (two decimals; a person whose due-total
- *  crosses above it is written an ALERT line; blank is off; not dated), and the role (clerk, steward or viewer — a viewer changes nothing)
+ *  crosses above it is written an ALERT line; blank is off; not dated), and the role (clerk, steward, viewer or restricted — a viewer changes nothing; a
+ *  restricted user sees on the people list only the people of their crews)
  *  assigned to each user name, and the delegations of the steward role (a steward delegates it to a user from a
  *  from-date, blank the sheet's today, to a to-date, inclusive; while the sheet's today is inside it the user acts
  *  as a steward), and the sheet's holidays (a date already on the list is refused). Saving saves each setting whose field was entered (focused or typed

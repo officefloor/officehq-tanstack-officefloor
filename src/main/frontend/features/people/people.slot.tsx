@@ -11,6 +11,7 @@ import { useShowRetired } from '../retire/useShowRetired';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { GRADES, fetchPeople, peopleKey, shownName, usePeople, type Person } from './usePeople';
 import { Col } from '../columns/useColumns';
+import { useVisiblePeople } from './useVisiblePeople';
 
 /** The sheet's people: a form that adds a person, or edits one when their editor is open, and the
  *  list of everyone in list order (by position; new people go to the end) (retired people only when "show retired" is on), each
@@ -26,7 +27,8 @@ import { Col } from '../columns/useColumns';
  *  the save is refused (409) and the editor shows their current values, at their current version; any other
  *  refused edit closes the editor, leaving its error showing. Each person is a <tbody> so features can add
  *  cells and rows of their own to it (slots/defs/personRow). A quick-add bar takes a name and an amount
- *  and adds a draft claim for that person (adding them with the sheet's default grade, A when blank, when the name is new) in one change. */
+ *  and adds a draft claim for that person (adding them with the sheet's default grade, A when blank, when the name is new) in one change.
+ *  A restricted user's list shows only the people of their crews (see `useVisiblePeople`). */
 const SORTS = ['added', 'name', 'grade', 'due-total'] as const;
 type SortKey = (typeof SORTS)[number];
 const asSort = (raw: unknown): SortKey => {
@@ -61,8 +63,9 @@ function sortPeople(people: Person[], by: SortKey, dueTotals: Map<number, string
   return [...people].sort(cmp);
 }
 
-function People({ sheetId }: { sheetId: string }) {
+function People({ sheetId, user }: { sheetId: string; user: string }) {
   const people = usePeople(sheetId);
+  const visible = useVisiblePeople(sheetId, user, people.data);
   const [showRetired] = useShowRetired();
   const [sortBy, setSortBy] = useSearchParam('sortBy', asSort);
   const dueTotals = useDueTotals(sheetId);
@@ -351,7 +354,7 @@ function People({ sheetId }: { sheetId: string }) {
             <th />
           </tr>
         </thead>
-        {sortPeople((people.data ?? []).filter((p) => showRetired || !p.retiredFrom), sortBy, dueTotals).map((p) => (
+        {sortPeople((people.data ?? []).filter((p) => (showRetired || !p.retiredFrom) && visible !== undefined && (visible === 'all' || visible.has(p.id))), sortBy, dueTotals).map((p) => (
           <tbody key={p.id} data-testid={`person-row-${p.id}`}>
             <tr>
               <td data-testid="person-name">{shownName(p)}</td>
@@ -377,5 +380,5 @@ function People({ sheetId }: { sheetId: string }) {
 
 export const contribution = SheetBody.fill({
   order: 10,
-  Component: ({ sheetId }) => <People sheetId={sheetId} />,
+  Component: ({ sheetId, user }) => <People sheetId={sheetId} user={user} />,
 });

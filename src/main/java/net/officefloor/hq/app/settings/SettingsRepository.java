@@ -16,6 +16,9 @@ public class SettingsRepository {
     public static final String STEWARD = "steward";
     /** A viewer sees everything and changes nothing. */
     public static final String VIEWER = "viewer";
+    /** A restricted user sees on the people list only the people of the crews they lead or belong to (by a person
+     *  with the user's name) and that person; every other figure is still over everyone. */
+    public static final String RESTRICTED = "restricted";
     /** The actions the permission matrix covers, in the order shown. */
     public static final List<String> PERMISSION_ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
 

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useReader } from '../../api/readNow';
 
-/** The role a user name holds on the sheet: clerk or steward. A name not listed is a clerk. */
+/** The role a user name holds on the sheet: clerk, steward, viewer or restricted. A name not listed is a clerk. */
 export type Role = { user: string; role: string };
 
 /** The sheet's settings: its clerk limit (two decimals; null means no limit), its floor (two decimals:
