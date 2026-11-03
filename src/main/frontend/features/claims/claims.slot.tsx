@@ -1,6 +1,6 @@
 import { useEffect, useState, type ChangeEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { postJson } from '../../api/http';
+import { getJson, postJson } from '../../api/http';
 import { useSingleFlight } from '../../query/useSingleFlight';
 import { PERSON_ROW_SPAN, PersonCells, PersonColumnHead, PersonDetail } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
@@ -57,6 +57,40 @@ const ACTIONS: [Exclude<ClaimAction, 'defer' | 'proof' | 'remind' | 'split' | 'r
  *  when its editor is open. A blank date takes the sheet's today. A negative amount is a correction:
  *  the form names, by number, the settled claim of the same person it corrects. A claim may carry an external
  *  reference (trimmed; blank: none), used at most once on the sheet regardless of case. */
+/** A claim's timeline: on each press, the audit lines about it re-read from the audit file, newest first,
+ *  exactly as the file holds them — those carrying its number, or for a claim with no number those naming its
+ *  person, amount and date together. It reads the file; it records nothing. */
+function ClaimTimeline({ sheetId, claimId }: { sheetId: string; claimId: number }) {
+  const show = useMutation({
+    mutationFn: () =>
+      getJson<{ lines: string[] }>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/claims/${claimId}/timeline`,
+      ),
+  });
+  return (
+    <>
+      <button
+        type="button"
+        data-testid="claim-timeline"
+        disabled={show.isPending}
+        onClick={() => {
+          show.reset();
+          show.mutate();
+        }}
+      >
+        Timeline
+      </button>
+      {show.isError && <span data-testid="claim-timeline-error">{show.error.message}</span>}
+      {show.isSuccess &&
+        show.data.lines.map((line, i) => (
+          <div key={i} data-testid="claim-timeline-line">
+            {line}
+          </div>
+        ))}
+    </>
+  );
+}
+
 function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number }) {
   const fig = useFigure();
   const claims = useClaims(sheetId);
@@ -448,6 +482,9 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                       {line}
                     </div>
                   ))}
+                </td>
+                <td>
+                  <ClaimTimeline sheetId={sheetId} claimId={c.id} />
                 </td>
                 <td data-testid="claim-comments">
                   {c.comments.map((line, i) => (

@@ -128,6 +128,26 @@ public class Audit {
         return lines;
     }
 
+    /** A claim's timeline: the sheet's lines about one claim, newest first, exactly as the file holds them. With a
+     *  number, the lines carrying number=<the number>; without one, the lines carrying none that name its person,
+     *  amount and date together (person=, amount=, date=). */
+    public List<String> timeline(String sheetId, String number, String person, String amount, String date) {
+        List<String> found = new ArrayList<>();
+        for (String line : read(sheetId, null)) {
+            List<String> fields = List.of(line.split(" "));
+            String numbered = null;
+            for (String f : fields) {
+                if (f.startsWith("number=")) numbered = f.substring("number=".length());
+            }
+            boolean about = number != null
+                    ? number.equals(numbered)
+                    : numbered == null && fields.contains("person=" + person) && fields.contains("amount=" + amount)
+                            && fields.contains("date=" + date);
+            if (about) found.add(line);
+        }
+        return found;
+    }
+
     private static boolean isAbout(String[] parts, String who) {
         for (int i = 2; i < parts.length; i++) {
             String p = parts[i];
