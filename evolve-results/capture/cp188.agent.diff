@@ -1,0 +1,146 @@
+diff --git a/src/main/java/net/officefloor/hq/app/history/AsOfView.java b/src/main/java/net/officefloor/hq/app/history/AsOfView.java
+index 3f7716822..0cc31c14d 100644
+--- a/src/main/java/net/officefloor/hq/app/history/AsOfView.java
++++ b/src/main/java/net/officefloor/hq/app/history/AsOfView.java
+@@ -23,7 +23,8 @@ import org.springframework.transaction.support.TransactionTemplate;
+  *  was on or before the date counts, in the order made, every later one does not (the sheet itself always
+  *  exists); the date stands in for the sheet's today. A read replays those changes into the asof schema's tables,
+  *  runs the usual read against them, and removes them again, all in one transaction, so no other read sees them.
+- *  The sheets it falls back to (its parent as it stood then, that one's parent and so on) are not shown as of the
++ *  The sheets it falls back to (its parent as it stood then, that one's parent and so on, and
++ *  the sheets it was cloned from) are not shown as of the
+  *  date: their rows are read as they are now, so a rate it inherits applies as it does live.
+  *  While the date is set, every change is refused. */
+ @Component
+@@ -90,10 +91,12 @@ public class AsOfView {
+             List<String> shown = new ArrayList<>(List.of(sheetId));
+             for (String at = parent("ASOF", sheetId); at != null && !shown.contains(at); at = parent("PUBLIC", at)) {
+                 shown.add(at);
+-                for (RowCaptureInstaller.Table table : installer.tables().values()) {
+-                    jdbc.update("INSERT INTO ASOF.\"" + table.name() + "\" SELECT * FROM PUBLIC.\"" + table.name()
+-                            + "\" WHERE \"" + table.columns().get(table.sheetColumn()) + "\" = ?", at);
+-                }
++                copy(at);
++            }
++            for (String at : fallbacks(sheetId)) {
++                if (shown.contains(at)) continue;
++                shown.add(at);
++                copy(at);
+             }
+             jdbc.execute("SET SCHEMA ASOF");
+             try {
+@@ -110,6 +113,35 @@ public class AsOfView {
+         });
+     }
+ 
++    /** Copy a sheet's rows as they are now into the asof schema. */
++    private void copy(String sheetId) {
++        for (RowCaptureInstaller.Table table : installer.tables().values()) {
++            jdbc.update("INSERT INTO ASOF.\"" + table.name() + "\" SELECT * FROM PUBLIC.\"" + table.name()
++                    + "\" WHERE \"" + table.columns().get(table.sheetColumn()) + "\" = ?", sheetId);
++        }
++    }
++
++    /** Every sheet a sheet may fall back to: its parent and the sheet it was cloned from as they stood then, then
++     *  theirs as they are now, and so on. */
++    private List<String> fallbacks(String sheetId) {
++        List<String> found = new ArrayList<>();
++        java.util.Deque<String> pending = new java.util.ArrayDeque<>(List.of(sheetId));
++        while (!pending.isEmpty()) {
++            String at = pending.poll();
++            String schema = at.equals(sheetId) ? "ASOF" : "PUBLIC";
++            for (Map<String, Object> row : jdbc.queryForList("SELECT parent_id, cloned_from FROM " + schema + ".SHEET WHERE id = ?",
++                    at)) {
++                for (Object next : row.values()) {
++                    if (next != null && !next.equals(sheetId) && !found.contains(next)) {
++                        found.add((String) next);
++                        pending.add((String) next);
++                    }
++                }
++            }
++        }
++        return found;
++    }
++
+     /** A sheet's parent in a schema; null when it has none (or is not there). */
+     private String parent(String schema, String sheetId) {
+         List<String> found = jdbc.queryForList("SELECT parent_id FROM " + schema + ".SHEET WHERE id = ?", String.class, sheetId);
+diff --git a/src/main/java/net/officefloor/hq/app/rate/Rates.java b/src/main/java/net/officefloor/hq/app/rate/Rates.java
+index dd651aa71..ccf610907 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/Rates.java
++++ b/src/main/java/net/officefloor/hq/app/rate/Rates.java
+@@ -4,7 +4,7 @@ import java.util.List;
+ 
+ /** A sheet's rates, by grade then from-date (an undated rate first); a grade with no rate is not listed. And
+  *  {@code inherited}: the rates of the sheets its grades fall back to, nearest first (its parent, the parent's parent,
+- *  up to three levels up), each listed the same way. And {@code earlier}, {@code inheritedEarlier}: the older
++ *  up to three levels up, then the sheet it was cloned from and that one's fallbacks), each listed the same way. And {@code earlier}, {@code inheritedEarlier}: the older
+  *  versions of those rates (superseded), which the claims a newer forward-only version does not apply to still use. */
+ public record Rates(List<Rate> rates, List<List<Rate>> inherited, List<Rate> earlier, List<List<Rate>> inheritedEarlier) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java b/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
+index 476a0bdf0..932d3cf0e 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
+@@ -359,10 +359,27 @@ public class SettingsRepository {
+         return found;
+     }
+ 
+-    /** The sheets whose rates a sheet's grade falls back to, nearest first: its ancestors up to three levels up. */
++    /** The sheets whose rates a sheet's grade falls back to, nearest first: its ancestors up to three levels up,
++     *  then (when it was cloned) the sheet it was cloned from and that one's own fallbacks (its ancestors, then its
++     *  source, and so on); each once and never the sheet itself. */
+     public List<String> rateAncestors(String sheetId) {
+-        List<String> found = lineage(sheetId);
+-        return found.size() > 3 ? found.subList(0, 3) : found;
++        List<String> found = new java.util.ArrayList<>();
++        java.util.Set<String> sources = new java.util.HashSet<>();
++        for (String at = sheetId; at != null && sources.add(at); at = clonedFrom(at)) {
++            if (!at.equals(sheetId) && !found.contains(at)) found.add(at);
++            List<String> up = lineage(at);
++            for (String a : up.size() > 3 ? up.subList(0, 3) : up) {
++                if (!a.equals(sheetId) && !found.contains(a)) found.add(a);
++            }
++        }
++        return found;
++    }
++
++    /** The sheet a sheet was cloned from; null when it was not cloned. Not dated: read from the sheet as it is now. */
++    public String clonedFrom(String sheetId) {
++        List<String> found = jdbc.query("SELECT cloned_from FROM PUBLIC.sheet WHERE id = ?",
++                (rs, i) -> rs.getString("cloned_from"), sheetId);
++        return found.isEmpty() ? null : found.get(0);
+     }
+ 
+     /** The sheet's grace days; null when blank (off). */
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+index ab27b5f53..580e05e55 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+@@ -32,13 +32,15 @@ public class SheetCloner {
+      *  aliases, holds, retirements and patrons; its pools and their members; its periods, all open; and its claims,
+      *  each person's in the order they are listed, with their status, settled figures, dates, notes, tags, status logs
+      *  and comments. Statements are not copied (no claim is bound to one), nor locks, settle batches, watches or
+-     *  delegations. Each claim that had a number takes the clone's next one, in the order the claims were opened (by
++     *  delegations. The clone remembers the sheet it was cloned from, whose rates its grades fall back
++     *  to (see {@link net.officefloor.hq.app.settings.SettingsRepository#rateAncestors}). Each claim that had a number takes the clone's next one, in the order the claims were opened (by
+      *  the sheet's today when each was opened, then by the order they were added to the clone); a number one of them
+      *  corrects or was split from follows it. The clone's history starts with all of this on its today. */
+     public void cloneTo(String from, String to, String by) {
+         jdbc.update("INSERT INTO sheet (id, created_by, today, policy_date, period_numbering_from, grace_days, entry_date, pot, fiscal_start_month, escalate_after, review_sla, proof_kinds)"
+                 + " SELECT ?, ?, today, policy_date, period_numbering_from, grace_days, entry_date, pot, fiscal_start_month, escalate_after, review_sla, proof_kinds FROM sheet WHERE id = ?",
+                 to, by, from);
++        jdbc.update("UPDATE sheet SET cloned_from = ? WHERE id = ?", from, to);
+         jdbc.update("INSERT INTO setting_value (sheet_id, setting_key, from_date, setting) SELECT ?, setting_key, from_date,"
+                 + " setting FROM setting_value WHERE sheet_id = ?", to, from);
+         jdbc.query("SELECT setting_key, from_date, setting FROM setting_value WHERE sheet_id = ? ORDER BY setting_key, from_date",
+diff --git a/src/main/resources/db/migration/V99__sheet_cloned_from.sql b/src/main/resources/db/migration/V99__sheet_cloned_from.sql
+new file mode 100644
+index 000000000..786b70477
+--- /dev/null
++++ b/src/main/resources/db/migration/V99__sheet_cloned_from.sql
+@@ -0,0 +1,4 @@
++-- The sheet a sheet was cloned from (null means it was not cloned; not dated): a grade with no rate in force on a
++-- date on the sheet nor on its parents takes the rate of the sheet it was cloned from, and so on up that sheet's
++-- parents and source.
++ALTER TABLE sheet ADD COLUMN cloned_from VARCHAR(200);
