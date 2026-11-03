@@ -118,6 +118,14 @@ public class SaveSettings {
             repository.setReviewSla(id, input.reviewSla());
             audit.record(prefix + "review-sla value=" + (input.reviewSla() == null ? "" : input.reviewSla()));
         }
+        if (input.setsScoreMid()) {
+            repository.setScoreMid(id, input.scoreMid());
+            audit.record(prefix + "score-mid value=" + (input.scoreMid() == null ? "" : input.scoreMid()));
+        }
+        if (input.setsScoreHigh()) {
+            repository.setScoreHigh(id, input.scoreHigh());
+            audit.record(prefix + "score-high value=" + (input.scoreHigh() == null ? "" : input.scoreHigh()));
+        }
         if (input.setsProofKinds()) {
             repository.setProofKinds(id, input.proofKinds());
             audit.record(prefix + "proof-kinds value=" + (input.proofKinds() == null ? "" : input.proofKinds()));

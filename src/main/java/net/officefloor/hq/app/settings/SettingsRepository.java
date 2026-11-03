@@ -61,7 +61,7 @@ public class SettingsRepository {
                 delegations(sheetId), entry == null ? null : entry.toString(), holidays(sheetId),
                 voidReasons(sheetId), pot == null ? null : money(pot), parent(sheetId), fiscalStartMonth(sheetId),
                 alert == null ? null : money(alert), escalateAfter(sheetId), reviewSla(sheetId), proofKinds(sheetId),
-                storedDefaultGrade(sheetId));
+                storedDefaultGrade(sheetId), scoreMid(sheetId), scoreHigh(sheetId));
     }
 
     /** The sheet's today; the real date when there is no such sheet. */
@@ -435,6 +435,28 @@ public class SettingsRepository {
 
     public void setReviewSla(String sheetId, Integer days) {
         jdbc.update("UPDATE sheet SET review_sla = ? WHERE id = ?", days, sheetId);
+    }
+
+    /** The sheet's mid score threshold; null when blank. */
+    public Integer scoreMid(String sheetId) {
+        List<Integer> found = jdbc.query("SELECT score_mid FROM sheet WHERE id = ?",
+                (rs, i) -> (Integer) rs.getObject("score_mid", Integer.class), sheetId);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    public void setScoreMid(String sheetId, Integer score) {
+        jdbc.update("UPDATE sheet SET score_mid = ? WHERE id = ?", score, sheetId);
+    }
+
+    /** The sheet's high score threshold; null when blank. */
+    public Integer scoreHigh(String sheetId) {
+        List<Integer> found = jdbc.query("SELECT score_high FROM sheet WHERE id = ?",
+                (rs, i) -> (Integer) rs.getObject("score_high", Integer.class), sheetId);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    public void setScoreHigh(String sheetId, Integer score) {
+        jdbc.update("UPDATE sheet SET score_high = ? WHERE id = ?", score, sheetId);
     }
 
     /** The sheet's proof kinds, a comma separated list of receipt and photo; null when blank (none). */

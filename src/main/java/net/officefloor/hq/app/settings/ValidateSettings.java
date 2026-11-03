@@ -24,6 +24,7 @@ public class ValidateSettings {
     private static final Pattern MONEY = Pattern.compile("\\d{1,9}(\\.\\d{1,2})?|\\.\\d{1,2}");
     private static final List<String> GRADES = List.of("A", "B", "C");
     private static final Pattern FISCAL_MONTH = Pattern.compile("\\d{1,2}");
+    private static final Pattern SCORE = Pattern.compile("-?\\d{1,9}");
     private static final Pattern TERMS = Pattern.compile("\\d{1,4}");
 
     public void validate(@RequestBody SettingsRequest request, Out<SettingsInput> settings)
@@ -144,6 +145,14 @@ public class ValidateSettings {
         if (sla != null && !sla.isEmpty() && (!TERMS.matcher(sla).matches() || Integer.parseInt(sla) > 3650)) {
             throw new BadRequestException("review SLA must be a whole number of days from 0 to 3650");
         }
+        String scoreMid = request == null || request.scoreMid() == null ? null : request.scoreMid().trim();
+        if (scoreMid != null && !scoreMid.isEmpty() && !SCORE.matcher(scoreMid).matches()) {
+            throw new BadRequestException("the mid score threshold must be a whole number");
+        }
+        String scoreHigh = request == null || request.scoreHigh() == null ? null : request.scoreHigh().trim();
+        if (scoreHigh != null && !scoreHigh.isEmpty() && !SCORE.matcher(scoreHigh).matches()) {
+            throw new BadRequestException("the high score threshold must be a whole number");
+        }
         String kinds = request == null || request.proofKinds() == null ? null : request.proofKinds().trim();
         if (kinds != null && !kinds.isEmpty()) {
             java.util.List<String> listed = new java.util.ArrayList<>();
@@ -260,6 +269,8 @@ public class ValidateSettings {
                 sla != null, sla == null || sla.isEmpty() ? null : Integer.parseInt(sla),
                 kinds != null, kinds == null || kinds.isEmpty() ? null : kinds,
                 defaultGrade != null, defaultGrade == null || defaultGrade.isEmpty() ? null : defaultGrade,
-                gradeLimit));
+                gradeLimit,
+                scoreMid != null, scoreMid == null || scoreMid.isEmpty() ? null : Integer.parseInt(scoreMid),
+                scoreHigh != null, scoreHigh == null || scoreHigh.isEmpty() ? null : Integer.parseInt(scoreHigh)));
     }
 }

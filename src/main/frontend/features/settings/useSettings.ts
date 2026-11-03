@@ -38,12 +38,14 @@ export type Role = { user: string; role: string };
  *  `proofKinds` is the sheet's proof kinds (a comma separated list of receipt and photo; null when blank: none; not
  *  dated): a claim above the proof threshold needs a proof of each listed kind to be settled or approved.
  *  `defaultGrade` is the sheet's default grade (A, B or C; null when blank: A; not dated): the grade the quick-add
- *  bar gives a new person, and the grade of an imported line that leaves it blank. */
+ *  bar gives a new person, and the grade of an imported line that leaves it blank. `scoreMid` and `scoreHigh` are the
+ *  sheet's score thresholds (whole numbers; null when blank; not dated): while both are set, each person shows a band. */
 export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; roles: Role[]; policyDate: string | null; periodNumberingFrom: string | null;
   gradeTerms: Record<string, number>; cap: string | null; dated: Record<string, DatedValue[]>;
   permissions: Record<string, string>; graceDays: number | null; delegations: Delegation[];
   entryDate: string | null; holidays: string[]; voidReasons: string[]; pot: string | null;
-  parent: string | null; fiscalStartMonth: number; alertThreshold: string | null; escalateAfter: number | null; reviewSla: number | null; proofKinds: string | null; defaultGrade: string | null };
+  parent: string | null; fiscalStartMonth: number; alertThreshold: string | null; escalateAfter: number | null; reviewSla: number | null; proofKinds: string | null; defaultGrade: string | null;
+  scoreMid: number | null; scoreHigh: number | null };
 
 /** A steward's (`by`) delegation of the steward role to a user, from a date to a date (yyyy-mm-dd, inclusive):
  *  while the sheet's today is inside it the user acts as a steward. */
