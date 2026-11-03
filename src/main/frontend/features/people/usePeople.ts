@@ -141,6 +141,12 @@ export function useWatched(sheetId: string) {
   });
 }
 
+/** The holds that keep these people's claims out of claimed, by person id: none of their own holds (a hold
+ *  leaves claimed alone), only, for a person whose retirement date is reached, a hold over every date. */
+export function claimedHoldsById(people: Person[] | undefined, today: string | undefined): Map<number, Hold[]> {
+  return new Map((people ?? []).map((p) => [p.id, retiredOn(p, today) ? [{ from: null, to: null }] : []]));
+}
+
 /** These people's holds, by person id, as they act on live totals on the sheet's today: a person whose
  *  retirement date is reached (the sheet's today on or after it) is held over every date as well. */
 export function holdsById(people: Person[] | undefined, today: string | undefined): Map<number, Hold[]> {

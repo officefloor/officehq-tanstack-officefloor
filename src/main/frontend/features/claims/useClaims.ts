@@ -97,6 +97,12 @@ export function counts(c: Claim, holds: ReadonlyMap<number, Hold[]>, today: stri
     || (isOpen(c) && !isDeferred(c, today) && (isBound(c) || (!c.held && !heldOn(holds.get(c.personId), c.date))));
 }
 
+/** Whether a claim counts toward claimed: as counts, except that a hold (its own or one of its person's) does not
+ *  take it out; given only the holds that do, by person id (see claimedHoldsById). */
+export function countsClaimed(c: Claim, holds: ReadonlyMap<number, Hold[]>, today: string | undefined): boolean {
+  return counts({ ...c, held: false }, holds, today);
+}
+
 /** A claim's status at the end of a day (yyyy-mm-dd), as its status log records it: the last line dated
  *  on or before it; null when the claim did not yet exist then. */
 export function statusOn(c: Claim, day: string): ClaimStatus | null {
@@ -180,9 +186,9 @@ export function shownTags(tags: string | null): string {
   return tags === null ? '' : tags.split(',').join(', ');
 }
 
-/** The sum of the amounts of those of these claims that count and correct no other claim (given the people's holds by person id and
+/** The sum of the amounts of those of these claims that count toward claimed and correct no other claim (given the holds that keep claims out of claimed by person id and
  *  the sheet's today), with two decimals (added up in cents, so no rounding drift). */
 export function claimed(claims: Claim[], holds: ReadonlyMap<number, Hold[]>, today: string | undefined): string {
-  const cents = claims.filter((c) => c.corrects === null && counts(c, holds, today)).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
+  const cents = claims.filter((c) => c.corrects === null && countsClaimed(c, holds, today)).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
   return (cents / 100).toFixed(2);
 }

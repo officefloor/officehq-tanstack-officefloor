@@ -52,4 +52,11 @@ public record Person(long id, String name, String grade, long version, long stat
         all.add(new Hold(null, null));
         return all;
     }
+
+    /** The holds that keep their claims out of claimed on the sheet's today: none of their own holds (a hold
+     *  leaves claimed alone), only, once their retirement date is reached, a hold over every date. */
+    public List<Hold> claimedHolds(String today) {
+        if (retiredFrom == null || today == null || retiredFrom.compareTo(today) > 0) return List.of();
+        return List.of(new Hold(null, null));
+    }
 }

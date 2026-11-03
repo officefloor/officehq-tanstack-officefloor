@@ -74,8 +74,10 @@ public class Rollup {
                 BigDecimal overdue = BigDecimal.ZERO.setScale(2);
                 boolean fixed = false;
                 for (Claim c : all) {
-                    if (c.personId() != p.id() || !c.counts(p.liveHolds(today == null ? null : today.toString()))) continue;
-                    if (c.corrects() == null) claimed = claimed.add(new BigDecimal(c.amount()));
+                    if (c.personId() != p.id()) continue;
+                    String on = today == null ? null : today.toString();
+                    if (c.corrects() == null && c.countsClaimed(p.claimedHolds(on))) claimed = claimed.add(new BigDecimal(c.amount()));
+                    if (!c.counts(p.liveHolds(on))) continue;
                     fixed |= c.fixed();
                     BigDecimal now = claims.dueNow(sheetId, c);
                     if (now != null) due = due.add(now);

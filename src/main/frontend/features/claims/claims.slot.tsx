@@ -4,7 +4,7 @@ import { getJson, postJson } from '../../api/http';
 import { useSingleFlight } from '../../query/useSingleFlight';
 import { PERSON_ROW_SPAN, PersonCells, PersonColumnHead, PersonDetail } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
-import { gradeOn, holdsById, usePeople } from '../people/usePeople';
+import { claimedHoldsById, gradeOn, usePeople } from '../people/usePeople';
 import { periodOf, usePeriods } from '../periods/usePeriods';
 import { rateFor, useRates } from '../rates/useRates';
 import { claimDueNow, isOverdue } from '../overdue/useOverdue';
@@ -17,7 +17,7 @@ import { useClaimSelection } from './useClaimSelection';
 import { useFigure } from '../locale/useLocale';
 import { Col } from '../columns/useColumns';
 
-/** A person's claimed: the sum of their counted, non-correction (OPEN, PENDING or SETTLED; an open one dated within a hold only when a statement binds it; not a deferred one) claims' amounts. */
+/** A person's claimed: the sum of their counted, non-correction (OPEN, PENDING or SETTLED; held or not; not a deferred one) claims' amounts. */
 function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: number }) {
   const fig = useFigure();
   const claims = useClaims(sheetId);
@@ -26,7 +26,7 @@ function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: numbe
   return (
     <Col id="claimed">
       <td data-testid="person-claimed">
-        {fig(claimed((claims.data ?? []).filter((c) => c.personId === personId), holdsById(people.data, today), today))}
+        {fig(claimed((claims.data ?? []).filter((c) => c.personId === personId), claimedHoldsById(people.data, today), today))}
       </td>
     </Col>
   );
@@ -972,7 +972,7 @@ function ClaimedTotal({ sheetId }: { sheetId: string }) {
   const today = useSheetToday(sheetId).data?.today;
   return (
     <p>
-      Claimed total: <strong data-testid="rollup-claimed-total">{fig(claimed(claims.data ?? [], holdsById(people.data, today), today))}</strong>
+      Claimed total: <strong data-testid="rollup-claimed-total">{fig(claimed(claims.data ?? [], claimedHoldsById(people.data, today), today))}</strong>
     </p>
   );
 }
