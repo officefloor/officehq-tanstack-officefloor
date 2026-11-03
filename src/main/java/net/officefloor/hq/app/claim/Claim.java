@@ -23,7 +23,7 @@ public record Claim(long id, long personId, String amount, String date, String n
         String dueBy, boolean statedNa, String deferredUntil, boolean deferred, int proofs, String splitFrom,
         boolean lateEntry, String reminded, String ref, String tags, String voidReason) {
 
-    /** Whether the claim is open: OPEN, or PENDING (handled like OPEN everywhere but its statement binding). */
+    /** Whether the claim is open: OPEN, or PENDING (handled like OPEN everywhere). */
     public boolean open() {
         return status.equals("OPEN") || status.equals("PENDING");
     }
@@ -52,15 +52,14 @@ public record Claim(long id, long personId, String amount, String date, String n
         return then.counts(open() ? holds : List.of());
     }
 
-    /** Whether the claim keeps a fixed figure: its settled due, else the one its last statement bound it
-     *  to — except while PENDING, when the statement does not bind it and its figure is live. */
+    /** Whether the claim keeps a fixed figure: its settled due, else the one its last statement bound it to. */
     public boolean fixed() {
         return due != null || (bound() && statedDue != null);
     }
 
-    /** Whether its last statement binds it now: it was stated and is not PENDING. */
+    /** Whether its last statement binds it now: it was stated (a PENDING claim is bound like any other). */
     public boolean bound() {
-        return stated && !status.equals("PENDING");
+        return stated;
     }
 
     /** The audit field a numbered claim adds at the end of its lines: " number=<n>", or "" when it has none. */

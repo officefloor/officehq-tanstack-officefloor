@@ -288,7 +288,7 @@ public class ClaimRepository {
     }
 
     /** A claim's figure now: the due fixed when it was settled, else the one its last statement bound
-     *  it to (not while PENDING; none when it bound it to n/a), else its live rate figure (not floored); null when it has none. */
+     *  it to (none when it bound it to n/a), else its live rate figure (not floored); null when it has none. */
     public BigDecimal figure(String sheetId, Claim claim) {
         if (claim.due() != null) return new BigDecimal(claim.due());
         if (claim.bound() && claim.statedNa()) return null;

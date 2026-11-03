@@ -203,8 +203,8 @@ public final class ClaimStatusChange {
             repository.openedBy(id, cid, by);
             openedBy = by;
         }
-        // Settling (or approving) fixes the claim's due as it is now: the figure its last statement bound it to
-        // (a PENDING claim's is live), else its live due ('n/a' when its grade has no rate, which stays live), with its late charge frozen in.
+        // Settling (or approving) fixes the claim's due as it is now: the figure its last statement bound it to,
+        // else its live due ('n/a' when its grade has no rate, which stays live), with its late charge frozen in.
         String due = null;
         String tail = event.equals("CLAIM_REJECTED") ? " reason=" + why : "";
         if (reversing) {

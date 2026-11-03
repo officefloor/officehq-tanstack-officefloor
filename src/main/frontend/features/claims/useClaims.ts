@@ -61,13 +61,13 @@ export type Claim = {
   reviewLate: boolean;
 };
 
-/** Whether a claim is open: OPEN, or PENDING (handled like OPEN everywhere but its statement binding). */
+/** Whether a claim is open: OPEN, or PENDING (handled like OPEN everywhere). */
 export function isOpen(c: Claim): boolean {
   return c.status === 'OPEN' || c.status === 'PENDING';
 }
 
 /** A claim's fixed figure: the due frozen when it was settled, else the one its last statement bound
- *  it to (a PENDING claim is not bound; 'n/a' when it bound it to n/a); null when its due is live. */
+ *  it to ('n/a' when it bound it to n/a); null when its due is live. */
 export function fixedDue(c: Claim): string | null {
   if (c.due !== null) return c.due;
   if (!isBound(c)) return null;
@@ -113,9 +113,9 @@ export function countsOn(c: Claim, day: string, holds: ReadonlyMap<number, Hold[
   return status !== null && counts({ ...c, status }, isOpen(c) ? holds : new Map(), today);
 }
 
-/** Whether its person's last statement binds a claim now: it was stated and is not PENDING. */
+/** Whether its person's last statement binds a claim now: it was stated (a PENDING claim is bound like any other). */
 export function isBound(c: Claim): boolean {
-  return c.stated && c.status !== 'PENDING';
+  return c.stated;
 }
 
 export function claimsKey(sheetId: string) {
