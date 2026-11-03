@@ -6,6 +6,7 @@ import java.time.format.DateTimeParseException;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.BadRequestException;
 import net.officefloor.hq.app.CurrentUser;
+import net.officefloor.hq.app.settings.SettingsRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -14,15 +15,23 @@ import org.springframework.web.bind.annotation.RequestBody;
 /** Make one period per calendar month from the from-date's month to the to-date's month, each from
  *  the first to the last day of its month and named yyyy-mm. A month whose name is already a period,
  *  or whose days overlap a period on the sheet, is left out. A blank from-date is the sheet's today;
- *  a to-date before the from-date is refused. */
+ *  a to-date before the from-date is refused. A viewer's generation simply makes nothing (0, nothing written); an
+ *  archived sheet refuses it. */
 public class GeneratePeriods {
     public void generate(@PathVariable("sheetId") String sheetId, @RequestBody GenerateRequest request,
-            ServerHttpConnection connection, PeriodRepository repository, Audit audit, Out<GenerateResult> result)
-            throws BadRequestException {
+            ServerHttpConnection connection, PeriodRepository repository, SettingsRepository settings, Audit audit,
+            Out<GenerateResult> result) throws BadRequestException {
         String by = CurrentUser.require(connection);
         String id = sheetId == null ? "" : sheetId.trim();
         if (!repository.lockSheet(id)) {
             throw new BadRequestException("no such sheet");
+        }
+        if (settings.archived(id)) {
+            throw new BadRequestException("the sheet is archived");
+        }
+        if (SettingsRepository.VIEWER.equals(settings.role(id, by))) {
+            result.set(new GenerateResult(0));
+            return;
         }
         String today = repository.today(id);
         LocalDate from = date(request == null ? null : request.from(), "from-date",

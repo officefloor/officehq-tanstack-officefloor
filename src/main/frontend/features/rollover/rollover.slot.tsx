@@ -8,7 +8,10 @@ import { periodsKey } from '../periods/usePeriods';
 /** Year-end rollover (a steward only): a fiscal year (yyyy) and its button generate the next fiscal year's twelve
  *  monthly periods as the fiscal year generator does, and carry each person's open figure at the end of the old
  *  year's last period into their opening balance for the new year's first period. Shows how many periods were made
- *  (gone while it runs); a bad year, a year with no periods, or anyone but a steward is refused with an error. */
+ *  (gone while it runs); a bad year, a year with no periods, or anyone but a steward is refused with an error.
+ *  Its undo button takes the last rollover back (its periods removed, its opening balances taken back) for the
+ *  steward who made it on the same sheet-today; otherwise, or once a claim belongs to one of its periods, it is
+ *  refused with the same error element. */
 function Rollover({ sheetId }: { sheetId: string }) {
   const [year, setYear] = useState('');
   const queryClient = useQueryClient();
@@ -20,6 +23,14 @@ function Rollover({ sheetId }: { sheetId: string }) {
       await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
     },
   });
+  const undo = useMutation({
+    mutationFn: () =>
+      postJson<{ made: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/rollover-undo`, {}),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
+    },
+  });
+  const error = rollover.error ?? undo.error;
   return (
     <form
       data-testid="rollover-form"
@@ -27,6 +38,7 @@ function Rollover({ sheetId }: { sheetId: string }) {
         e.preventDefault();
         submitOnce(() => {
           rollover.reset();
+          undo.reset();
           return rollover.mutateAsync(year);
         });
       }}
@@ -40,6 +52,7 @@ function Rollover({ sheetId }: { sheetId: string }) {
           onChange={(e) => {
             setYear(e.target.value);
             rollover.reset();
+            undo.reset();
           }}
         />
       </label>{' '}
@@ -52,7 +65,21 @@ function Rollover({ sheetId }: { sheetId: string }) {
           Made <strong data-testid="rollover-made">{rollover.data.made}</strong>
         </>
       )}
-      {rollover.isError && <p data-testid="rollover-error">{rollover.error.message}</p>}
+      <button
+        type="button"
+        data-testid="rollover-undo"
+        disabled={undo.isPending}
+        onClick={() =>
+          submitOnce(() => {
+            rollover.reset();
+            undo.reset();
+            return undo.mutateAsync();
+          })
+        }
+      >
+        Undo last rollover
+      </button>
+      {error && <p data-testid="rollover-error">{error.message}</p>}
     </form>
   );
 }

@@ -87,6 +87,75 @@ public class PeriodRepository {
         }
     }
 
+    /** Keep a rollover as the sheet's last one, replacing any kept before: who made it, on which sheet-today, for
+     *  which fiscal year, the periods it generated (by id) and the opening balances it added (period id, person id,
+     *  amount). */
+    public void keepRollover(String sheetId, String by, String today, String fy, List<Long> periodIds,
+            List<Object[]> openings) {
+        forgetRollover(sheetId);
+        jdbc.update("INSERT INTO rollover_last (sheet_id, by_user, made_on, fy) VALUES (?, ?, ?, ?)", sheetId, by,
+                today == null ? null : Date.valueOf(LocalDate.parse(today)), fy);
+        for (Long periodId : periodIds) {
+            jdbc.update("INSERT INTO rollover_last_period (sheet_id, period_id) VALUES (?, ?)", sheetId, periodId);
+        }
+        for (Object[] o : openings) {
+            jdbc.update("INSERT INTO rollover_last_opening (sheet_id, period_id, person_id, amount) VALUES (?, ?, ?, ?)",
+                    sheetId, o[0], o[1], o[2]);
+        }
+    }
+
+    /** The sheet's last rollover kept for undoing: by, made-on (yyyy-MM-dd or null) and fy; null when none. */
+    public String[] lastRollover(String sheetId) {
+        List<String[]> found = jdbc.query("SELECT by_user, made_on, fy FROM rollover_last WHERE sheet_id = ?",
+                (rs, i) -> new String[] { rs.getString("by_user"),
+                        rs.getDate("made_on") == null ? null : rs.getDate("made_on").toLocalDate().toString(),
+                        rs.getString("fy") }, sheetId);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** The ids of the periods the sheet's last rollover generated. */
+    public List<Long> lastRolloverPeriods(String sheetId) {
+        return jdbc.queryForList("SELECT period_id FROM rollover_last_period WHERE sheet_id = ? ORDER BY period_id",
+                Long.class, sheetId);
+    }
+
+    /** Whether any claim of the sheet (in any status) belongs to one of these periods, by its date or its due-by. */
+    public boolean claimsIn(String sheetId, List<Long> periodIds) {
+        for (Long periodId : periodIds) {
+            Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim c JOIN period p ON p.sheet_id = c.sheet_id"
+                    + " WHERE c.sheet_id = ? AND p.id = ? AND ((c.claim_date >= p.from_date AND c.claim_date <= p.to_date)"
+                    + " OR (c.due_by >= p.from_date AND c.due_by <= p.to_date))", Integer.class, sheetId, periodId);
+            if (n != null && n > 0) return true;
+        }
+        return false;
+    }
+
+    /** Undo the sheet's last rollover: take back the opening balances it added (dropping one that comes to 0.00 or
+     *  less), remove the periods it generated with everything fixed for them, and forget it. */
+    public void undoRollover(String sheetId) {
+        jdbc.query("SELECT period_id, person_id, amount FROM rollover_last_opening WHERE sheet_id = ?", rs -> {
+            long periodId = rs.getLong("period_id");
+            long personId = rs.getLong("person_id");
+            jdbc.update("UPDATE period_opening SET amount = amount - ? WHERE sheet_id = ? AND period_id = ? AND person_id = ?",
+                    rs.getBigDecimal("amount"), sheetId, periodId, personId);
+            jdbc.update("DELETE FROM period_opening WHERE sheet_id = ? AND period_id = ? AND person_id = ? AND amount <= 0",
+                    sheetId, periodId, personId);
+        }, sheetId);
+        for (Long periodId : lastRolloverPeriods(sheetId)) {
+            jdbc.update("DELETE FROM period_pool_cut WHERE period_id = ? AND sheet_id = ?", periodId, sheetId);
+            jdbc.update("DELETE FROM period_person_total WHERE period_id = ? AND sheet_id = ?", periodId, sheetId);
+            jdbc.update("DELETE FROM period_opening WHERE period_id = ? AND sheet_id = ?", periodId, sheetId);
+            jdbc.update("DELETE FROM period WHERE id = ? AND sheet_id = ?", periodId, sheetId);
+        }
+        forgetRollover(sheetId);
+    }
+
+    private void forgetRollover(String sheetId) {
+        jdbc.update("DELETE FROM rollover_last_opening WHERE sheet_id = ?", sheetId);
+        jdbc.update("DELETE FROM rollover_last_period WHERE sheet_id = ?", sheetId);
+        jdbc.update("DELETE FROM rollover_last WHERE sheet_id = ?", sheetId);
+    }
+
     /** The sheet's period of this name (exactly); null when there is none. */
     public Period find(String sheetId, String name) {
         List<Period> found = jdbc.query("SELECT " + COLUMNS + " FROM period WHERE sheet_id = ? AND name = ?", ROW,

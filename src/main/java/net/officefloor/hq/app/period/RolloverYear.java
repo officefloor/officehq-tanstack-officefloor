@@ -25,8 +25,9 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  as the fiscal year generator does, then add each person's open figure at the end of the old year's last period
  *  (the dues now of their claims that count whose due-by falls in a period of the old year — one starting within it —
  *  and that were OPEN or PENDING at that period's end) to their opening balance for the new year's first period
- *  (OPENING_SET, only for a figure above 0.00), and write ROLLOVER. A year that is not yyyy, or one with no periods,
- *  is refused. */
+ *  (OPENING_SET, only for a figure above 0.00, and only when this rollover generated that period — a repeated
+ *  rollover adds nothing again), and write ROLLOVER. A year that is not yyyy, or one with no periods,
+ *  is refused. The rollover is kept as the sheet's last one, so {@link UndoRollover} can take it back. */
 public class RolloverYear {
     private static final Pattern YEAR = Pattern.compile("\\d{4}");
 
@@ -77,16 +78,23 @@ public class RolloverYear {
         }
 
         YearMonth next = start.plusMonths(12);
+        java.util.Set<Long> before = new java.util.HashSet<>();
+        repository.list(id).forEach(p -> before.add(p.id()));
         int made = GeneratePeriods.months(id, by, next, next.plusMonths(11), repository, audit);
-        Period first = within(repository.list(id), next).stream().findFirst().orElse(null);
-        if (first != null) {
+        List<Period> after = repository.list(id);
+        List<Long> generated = after.stream().map(Period::id).filter(p -> !before.contains(p)).toList();
+        List<Object[]> openings = new java.util.ArrayList<>();
+        Period first = within(after, next).stream().findFirst().orElse(null);
+        if (first != null && generated.contains(first.id())) {
             for (Map.Entry<Long, BigDecimal> e : open.entrySet()) {
                 if (e.getValue().signum() <= 0) continue;
                 repository.addOpening(id, first.id(), e.getKey(), e.getValue());
+                openings.add(new Object[] { first.id(), e.getKey(), e.getValue() });
                 audit.record("OPENING_SET sheet=" + id + " by=" + by + " name=" + byId.get(e.getKey()).name()
                         + " period=" + first.name() + " amount=" + e.getValue().setScale(2).toPlainString());
             }
         }
+        repository.keepRollover(id, by, today, "FY" + year, generated, openings);
         audit.record("ROLLOVER sheet=" + id + " by=" + by + " fy=FY" + year + " periods=" + made);
         result.set(new GenerateResult(made));
     }
