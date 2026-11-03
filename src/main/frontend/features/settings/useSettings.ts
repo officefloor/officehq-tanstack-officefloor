@@ -35,6 +35,13 @@ export type Settings = { clerkLimit: string | null; floor: string; terms: number
  *  while the sheet's today is inside it the user acts as a steward. */
 export type Delegation = { user: string; by: string; from: string; to: string };
 
+/** The role a user acts in on the sheet: steward while a delegation to them covers the sheet's today, else
+ *  their own role (undefined when none is set: a clerk). */
+export function roleOf(settings: Settings | undefined, user: string | undefined, today: string | undefined): string | undefined {
+  if (today !== undefined && settings?.delegations?.some((d) => d.user === user && d.from <= today && today <= d.to)) return 'steward';
+  return settings?.roles.find((r) => r.user === user)?.role;
+}
+
 /** A value a dated setting has from a date (yyyy-mm-dd); null when blank. */
 export type DatedValue = { from: string; value: string | null };
 

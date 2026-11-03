@@ -9,9 +9,9 @@ import { periodOf, usePeriods } from '../periods/usePeriods';
 import { rateFor, useRates } from '../rates/useRates';
 import { claimDueNow, isOverdue } from '../overdue/useOverdue';
 import { useSignedInUser } from '../session/useSession';
-import { useSettings } from '../settings/useSettings';
+import { roleOf, useSettings } from '../settings/useSettings';
 import { useSheetToday } from '../today/useSheetToday';
-import { claimed, claimsKey, isDeferred, shownTags, useClaims, type Claim } from './useClaims';
+import { claimed, claimsKey, isDeferred, shownTags, useClaims, useLastBatch, type Claim } from './useClaims';
 import { useClaimSelection } from './useClaimSelection';
 
 /** A person's claimed: the sum of their counted (OPEN, PENDING or SETTLED; an open one dated within a hold only when a statement binds it; not a deferred one) claims' amounts. */
@@ -224,7 +224,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
     reassign.reset();
     inline.reset();
     lock.reset();
-    const role = settings?.roles.find((r) => r.user === user)?.role;
+    const role = roleOf(settings, user, today);
     const known =
       sheet?.archived ? 'the sheet is archived'
       : role === 'viewer' ? 'a viewer can change nothing'
@@ -364,6 +364,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                 <td data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</td>
                 <td data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</td>
                 <td data-testid="claim-status">{c.status}</td>
+                <td data-testid="claim-batch">{c.batch ?? ''}</td>
                 <td data-testid="claim-opened-by">{c.openedBy ?? ''}</td>
                 <td data-testid="claim-proofs">{c.proofs}</td>
                 <td data-testid="claim-reminded">{c.reminded ?? ''}</td>
@@ -634,9 +635,11 @@ function BulkOpen({ sheetId }: { sheetId: string }) {
 
 /** Settle the selected claims together: the server settles, in list order and by the rules of a single
  *  settle, each that can be settled (one sent to PENDING counts) and leaves the rest; the bar shows how
- *  many were settled and how many refused (gone while it runs). */
+ *  many were settled and how many refused (gone while it runs), and the number of the sheet's last
+ *  batch (a bulk settle that settled at least one; blank when none). */
 function BulkSettle({ sheetId }: { sheetId: string }) {
   const selection = useClaimSelection(sheetId);
+  const lastBatch = useLastBatch(sheetId);
   const queryClient = useQueryClient();
   const submitOnce = useSingleFlight();
   const bulk = useMutation({
@@ -661,7 +664,8 @@ function BulkSettle({ sheetId }: { sheetId: string }) {
         }
       >
         Settle selected ({selection.ids.size})
-      </button>
+      </button>{' '}
+      Last batch <strong data-testid="bulk-settle-batch">{lastBatch.data ?? ''}</strong>
       {bulk.isSuccess && (
         <>
           {' '}

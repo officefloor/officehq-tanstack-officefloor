@@ -558,6 +558,32 @@ public class ClaimRepository {
         return found.isEmpty() ? null : found.get(0);
     }
 
+    /** Make the sheet's next settle batch and give it to these claims: its number (1, 2, ... on the sheet). */
+    public int batch(String sheetId, List<Long> claimIds) {
+        jdbc.update("UPDATE sheet SET last_batch = COALESCE(last_batch, 0) + 1 WHERE id = ?", sheetId);
+        int batch = lastBatch(sheetId);
+        for (Long cid : claimIds) {
+            jdbc.update("UPDATE claim SET batch = ? WHERE id = ? AND sheet_id = ?", batch, cid, sheetId);
+        }
+        return batch;
+    }
+
+    /** The number of the sheet's last settle batch; null when there has been none. */
+    public Integer lastBatch(String sheetId) {
+        List<Integer> found = jdbc.queryForList("SELECT last_batch FROM sheet WHERE id = ?", Integer.class, sheetId);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** The settle batch of each of the sheet's claims settled by one, by claim id. */
+    public Map<String, Integer> batches(String sheetId) {
+        Map<String, Integer> batches = new LinkedHashMap<>();
+        jdbc.query("SELECT id, batch FROM claim WHERE sheet_id = ? AND batch IS NOT NULL",
+                rs -> {
+                    batches.put(String.valueOf(rs.getLong("id")), rs.getInt("batch"));
+                }, sheetId);
+        return batches;
+    }
+
     /** Who holds each locked claim of the sheet, by claim id. */
     public Map<String, String> locks(String sheetId) {
         Map<String, String> locks = new LinkedHashMap<>();

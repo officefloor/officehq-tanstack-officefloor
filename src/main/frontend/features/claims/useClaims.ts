@@ -22,7 +22,8 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
  *  whose open editor locks it for everyone else (null when it is not locked), and the last day (the sheet's today
  *  then) a reminder was written for it (null when never reminded), and its tags (lower-case, sorted and comma separated
  *  with no spaces; null when none), and the reason it was voided with (one of the sheet's void reasons; null when none
- *  was given), and its comments, oldest first, as "<user> on <date>: <text>" with the sheet's today when written. */
+ *  was given), and its comments, oldest first, as "<user> on <date>: <text>" with the sheet's today when written, and the
+ *  number of the settle batch (a bulk settle) that settled it (null when settled one at a time, or not settled). */
 export type Claim = {
   id: number;
   personId: number;
@@ -49,6 +50,7 @@ export type Claim = {
   log: string[];
   comments: string[];
   lockedBy: string | null;
+  batch: number | null;
 };
 
 /** Whether a claim is open: OPEN, or PENDING (handled like OPEN everywhere but its statement binding). */
@@ -112,16 +114,18 @@ export function useClaims(sheetId: string) {
     queryKey: claimsKey(sheetId),
     queryFn: async () => {
       const res = await getJson<{
-        claims: Omit<Claim, 'log' | 'comments' | 'lockedBy'>[];
+        claims: Omit<Claim, 'log' | 'comments' | 'lockedBy' | 'batch'>[];
         logs: Record<string, string[]>;
         locks: Record<string, string>;
         comments: Record<string, string[]>;
+        batches: Record<string, number>;
       }>(`/api/sheets/${encodeURIComponent(sheetId)}/claims`);
       return res.claims.map((c): Claim => ({
         ...c,
         log: res.logs[String(c.id)] ?? [],
         comments: res.comments[String(c.id)] ?? [],
         lockedBy: res.locks[String(c.id)] ?? null,
+        batch: res.batches[String(c.id)] ?? null,
       }));
     },
   });
@@ -134,6 +138,16 @@ export function useTagsUsed(sheetId: string) {
     queryKey: [...claimsKey(sheetId), 'tags'],
     queryFn: async () =>
       (await getJson<{ tags: string[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/claims`)).tags,
+  });
+}
+
+/** The number of the sheet's last settle batch (null when there has been none). Kept under the claims' key,
+ *  so whatever re-reads the claims re-reads it too. */
+export function useLastBatch(sheetId: string) {
+  return useQuery({
+    queryKey: [...claimsKey(sheetId), 'last-batch'],
+    queryFn: async () =>
+      (await getJson<{ lastBatch: number | null }>(`/api/sheets/${encodeURIComponent(sheetId)}/claims`)).lastBatch,
   });
 }
 

@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.claim;
 
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -17,7 +18,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 /** Settle the selected claims together, in list order (people in the order they were added, each
  *  person's claims newest first), each by exactly the rules of settling one claim: a claim a clerk sends
- *  to PENDING counts as settled. A claim that cannot be settled is left as it is and counted as refused. */
+ *  to PENDING counts as settled. A claim that cannot be settled is left as it is and counted as refused.
+ *  When at least one is settled, they are the sheet's next batch, and each keeps its number. */
 public class BulkSettleClaims {
     public void settle(@PathVariable("sheetId") String sheetId, @RequestBody BulkSettleRequest request,
             ServerHttpConnection connection, ClaimRepository repository, PeriodRepository periods,
@@ -35,15 +37,16 @@ public class BulkSettleClaims {
         }
         List<Claim> found = repository.inListOrder(id, selected);
         int refused = selected.size() - found.size();
-        int settled = 0;
+        List<Long> settled = new ArrayList<>();
         for (Claim c : found) {
             try {
                 ClaimStatusChange.apply(id, c.id(), "settle", by, repository, periods, settings, audit, rollup, watches);
-                settled++;
+                settled.add(c.id());
             } catch (BadRequestException e) {
                 refused++;
             }
         }
-        result.set(new BulkSettleResult(settled, refused));
+        if (!settled.isEmpty()) repository.batch(id, settled);
+        result.set(new BulkSettleResult(settled.size(), refused));
     }
 }
