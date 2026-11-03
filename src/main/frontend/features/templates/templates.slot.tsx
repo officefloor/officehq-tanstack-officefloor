@@ -4,10 +4,12 @@ import { postJson } from '../../api/http';
 import { useSingleFlight } from '../../query/useSingleFlight';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { templatesKey, useTemplates, type Template } from './useTemplates';
+import { useFigure } from '../locale/useLocale';
 
 /** The sheet's claim templates: a form that saves one (a name, an amount the claim form would take, a
  *  note; saving a name again replaces it) and the templates saved. A person's row adds a claim from one. */
 function Templates({ sheetId }: { sheetId: string }) {
+  const fig = useFigure();
   const templates = useTemplates(sheetId);
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
@@ -62,7 +64,7 @@ function Templates({ sheetId }: { sheetId: string }) {
           {(templates.data ?? []).map((t) => (
             <tr key={t.name} data-testid={`template-row-${t.name}`}>
               <td data-testid="template-name">{t.name}</td>
-              <td data-testid="template-amount">{t.amount}</td>
+              <td data-testid="template-amount">{fig(t.amount)}</td>
               <td data-testid="template-note">{t.note}</td>
             </tr>
           ))}

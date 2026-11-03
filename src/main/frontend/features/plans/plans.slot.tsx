@@ -8,6 +8,7 @@ import { claimsKey } from '../claims/useClaims';
 import { peopleKey } from '../people/usePeople';
 import { useSheetToday } from '../today/useSheetToday';
 import { plansKey, usePlans, type Plan } from './usePlans';
+import { useFigure } from '../locale/useLocale';
 
 const DAY_MS = 86_400_000;
 
@@ -46,6 +47,7 @@ export function nextPlanDates(plan: Plan, today: string): string[] {
  *  start date, every N days (a whole number, at least 1) or a day of the month (1 to 31), and an end date not before the start. A refused plan
  *  shows an error on the row. */
 function PersonPlans({ sheetId, personId }: { sheetId: string; personId: number }) {
+  const fig = useFigure();
   const plans = usePlans(sheetId);
   const today = useSheetToday(sheetId).data?.today;
   const queryClient = useQueryClient();
@@ -95,7 +97,7 @@ function PersonPlans({ sheetId, personId }: { sheetId: string; personId: number 
             <tbody>
               {mine.map((p) => (
                 <tr key={p.id} data-testid={`plan-row-${p.id}`}>
-                  <td data-testid="plan-amount-shown">{p.amount}</td>
+                  <td data-testid="plan-amount-shown">{fig(p.amount)}</td>
                   <td data-testid="plan-start">{p.start}</td>
                   <td data-testid="plan-every">{p.every ?? ''}</td>
                   <td data-testid="plan-day">{p.day ?? ''}</td>

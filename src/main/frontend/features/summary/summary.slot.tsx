@@ -8,12 +8,14 @@ import { useSettings } from '../settings/useSettings';
 import { useDueTotals } from '../rates/useDueTotals';
 import { hundredths, money, sumDues } from '../rates/useRates';
 import { countWithStatus, STATUSES } from './statusCounts';
+import { useFigure } from '../locale/useLocale';
 
 /** The sheet's summary, worked out from the same figures the lists show: per grade, how many people
  *  have it on the sheet's today (retired people left out) and their due-totals added up (skipping
  *  'n/a') and how many of them are active; per period, its due-total and its change from the period before it by from-date (none for the earliest); per status, how many claims have it; per void reason on the
  *  sheet's list, how many VOID claims were voided with it. */
 function Summary({ sheetId }: { sheetId: string }) {
+  const fig = useFigure();
   const people = usePeople(sheetId);
   const claims = useClaims(sheetId);
   const periods = usePeriods(sheetId);
@@ -48,7 +50,7 @@ function Summary({ sheetId }: { sheetId: string }) {
                 <td>{g}</td>
                 <td data-testid={`summary-grade-${g}-count`}>{onGrade.length}</td>
                 <td data-testid={`summary-grade-${g}-due-total`}>
-                  {sumDues(onGrade.map((p) => dueTotals.get(p.id) ?? 'n/a'))}
+                  {fig(sumDues(onGrade.map((p) => dueTotals.get(p.id) ?? 'n/a')))}
                 </td>
                 <td data-testid={`summary-grade-${g}-active`}>
                   {onGrade.filter((p) => activeById.get(p.id)).length}
@@ -70,8 +72,8 @@ function Summary({ sheetId }: { sheetId: string }) {
           {(periods.data ?? []).map((p) => (
             <tr key={p.id}>
               <td>{p.name}</td>
-              <td data-testid={`summary-period-${p.name}-due-total`}>{periodTotals.get(p.name) ?? ''}</td>
-              <td data-testid={`summary-period-${p.name}-change`}>{changes.get(p.name) ?? ''}</td>
+              <td data-testid={`summary-period-${p.name}-due-total`}>{fig(periodTotals.get(p.name) ?? '')}</td>
+              <td data-testid={`summary-period-${p.name}-change`}>{fig(changes.get(p.name) ?? '')}</td>
             </tr>
           ))}
         </tbody>

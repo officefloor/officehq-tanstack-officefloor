@@ -5,6 +5,7 @@ import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
 import { claimsKey } from '../claims/useClaims';
 import { peopleKey, usePeople, type Person } from '../people/usePeople';
 import { usePersonRowAction } from '../people/usePersonRowAction';
+import { useFigure } from '../locale/useLocale';
 
 /** A person's statements: how many have been taken, the last one's due-total and date (blank before
  *  the first), and a button that takes one. Taking a statement records their due-total and binds each
@@ -13,6 +14,7 @@ import { usePersonRowAction } from '../people/usePersonRowAction';
  *  statement as of that date (on or before the sheet's today; blank: now); it is cleared once that statement is
  *  taken or refused. */
 function PersonStatement({ sheetId, personId }: { sheetId: string; personId: number }) {
+  const fig = useFigure();
   const people = usePeople(sheetId);
   const queryClient = useQueryClient();
   const p = people.data?.find((x) => x.id === personId);
@@ -53,7 +55,7 @@ function PersonStatement({ sheetId, personId }: { sheetId: string; personId: num
   return (
     <>
       <td data-testid="person-statement-count">{p?.statementCount ?? 0}</td>
-      <td data-testid="person-stated-total">{p?.statedTotal ?? ''}</td>
+      <td data-testid="person-stated-total">{fig(p?.statedTotal ?? '')}</td>
       <td data-testid="person-statement-date">{p?.statementDate ?? ''}</td>
       <td>
         <input

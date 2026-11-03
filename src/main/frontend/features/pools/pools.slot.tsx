@@ -5,11 +5,13 @@ import { useSingleFlight } from '../../query/useSingleFlight';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { usePeople, type Person } from '../people/usePeople';
 import { poolsKey, usePools, type Pool } from './usePools';
+import { useFigure } from '../locale/useLocale';
 
 /** One pool: its members with their shares and cuts of the sheet's pot, its total share and whether it is balanced, and a form that
  *  adds a member (a person on the sheet, or another pool as pool:<name>, a share percent and an optional from-date and
  *  to-date: a member whose dates do not include the sheet's today is left out of the pool). */
 function PoolRow({ sheetId, pool, pools, people }: { sheetId: string; pool: Pool; pools: Pool[]; people: Person[] }) {
+  const fig = useFigure();
   const queryClient = useQueryClient();
   // A person's id, or pool:<name> for another pool.
   const [member, setMember] = useState('');
@@ -33,7 +35,7 @@ function PoolRow({ sheetId, pool, pools, people }: { sheetId: string; pool: Pool
   return (
     <div data-testid={`pool-row-${pool.name}`}>
       <strong data-testid="pool-name">{pool.name}</strong>{' '}
-      Total <span data-testid="pool-total-share">{pool.totalShare}</span>{' '}
+      Total <span data-testid="pool-total-share">{fig(pool.totalShare)}</span>{' '}
       Balanced <span data-testid="pool-balanced">{pool.balanced ? 'yes' : 'no'}</span>
       <ul>
         {pool.members.map((m) => (
@@ -42,8 +44,8 @@ function PoolRow({ sheetId, pool, pools, people }: { sheetId: string; pool: Pool
             data-testid={m.pool === null ? `pool-member-${pool.name}-${m.personId}` : `pool-member-${pool.name}-pool-${m.pool}`}
           >
             <span data-testid="pool-member-name">{m.name}</span>{' '}
-            <span data-testid="pool-share">{m.share}</span>{' '}
-            <span data-testid="pool-cut">{m.cut ?? ''}</span>
+            <span data-testid="pool-share">{fig(m.share)}</span>{' '}
+            <span data-testid="pool-cut">{fig(m.cut ?? '')}</span>
             {(m.from !== null || m.to !== null) && ` (${m.from ?? ''} – ${m.to ?? ''})`}
             {m.retired && ' (retired)'}
           </li>

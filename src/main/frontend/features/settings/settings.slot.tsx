@@ -9,6 +9,7 @@ import { peopleKey } from '../people/usePeople';
 import { poolsKey } from '../pools/usePools';
 import { ratesKey } from '../rates/useRates';
 import { settingOn, settingsKey, useSettings, type Settings } from './useSettings';
+import { useFigure } from '../locale/useLocale';
 
 /** The sheet's settings: its clerk limit (a clerk settles a claim only when its due is at or below
  *  it; blank is no limit), its floor (the least a live due can be), its terms (the days after
@@ -62,6 +63,7 @@ function FromInput({ settingKey, from, setFrom, onChange }: { settingKey: string
 }
 
 function SettingsPanel({ sheetId }: { sheetId: string }) {
+  const fig = useFigure();
   const settings = useSettings(sheetId);
   const queryClient = useQueryClient();
   const [limit, setLimit] = useState<string | null>(null);
@@ -491,45 +493,45 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>{' '}
-        Current: clerk limit <strong data-testid="setting-clerk-limit-current">{settingOn(settings.data, 'clerk-limit', today) ?? ''}</strong>,
-        floor <strong data-testid="setting-floor-current">{settingOn(settings.data, 'floor', today) ?? ''}</strong>,
-        terms <strong data-testid="setting-terms-current">{settingOn(settings.data, 'terms', today) ?? ''}</strong>,
+        Current: clerk limit <strong data-testid="setting-clerk-limit-current">{fig(settingOn(settings.data, 'clerk-limit', today) ?? '')}</strong>,
+        floor <strong data-testid="setting-floor-current">{fig(settingOn(settings.data, 'floor', today) ?? '')}</strong>,
+        terms <strong data-testid="setting-terms-current">{fig(settingOn(settings.data, 'terms', today) ?? '')}</strong>,
         {GRADES.map((g) => (
           <span key={g}>
-            terms {g} <strong data-testid={`setting-terms-${g}-current`}>{settingOn(settings.data, `terms-${g}`, today) ?? ''}</strong>,{' '}
+            terms {g} <strong data-testid={`setting-terms-${g}-current`}>{fig(settingOn(settings.data, `terms-${g}`, today) ?? '')}</strong>,{' '}
           </span>
         ))}
         {GRADES.map((g) => (
           <span key={g}>
-            grace {g} <strong data-testid={`setting-grace-${g}-current`}>{settingOn(settings.data, `grace-${g}`, today) ?? ''}</strong>,{' '}
+            grace {g} <strong data-testid={`setting-grace-${g}-current`}>{fig(settingOn(settings.data, `grace-${g}`, today) ?? '')}</strong>,{' '}
           </span>
         ))}
-        late % <strong data-testid="setting-late-pct-current">{settingOn(settings.data, 'late-pct', today) ?? ''}</strong>,
-        policy date <strong data-testid="setting-policy-date-current">{settings.data?.policyDate ?? ''}</strong>,
+        late % <strong data-testid="setting-late-pct-current">{fig(settingOn(settings.data, 'late-pct', today) ?? '')}</strong>,
+        policy date <strong data-testid="setting-policy-date-current">{fig(settings.data?.policyDate ?? '')}</strong>,
         period numbering from{' '}
-        <strong data-testid="setting-period-numbering-from-current">{settings.data?.periodNumberingFrom ?? ''}</strong>,
-        cap <strong data-testid="setting-cap-current">{settingOn(settings.data, 'cap', today) ?? ''}</strong>,
-        proof threshold <strong data-testid="setting-proof-threshold-current">{settingOn(settings.data, 'proof-threshold', today) ?? ''}</strong>,
+        <strong data-testid="setting-period-numbering-from-current">{fig(settings.data?.periodNumberingFrom ?? '')}</strong>,
+        cap <strong data-testid="setting-cap-current">{fig(settingOn(settings.data, 'cap', today) ?? '')}</strong>,
+        proof threshold <strong data-testid="setting-proof-threshold-current">{fig(settingOn(settings.data, 'proof-threshold', today) ?? '')}</strong>,
         {GRADES.map((g) => (
           <span key={g}>
-            proof threshold {g} <strong data-testid={`setting-proof-threshold-${g}-current`}>{settingOn(settings.data, `proof-threshold-${g}`, today) ?? ''}</strong>,{' '}
+            proof threshold {g} <strong data-testid={`setting-proof-threshold-${g}-current`}>{fig(settingOn(settings.data, `proof-threshold-${g}`, today) ?? '')}</strong>,{' '}
           </span>
         ))}
-        note threshold <strong data-testid="setting-note-threshold-current">{settingOn(settings.data, 'note-threshold', today) ?? ''}</strong>
-        , review threshold <strong data-testid="setting-review-threshold-current">{settingOn(settings.data, 'review-threshold', today) ?? ''}</strong>
-        , rounding <strong data-testid="setting-rounding-current">{settingOn(settings.data, 'rounding', today) ?? ''}</strong>
+        note threshold <strong data-testid="setting-note-threshold-current">{fig(settingOn(settings.data, 'note-threshold', today) ?? '')}</strong>
+        , review threshold <strong data-testid="setting-review-threshold-current">{fig(settingOn(settings.data, 'review-threshold', today) ?? '')}</strong>
+        , rounding <strong data-testid="setting-rounding-current">{fig(settingOn(settings.data, 'rounding', today) ?? '')}</strong>
         {PERM_ACTIONS.map((a) => (
           <span key={a}>
-            , may {a} <strong data-testid={`setting-perm-${a}-current`}>{settings.data?.permissions?.[a] ?? ''}</strong>
+            , may {a} <strong data-testid={`setting-perm-${a}-current`}>{fig(settings.data?.permissions?.[a] ?? '')}</strong>
           </span>
         ))}
-        , grace days <strong data-testid="setting-grace-days-current">{settings.data?.graceDays ?? ''}</strong>
-        , entry date <strong data-testid="setting-entry-date-current">{settings.data?.entryDate ?? ''}</strong>
-        , pot <strong data-testid="setting-pot-current">{settings.data?.pot ?? ''}</strong>
-        , parent <strong data-testid="setting-parent-current">{settings.data?.parent ?? ''}</strong>
+        , grace days <strong data-testid="setting-grace-days-current">{fig(settings.data?.graceDays ?? '')}</strong>
+        , entry date <strong data-testid="setting-entry-date-current">{fig(settings.data?.entryDate ?? '')}</strong>
+        , pot <strong data-testid="setting-pot-current">{fig(settings.data?.pot ?? '')}</strong>
+        , parent <strong data-testid="setting-parent-current">{fig(settings.data?.parent ?? '')}</strong>
         , fiscal year starts in month{' '}
-        <strong data-testid="setting-fiscal-start-month-current">{settings.data?.fiscalStartMonth ?? ''}</strong>
-        , alert threshold <strong data-testid="setting-alert-threshold-current">{settings.data?.alertThreshold ?? ''}</strong>
+        <strong data-testid="setting-fiscal-start-month-current">{fig(settings.data?.fiscalStartMonth ?? '')}</strong>
+        , alert threshold <strong data-testid="setting-alert-threshold-current">{fig(settings.data?.alertThreshold ?? '')}</strong>
         {save.isError && <p data-testid="settings-error">{save.error.message}</p>}
       </form>
       <form

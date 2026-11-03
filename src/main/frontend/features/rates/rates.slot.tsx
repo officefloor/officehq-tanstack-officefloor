@@ -9,12 +9,14 @@ import { useSheetToday } from '../today/useSheetToday';
 import { useDueTotals, useExcess, useSettledOpenTotals } from './useDueTotals';
 import { useRatePreview } from './useRatePreview';
 import { rateFor, ratesKey, sumDues, trimmedSum, useRates, type Rate } from './useRates';
+import { useFigure } from '../locale/useLocale';
 
 /** The sheet's rates for each grade: a form that sets one from an optional from-date (a new version of the
  *  grade's rate from that date, the one in force; blank is from the beginning of time) through an optional to-date
  *  (blank is no end), the rates set, and the rate in
  *  force on the sheet's today for every grade ('n/a' when none is). */
 function Rates({ sheetId }: { sheetId: string }) {
+  const fig = useFigure();
   const rates = useRates(sheetId);
   const today = useSheetToday(sheetId);
   const queryClient = useQueryClient();
@@ -121,7 +123,7 @@ function Rates({ sheetId }: { sheetId: string }) {
           {(rates.data ?? []).filter((r) => r.level === 0 && !r.superseded).map((r) => (
             <tr key={`${r.grade}-${r.from ?? 'start'}`} data-testid={`rate-row-${r.grade}-${r.from ?? 'start'}`}>
               <td data-testid="rate-grade">{r.grade}</td>
-              <td data-testid="rate-pct">{r.pct}</td>
+              <td data-testid="rate-pct">{fig(r.pct)}</td>
               <td data-testid="rate-from">{r.from ?? ''}</td>
               <td data-testid="rate-to">{r.to ?? ''}</td>
               <td data-testid="rate-version">{r.version ?? 1}</td>
@@ -133,7 +135,7 @@ function Rates({ sheetId }: { sheetId: string }) {
         Current rates:{' '}
         {GRADES.map((g) => (
           <span key={g}>
-            {g} <strong data-testid={`rate-current-${g}`}>{rateFor(rates.data, g, today.data?.today) ?? 'n/a'}</strong>{' '}
+            {g} <strong data-testid={`rate-current-${g}`}>{fig(rateFor(rates.data, g, today.data?.today) ?? 'n/a')}</strong>{' '}
           </span>
         ))}
       </p>
@@ -198,6 +200,7 @@ function ImportRates({ sheetId }: { sheetId: string }) {
 /** A preview of a candidate rate for a grade (see `useRatePreview`): how many claims would show a different
  *  due and the sum of the differences. Nothing is saved. The result is cleared when the form changes. */
 function RatePreview({ sheetId }: { sheetId: string }) {
+  const fig = useFigure();
   const preview = useRatePreview(sheetId);
   const [grade, setGrade] = useState<string>('A');
   const [pct, setPct] = useState('');
@@ -258,7 +261,7 @@ function RatePreview({ sheetId }: { sheetId: string }) {
         <span>
           {' '}
           Would change <strong data-testid="rate-preview-count">{result.count}</strong> claims by{' '}
-          <strong data-testid="rate-preview-diff">{result.diff}</strong>
+          <strong data-testid="rate-preview-diff">{fig(result.diff)}</strong>
         </span>
       )}
       {error !== null && <p data-testid="rate-preview-error">{error}</p>}
@@ -267,35 +270,39 @@ function RatePreview({ sheetId }: { sheetId: string }) {
 }
 
 function PersonDueTotal({ sheetId, personId }: { sheetId: string; personId: number }) {
+  const fig = useFigure();
   const totals = useDueTotals(sheetId);
-  return <td data-testid="person-due-total">{totals.get(personId) ?? ''}</td>;
+  return <td data-testid="person-due-total">{fig(totals.get(personId) ?? '')}</td>;
 }
 
 /** A person's excess: how far the sum of their figures is above the sheet's cap. */
 function PersonExcess({ sheetId, personId }: { sheetId: string; personId: number }) {
+  const fig = useFigure();
   const excess = useExcess(sheetId);
-  return <td data-testid="person-excess">{excess.get(personId) ?? ''}</td>;
+  return <td data-testid="person-excess">{fig(excess.get(personId) ?? '')}</td>;
 }
 
 /** A person's settled-total and open-total: the parts of their due-total (before the cap) from their
  *  SETTLED claims and from their open (OPEN or PENDING) claims. */
 function PersonSettledOpen({ sheetId, personId }: { sheetId: string; personId: number }) {
+  const fig = useFigure();
   const split = useSettledOpenTotals(sheetId).get(personId);
   return (
     <>
-      <td data-testid="person-settled-total">{split?.settled ?? ''}</td>
-      <td data-testid="person-open-total">{split?.open ?? ''}</td>
+      <td data-testid="person-settled-total">{fig(split?.settled ?? '')}</td>
+      <td data-testid="person-open-total">{fig(split?.open ?? '')}</td>
     </>
   );
 }
 
 /** The sheet's settled-total and open-total: everyone's figure simply added up (not trimmed). */
 function SettledOpenTotals({ sheetId }: { sheetId: string }) {
+  const fig = useFigure();
   const split = [...useSettledOpenTotals(sheetId).values()];
   return (
     <p>
-      Settled total: <strong data-testid="rollup-settled-total">{sumDues(split.map((s) => s.settled))}</strong>,
-      open total <strong data-testid="rollup-open-total">{sumDues(split.map((s) => s.open))}</strong>
+      Settled total: <strong data-testid="rollup-settled-total">{fig(sumDues(split.map((s) => s.settled)))}</strong>,
+      open total <strong data-testid="rollup-open-total">{fig(sumDues(split.map((s) => s.open)))}</strong>
     </p>
   );
 }
@@ -303,10 +310,11 @@ function SettledOpenTotals({ sheetId }: { sheetId: string }) {
 /** The sheet's due-total: everyone's due-total added up, skipping 'n/a',
  *  leaving out the highest and the lowest when three or more people have one. */
 function DueTotal({ sheetId }: { sheetId: string }) {
+  const fig = useFigure();
   const totals = useDueTotals(sheetId);
   return (
     <p>
-      Due total: <strong data-testid="rollup-due-total">{trimmedSum([...totals.values()])}</strong>
+      Due total: <strong data-testid="rollup-due-total">{fig(trimmedSum([...totals.values()]))}</strong>
     </p>
   );
 }

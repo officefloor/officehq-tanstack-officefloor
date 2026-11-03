@@ -5,10 +5,12 @@ import { gradeOn, holdsById, usePeople } from '../people/usePeople';
 import { rateFor, sumDues, useRates } from '../rates/useRates';
 import { useSettings } from '../settings/useSettings';
 import { useSheetToday } from '../today/useSheetToday';
+import { useFigure } from '../locale/useLocale';
 
 /** Per calendar month (yyyy-mm) any claim on the sheet is dated in, its due-total: the dues of the
  *  claims dated in it that count (as in a person's due-total) added up, skipping 'n/a'. */
 function MonthTotals({ sheetId }: { sheetId: string }) {
+  const fig = useFigure();
   const claims = useClaims(sheetId);
   const people = usePeople(sheetId);
   const rates = useRates(sheetId);
@@ -36,7 +38,7 @@ function MonthTotals({ sheetId }: { sheetId: string }) {
           {months.map((m) => (
             <tr key={m}>
               <td>{m}</td>
-              <td data-testid={`month-${m}-due-total`}>{sumDues(dues.get(m)!)}</td>
+              <td data-testid={`month-${m}-due-total`}>{fig(sumDues(dues.get(m)!))}</td>
             </tr>
           ))}
         </tbody>

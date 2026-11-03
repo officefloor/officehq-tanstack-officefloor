@@ -6,6 +6,7 @@ import { patronsKey, usePatrons, usePeople, type Person } from '../people/usePeo
 import { useClaims } from '../claims/useClaims';
 import { hundredths, money, sumDues } from '../rates/useRates';
 import { useSheetToday } from '../today/useSheetToday';
+import { useFigure } from '../locale/useLocale';
 
 /** The first day (yyyy-mm-dd) of the 90 days up to and including a day. */
 function windowStart(today: string): string {
@@ -31,6 +32,7 @@ function shares(count: number): bigint[] {
  *  sheet's today was settled, added up — times their share divided by 100, added up and rounded half to even;
  *  0.00 with none), and a picker that names one more. Naming themselves, or a patron twice, is refused. */
 function PersonPatrons({ sheetId, personId }: { sheetId: string; personId: number }) {
+  const fig = useFigure();
   const people = usePeople(sheetId);
   const patrons = usePatrons(sheetId);
   const claims = useClaims(sheetId);
@@ -72,7 +74,7 @@ function PersonPatrons({ sheetId, personId }: { sheetId: string; personId: numbe
   return (
     <>
       <td data-testid="person-patrons">{labels.join(', ')}</td>
-      <td data-testid="person-backing">{backing}</td>
+      <td data-testid="person-backing">{fig(backing)}</td>
       <td>
         <select
           data-testid="person-patron-select"

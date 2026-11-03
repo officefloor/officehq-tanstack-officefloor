@@ -14,15 +14,17 @@ import { useSheetToday } from '../today/useSheetToday';
 import { useTemplates } from '../templates/useTemplates';
 import { claimed, claimsKey, shownDeferred, shownTags, useClaims, useLastBatch, type Claim } from './useClaims';
 import { useClaimSelection } from './useClaimSelection';
+import { useFigure } from '../locale/useLocale';
 
 /** A person's claimed: the sum of their counted, non-correction (OPEN, PENDING or SETTLED; an open one dated within a hold only when a statement binds it; not a deferred one) claims' amounts. */
 function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: number }) {
+  const fig = useFigure();
   const claims = useClaims(sheetId);
   const people = usePeople(sheetId);
   const today = useSheetToday(sheetId).data?.today;
   return (
     <td data-testid="person-claimed">
-      {claimed((claims.data ?? []).filter((c) => c.personId === personId), holdsById(people.data, today), today)}
+      {fig(claimed((claims.data ?? []).filter((c) => c.personId === personId), holdsById(people.data, today), today))}
     </td>
   );
 }
@@ -53,6 +55,7 @@ const ACTIONS: [Exclude<ClaimAction, 'defer' | 'proof' | 'remind' | 'split' | 'r
  *  the form names, by number, the settled claim of the same person it corrects. A claim may carry an external
  *  reference (trimmed; blank: none), used at most once on the sheet regardless of case. */
 function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number }) {
+  const fig = useFigure();
   const claims = useClaims(sheetId);
   const people = usePeople(sheetId);
   const rates = useRates(sheetId);
@@ -412,12 +415,12 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                   />
                 </td>
                 <td data-testid="claim-number">{c.number ?? ''}</td>
-                <td data-testid="claim-amount">{c.amount}</td>
+                <td data-testid="claim-amount">{fig(c.amount)}</td>
                 <td data-testid="claim-date">{c.date}</td>
                 <td data-testid="claim-period">{periodOf(periods.data, c.dueBy)?.name ?? ''}</td>
                 <td data-testid="claim-note">{c.note}</td>
                 <td data-testid="claim-due">
-                  {claimDueNow(c, claims.data, rateFor(rates.data, gradeOn(person, c.date), c.date, c.added), settings, today, gradeOn(person, c.date))}
+                  {fig(claimDueNow(c, claims.data, rateFor(rates.data, gradeOn(person, c.date), c.date, c.added), settings, today, gradeOn(person, c.date)))}
                 </td>
                 <td data-testid="claim-due-by">{c.dueBy}</td>
                 <td data-testid="claim-overdue">
@@ -887,12 +890,13 @@ function BulkRedate({ sheetId }: { sheetId: string }) {
 
 /** The sheet's claimed-total: everyone's claimed added up. */
 function ClaimedTotal({ sheetId }: { sheetId: string }) {
+  const fig = useFigure();
   const claims = useClaims(sheetId);
   const people = usePeople(sheetId);
   const today = useSheetToday(sheetId).data?.today;
   return (
     <p>
-      Claimed total: <strong data-testid="rollup-claimed-total">{claimed(claims.data ?? [], holdsById(people.data, today), today)}</strong>
+      Claimed total: <strong data-testid="rollup-claimed-total">{fig(claimed(claims.data ?? [], holdsById(people.data, today), today))}</strong>
     </p>
   );
 }

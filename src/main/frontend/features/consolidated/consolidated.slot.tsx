@@ -8,6 +8,7 @@ import { peopleKey, type Person } from '../people/usePeople';
 import { useDueTotals } from '../rates/useDueTotals';
 import { hundredths, money, trimmedSum } from '../rates/useRates';
 import { asString, useSearchParam } from '../../url/useSearchParam';
+import { useFigure } from '../locale/useLocale';
 
 /** One sheet's figures, as the store holds it now (not as of the screen's as-of date): its people (retired
  *  included), and its due-total and overdue-total as its header shows them with no as-of date. */
@@ -49,6 +50,7 @@ function SheetFigures({ sheetId, onFigures }: { sheetId: string; onFigures: (id:
 /** The consolidated figures over the sheet and all its descendants: the number of people, and each sheet's
  *  due-total and overdue-total (as that sheet shows them) added up. A sheet with no children shows its own. */
 function Consolidated({ sheetId }: { sheetId: string }) {
+  const fig = useFigure();
   const descendants = useDescendants(sheetId);
   const [figures, setFigures] = useState<Record<string, Figures>>({});
   const [onFigures] = useState(() => (id: string, f: Figures) => setFigures((all) => ({ ...all, [id]: f })));
@@ -64,8 +66,8 @@ function Consolidated({ sheetId }: { sheetId: string }) {
         ))}
       </ReadNow.Provider>
       Consolidated: people <strong data-testid="consolidated-people-count">{shown.reduce((n, f) => n + f.people, 0)}</strong>
-      {' '}· due total <strong data-testid="consolidated-due-total">{sum((f) => f.due)}</strong>
-      {' '}· overdue total <strong data-testid="consolidated-overdue-total">{sum((f) => f.overdue)}</strong>
+      {' '}· due total <strong data-testid="consolidated-due-total">{fig(sum((f) => f.due))}</strong>
+      {' '}· overdue total <strong data-testid="consolidated-overdue-total">{fig(sum((f) => f.overdue))}</strong>
     </p>
   );
 }

@@ -5,6 +5,7 @@ import { gradeOn, holdsById, usePeople, type Person } from '../people/usePeople'
 import { rateFor, sumDues, useRates } from '../rates/useRates';
 import { useSettings } from '../settings/useSettings';
 import { useSheetToday } from '../today/useSheetToday';
+import { useFigure } from '../locale/useLocale';
 
 /** Whether a claim or its person carries a tag. */
 function carries(c: Claim, people: Person[] | undefined, tag: string): boolean {
@@ -16,6 +17,7 @@ function carries(c: Claim, people: Person[] | undefined, tag: string): boolean {
  *  due-total) which carry it, or whose person carries it, added up once each, skipping 'n/a' (a claim
  *  with two tags counts in both). */
 function TagTotals({ sheetId }: { sheetId: string }) {
+  const fig = useFigure();
   const tags = useTagsUsed(sheetId);
   const claims = useClaims(sheetId);
   const people = usePeople(sheetId);
@@ -44,7 +46,7 @@ function TagTotals({ sheetId }: { sheetId: string }) {
             <tr key={t}>
               <td>{t}</td>
               <td data-testid={`tag-${t}-due-total`}>
-                {sumDues((claims.data ?? []).filter((c) => dues.has(c.id) && carries(c, people.data, t)).map((c) => dues.get(c.id)!))}
+                {fig(sumDues((claims.data ?? []).filter((c) => dues.has(c.id) && carries(c, people.data, t)).map((c) => dues.get(c.id)!)))}
               </td>
             </tr>
           ))}

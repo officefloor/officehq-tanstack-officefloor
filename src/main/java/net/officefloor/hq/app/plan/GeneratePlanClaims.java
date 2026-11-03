@@ -15,6 +15,7 @@ import net.officefloor.hq.app.period.PeriodGuard;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rollup.Rollup;
+import net.officefloor.hq.app.settings.SettingsRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.server.http.ServerHttpConnection;
@@ -23,15 +24,24 @@ import org.springframework.web.bind.annotation.PathVariable;
 /** For every plan on the sheet, in the order they were added, make a DRAFT claim with the plan's amount for each
  *  plan date (the start, then every N days; or monthly on its day) up to the end and the sheet's today that has none yet, dated that day
  *  with an empty note, written as CLAIM_ADDED. Each is checked by the claim form's rules: a date the form refuses
- *  is skipped (nothing written) and tried again next time. Answers how many were made. */
+ *  is skipped (nothing written) and tried again next time. Answers how many were made. A viewer's makes none
+ *  (nothing written); an archived sheet refuses it. */
 public class GeneratePlanClaims {
     public void generate(@PathVariable("sheetId") String sheetId, ServerHttpConnection connection,
             PlanRepository plans, ClaimRepository claims, SheetRepository sheets, PeriodRepository periods,
-            PersonRepository people, Audit audit, Rollup rollup, Out<GenerateResult> result) throws BadRequestException {
+            PersonRepository people, SettingsRepository settings, Audit audit, Rollup rollup, Out<GenerateResult> result)
+            throws BadRequestException {
         String by = CurrentUser.require(connection);
         String id = sheetId == null ? "" : sheetId.trim();
         if (!plans.lockSheet(id)) {
             throw new BadRequestException("no such sheet");
+        }
+        if (settings.archived(id)) {
+            throw new BadRequestException("the sheet is archived");
+        }
+        if (settings.role(id, by).equals(SettingsRepository.VIEWER)) {
+            result.set(new GenerateResult(0));
+            return;
         }
         LocalDate today = sheets.today(id);
         int made = 0;

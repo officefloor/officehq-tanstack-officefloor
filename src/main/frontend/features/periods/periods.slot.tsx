@@ -7,6 +7,7 @@ import { SheetBody } from '../../slots/defs/sheetBody';
 import { usePeriodDueTotals, usePersonPeriodDueTotals } from './usePeriodDueTotals';
 import { useSettings } from '../settings/useSettings';
 import { fiscalYearOf, periodsKey, usePeriods, type Period } from './usePeriods';
+import { useFigure } from '../locale/useLocale';
 
 /** The sheet's periods: a form that adds one (a name unique on the sheet, a from- and to-date,
  *  inclusive, overlapping no other period, and an optional cap on each person's open claims in it), and each period with its due-total: the figures of the
@@ -182,6 +183,7 @@ function GeneratePeriods({ sheetId }: { sheetId: string }) {
  *  changed, reopening it (a steward only) makes it live again.
  *  A refused close or reopen shows its error, cleared when the next action on the row is taken. */
 function PeriodRow({ sheetId, period: p, dueTotal, fiscalYear }: { sheetId: string; period: Period; dueTotal: string; fiscalYear: string }) {
+  const fig = useFigure();
   const queryClient = useQueryClient();
   const closeOnce = useSingleFlight();
   const close = useMutation({
@@ -228,10 +230,10 @@ function PeriodRow({ sheetId, period: p, dueTotal, fiscalYear }: { sheetId: stri
       <td data-testid="period-name">{p.name}</td>
       <td data-testid="period-from">{p.from}</td>
       <td data-testid="period-to">{p.to}</td>
-      <td data-testid="period-due-total">{dueTotal}</td>
+      <td data-testid="period-due-total">{fig(dueTotal)}</td>
       <td data-testid="period-closed">{p.closed ? 'yes' : p.softClosed ? 'soft' : 'no'}</td>
       <td data-testid="period-fy">{fiscalYear}</td>
-      <td data-testid="period-cap">{p.cap ?? ''}</td>
+      <td data-testid="period-cap">{fig(p.cap ?? '')}</td>
       <td>
         <button
           type="button"
@@ -277,13 +279,14 @@ function PeriodColumnHeads({ sheetId }: { sheetId: string }) {
 
 /** A person's due-total for each period on the sheet (fixed while the period is closed). */
 function PersonPeriodDueTotals({ sheetId, personId }: { sheetId: string; personId: number }) {
+  const fig = useFigure();
   const periods = usePeriods(sheetId);
   const totals = usePersonPeriodDueTotals(sheetId).get(personId);
   return (
     <>
       {(periods.data ?? []).map((p) => (
         <td key={p.id} data-testid={`person-period-${p.name}-due-total`}>
-          {totals?.get(p.name) ?? ''}
+          {fig(totals?.get(p.name) ?? '')}
         </td>
       ))}
     </>
