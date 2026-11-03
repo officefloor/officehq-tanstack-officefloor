@@ -6,12 +6,12 @@ import { usePeriodDueTotals } from '../periods/usePeriodDueTotals';
 import { usePeriods } from '../periods/usePeriods';
 import { useSettings } from '../settings/useSettings';
 import { useDueTotals } from '../rates/useDueTotals';
-import { sumDues } from '../rates/useRates';
+import { hundredths, money, sumDues } from '../rates/useRates';
 import { countWithStatus, STATUSES } from './statusCounts';
 
 /** The sheet's summary, worked out from the same figures the lists show: per grade, how many people
  *  have it on the sheet's today (retired people left out) and their due-totals added up (skipping
- *  'n/a') and how many of them are active; per period, its due-total; per status, how many claims have it; per void reason on the
+ *  'n/a') and how many of them are active; per period, its due-total and its change from the period before it by from-date (none for the earliest); per status, how many claims have it; per void reason on the
  *  sheet's list, how many VOID claims were voided with it. */
 function Summary({ sheetId }: { sheetId: string }) {
   const people = usePeople(sheetId);
@@ -22,6 +22,13 @@ function Summary({ sheetId }: { sheetId: string }) {
   const activeById = useActive(sheetId);
   const voidReasons = useSettings(sheetId).data?.voidReasons ?? [];
   const current = (people.data ?? []).filter((p) => !p.retiredFrom);
+  const byFrom = [...(periods.data ?? [])].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
+  const changes = new Map<string, string>();
+  byFrom.forEach((p, i) => {
+    if (i === 0) return;
+    const prev = periodTotals.get(byFrom[i - 1].name) ?? '0.00';
+    changes.set(p.name, money(hundredths(periodTotals.get(p.name) ?? '0.00') - hundredths(prev)));
+  });
   return (
     <section data-testid="summary">
       <table>
@@ -56,6 +63,7 @@ function Summary({ sheetId }: { sheetId: string }) {
           <tr>
             <th>Period</th>
             <th>Due total</th>
+            <th>Change</th>
           </tr>
         </thead>
         <tbody>
@@ -63,6 +71,7 @@ function Summary({ sheetId }: { sheetId: string }) {
             <tr key={p.id}>
               <td>{p.name}</td>
               <td data-testid={`summary-period-${p.name}-due-total`}>{periodTotals.get(p.name) ?? ''}</td>
+              <td data-testid={`summary-period-${p.name}-change`}>{changes.get(p.name) ?? ''}</td>
             </tr>
           ))}
         </tbody>
