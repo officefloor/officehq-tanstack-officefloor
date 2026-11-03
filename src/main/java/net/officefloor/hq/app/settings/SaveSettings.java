@@ -109,6 +109,10 @@ public class SaveSettings {
             repository.setEscalateAfter(id, input.escalateAfter());
             audit.record(prefix + "escalate-after value=" + (input.escalateAfter() == null ? "" : input.escalateAfter()));
         }
+        if (input.setsReviewSla()) {
+            repository.setReviewSla(id, input.reviewSla());
+            audit.record(prefix + "review-sla value=" + (input.reviewSla() == null ? "" : input.reviewSla()));
+        }
         if (input.setsEntryDate()) {
             repository.setEntryDate(id, input.entryDate());
             audit.record(prefix + "entry-date value=" + (input.entryDate() == null ? "" : input.entryDate().toString()));

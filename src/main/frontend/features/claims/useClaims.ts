@@ -27,7 +27,8 @@ export type ClaimStatus = 'DRAFT' | 'REVIEW' | 'OPEN' | 'PENDING' | 'SETTLED' | 
  *  was given), and its comments, oldest first, as "<user> on <date>: <text>" with the sheet's today when written, and the
  *  number of the settle batch (a bulk settle) that settled it (null when settled one at a time, or not settled), and its
  *  lines, oldest first, as "<label> <qty> x <unit>" (a claim with lines has their total as its amount), and its added
- *  number: claims added later have higher ones; a forward-only rate applies only to claims added after it (see `rateFor`). */
+ *  number: claims added later have higher ones; a forward-only rate applies only to claims added after it (see `rateFor`), and whether it is review-late (REVIEW, and its
+ *  review day — the sheet's today when it went to REVIEW — plus the sheet's review SLA is before the sheet's today). */
 export type Claim = {
   id: number;
   personId: number;
@@ -57,6 +58,7 @@ export type Claim = {
   lockedBy: string | null;
   batch: number | null;
   added: number;
+  reviewLate: boolean;
 };
 
 /** Whether a claim is open: OPEN, or PENDING (handled like OPEN everywhere but its statement binding). */
@@ -127,13 +129,14 @@ export function useClaims(sheetId: string) {
     queryKey: read.key(claimsKey(sheetId)),
     queryFn: async () => {
       const res = await read.get<{
-        claims: Omit<Claim, 'log' | 'comments' | 'lines' | 'lockedBy' | 'batch' | 'added'>[];
+        claims: Omit<Claim, 'log' | 'comments' | 'lines' | 'lockedBy' | 'batch' | 'added' | 'reviewLate'>[];
         logs: Record<string, string[]>;
         locks: Record<string, string>;
         comments: Record<string, string[]>;
         lines: Record<string, string[]>;
         batches: Record<string, number>;
         added: Record<string, number>;
+        reviewLate: Record<string, boolean>;
       }>(`/api/sheets/${encodeURIComponent(sheetId)}/claims`);
       return res.claims.map((c): Claim => ({
         ...c,
@@ -143,6 +146,7 @@ export function useClaims(sheetId: string) {
         lockedBy: res.locks[String(c.id)] ?? null,
         batch: res.batches[String(c.id)] ?? null,
         added: res.added?.[String(c.id)] ?? 0,
+        reviewLate: res.reviewLate?.[String(c.id)] ?? false,
       }));
     },
   });

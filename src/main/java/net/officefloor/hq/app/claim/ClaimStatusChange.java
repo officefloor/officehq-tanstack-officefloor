@@ -187,6 +187,9 @@ public final class ClaimStatusChange {
         if (voidReason != null) {
             repository.voidReason(id, cid, voidReason);
         }
+        if (to.equals("REVIEW")) {
+            repository.reviewDay(id, cid);
+        }
         // Opening gives the sheet's next number; a rejected claim keeps its own; a voided claim keeps the number it had (never reused).
         String number = found.number();
         String openedBy = found.openedBy();

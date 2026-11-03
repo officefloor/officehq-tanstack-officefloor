@@ -118,6 +118,27 @@ public class ClaimRepository {
                 args.toArray()) > 0);
     }
 
+    /** Record the sheet's today as the claim's review day (it has just gone to REVIEW). */
+    public void reviewDay(String sheetId, long claimId) {
+        kept(sheetId, claimId, jdbc.update("UPDATE claim SET review_day = ? WHERE id = ? AND sheet_id = ?",
+                java.sql.Date.valueOf(settings.today(sheetId)), claimId, sheetId) > 0);
+    }
+
+    /** Whether each REVIEW claim of the sheet is review-late (its review day plus the sheet's review SLA is before the
+     *  sheet's today; none is while the SLA is blank), by claim id. */
+    public Map<String, Boolean> reviewLate(String sheetId) {
+        Map<String, Boolean> late = new LinkedHashMap<>();
+        Integer sla = settings.reviewSla(sheetId);
+        if (sla == null) return late;
+        LocalDate today = settings.today(sheetId);
+        jdbc.query("SELECT id, review_day FROM claim WHERE sheet_id = ? AND status = 'REVIEW' AND review_day IS NOT NULL",
+                rs -> {
+                    late.put(String.valueOf(rs.getLong("id")),
+                            rs.getDate("review_day").toLocalDate().plusDays(sla).isBefore(today));
+                }, sheetId);
+        return late;
+    }
+
     /** Record the reason a claim was voided with. */
     public void voidReason(String sheetId, long claimId, String reason) {
         kept(sheetId, claimId, jdbc.update("UPDATE claim SET void_reason = ? WHERE id = ? AND sheet_id = ?", reason, claimId, sheetId) > 0);

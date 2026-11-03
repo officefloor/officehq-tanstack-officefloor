@@ -467,6 +467,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                 <td data-testid="claim-ref">{c.ref ?? ''}</td>
                 <td data-testid="claim-tags">{shownTags(c.tags)}</td>
                 <td data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</td>
+                <td data-testid="claim-review-late">{c.reviewLate ? 'yes' : 'no'}</td>
                 <td data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</td>
                 <td data-testid="claim-status">{c.status}</td>
                 <td data-testid="claim-batch">{c.batch ?? ''}</td>

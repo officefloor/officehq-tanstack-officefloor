@@ -57,7 +57,7 @@ public class SettingsRepository {
                 cap == null ? null : money(cap), dated(sheetId), permissions(sheetId), graceDays(sheetId),
                 delegations(sheetId), entry == null ? null : entry.toString(), holidays(sheetId),
                 voidReasons(sheetId), pot == null ? null : money(pot), parent(sheetId), fiscalStartMonth(sheetId),
-                alert == null ? null : money(alert), escalateAfter(sheetId));
+                alert == null ? null : money(alert), escalateAfter(sheetId), reviewSla(sheetId));
     }
 
     /** The sheet's today; the real date when there is no such sheet. */
@@ -385,6 +385,17 @@ public class SettingsRepository {
 
     public void setEscalateAfter(String sheetId, Integer days) {
         jdbc.update("UPDATE sheet SET escalate_after = ? WHERE id = ?", days, sheetId);
+    }
+
+    /** The sheet's review SLA in days; null when blank (none). */
+    public Integer reviewSla(String sheetId) {
+        List<Integer> found = jdbc.query("SELECT review_sla FROM sheet WHERE id = ?",
+                (rs, i) -> (Integer) rs.getObject("review_sla", Integer.class), sheetId);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    public void setReviewSla(String sheetId, Integer days) {
+        jdbc.update("UPDATE sheet SET review_sla = ? WHERE id = ?", days, sheetId);
     }
 
     /** The role a user name acts in on the sheet: steward while a delegation to them covers the sheet's today,

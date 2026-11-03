@@ -12,7 +12,7 @@ import { useFigure } from '../locale/useLocale';
 
 /** The sheet's summary, worked out from the same figures the lists show: per grade, how many people
  *  have it on the sheet's today (retired people left out) and their due-totals added up (skipping
- *  'n/a') and how many of them are active; per period, its due-total and its change from the period before it by from-date (none for the earliest); per status, how many claims have it; per void reason on the
+ *  'n/a') and how many of them are active; per period, its due-total and its change from the period before it by from-date (none for the earliest); per status, how many claims have it, and how many REVIEW claims are review-late; per void reason on the
  *  sheet's list, how many VOID claims were voided with it. */
 function Summary({ sheetId }: { sheetId: string }) {
   const fig = useFigure();
@@ -94,6 +94,10 @@ function Summary({ sheetId }: { sheetId: string }) {
               </td>
             </tr>
           ))}
+          <tr>
+            <td>Review late</td>
+            <td data-testid="summary-review-late-count">{(claims.data ?? []).filter((c) => c.reviewLate).length}</td>
+          </tr>
         </tbody>
       </table>
       <table>

@@ -125,6 +125,10 @@ public class ValidateSettings {
         if (escalate != null && !escalate.isEmpty() && (!TERMS.matcher(escalate).matches() || Integer.parseInt(escalate) > 3650)) {
             throw new BadRequestException("escalation gap must be a whole number of days from 0 to 3650");
         }
+        String sla = request == null || request.reviewSla() == null ? null : request.reviewSla().trim();
+        if (sla != null && !sla.isEmpty() && (!TERMS.matcher(sla).matches() || Integer.parseInt(sla) > 3650)) {
+            throw new BadRequestException("review SLA must be a whole number of days from 0 to 3650");
+        }
         String policy = request == null || request.policyDate() == null ? null : request.policyDate().trim();
         LocalDate policyDate = null;
         if (policy != null && !policy.isEmpty()) {
@@ -220,6 +224,7 @@ public class ValidateSettings {
                 alert != null, alert == null || alert.isEmpty() ? null : new BigDecimal(alert).setScale(2),
                 rounding != null, rounding == null || rounding.isEmpty() ? null : rounding,
                 review != null, review == null || review.isEmpty() ? null : new BigDecimal(review).setScale(2),
-                escalate != null, escalate == null || escalate.isEmpty() ? null : Integer.parseInt(escalate)));
+                escalate != null, escalate == null || escalate.isEmpty() ? null : Integer.parseInt(escalate),
+                sla != null, sla == null || sla.isEmpty() ? null : Integer.parseInt(sla)));
     }
 }
