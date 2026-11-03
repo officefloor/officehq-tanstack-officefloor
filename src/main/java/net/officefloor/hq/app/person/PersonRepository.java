@@ -150,13 +150,83 @@ public class PersonRepository {
     }
 
     /** Whether another person on the sheet (other than {@code exceptId}; 0 for none) already has this name,
-     *  or anyone on the sheet has it as an alias, ignoring case. */
+     *  or anyone on the sheet has it as an alias, ignoring case; or anyone (other than {@code exceptId}) on another
+     *  sheet of its tree has it as a name or alias (see {@link #tree}). */
     public boolean nameTaken(String sheetId, String name, long exceptId) {
         Integer taken = jdbc.queryForObject(
                 "SELECT (SELECT COUNT(*) FROM person WHERE sheet_id = ? AND LOWER(name) = LOWER(?) AND id <> ?)"
                         + " + (SELECT COUNT(*) FROM person_alias WHERE sheet_id = ? AND LOWER(alias) = LOWER(?))",
                 Integer.class, sheetId, name, exceptId, sheetId, name);
-        return taken != null && taken > 0;
+        return (taken != null && taken > 0) || takenInTree(sheetId, name, exceptId);
+    }
+
+    /** Whether anyone (other than {@code exceptId}; 0 for none) on another sheet of the sheet's tree has this name
+     *  or alias, ignoring case. */
+    public boolean takenInTree(String sheetId, String name, long exceptId) {
+        for (String other : tree(sheetId)) {
+            Integer taken = jdbc.queryForObject(
+                    "SELECT (SELECT COUNT(*) FROM PUBLIC.person WHERE sheet_id = ? AND LOWER(name) = LOWER(?) AND id <> ?)"
+                            + " + (SELECT COUNT(*) FROM PUBLIC.person_alias WHERE sheet_id = ? AND LOWER(alias) = LOWER(?)"
+                            + " AND person_id <> ?)",
+                    Integer.class, other, name, exceptId, other, name, exceptId);
+            if (taken != null && taken > 0) return true;
+        }
+        return false;
+    }
+
+    /** Whether any of the person's aliases is a name or alias on another sheet of the sheet's tree. */
+    public boolean aliasClashes(String sheetId, long id) {
+        for (String alias : jdbc.queryForList("SELECT alias FROM PUBLIC.person_alias WHERE sheet_id = ? AND person_id = ?",
+                String.class, sheetId, id)) {
+            if (takenInTree(sheetId, alias, id)) return true;
+        }
+        return false;
+    }
+
+    /** The other sheets of the sheet's tree, among the sheets that exist: every sheet under its topmost ancestor
+     *  (the ancestor itself included), following parents and children, each once and never the sheet itself. */
+    public List<String> tree(String sheetId) {
+        java.util.LinkedHashSet<String> found = new java.util.LinkedHashSet<>();
+        String root = sheetId;
+        java.util.Set<String> seen = new java.util.HashSet<>(List.of(sheetId));
+        for (String at = parent(sheetId); at != null && seen.add(at); at = parent(at)) {
+            root = at;
+        }
+        java.util.Deque<String> pending = new java.util.ArrayDeque<>(List.of(root));
+        found.add(root);
+        while (!pending.isEmpty()) {
+            for (String child : jdbc.queryForList("SELECT id FROM PUBLIC.sheet WHERE parent_id = ? ORDER BY id",
+                    String.class, pending.poll())) {
+                if (found.add(child)) pending.add(child);
+            }
+        }
+        found.remove(sheetId);
+        return new ArrayList<>(found);
+    }
+
+    private String parent(String sheetId) {
+        List<String> found = jdbc.query("SELECT parent_id FROM PUBLIC.sheet WHERE id = ?",
+                (rs, i) -> rs.getString("parent_id"), sheetId);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** The ids of the sheet's people whose name or an alias is a name or alias on another sheet of its tree. */
+    public List<Long> clashing(String sheetId) {
+        List<String> others = tree(sheetId);
+        if (others.isEmpty()) return List.of();
+        java.util.Set<String> keys = new java.util.HashSet<>();
+        for (String other : others) {
+            keys.addAll(jdbc.queryForList("SELECT LOWER(name) FROM PUBLIC.person WHERE sheet_id = ?", String.class, other));
+            keys.addAll(jdbc.queryForList("SELECT LOWER(alias) FROM PUBLIC.person_alias WHERE sheet_id = ?", String.class, other));
+        }
+        java.util.Set<Long> clash = new java.util.LinkedHashSet<>();
+        jdbc.query("SELECT id, LOWER(name) AS k FROM PUBLIC.person WHERE sheet_id = ? ORDER BY id", rs -> {
+            if (keys.contains(rs.getString("k"))) clash.add(rs.getLong("id"));
+        }, sheetId);
+        jdbc.query("SELECT person_id, LOWER(alias) AS k FROM PUBLIC.person_alias WHERE sheet_id = ?", rs -> {
+            if (keys.contains(rs.getString("k"))) clash.add(rs.getLong("person_id"));
+        }, sheetId);
+        return new ArrayList<>(clash);
     }
 
     /** The person on the sheet with this name or alias, ignoring case; null when there is none. */

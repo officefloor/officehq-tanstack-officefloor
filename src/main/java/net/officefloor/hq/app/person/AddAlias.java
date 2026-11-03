@@ -8,7 +8,8 @@ import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
-/** Give a person an alias (trimmed; required): it must not equal, ignoring case, any name or alias on the sheet. */
+/** Give a person an alias (trimmed; required): it must not equal, ignoring case, any name or alias on the sheet
+ *  or on another sheet of its tree. */
 public class AddAlias {
     public void add(@PathVariable("sheetId") String sheetId, @PathVariable("personId") String personId,
             @RequestBody AliasRequest request, ServerHttpConnection connection, PersonRepository repository,

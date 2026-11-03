@@ -40,6 +40,9 @@ public class SavePerson {
         if (repository.nameTaken(id, request.name(), pid)) {
             throw new BadRequestException("name is already in use");
         }
+        if (repository.aliasClashes(id, pid)) {
+            throw new BadRequestException("an alias is already in use on another sheet of the tree");
+        }
         Person current = repository.find(id, pid);
         // a stale editor is told so (and shown the current values) before its contact is judged against them
         if (current.version() != request.version()) {

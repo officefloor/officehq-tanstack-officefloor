@@ -19,7 +19,8 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.web.bind.annotation.PathVariable;
 
 /** Add a draft claim, dated the sheet's entry date (its today when none is set) with an empty note, for the person with this name (ignoring
- *  case), adding them first with grade A when the sheet has no one by that name. One change: every check
+ *  case), adding them first with grade A when the sheet has no one by that name (refused when the name is already
+ *  a name or alias on another sheet of the sheet's tree). One change: every check
  *  runs before anything is written, so a refusal leaves no new person and no audit record behind. */
 public class QuickAdd {
     public void add(@PathVariable("sheetId") String sheetId, @Val QuickAddInput input,
@@ -35,6 +36,8 @@ public class QuickAdd {
         PeriodGuard.open(periods, id, person != null ? claims.dueBy(id, person.id(), date) : claims.dueByOfGrade(id, "A", date));
         if (person != null) {
             people.claimAllowed(id, person.id(), date);
+        } else if (people.nameTaken(id, input.name(), 0)) {
+            throw new BadRequestException("name is already in use");
         }
         if (person == null) {
             Rollup.Snapshot before = rollup.take(id);

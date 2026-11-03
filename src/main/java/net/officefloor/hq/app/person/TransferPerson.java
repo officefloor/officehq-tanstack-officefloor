@@ -53,11 +53,11 @@ public class TransferPerson {
         if (settings.archived(to)) {
             throw new BadRequestException("sheet " + to + " is archived");
         }
-        if (people.nameTaken(to, from.name(), 0)) {
+        if (people.nameTaken(to, from.name(), pid)) {
             throw new BadRequestException(from.name() + " is already on sheet " + to);
         }
         for (Alias alias : aliases.list(id)) {
-            if (alias.personId() == pid && people.nameTaken(to, alias.alias(), 0)) {
+            if (alias.personId() == pid && people.nameTaken(to, alias.alias(), pid)) {
                 throw new BadRequestException(alias.alias() + " is already on sheet " + to);
             }
         }

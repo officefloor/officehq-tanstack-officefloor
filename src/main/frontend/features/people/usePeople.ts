@@ -58,8 +58,9 @@ export function peopleKey(sheetId: string) {
   return ['sheet', sheetId, 'people'];
 }
 
-/** The sheet's people, the patrons they have named, the people the signed-in user watches and their aliases, as the store holds them. */
-type PeopleBody = { people: Person[]; patrons: Patron[]; watched: number[]; aliases: Alias[] };
+/** The sheet's people, the patrons they have named, the people the signed-in user watches, their aliases and the
+ *  people whose name or an alias is already a name or alias on another sheet of the tree, as the store holds them. */
+type PeopleBody = { people: Person[]; patrons: Patron[]; watched: number[]; aliases: Alias[]; clashing: number[] };
 
 function peopleBody(sheetId: string): Promise<PeopleBody> {
   return getJson<PeopleBody>(`/api/sheets/${encodeURIComponent(sheetId)}/people`);
@@ -91,6 +92,18 @@ export function useAliases(sheetId: string) {
   return useQuery({
     queryKey: aliasesKey(sheetId),
     queryFn: async () => (await peopleBody(sheetId)).aliases ?? [],
+  });
+}
+
+export function clashingKey(sheetId: string) {
+  return [...peopleKey(sheetId), 'clashing'];
+}
+
+/** The ids of the people whose name or an alias is a name or alias on another sheet of the sheet's tree. */
+export function useClashing(sheetId: string) {
+  return useQuery({
+    queryKey: clashingKey(sheetId),
+    queryFn: async () => (await peopleBody(sheetId)).clashing ?? [],
   });
 }
 
