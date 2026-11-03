@@ -29,7 +29,7 @@ public class PersonRepository {
             rs.getDate("statement_date") == null ? null : rs.getDate("statement_date").toLocalDate().toString(),
             rs.getDate("retired_from") == null ? null : rs.getDate("retired_from").toLocalDate().toString(),
             false, List.of(), List.of(), (Integer) rs.getObject("terms", Integer.class), rs.getString("contact"),
-            rs.getString("origin_sheet"));
+            rs.getString("origin_sheet"), List.of());
 
     /** The position after the last person's on the sheet being inserted into (the end of its list). */
     private static final String NEXT_POSITION = "(SELECT COALESCE(MAX(q.list_position), 0) + 1 FROM person q WHERE q.sheet_id = sheet.id)";
@@ -56,8 +56,24 @@ public class PersonRepository {
                     grades.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(gradeFrom(rs));
                 }, sheetId);
         Map<Long, List<Hold>> holds = holds(sheetId);
+        Map<Long, List<Retirement>> retirements = new HashMap<>();
+        jdbc.query("SELECT person_id, from_date, to_date FROM person_retirement WHERE sheet_id = ? ORDER BY id",
+                rs -> {
+                    retirements.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(retirement(rs));
+                }, sheetId);
         return people.stream().map(p -> p.withGrades(grades.getOrDefault(p.id(), List.of()))
-                .withHolds(holds.getOrDefault(p.id(), List.of()))).toList();
+                .withHolds(holds.getOrDefault(p.id(), List.of()))
+                .withRetirements(retirements.getOrDefault(p.id(), List.of()))).toList();
+    }
+
+    private static Retirement retirement(java.sql.ResultSet rs) throws java.sql.SQLException {
+        return new Retirement(rs.getDate("from_date").toLocalDate().toString(), rs.getDate("to_date").toLocalDate().toString());
+    }
+
+    /** A person's past retirements, oldest first. */
+    public List<Retirement> retirements(String sheetId, long id) {
+        return jdbc.query("SELECT from_date, to_date FROM person_retirement WHERE sheet_id = ? AND person_id = ? ORDER BY id",
+                (rs, i) -> retirement(rs), sheetId, id);
     }
 
     private static Hold hold(java.sql.ResultSet rs) throws java.sql.SQLException {
@@ -107,7 +123,8 @@ public class PersonRepository {
     public Person find(String sheetId, long id) {
         List<Person> found = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND id = ?", ROW,
                 sheetId, id);
-        return found.isEmpty() ? null : found.get(0).withGrades(grades(sheetId, id)).withHolds(holds(sheetId, id));
+        return found.isEmpty() ? null : found.get(0).withGrades(grades(sheetId, id)).withHolds(holds(sheetId, id))
+                .withRetirements(retirements(sheetId, id));
     }
 
     /** Record a statement taken of a person: one more, with its due-total and date. */
@@ -138,6 +155,15 @@ public class PersonRepository {
         history.retire(sheetId, id, from);
     }
 
+    /** Unretire a person on a day: they are no longer retired, and their retirement from {@code from} is kept
+     *  as a past one to that day. */
+    public void unretire(String sheetId, long id, LocalDate from, LocalDate on) {
+        jdbc.update("UPDATE person SET retired_from = NULL WHERE id = ? AND sheet_id = ?", id, sheetId);
+        jdbc.update("INSERT INTO person_retirement (sheet_id, person_id, from_date, to_date) VALUES (?, ?, ?, ?)",
+                sheetId, id, Date.valueOf(from), Date.valueOf(on));
+        history.retire(sheetId, id, null);
+    }
+
     /** Put a person on hold from a from-date to a to-date (null: open-ended). */
     public void hold(String sheetId, long id, LocalDate from, LocalDate to) {
         jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date, held_on)"
@@ -145,11 +171,19 @@ public class PersonRepository {
                 sheetId, id, Date.valueOf(from), to == null ? null : Date.valueOf(to), sheetId);
     }
 
-    /** Refuse a claim of the person dated after the date they are retired from. */
+    /** Refuse a claim of the person dated after the date they are retired from, or after the from-date and
+     *  before the to-date of one of their past retirements. */
     public void claimAllowed(String sheetId, long id, LocalDate date) throws BadRequestException {
         Person p = find(sheetId, id);
         if (p != null && p.retiredFrom() != null && date.isAfter(LocalDate.parse(p.retiredFrom()))) {
             throw new BadRequestException(p.name() + " is retired from " + p.retiredFrom());
+        }
+        if (p != null) {
+            for (Retirement r : p.retirements()) {
+                if (date.isAfter(LocalDate.parse(r.from())) && date.isBefore(LocalDate.parse(r.to()))) {
+                    throw new BadRequestException(p.name() + " was retired from " + r.from() + " to " + r.to());
+                }
+            }
         }
     }
 
@@ -269,7 +303,7 @@ public class PersonRepository {
         }, keys);
         long id = keys.getKey().longValue();
         grade(sheetId, id, grade, null);
-        return new Person(id, name, grade, 1, 0, null, null, null, false, List.of(new GradeFrom(grade, null)), List.of(), terms, contact, null);
+        return new Person(id, name, grade, 1, 0, null, null, null, false, List.of(new GradeFrom(grade, null)), List.of(), terms, contact, null, List.of());
     }
 
     /** Swap two people's places in the sheet's list. */
@@ -334,13 +368,14 @@ public class PersonRepository {
     }
 
     /** Take a person off the sheet entirely: their patron links (both ways), pool memberships, closed periods'
-     *  figures, watchers, holds, statements, grades and aliases go with them. Their claims must already be gone. */
+     *  figures, watchers, holds, past retirements, statements, grades and aliases go with them. Their claims must already be gone. */
     public void remove(String sheetId, long id) {
         jdbc.update("DELETE FROM patron WHERE sheet_id = ? AND (person_id = ? OR patron_id = ?)", sheetId, id, id);
         jdbc.update("DELETE FROM pool_member WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+        jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM person_alias WHERE sheet_id = ? AND person_id = ?", sheetId, id);
@@ -351,7 +386,7 @@ public class PersonRepository {
      *  merged person's patrons are added to the other's (not themselves, no repeats), anyone naming the merged
      *  person names the other instead (no repeats); pool memberships move to the other (shares added, at most
      *  100.00, when the other is already a member); closed periods' figures are added to the other's. Their
-     *  statements, holds, grades, watchers and contact go with them, and the merged person leaves the sheet.
+     *  statements, holds, past retirements, grades, watchers and contact go with them, and the merged person leaves the sheet.
      *  Their claims must already have been moved. */
     public void merge(String sheetId, long fromId, long intoId) {
         String name = jdbc.queryForObject("SELECT name FROM person WHERE id = ? AND sheet_id = ?", String.class, fromId, sheetId);
@@ -396,6 +431,7 @@ public class PersonRepository {
 
         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
+        jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         jdbc.update("DELETE FROM person WHERE id = ? AND sheet_id = ?", fromId, sheetId);

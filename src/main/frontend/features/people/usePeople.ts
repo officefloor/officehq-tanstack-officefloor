@@ -8,7 +8,8 @@ import { useReader } from '../../api/readNow';
  *  from (null when not retired); their holds, oldest first, and whether they have any (their open (OPEN or PENDING)
  *  claims dated within a hold, unless bound by a statement, then count in no live total); their own terms in
  *  days (null when they have none: their grade's, else the sheet's, apply); their contact (null when they have none);
- *  the sheet they were transferred from (null when they were not transferred here). */
+ *  the sheet they were transferred from (null when they were not transferred here); their past retirements,
+ *  oldest first. */
 export type Person = {
   id: number;
   name: string;
@@ -24,7 +25,12 @@ export type Person = {
   terms: number | null;
   contact: string | null;
   origin: string | null;
+  retirements: Retirement[];
 };
+
+/** One of a person's past retirements: from the date they were retired from to the sheet's today when they
+ *  were unretired (yyyy-mm-dd). No claim of theirs may be dated after its from and before its to. */
+export type Retirement = { from: string; to: string };
 
 /** One of a person's holds: from its from-date to its to-date (yyyy-mm-dd, both inclusive; a null
  *  from-date is the beginning of time, a null to-date open-ended). */

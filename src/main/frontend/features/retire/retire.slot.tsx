@@ -4,12 +4,15 @@ import { postJson } from '../../api/http';
 import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { peopleKey, usePeople, type Person } from '../people/usePeople';
+import { poolsKey } from '../pools/usePools';
 import { usePersonRowAction } from '../people/usePersonRowAction';
 import { useShowRetired } from './useShowRetired';
 
-/** A person's retirement: whether they are retired and from when, and a date (blank: the sheet's
- *  today) and button that retire them. A person with a date set counts as retired at once; no claim
- *  of theirs may be dated after it, and the list leaves them out unless "show retired" is on. */
+/** A person's retirement: whether they are retired and from when, a line per past retirement (from to the
+ *  day unretired), and a date (blank: the sheet's today) and button that retire them, and a button that
+ *  unretires them on the sheet's today (refused for anyone not retired). A person with a date set counts as
+ *  retired at once; no claim of theirs may be dated after it (nor after a past retirement's from and before
+ *  its to), and the list leaves them out unless "show retired" is on. */
 function PersonRetire({ sheetId, personId }: { sheetId: string; personId: number }) {
   const people = usePeople(sheetId);
   const queryClient = useQueryClient();
@@ -26,10 +29,26 @@ function PersonRetire({ sheetId, personId }: { sheetId: string; personId: number
   });
   const announce = usePersonRowAction(sheetId, personId, retire.reset);
 
+  const unretire = useMutation({
+    mutationFn: () => postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/unretire`, {}),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+      void queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
+    },
+  });
+  const announceUnretire = usePersonRowAction(sheetId, personId, unretire.reset);
+
   return (
     <>
       <td data-testid="person-retired">{p?.retiredFrom ? 'yes' : 'no'}</td>
       <td data-testid="person-retired-from">{p?.retiredFrom ?? ''}</td>
+      <td>
+        {(p?.retirements ?? []).map((r, i) => (
+          <div key={i} data-testid="person-retirement-line">
+            {r.from} to {r.to}
+          </div>
+        ))}
+      </td>
       <td>
         <input
           type="text"
@@ -52,8 +71,21 @@ function PersonRetire({ sheetId, personId }: { sheetId: string; personId: number
           }}
         >
           Retire
+        </button>{' '}
+        <button
+          type="button"
+          data-testid="person-unretire"
+          disabled={unretire.isPending}
+          onClick={() => {
+            announceUnretire();
+            unretire.reset();
+            unretire.mutate();
+          }}
+        >
+          Unretire
         </button>
         {retire.isError && <span data-testid="person-error">{retire.error.message}</span>}
+        {unretire.isError && <span data-testid="person-error">{unretire.error.message}</span>}
       </td>
     </>
   );
@@ -78,6 +110,7 @@ export const contributions = [
       <>
         <th>Retired</th>
         <th>Retired from</th>
+        <th>Past retirements</th>
         <th />
       </>
     ),
