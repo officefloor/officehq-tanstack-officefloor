@@ -11,6 +11,7 @@ import { claimDueNow, isOverdue } from '../overdue/useOverdue';
 import { useSignedInUser } from '../session/useSession';
 import { roleOf, useSettings } from '../settings/useSettings';
 import { useSheetToday } from '../today/useSheetToday';
+import { useTemplates } from '../templates/useTemplates';
 import { claimed, claimsKey, shownDeferred, shownTags, useClaims, useLastBatch, type Claim } from './useClaims';
 import { useClaimSelection } from './useClaimSelection';
 
@@ -64,6 +65,8 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   const [corrects, setCorrects] = useState('');
   const [ref, setRef] = useState('');
   const [tags, setTags] = useState('');
+  const [template, setTemplate] = useState('');
+  const templates = useTemplates(sheetId);
   const [reasons, setReasons] = useState<Record<number, string>>({});
   const [voidReasons, setVoidReasons] = useState<Record<number, string>>({});
   const [targets, setTargets] = useState<Record<number, string>>({});
@@ -109,6 +112,16 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
     onSuccess: async (_, f) => {
       if (f.id !== null) markLock(f.id, null);
       clearForm();
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+  });
+
+  // A DRAFT claim from a template: its amount and note as they are now, the date left blank, by every rule
+  // of the claim form (a refusal shows as the form's).
+  const fromTemplate = useMutation({
+    mutationFn: (name: string) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/template-claim`, { template: name }),
+    onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
     },
   });
@@ -276,6 +289,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   const field = (set: (v: string) => void) => (e: ChangeEvent<HTMLInputElement>) => {
     set(e.target.value);
     save.reset();
+    fromTemplate.reset();
   };
 
   // A claim's due: the one fixed when it was settled, else the greater of the floor in force on its date and its
@@ -293,6 +307,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
             setRefused(null);
             submitOnce(() => {
               save.reset();
+              fromTemplate.reset();
               return save.mutateAsync({ id: editing, amount, date, note, corrects, ref, tags });
             });
           }}
@@ -332,7 +347,43 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
           <button type="submit" data-testid="claim-form-submit" disabled={save.isPending || (lock.isPending && lock.variables?.action === 'lock')}>
             {editing === null ? 'Add claim' : 'Save claim'}
           </button>
-          {save.isError && <p data-testid="claim-form-error">{save.error.message}</p>}
+          <label>
+            Template{' '}
+            <select
+              data-testid="claim-template-select"
+              value={template}
+              onChange={(e) => {
+                setTemplate(e.target.value);
+                fromTemplate.reset();
+                save.reset();
+              }}
+            >
+              <option value="">(choose)</option>
+              {(templates.data ?? []).map((t) => (
+                <option key={t.name} value={t.name}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </label>{' '}
+          <button
+            type="button"
+            data-testid="claim-template-add"
+            disabled={fromTemplate.isPending}
+            onClick={() => {
+              setRefused(null);
+              submitOnce(() => {
+                save.reset();
+                fromTemplate.reset();
+                return fromTemplate.mutateAsync(template);
+              });
+            }}
+          >
+            Add from template
+          </button>
+          {(save.isError || fromTemplate.isError) && (
+            <p data-testid="claim-form-error">{(save.error ?? fromTemplate.error)?.message}</p>
+          )}
         </form>
         <table data-testid="claims-list">
           <tbody>
