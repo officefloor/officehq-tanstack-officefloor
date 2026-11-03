@@ -409,6 +409,13 @@ public class PersonRepository {
         }
     }
 
+    /** The sheet-today a person arrived on the sheet by a transfer (null when they did not arrive by one). */
+    public LocalDate arrivedOn(String sheetId, long id) {
+        List<java.sql.Date> found = jdbc.query("SELECT arrived_on FROM person WHERE sheet_id = ? AND id = ?",
+                (rs, i) -> rs.getDate("arrived_on"), sheetId, id);
+        return found.isEmpty() || found.get(0) == null ? null : found.get(0).toLocalDate();
+    }
+
     /** Copy a person onto another sheet, as added there on its today: their name, the grade they were first given,
      *  every grade they were given (with its from-date), their terms, contact and aliases (in the order they were
      *  added), and the sheet they came from (their statements are joined by the caller); the new person's id. Their claims are moved by the caller. */
@@ -416,16 +423,18 @@ public class PersonRepository {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(c -> {
             PreparedStatement ps = c.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade, terms, contact, added_on, list_position, origin_sheet)"
+                    "INSERT INTO person (sheet_id, name, grade, terms, contact, added_on, list_position, origin_sheet, arrived_on)"
                             + " SELECT ?, p.name, p.grade, p.terms, p.contact, (SELECT s.today FROM sheet s WHERE s.id = ?),"
-                            + " (SELECT COALESCE(MAX(q.list_position), 0) + 1 FROM person q WHERE q.sheet_id = ?), ?"
+                            + " (SELECT COALESCE(MAX(q.list_position), 0) + 1 FROM person q WHERE q.sheet_id = ?), ?,"
+                            + " (SELECT s.today FROM sheet s WHERE s.id = ?)"
                             + " FROM person p WHERE p.id = ? AND p.sheet_id = ?", new String[] { "id" });
             ps.setString(1, toSheet);
             ps.setString(2, toSheet);
             ps.setString(3, toSheet);
             ps.setString(4, fromSheet);
-            ps.setLong(5, id);
-            ps.setString(6, fromSheet);
+            ps.setString(5, toSheet);
+            ps.setLong(6, id);
+            ps.setString(7, fromSheet);
             return ps;
         }, keys);
         long arrived = keys.getKey().longValue();

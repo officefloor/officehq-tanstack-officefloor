@@ -51,6 +51,38 @@ function PersonTransfer({ sheetId, personId }: { sheetId: string; personId: numb
   );
 }
 
+/** A steward undoes the transfer that brought a person here, on the sheet-today they arrived: they go back to the
+ *  sheet they came from by the transfer rules, so every figure on the sheet is re-read. Any later day, anyone else,
+ *  or a person who did not arrive by transfer is refused with the row's error. */
+function PersonTransferUndo({ sheetId, personId }: { sheetId: string; personId: number }) {
+  const queryClient = useQueryClient();
+  const undo = useMutation({
+    mutationFn: () => postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/transfer-undo`, {}),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['sheet', sheetId] });
+    },
+  });
+  const announce = usePersonRowAction(sheetId, personId, undo.reset);
+
+  return (
+    <td>
+      <button
+        type="button"
+        data-testid="person-transfer-undo"
+        disabled={undo.isPending}
+        onClick={() => {
+          announce();
+          undo.reset();
+          undo.mutate();
+        }}
+      >
+        Undo transfer
+      </button>
+      {undo.isError && <span data-testid="person-error">{undo.error.message}</span>}
+    </td>
+  );
+}
+
 /** The sheet a person was transferred from (blank for anyone added on this sheet). */
 function PersonOrigin({ sheetId, personId }: { sheetId: string; personId: number }) {
   const people = usePeople(sheetId);
@@ -63,4 +95,6 @@ export const contributions = [
   PersonCells.fill({ order: 55, Component: PersonOrigin }),
   PersonColumnHead.fill({ order: 56, Component: () => <th>Transfer</th> }),
   PersonCells.fill({ order: 56, Component: PersonTransfer }),
+  PersonColumnHead.fill({ order: 56.5, Component: () => <th>Undo transfer</th> }),
+  PersonCells.fill({ order: 56.5, Component: PersonTransferUndo }),
 ];

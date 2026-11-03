@@ -45,10 +45,19 @@ public class TransferPerson {
         if (!settings.role(id, by).equals(SettingsRepository.STEWARD)) {
             throw new BadRequestException("only a steward can transfer people");
         }
+        String to = request == null || request.toSheetId() == null ? "" : request.toSheetId().trim();
+        long arrived = move(id, pid, from, to, by, people, aliases, claims, settings, sheets, audit, rollup);
+        person.set(people.find(to, arrived));
+    }
+
+    /** Transfer a person, already found on sheet {@code id}, to sheet {@code to} by the transfer rules (refused as
+     *  {@link #transfer} refuses, beyond the steward check), writing both sheets' lines; their id on that sheet. */
+    static long move(String id, long pid, Person from, String to, String by, PersonRepository people,
+            AliasRepository aliases, ClaimRepository claims, SettingsRepository settings, SheetRepository sheets,
+            Audit audit, Rollup rollup) throws BadRequestException {
         if (from.retired()) {
             throw new BadRequestException(from.name() + " is retired");
         }
-        String to = request == null || request.toSheetId() == null ? "" : request.toSheetId().trim();
         if (to.isEmpty()) {
             throw new BadRequestException("enter the sheet to transfer to");
         }
@@ -111,6 +120,6 @@ public class TransferPerson {
             audit.record("PERSON_MERGED sheet=" + to + " by=" + by + " from=" + from.name() + " into=" + into.name());
         }
         rollup.record(to, by, beforeThere);
-        person.set(people.find(to, arrived));
+        return arrived;
     }
 }
