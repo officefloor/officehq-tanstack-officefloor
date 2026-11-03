@@ -13,7 +13,7 @@ import { Col } from '../columns/useColumns';
  *  of their counting claims to the figure it has then (unbinding the rest), until the next one; a
  *  steward can cancel the last one, its claims going live again. A date beside the button takes the
  *  statement as of that date (on or before the sheet's today; blank: now); it is cleared once that statement is
- *  taken or refused. Below, one line per statement still standing (oldest first, by date), as its date and
+ *  taken or refused. Below, one line per statement still standing (in the order taken, oldest first), as its date and
  *  due-total. */
 function PersonStatement({ sheetId, personId }: { sheetId: string; personId: number }) {
   const fig = useFigure();

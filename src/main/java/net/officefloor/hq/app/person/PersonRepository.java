@@ -75,7 +75,7 @@ public class PersonRepository {
                     snapshots.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(snapshot(rs));
                 }, sheetId);
         Map<Long, List<StatementLine>> statements = new HashMap<>();
-        jdbc.query("SELECT person_id, statement_date, due_total FROM person_statement WHERE sheet_id = ? ORDER BY statement_date, seq",
+        jdbc.query("SELECT person_id, statement_date, due_total FROM person_statement WHERE sheet_id = ? ORDER BY person_id, seq",
                 rs -> {
                     statements.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(statementLine(rs));
                 }, sheetId);
@@ -101,10 +101,10 @@ public class PersonRepository {
         return new StatementLine(rs.getDate("statement_date").toLocalDate().toString(), rs.getString("due_total"));
     }
 
-    /** A person's statements still standing, by date (oldest first; taken order among those of one date). */
+    /** A person's statements still standing, in the order taken (oldest first). */
     public List<StatementLine> statements(String sheetId, long id) {
         return jdbc.query("SELECT statement_date, due_total FROM person_statement WHERE sheet_id = ? AND person_id = ?"
-                + " ORDER BY statement_date, seq", (rs, i) -> statementLine(rs), sheetId, id);
+                + " ORDER BY person_id, seq", (rs, i) -> statementLine(rs), sheetId, id);
     }
 
     /** Keep a snapshot of a person: their due-total as it stood on the day being left. */
