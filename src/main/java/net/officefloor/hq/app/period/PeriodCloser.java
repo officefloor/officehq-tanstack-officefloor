@@ -21,8 +21,8 @@ import org.springframework.stereotype.Service;
  *  within one of their holds left out unless bound by a statement, skipping those with none), so later changes to
  *  rates do not alter it; and each person's due-total for it likewise, for every person on the sheet (0.00 for one
  *  with nothing in it), and each person's carried figure for it (their claims that count whose due-by falls in a
- *  period ending before it starts and that were still OPEN or PENDING at the end of its last day, 0.00 for one with
- *  none). Writes PERIOD_CLOSED, ending auto=yes when closed by the sheet's grace days. */
+ *  period ending before it starts and that were still OPEN or PENDING at the end of its last day, plus their opening
+ *  balance for it, 0.00 for one with none). Writes PERIOD_CLOSED, ending auto=yes when closed by the sheet's grace days. */
 @Service
 public class PeriodCloser {
 
@@ -78,13 +78,19 @@ public class PeriodCloser {
             }
             if (carried) personCarried.merge(c.personId(), now, BigDecimal::add);
         }
+        Map<Long, BigDecimal> openings = periods.openings(sheetId, found.id());
+        for (Map.Entry<Long, BigDecimal> e : openings.entrySet()) {
+            if (personCarried.containsKey(e.getKey())) personCarried.merge(e.getKey(), e.getValue(), BigDecimal::add);
+        }
         String shown = total.setScale(2).toPlainString();
         periods.close(sheetId, found.id(), total, personTotals, personCarried, soft);
         audit.record((soft ? "PERIOD_SOFT_CLOSED" : "PERIOD_CLOSED") + " sheet=" + sheetId + " by=" + by + " period=" + found.name() + " total=" + shown
                 + (auto ? " auto=yes" : ""));
         return new Period(found.id(), found.name(), found.from(), found.to(), !soft, shown, personTotals.entrySet().stream().collect(Collectors.toMap(e -> Long.toString(e.getKey()),
                 e -> e.getValue().setScale(2).toPlainString(), (a, b) -> a, LinkedHashMap::new)), personCarried.entrySet().stream().collect(Collectors.toMap(e -> Long.toString(e.getKey()),
-                e -> e.getValue().setScale(2).toPlainString(), (a, b) -> a, LinkedHashMap::new)), soft, found.cap());
+                e -> e.getValue().setScale(2).toPlainString(), (a, b) -> a, LinkedHashMap::new)), soft, found.cap(),
+                openings.entrySet().stream().collect(Collectors.toMap(e -> Long.toString(e.getKey()),
+                e -> e.getValue().setScale(2).toPlainString(), (a, b) -> a, LinkedHashMap::new)));
     }
 
     /** Close, by the sheet's grace days (none when blank), every open (not closed nor soft-closed) period whose to-date plus the grace days is

@@ -474,6 +474,7 @@ public class PersonRepository {
         jdbc.update("DELETE FROM pool_member WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM crew_member WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+        jdbc.update("DELETE FROM period_opening WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, id);
@@ -535,6 +536,14 @@ public class PersonRepository {
         jdbc.update("DELETE FROM period_person_total t WHERE t.sheet_id = ? AND t.person_id = ? AND EXISTS (SELECT 1"
                 + " FROM period_person_total o WHERE o.period_id = t.period_id AND o.person_id = ?)", sheetId, fromId, intoId);
         jdbc.update("UPDATE period_person_total SET person_id = ? WHERE sheet_id = ? AND person_id = ?", intoId, sheetId, fromId);
+        // So do the opening balances.
+        jdbc.update("UPDATE period_opening t SET amount = amount + (SELECT f.amount FROM period_opening f"
+                + " WHERE f.period_id = t.period_id AND f.person_id = ?) WHERE t.sheet_id = ? AND t.person_id = ?"
+                + " AND EXISTS (SELECT 1 FROM period_opening f WHERE f.period_id = t.period_id AND f.person_id = ?)",
+                fromId, sheetId, intoId, fromId);
+        jdbc.update("DELETE FROM period_opening t WHERE t.sheet_id = ? AND t.person_id = ? AND EXISTS (SELECT 1"
+                + " FROM period_opening o WHERE o.period_id = t.period_id AND o.person_id = ?)", sheetId, fromId, intoId);
+        jdbc.update("UPDATE period_opening SET person_id = ? WHERE sheet_id = ? AND person_id = ?", intoId, sheetId, fromId);
 
         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);

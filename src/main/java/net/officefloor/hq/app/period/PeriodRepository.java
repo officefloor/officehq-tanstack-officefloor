@@ -20,7 +20,7 @@ public class PeriodRepository {
             rs.getDate("from_date").toLocalDate().toString(), rs.getDate("to_date").toLocalDate().toString(),
             rs.getBoolean("closed"), rs.getBigDecimal("closed_total") == null ? null
                     : rs.getBigDecimal("closed_total").setScale(2).toPlainString(), Map.of(), Map.of(),
-            rs.getBoolean("soft_closed"), (Integer) rs.getObject("claim_cap", Integer.class));
+            rs.getBoolean("soft_closed"), (Integer) rs.getObject("claim_cap", Integer.class), Map.of());
 
     private static final String COLUMNS = "id, name, from_date, to_date, closed, closed_total, soft_closed, claim_cap";
 
@@ -55,8 +55,35 @@ public class PeriodRepository {
                     carried.computeIfAbsent(rs.getLong("period_id"), k -> new LinkedHashMap<>())
                             .put(Long.toString(rs.getLong("person_id")), rs.getBigDecimal("carried").setScale(2).toPlainString());
                 }, sheetId);
+        Map<Long, Map<String, String>> openings = new HashMap<>();
+        jdbc.query("SELECT period_id, person_id, amount FROM period_opening WHERE sheet_id = ? ORDER BY person_id",
+                rs -> {
+                    openings.computeIfAbsent(rs.getLong("period_id"), k -> new LinkedHashMap<>())
+                            .put(Long.toString(rs.getLong("person_id")), rs.getBigDecimal("amount").setScale(2).toPlainString());
+                }, sheetId);
         return periods.stream().map(p -> new Period(p.id(), p.name(), p.from(), p.to(), p.closed(), p.closedTotal(),
-                totals.getOrDefault(p.id(), Map.of()), carried.getOrDefault(p.id(), Map.of()), p.softClosed(), p.cap())).toList();
+                totals.getOrDefault(p.id(), Map.of()), carried.getOrDefault(p.id(), Map.of()), p.softClosed(), p.cap(),
+                openings.getOrDefault(p.id(), Map.of()))).toList();
+    }
+
+    /** Each person's opening balance for a period, by person id (only those with one). */
+    public Map<Long, BigDecimal> openings(String sheetId, long periodId) {
+        Map<Long, BigDecimal> found = new LinkedHashMap<>();
+        jdbc.query("SELECT person_id, amount FROM period_opening WHERE sheet_id = ? AND period_id = ? ORDER BY person_id",
+                rs -> {
+                    found.put(rs.getLong("person_id"), rs.getBigDecimal("amount"));
+                }, sheetId, periodId);
+        return found;
+    }
+
+    /** Add an amount to a person's opening balance for a period. */
+    public void addOpening(String sheetId, long periodId, long personId, BigDecimal amount) {
+        int changed = jdbc.update("UPDATE period_opening SET amount = amount + ? WHERE sheet_id = ? AND period_id = ? AND person_id = ?",
+                amount, sheetId, periodId, personId);
+        if (changed == 0) {
+            jdbc.update("INSERT INTO period_opening (period_id, sheet_id, person_id, amount) VALUES (?, ?, ?, ?)",
+                    periodId, sheetId, personId, amount);
+        }
     }
 
     /** The sheet's period of this name (exactly); null when there is none. */
@@ -143,6 +170,6 @@ public class PeriodRepository {
             }
             return ps;
         }, keys);
-        return new Period(keys.getKey().longValue(), name, from.toString(), to.toString(), false, null, Map.of(), Map.of(), false, cap);
+        return new Period(keys.getKey().longValue(), name, from.toString(), to.toString(), false, null, Map.of(), Map.of(), false, cap, Map.of());
     }
 }

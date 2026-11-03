@@ -31,6 +31,7 @@ public class ReopenPeriod {
         }
         repository.reopen(id, found.id());
         audit.record("PERIOD_REOPENED sheet=" + id + " by=" + by + " period=" + found.name());
-        period.set(new Period(found.id(), found.name(), found.from(), found.to(), false, null, java.util.Map.of(), java.util.Map.of(), false, found.cap()));
+        period.set(new Period(found.id(), found.name(), found.from(), found.to(), false, null, java.util.Map.of(), java.util.Map.of(), false, found.cap(),
+                repository.list(id).stream().filter(p -> p.id() == found.id()).findFirst().map(Period::personOpenings).orElse(java.util.Map.of())));
     }
 }
