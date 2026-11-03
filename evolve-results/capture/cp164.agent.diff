@@ -1,0 +1,77 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimInput.java b/src/main/java/net/officefloor/hq/app/claim/ClaimInput.java
+index 7e4375d47..90a62d63e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimInput.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimInput.java
+@@ -53,6 +53,13 @@ public record ClaimInput(BigDecimal amount, LocalDate date, String note, String
+     /** Check the form against the person's claims: a negative amount must name, by number, a SETTLED
+      *  claim of the same person; only a negative amount may name one. */
+     public void checkCorrection(ClaimRepository repository, String sheetId, long personId) throws BadRequestException {
++        checkCorrection(repository, sheetId, personId, null);
++    }
++
++    /** As {@link #checkCorrection(ClaimRepository, String, long)}, and a correction may not exceed what remains of
++     *  the claim it corrects: its amount less the corrections already made against it (VOID and DELETED ones, and
++     *  {@code exceptId}, null: none, left out). */
++    public void checkCorrection(ClaimRepository repository, String sheetId, long personId, Long exceptId) throws BadRequestException {
+         if (!correction()) {
+             if (corrects != null) {
+                 throw new BadRequestException("only a negative amount corrects a claim");
+@@ -65,5 +72,10 @@ public record ClaimInput(BigDecimal amount, LocalDate date, String note, String
+         if (!repository.settledOf(sheetId, personId, corrects)) {
+             throw new BadRequestException("claim " + corrects + " is not a settled claim of this person");
+         }
++        BigDecimal remaining = repository.remainingOf(sheetId, personId, corrects, exceptId);
++        if (amount.negate().compareTo(remaining) > 0) {
++            throw new BadRequestException("the correction exceeds the " + ClaimRepository.money(remaining)
++                    + " that remains of claim " + corrects);
++        }
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 0156cbf86..52ebf7db2 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -543,6 +543,17 @@ public class ClaimRepository {
+         return n != null && n > 0;
+     }
+ 
++    /** What remains of the person's SETTLED claim with this number: its amount plus the (negative) amounts of the
++     *  corrections made against it that are not VOID or DELETED, leaving out {@code exceptId} (null: none). */
++    public BigDecimal remainingOf(String sheetId, long personId, String number, Long exceptId) {
++        BigDecimal target = jdbc.queryForObject("SELECT amount FROM claim WHERE sheet_id = ? AND person_id = ?"
++                + " AND claim_no = ? AND status = 'SETTLED' ORDER BY id LIMIT 1", BigDecimal.class, sheetId, personId, number);
++        BigDecimal made = jdbc.queryForObject("SELECT COALESCE(SUM(amount), 0) FROM claim WHERE sheet_id = ? AND person_id = ?"
++                + " AND corrects = ? AND status NOT IN ('VOID', 'DELETED') AND id <> ?", BigDecimal.class,
++                sheetId, personId, number, exceptId == null ? -1L : exceptId);
++        return target.add(made).setScale(2);
++    }
++
+     /** The due-by of a claim created now for a person with a date: the terms-th business day after the date (skipping
+      *  Saturdays, Sundays and the sheet's holidays), for the person's own terms, else the terms, in force on it, of the
+      *  grade the person has on it, else the sheet's terms in force on it. */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java b/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
+index 2ce22c1ad..d1912187d 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
+@@ -47,7 +47,7 @@ public class SaveClaim {
+         LocalDate date = input.date() != null ? input.date() : sheets.today(id);
+         PeriodGuard.open(periods, id, LocalDate.parse(found.dueBy()));
+         people.claimAllowed(id, found.personId(), date);
+-        input.checkCorrection(repository, id, found.personId());
++        input.checkCorrection(repository, id, found.personId(), cid);
+         input.checkRef(repository, id, cid);
+         // A claim's due-by is fixed when it is created: editing its date leaves it as it is.
+         String dueBy = found.dueBy();
+diff --git a/src/main/java/net/officefloor/hq/app/paste/PasteClaims.java b/src/main/java/net/officefloor/hq/app/paste/PasteClaims.java
+index 949ce2a44..40d4da4f3 100644
+--- a/src/main/java/net/officefloor/hq/app/paste/PasteClaims.java
++++ b/src/main/java/net/officefloor/hq/app/paste/PasteClaims.java
+@@ -115,7 +115,7 @@ public class PasteClaims {
+                 }
+                 PeriodGuard.open(periods, id, draft != null ? LocalDate.parse(draft.dueBy()) : claims.dueBy(id, person.id(), date));
+                 people.claimAllowed(id, person.id(), date);
+-                line.claim().checkCorrection(claims, id, person.id());
++                line.claim().checkCorrection(claims, id, person.id(), draft == null ? null : draft.id());
+                 line.claim().checkRef(claims, id, draft == null ? null : draft.id());
+                 if (line.claim().ref() != null && !refs.add(line.claim().ref().toLowerCase(Locale.ROOT))) {
+                     throw new BadRequestException("reference " + line.claim().ref() + " is given twice in the paste");
