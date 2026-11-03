@@ -112,6 +112,12 @@ public class Rollup {
         }
     }
 
+    /** Record the lines for every person (in list order) and the sheet's totals, moved or not. */
+    public void recordAll(String sheetId, String by) {
+        Map<Long, Figures> none = Map.of();
+        record(sheetId, by, new Snapshot(none, "", "", ""));
+    }
+
     /** Record the lines for whatever figures moved since {@code before}. */
     public void record(String sheetId, String by, Snapshot before) {
         Snapshot after = take(sheetId);
