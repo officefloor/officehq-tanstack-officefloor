@@ -375,7 +375,7 @@ public class PersonRepository {
     }
 
     /** Take a person off the sheet entirely: their patron links (both ways), pool memberships, closed periods'
-     *  figures, watchers, holds, past retirements, statements, grades and aliases go with them. Their claims must already be gone. */
+     *  figures, watchers, holds, past retirements, statements, grades, aliases and plans go with them. Their claims must already be gone. */
     public void remove(String sheetId, long id) {
         jdbc.update("DELETE FROM patron WHERE sheet_id = ? AND (person_id = ? OR patron_id = ?)", sheetId, id, id);
         jdbc.update("DELETE FROM pool_member WHERE sheet_id = ? AND person_id = ?", sheetId, id);
@@ -386,6 +386,9 @@ public class PersonRepository {
         jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM person_alias WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+        jdbc.update("DELETE FROM plan_claim WHERE sheet_id = ? AND plan_id IN (SELECT id FROM plan WHERE sheet_id = ? AND person_id = ?)",
+                sheetId, sheetId, id);
+        jdbc.update("DELETE FROM plan WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM person WHERE id = ? AND sheet_id = ?", id, sheetId);
     }
 
@@ -393,7 +396,7 @@ public class PersonRepository {
      *  merged person's patrons are added to the other's (not themselves, no repeats), anyone naming the merged
      *  person names the other instead (no repeats); pool memberships move to the other (shares added, at most
      *  100.00, when the other is already a member); closed periods' figures are added to the other's. Their
-     *  statements, holds, past retirements, grades, watchers and contact go with them, and the merged person leaves the sheet.
+     *  statements, holds, past retirements, grades, watchers and contact go with them, their plans move to the other, and the merged person leaves the sheet.
      *  Their claims must already have been moved. */
     public void merge(String sheetId, long fromId, long intoId) {
         String name = jdbc.queryForObject("SELECT name FROM person WHERE id = ? AND sheet_id = ?", String.class, fromId, sheetId);
@@ -441,6 +444,8 @@ public class PersonRepository {
         jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
+        // Plans follow the claims.
+        jdbc.update("UPDATE plan SET person_id = ? WHERE sheet_id = ? AND person_id = ?", intoId, sheetId, fromId);
         jdbc.update("DELETE FROM person WHERE id = ? AND sheet_id = ?", fromId, sheetId);
     }
 }
