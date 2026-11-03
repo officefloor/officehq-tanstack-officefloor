@@ -1,0 +1,302 @@
+diff --git a/src/main/frontend/features/transfer/transfer.slot.tsx b/src/main/frontend/features/transfer/transfer.slot.tsx
+new file mode 100644
+index 000000000..d2501d101
+--- /dev/null
++++ b/src/main/frontend/features/transfer/transfer.slot.tsx
+@@ -0,0 +1,57 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
++import type { Person } from '../people/usePeople';
++import { usePersonRowAction } from '../people/usePersonRowAction';
++
++/** A steward transfers a person to another sheet by id: an entry for the sheet id and a transfer button. The
++ *  person, with their grades, terms, contact, aliases and claims, leaves this sheet for the other, so every
++ *  figure on the sheet is re-read. Anyone else, a retired person, this sheet's own id, or a name, alias or
++ *  contact already on the other sheet is refused with the row's error. */
++function PersonTransfer({ sheetId, personId }: { sheetId: string; personId: number }) {
++  const queryClient = useQueryClient();
++  const [to, setTo] = useState('');
++
++  const transfer = useMutation({
++    mutationFn: (toSheetId: string) =>
++      postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/transfer`, { toSheetId }),
++    onSuccess: async () => {
++      setTo('');
++      await queryClient.invalidateQueries({ queryKey: ['sheet', sheetId] });
++    },
++  });
++  const announce = usePersonRowAction(sheetId, personId, transfer.reset);
++
++  return (
++    <td>
++      <input
++        data-testid="person-transfer-to"
++        placeholder="Sheet id"
++        value={to}
++        onChange={(e) => {
++          setTo(e.target.value);
++          transfer.reset();
++        }}
++      />{' '}
++      <button
++        type="button"
++        data-testid="person-transfer"
++        disabled={transfer.isPending}
++        onClick={() => {
++          announce();
++          transfer.reset();
++          transfer.mutate(to);
++        }}
++      >
++        Transfer
++      </button>
++      {transfer.isError && <span data-testid="person-error">{transfer.error.message}</span>}
++    </td>
++  );
++}
++
++export const contributions = [
++  PersonColumnHead.fill({ order: 56, Component: () => <th>Transfer</th> }),
++  PersonCells.fill({ order: 56, Component: PersonTransfer }),
++];
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 86ec8ef03..4b3570131 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -353,6 +353,70 @@ public class ClaimRepository {
+         }
+     }
+ 
++    /** Move every claim of a person to another sheet, as the claims of the person {@code toPersonId} there: each keeps
++     *  its status, dates, note, tags, settled due, status log and comments, and is listed in the same order; it loses
++     *  any figure a statement bound it to, its external reference, its lock and its settle batch. Each claim that had
++     *  a number takes the other sheet's next one (as opening it there would give it), in the order the claims were
++     *  opened (by the sheet's today when each was opened, then by the order they were added); a number one of them
++     *  corrects or was split from follows it. The claims leave this sheet. */
++    public void transferAll(String fromSheet, long personId, String toSheet, long toPersonId) {
++        List<Long> ids = jdbc.queryForList("SELECT id FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY listed, id",
++                Long.class, fromSheet, personId);
++        Map<Long, Long> moved = new LinkedHashMap<>();
++        for (Long claimId : ids) {
++            GeneratedKeyHolder keys = new GeneratedKeyHolder();
++            jdbc.update(c -> {
++                PreparedStatement ps = c.prepareStatement("INSERT INTO claim (sheet_id, person_id, amount, claim_date, note,"
++                        + " status, settled_due, opened_by, corrects, due_by, deferred_until, proofs, split_from, late_entry,"
++                        + " reminded, tags, void_reason, edited_by) SELECT ?, ?, amount, claim_date, note, status, settled_due,"
++                        + " opened_by, corrects, due_by, deferred_until, proofs, split_from, late_entry, reminded, tags,"
++                        + " void_reason, edited_by FROM claim WHERE id = ? AND sheet_id = ?", new String[] { "id" });
++                ps.setString(1, toSheet);
++                ps.setLong(2, toPersonId);
++                ps.setLong(3, claimId);
++                ps.setString(4, fromSheet);
++                return ps;
++            }, keys);
++            long arrived = keys.getKey().longValue();
++            moved.put(claimId, arrived);
++            jdbc.update("INSERT INTO claim_log (sheet_id, claim_id, status, by_user, on_date, due) SELECT ?, ?, status,"
++                    + " by_user, on_date, due FROM claim_log WHERE sheet_id = ? AND claim_id = ? ORDER BY id",
++                    toSheet, arrived, fromSheet, claimId);
++            jdbc.update("INSERT INTO claim_comment (sheet_id, claim_id, by_user, on_date, text) SELECT ?, ?, by_user,"
++                    + " on_date, text FROM claim_comment WHERE sheet_id = ? AND claim_id = ? ORDER BY id",
++                    toSheet, arrived, fromSheet, claimId);
++            used(toSheet, jdbc.queryForObject("SELECT tags FROM claim WHERE id = ?", String.class, arrived));
++        }
++
++        // Renumber on the other sheet, in the order the claims were opened.
++        List<Object[]> numbered = jdbc.query("SELECT c.id, c.claim_no, c.due_by FROM claim c WHERE c.sheet_id = ?"
++                + " AND c.person_id = ? AND c.claim_no IS NOT NULL ORDER BY (SELECT MIN(l.on_date) FROM claim_log l"
++                + " WHERE l.sheet_id = c.sheet_id AND l.claim_id = c.id AND l.status = 'OPEN') NULLS LAST, c.id",
++                (rs, i) -> new Object[] { rs.getLong("id"), rs.getString("claim_no"), rs.getDate("due_by").toLocalDate() },
++                fromSheet, personId);
++        boolean perPeriod = numbersPerPeriod(toSheet);
++        Map<String, String> numbers = new LinkedHashMap<>();
++        for (Object[] c : numbered) {
++            long arrived = moved.get((Long) c[0]);
++            numbers.put((String) c[1], perPeriod ? numberInPeriod(toSheet, arrived, (LocalDate) c[2]) : number(toSheet, arrived));
++        }
++        for (Long arrived : moved.values()) {
++            Map<String, Object> was = jdbc.queryForMap("SELECT corrects, split_from FROM claim WHERE id = ?", arrived);
++            String corrects = (String) was.get("corrects");
++            String splitFrom = (String) was.get("split_from");
++            jdbc.update("UPDATE claim SET corrects = ?, split_from = ? WHERE id = ?",
++                    corrects == null ? null : numbers.getOrDefault(corrects, corrects),
++                    splitFrom == null ? null : numbers.getOrDefault(splitFrom, splitFrom), arrived);
++            history.claim(toSheet, arrived);
++        }
++
++        for (Long claimId : ids) {
++            jdbc.update("DELETE FROM claim_log WHERE sheet_id = ? AND claim_id = ?", fromSheet, claimId);
++            jdbc.update("DELETE FROM claim_comment WHERE sheet_id = ? AND claim_id = ?", fromSheet, claimId);
++            jdbc.update("DELETE FROM claim WHERE id = ? AND sheet_id = ?", claimId, fromSheet);
++        }
++    }
++
+     /** Defer an OPEN claim until a date; false when the sheet has no such OPEN claim. */
+     public boolean defer(String sheetId, long claimId, LocalDate until) {
+         return kept(sheetId, claimId, jdbc.update("UPDATE claim SET deferred_until = ? WHERE id = ? AND sheet_id = ? AND status = 'OPEN'",
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index dee20a423..467421a75 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -219,6 +219,45 @@ public class PersonRepository {
+                 name, terms, contact, id, sheetId, version) > 0;
+     }
+ 
++    /** Copy a person onto another sheet, as added there on its today: their name, the grade they were first given,
++     *  every grade they were given (with its from-date), their terms, contact and aliases (in the order they were
++     *  added), with no statements; the new person's id. Their claims are moved by the caller. */
++    public long transferIn(String fromSheet, long id, String toSheet) {
++        GeneratedKeyHolder keys = new GeneratedKeyHolder();
++        jdbc.update(c -> {
++            PreparedStatement ps = c.prepareStatement(
++                    "INSERT INTO person (sheet_id, name, grade, terms, contact, added_on)"
++                            + " SELECT ?, p.name, p.grade, p.terms, p.contact, (SELECT s.today FROM sheet s WHERE s.id = ?)"
++                            + " FROM person p WHERE p.id = ? AND p.sheet_id = ?", new String[] { "id" });
++            ps.setString(1, toSheet);
++            ps.setString(2, toSheet);
++            ps.setLong(3, id);
++            ps.setString(4, fromSheet);
++            return ps;
++        }, keys);
++        long arrived = keys.getKey().longValue();
++        for (GradeFrom g : grades(fromSheet, id)) {
++            grade(toSheet, arrived, g.grade(), g.from() == null ? null : LocalDate.parse(g.from()));
++        }
++        jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias) SELECT ?, ?, alias FROM person_alias"
++                + " WHERE sheet_id = ? AND person_id = ? ORDER BY id", toSheet, arrived, fromSheet, id);
++        return arrived;
++    }
++
++    /** Take a person off the sheet entirely: their patron links (both ways), pool memberships, closed periods'
++     *  figures, watchers, holds, statements, grades and aliases go with them. Their claims must already be gone. */
++    public void remove(String sheetId, long id) {
++        jdbc.update("DELETE FROM patron WHERE sheet_id = ? AND (person_id = ? OR patron_id = ?)", sheetId, id, id);
++        jdbc.update("DELETE FROM pool_member WHERE sheet_id = ? AND person_id = ?", sheetId, id);
++        jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", sheetId, id);
++        jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, id);
++        jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, id);
++        jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, id);
++        jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, id);
++        jdbc.update("DELETE FROM person_alias WHERE sheet_id = ? AND person_id = ?", sheetId, id);
++        jdbc.update("DELETE FROM person WHERE id = ? AND sheet_id = ?", id, sheetId);
++    }
++
+     /** Merge one person into another: the merged name and aliases become the other's aliases (name first); the
+      *  merged person's patrons are added to the other's (not themselves, no repeats), anyone naming the merged
+      *  person names the other instead (no repeats); pool memberships move to the other (shares added, at most
+diff --git a/src/main/java/net/officefloor/hq/app/person/TransferPerson.java b/src/main/java/net/officefloor/hq/app/person/TransferPerson.java
+new file mode 100644
+index 000000000..c07523ef5
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/TransferPerson.java
+@@ -0,0 +1,79 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.settings.SettingsRepository;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.server.http.ServerHttpConnection;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** A steward transfers a person to another sheet by id: they arrive there with every grade they were given (and
++ *  its from-date), their terms, contact and aliases, and their claims (see {@link ClaimRepository#transferAll}), with
++ *  no statements; they leave this sheet entirely (patron links, pool memberships, holds and watches dropped).
++ *  Refused for anyone but a steward, for a retired person, for this sheet's own id, for a sheet never loaded or
++ *  archived, and when their name, an alias or their contact is already on the other sheet. Each sheet writes its
++ *  PERSON_TRANSFERRED line, then its rollup lines. */
++public class TransferPerson {
++    public void transfer(@PathVariable("sheetId") String sheetId, @PathVariable("personId") String personId,
++            @RequestBody TransferRequest request, ServerHttpConnection connection, PersonRepository people,
++            AliasRepository aliases, ClaimRepository claims, SettingsRepository settings, Audit audit, Rollup rollup,
++            Out<Person> person) throws BadRequestException {
++        String by = CurrentUser.require(connection);
++        String id = sheetId == null ? "" : sheetId.trim();
++        long pid;
++        try {
++            pid = Long.parseLong(personId == null ? "" : personId.trim());
++        } catch (NumberFormatException e) {
++            throw new BadRequestException("no such person");
++        }
++        Person from = people.find(id, pid);
++        if (from == null) {
++            throw new BadRequestException("no such person");
++        }
++        if (!settings.role(id, by).equals(SettingsRepository.STEWARD)) {
++            throw new BadRequestException("only a steward can transfer people");
++        }
++        if (from.retired()) {
++            throw new BadRequestException(from.name() + " is retired");
++        }
++        String to = request == null || request.toSheetId() == null ? "" : request.toSheetId().trim();
++        if (to.isEmpty()) {
++            throw new BadRequestException("enter the sheet to transfer to");
++        }
++        if (to.equals(id)) {
++            throw new BadRequestException("a person cannot be transferred to their own sheet");
++        }
++        if (!people.sheetExists(to)) {
++            throw new BadRequestException("no such sheet " + to);
++        }
++        if (settings.archived(to)) {
++            throw new BadRequestException("sheet " + to + " is archived");
++        }
++        if (people.nameTaken(to, from.name(), 0)) {
++            throw new BadRequestException(from.name() + " is already on sheet " + to);
++        }
++        for (Alias alias : aliases.list(id)) {
++            if (alias.personId() == pid && people.nameTaken(to, alias.alias(), 0)) {
++                throw new BadRequestException(alias.alias() + " is already on sheet " + to);
++            }
++        }
++        if (from.contact() != null && people.contactTaken(to, from.contact(), 0)) {
++            throw new BadRequestException(from.contact() + " is already on sheet " + to);
++        }
++
++        Rollup.Snapshot beforeHere = rollup.take(id);
++        Rollup.Snapshot beforeThere = rollup.take(to);
++        long arrived = people.transferIn(id, pid, to);
++        claims.transferAll(id, pid, to, arrived);
++        people.remove(id, pid);
++        audit.record("PERSON_TRANSFERRED sheet=" + id + " by=" + by + " name=" + from.name() + " to=" + to);
++        rollup.record(id, by, beforeHere);
++        audit.record("PERSON_TRANSFERRED sheet=" + to + " by=" + by + " name=" + from.name() + " from=" + id);
++        rollup.record(to, by, beforeThere);
++        person.set(people.find(to, arrived));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/TransferRequest.java b/src/main/java/net/officefloor/hq/app/person/TransferRequest.java
+new file mode 100644
+index 000000000..e3945ce06
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/TransferRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** The transfer form: the id of the sheet to transfer this person to. */
++public record TransferRequest(String toSheetId) {
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/transfer.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/transfer.POST.yml
+new file mode 100644
+index 000000000..707beebe5
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/transfer.POST.yml
+@@ -0,0 +1,12 @@
++# A steward transfers a person to another sheet by id (not this one; not a retired person; no name, alias or
++# contact of theirs already there): their grades, terms, contact, aliases and claims go with them, and they
++# leave this sheet.
++guard:
++  class: net.officefloor.hq.app.settings.RefuseViewer
++  next: transfer
++transfer:
++  class: net.officefloor.hq.app.person.TransferPerson
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPerson
