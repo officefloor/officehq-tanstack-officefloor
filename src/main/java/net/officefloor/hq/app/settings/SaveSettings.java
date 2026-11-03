@@ -91,6 +91,10 @@ public class SaveSettings {
             repository.setEntryDate(id, input.entryDate());
             audit.record(prefix + "entry-date value=" + (input.entryDate() == null ? "" : input.entryDate().toString()));
         }
+        if (input.setsPot()) {
+            repository.setPot(id, input.pot());
+            audit.record(prefix + "pot value=" + (input.pot() == null ? "" : SettingsRepository.money(input.pot())));
+        }
         input.permissions().forEach((action, roles) -> {
             repository.setPermission(id, action, roles);
             audit.record(prefix + "perm-" + action + " value=" + roles);

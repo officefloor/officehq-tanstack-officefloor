@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  numbering from-date is a date, blank meaning off; a grade's (A, B or C) terms are like the sheet's, blank
  *  meaning the grade uses the sheet's terms; the cap is 0.00 or more with up to two decimals, blank meaning none; the proof threshold and the note threshold likewise. A from-date given for a
  *  setting with a figure is a date; blank is the sheet's today. A permission matrix entry (open, settle, void, reassign, close or reopen) is a comma separated
- *  list of roles (clerk, steward), blank keeping the standing rule. The grace days are a whole number of days, 0 to 3650, blank meaning off. The entry date is a date, blank meaning off. A grade's grace days are a whole number of days, 0 to 3650, blank meaning none. A grade's proof threshold is like the sheet's, blank meaning none. A setting left out is not changed. */
+ *  list of roles (clerk, steward), blank keeping the standing rule. The grace days are a whole number of days, 0 to 3650, blank meaning off. The entry date is a date, blank meaning off. A grade's grace days are a whole number of days, 0 to 3650, blank meaning none. A grade's proof threshold is like the sheet's, blank meaning none. The pot is 0.00 or more with up to two decimals, blank meaning none. A setting left out is not changed. */
 public class ValidateSettings {
     private static final Pattern MONEY = Pattern.compile("\\d{1,9}(\\.\\d{1,2})?|\\.\\d{1,2}");
     private static final List<String> GRADES = List.of("A", "B", "C");
@@ -93,6 +93,10 @@ public class ValidateSettings {
         String note = request == null || request.noteThreshold() == null ? null : request.noteThreshold().trim();
         if (note != null && !note.isEmpty() && !MONEY.matcher(note).matches()) {
             throw new BadRequestException("note threshold must be 0.00 or more with up to two decimals");
+        }
+        String pot = request == null || request.pot() == null ? null : request.pot().trim();
+        if (pot != null && !pot.isEmpty() && !MONEY.matcher(pot).matches()) {
+            throw new BadRequestException("pot must be 0.00 or more with up to two decimals");
         }
         String grace = request == null || request.graceDays() == null ? null : request.graceDays().trim();
         if (grace != null && !grace.isEmpty() && (!TERMS.matcher(grace).matches() || Integer.parseInt(grace) > 3650)) {
@@ -184,6 +188,7 @@ public class ValidateSettings {
                 proof != null, proof == null || proof.isEmpty() ? null : new BigDecimal(proof).setScale(2), permissions,
                 grace != null, grace == null || grace.isEmpty() ? null : Integer.parseInt(grace),
                 note != null, note == null || note.isEmpty() ? null : new BigDecimal(note).setScale(2),
-                entry != null, entryDate, gradeGrace, gradeProof));
+                entry != null, entryDate, gradeGrace, gradeProof,
+                pot != null, pot == null || pot.isEmpty() ? null : new BigDecimal(pot).setScale(2)));
     }
 }

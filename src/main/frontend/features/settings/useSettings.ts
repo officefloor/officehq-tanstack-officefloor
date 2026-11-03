@@ -25,11 +25,12 @@ export type Role = { user: string; role: string };
  *  set, it is the default date of a new claim instead of the sheet's today. `holidays` is the sheet's holidays
  *  (yyyy-mm-dd), earliest first: a claim's due-by, fixed when it is created, that falls on one is moved to the next
  *  day that is not one. `voidReasons` is the sheet's void reasons, in the order they were added: while there is one,
- *  voiding a claim needs one of them. */
+ *  voiding a claim needs one of them. `pot` is the sheet's pot (two decimals; null when blank: none; not dated): each
+ *  member of a balanced pool gets a cut of it. */
 export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; roles: Role[]; policyDate: string | null; periodNumberingFrom: string | null;
   gradeTerms: Record<string, number>; cap: string | null; dated: Record<string, DatedValue[]>;
   permissions: Record<string, string>; graceDays: number | null; delegations: Delegation[];
-  entryDate: string | null; holidays: string[]; voidReasons: string[] };
+  entryDate: string | null; holidays: string[]; voidReasons: string[]; pot: string | null };
 
 /** A steward's (`by`) delegation of the steward role to a user, from a date to a date (yyyy-mm-dd, inclusive):
  *  while the sheet's today is inside it the user acts as a steward. */

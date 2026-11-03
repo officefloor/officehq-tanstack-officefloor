@@ -49,12 +49,13 @@ public class SettingsRepository {
         LocalDate policy = policyDate(sheetId);
         LocalDate numbering = periodNumberingFrom(sheetId);
         LocalDate entry = entryDate(sheetId);
+        BigDecimal pot = pot(sheetId);
         return new Settings(limit == null ? null : money(limit), money(floor(sheetId, today)), terms(sheetId, today),
                 money(latePct(sheetId, today)), roles, policy == null ? null : policy.toString(),
                 numbering == null ? null : numbering.toString(), gradeTerms(sheetId, today),
                 cap == null ? null : money(cap), dated(sheetId), permissions(sheetId), graceDays(sheetId),
                 delegations(sheetId), entry == null ? null : entry.toString(), holidays(sheetId),
-                voidReasons(sheetId));
+                voidReasons(sheetId), pot == null ? null : money(pot));
     }
 
     /** The sheet's today; the real date when there is no such sheet. */
@@ -256,6 +257,17 @@ public class SettingsRepository {
 
     public void setEntryDate(String sheetId, LocalDate date) {
         jdbc.update("UPDATE sheet SET entry_date = ? WHERE id = ?", date == null ? null : Date.valueOf(date), sheetId);
+    }
+
+    /** The sheet's pot; null when blank (none). */
+    public BigDecimal pot(String sheetId) {
+        List<BigDecimal> found = jdbc.query("SELECT pot FROM sheet WHERE id = ?",
+                (rs, i) -> rs.getBigDecimal("pot"), sheetId);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    public void setPot(String sheetId, BigDecimal pot) {
+        jdbc.update("UPDATE sheet SET pot = ? WHERE id = ?", pot, sheetId);
     }
 
     /** The sheet's grace days; null when blank (off). */
