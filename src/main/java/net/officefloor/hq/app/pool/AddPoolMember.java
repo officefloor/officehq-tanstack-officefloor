@@ -38,7 +38,7 @@ public class AddPoolMember {
             if (repository.depthAbove(id, pool) + repository.heightBelow(id, name) > MAX_DEPTH) {
                 throw new BadRequestException("a chain of pools is at most " + MAX_DEPTH + " deep");
             }
-            if (!repository.addPoolMember(id, pool, name, input.share())) {
+            if (!repository.addPoolMember(id, pool, name, input.share(), input.from(), input.to())) {
                 throw new BadRequestException(name + " is already a member of a pool");
             }
         } else {
@@ -46,11 +46,12 @@ public class AddPoolMember {
             if (name == null) {
                 throw new BadRequestException("no such person");
             }
-            if (!repository.addMember(id, pool, input.personId(), input.share())) {
+            if (!repository.addMember(id, pool, input.personId(), input.share(), input.from(), input.to())) {
                 throw new BadRequestException(name + " is already in the pool");
             }
         }
         audit.record("POOL_MEMBER_ADDED sheet=" + id + " by=" + by + " pool=" + pool + " name=" + name + " share="
-                + input.share().toPlainString());
+                + input.share().toPlainString() + (input.from() == null ? "" : " from=" + input.from())
+                + (input.to() == null ? "" : " to=" + input.to()));
     }
 }
