@@ -27,12 +27,13 @@ export type Role = { user: string; role: string };
  *  day that is not one. `voidReasons` is the sheet's void reasons, in the order they were added: while there is one,
  *  voiding a claim needs one of them. `pot` is the sheet's pot (two decimals; null when blank: none; not dated): each
  *  member of a balanced pool gets a cut of it. `parent` is the sheet's parent sheet id (null when blank: none; not
- *  dated): a grade with no rate in force on a date takes the parent's, then its parent's, up to three levels up. */
+ *  dated): a grade with no rate in force on a date takes the parent's, then its parent's, up to three levels up.
+ *  `fiscalStartMonth` is the month (1 to 12; 1 unless set; not dated) the sheet's fiscal year starts in. */
 export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; roles: Role[]; policyDate: string | null; periodNumberingFrom: string | null;
   gradeTerms: Record<string, number>; cap: string | null; dated: Record<string, DatedValue[]>;
   permissions: Record<string, string>; graceDays: number | null; delegations: Delegation[];
   entryDate: string | null; holidays: string[]; voidReasons: string[]; pot: string | null;
-  parent: string | null };
+  parent: string | null; fiscalStartMonth: number };
 
 /** A steward's (`by`) delegation of the steward role to a user, from a date to a date (yyyy-mm-dd, inclusive):
  *  while the sheet's today is inside it the user acts as a steward. */

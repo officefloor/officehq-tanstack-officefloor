@@ -36,8 +36,8 @@ public class SheetCloner {
      *  the sheet's today when each was opened, then by the order they were added to the clone); a number one of them
      *  corrects or was split from follows it. The clone's history starts with all of this on its today. */
     public void cloneTo(String from, String to, String by) {
-        jdbc.update("INSERT INTO sheet (id, created_by, today, policy_date, period_numbering_from, grace_days, entry_date, pot)"
-                + " SELECT ?, ?, today, policy_date, period_numbering_from, grace_days, entry_date, pot FROM sheet WHERE id = ?",
+        jdbc.update("INSERT INTO sheet (id, created_by, today, policy_date, period_numbering_from, grace_days, entry_date, pot, fiscal_start_month)"
+                + " SELECT ?, ?, today, policy_date, period_numbering_from, grace_days, entry_date, pot, fiscal_start_month FROM sheet WHERE id = ?",
                 to, by, from);
         jdbc.update("INSERT INTO setting_value (sheet_id, setting_key, from_date, setting) SELECT ?, setting_key, from_date,"
                 + " setting FROM setting_value WHERE sheet_id = ?", to, from);

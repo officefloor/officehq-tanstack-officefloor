@@ -31,8 +31,14 @@ public class GeneratePeriods {
         if (to.isBefore(from)) {
             throw new BadRequestException("to-date must not be before from-date");
         }
+        result.set(new GenerateResult(months(id, by, YearMonth.from(from), YearMonth.from(to), repository, audit)));
+    }
+
+    /** Make the monthly periods from one month to another, both inclusive, leaving out a month already named or
+     *  overlapping a period; answers how many were made. */
+    static int months(String id, String by, YearMonth start, YearMonth end, PeriodRepository repository, Audit audit) {
         int made = 0;
-        for (YearMonth m = YearMonth.from(from); !m.isAfter(YearMonth.from(to)); m = m.plusMonths(1)) {
+        for (YearMonth m = start; !m.isAfter(end); m = m.plusMonths(1)) {
             String name = m.toString();
             LocalDate first = m.atDay(1);
             LocalDate last = m.atEndOfMonth();
@@ -44,7 +50,7 @@ public class GeneratePeriods {
                     + saved.from() + " to=" + saved.to());
             made++;
         }
-        result.set(new GenerateResult(made));
+        return made;
     }
 
     private static LocalDate date(String value, String what, LocalDate blank) throws BadRequestException {

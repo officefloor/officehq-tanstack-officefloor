@@ -55,7 +55,7 @@ public class SettingsRepository {
                 numbering == null ? null : numbering.toString(), gradeTerms(sheetId, today),
                 cap == null ? null : money(cap), dated(sheetId), permissions(sheetId), graceDays(sheetId),
                 delegations(sheetId), entry == null ? null : entry.toString(), holidays(sheetId),
-                voidReasons(sheetId), pot == null ? null : money(pot), parent(sheetId));
+                voidReasons(sheetId), pot == null ? null : money(pot), parent(sheetId), fiscalStartMonth(sheetId));
     }
 
     /** The sheet's today; the real date when there is no such sheet. */
@@ -268,6 +268,17 @@ public class SettingsRepository {
 
     public void setPot(String sheetId, BigDecimal pot) {
         jdbc.update("UPDATE sheet SET pot = ? WHERE id = ?", pot, sheetId);
+    }
+
+    /** The month (1 to 12) the sheet's fiscal year starts in; 1 unless set. */
+    public int fiscalStartMonth(String sheetId) {
+        List<Integer> found = jdbc.query("SELECT fiscal_start_month FROM sheet WHERE id = ?",
+                (rs, i) -> rs.getInt("fiscal_start_month"), sheetId);
+        return found.isEmpty() ? 1 : found.get(0);
+    }
+
+    public void setFiscalStartMonth(String sheetId, int month) {
+        jdbc.update("UPDATE sheet SET fiscal_start_month = ? WHERE id = ?", month, sheetId);
     }
 
     /** The sheet's parent sheet id; null when blank (none). Not dated: read from the sheet as it is now, also on a

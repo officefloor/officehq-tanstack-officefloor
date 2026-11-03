@@ -21,10 +21,12 @@ import java.util.List;
  *  {@code voidReasons} is the sheet's void reasons, in the order they were added: while there is one, voiding a claim
  *  needs one of them. {@code pot} is the sheet's pot (two decimals; null when blank: none; not dated): each member of
  *  a balanced pool gets a cut of it. {@code parent} is the sheet's parent sheet id (null when blank: none; not dated):
- *  a grade with no rate in force on a date takes the parent's, then its parent's, up to three levels up. */
+ *  a grade with no rate in force on a date takes the parent's, then its parent's, up to three levels up.
+ *  {@code fiscalStartMonth} is the month (1 to 12; 1 unless set; not dated) the sheet's fiscal year starts in: a fiscal
+ *  year is named FY<yyyy> by the calendar year its first day falls in. */
 public record Settings(String clerkLimit, String floor, int terms, String latePct, List<Role> roles, String policyDate,
         String periodNumberingFrom, java.util.Map<String, Integer> gradeTerms, String cap,
         java.util.Map<String, List<DatedValue>> dated, java.util.Map<String, String> permissions, Integer graceDays,
         List<Delegation> delegations, String entryDate, List<String> holidays, List<String> voidReasons,
-        String pot, String parent) {
+        String pot, String parent, int fiscalStartMonth) {
 }

@@ -29,6 +29,14 @@ export function usePeriods(sheetId: string) {
   });
 }
 
+/** The fiscal year (FY<yyyy>, by the calendar year its first day falls in) a date (yyyy-mm-dd) falls in, for a
+ *  fiscal year starting in a month (1 to 12). */
+export function fiscalYearOf(on: string, startMonth: number): string {
+  const year = Number(on.slice(0, 4));
+  const month = Number(on.slice(5, 7));
+  return `FY${month >= startMonth ? year : year - 1}`;
+}
+
 /** The period whose dates contain a date (yyyy-mm-dd); undefined when none does. */
 export function periodOf(periods: Period[] | undefined, on: string): Period | undefined {
   return (periods ?? []).find((p) => p.from <= on && on <= p.to);

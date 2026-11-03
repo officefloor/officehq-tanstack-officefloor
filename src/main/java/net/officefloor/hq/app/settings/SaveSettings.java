@@ -106,6 +106,10 @@ public class SaveSettings {
             repository.setParent(id, input.parent());
             audit.record(prefix + "parent value=" + (input.parent() == null ? "" : input.parent()));
         }
+        if (input.setsFiscalStartMonth()) {
+            repository.setFiscalStartMonth(id, input.fiscalStartMonth());
+            audit.record(prefix + "fiscal-start-month value=" + input.fiscalStartMonth());
+        }
         input.permissions().forEach((action, roles) -> {
             repository.setPermission(id, action, roles);
             audit.record(prefix + "perm-" + action + " value=" + roles);
