@@ -1,0 +1,101 @@
+diff --git a/src/main/frontend/features/periods/periods.slot.tsx b/src/main/frontend/features/periods/periods.slot.tsx
+index 3cb142887..201be5e23 100644
+--- a/src/main/frontend/features/periods/periods.slot.tsx
++++ b/src/main/frontend/features/periods/periods.slot.tsx
+@@ -1,10 +1,10 @@
+-import { useState, type ChangeEvent } from 'react';
++import { Fragment, useState, type ChangeEvent } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { useSingleFlight } from '../../query/useSingleFlight';
+ import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+-import { usePeriodDueTotals, usePersonPeriodDueTotals } from './usePeriodDueTotals';
++import { usePeriodDueTotals, usePersonPeriodCarried, usePersonPeriodDueTotals } from './usePeriodDueTotals';
+ import { useSettings } from '../settings/useSettings';
+ import { fiscalYearOf, periodsKey, usePeriods, type Period } from './usePeriods';
+ import { useFigure } from '../locale/useLocale';
+@@ -271,23 +271,28 @@ function PeriodColumnHeads({ sheetId }: { sheetId: string }) {
+   return (
+     <>
+       {(periods.data ?? []).map((p) => (
+-        <th key={p.id}>Due {p.name}</th>
++        <Fragment key={p.id}>
++          <th>Due {p.name}</th>
++          <th>Carried {p.name}</th>
++        </Fragment>
+       ))}
+     </>
+   );
+ }
+ 
+-/** A person's due-total for each period on the sheet (fixed while the period is closed). */
++/** A person's due-total for each period on the sheet (fixed while the period is closed), and what is carried into it. */
+ function PersonPeriodDueTotals({ sheetId, personId }: { sheetId: string; personId: number }) {
+   const fig = useFigure();
+   const periods = usePeriods(sheetId);
+   const totals = usePersonPeriodDueTotals(sheetId).get(personId);
++  const carried = usePersonPeriodCarried(sheetId).get(personId);
+   return (
+     <>
+       {(periods.data ?? []).map((p) => (
+-        <td key={p.id} data-testid={`person-period-${p.name}-due-total`}>
+-          {fig(totals?.get(p.name) ?? '')}
+-        </td>
++        <Fragment key={p.id}>
++          <td data-testid={`person-period-${p.name}-due-total`}>{fig(totals?.get(p.name) ?? '')}</td>
++          <td data-testid={`person-period-${p.name}-carried`}>{fig(carried?.get(p.name) ?? '')}</td>
++        </Fragment>
+       ))}
+     </>
+   );
+diff --git a/src/main/frontend/features/periods/usePeriodDueTotals.ts b/src/main/frontend/features/periods/usePeriodDueTotals.ts
+index 6b1e1288c..f97b366c1 100644
+--- a/src/main/frontend/features/periods/usePeriodDueTotals.ts
++++ b/src/main/frontend/features/periods/usePeriodDueTotals.ts
+@@ -1,4 +1,4 @@
+-import { counts, countsOn, useClaims } from '../claims/useClaims';
++import { counts, countsOn, statusOn, useClaims } from '../claims/useClaims';
+ import { claimDueNow } from '../overdue/useOverdue';
+ import { gradeOn, holdsById, usePeople } from '../people/usePeople';
+ import { rateFor, sumDues, useRates } from '../rates/useRates';
+@@ -51,3 +51,39 @@ export function usePeriodDueTotals(sheetId: string, byStatusNow = false): Map<st
+   }
+   return totals;
+ }
++
++/** Each person's carried figure for each period, by person id then period name: the figures (as the
++ *  period figures count them) of their claims that count whose due-by falls in a period ending before
++ *  this one starts and that were still OPEN or PENDING at the end of this period's last day, by the
++ *  status log (see `statusOn`). 0.00 when nothing is carried. */
++export function usePersonPeriodCarried(sheetId: string): Map<number, Map<string, string>> {
++  const periods = usePeriods(sheetId);
++  const claims = useClaims(sheetId);
++  const people = usePeople(sheetId);
++  const rates = useRates(sheetId);
++  const settings = useSettings(sheetId).data;
++  const today = useSheetToday(sheetId).data?.today;
++  const holds = holdsById(people.data, today);
++  const carried = new Map<number, Map<string, string>>();
++  for (const person of people.data ?? []) {
++    const own = (claims.data ?? []).filter((c) => c.personId === person.id);
++    const byPeriod = new Map<string, string>();
++    for (const p of periods.data ?? []) {
++      const earlier = (periods.data ?? []).filter((q) => q.to < p.from);
++      byPeriod.set(
++        p.name,
++        sumDues(
++          own
++            .filter((c) => earlier.some((q) => q.from <= c.dueBy && c.dueBy <= q.to))
++            .filter((c) => {
++              const status = statusOn(c, p.to);
++              return (status === 'OPEN' || status === 'PENDING') && countsOn(c, p.to, holds, today);
++            })
++            .map((c) => claimDueNow(c, claims.data, rateFor(rates.data, gradeOn(person, c.date), c.date, c.added), settings, today, gradeOn(person, c.date))),
++        ),
++      );
++    }
++    carried.set(person.id, byPeriod);
++  }
++  return carried;
++}
