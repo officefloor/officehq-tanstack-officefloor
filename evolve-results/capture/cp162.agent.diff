@@ -1,0 +1,140 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 319e7b6ac..91dc97cf2 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -1,6 +1,6 @@
+ import { useEffect, useState, type ChangeEvent } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+-import { postJson } from '../../api/http';
++import { getJson, postJson } from '../../api/http';
+ import { useSingleFlight } from '../../query/useSingleFlight';
+ import { PERSON_ROW_SPAN, PersonCells, PersonColumnHead, PersonDetail } from '../../slots/defs/personRow';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+@@ -57,6 +57,40 @@ const ACTIONS: [Exclude<ClaimAction, 'defer' | 'proof' | 'remind' | 'split' | 'r
+  *  when its editor is open. A blank date takes the sheet's today. A negative amount is a correction:
+  *  the form names, by number, the settled claim of the same person it corrects. A claim may carry an external
+  *  reference (trimmed; blank: none), used at most once on the sheet regardless of case. */
++/** A claim's timeline: on each press, the audit lines about it re-read from the audit file, newest first,
++ *  exactly as the file holds them — those carrying its number, or for a claim with no number those naming its
++ *  person, amount and date together. It reads the file; it records nothing. */
++function ClaimTimeline({ sheetId, claimId }: { sheetId: string; claimId: number }) {
++  const show = useMutation({
++    mutationFn: () =>
++      getJson<{ lines: string[] }>(
++        `/api/sheets/${encodeURIComponent(sheetId)}/claims/${claimId}/timeline`,
++      ),
++  });
++  return (
++    <>
++      <button
++        type="button"
++        data-testid="claim-timeline"
++        disabled={show.isPending}
++        onClick={() => {
++          show.reset();
++          show.mutate();
++        }}
++      >
++        Timeline
++      </button>
++      {show.isError && <span data-testid="claim-timeline-error">{show.error.message}</span>}
++      {show.isSuccess &&
++        show.data.lines.map((line, i) => (
++          <div key={i} data-testid="claim-timeline-line">
++            {line}
++          </div>
++        ))}
++    </>
++  );
++}
++
+ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number }) {
+   const fig = useFigure();
+   const claims = useClaims(sheetId);
+@@ -449,6 +483,9 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
+                     </div>
+                   ))}
+                 </td>
++                <td>
++                  <ClaimTimeline sheetId={sheetId} claimId={c.id} />
++                </td>
+                 <td data-testid="claim-comments">
+                   {c.comments.map((line, i) => (
+                     <div key={i} data-testid="claim-comments-line">
+diff --git a/src/main/java/net/officefloor/hq/app/Audit.java b/src/main/java/net/officefloor/hq/app/Audit.java
+index 431bb23af..c7e02ca9b 100644
+--- a/src/main/java/net/officefloor/hq/app/Audit.java
++++ b/src/main/java/net/officefloor/hq/app/Audit.java
+@@ -128,6 +128,26 @@ public class Audit {
+         return lines;
+     }
+ 
++    /** A claim's timeline: the sheet's lines about one claim, newest first, exactly as the file holds them. With a
++     *  number, the lines carrying number=<the number>; without one, the lines carrying none that name its person,
++     *  amount and date together (person=, amount=, date=). */
++    public List<String> timeline(String sheetId, String number, String person, String amount, String date) {
++        List<String> found = new ArrayList<>();
++        for (String line : read(sheetId, null)) {
++            List<String> fields = List.of(line.split(" "));
++            String numbered = null;
++            for (String f : fields) {
++                if (f.startsWith("number=")) numbered = f.substring("number=".length());
++            }
++            boolean about = number != null
++                    ? number.equals(numbered)
++                    : numbered == null && fields.contains("person=" + person) && fields.contains("amount=" + amount)
++                            && fields.contains("date=" + date);
++            if (about) found.add(line);
++        }
++        return found;
++    }
++
+     private static boolean isAbout(String[] parts, String who) {
+         for (int i = 2; i < parts.length; i++) {
+             String p = parts[i];
+diff --git a/src/main/java/net/officefloor/hq/app/audit/LoadClaimTimeline.java b/src/main/java/net/officefloor/hq/app/audit/LoadClaimTimeline.java
+new file mode 100644
+index 000000000..01de2b51b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/audit/LoadClaimTimeline.java
+@@ -0,0 +1,27 @@
++package net.officefloor.hq.app.audit;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.server.http.ServerHttpConnection;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** A claim's timeline: the audit lines about it, newest first, exactly as the file holds them (see
++ *  {@link Audit#timeline}). It reads the file; it records nothing. */
++public class LoadClaimTimeline {
++    public void load(@PathVariable("sheetId") String sheetId, @PathVariable("claimId") long claimId,
++            ServerHttpConnection connection, Audit audit, ClaimRepository claims, Out<AuditLines> lines)
++            throws BadRequestException {
++        CurrentUser.require(connection);
++        String id = sheetId == null ? "" : sheetId.trim();
++        Claim claim = claims.find(id, claimId);
++        if (claim == null) {
++            throw new BadRequestException("no such claim");
++        }
++        String person = claims.personName(id, claim.personId());
++        lines.set(new AuditLines(audit.timeline(id, claim.number(), person, claim.amount(), claim.date())));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/timeline.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/timeline.GET.yml
+new file mode 100644
+index 000000000..78e0c6592
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/timeline.GET.yml
+@@ -0,0 +1,7 @@
++# A claim's timeline: the audit lines about it, newest first, exactly as the audit file holds them.
++load:
++  class: net.officefloor.hq.app.audit.LoadClaimTimeline
++  govern: [ readonly-transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.audit.RespondWithAuditLines
