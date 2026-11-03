@@ -219,6 +219,45 @@ public class PersonRepository {
                 name, terms, contact, id, sheetId, version) > 0;
     }
 
+    /** Copy a person onto another sheet, as added there on its today: their name, the grade they were first given,
+     *  every grade they were given (with its from-date), their terms, contact and aliases (in the order they were
+     *  added), with no statements; the new person's id. Their claims are moved by the caller. */
+    public long transferIn(String fromSheet, long id, String toSheet) {
+        GeneratedKeyHolder keys = new GeneratedKeyHolder();
+        jdbc.update(c -> {
+            PreparedStatement ps = c.prepareStatement(
+                    "INSERT INTO person (sheet_id, name, grade, terms, contact, added_on)"
+                            + " SELECT ?, p.name, p.grade, p.terms, p.contact, (SELECT s.today FROM sheet s WHERE s.id = ?)"
+                            + " FROM person p WHERE p.id = ? AND p.sheet_id = ?", new String[] { "id" });
+            ps.setString(1, toSheet);
+            ps.setString(2, toSheet);
+            ps.setLong(3, id);
+            ps.setString(4, fromSheet);
+            return ps;
+        }, keys);
+        long arrived = keys.getKey().longValue();
+        for (GradeFrom g : grades(fromSheet, id)) {
+            grade(toSheet, arrived, g.grade(), g.from() == null ? null : LocalDate.parse(g.from()));
+        }
+        jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias) SELECT ?, ?, alias FROM person_alias"
+                + " WHERE sheet_id = ? AND person_id = ? ORDER BY id", toSheet, arrived, fromSheet, id);
+        return arrived;
+    }
+
+    /** Take a person off the sheet entirely: their patron links (both ways), pool memberships, closed periods'
+     *  figures, watchers, holds, statements, grades and aliases go with them. Their claims must already be gone. */
+    public void remove(String sheetId, long id) {
+        jdbc.update("DELETE FROM patron WHERE sheet_id = ? AND (person_id = ? OR patron_id = ?)", sheetId, id, id);
+        jdbc.update("DELETE FROM pool_member WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+        jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+        jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+        jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+        jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+        jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+        jdbc.update("DELETE FROM person_alias WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+        jdbc.update("DELETE FROM person WHERE id = ? AND sheet_id = ?", id, sheetId);
+    }
+
     /** Merge one person into another: the merged name and aliases become the other's aliases (name first); the
      *  merged person's patrons are added to the other's (not themselves, no repeats), anyone naming the merged
      *  person names the other instead (no repeats); pool memberships move to the other (shares added, at most

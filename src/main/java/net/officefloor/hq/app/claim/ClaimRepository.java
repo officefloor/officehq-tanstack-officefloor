@@ -353,6 +353,70 @@ public class ClaimRepository {
         }
     }
 
+    /** Move every claim of a person to another sheet, as the claims of the person {@code toPersonId} there: each keeps
+     *  its status, dates, note, tags, settled due, status log and comments, and is listed in the same order; it loses
+     *  any figure a statement bound it to, its external reference, its lock and its settle batch. Each claim that had
+     *  a number takes the other sheet's next one (as opening it there would give it), in the order the claims were
+     *  opened (by the sheet's today when each was opened, then by the order they were added); a number one of them
+     *  corrects or was split from follows it. The claims leave this sheet. */
+    public void transferAll(String fromSheet, long personId, String toSheet, long toPersonId) {
+        List<Long> ids = jdbc.queryForList("SELECT id FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY listed, id",
+                Long.class, fromSheet, personId);
+        Map<Long, Long> moved = new LinkedHashMap<>();
+        for (Long claimId : ids) {
+            GeneratedKeyHolder keys = new GeneratedKeyHolder();
+            jdbc.update(c -> {
+                PreparedStatement ps = c.prepareStatement("INSERT INTO claim (sheet_id, person_id, amount, claim_date, note,"
+                        + " status, settled_due, opened_by, corrects, due_by, deferred_until, proofs, split_from, late_entry,"
+                        + " reminded, tags, void_reason, edited_by) SELECT ?, ?, amount, claim_date, note, status, settled_due,"
+                        + " opened_by, corrects, due_by, deferred_until, proofs, split_from, late_entry, reminded, tags,"
+                        + " void_reason, edited_by FROM claim WHERE id = ? AND sheet_id = ?", new String[] { "id" });
+                ps.setString(1, toSheet);
+                ps.setLong(2, toPersonId);
+                ps.setLong(3, claimId);
+                ps.setString(4, fromSheet);
+                return ps;
+            }, keys);
+            long arrived = keys.getKey().longValue();
+            moved.put(claimId, arrived);
+            jdbc.update("INSERT INTO claim_log (sheet_id, claim_id, status, by_user, on_date, due) SELECT ?, ?, status,"
+                    + " by_user, on_date, due FROM claim_log WHERE sheet_id = ? AND claim_id = ? ORDER BY id",
+                    toSheet, arrived, fromSheet, claimId);
+            jdbc.update("INSERT INTO claim_comment (sheet_id, claim_id, by_user, on_date, text) SELECT ?, ?, by_user,"
+                    + " on_date, text FROM claim_comment WHERE sheet_id = ? AND claim_id = ? ORDER BY id",
+                    toSheet, arrived, fromSheet, claimId);
+            used(toSheet, jdbc.queryForObject("SELECT tags FROM claim WHERE id = ?", String.class, arrived));
+        }
+
+        // Renumber on the other sheet, in the order the claims were opened.
+        List<Object[]> numbered = jdbc.query("SELECT c.id, c.claim_no, c.due_by FROM claim c WHERE c.sheet_id = ?"
+                + " AND c.person_id = ? AND c.claim_no IS NOT NULL ORDER BY (SELECT MIN(l.on_date) FROM claim_log l"
+                + " WHERE l.sheet_id = c.sheet_id AND l.claim_id = c.id AND l.status = 'OPEN') NULLS LAST, c.id",
+                (rs, i) -> new Object[] { rs.getLong("id"), rs.getString("claim_no"), rs.getDate("due_by").toLocalDate() },
+                fromSheet, personId);
+        boolean perPeriod = numbersPerPeriod(toSheet);
+        Map<String, String> numbers = new LinkedHashMap<>();
+        for (Object[] c : numbered) {
+            long arrived = moved.get((Long) c[0]);
+            numbers.put((String) c[1], perPeriod ? numberInPeriod(toSheet, arrived, (LocalDate) c[2]) : number(toSheet, arrived));
+        }
+        for (Long arrived : moved.values()) {
+            Map<String, Object> was = jdbc.queryForMap("SELECT corrects, split_from FROM claim WHERE id = ?", arrived);
+            String corrects = (String) was.get("corrects");
+            String splitFrom = (String) was.get("split_from");
+            jdbc.update("UPDATE claim SET corrects = ?, split_from = ? WHERE id = ?",
+                    corrects == null ? null : numbers.getOrDefault(corrects, corrects),
+                    splitFrom == null ? null : numbers.getOrDefault(splitFrom, splitFrom), arrived);
+            history.claim(toSheet, arrived);
+        }
+
+        for (Long claimId : ids) {
+            jdbc.update("DELETE FROM claim_log WHERE sheet_id = ? AND claim_id = ?", fromSheet, claimId);
+            jdbc.update("DELETE FROM claim_comment WHERE sheet_id = ? AND claim_id = ?", fromSheet, claimId);
+            jdbc.update("DELETE FROM claim WHERE id = ? AND sheet_id = ?", claimId, fromSheet);
+        }
+    }
+
     /** Defer an OPEN claim until a date; false when the sheet has no such OPEN claim. */
     public boolean defer(String sheetId, long claimId, LocalDate until) {
         return kept(sheetId, claimId, jdbc.update("UPDATE claim SET deferred_until = ? WHERE id = ? AND sheet_id = ? AND status = 'OPEN'",
