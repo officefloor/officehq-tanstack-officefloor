@@ -1,0 +1,127 @@
+diff --git a/src/main/frontend/features/periods/periods.slot.tsx b/src/main/frontend/features/periods/periods.slot.tsx
+index b24982c96..eee617fb4 100644
+--- a/src/main/frontend/features/periods/periods.slot.tsx
++++ b/src/main/frontend/features/periods/periods.slot.tsx
+@@ -108,18 +108,22 @@ function Periods({ sheetId }: { sheetId: string }) {
+  *  (a blank from-date is the sheet's today), each named yyyy-mm, leaving out a month already named or
+  *  overlapping a period. Shows how many were made (gone while it runs); a to-date before the
+  *  from-date is refused with an error. A fiscal year (yyyy) and its button generate that fiscal year's twelve monthly
+- *  periods the same way, from the sheet's fiscal year start month; the count and error are shared. */
++ *  periods the same way, from the sheet's fiscal year start month. A year (yyyy) and its button generate that calendar
++ *  year's four quarters, named yyyy-Q1 to yyyy-Q4, the same way; the count and error are shared. */
+ function GeneratePeriods({ sheetId }: { sheetId: string }) {
+   const queryClient = useQueryClient();
+   const [from, setFrom] = useState('');
+   const [to, setTo] = useState('');
+   const [fyYear, setFyYear] = useState('');
++  const [qYear, setQYear] = useState('');
+   const submitOnce = useSingleFlight();
+   const generate = useMutation({
+-    mutationFn: (f: { from: string; to: string } | { year: string }) =>
++    mutationFn: (f: { from: string; to: string } | { year: string; quarters?: boolean }) =>
+       postJson<{ made: number }>(
+-        `/api/sheets/${encodeURIComponent(sheetId)}/${'year' in f ? 'period-generate-fy' : 'period-generate'}`,
+-        f,
++        `/api/sheets/${encodeURIComponent(sheetId)}/${
++          'year' in f ? (f.quarters ? 'period-generate-quarters' : 'period-generate-fy') : 'period-generate'
++        }`,
++        'year' in f ? { year: f.year } : f,
+       ),
+     onSuccess: async () => {
+       await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
+@@ -168,6 +172,23 @@ function GeneratePeriods({ sheetId }: { sheetId: string }) {
+         }
+       >
+         Generate fiscal year
++      </button>{' '}
++      <label>
++        Quarters of{' '}
++        <input placeholder="yyyy" data-testid="period-generate-quarters-year" value={qYear} onChange={field(setQYear)} />
++      </label>{' '}
++      <button
++        type="button"
++        data-testid="period-generate-quarters"
++        disabled={generate.isPending}
++        onClick={() =>
++          submitOnce(() => {
++            generate.reset();
++            return generate.mutateAsync({ year: qYear, quarters: true });
++          })
++        }
++      >
++        Generate quarters
+       </button>
+       {generate.isSuccess && (
+         <>
+diff --git a/src/main/java/net/officefloor/hq/app/period/GenerateQuarters.java b/src/main/java/net/officefloor/hq/app/period/GenerateQuarters.java
+new file mode 100644
+index 000000000..c4ca3c163
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/GenerateQuarters.java
+@@ -0,0 +1,48 @@
++package net.officefloor.hq.app.period;
++
++import java.time.LocalDate;
++import java.time.YearMonth;
++import java.util.regex.Pattern;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.server.http.ServerHttpConnection;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Make the four calendar quarters of a year (yyyy) as periods named <yyyy>-Q1 to <yyyy>-Q4, each as the period
++ *  form adds it; a quarter whose name is already a period, or whose days overlap a period on the sheet, is left
++ *  out. A year that is not yyyy is refused. */
++public class GenerateQuarters {
++    private static final Pattern YEAR = Pattern.compile("\\d{4}");
++
++    public void generate(@PathVariable("sheetId") String sheetId, @RequestBody GenerateFyRequest request,
++            ServerHttpConnection connection, PeriodRepository repository, Audit audit, Out<GenerateResult> result)
++            throws BadRequestException {
++        String by = CurrentUser.require(connection);
++        String id = sheetId == null ? "" : sheetId.trim();
++        String year = request == null || request.year() == null ? "" : request.year().trim();
++        if (!YEAR.matcher(year).matches()) {
++            throw new BadRequestException("year must be a year (yyyy)");
++        }
++        if (!repository.lockSheet(id)) {
++            throw new BadRequestException("no such sheet");
++        }
++        int y = Integer.parseInt(year);
++        int made = 0;
++        for (int q = 1; q <= 4; q++) {
++            String name = year + "-Q" + q;
++            LocalDate first = YearMonth.of(y, q * 3 - 2).atDay(1);
++            LocalDate last = YearMonth.of(y, q * 3).atEndOfMonth();
++            if (repository.named(id, name) || repository.overlaps(id, first, last)) {
++                continue;
++            }
++            Period saved = repository.add(id, name, first, last);
++            audit.record("PERIOD_ADDED sheet=" + id + " by=" + by + " period=" + saved.name() + " from="
++                    + saved.from() + " to=" + saved.to());
++            made++;
++        }
++        result.set(new GenerateResult(made));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/period-generate-quarters.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/period-generate-quarters.POST.yml
+new file mode 100644
+index 000000000..3c8935663
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/period-generate-quarters.POST.yml
+@@ -0,0 +1,12 @@
++# Generate a calendar year's four quarterly periods (yyyy given), each named <yyyy>-Q1 to <yyyy>-Q4 and
++# added as the period form would add it: a quarter already named or overlapping a period is left out.
++# Answers how many were made.
++guard:
++  class: net.officefloor.hq.app.settings.RefuseViewer
++  next: generate
++generate:
++  class: net.officefloor.hq.app.period.GenerateQuarters
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.period.RespondWithGenerated
