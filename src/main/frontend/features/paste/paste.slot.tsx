@@ -7,9 +7,10 @@ import { claimsKey } from '../claims/useClaims';
 import { peopleKey } from '../people/usePeople';
 
 /** A paste box: lines of name,amount,date,note (the note may hold commas; a blank date is the sheet's
- *  today; a note ending in " #<reference>" gives the claim that external reference) each add a draft claim, in order, for the person on the sheet with that name. The server checks
- *  every line first: one refused line refuses the paste and adds nothing. Shows how many were added
- *  (gone while it runs). */
+ *  today; a note ending in " #<reference>" gives the claim that external reference) each add a claim, in order, for the person on the sheet with that name, and open it as the open
+ *  button would; a line matching one of the person's claims by date and note updates the newest such DRAFT
+ *  instead and opens it. One refused line (or open) refuses the paste and changes nothing. Shows how many
+ *  lines went through (gone while it runs). */
 function PasteClaims({ sheetId }: { sheetId: string }) {
   const [text, setText] = useState('');
   const queryClient = useQueryClient();
@@ -47,7 +48,7 @@ function PasteClaims({ sheetId }: { sheetId: string }) {
         />
       </label>{' '}
       <button type="submit" data-testid="paste-submit" disabled={paste.isPending}>
-        Add draft claims
+        Add and open claims
       </button>
       {paste.isSuccess && (
         <>

@@ -35,6 +35,9 @@ public class Audit {
 
     private final ObjectProvider<SettingsRepository> settings;
 
+    /** The records held back on this thread while a change that may still be refused runs (see {@link #held}). */
+    private final ThreadLocal<List<String>> held = new ThreadLocal<>();
+
     public Audit(@Value("${app.audit.file:.run/audit.log}") String path, ObjectProvider<SettingsRepository> settings) {
         this.file = Path.of(path);
         this.settings = settings;
@@ -45,6 +48,35 @@ public class Audit {
      *  who delegated>. */
     public synchronized void record(String entry) {
         entry = entry + delegatedFor(entry);
+        List<String> holding = held.get();
+        if (holding != null) {
+            holding.add(entry);
+            return;
+        }
+        write(entry);
+    }
+
+    /** Run a change whose records are held back until it is done: written in order when it returns, dropped
+     *  when it throws (a refused change writes nothing to the audit). */
+    public <T> T held(java.util.function.Supplier<T> change) {
+        if (held.get() != null) {
+            return change.get();
+        }
+        List<String> holding = new ArrayList<>();
+        held.set(holding);
+        T result;
+        try {
+            result = change.get();
+        } finally {
+            held.remove();
+        }
+        for (String entry : holding) {
+            write(entry);
+        }
+        return result;
+    }
+
+    private synchronized void write(String entry) {
         try {
             Path parent = file.toAbsolutePath().getParent();
             if (parent != null) {

@@ -14,8 +14,14 @@ import net.officefloor.hq.app.settings.SettingsRepository;
 
 /** A claim's status change (open, settle, approve, reject or void — a SETTLED claim too, by a steward within 7 days of its settlement), shared by the single and the bulk actions. Every
  *  check is made before anything is written, so a refusal writes nothing to the store or the audit. */
-final class ClaimStatusChange {
+public final class ClaimStatusChange {
     private ClaimStatusChange() {
+    }
+
+    /** Open a DRAFT claim exactly as its open button does (for a paste, which opens what it adds). */
+    public static Claim open(String id, long cid, String by, ClaimRepository repository, PeriodRepository periods,
+            SettingsRepository settings, Audit audit, Rollup rollup, WatchRepository watches) throws BadRequestException {
+        return apply(id, cid, "open", by, repository, periods, settings, audit, rollup, watches);
     }
 
     static Claim apply(String id, long cid, String action, String by, ClaimRepository repository,
