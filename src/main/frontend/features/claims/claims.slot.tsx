@@ -985,6 +985,72 @@ function BulkRedate({ sheetId }: { sheetId: string }) {
   );
 }
 
+/** Void the selected claims together with the reason chosen in the bar (offered while the sheet has void reasons):
+ *  the server voids, in list order and by the rules of a single void, each that can be voided and leaves the rest;
+ *  the bar shows how many were voided and how many refused (gone while it runs). */
+function BulkVoid({ sheetId }: { sheetId: string }) {
+  const selection = useClaimSelection(sheetId);
+  const voidReasons = useSettings(sheetId).data?.voidReasons ?? [];
+  const queryClient = useQueryClient();
+  const submitOnce = useSingleFlight();
+  const [reason, setReason] = useState('');
+  const bulk = useMutation({
+    mutationFn: (r: { claimIds: number[]; reason: string }) =>
+      postJson<{ voided: number; refused: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/bulk-void`, r),
+    onSuccess: () => {
+      selection.clear();
+      setReason('');
+    },
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+  });
+  return (
+    <p data-testid="bulk-void-bar">
+      {voidReasons.length > 0 && (
+        <>
+          <select
+            data-testid="bulk-void-reason"
+            value={reason}
+            onChange={(e) => {
+              setReason(e.target.value);
+              bulk.reset();
+            }}
+          >
+            <option value="">void reason</option>
+            {voidReasons.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>{' '}
+        </>
+      )}
+      <button
+        type="button"
+        data-testid="bulk-void"
+        disabled={bulk.isPending}
+        onClick={() =>
+          submitOnce(() => {
+            bulk.reset();
+            return bulk.mutateAsync({ claimIds: [...selection.ids], reason });
+          })
+        }
+      >
+        Void selected ({selection.ids.size})
+      </button>
+      {bulk.isSuccess && (
+        <>
+          {' '}
+          Voided <strong data-testid="bulk-voided">{bulk.data.voided}</strong>, refused{' '}
+          <strong data-testid="bulk-void-refused">{bulk.data.refused}</strong>
+        </>
+      )}
+      {bulk.isError && <span data-testid="bulk-void-error">{bulk.error.message}</span>}
+    </p>
+  );
+}
+
 /** The sheet's claimed-total: everyone's claimed added up. */
 function ClaimedTotal({ sheetId }: { sheetId: string }) {
   const fig = useFigure();
@@ -1006,5 +1072,6 @@ export const contributions = [
   SheetBody.fill({ order: 16, Component: BulkSettle }),
   SheetBody.fill({ order: 17, Component: BulkReassign }),
   SheetBody.fill({ order: 17.5, Component: BulkRedate }),
+  SheetBody.fill({ order: 17.6, Component: BulkVoid }),
   SheetBody.fill({ order: 20, Component: ({ sheetId }) => <ClaimedTotal sheetId={sheetId} /> }),
 ];
