@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
 import { peopleKey, usePeople, type Person } from '../people/usePeople';
+import { poolsKey } from '../pools/usePools';
 import { usePersonRowAction } from '../people/usePersonRowAction';
 
 /** A person's holds: whether they have any, a line per hold (from – to), and a from-date (blank: the
@@ -23,6 +24,8 @@ function PersonHold({ sheetId, personId }: { sheetId: string; personId: number }
       setFrom('');
       setTo('');
       await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+      // A hold in force on the sheet's today takes the person's cuts from the pools.
+      void queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
     },
   });
   const announce = usePersonRowAction(sheetId, personId, hold.reset);

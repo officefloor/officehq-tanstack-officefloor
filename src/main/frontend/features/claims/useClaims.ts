@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
+import { useReader } from '../../api/readNow';
 import { heldOn, type Hold } from '../people/usePeople';
 
 /** A claim's status: DRAFT -> OPEN -> SETTLED; a clerk's settle above the clerk limit goes to PENDING
@@ -116,10 +117,11 @@ export function claimsKey(sheetId: string) {
 
 /** Every claim on the sheet, newest first. */
 export function useClaims(sheetId: string) {
+  const read = useReader();
   return useQuery({
-    queryKey: claimsKey(sheetId),
+    queryKey: read.key(claimsKey(sheetId)),
     queryFn: async () => {
-      const res = await getJson<{
+      const res = await read.get<{
         claims: Omit<Claim, 'log' | 'comments' | 'lockedBy' | 'batch'>[];
         logs: Record<string, string[]>;
         locks: Record<string, string>;

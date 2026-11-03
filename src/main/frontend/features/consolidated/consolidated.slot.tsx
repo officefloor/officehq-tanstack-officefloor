@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getJson, getJsonNow } from '../../api/http';
+import { ReadNow } from '../../api/readNow';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useOverdue } from '../overdue/useOverdue';
 import { peopleKey, type Person } from '../people/usePeople';
 import { useDueTotals } from '../rates/useDueTotals';
 import { hundredths, money, trimmedSum } from '../rates/useRates';
+import { asString, useSearchParam } from '../../url/useSearchParam';
 
-/** One sheet's figures: its people as the store holds them now (retired included; not as of the screen's as-of
- *  date), and its due-total and overdue-total as its header shows them. */
+/** One sheet's figures, as the store holds it now (not as of the screen's as-of date): its people (retired
+ *  included), and its due-total and overdue-total as its header shows them with no as-of date. */
 type Figures = { people: number; due: string; overdue: string };
 
 /** The sheet's descendants (the sheets naming it as their parent, theirs, and so on), re-read from the store.
@@ -52,12 +54,15 @@ function Consolidated({ sheetId }: { sheetId: string }) {
   const [onFigures] = useState(() => (id: string, f: Figures) => setFigures((all) => ({ ...all, [id]: f })));
   const sheets = [sheetId, ...(descendants.data ?? [])];
   const shown = sheets.map((id) => figures[id]).filter((f): f is Figures => f !== undefined);
+  const [asOf] = useSearchParam('asOf', asString);
   const sum = (pick: (f: Figures) => string) => money(shown.reduce((s, f) => s + hundredths(pick(f)), 0n));
   return (
     <p data-testid="consolidated">
-      {sheets.map((id) => (
-        <SheetFigures key={id} sheetId={id} onFigures={onFigures} />
-      ))}
+      <ReadNow.Provider value={asOf !== ''}>
+        {sheets.map((id) => (
+          <SheetFigures key={id} sheetId={id} onFigures={onFigures} />
+        ))}
+      </ReadNow.Provider>
       Consolidated: people <strong data-testid="consolidated-people-count">{shown.reduce((n, f) => n + f.people, 0)}</strong>
       {' '}· due total <strong data-testid="consolidated-due-total">{sum((f) => f.due)}</strong>
       {' '}· overdue total <strong data-testid="consolidated-overdue-total">{sum((f) => f.overdue)}</strong>

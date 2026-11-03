@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { getJson } from '../../api/http';
+import { useReader } from '../../api/readNow';
 
 /** The role a user name holds on the sheet: clerk or steward. A name not listed is a clerk. */
 export type Role = { user: string; role: string };
@@ -67,8 +67,9 @@ export function settingsKey(sheetId: string) {
 }
 
 export function useSettings(sheetId: string) {
+  const read = useReader();
   return useQuery({
-    queryKey: settingsKey(sheetId),
-    queryFn: () => getJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`),
+    queryKey: read.key(settingsKey(sheetId)),
+    queryFn: () => read.get<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`),
   });
 }

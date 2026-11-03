@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
+import { useReader } from '../../api/readNow';
 
 /** A person: `grade` is the one in force on the sheet's today, `grades` every grade they have been
  *  given, oldest first; `version` goes up by one each time they are saved. Their statements: how many have been
@@ -62,13 +63,13 @@ export function peopleKey(sheetId: string) {
  *  people whose name or an alias is already a name or alias on another sheet of the tree, as the store holds them. */
 type PeopleBody = { people: Person[]; patrons: Patron[]; watched: number[]; aliases: Alias[]; clashing: number[] };
 
-function peopleBody(sheetId: string): Promise<PeopleBody> {
-  return getJson<PeopleBody>(`/api/sheets/${encodeURIComponent(sheetId)}/people`);
+function peopleBody(sheetId: string, get: <T>(path: string) => Promise<T> = getJson): Promise<PeopleBody> {
+  return get<PeopleBody>(`/api/sheets/${encodeURIComponent(sheetId)}/people`);
 }
 
 /** Read the sheet's people from the store. */
-export async function fetchPeople(sheetId: string): Promise<Person[]> {
-  return (await peopleBody(sheetId)).people;
+export async function fetchPeople(sheetId: string, get?: <T>(path: string) => Promise<T>): Promise<Person[]> {
+  return (await peopleBody(sheetId, get)).people;
 }
 
 export function patronsKey(sheetId: string) {
@@ -133,8 +134,9 @@ export function retiredOn(person: Person, today: string | undefined): boolean {
 
 /** The sheet's people, in list order. */
 export function usePeople(sheetId: string) {
+  const read = useReader();
   return useQuery({
-    queryKey: peopleKey(sheetId),
-    queryFn: () => fetchPeople(sheetId),
+    queryKey: read.key(peopleKey(sheetId)),
+    queryFn: () => fetchPeople(sheetId, read.get),
   });
 }

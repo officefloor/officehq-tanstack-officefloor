@@ -4,9 +4,11 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -114,20 +116,39 @@ public class PoolRepository {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    /** Each member's cut of the pot: the pot times their share divided by 100, rounded half to even to two
-     *  decimals (0.00 for a retired member); the remainder, the pot minus the cuts added up, goes to the member
-     *  with the largest share (the earliest added on a tie), so the cuts total exactly the pot. */
-    private static List<PoolMember> cut(List<PoolMember> members, BigDecimal pot) {
+    /** The ids of the sheet's people with a hold in force on the sheet's today (a hold whose dates include it). */
+    private Set<Long> heldToday(String sheetId) {
+        return new HashSet<>(jdbc.queryForList("SELECT DISTINCT h.person_id FROM person_hold h"
+                + " JOIN sheet s ON s.id = h.sheet_id WHERE h.sheet_id = ?"
+                + " AND (h.from_date IS NULL OR h.from_date <= COALESCE(s.today, CURRENT_DATE))"
+                + " AND (h.to_date IS NULL OR h.to_date >= COALESCE(s.today, CURRENT_DATE))", Long.class, sheetId));
+    }
+
+    /** Each member's cut of the pot. A member with a cut is one neither retired nor held on the sheet's today;
+     *  each such member's cut is the pot times their share divided by the shares of the members with a cut added
+     *  up, rounded half to even to two decimals (0.00 for any other member, and for every member when none has a
+     *  cut); the remainder, the pot minus the cuts added up, goes to the member with a cut with the largest share
+     *  (the earliest added on a tie), so the cuts total exactly the pot. */
+    private static List<PoolMember> cut(List<PoolMember> members, BigDecimal pot, Set<Long> held) {
+        List<Boolean> withCut = new ArrayList<>();
+        BigDecimal shares = BigDecimal.ZERO;
+        for (PoolMember m : members) {
+            boolean has = !m.retired() && (m.personId() == null || !held.contains(m.personId()));
+            withCut.add(has);
+            if (has) shares = shares.add(new BigDecimal(m.share()));
+        }
         List<BigDecimal> cuts = new ArrayList<>();
         int largest = -1;
         BigDecimal sum = BigDecimal.ZERO;
         for (int i = 0; i < members.size(); i++) {
             PoolMember m = members.get(i);
-            BigDecimal share = m.retired() ? BigDecimal.ZERO : new BigDecimal(m.share());
-            BigDecimal cut = pot.multiply(share).divide(HUNDRED, 2, RoundingMode.HALF_EVEN);
+            boolean has = withCut.get(i) && shares.signum() > 0;
+            BigDecimal share = has ? new BigDecimal(m.share()) : BigDecimal.ZERO;
+            BigDecimal cut = has ? pot.multiply(share).divide(shares, 2, RoundingMode.HALF_EVEN)
+                    : BigDecimal.ZERO.setScale(2);
             cuts.add(cut);
             sum = sum.add(cut);
-            if (!m.retired() && (largest < 0 || share.compareTo(new BigDecimal(members.get(largest).share())) > 0)) {
+            if (has && (largest < 0 || share.compareTo(new BigDecimal(members.get(largest).share())) > 0)) {
                 largest = i;
             }
         }
@@ -167,17 +188,18 @@ public class PoolRepository {
             }
         }, sheetId);
         BigDecimal sheetPot = pot(sheetId);
+        Set<Long> held = heldToday(sheetId);
         Map<String, Pool> done = new HashMap<>();
         List<Pool> pools = new ArrayList<>();
         for (String name : members.keySet()) {
-            pools.add(resolve(name, members, parents, sheetPot, done));
+            pools.add(resolve(name, members, parents, sheetPot, held, done));
         }
         return pools;
     }
 
     /** The named pool with its cuts, resolving the pool above it first for its pot. */
     private static Pool resolve(String name, Map<String, List<PoolMember>> members, Map<String, String> parents,
-            BigDecimal sheetPot, Map<String, Pool> done) {
+            BigDecimal sheetPot, Set<Long> held, Map<String, Pool> done) {
         Pool known = done.get(name);
         if (known != null) return known;
         BigDecimal pot = sheetPot;
@@ -185,7 +207,7 @@ public class PoolRepository {
         if (parent != null) {
             pot = null;
             if (members.containsKey(parent)) {
-                for (PoolMember m : resolve(parent, members, parents, sheetPot, done).members()) {
+                for (PoolMember m : resolve(parent, members, parents, sheetPot, held, done).members()) {
                     if (name.equals(m.pool()) && m.cut() != null) pot = new BigDecimal(m.cut());
                 }
             }
@@ -194,7 +216,7 @@ public class PoolRepository {
         BigDecimal total = of.stream().filter(m -> !m.retired()).map(m -> new BigDecimal(m.share()))
                 .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
         boolean balanced = total.compareTo(HUNDRED) == 0;
-        Pool pool = new Pool(name, balanced && pot != null ? cut(of, pot) : of, total.toPlainString(), balanced);
+        Pool pool = new Pool(name, balanced && pot != null ? cut(of, pot, held) : of, total.toPlainString(), balanced);
         done.put(name, pool);
         return pool;
     }

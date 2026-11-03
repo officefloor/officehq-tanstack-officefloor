@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
+import { useReader } from '../../api/readNow';
 
 /** A grade's rate: a percent with two decimals, in force from its from-date (yyyy-mm-dd; null when it
  *  applies from the beginning of time) through its to-date (null when it has no end). `level` is the sheet it
@@ -13,10 +14,11 @@ export function ratesKey(sheetId: string) {
 /** The sheet's rates (level 0), by grade then from-date (an undated rate first); a grade with no rate is not
  *  listed. Then those of the sheets its grades fall back to, nearest first (level 1 its parent, up to 3). */
 export function useRates(sheetId: string) {
+  const read = useReader();
   return useQuery({
-    queryKey: ratesKey(sheetId),
+    queryKey: read.key(ratesKey(sheetId)),
     queryFn: async () => {
-      const got = await getJson<{ rates: Rate[]; inherited: Rate[][] }>(`/api/sheets/${encodeURIComponent(sheetId)}/rates`);
+      const got = await read.get<{ rates: Rate[]; inherited: Rate[][] }>(`/api/sheets/${encodeURIComponent(sheetId)}/rates`);
       return [
         ...got.rates.map((r) => ({ ...r, level: 0 })),
         ...(got.inherited ?? []).flatMap((rates, i) => rates.map((r) => ({ ...r, level: i + 1 }))),
