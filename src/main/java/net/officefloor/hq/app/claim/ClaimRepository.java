@@ -255,7 +255,7 @@ public class ClaimRepository {
      *  had on that date, falling back to the parent sheets' (see {@link #rateInForce})
      *  (the one with the latest from-date on or before it; an undated rate applies from the beginning
      *  of time; none applies when the claim's date is after that rate's to-date), rounded to two decimals by the claim's
-     *  rounding (see {@link #rounding}) — the rate figure, not floored: the floor is applied last, in {@link #dueNow};
+     *  rounding (see {@link #rounding}) — the rate figure, not floored: the floor is applied before the late charge, in {@link #dueNow};
      *  null when no rate applies. */
     public BigDecimal due(String sheetId, Claim claim) {
         BigDecimal pct = rateInForce(sheetId, claim.personId(), LocalDate.parse(claim.date()), added(sheetId, claim.id()));
@@ -288,7 +288,7 @@ public class ClaimRepository {
     }
 
     /** A claim's figure now: the due fixed when it was settled, else the due as shown its last statement bound
-     *  it to (late charge and floor included; none when it bound it to n/a), else its live rate figure (not floored);
+     *  it to (floor and late charge included; none when it bound it to n/a), else its live rate figure (not floored);
      *  null when it has none. */
     public BigDecimal figure(String sheetId, Claim claim) {
         if (claim.due() != null) return new BigDecimal(claim.due());
@@ -297,8 +297,8 @@ public class ClaimRepository {
         return due(sheetId, claim);
     }
 
-    /** A claim's due now: a settled claim's frozen due; else the greater of the sheet's floor in force on the
-     *  claim's date and its live rate figure plus, while it
+    /** A claim's due now: a settled claim's frozen due; else its floored figure (the greater of the sheet's floor in
+     *  force on the claim's date and its live rate figure) plus, while it
      *  is overdue (OPEN or PENDING and its due-by — fixed when it was created — plus its grade's grace days before the
      *  sheet's today), for every full 30 days it is overdue, the sheet's late percent in force on that boundary date (the
      *  due-by plus the grace plus 30, 60,
@@ -312,8 +312,8 @@ public class ClaimRepository {
         if (claim.bound() && (claim.statedNa() || claim.statedDue() != null)) return figure(sheetId, claim);
         BigDecimal figure = figure(sheetId, claim);
         if (figure == null || new BigDecimal(claim.amount()).signum() < 0) return figure;
-        BigDecimal due = figure.add(lateCharge(sheetId, claim, figure));
-        return due.max(settings.floor(sheetId, LocalDate.parse(claim.date())));
+        BigDecimal floored = figure.max(settings.floor(sheetId, LocalDate.parse(claim.date())));
+        return floored.add(lateCharge(sheetId, claim, floored));
     }
 
     /** The day a claim's overdue days are counted from: its due-by plus the grace days, in force on the claim's date,

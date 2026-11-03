@@ -37,8 +37,8 @@ export function roundsHalfUp(c: Claim, claims: Claim[] | undefined, settings: Se
 }
 
 /** A claim's due now: a settled claim's frozen due; else the due as shown its last statement bound it to (late
- *  charge and floor included: while bound, its charge no longer follows the sheet's today); else the greater of the floor (two decimals; none while
- *  it is not loaded) and its live rate figure plus,
+ *  charge and floor included: while bound, its charge no longer follows the sheet's today); else its floored figure — the greater of the floor (two decimals; none
+ *  while it is not loaded) and its live rate figure — plus,
  *  while it is overdue, for every full 30 days it is overdue the sheet's late percent in force on that boundary
  *  date (the overdue-from day — the due-by plus the grade's grace — plus 30, 60, 90 ... days) of that figure plus the charges of the boundaries before it (compounding), each rounded like a due, the charges added up. A
  *  correction (a negative amount) has no floor and no late charge, nor does a claim whose late charge a steward waived. No charge until the settings and the sheet's today are loaded. */
@@ -54,7 +54,7 @@ export function dueNow(c: Claim, figure: string, floor: string | undefined, sett
       pcts.push(settingOn(settings, 'late-pct', boundary) ?? '0.00');
     }
   }
-  return atLeast(withCharge(figure, pcts, halfUp), floor);
+  return withCharge(atLeast(figure, floor), pcts, halfUp);
 }
 
 /** A claim's due now (see `dueNow`) from its fixed figure, else its live rate figure at this rate (a

@@ -161,15 +161,15 @@ public record SheetAsOf(LocalDate day, Map<Long, Claim> claims, Map<Long, TreeMa
         return due(claim);
     }
 
-    /** A claim's due then: its settled due, else the due a statement bound it to (as shown then), else its figure plus its late charges on the day, at least the
-     *  floor (a correction has neither); null when it had no figure. */
+    /** A claim's due then: its settled due, else the due a statement bound it to (as shown then), else its figure raised to at least the floor plus its late
+     *  charges on the day on that floored figure (a correction has neither); null when it had no figure. */
     public BigDecimal dueNow(Claim claim) {
         if (claim.due() != null) return new BigDecimal(claim.due());
         if (claim.bound() && (claim.statedNa() || claim.statedDue() != null)) return figure(claim);
         BigDecimal figure = figure(claim);
         if (figure == null || new BigDecimal(claim.amount()).signum() < 0) return figure;
-        BigDecimal due = figure.add(lateCharge(claim, figure));
-        return due.max(floor(LocalDate.parse(claim.date())));
+        BigDecimal floored = figure.max(floor(LocalDate.parse(claim.date())));
+        return floored.add(lateCharge(claim, floored));
     }
 
     /** The day a claim's overdue days counted from then: its due-by plus the grace days, then in force on its date,
