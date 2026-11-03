@@ -50,7 +50,7 @@ export function nextPlanDates(plan: Plan, today: string): string[] {
 }
 
 /** One plan's row: its figures, next dates and whether it is paused, with buttons that pause and resume it, an
- *  entry that changes its amount from the sheet's today, and its amount changes, oldest first. A refused pause,
+ *  entry that changes its amount from the sheet's today (its DRAFT claims taking it too), and its amount changes, oldest first. A refused pause,
  *  resume or change shows an error on the row, gone when the next one is pressed or the entry is changed. */
 function PlanRow({ sheetId, plan, today }: { sheetId: string; plan: Plan; today: string | undefined }) {
   const fig = useFigure();
@@ -68,6 +68,9 @@ function PlanRow({ sheetId, plan, today }: { sheetId: string; plan: Plan; today:
     onSuccess: (data) => {
       setAmount('');
       queryClient.setQueryData(plansKey(sheetId), data.plans);
+      // its DRAFT claims took the new amount too
+      void queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+      void queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
     },
   });
   const save = () =>
