@@ -33,9 +33,9 @@ public class HistoryRepository {
     /** Keep a claim's values as they are now, after a change to it. */
     public void claim(String sheetId, long claimId) {
         jdbc.update("INSERT INTO claim_history (sheet_id, on_date, claim_id, person_id, amount, claim_date, status,"
-                + " settled_due, stated, stated_due, stated_na, corrects, due_by, deferred_until, waived)"
+                + " settled_due, stated, stated_due, stated_na, corrects, due_by, deferred_until, waived, held)"
                 + " SELECT c.sheet_id, s.today, c.id, c.person_id, c.amount, c.claim_date, c.status, c.settled_due,"
-                + " c.stated, c.stated_due, c.stated_na, c.corrects, c.due_by, c.deferred_until, c.waived"
+                + " c.stated, c.stated_due, c.stated_na, c.corrects, c.due_by, c.deferred_until, c.waived, c.held"
                 + " FROM claim c JOIN sheet s ON s.id = c.sheet_id WHERE c.id = ? AND c.sheet_id = ?", claimId, sheetId);
     }
 
@@ -105,7 +105,7 @@ public class HistoryRepository {
                             rs.getString("corrects"), local(rs.getDate("due_by")).toString(), rs.getBoolean("stated_na"),
                             deferredUntil == null ? null : deferredUntil.toString(),
                             status.equals("OPEN") && deferredUntil != null && deferredUntil.isAfter(day), 0, null, false, null, null, null, null,
-                            rs.getBoolean("waived"), 0));
+                            rs.getBoolean("waived"), 0, rs.getBoolean("held")));
                 }, sheetId, on);
         Map<Long, TreeMap<LocalDate, String>> grades = new HashMap<>();
         jdbc.query("SELECT person_id, grade, from_date FROM grade_history WHERE sheet_id = ? AND on_date <= ? ORDER BY id",

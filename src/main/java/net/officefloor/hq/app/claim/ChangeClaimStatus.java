@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Move a claim along its status: open, settle, approve, reject (with a reason) or void, each only from the
- *  statuses it allows; or defer an OPEN claim until a date (see {@link ClaimDeferral}); or raise its proofs count (see {@link ClaimProof}); or split an amount off an OPEN claim (see {@link ClaimSplit}); or re-date an OPEN or PENDING claim (see {@link ClaimRedate}); or lock or unlock a claim's editor (see {@link ClaimLock}); or remind an OPEN or PENDING claim (see {@link ClaimRemind}); or comment a claim (see {@link ClaimComment}); or delete a DRAFT claim or restore it the same day (see {@link ClaimDelete}); or add a line to a DRAFT claim (see {@link ClaimLine}); or waive an OPEN or PENDING claim's late charge (see {@link ClaimWaive}). */
+ *  statuses it allows; or defer an OPEN claim until a date (see {@link ClaimDeferral}); or raise its proofs count (see {@link ClaimProof}); or split an amount off an OPEN claim (see {@link ClaimSplit}); or re-date an OPEN or PENDING claim (see {@link ClaimRedate}); or lock or unlock a claim's editor (see {@link ClaimLock}); or remind an OPEN or PENDING claim (see {@link ClaimRemind}); or comment a claim (see {@link ClaimComment}); or delete a DRAFT claim or restore it the same day (see {@link ClaimDelete}); or add a line to a DRAFT claim (see {@link ClaimLine}); or waive an OPEN or PENDING claim's late charge (see {@link ClaimWaive}); or hold or release an OPEN or PENDING claim (see {@link ClaimHold}). */
 public class ChangeClaimStatus {
     public void change(@PathVariable("sheetId") String sheetId, @PathVariable("claimId") String claimId,
             @PathVariable("action") String action, @RequestBody ClaimActionRequest request, ServerHttpConnection connection, ClaimRepository repository,
@@ -74,6 +74,10 @@ public class ChangeClaimStatus {
         }
         if ("waive".equals(action == null ? "" : action.trim())) {
             claim.set(ClaimWaive.apply(id, cid, by, repository, settings, audit, rollup));
+            return;
+        }
+        if ("hold".equals(action == null ? "" : action.trim())) {
+            claim.set(ClaimHold.toggle(id, cid, by, repository, settings, audit, rollup));
             return;
         }
         if ("proof".equals(action == null ? "" : action.trim())) {

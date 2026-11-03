@@ -19,11 +19,12 @@ import net.officefloor.hq.app.person.Hold;
  *  was written for it (null when never reminded), and its external reference (null when none), and its tags (lower-case, sorted and
  *  comma separated, with no spaces; null when none), and the reason it was voided with (one of its sheet's void reasons; null when none was given), and whether a steward
  *  waived its late charge (it then bears none, whatever its overdue state), and how many of its proofs are photos (the
- *  rest are receipts). */
+ *  rest are receipts), and whether it is held (an OPEN or PENDING claim held on its own: it then counts in no
+ *  live total unless a statement binds it, exactly as a claim dated within one of its person's holds). */
 public record Claim(long id, long personId, String amount, String date, String note, String status,
         String number, String due, String openedBy, boolean stated, String statedDue, String corrects,
         String dueBy, boolean statedNa, String deferredUntil, boolean deferred, int proofs, String splitFrom,
-        boolean lateEntry, String reminded, String ref, String tags, String voidReason, boolean waived, int photos) {
+        boolean lateEntry, String reminded, String ref, String tags, String voidReason, boolean waived, int photos, boolean held) {
 
     /** The kinds a proof can be, the first (receipt) being a proof's kind when none is chosen. */
     public static final List<String> PROOF_KINDS = List.of("receipt", "photo");
@@ -44,10 +45,10 @@ public record Claim(long id, long personId, String amount, String date, String n
     }
 
     /** Whether the claim counts toward live totals (claimed, due-totals, a period's total) given its
-     *  person's holds: an open claim dated within a hold does not, unless a statement binds it; SETTLED
+     *  person's holds: an open claim dated within a hold, or held itself, does not, unless a statement binds it; SETTLED
      *  claims always do. A deferred claim does not. */
     public boolean counts(List<Hold> holds) {
-        return status.equals("SETTLED") || (open() && !deferred && (bound() || !Hold.anyCovers(holds, date)));
+        return status.equals("SETTLED") || (open() && !deferred && (bound() || (!held && !Hold.anyCovers(holds, date))));
     }
 
     /** Whether the claim counts toward a period ending on a day, given the status it had at the end of that
@@ -58,7 +59,7 @@ public record Claim(long id, long personId, String amount, String date, String n
         if (statusThen == null) return false;
         boolean deferredNow = statusThen.equals("OPEN") && deferredUntil != null && today != null && today.compareTo(deferredUntil) < 0;
         Claim then = new Claim(id, personId, amount, date, note, statusThen, number, due, openedBy, stated, statedDue,
-                corrects, dueBy, statedNa, deferredUntil, deferredNow, proofs, splitFrom, lateEntry, reminded, ref, tags, voidReason, waived, photos);
+                corrects, dueBy, statedNa, deferredUntil, deferredNow, proofs, splitFrom, lateEntry, reminded, ref, tags, voidReason, waived, photos, held && open());
         return then.counts(open() ? holds : List.of());
     }
 

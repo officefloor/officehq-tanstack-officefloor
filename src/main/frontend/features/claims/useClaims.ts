@@ -54,6 +54,7 @@ export type Claim = {
   tags: string | null;
   voidReason: string | null;
   waived: boolean;
+  held: boolean;
   log: string[];
   comments: string[];
   lines: string[];
@@ -90,10 +91,10 @@ export function isDeferred(c: Claim, today: string | undefined): boolean {
 
 /** Whether a claim counts toward claimed and every live total, given the people's holds by person id
  *  and the sheet's today: only open (OPEN or PENDING) and SETTLED claims do, and an open claim dated within
- *  one of its person's holds does not, unless a statement binds it, nor does a deferred one. */
+ *  one of its person's holds, or held itself, does not, unless a statement binds it, nor does a deferred one. */
 export function counts(c: Claim, holds: ReadonlyMap<number, Hold[]>, today: string | undefined): boolean {
   return c.status === 'SETTLED'
-    || (isOpen(c) && !isDeferred(c, today) && (isBound(c) || !heldOn(holds.get(c.personId), c.date)));
+    || (isOpen(c) && !isDeferred(c, today) && (isBound(c) || (!c.held && !heldOn(holds.get(c.personId), c.date))));
 }
 
 /** A claim's status at the end of a day (yyyy-mm-dd), as its status log records it: the last line dated
@@ -112,7 +113,7 @@ export function statusOn(c: Claim, day: string): ClaimStatus | null {
  *  out only a claim still open now: one since settled or voided counts by the status it had then. */
 export function countsOn(c: Claim, day: string, holds: ReadonlyMap<number, Hold[]>, today: string | undefined): boolean {
   const status = statusOn(c, day);
-  return status !== null && counts({ ...c, status }, isOpen(c) ? holds : new Map(), today);
+  return status !== null && counts({ ...c, status, held: c.held && isOpen(c) }, isOpen(c) ? holds : new Map(), today);
 }
 
 /** Whether its person's last statement binds a claim now: it was stated (a PENDING claim is bound like any other). */
