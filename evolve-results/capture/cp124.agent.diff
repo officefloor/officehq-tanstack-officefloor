@@ -1,0 +1,56 @@
+diff --git a/src/main/frontend/features/pools/usePools.ts b/src/main/frontend/features/pools/usePools.ts
+index e60559ce1..a38dd7b26 100644
+--- a/src/main/frontend/features/pools/usePools.ts
++++ b/src/main/frontend/features/pools/usePools.ts
+@@ -3,8 +3,8 @@ import { getJson } from '../../api/http';
+ 
+ /** A member of a pool: a person (by id, and their name now) or another pool (`pool`, its name; `personId` then
+  *  null), their share percent (two decimals), whether they are retired (a person with a retirement date set,
+- *  whatever the date: their share then counts as 0.00) and their cut of the pool's pot (two decimals; null when
+- *  the pool is not balanced or has no pot: a pool that is a member of another has its cut there as its pot; null
++ *  whatever the date: they get no cut, their share spread over the others, but it counts in the total share) and their cut of the pool's pot (two decimals; null when
++ *  the pool is not balanced, has no pot or has only retired members: a pool that is a member of another has its cut there as its pot; null
+  *  too for a member that is not current), the membership's from-date and to-date (null when not given) and whether
+  *  they include the sheet's today (a member that is not current counts in neither the total share nor the balance). */
+ export type PoolMember = {
+diff --git a/src/main/java/net/officefloor/hq/app/pool/Pool.java b/src/main/java/net/officefloor/hq/app/pool/Pool.java
+index 3a0105fe0..f7362bd67 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/Pool.java
++++ b/src/main/java/net/officefloor/hq/app/pool/Pool.java
+@@ -3,6 +3,6 @@ package net.officefloor.hq.app.pool;
+ import java.util.List;
+ 
+ /** A sheet's pool: its name, its members (people and pools) in the order they were added, the total of their shares (a
+- *  retired member's, or one whose dates do not include the sheet's today, counting as 0.00; two decimals) and whether that total is exactly 100.00. */
++ *  retired member's share counted as given, one whose dates do not include the sheet's today, counting as 0.00; two decimals) and whether that total is exactly 100.00. */
+ public record Pool(String name, List<PoolMember> members, String totalShare, boolean balanced) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+index d6fd473ef..6a171d416 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+@@ -167,7 +167,8 @@ public class PoolRepository {
+     }
+ 
+     /** The sheet's pools, by name, each with its members (people and pools) in the order they were added, and
+-     *  their cuts of the pool's pot when the pool is balanced and has a pot. A pool that is a member of none has
++     *  their cuts of the pool's pot when the pool is balanced, has a pot and has a current member not retired. A
++     *  pool's total share counts every current member's share, a retired member's included. A pool that is a member of none has
+      *  the sheet's pot; a pool that is a member of another has its cut there as its pot (none when that pool
+      *  shows no cuts). */
+     public List<Pool> list(String sheetId) {
+@@ -225,10 +226,12 @@ public class PoolRepository {
+             }
+         }
+         List<PoolMember> of = members.get(name);
+-        BigDecimal total = of.stream().filter(m -> m.current() && !m.retired()).map(m -> new BigDecimal(m.share()))
++        BigDecimal total = of.stream().filter(PoolMember::current).map(m -> new BigDecimal(m.share()))
+                 .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
+         boolean balanced = total.compareTo(HUNDRED) == 0;
+-        Pool pool = new Pool(name, balanced && pot != null ? cut(of, pot, held) : of, total.toPlainString(), balanced);
++        boolean allRetired = of.stream().filter(PoolMember::current).allMatch(PoolMember::retired);
++        Pool pool = new Pool(name, balanced && pot != null && !allRetired ? cut(of, pot, held) : of,
++                total.toPlainString(), balanced);
+         done.put(name, pool);
+         return pool;
+     }
