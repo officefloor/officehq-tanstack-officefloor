@@ -335,6 +335,13 @@ public class ClaimRepository {
         return grade.isEmpty() ? null : grade.get(0);
     }
 
+    /** The grade a person had on a day; null when none. */
+    public String gradeOn(String sheetId, long personId, LocalDate day) {
+        List<String> grade = jdbc.queryForList("SELECT " + GRADE_ON + " FROM DUAL", String.class, sheetId,
+                personId, day.toString());
+        return grade.isEmpty() ? null : grade.get(0);
+    }
+
     /** Whether a claim is overdue on a day: open, not deferred, and its overdue-from day (see {@link #overdueFrom})
      *  before that day. */
     public boolean overdue(String sheetId, Claim claim, LocalDate today) {

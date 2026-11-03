@@ -13,7 +13,8 @@ export type Role = { user: string; role: string };
  *  numbered within its period), and each grade's own terms, by grade (a grade not listed uses the sheet's
  *  terms; a claim's due-by is fixed from them when it is created), and its cap (two decimals; null means
  *  none: a person's due-total is at most it). Those with a figure are as in force on the sheet's today when
- *  loaded; `dated` is every value recorded for each of them, by key (clerk-limit, floor, terms, terms-<grade>,
+ *  loaded; `dated` is every value recorded for each of them, by key (clerk-limit, clerk-limit-<grade>: the grade's own clerk limit, used for a claim of a person of
+ *  that grade instead of the sheet's while one is in force on the sheet's today, floor, terms, terms-<grade>,
  *  late-pct, cap, proof-threshold: a claim whose due is above the one in force on its date cannot be settled or
  *  approved without a proof; proof-threshold-<grade>: the grade's own proof threshold, used for a claim of a
  *  person of that grade instead of the sheet's while one is in force on its date; note-threshold: one above it cannot be opened with an empty note; review-threshold: one above it goes to REVIEW when opened; rounding: the rounding mode, half-up or half-even, a claim of a date with one in force rounds its live figures by it; grace-<grade>: the grade's grace days, see `overdueFrom`), oldest from-date first. `permissions` is the permission matrix entries set, by action

@@ -106,6 +106,24 @@ public class SettingsRepository {
         record(sheetId, "clerk-limit", from, limit == null ? null : money(limit));
     }
 
+    /** A grade's own clerk limit in force on the sheet's today; null when it has none then (the sheet's is used). */
+    public BigDecimal gradeClerkLimit(String sheetId, String grade) {
+        List<String> found = on(sheetId, "clerk-limit-" + grade, today(sheetId));
+        return found.isEmpty() || found.get(0) == null ? null : new BigDecimal(found.get(0));
+    }
+
+    /** Set a grade's own clerk limit from a date; null means none from then (the sheet's is used). */
+    public void setGradeClerkLimit(String sheetId, String grade, LocalDate from, BigDecimal limit) {
+        record(sheetId, "clerk-limit-" + grade, from, limit == null ? null : money(limit));
+    }
+
+    /** The clerk limit in force for a claim whose person has a grade (null when none): the grade's own in force on
+     *  the sheet's today when one is set, else the sheet's; null when neither is. */
+    public BigDecimal clerkLimit(String sheetId, String grade) {
+        BigDecimal own = grade == null ? null : gradeClerkLimit(sheetId, grade);
+        return own != null ? own : clerkLimit(sheetId);
+    }
+
     /** The sheet's cap in force on its today: the most a person's due-total can be; null when it has none. */
     public BigDecimal cap(String sheetId) {
         List<String> found = on(sheetId, "cap", today(sheetId));

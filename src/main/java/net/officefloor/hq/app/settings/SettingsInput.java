@@ -10,7 +10,7 @@ import java.time.LocalDate;
  *  permission matrix entries entered, by action (a comma separated list of roles; empty when blank: the standing rule), and the grace days (null when blank: off), and the note threshold
  *  scaled to two decimals (null for none), and the entry date (null when blank: off), and the grade grace days entered, by grade (in grade order; null when blank: none), and the grade proof thresholds entered, by
  *  grade, scaled to two decimals (in grade order; null when blank: none, the sheet's is then used), and the pot scaled to two decimals
- *  (null for none), and the parent sheet's id (null when blank: none), and the fiscal year start month (1 to 12), and the alert threshold scaled to two decimals (null for off), and the rounding mode (half-up or half-even; null when blank: none), and the review threshold scaled to two decimals (null for none), and the escalation gap in days (null when blank: off), and the review SLA in days (null when blank: none), and the default grade (null when blank: A). */
+ *  (null for none), and the parent sheet's id (null when blank: none), and the fiscal year start month (1 to 12), and the alert threshold scaled to two decimals (null for off), and the rounding mode (half-up or half-even; null when blank: none), and the review threshold scaled to two decimals (null for none), and the escalation gap in days (null when blank: off), and the review SLA in days (null when blank: none), and the default grade (null when blank: A), and the grade clerk limits entered, by grade, scaled to two decimals (in grade order; null when blank: none, the sheet's is then used). */
 public record SettingsInput(boolean setsClerkLimit, BigDecimal clerkLimit, boolean setsFloor, BigDecimal floor, boolean setsTerms,
         Integer terms, boolean setsLatePct, BigDecimal latePct,
         boolean setsPolicyDate, LocalDate policyDate, boolean setsPeriodNumberingFrom, LocalDate periodNumberingFrom,
@@ -23,5 +23,6 @@ public record SettingsInput(boolean setsClerkLimit, BigDecimal clerkLimit, boole
         boolean setsAlertThreshold, BigDecimal alertThreshold,
         boolean setsRounding, String rounding, boolean setsReviewThreshold, BigDecimal reviewThreshold,
         boolean setsEscalateAfter, Integer escalateAfter, boolean setsReviewSla, Integer reviewSla,
-        boolean setsProofKinds, String proofKinds, boolean setsDefaultGrade, String defaultGrade) {
+        boolean setsProofKinds, String proofKinds, boolean setsDefaultGrade, String defaultGrade,
+        java.util.Map<String, BigDecimal> gradeClerkLimit) {
 }

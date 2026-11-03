@@ -14,12 +14,14 @@ package net.officefloor.hq.app.settings;
  *  {@code escalateAfter} is the escalation gap in days, blank meaning off (not dated).
  *  {@code reviewSla} is the review SLA in days, blank meaning none (not dated).
  *  {@code proofKinds} is the proof kinds, a comma separated list of receipt and photo, blank meaning none (not dated).
- *  {@code defaultGrade} is the default grade, A, B or C, blank meaning A (not dated). */
+ *  {@code defaultGrade} is the default grade, A, B or C, blank meaning A (not dated).
+ *  {@code gradeClerkLimit} is each grade's clerk limit given, by grade (dated, from-date key clerk-limit-<grade>), blank
+ *  meaning none (the sheet's is then used). */
 public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom,
         java.util.Map<String, String> gradeTerms, String cap, java.util.Map<String, String> from,
         String proofThreshold, java.util.Map<String, String> permissions, String graceDays,
         String noteThreshold, String entryDate, java.util.Map<String, String> gradeGrace,
         java.util.Map<String, String> gradeProofThreshold, String pot, String parent,
         String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla,
-        String proofKinds, String defaultGrade) {
+        String proofKinds, String defaultGrade, java.util.Map<String, String> gradeClerkLimit) {
 }

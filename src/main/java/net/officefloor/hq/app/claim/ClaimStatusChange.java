@@ -170,11 +170,11 @@ public final class ClaimStatusChange {
                 }
             }
         }
-        // A clerk settles outright only a claim whose due is within the sheet's clerk limit ('n/a' is within
-        // any); above it the claim goes to PENDING for a steward to approve or reject. A steward settles anything.
+        // A clerk settles outright only a claim whose due is within the clerk limit in force (its person's grade's
+        // on the sheet's today when one is set, else the sheet's; 'n/a' is within any); above it the claim goes to PENDING for a steward to approve or reject. A steward settles anything.
         if (to.equals("SETTLED") && found.status().equals("OPEN")
                 && settings.role(id, by).equals(SettingsRepository.CLERK)) {
-            BigDecimal limit = settings.clerkLimit(id);
+            BigDecimal limit = settings.clerkLimit(id, repository.gradeOn(id, found.personId(), settings.today(id)));
             BigDecimal now = repository.dueNow(id, found);
             if (limit != null && now != null && now.compareTo(limit) > 0) {
                 to = "PENDING";

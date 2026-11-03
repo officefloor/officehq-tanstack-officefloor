@@ -82,6 +82,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
   const [noteThreshold, setNoteThreshold] = useState<string | null>(null);
   const [reviewThreshold, setReviewThreshold] = useState<string | null>(null);
   const [gradeProof, setGradeProof] = useState<Record<string, string>>({});
+  const [gradeLimit, setGradeLimit] = useState<Record<string, string>>({});
   const [from, setFrom] = useState<Record<string, string>>({});
   const [permissions, setPermissions] = useState<Record<string, string>>({});
   const [graceDays, setGraceDays] = useState<string | null>(null);
@@ -108,7 +109,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
 
   const saveOnce = useSingleFlight();
   const save = useMutation({
-    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null; noteThreshold: string | null; permissions: Record<string, string>; graceDays: string | null; entryDate: string | null; gradeGrace: Record<string, string>; gradeProofThreshold: Record<string, string>; pot: string | null; parent: string | null; fiscalStartMonth: string | null; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null; escalateAfter: string | null; reviewSla: string | null; proofKinds: string | null; defaultGrade: string | null }) =>
+    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null; noteThreshold: string | null; permissions: Record<string, string>; graceDays: string | null; entryDate: string | null; gradeGrace: Record<string, string>; gradeProofThreshold: Record<string, string>; pot: string | null; parent: string | null; fiscalStartMonth: string | null; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null; escalateAfter: string | null; reviewSla: string | null; proofKinds: string | null; defaultGrade: string | null; gradeClerkLimit: Record<string, string> }) =>
       postJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, f),
     onSuccess: (saved) => {
       setLimit(null);
@@ -117,6 +118,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
       setGradeTerms({});
       setGradeGrace({});
       setGradeProof({});
+      setGradeLimit({});
       setLatePct(null);
       setPolicyDate(null);
       setNumberingFrom(null);
@@ -205,7 +207,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           e.preventDefault();
           saveOnce(() => {
             save.reset();
-            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap, from, proofThreshold, noteThreshold, permissions, graceDays, entryDate, gradeGrace, gradeProofThreshold: gradeProof, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter, reviewSla, proofKinds, defaultGrade });
+            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap, from, proofThreshold, noteThreshold, permissions, graceDays, entryDate, gradeGrace, gradeProofThreshold: gradeProof, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter, reviewSla, proofKinds, defaultGrade, gradeClerkLimit: gradeLimit });
           });
         }}
       >
@@ -223,6 +225,22 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           />
         </label>{' '}
         <FromInput settingKey="clerk-limit" from={from} setFrom={setFrom} onChange={() => save.reset()} />{' '}
+        {GRADES.map((g) => (
+          <label key={g}>
+            Clerk limit {g}{' '}
+            <input
+              data-testid={`setting-clerk-limit-${g}`}
+              inputMode="decimal"
+              value={gradeLimit[g] ?? ''}
+              onFocus={() => setGradeLimit((v) => (g in v ? v : { ...v, [g]: '' }))}
+              onChange={(e) => {
+                setGradeLimit((v) => ({ ...v, [g]: e.target.value }));
+                save.reset();
+              }}
+            />{' '}
+            <FromInput settingKey={`clerk-limit-${g}`} from={from} setFrom={setFrom} onChange={() => save.reset()} />{' '}
+          </label>
+        ))}
         <label>
           Floor{' '}
           <input
@@ -557,6 +575,11 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           Save settings
         </button>{' '}
         Current: clerk limit <strong data-testid="setting-clerk-limit-current">{fig(settingOn(settings.data, 'clerk-limit', today) ?? '')}</strong>,
+        {GRADES.map((g) => (
+          <span key={g}>
+            clerk limit {g} <strong data-testid={`setting-clerk-limit-${g}-current`}>{fig(settingOn(settings.data, `clerk-limit-${g}`, today) ?? '')}</strong>,{' '}
+          </span>
+        ))}
         floor <strong data-testid="setting-floor-current">{fig(settingOn(settings.data, 'floor', today) ?? '')}</strong>,
         terms <strong data-testid="setting-terms-current">{fig(settingOn(settings.data, 'terms', today) ?? '')}</strong>,
         {GRADES.map((g) => (

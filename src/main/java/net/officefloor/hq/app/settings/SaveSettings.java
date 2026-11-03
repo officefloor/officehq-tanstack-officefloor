@@ -38,6 +38,11 @@ public class SaveSettings {
             audit.record(prefix + "clerk-limit value="
                     + (input.clerkLimit() == null ? "" : SettingsRepository.money(input.clerkLimit())) + given(input, "clerk-limit"));
         }
+        input.gradeClerkLimit().forEach((grade, limit) -> {
+            repository.setGradeClerkLimit(id, grade, from(input, "clerk-limit-" + grade, today), limit);
+            audit.record(prefix + "clerk-limit-" + grade + " value="
+                    + (limit == null ? "" : SettingsRepository.money(limit)) + given(input, "clerk-limit-" + grade));
+        });
         if (input.setsFloor()) {
             repository.setFloor(id, from(input, "floor", today), input.floor());
             audit.record(prefix + "floor value=" + SettingsRepository.money(input.floor()) + given(input, "floor"));
