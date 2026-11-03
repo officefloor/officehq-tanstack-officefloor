@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  numbering from-date is a date, blank meaning off; a grade's (A, B or C) terms are like the sheet's, blank
  *  meaning the grade uses the sheet's terms; the cap is 0.00 or more with up to two decimals, blank meaning none; the proof threshold and the note threshold likewise. A from-date given for a
  *  setting with a figure is a date; blank is the sheet's today. A permission matrix entry (open, settle, void, reassign, close or reopen) is a comma separated
- *  list of roles (clerk, steward), blank keeping the standing rule. The grace days are a whole number of days, 0 to 3650, blank meaning off. The entry date is a date, blank meaning off. A grade's grace days are a whole number of days, 0 to 3650, blank meaning none. A setting left out is not changed. */
+ *  list of roles (clerk, steward), blank keeping the standing rule. The grace days are a whole number of days, 0 to 3650, blank meaning off. The entry date is a date, blank meaning off. A grade's grace days are a whole number of days, 0 to 3650, blank meaning none. A grade's proof threshold is like the sheet's, blank meaning none. A setting left out is not changed. */
 public class ValidateSettings {
     private static final Pattern MONEY = Pattern.compile("\\d{1,9}(\\.\\d{1,2})?|\\.\\d{1,2}");
     private static final List<String> GRADES = List.of("A", "B", "C");
@@ -63,6 +63,20 @@ public class ValidateSettings {
             gradeGrace.put(grade, value.isEmpty() ? null : Integer.parseInt(value));
         }
         for (String grade : graces.keySet()) {
+            if (!GRADES.contains(grade)) throw new BadRequestException("grade must be A, B or C");
+        }
+        Map<String, BigDecimal> gradeProof = new LinkedHashMap<>();
+        Map<String, String> proofs = request == null || request.gradeProofThreshold() == null ? Map.of()
+                : request.gradeProofThreshold();
+        for (String grade : GRADES) {
+            String value = proofs.get(grade) == null ? null : proofs.get(grade).trim();
+            if (value == null) continue;
+            if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
+                throw new BadRequestException("proof threshold for grade " + grade + " must be 0.00 or more with up to two decimals");
+            }
+            gradeProof.put(grade, value.isEmpty() ? null : new BigDecimal(value).setScale(2));
+        }
+        for (String grade : proofs.keySet()) {
             if (!GRADES.contains(grade)) throw new BadRequestException("grade must be A, B or C");
         }
         if (latePct != null && !MONEY.matcher(latePct).matches()) {
@@ -150,7 +164,8 @@ public class ValidateSettings {
                 case "proof-threshold" -> proof != null;
                 case "note-threshold" -> note != null;
                 default -> (key.startsWith("terms-") && gradeTerms.containsKey(key.substring(6)))
-                        || (key.startsWith("grace-") && gradeGrace.containsKey(key.substring(6)));
+                        || (key.startsWith("grace-") && gradeGrace.containsKey(key.substring(6)))
+                        || (key.startsWith("proof-threshold-") && gradeProof.containsKey(key.substring(16)));
             };
             if (!saved) continue;
             try {
@@ -169,6 +184,6 @@ public class ValidateSettings {
                 proof != null, proof == null || proof.isEmpty() ? null : new BigDecimal(proof).setScale(2), permissions,
                 grace != null, grace == null || grace.isEmpty() ? null : Integer.parseInt(grace),
                 note != null, note == null || note.isEmpty() ? null : new BigDecimal(note).setScale(2),
-                entry != null, entryDate, gradeGrace));
+                entry != null, entryDate, gradeGrace, gradeProof));
     }
 }

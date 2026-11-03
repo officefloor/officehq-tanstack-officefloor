@@ -244,11 +244,17 @@ public class ClaimRepository {
      *  from it. */
     public LocalDate overdueFrom(String sheetId, Claim claim) {
         LocalDate dueBy = LocalDate.parse(claim.dueBy());
+        String grade = gradeOn(sheetId, claim);
+        if (grade == null) return dueBy;
+        Integer grace = settings.gradeGrace(sheetId, grade, LocalDate.parse(claim.date()));
+        return grace == null ? dueBy : dueBy.plusDays(grace);
+    }
+
+    /** The grade a claim's person had on the claim's date; null when none. */
+    public String gradeOn(String sheetId, Claim claim) {
         List<String> grade = jdbc.queryForList("SELECT " + GRADE_ON + " FROM DUAL", String.class, sheetId,
                 claim.personId(), claim.date());
-        if (grade.isEmpty() || grade.get(0) == null) return dueBy;
-        Integer grace = settings.gradeGrace(sheetId, grade.get(0), LocalDate.parse(claim.date()));
-        return grace == null ? dueBy : dueBy.plusDays(grace);
+        return grade.isEmpty() ? null : grade.get(0);
     }
 
     /** Whether a claim is overdue on a day: open, not deferred, and its overdue-from day (see {@link #overdueFrom})

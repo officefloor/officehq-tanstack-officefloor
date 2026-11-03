@@ -123,6 +123,24 @@ public class SettingsRepository {
         record(sheetId, "proof-threshold", from, threshold == null ? null : money(threshold));
     }
 
+    /** A grade's own proof threshold in force on a date; null when it has none then (the sheet's is used). */
+    public BigDecimal gradeProofThreshold(String sheetId, String grade, LocalDate date) {
+        List<String> found = on(sheetId, "proof-threshold-" + grade, date);
+        return found.isEmpty() || found.get(0) == null ? null : new BigDecimal(found.get(0));
+    }
+
+    /** Set a grade's own proof threshold from a date; null means none from then (the sheet's is used). */
+    public void setGradeProofThreshold(String sheetId, String grade, LocalDate from, BigDecimal threshold) {
+        record(sheetId, "proof-threshold-" + grade, from, threshold == null ? null : money(threshold));
+    }
+
+    /** The proof threshold in force for a claim of a date whose person had a grade then (null when none): the
+     *  grade's own in force on the date when one is set, else the sheet's; null when neither is. */
+    public BigDecimal proofThreshold(String sheetId, String grade, LocalDate date) {
+        BigDecimal own = grade == null ? null : gradeProofThreshold(sheetId, grade, date);
+        return own != null ? own : proofThreshold(sheetId, date);
+    }
+
     /** The sheet's note threshold in force on a date: a claim of that date whose due is above it cannot be
      *  opened with an empty note; null when it has none. */
     public BigDecimal noteThreshold(String sheetId, LocalDate date) {

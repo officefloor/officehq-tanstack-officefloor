@@ -72,6 +72,11 @@ public class SaveSettings {
                     + (input.proofThreshold() == null ? "" : SettingsRepository.money(input.proofThreshold()))
                     + given(input, "proof-threshold"));
         }
+        input.gradeProofThreshold().forEach((grade, threshold) -> {
+            repository.setGradeProofThreshold(id, grade, from(input, "proof-threshold-" + grade, today), threshold);
+            audit.record(prefix + "proof-threshold-" + grade + " value="
+                    + (threshold == null ? "" : SettingsRepository.money(threshold)) + given(input, "proof-threshold-" + grade));
+        });
         if (input.setsNoteThreshold()) {
             repository.setNoteThreshold(id, from(input, "note-threshold", today), input.noteThreshold());
             audit.record(prefix + "note-threshold value="

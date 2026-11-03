@@ -65,6 +65,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
   const [cap, setCap] = useState<string | null>(null);
   const [proofThreshold, setProofThreshold] = useState<string | null>(null);
   const [noteThreshold, setNoteThreshold] = useState<string | null>(null);
+  const [gradeProof, setGradeProof] = useState<Record<string, string>>({});
   const [from, setFrom] = useState<Record<string, string>>({});
   const [permissions, setPermissions] = useState<Record<string, string>>({});
   const [graceDays, setGraceDays] = useState<string | null>(null);
@@ -82,7 +83,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
 
   const saveOnce = useSingleFlight();
   const save = useMutation({
-    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null; noteThreshold: string | null; permissions: Record<string, string>; graceDays: string | null; entryDate: string | null; gradeGrace: Record<string, string> }) =>
+    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null; noteThreshold: string | null; permissions: Record<string, string>; graceDays: string | null; entryDate: string | null; gradeGrace: Record<string, string>; gradeProofThreshold: Record<string, string> }) =>
       postJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, f),
     onSuccess: (saved) => {
       setLimit(null);
@@ -90,6 +91,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
       setTerms(null);
       setGradeTerms({});
       setGradeGrace({});
+      setGradeProof({});
       setLatePct(null);
       setPolicyDate(null);
       setNumberingFrom(null);
@@ -155,7 +157,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           e.preventDefault();
           saveOnce(() => {
             save.reset();
-            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap, from, proofThreshold, noteThreshold, permissions, graceDays, entryDate, gradeGrace });
+            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap, from, proofThreshold, noteThreshold, permissions, graceDays, entryDate, gradeGrace, gradeProofThreshold: gradeProof });
           });
         }}
       >
@@ -301,6 +303,22 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           />
         </label>{' '}
         <FromInput settingKey="proof-threshold" from={from} setFrom={setFrom} onChange={() => save.reset()} />{' '}
+        {GRADES.map((g) => (
+          <label key={g}>
+            Proof threshold {g}{' '}
+            <input
+              data-testid={`setting-proof-threshold-${g}`}
+              inputMode="decimal"
+              value={gradeProof[g] ?? ''}
+              onFocus={() => setGradeProof((v) => (g in v ? v : { ...v, [g]: '' }))}
+              onChange={(e) => {
+                setGradeProof((v) => ({ ...v, [g]: e.target.value }));
+                save.reset();
+              }}
+            />{' '}
+            <FromInput settingKey={`proof-threshold-${g}`} from={from} setFrom={setFrom} onChange={() => save.reset()} />{' '}
+          </label>
+        ))}
         <label>
           Note threshold{' '}
           <input
@@ -378,6 +396,11 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
         <strong data-testid="setting-period-numbering-from-current">{settings.data?.periodNumberingFrom ?? ''}</strong>,
         cap <strong data-testid="setting-cap-current">{settingOn(settings.data, 'cap', today) ?? ''}</strong>,
         proof threshold <strong data-testid="setting-proof-threshold-current">{settingOn(settings.data, 'proof-threshold', today) ?? ''}</strong>,
+        {GRADES.map((g) => (
+          <span key={g}>
+            proof threshold {g} <strong data-testid={`setting-proof-threshold-${g}-current`}>{settingOn(settings.data, `proof-threshold-${g}`, today) ?? ''}</strong>,{' '}
+          </span>
+        ))}
         note threshold <strong data-testid="setting-note-threshold-current">{settingOn(settings.data, 'note-threshold', today) ?? ''}</strong>
         {PERM_ACTIONS.map((a) => (
           <span key={a}>
