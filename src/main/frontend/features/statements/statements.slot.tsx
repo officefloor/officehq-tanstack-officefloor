@@ -2,7 +2,8 @@ import { useCallback, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
-import { claimsKey } from '../claims/useClaims';
+import { claimsKey, useClaims } from '../claims/useClaims';
+import { downloadCsv, fresh } from '../export/csv';
 import { peopleKey, usePeople, type Person } from '../people/usePeople';
 import { usePersonRowAction } from '../people/usePersonRowAction';
 import { useFigure } from '../locale/useLocale';
@@ -14,11 +15,14 @@ import { Col } from '../columns/useColumns';
  *  steward can cancel the last one, its claims going live again. A date beside the button takes the
  *  statement as of that date (on or before the sheet's today; blank: now); it is cleared once that statement is
  *  taken or refused. Below, one line per statement still standing (in the order taken, oldest first), as its date and
- *  due-total. */
+ *  due-total. A last button downloads the statement as a CSV file: a header line, then one line per claim of
+ *  theirs its last statement binds, oldest first, with the figure it was bound to ('n/a' when bound to n/a; the
+ *  claim's fixed due when bound with no figure). */
 function PersonStatement({ sheetId, personId }: { sheetId: string; personId: number }) {
   const fig = useFigure();
   const people = usePeople(sheetId);
   const queryClient = useQueryClient();
+  const claims = useClaims(sheetId);
   const p = people.data?.find((x) => x.id === personId);
   const [asof, setAsof] = useState('');
 
@@ -53,6 +57,16 @@ function PersonStatement({ sheetId, personId }: { sheetId: string; personId: num
   }, [resetTake, resetUnstate]);
   const announce = usePersonRowAction(sheetId, personId, reset);
   const error = take.error ?? unstate.error;
+
+  // Re-read the claims first: another user may have stated, settled or changed them since they were loaded.
+  const exportStatement = async () => {
+    const mine = ((await fresh(claims)) ?? []).filter((c) => c.personId === personId && c.stated).reverse();
+    const lines = [['number', 'date', 'amount', 'figure', 'status']];
+    for (const c of mine) {
+      lines.push([c.number ?? '', c.date, c.amount, c.statedNa ? 'n/a' : c.statedDue ?? c.due ?? '', c.status]);
+    }
+    downloadCsv(lines, `statement-${sheetId}-${personId}.csv`);
+  };
 
   return (
     <>
@@ -101,6 +115,9 @@ function PersonStatement({ sheetId, personId }: { sheetId: string; personId: num
           }}
         >
           Cancel statement
+        </button>
+        <button type="button" data-testid="person-export-statement" onClick={() => void exportStatement()}>
+          Export statement (CSV)
         </button>
         {error && <span data-testid="person-error">{error.message}</span>}
       </td>
