@@ -1,0 +1,61 @@
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index da226c7f5..c00c6ad6b 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -15,7 +15,7 @@ export type ClaimStatus = 'DRAFT' | 'REVIEW' | 'OPEN' | 'PENDING' | 'SETTLED' |
+  *  who opened it (null until it is opened), whether its person's last statement bound it, and the figure
+  *  it was bound to (null when not bound, or bound with no figure: its due then stays live), and, for a
+  *  correction (a negative amount), the number of the settled claim of the same person it corrects, and
+- *  its due-by (yyyy-mm-dd), fixed when it was created from its person's own terms, else the terms of their grade then (else the
++ *  its due-by (yyyy-mm-dd), fixed when it was created from the terms in force that day (the sheet's today then): its person's own, else their grade's that day (else the
+  *  sheet's terms), and its status log: a line per status it has had, oldest first, as
+  *  "<STATUS> by <user> on <date> due=<due>" with the sheet's today and its due at that moment, and whether
+  *  its last statement bound it to n/a (the rate that would apply to it had ended: its due stays n/a), and
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index da737d562..df0768731 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -596,15 +596,17 @@ public class ClaimRepository {
+     }
+ 
+     /** The due-by of a claim created now for a person with a date: the terms-th business day after the date (skipping
+-     *  Saturdays, Sundays and the sheet's holidays), for the person's own terms in force on it, else the terms, in force on it, of the
+-     *  grade the person has on it, else the sheet's terms in force on it. */
++     *  Saturdays, Sundays and the sheet's holidays), for the terms in force on the day it is created (the sheet's today):
++     *  the person's own terms in force that day, else the terms, in force that day, of the grade the person has that day,
++     *  else the sheet's terms in force that day. */
+     public LocalDate dueBy(String sheetId, long personId, LocalDate date) {
+-        // the person's own terms in force on the date: the latest dated ones on or before it, else those from the beginning
++        LocalDate on = settings.today(sheetId);
++        // the person's own terms in force that day: the latest dated ones on or before it, else those from the beginning
+         List<Integer> mine = new java.util.ArrayList<>();
+         jdbc.query("SELECT terms FROM person_terms WHERE sheet_id = ? AND person_id = ? AND from_date <= ?"
+                 + " ORDER BY from_date DESC LIMIT 1", rs -> {
+                     mine.add((Integer) rs.getObject("terms", Integer.class));
+-                }, sheetId, personId, Date.valueOf(date));
++                }, sheetId, personId, Date.valueOf(on));
+         if (mine.isEmpty()) {
+             mine.addAll(jdbc.queryForList("SELECT terms FROM person WHERE sheet_id = ? AND id = ?", Integer.class,
+                     sheetId, personId));
+@@ -613,16 +615,17 @@ public class ClaimRepository {
+             return settings.businessDaysAfter(sheetId, date, mine.get(0));
+         }
+         List<String> grade = jdbc.queryForList("SELECT " + GRADE_ON + " FROM DUAL", String.class, sheetId, personId,
+-                date.toString());
++                on.toString());
+         return dueByOfGrade(sheetId, grade.isEmpty() ? null : grade.get(0), date);
+     }
+ 
+     /** The due-by of a claim created now with a date for a person of a grade (null when none) with no terms of their
+      *  own: the terms-th business day after the date (skipping Saturdays, Sundays and the sheet's holidays), for the
+-     *  grade's terms in force on it, else the sheet's terms in force on it. */
++     *  grade's terms in force on the day it is created (the sheet's today), else the sheet's terms in force that day. */
+     public LocalDate dueByOfGrade(String sheetId, String grade, LocalDate date) {
+-        Integer own = grade == null ? null : settings.gradeTerms(sheetId, grade, date);
+-        return settings.businessDaysAfter(sheetId, date, own != null ? own : settings.terms(sheetId, date));
++        LocalDate on = settings.today(sheetId);
++        Integer own = grade == null ? null : settings.gradeTerms(sheetId, grade, on);
++        return settings.businessDaysAfter(sheetId, date, own != null ? own : settings.terms(sheetId, on));
+     }
+ 
+     /** Re-fix, after a holiday is added to the sheet, the due-by of each claim not SETTLED or VOID whose due-by is on
