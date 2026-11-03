@@ -1,0 +1,136 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index a9ec50d9e..4f643ac38 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -4,7 +4,7 @@ import { getJson, postJson } from '../../api/http';
+ import { useSingleFlight } from '../../query/useSingleFlight';
+ import { PERSON_ROW_SPAN, PersonCells, PersonColumnHead, PersonDetail } from '../../slots/defs/personRow';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+-import { gradeOn, holdsById, usePeople } from '../people/usePeople';
++import { claimedHoldsById, gradeOn, usePeople } from '../people/usePeople';
+ import { periodOf, usePeriods } from '../periods/usePeriods';
+ import { rateFor, useRates } from '../rates/useRates';
+ import { claimDueNow, isOverdue } from '../overdue/useOverdue';
+@@ -17,7 +17,7 @@ import { useClaimSelection } from './useClaimSelection';
+ import { useFigure } from '../locale/useLocale';
+ import { Col } from '../columns/useColumns';
+ 
+-/** A person's claimed: the sum of their counted, non-correction (OPEN, PENDING or SETTLED; an open one dated within a hold only when a statement binds it; not a deferred one) claims' amounts. */
++/** A person's claimed: the sum of their counted, non-correction (OPEN, PENDING or SETTLED; held or not; not a deferred one) claims' amounts. */
+ function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: number }) {
+   const fig = useFigure();
+   const claims = useClaims(sheetId);
+@@ -26,7 +26,7 @@ function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: numbe
+   return (
+     <Col id="claimed">
+       <td data-testid="person-claimed">
+-        {fig(claimed((claims.data ?? []).filter((c) => c.personId === personId), holdsById(people.data, today), today))}
++        {fig(claimed((claims.data ?? []).filter((c) => c.personId === personId), claimedHoldsById(people.data, today), today))}
+       </td>
+     </Col>
+   );
+@@ -972,7 +972,7 @@ function ClaimedTotal({ sheetId }: { sheetId: string }) {
+   const today = useSheetToday(sheetId).data?.today;
+   return (
+     <p>
+-      Claimed total: <strong data-testid="rollup-claimed-total">{fig(claimed(claims.data ?? [], holdsById(people.data, today), today))}</strong>
++      Claimed total: <strong data-testid="rollup-claimed-total">{fig(claimed(claims.data ?? [], claimedHoldsById(people.data, today), today))}</strong>
+     </p>
+   );
+ }
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index d3259bec4..79843d703 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -97,6 +97,12 @@ export function counts(c: Claim, holds: ReadonlyMap<number, Hold[]>, today: stri
+     || (isOpen(c) && !isDeferred(c, today) && (isBound(c) || (!c.held && !heldOn(holds.get(c.personId), c.date))));
+ }
+ 
++/** Whether a claim counts toward claimed: as counts, except that a hold (its own or one of its person's) does not
++ *  take it out; given only the holds that do, by person id (see claimedHoldsById). */
++export function countsClaimed(c: Claim, holds: ReadonlyMap<number, Hold[]>, today: string | undefined): boolean {
++  return counts({ ...c, held: false }, holds, today);
++}
++
+ /** A claim's status at the end of a day (yyyy-mm-dd), as its status log records it: the last line dated
+  *  on or before it; null when the claim did not yet exist then. */
+ export function statusOn(c: Claim, day: string): ClaimStatus | null {
+@@ -180,9 +186,9 @@ export function shownTags(tags: string | null): string {
+   return tags === null ? '' : tags.split(',').join(', ');
+ }
+ 
+-/** The sum of the amounts of those of these claims that count and correct no other claim (given the people's holds by person id and
++/** The sum of the amounts of those of these claims that count toward claimed and correct no other claim (given the holds that keep claims out of claimed by person id and
+  *  the sheet's today), with two decimals (added up in cents, so no rounding drift). */
+ export function claimed(claims: Claim[], holds: ReadonlyMap<number, Hold[]>, today: string | undefined): string {
+-  const cents = claims.filter((c) => c.corrects === null && counts(c, holds, today)).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
++  const cents = claims.filter((c) => c.corrects === null && countsClaimed(c, holds, today)).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
+   return (cents / 100).toFixed(2);
+ }
+diff --git a/src/main/frontend/features/people/usePeople.ts b/src/main/frontend/features/people/usePeople.ts
+index 183aab78f..6d03a0be4 100644
+--- a/src/main/frontend/features/people/usePeople.ts
++++ b/src/main/frontend/features/people/usePeople.ts
+@@ -141,6 +141,12 @@ export function useWatched(sheetId: string) {
+   });
+ }
+ 
++/** The holds that keep these people's claims out of claimed, by person id: none of their own holds (a hold
++ *  leaves claimed alone), only, for a person whose retirement date is reached, a hold over every date. */
++export function claimedHoldsById(people: Person[] | undefined, today: string | undefined): Map<number, Hold[]> {
++  return new Map((people ?? []).map((p) => [p.id, retiredOn(p, today) ? [{ from: null, to: null }] : []]));
++}
++
+ /** These people's holds, by person id, as they act on live totals on the sheet's today: a person whose
+  *  retirement date is reached (the sheet's today on or after it) is held over every date as well. */
+ export function holdsById(people: Person[] | undefined, today: string | undefined): Map<number, Hold[]> {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 003f4b6ad..7b5876f11 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -51,6 +51,12 @@ public record Claim(long id, long personId, String amount, String date, String n
+         return status.equals("SETTLED") || (open() && !deferred && (bound() || (!held && !Hold.anyCovers(holds, date))));
+     }
+ 
++    /** Whether the claim counts toward claimed: as {@link #counts(List)}, except that a hold (its own or one of its
++     *  person's) does not take it out; given only the holds that do (see Person#claimedHolds). */
++    public boolean countsClaimed(List<Hold> holds) {
++        return status.equals("SETTLED") || (open() && !deferred && (bound() || !Hold.anyCovers(holds, date)));
++    }
++
+     /** Whether the claim counts toward a period ending on a day, given the status it had at the end of that
+      *  day (null when it did not exist then: it does not count) and its person's holds: the live rules
+      *  applied to that status (an open claim deferred until after the sheet's today does not count either). A hold
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 9a48cefe7..0fb92bcd3 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -52,4 +52,11 @@ public record Person(long id, String name, String grade, long version, long stat
+         all.add(new Hold(null, null));
+         return all;
+     }
++
++    /** The holds that keep their claims out of claimed on the sheet's today: none of their own holds (a hold
++     *  leaves claimed alone), only, once their retirement date is reached, a hold over every date. */
++    public List<Hold> claimedHolds(String today) {
++        if (retiredFrom == null || today == null || retiredFrom.compareTo(today) > 0) return List.of();
++        return List.of(new Hold(null, null));
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index c7987be38..d83bd60d4 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -74,8 +74,10 @@ public class Rollup {
+                 BigDecimal overdue = BigDecimal.ZERO.setScale(2);
+                 boolean fixed = false;
+                 for (Claim c : all) {
+-                    if (c.personId() != p.id() || !c.counts(p.liveHolds(today == null ? null : today.toString()))) continue;
+-                    if (c.corrects() == null) claimed = claimed.add(new BigDecimal(c.amount()));
++                    if (c.personId() != p.id()) continue;
++                    String on = today == null ? null : today.toString();
++                    if (c.corrects() == null && c.countsClaimed(p.claimedHolds(on))) claimed = claimed.add(new BigDecimal(c.amount()));
++                    if (!c.counts(p.liveHolds(on))) continue;
+                     fixed |= c.fixed();
+                     BigDecimal now = claims.dueNow(sheetId, c);
+                     if (now != null) due = due.add(now);
