@@ -61,7 +61,7 @@ public class SettingsRepository {
                 delegations(sheetId), entry == null ? null : entry.toString(), holidays(sheetId),
                 voidReasons(sheetId), pot == null ? null : money(pot), parent(sheetId), fiscalStartMonth(sheetId),
                 alert == null ? null : money(alert), escalateAfter(sheetId), reviewSla(sheetId), proofKinds(sheetId),
-                storedDefaultGrade(sheetId), scoreMid(sheetId), scoreHigh(sheetId));
+                storedDefaultGrade(sheetId), scoreMid(sheetId), scoreHigh(sheetId), scoreLog(sheetId));
     }
 
     /** The sheet's today; the real date when there is no such sheet. */
@@ -446,6 +446,17 @@ public class SettingsRepository {
 
     public void setScoreMid(String sheetId, Integer score) {
         jdbc.update("UPDATE sheet SET score_mid = ? WHERE id = ?", score, sheetId);
+    }
+
+    /** Whether the sheet's score log switch is on. */
+    public boolean scoreLog(String sheetId) {
+        List<Boolean> found = jdbc.query("SELECT score_log FROM sheet WHERE id = ?",
+                (rs, i) -> rs.getBoolean("score_log"), sheetId);
+        return !found.isEmpty() && found.get(0);
+    }
+
+    public void setScoreLog(String sheetId, boolean on) {
+        jdbc.update("UPDATE sheet SET score_log = ? WHERE id = ?", on, sheetId);
     }
 
     /** The sheet's high score threshold; null when blank. */

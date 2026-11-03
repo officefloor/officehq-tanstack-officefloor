@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.rollup;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -25,8 +26,10 @@ import org.springframework.stereotype.Service;
 public class Rollup {
 
     /** A person's figures: claimed (two decimals), due-total (two decimals, or 'n/a') and overdue-total
-     *  (two decimals: the sum of the dues now of their counting claims that are overdue, skipping those with none). */
-    record Figures(String name, String claimed, String dueTotal, String overdueTotal) {
+     *  (two decimals: the sum of the dues now of their counting claims that are overdue, skipping those with none), and
+     *  score (the sum of the dues now of their counting SETTLED claims divided by 100, rounded half to even to a whole
+     *  number, minus 5 for every counting claim of theirs that is overdue). */
+    record Figures(String name, String claimed, String dueTotal, String overdueTotal, long score) {
         boolean same(Figures other) {
             return other != null && claimed.equals(other.claimed) && dueTotal.equals(other.dueTotal)
                     && overdueTotal.equals(other.overdueTotal);
@@ -72,6 +75,8 @@ public class Rollup {
                 BigDecimal claimed = BigDecimal.ZERO.setScale(2);
                 BigDecimal due = BigDecimal.ZERO.setScale(2);
                 BigDecimal overdue = BigDecimal.ZERO.setScale(2);
+                BigDecimal settled = BigDecimal.ZERO.setScale(2);
+                int overdueCount = 0;
                 boolean fixed = false;
                 for (Claim c : all) {
                     if (c.personId() != p.id()) continue;
@@ -82,12 +87,15 @@ public class Rollup {
                     BigDecimal now = claims.dueNow(sheetId, c);
                     if (now != null) due = due.add(now);
                     if (now != null && claims.overdue(sheetId, c, today)) overdue = overdue.add(now);
+                    if (now != null && "SETTLED".equals(c.status())) settled = settled.add(now);
+                    if (claims.overdue(sheetId, c, today)) overdueCount++;
                     fixed |= now != null;
                 }
                 boolean shown = fixed || claims.rated(sheetId, p.id(), today);
                 due = SettingsRepository.capped(due, cap);
                 figures.put(p.id(), new Figures(p.name(), claimed.toPlainString(),
-                        shown ? due.toPlainString() : "n/a", overdue.toPlainString()));
+                        shown ? due.toPlainString() : "n/a", overdue.toPlainString(),
+                        settled.movePointLeft(2).setScale(0, RoundingMode.HALF_EVEN).longValueExact() - 5L * overdueCount));
                 claimedTotal = claimedTotal.add(claimed);
                 if (shown) dues.add(due);
                 overdues.add(overdue);
@@ -116,6 +124,13 @@ public class Rollup {
             people.snapshot(sheetId, e.getKey(), dayLeft, f.dueTotal());
             audit.record("SNAPSHOT sheet=" + sheetId + " by=" + by + " name=" + f.name() + " due-total=" + f.dueTotal()
                     + (delegator == null ? "" : " for=" + delegator));
+        }
+    }
+
+    /** Record one SCORE line per person (in list order) with their score as {@code before} had it. */
+    public void scores(String sheetId, String by, Snapshot before) {
+        for (Figures f : before.people().values()) {
+            audit.record("SCORE sheet=" + sheetId + " by=" + by + " name=" + f.name() + " score=" + f.score());
         }
     }
 

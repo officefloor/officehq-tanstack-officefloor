@@ -35,12 +35,14 @@ import java.util.List;
  *  {@code defaultGrade} is the sheet's default grade (A, B or C; null when blank: A; not dated): the grade the
  *  quick-add bar gives a new person, and the grade of an imported line that leaves it blank.
  *  {@code scoreMid} and {@code scoreHigh} are the sheet's score thresholds (whole numbers; null when blank; not dated):
- *  while both are set, each person shows a band: HIGH at or above the high one, MID at or above the mid one, else LOW. */
+ *  while both are set, each person shows a band: HIGH at or above the high one, MID at or above the mid one, else LOW.
+ *  {@code scoreLog} is the sheet's score log switch (not dated): while on, changing the sheet's today writes one SCORE
+ *  line per person with their score as it stood on the day being left. */
 public record Settings(String clerkLimit, String floor, int terms, String latePct, List<Role> roles, String policyDate,
         String periodNumberingFrom, java.util.Map<String, Integer> gradeTerms, String cap,
         java.util.Map<String, List<DatedValue>> dated, java.util.Map<String, String> permissions, Integer graceDays,
         List<Delegation> delegations, String entryDate, List<String> holidays, List<String> voidReasons,
         String pot, String parent, int fiscalStartMonth, String alertThreshold,
         Integer escalateAfter, Integer reviewSla, String proofKinds, String defaultGrade,
-        Integer scoreMid, Integer scoreHigh) {
+        Integer scoreMid, Integer scoreHigh, boolean scoreLog) {
 }

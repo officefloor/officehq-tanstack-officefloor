@@ -16,6 +16,7 @@ package net.officefloor.hq.app.settings;
  *  {@code proofKinds} is the proof kinds, a comma separated list of receipt and photo, blank meaning none (not dated).
  *  {@code defaultGrade} is the default grade, A, B or C, blank meaning A (not dated).
  *  {@code scoreMid} and {@code scoreHigh} are the score thresholds, whole numbers, blank meaning none (not dated).
+ *  {@code scoreLog} is the score log switch, on or blank meaning off (not dated).
  *  {@code gradeClerkLimit} is each grade's clerk limit given, by grade (dated, from-date key clerk-limit-<grade>), blank
  *  meaning none (the sheet's is then used). */
 public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom,
@@ -25,5 +26,5 @@ public record SettingsRequest(String clerkLimit, String floor, String terms, Str
         java.util.Map<String, String> gradeProofThreshold, String pot, String parent,
         String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla,
         String proofKinds, String defaultGrade, java.util.Map<String, String> gradeClerkLimit,
-        String scoreMid, String scoreHigh) {
+        String scoreMid, String scoreHigh, String scoreLog) {
 }

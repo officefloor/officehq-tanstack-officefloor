@@ -126,6 +126,10 @@ public class SaveSettings {
             repository.setScoreHigh(id, input.scoreHigh());
             audit.record(prefix + "score-high value=" + (input.scoreHigh() == null ? "" : input.scoreHigh()));
         }
+        if (input.setsScoreLog()) {
+            repository.setScoreLog(id, input.scoreLog());
+            audit.record(prefix + "score-log value=" + (input.scoreLog() ? "on" : ""));
+        }
         if (input.setsProofKinds()) {
             repository.setProofKinds(id, input.proofKinds());
             audit.record(prefix + "proof-kinds value=" + (input.proofKinds() == null ? "" : input.proofKinds()));
