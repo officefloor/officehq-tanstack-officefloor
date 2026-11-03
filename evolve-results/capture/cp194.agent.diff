@@ -1,0 +1,203 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 032419f1c..e579799c9 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -117,6 +117,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
+   const [voidReasons, setVoidReasons] = useState<Record<number, string>>({});
+   const [targets, setTargets] = useState<Record<number, string>>({});
+   const [deferDates, setDeferDates] = useState<Record<number, string>>({});
++  const [settleDates, setSettleDates] = useState<Record<number, string>>({});
+   const [splitAmounts, setSplitAmounts] = useState<Record<number, string>>({});
+   const [settlePartAmounts, setSettlePartAmounts] = useState<Record<number, string>>({});
+   const [newDates, setNewDates] = useState<Record<number, string>>({});
+@@ -197,8 +198,8 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
+   // or adding the line (label, quantity, unit amount) typed on its row to a DRAFT one (its amount becomes its lines' total);
+   // a refusal shows on that claim's row.
+   const action = useMutation({
+-    mutationFn: (a: { id: number; action: ClaimAction; reason: string; until: string; amount: string; date: string; text: string; label: string; qty: string; unit: string; kind: string }) =>
+-      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${a.id}/${a.action}`, { reason: a.reason, until: a.until, amount: a.amount, date: a.date, text: a.text, label: a.label, qty: a.qty, unit: a.unit, kind: a.kind }),
++    mutationFn: (a: { id: number; action: ClaimAction; reason: string; until: string; amount: string; date: string; text: string; label: string; qty: string; unit: string; kind: string; on: string }) =>
++      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${a.id}/${a.action}`, { reason: a.reason, until: a.until, amount: a.amount, date: a.date, text: a.text, label: a.label, qty: a.qty, unit: a.unit, kind: a.kind, on: a.on }),
+     onSuccess: (changed, a) => {
+       if (a.action === 'reject') setReasons((r) => ({ ...r, [a.id]: '' }));
+       if (a.action === 'void') setVoidReasons((r) => ({ ...r, [a.id]: '' }));
+@@ -212,7 +213,9 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
+       // An open editor of the claim takes the amount its lines now add up to.
+       if (a.action === 'line' && editing === a.id) setAmount(changed.amount);
+     },
+-    onSettled: async () => {
++    onSettled: async (_, __, a) => {
++      // A settle's as-of date is used once, went it through or not, so it never carries into the next settle.
++      if (a.action === 'settle') setSettleDates((d) => ({ ...d, [a.id]: '' }));
+       await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+     },
+   });
+@@ -283,6 +286,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
+       qty: a === 'line' ? (lineFields[id]?.qty ?? '').trim() : '',
+       unit: a === 'line' ? (lineFields[id]?.unit ?? '').trim() : '',
+       kind: a === 'proof' ? proofKinds[id] ?? '' : '',
++      on: a === 'settle' ? (settleDates[id] ?? '').trim() : '',
+     });
+   };
+ 
+@@ -580,6 +584,17 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
+                       ))}
+                     </select>
+                   )}{' '}
++                  <input
++                    type="text"
++                    data-testid="claim-settle-date"
++                    placeholder="settle as of yyyy-mm-dd"
++                    value={settleDates[c.id] ?? ''}
++                    onChange={(e) => {
++                      const v = e.target.value;
++                      setSettleDates((d) => ({ ...d, [c.id]: v }));
++                      if (action.variables?.id === c.id) action.reset();
++                    }}
++                  />{' '}
+                   {ACTIONS.map(([a, label]) => (
+                     <button
+                       key={a}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ChangeClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ChangeClaimStatus.java
+index e70d9cde4..b1fa00b86 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ChangeClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ChangeClaimStatus.java
+@@ -4,6 +4,7 @@ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.CurrentUser;
+ import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.history.AsOfView;
+ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.person.WatchRepository;
+ import net.officefloor.hq.app.rollup.Rollup;
+@@ -19,7 +20,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+ public class ChangeClaimStatus {
+     public void change(@PathVariable("sheetId") String sheetId, @PathVariable("claimId") String claimId,
+             @PathVariable("action") String action, @RequestBody ClaimActionRequest request, ServerHttpConnection connection, ClaimRepository repository,
+-            PeriodRepository periods, SettingsRepository settings, SheetRepository sheets, Audit audit, Rollup rollup, WatchRepository watches, PersonRepository people, Out<Claim> claim) throws BadRequestException {
++            PeriodRepository periods, SettingsRepository settings, SheetRepository sheets, Audit audit, Rollup rollup, WatchRepository watches, PersonRepository people, AsOfView view, Out<Claim> claim) throws BadRequestException {
+         String by = CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
+         long cid;
+@@ -89,6 +90,11 @@ public class ChangeClaimStatus {
+             claim.set(ClaimProof.apply(id, cid, request == null ? null : request.kind(), by, repository, periods, audit));
+             return;
+         }
++        if ("settle".equals(action == null ? "" : action.trim())) {
++            claim.set(ClaimStatusChange.settle(id, cid, request == null ? null : request.on(), by, view, repository, periods,
++                    settings, audit, rollup, watches));
++            return;
++        }
+         claim.set(ClaimStatusChange.apply(id, cid, action,
+                 request == null ? null : request.reason(), by, repository, periods, settings, audit, rollup, watches));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimActionRequest.java b/src/main/java/net/officefloor/hq/app/claim/ClaimActionRequest.java
+index b4b54ba31..cab35a2c3 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimActionRequest.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimActionRequest.java
+@@ -1,7 +1,7 @@
+ package net.officefloor.hq.app.claim;
+ 
+-/** A claim's status change: the reason, for a reject, and the date to defer until, for a defer, and the amount to split off, for a split, and the new date, for a redate, and the text, for a comment, and the label, quantity and unit amount, for a line, and the kind, for a proof (each ignored
++/** A claim's status change: the reason, for a reject, and the date to defer until, for a defer, and the amount to split off, for a split, and the new date, for a redate, and the text, for a comment, and the label, quantity and unit amount, for a line, and the kind, for a proof and the date to settle as of, for a settle (each ignored
+  *  by the other actions). */
+ public record ClaimActionRequest(String reason, String until, String amount, String date, String text, String label, String qty,
+-        String unit, String kind) {
++        String unit, String kind, String on) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+index 9693c70a8..d007f8af5 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+@@ -2,7 +2,9 @@ package net.officefloor.hq.app.claim;
+ 
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
+ import java.util.List;
++import net.officefloor.hq.app.history.AsOfView;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.period.Period;
+@@ -32,23 +34,39 @@ public final class ClaimStatusChange {
+ 
+     static Claim apply(String id, long cid, String action, String reason, String by, ClaimRepository repository,
+             PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup, WatchRepository watches) throws BadRequestException {
+-        return apply(id, cid, action, reason, by, false, null, repository, periods, settings, audit, rollup, watches);
++        return apply(id, cid, action, reason, by, false, null, null, null, repository, periods, settings, audit, rollup, watches);
++    }
++
++    /** Settle a claim as of a date (null: as it is now): its due is frozen as it stood at the end of that day (see
++     *  {@link AsOfView}); a date after the sheet's today, or one before the claim existed, is refused. */
++    static Claim settle(String id, long cid, String on, String by, AsOfView view, ClaimRepository repository,
++            PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup, WatchRepository watches) throws BadRequestException {
++        String raw = on == null ? "" : on.trim();
++        LocalDate day = null;
++        if (!raw.isEmpty()) {
++            try {
++                day = LocalDate.parse(raw);
++            } catch (DateTimeParseException e) {
++                throw new BadRequestException("the settle date must be yyyy-mm-dd");
++            }
++        }
++        return apply(id, cid, "settle", null, by, false, null, day, view, repository, periods, settings, audit, rollup, watches);
+     }
+ 
+     /** Make every check of the status change, writing nothing: throws the refusal the change would give. */
+     static void check(String id, long cid, String action, String by, ClaimRepository repository,
+             PeriodRepository periods, SettingsRepository settings) throws BadRequestException {
+-        apply(id, cid, action, null, by, true, null, repository, periods, settings, null, null, null);
++        apply(id, cid, action, null, by, true, null, null, null, repository, periods, settings, null, null, null);
+     }
+ 
+     /** Settle a claim split off {@code original} by a part-settle exactly as the settle button does, except that the
+      *  four-eyes rules and the proof rule are judged on the original claim; with {@code checkOnly}, write nothing. */
+     static Claim settlePart(String id, long cid, Claim original, String by, boolean checkOnly, ClaimRepository repository,
+             PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup, WatchRepository watches) throws BadRequestException {
+-        return apply(id, cid, "settle", null, by, checkOnly, original, repository, periods, settings, audit, rollup, watches);
++        return apply(id, cid, "settle", null, by, checkOnly, original, null, null, repository, periods, settings, audit, rollup, watches);
+     }
+ 
+-    private static Claim apply(String id, long cid, String action, String reason, String by, boolean checkOnly, Claim original, ClaimRepository repository,
++    private static Claim apply(String id, long cid, String action, String reason, String by, boolean checkOnly, Claim original, LocalDate on, AsOfView view, ClaimRepository repository,
+             PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup, WatchRepository watches) throws BadRequestException {
+         if (settings.archived(id)) {
+             throw new BadRequestException("the sheet is archived");
+@@ -199,6 +217,22 @@ public final class ClaimStatusChange {
+                 event = "CLAIM_REVIEW";
+             }
+         }
++        // Settled as of a date: on or before the sheet's today, and only a claim that existed then; its due is the one
++        // it had at the end of that day, worked out as the as-of view does.
++        BigDecimal asOfDue = null;
++        if (on != null && to.equals("SETTLED")) {
++            if (on.isAfter(settings.today(id))) {
++                throw new BadRequestException("a claim cannot be settled as of a date after the sheet's today");
++            }
++            BigDecimal[] then = view.readAt(id, on, () -> {
++                Claim was = repository.find(id, cid);
++                return was == null ? null : new BigDecimal[] { repository.dueNow(id, was) };
++            });
++            if (then == null) {
++                throw new BadRequestException("the claim did not exist on " + on);
++            }
++            asOfDue = then[0];
++        }
+         if (checkOnly) {
+             return null;
+         }
+@@ -236,10 +270,13 @@ public final class ClaimStatusChange {
+             tail += " reason=" + voidReason;
+         }
+         if (to.equals("SETTLED")) {
+-            BigDecimal now = repository.dueNow(id, found);
++            BigDecimal now = on != null ? asOfDue : repository.dueNow(id, found);
+             repository.settleDue(id, cid, now);
+             due = ClaimRepository.dueOf(now);
+             tail = " due=" + (due == null ? "n/a" : due);
++            if (on != null) {
++                tail += " on=" + on;
++            }
+         }
+         repository.log(id, cid, by);
+         Claim changed = new Claim(found.id(), found.personId(), found.amount(), found.date(), found.note(), to,
