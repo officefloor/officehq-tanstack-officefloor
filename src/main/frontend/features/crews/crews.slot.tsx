@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useSingleFlight } from '../../query/useSingleFlight';
 import { SheetBody } from '../../slots/defs/sheetBody';
-import { usePeople, type Person } from '../people/usePeople';
+import { shownName, usePeople, type Person } from '../people/usePeople';
 import { useDueTotals } from '../rates/useDueTotals';
 import { useFigure } from '../locale/useLocale';
 import { crewDue } from './crewDue';
@@ -18,6 +18,8 @@ function CrewRow({ sheetId, crew, people }: { sheetId: string; crew: Crew; peopl
   const dueTotals = useDueTotals(sheetId);
   const [member, setMember] = useState('');
   const due = crewDue(crew, dueTotals);
+  const leadPerson = people.find((p) => p.id === crew.leadId);
+  const leadShown = leadPerson === undefined ? crew.lead : shownName(leadPerson);
 
   const submitOnce = useSingleFlight();
   const add = useMutation({
@@ -36,7 +38,7 @@ function CrewRow({ sheetId, crew, people }: { sheetId: string; crew: Crew; peopl
   return (
     <div data-testid={`crew-row-${crew.name}`}>
       <strong data-testid="crew-name">{crew.name}</strong>{' '}
-      Lead <span data-testid="crew-lead">{crew.lead}</span>{' '}
+      Lead <span data-testid="crew-lead">{leadShown}</span>{' '}
       Due-total <span data-testid="crew-due-total">{fig(due)}</span>
       <ul>
         {crew.members.map((m) => (

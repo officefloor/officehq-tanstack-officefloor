@@ -68,6 +68,12 @@ export function gradeOn(person: Person | undefined, on: string): string | undefi
   return found?.grade;
 }
 
+/** How the screen shows a person's name: `<name> (<grade in force on the sheet's today>)`. Exports, audit lines,
+ *  the import and paste boxes and the selects of names use the plain name. */
+export function shownName(person: Pick<Person, 'name' | 'grade'>): string {
+  return `${person.name} (${person.grade})`;
+}
+
 /** One of a person's patrons: another person on the same sheet, by id. */
 export type Patron = { personId: number; patronId: number };
 

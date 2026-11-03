@@ -9,7 +9,7 @@ import { useDueTotals } from '../rates/useDueTotals';
 import { hundredths } from '../rates/useRates';
 import { useShowRetired } from '../retire/useShowRetired';
 import { asString, useSearchParam } from '../../url/useSearchParam';
-import { GRADES, fetchPeople, peopleKey, usePeople, type Person } from './usePeople';
+import { GRADES, fetchPeople, peopleKey, shownName, usePeople, type Person } from './usePeople';
 import { Col } from '../columns/useColumns';
 
 /** The sheet's people: a form that adds a person, or edits one when their editor is open, and the
@@ -354,7 +354,7 @@ function People({ sheetId }: { sheetId: string }) {
         {sortPeople((people.data ?? []).filter((p) => showRetired || !p.retiredFrom), sortBy, dueTotals).map((p) => (
           <tbody key={p.id} data-testid={`person-row-${p.id}`}>
             <tr>
-              <td data-testid="person-name">{p.name}</td>
+              <td data-testid="person-name">{shownName(p)}</td>
               <td data-testid="person-grade">{p.grade}</td>
               <Col id="terms"><td data-testid="person-terms">{p.terms ?? ''}</td></Col>
               <Col id="contact"><td data-testid="person-contact">{p.contact ?? ''}</td></Col>
