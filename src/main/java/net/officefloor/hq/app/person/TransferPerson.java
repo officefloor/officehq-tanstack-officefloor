@@ -17,11 +17,11 @@ import java.util.List;
 
 /** A steward transfers a person to another sheet by id: they arrive there with every grade they were given (and
  *  its from-date), their terms, contact and aliases, and their claims (see {@link ClaimRepository#transferAll}), with
- *  no statements; they leave this sheet entirely (patron links, pool memberships, holds and watches dropped).
+ *  their statements (see {@link PersonRepository#joinStatements}); they leave this sheet entirely (patron links, pool memberships, holds and watches dropped).
  *  A sheet id never used is made empty first, as loading it would. Refused for anyone but a steward, for a retired
  *  person, for this sheet's own id, and for an archived sheet. When their name or an alias is already a name or alias
  *  of someone on the other sheet, they are merged into that person there, as {@link MergePerson} does (claims after
- *  theirs, aliases joined, bound figures lost; refused when that person is retired or more than one person matches);
+ *  theirs, aliases joined, bound figures kept, statements joined; refused when that person is retired or more than one person matches);
  *  otherwise refused when their name, an alias or their contact is already taken there. Each sheet writes its
  *  PERSON_TRANSFERRED line (the other sheet then PERSON_MERGED when merged), then its rollup lines. */
 public class TransferPerson {
@@ -102,6 +102,7 @@ public class TransferPerson {
             claims.transferAll(id, pid, to, arrived);
             people.joinAliases(to, arrived, names);
         }
+        people.joinStatements(id, pid, to, arrived);
         people.remove(id, pid);
         audit.record("PERSON_TRANSFERRED sheet=" + id + " by=" + by + " name=" + from.name() + " to=" + to);
         rollup.record(id, by, beforeHere);

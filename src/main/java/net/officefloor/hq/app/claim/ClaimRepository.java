@@ -374,21 +374,21 @@ public class ClaimRepository {
                 + " AND status IN ('DRAFT', 'OPEN', 'PENDING')", personId, claimId, sheetId) > 0);
     }
 
-    /** Move every claim of one person to another (a merge): each keeps its number and date, loses any figure a
+    /** Move every claim of one person to another (a merge): each keeps its number, its date and any figure a
      *  statement bound it to, and is listed after the other's claims in the order it was added. */
     public void moveAll(String sheetId, long fromId, long intoId) {
         List<Long> ids = jdbc.queryForList("SELECT id FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY id",
                 Long.class, sheetId, fromId);
         for (Long claimId : ids) {
-            kept(sheetId, claimId, jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL,"
-                    + " stated_na = FALSE, listed = NEXT VALUE FOR claim_listed_seq WHERE id = ? AND sheet_id = ?",
+            kept(sheetId, claimId, jdbc.update("UPDATE claim SET person_id = ?,"
+                    + " listed = NEXT VALUE FOR claim_listed_seq WHERE id = ? AND sheet_id = ?",
                     intoId, claimId, sheetId) > 0);
         }
     }
 
     /** Move every claim of a person to another sheet, as the claims of the person {@code toPersonId} there: each keeps
-     *  its status, dates, note, tags, settled due, status log and comments, and is listed in the same order; it loses
-     *  any figure a statement bound it to, its external reference, its lock and its settle batch. Each claim that had
+     *  its status, dates, note, tags, settled due, status log, comments and any figure a statement bound it to, and is listed
+     *  in the same order; it loses its external reference, its lock and its settle batch. Each claim that had
      *  a number takes the other sheet's next one (as opening it there would give it), in the order the claims were
      *  opened (by the sheet's today when each was opened, then by the order they were added); a number one of them
      *  corrects or was split from follows it. The claims leave this sheet. */
@@ -401,9 +401,9 @@ public class ClaimRepository {
             jdbc.update(c -> {
                 PreparedStatement ps = c.prepareStatement("INSERT INTO claim (sheet_id, person_id, amount, claim_date, note,"
                         + " status, settled_due, opened_by, corrects, due_by, deferred_until, proofs, split_from, late_entry,"
-                        + " reminded, tags, void_reason, edited_by) SELECT ?, ?, amount, claim_date, note, status, settled_due,"
-                        + " opened_by, corrects, due_by, deferred_until, proofs, split_from, late_entry, reminded, tags,"
-                        + " void_reason, edited_by FROM claim WHERE id = ? AND sheet_id = ?", new String[] { "id" });
+                        + " reminded, tags, void_reason, edited_by, stated, stated_due, stated_na) SELECT ?, ?, amount, claim_date, note,"
+                        + " status, settled_due, opened_by, corrects, due_by, deferred_until, proofs, split_from, late_entry,"
+                        + " reminded, tags, void_reason, edited_by, stated, stated_due, stated_na FROM claim WHERE id = ? AND sheet_id = ?", new String[] { "id" });
                 ps.setString(1, toSheet);
                 ps.setLong(2, toPersonId);
                 ps.setLong(3, claimId);

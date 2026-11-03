@@ -12,9 +12,11 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** A steward merges a person into another: the merged person's claims move to the other (numbers and dates
- *  kept, listed after the other's in the order they were added, each losing any figure a statement bound), their
+ *  kept, listed after the other's in the order they were added, each keeping any figure a statement bound), their
  *  name and aliases become the other's aliases, their patrons, the people naming them and their pool memberships
- *  pass to the other, and they leave the sheet (statements, holds, watchers and contact dropped). Refused for anyone
+ *  pass to the other, and they leave the sheet (their statements joined to the other's — the other's count becomes their own plus
+ *  the merged person's, the other's last statement staying theirs, or becoming the merged person's when they had
+ *  none; holds, watchers and contact dropped). Refused for anyone
  *  but a steward, for the same person, and when either of them is retired. */
 public class MergePerson {
     public void merge(@PathVariable("sheetId") String sheetId, @PathVariable("personId") String personId,

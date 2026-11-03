@@ -350,7 +350,7 @@ public class PersonRepository {
 
     /** Copy a person onto another sheet, as added there on its today: their name, the grade they were first given,
      *  every grade they were given (with its from-date), their terms, contact and aliases (in the order they were
-     *  added), with no statements, and the sheet they came from; the new person's id. Their claims are moved by the caller. */
+     *  added), and the sheet they came from (their statements are joined by the caller); the new person's id. Their claims are moved by the caller. */
     public long transferIn(String fromSheet, long id, String toSheet) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(c -> {
@@ -375,6 +375,26 @@ public class PersonRepository {
         jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias) SELECT ?, ?, alias FROM person_alias"
                 + " WHERE sheet_id = ? AND person_id = ? ORDER BY id", toSheet, arrived, fromSheet, id);
         return arrived;
+    }
+
+    /** Join one person's statements to another's (possibly on another sheet), as a merge or transfer does: the
+     *  receiving person's statement count becomes their own plus the other's, the other's statements coming before
+     *  theirs, so their last statement stays theirs (or, having none, becomes the other's). */
+    public void joinStatements(String fromSheet, long fromId, String toSheet, long intoId) {
+        Map<String, Object> from = jdbc.queryForMap("SELECT statement_count, stated_total, statement_date FROM person"
+                + " WHERE id = ? AND sheet_id = ?", fromId, fromSheet);
+        long count = ((Number) from.get("statement_count")).longValue();
+        if (count <= 0) return;
+        // Shift the receiving person's statements after the other's (through negatives, keeping seq unique).
+        jdbc.update("UPDATE person_statement SET seq = -(seq + ?) WHERE sheet_id = ? AND person_id = ?", count, toSheet, intoId);
+        jdbc.update("UPDATE person_statement SET seq = -seq WHERE sheet_id = ? AND person_id = ? AND seq < 0", toSheet, intoId);
+        jdbc.update("INSERT INTO person_statement (sheet_id, person_id, seq, due_total, statement_date)"
+                + " SELECT ?, ?, seq, due_total, statement_date FROM person_statement WHERE sheet_id = ? AND person_id = ?",
+                toSheet, intoId, fromSheet, fromId);
+        jdbc.update("UPDATE person SET stated_total = CASE WHEN statement_count = 0 THEN ? ELSE stated_total END,"
+                + " statement_date = CASE WHEN statement_count = 0 THEN ? ELSE statement_date END,"
+                + " statement_count = statement_count + ? WHERE id = ? AND sheet_id = ?",
+                from.get("stated_total"), from.get("statement_date"), count, intoId, toSheet);
     }
 
     /** Add names (in order) to a person's aliases, as a merge joins the merged person's name and aliases. */
@@ -406,7 +426,7 @@ public class PersonRepository {
      *  merged person's patrons are added to the other's (not themselves, no repeats), anyone naming the merged
      *  person names the other instead (no repeats); pool memberships move to the other (shares added, at most
      *  100.00, when the other is already a member); closed periods' figures are added to the other's. Their
-     *  statements, holds, past retirements, grades, watchers and contact go with them, their plans move to the other, and the merged person leaves the sheet.
+     *  statements are joined to the other's (see {@link #joinStatements}); their holds, past retirements, grades, watchers and contact go with them, their plans move to the other, and the merged person leaves the sheet.
      *  Their claims must already have been moved. */
     public void merge(String sheetId, long fromId, long intoId) {
         String name = jdbc.queryForObject("SELECT name FROM person WHERE id = ? AND sheet_id = ?", String.class, fromId, sheetId);
@@ -452,6 +472,7 @@ public class PersonRepository {
         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
+        joinStatements(sheetId, fromId, sheetId, intoId);
         jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         // Plans follow the claims.
