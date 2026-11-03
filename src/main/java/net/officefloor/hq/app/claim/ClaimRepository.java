@@ -497,13 +497,13 @@ public class ClaimRepository {
         return keys.getKey().longValue();
     }
 
-    /** Change a DRAFT claim's amount, date, note, the number it corrects, its external reference (null: none) and
+    /** Change a DRAFT claim's amount, date (with the due-by it now has), note, the number it corrects, its external reference (null: none) and
      *  its tags (null: none); false when the sheet has no such draft claim. */
-    public boolean update(String sheetId, long claimId, BigDecimal amount, LocalDate date, String note, String corrects, String ref,
+    public boolean update(String sheetId, long claimId, BigDecimal amount, LocalDate date, LocalDate dueBy, String note, String corrects, String ref,
             String tags) {
-        boolean changed = kept(sheetId, claimId, jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ?,"
+        boolean changed = kept(sheetId, claimId, jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, due_by = ?, note = ?, corrects = ?, ref = ?,"
                 + " tags = ? WHERE id = ? AND sheet_id = ? AND status = 'DRAFT'",
-                amount, Date.valueOf(date), note, corrects, ref, tags, claimId, sheetId) > 0);
+                amount, Date.valueOf(date), Date.valueOf(dueBy), note, corrects, ref, tags, claimId, sheetId) > 0);
         if (changed) used(sheetId, tags);
         return changed;
     }
