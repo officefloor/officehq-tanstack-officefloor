@@ -32,16 +32,23 @@ public final class ClaimStatusChange {
 
     static Claim apply(String id, long cid, String action, String reason, String by, ClaimRepository repository,
             PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup, WatchRepository watches) throws BadRequestException {
-        return apply(id, cid, action, reason, by, false, repository, periods, settings, audit, rollup, watches);
+        return apply(id, cid, action, reason, by, false, null, repository, periods, settings, audit, rollup, watches);
     }
 
     /** Make every check of the status change, writing nothing: throws the refusal the change would give. */
     static void check(String id, long cid, String action, String by, ClaimRepository repository,
             PeriodRepository periods, SettingsRepository settings) throws BadRequestException {
-        apply(id, cid, action, null, by, true, repository, periods, settings, null, null, null);
+        apply(id, cid, action, null, by, true, null, repository, periods, settings, null, null, null);
     }
 
-    private static Claim apply(String id, long cid, String action, String reason, String by, boolean checkOnly, ClaimRepository repository,
+    /** Settle a claim split off {@code original} by a part-settle exactly as the settle button does, except that the
+     *  four-eyes rules and the proof rule are judged on the original claim; with {@code checkOnly}, write nothing. */
+    static Claim settlePart(String id, long cid, Claim original, String by, boolean checkOnly, ClaimRepository repository,
+            PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup, WatchRepository watches) throws BadRequestException {
+        return apply(id, cid, "settle", null, by, checkOnly, original, repository, periods, settings, audit, rollup, watches);
+    }
+
+    private static Claim apply(String id, long cid, String action, String reason, String by, boolean checkOnly, Claim original, ClaimRepository repository,
             PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup, WatchRepository watches) throws BadRequestException {
         if (settings.archived(id)) {
             throw new BadRequestException("the sheet is archived");
@@ -65,6 +72,8 @@ public final class ClaimStatusChange {
         if (found == null) {
             throw new BadRequestException("no such claim");
         }
+        // The claim the four-eyes rules and the proof rule are judged on: the claim itself, or for a part-settle the original.
+        Claim judged = original != null ? original : found;
         if (!from.contains(found.status())) {
             throw new BadRequestException("a " + found.status() + " claim cannot be moved to " + to);
         }
@@ -84,12 +93,12 @@ public final class ClaimStatusChange {
             throw new BadRequestException("only a steward can review a claim");
         }
         // Four eyes: whoever opened a claim cannot settle it.
-        if (to.equals("SETTLED") && found.status().equals("OPEN") && by.equals(found.openedBy())) {
+        if (to.equals("SETTLED") && found.status().equals("OPEN") && by.equals(judged.openedBy())) {
             throw new BadRequestException("the user who opened a claim cannot settle it");
         }
         // Nor can whoever last edited it settle or approve it.
         if (to.equals("SETTLED") && (found.status().equals("OPEN") || found.status().equals("PENDING"))
-                && by.equals(repository.editedBy(id, cid))) {
+                && by.equals(repository.editedBy(id, judged.id()))) {
             throw new BadRequestException("the user who last edited a claim cannot " + act + " it");
         }
         // A deferred claim cannot be settled until the sheet's today reaches the date it is deferred until.
@@ -147,15 +156,15 @@ public final class ClaimStatusChange {
         // is set, else the sheet's) cannot be settled or approved without a proof ('n/a' is above none); this is
         // decided before the clerk limit. While the sheet has proof kinds, such a claim needs a proof of each.
         String kinds = settings.proofKinds(id);
-        if (to.equals("SETTLED") && (found.proofs() == 0 || kinds != null)) {
-            BigDecimal threshold = settings.proofThreshold(id, repository.gradeOn(id, found), LocalDate.parse(found.date()));
-            BigDecimal now = repository.dueNow(id, found);
+        if (to.equals("SETTLED") && (judged.proofs() == 0 || kinds != null)) {
+            BigDecimal threshold = settings.proofThreshold(id, repository.gradeOn(id, judged), LocalDate.parse(judged.date()));
+            BigDecimal now = repository.dueNow(id, judged);
             if (threshold != null && now != null && now.compareTo(threshold) > 0) {
-                if (found.proofs() == 0) {
+                if (judged.proofs() == 0) {
                     throw new BadRequestException("a claim with a due above the proof threshold needs a proof to be settled");
                 }
                 for (String kind : kinds.split(",")) {
-                    if (found.proofs(kind) == 0) {
+                    if (judged.proofs(kind) == 0) {
                         throw new BadRequestException("a claim with a due above the proof threshold needs a " + kind + " proof to be settled");
                     }
                 }

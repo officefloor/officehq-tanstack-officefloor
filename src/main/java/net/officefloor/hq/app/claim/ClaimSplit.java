@@ -20,6 +20,17 @@ final class ClaimSplit {
 
     static Claim apply(String id, long cid, String amount, String by, ClaimRepository repository,
             PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup) throws BadRequestException {
+        return apply(id, cid, amount, by, false, repository, periods, settings, audit, rollup);
+    }
+
+    /** Make every check of the split, writing nothing: throws the refusal the split would give. */
+    static void check(String id, long cid, String amount, String by, ClaimRepository repository,
+            PeriodRepository periods, SettingsRepository settings) throws BadRequestException {
+        apply(id, cid, amount, by, true, repository, periods, settings, null, null);
+    }
+
+    private static Claim apply(String id, long cid, String amount, String by, boolean checkOnly, ClaimRepository repository,
+            PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup) throws BadRequestException {
         Claim found = repository.find(id, cid);
         if (found == null) {
             throw new BadRequestException("no such claim");
@@ -37,6 +48,9 @@ final class ClaimSplit {
         PeriodGuard.open(periods, id, LocalDate.parse(found.dueBy()));
         if (!settings.allows(id, "open", by)) {
             throw new BadRequestException("a " + settings.role(id, by) + " cannot open a claim, so cannot split one");
+        }
+        if (checkOnly) {
+            return null;
         }
         Rollup.Snapshot before = rollup.take(id);
         Long nid = repository.split(id, found, part, by);

@@ -32,7 +32,7 @@ function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: numbe
   );
 }
 
-type ClaimAction = 'open' | 'review' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | 'delete' | 'restore' | 'defer' | 'proof' | 'remind' | 'waive' | 'hold' | 'split' | 'redate' | 'comment' | 'line';
+type ClaimAction = 'open' | 'review' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | 'delete' | 'restore' | 'defer' | 'proof' | 'remind' | 'waive' | 'hold' | 'split' | 'settle-part' | 'redate' | 'comment' | 'line';
 
 /** A claim's status changes; the server refuses one its status does not allow, a settle by the user
  *  who opened the claim, and an approve or reject by anyone but a steward (an approve also by the
@@ -41,7 +41,7 @@ type ClaimAction = 'open' | 'review' | 'settle' | 'approve' | 'reject' | 'void' 
  *  A settle or approve of a claim whose due is above the proof threshold in force on its date is refused while it has no proof.
  *  An open of a claim whose due is above the review threshold in force on its date makes it REVIEW (no number yet); a review
  *  by a steward makes it OPEN, by anyone else is refused. */
-const ACTIONS: [Exclude<ClaimAction, 'defer' | 'proof' | 'remind' | 'waive' | 'hold' | 'split' | 'redate' | 'comment' | 'line'>, string][] = [
+const ACTIONS: [Exclude<ClaimAction, 'defer' | 'proof' | 'remind' | 'waive' | 'hold' | 'split' | 'settle-part' | 'redate' | 'comment' | 'line'>, string][] = [
   ['open', 'Open'],
   ['review', 'Review'],
   ['settle', 'Settle'],
@@ -118,6 +118,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   const [targets, setTargets] = useState<Record<number, string>>({});
   const [deferDates, setDeferDates] = useState<Record<number, string>>({});
   const [splitAmounts, setSplitAmounts] = useState<Record<number, string>>({});
+  const [settlePartAmounts, setSettlePartAmounts] = useState<Record<number, string>>({});
   const [newDates, setNewDates] = useState<Record<number, string>>({});
   const [comments, setComments] = useState<Record<number, string>>({});
   const [proofKinds, setProofKinds] = useState<Record<number, string>>({});
@@ -192,7 +193,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
 
   // A status change (open, settle, approve, reject, void) of one claim, or deferring an OPEN one until the
   // date typed on its row, or adding a proof to it, or reminding an OPEN or PENDING one (once per sheet-today), or splitting the amount typed on its row off an OPEN one
-  // (a new OPEN claim listed under the person), or re-dating an OPEN or PENDING one to the date typed on its row, or commenting it with the text typed on its row,
+  // (a new OPEN claim listed under the person), or part-settling one (the amount typed on its row split off and settled at once), or re-dating an OPEN or PENDING one to the date typed on its row, or commenting it with the text typed on its row,
   // or adding the line (label, quantity, unit amount) typed on its row to a DRAFT one (its amount becomes its lines' total);
   // a refusal shows on that claim's row.
   const action = useMutation({
@@ -203,6 +204,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
       if (a.action === 'void') setVoidReasons((r) => ({ ...r, [a.id]: '' }));
       if (a.action === 'defer') setDeferDates((d) => ({ ...d, [a.id]: '' }));
       if (a.action === 'split') setSplitAmounts((m) => ({ ...m, [a.id]: '' }));
+      if (a.action === 'settle-part') setSettlePartAmounts((m) => ({ ...m, [a.id]: '' }));
       if (a.action === 'redate') setNewDates((d) => ({ ...d, [a.id]: '' }));
       if (a.action === 'comment') setComments((m) => ({ ...m, [a.id]: '' }));
       if (a.action === 'proof') setProofKinds((m) => ({ ...m, [a.id]: '' }));
@@ -274,7 +276,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
       action: a,
       reason: a === 'reject' ? reasons[id] ?? '' : a === 'void' ? voidReasons[id] ?? '' : '',
       until: a === 'defer' ? (deferDates[id] ?? '').trim() : '',
-      amount: a === 'split' ? (splitAmounts[id] ?? '').trim() : '',
+      amount: a === 'split' ? (splitAmounts[id] ?? '').trim() : a === 'settle-part' ? (settlePartAmounts[id] ?? '').trim() : '',
       date: a === 'redate' ? (newDates[id] ?? '').trim() : '',
       text: a === 'comment' ? comments[id] ?? '' : '',
       label: a === 'line' ? lineFields[id]?.label ?? '' : '',
@@ -670,6 +672,25 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                     onClick={() => act(c.id, 'split')}
                   >
                     Split
+                  </button>{' '}
+                  <input
+                    data-testid="claim-settle-part-amount"
+                    inputMode="decimal"
+                    placeholder="settle part amount"
+                    value={settlePartAmounts[c.id] ?? ''}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setSettlePartAmounts((m) => ({ ...m, [c.id]: v }));
+                      if (action.variables?.id === c.id) action.reset();
+                    }}
+                  />{' '}
+                  <button
+                    type="button"
+                    data-testid="claim-settle-part"
+                    disabled={action.isPending}
+                    onClick={() => act(c.id, 'settle-part')}
+                  >
+                    Settle part
                   </button>{' '}
                   <input
                     type="text"
