@@ -22,10 +22,10 @@ import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.web.bind.annotation.PathVariable;
 
 /** Take a person's statement: record their due-total now, and bind each claim of theirs that counts (a
- *  person's open (OPEN or PENDING) claims dated within a hold do not, unless already bound) to the figure it has now — its rate figure, not floored (a settled claim keeps its frozen due); a
- *  claim with no figure because the rate that would apply to it has ended is bound to n/a; a
- *  claim that does not count is unbound (live again). A late charge is never bound, nor is the floor: they keep following
- *  the sheet's today. The due-total is as shown: the sum of the counting claims' dues now (late charges
+ *  person's open (OPEN or PENDING) claims dated within a hold do not, unless already bound) to its due as shown now — its figure plus its late charge, at least the floor (a settled claim keeps its
+ *  frozen due; a claim already bound keeps the due it was bound to): while bound, its late charge no longer follows the
+ *  sheet's today; a claim with no figure because the rate that would apply to it has ended is bound to n/a; a
+ *  claim that does not count is unbound (live again). The due-total is as shown: the sum of the counting claims' dues now (late charges
  *  included), skipping those with none; 'n/a' when no rate for the grade they have on the sheet's today
  *  is in force then and no counting claim has a fixed figure or a due (at the grade it was claimed under); at
  *  most the sheet's cap.
@@ -78,9 +78,9 @@ public class TakeStatement {
             }
             count++;
             fixed |= c.fixed();
-            // The claim is bound to its figure; its late charge is not bound, but counts in the due-total.
-            BigDecimal figure = then == null ? claims.figure(id, c) : then.figure(c);
+            // The claim is bound to its due as shown, late charge and floor included.
             BigDecimal now = then == null ? claims.dueNow(id, c) : then.dueNow(c);
+            BigDecimal figure = now;
             if (now != null) {
                 total = total.add(now);
                 fixed = true;

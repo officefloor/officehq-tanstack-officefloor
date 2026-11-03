@@ -287,8 +287,9 @@ public class ClaimRepository {
                 : RoundingMode.HALF_EVEN;
     }
 
-    /** A claim's figure now: the due fixed when it was settled, else the one its last statement bound
-     *  it to (none when it bound it to n/a), else its live rate figure (not floored); null when it has none. */
+    /** A claim's figure now: the due fixed when it was settled, else the due as shown its last statement bound
+     *  it to (late charge and floor included; none when it bound it to n/a), else its live rate figure (not floored);
+     *  null when it has none. */
     public BigDecimal figure(String sheetId, Claim claim) {
         if (claim.due() != null) return new BigDecimal(claim.due());
         if (claim.bound() && claim.statedNa()) return null;
@@ -297,16 +298,18 @@ public class ClaimRepository {
     }
 
     /** A claim's due now: a settled claim's frozen due; else the greater of the sheet's floor in force on the
-     *  claim's date and its figure (the one its last statement bound it to, else its live rate figure) plus, while it
+     *  claim's date and its live rate figure plus, while it
      *  is overdue (OPEN or PENDING and its due-by — fixed when it was created — plus its grade's grace days before the
      *  sheet's today), for every full 30 days it is overdue, the sheet's late percent in force on that boundary date (the
      *  due-by plus the grace plus 30, 60,
      *  90 ... days) of that figure plus the charges of the boundaries before it (compounding), each rounded to two decimals by the claim's rounding, the charges added up (a
-     *  boundary whose percent is 0.00 adds nothing). A statement never binds the charge: it keeps following the
-     *  sheet's today until settling freezes it in. A correction (a negative amount) has no floor and no late charge,
+     *  boundary whose percent is 0.00 adds nothing). A claim bound by a statement shows the due its last statement
+     *  bound it to, as it was shown then (late charge and floor included): its charge no longer follows the sheet's
+     *  today until the statement is cancelled. A correction (a negative amount) has no floor and no late charge,
      *  nor does a deferred claim have a charge (it is not overdue). Null when it has no figure. */
     public BigDecimal dueNow(String sheetId, Claim claim) {
         if (claim.due() != null) return new BigDecimal(claim.due());
+        if (claim.bound() && (claim.statedNa() || claim.statedDue() != null)) return figure(sheetId, claim);
         BigDecimal figure = figure(sheetId, claim);
         if (figure == null || new BigDecimal(claim.amount()).signum() < 0) return figure;
         BigDecimal due = figure.add(lateCharge(sheetId, claim, figure));

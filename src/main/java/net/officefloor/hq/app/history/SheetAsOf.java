@@ -161,10 +161,11 @@ public record SheetAsOf(LocalDate day, Map<Long, Claim> claims, Map<Long, TreeMa
         return due(claim);
     }
 
-    /** A claim's due then: its settled due, else its figure plus its late charges on the day, at least the
+    /** A claim's due then: its settled due, else the due a statement bound it to (as shown then), else its figure plus its late charges on the day, at least the
      *  floor (a correction has neither); null when it had no figure. */
     public BigDecimal dueNow(Claim claim) {
         if (claim.due() != null) return new BigDecimal(claim.due());
+        if (claim.bound() && (claim.statedNa() || claim.statedDue() != null)) return figure(claim);
         BigDecimal figure = figure(claim);
         if (figure == null || new BigDecimal(claim.amount()).signum() < 0) return figure;
         BigDecimal due = figure.add(lateCharge(claim, figure));

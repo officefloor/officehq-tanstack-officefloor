@@ -36,15 +36,15 @@ export function roundsHalfUp(c: Claim, claims: Claim[] | undefined, settings: Se
   return date < policy;
 }
 
-/** A claim's due now: a settled claim's frozen due; else the greater of the floor (two decimals; none while
- *  it is not loaded) and its figure (the one its last statement bound it to, else its live rate figure) plus,
+/** A claim's due now: a settled claim's frozen due; else the due as shown its last statement bound it to (late
+ *  charge and floor included: while bound, its charge no longer follows the sheet's today); else the greater of the floor (two decimals; none while
+ *  it is not loaded) and its live rate figure plus,
  *  while it is overdue, for every full 30 days it is overdue the sheet's late percent in force on that boundary
- *  date (the overdue-from day — the due-by plus the grade's grace — plus 30, 60, 90 ... days) of that figure plus the charges of the boundaries before it (compounding), each rounded like a due, the charges added up. The
- *  charge is never bound by a statement: it follows the sheet's today until settling freezes it in. A correction
- *  (a negative amount) has no floor and no late charge, nor does a claim whose late charge a steward waived. No charge until the settings and the sheet's today are loaded. */
+ *  date (the overdue-from day — the due-by plus the grade's grace — plus 30, 60, 90 ... days) of that figure plus the charges of the boundaries before it (compounding), each rounded like a due, the charges added up. A
+ *  correction (a negative amount) has no floor and no late charge, nor does a claim whose late charge a steward waived. No charge until the settings and the sheet's today are loaded. */
 export function dueNow(c: Claim, figure: string, floor: string | undefined, settings: Settings | undefined,
   today: string | undefined, halfUp: boolean, grade: string | undefined): string {
-  if (c.due !== null || figure === 'n/a' || isCorrection(c.amount)) return figure;
+  if (c.due !== null || fixedDue(c) !== null || figure === 'n/a' || isCorrection(c.amount)) return figure;
   const pcts: string[] = [];
   if (!c.waived && settings !== undefined && today !== undefined && isOverdue(c, today, settings, grade)) {
     const dueBy = Date.parse(`${overdueFrom(c, settings, grade)}T00:00:00Z`);
