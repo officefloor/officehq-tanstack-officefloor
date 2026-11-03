@@ -68,6 +68,7 @@ public class SavePerson {
         if (!updated) {
             throw new ConflictException("someone else has saved this person; showing their current values");
         }
+        repository.tags(id, pid, request.tags());
         if (regrade) {
             repository.grade(id, pid, request.grade(), from);
         }

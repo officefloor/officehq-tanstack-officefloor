@@ -104,8 +104,8 @@ public class SheetCloner {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(c -> {
             PreparedStatement ps = c.prepareStatement("INSERT INTO person (sheet_id, name, grade, terms, contact, added_on,"
-                    + " list_position, origin_sheet, retired_from) SELECT ?, name, grade, terms, contact, added_on,"
-                    + " list_position, origin_sheet, retired_from FROM person WHERE id = ? AND sheet_id = ?",
+                    + " list_position, origin_sheet, retired_from, tags) SELECT ?, name, grade, terms, contact, added_on,"
+                    + " list_position, origin_sheet, retired_from, tags FROM person WHERE id = ? AND sheet_id = ?",
                     new String[] { "id" });
             ps.setString(1, to);
             ps.setLong(2, id);

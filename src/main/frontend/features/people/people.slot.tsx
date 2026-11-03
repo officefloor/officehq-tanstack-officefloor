@@ -4,7 +4,7 @@ import { HttpError, postJson } from '../../api/http';
 import { useSingleFlight } from '../../query/useSingleFlight';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { PersonCells, PersonColumnHead, PersonDetail } from '../../slots/defs/personRow';
-import { claimsKey, type Claim } from '../claims/useClaims';
+import { claimsKey, shownTags, type Claim } from '../claims/useClaims';
 import { useShowRetired } from '../retire/useShowRetired';
 import { GRADES, fetchPeople, peopleKey, usePeople, type Person } from './usePeople';
 
@@ -15,6 +15,7 @@ import { GRADES, fetchPeople, peopleKey, usePeople, type Person } from './usePeo
  *  A person may have their own terms (days; blank for none), shown on their row: a claim's due-by is fixed
  *  from them when it is created, ahead of their grade's and the sheet's terms. A person may have a contact
  *  (stored trimmed and lower-cased; blank for none), shown on their row; another person's contact is refused.
+ *  A person may carry tags (comma separated; trimmed, lower-cased, repeats dropped), shown sorted on their row.
  *  The editor remembers the version of the person it loaded; when someone else has saved them since,
  *  the save is refused (409) and the editor shows their current values, at their current version; any other
  *  refused edit closes the editor, leaving its error showing. Each person is a <tbody> so features can add
@@ -30,15 +31,16 @@ function People({ sheetId }: { sheetId: string }) {
   const [gradeFrom, setGradeFrom] = useState('');
   const [terms, setTerms] = useState('');
   const [contact, setContact] = useState('');
+  const [tags, setTags] = useState('');
   const [version, setVersion] = useState<number | null>(null);
 
   const submitOnce = useSingleFlight();
   const save = useMutation({
-    mutationFn: (f: { id: number | null; name: string; grade: string; gradeFrom: string; terms: string; contact: string; version: number | null }) => {
+    mutationFn: (f: { id: number | null; name: string; grade: string; gradeFrom: string; terms: string; contact: string; tags: string; version: number | null }) => {
       const base = `/api/sheets/${encodeURIComponent(sheetId)}/people`;
       return f.id === null
-        ? postJson<Person>(base, { name: f.name, grade: f.grade, terms: f.terms, contact: f.contact })
-        : postJson<Person>(`${base}/${f.id}`, { name: f.name, grade: f.grade, gradeFrom: f.gradeFrom, terms: f.terms, contact: f.contact, version: f.version });
+        ? postJson<Person>(base, { name: f.name, grade: f.grade, terms: f.terms, contact: f.contact, tags: f.tags })
+        : postJson<Person>(`${base}/${f.id}`, { name: f.name, grade: f.grade, gradeFrom: f.gradeFrom, terms: f.terms, contact: f.contact, tags: f.tags, version: f.version });
     },
     onSuccess: async () => {
       setEditing(null);
@@ -47,8 +49,13 @@ function People({ sheetId }: { sheetId: string }) {
       setGradeFrom('');
       setTerms('');
       setContact('');
+      setTags('');
       setVersion(null);
-      await queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+      // a person's tags join the sheet's tags, kept under the claims' key
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+      ]);
     },
     onError: async (err, f) => {
       if (f.id === null) return;
@@ -60,6 +67,7 @@ function People({ sheetId }: { sheetId: string }) {
         setGradeFrom('');
         setTerms('');
         setContact('');
+        setTags('');
         setVersion(null);
         return;
       }
@@ -74,6 +82,7 @@ function People({ sheetId }: { sheetId: string }) {
         setGrade(current.grade);
         setTerms(current.terms === null ? '' : String(current.terms));
         setContact(current.contact ?? '');
+        setTags(shownTags(current.tags));
         setVersion(current.version);
       }
     },
@@ -103,6 +112,7 @@ function People({ sheetId }: { sheetId: string }) {
     setGradeFrom('');
     setTerms(p.terms === null ? '' : String(p.terms));
     setContact(p.contact ?? '');
+    setTags(shownTags(p.tags));
     setVersion(p.version);
   };
 
@@ -114,6 +124,7 @@ function People({ sheetId }: { sheetId: string }) {
     setGradeFrom('');
     setTerms('');
     setContact('');
+    setTags('');
     setVersion(null);
   };
 
@@ -125,7 +136,7 @@ function People({ sheetId }: { sheetId: string }) {
           e.preventDefault();
           submitOnce(() => {
             save.reset();
-            return save.mutateAsync({ id: editing, name, grade, gradeFrom, terms, contact, version });
+            return save.mutateAsync({ id: editing, name, grade, gradeFrom, terms, contact, tags, version });
           });
         }}
       >
@@ -191,6 +202,17 @@ function People({ sheetId }: { sheetId: string }) {
             }}
           />
         </label>{' '}
+        <label>
+          Tags{' '}
+          <input
+            data-testid="person-form-tags"
+            value={tags}
+            onChange={(e) => {
+              setTags(e.target.value);
+              save.reset();
+            }}
+          />
+        </label>{' '}
         <button type="submit" data-testid="person-form-submit" disabled={save.isPending}>
           {editing === null ? 'Add person' : 'Save person'}
         </button>
@@ -248,6 +270,7 @@ function People({ sheetId }: { sheetId: string }) {
             <th>Grade</th>
             <th>Terms</th>
             <th>Contact</th>
+            <th>Tags</th>
             <PersonColumnHead.Slot sheetId={sheetId} />
             <th />
           </tr>
@@ -259,6 +282,7 @@ function People({ sheetId }: { sheetId: string }) {
               <td data-testid="person-grade">{p.grade}</td>
               <td data-testid="person-terms">{p.terms ?? ''}</td>
               <td data-testid="person-contact">{p.contact ?? ''}</td>
+              <td data-testid="person-tags">{shownTags(p.tags)}</td>
               <PersonCells.Slot sheetId={sheetId} personId={p.id} />
               <td>
                 <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => openEditor(p)}>

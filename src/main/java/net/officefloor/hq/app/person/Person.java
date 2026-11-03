@@ -9,23 +9,23 @@ import java.util.List;
  *  from (null when not retired; any date set means retired at once), and their holds (oldest first) and
  *  whether they have any (their open (OPEN or PENDING) claims dated within a hold, unless bound by a
  *  statement, then count in no live total), and their own terms in days (null when they have none), and their contact (null when they have none), and the sheet they were
- *  transferred from (null when they were not transferred here), and their past retirements (oldest first). */
+ *  transferred from (null when they were not transferred here), and their past retirements (oldest first), and their tags (as {@link net.officefloor.hq.app.claim.Claim#tags(String)} keeps them; null when none). */
 public record Person(long id, String name, String grade, long version, long statementCount,
         String statedTotal, String statementDate, String retiredFrom, boolean held, List<GradeFrom> grades,
         List<Hold> holds, Integer terms, String contact, String origin,
-        List<Retirement> retirements) {
+        List<Retirement> retirements, String tags) {
 
     public Person withGrades(List<GradeFrom> grades) {
-        return new Person(id, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom, held, grades, holds, terms, contact, origin, retirements);
+        return new Person(id, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom, held, grades, holds, terms, contact, origin, retirements, tags);
     }
 
     public Person withHolds(List<Hold> holds) {
         return new Person(id, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom,
-                !holds.isEmpty(), grades, holds, terms, contact, origin, retirements);
+                !holds.isEmpty(), grades, holds, terms, contact, origin, retirements, tags);
     }
 
     public Person withRetirements(List<Retirement> retirements) {
-        return new Person(id, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom, held, grades, holds, terms, contact, origin, retirements);
+        return new Person(id, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom, held, grades, holds, terms, contact, origin, retirements, tags);
     }
 
     public boolean retired() {

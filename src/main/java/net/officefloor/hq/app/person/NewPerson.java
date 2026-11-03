@@ -41,7 +41,8 @@ public final class NewPerson {
         }
         String contact = request.contact() == null ? "" : request.contact().trim().toLowerCase(java.util.Locale.ROOT);
         return new PersonRequest(name, grade, request.version(), from,
-                terms.isEmpty() ? "" : String.valueOf(Integer.parseInt(terms)), contact);
+                terms.isEmpty() ? "" : String.valueOf(Integer.parseInt(terms)), contact,
+                net.officefloor.hq.app.claim.Claim.tags(request.tags()));
     }
 
     /** Refuse a validated person whose name or contact is already in use on the sheet. */
@@ -65,6 +66,10 @@ public final class NewPerson {
                     request.terms().isEmpty() ? null : Integer.valueOf(request.terms()), contact);
         } catch (DuplicateKeyException e) {
             throw new BadRequestException("name is already in use");
+        }
+        if (request.tags() != null) {
+            repository.tags(id, added.id(), request.tags());
+            added = repository.find(id, added.id());
         }
         audit.record("PERSON_ADDED sheet=" + id + " by=" + by + " name=" + added.name()
                 + " grade=" + added.grade() + (added.terms() == null ? "" : " terms=" + added.terms())
