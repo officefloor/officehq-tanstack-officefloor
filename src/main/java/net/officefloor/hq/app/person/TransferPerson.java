@@ -6,6 +6,7 @@ import net.officefloor.hq.app.CurrentUser;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.settings.SettingsRepository;
+import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -14,13 +15,14 @@ import org.springframework.web.bind.annotation.RequestBody;
 /** A steward transfers a person to another sheet by id: they arrive there with every grade they were given (and
  *  its from-date), their terms, contact and aliases, and their claims (see {@link ClaimRepository#transferAll}), with
  *  no statements; they leave this sheet entirely (patron links, pool memberships, holds and watches dropped).
- *  Refused for anyone but a steward, for a retired person, for this sheet's own id, for a sheet never loaded or
- *  archived, and when their name, an alias or their contact is already on the other sheet. Each sheet writes its
- *  PERSON_TRANSFERRED line, then its rollup lines. */
+ *  A sheet id never used is made empty first, as loading it would. Refused for anyone but a steward, for a retired
+ *  person, for this sheet's own id, for an archived sheet, and when their name, an alias or their contact is already
+ *  on the other sheet. Each sheet writes its PERSON_TRANSFERRED line, then its rollup lines. */
 public class TransferPerson {
     public void transfer(@PathVariable("sheetId") String sheetId, @PathVariable("personId") String personId,
             @RequestBody TransferRequest request, ServerHttpConnection connection, PersonRepository people,
-            AliasRepository aliases, ClaimRepository claims, SettingsRepository settings, Audit audit, Rollup rollup,
+            AliasRepository aliases, ClaimRepository claims, SettingsRepository settings, SheetRepository sheets, Audit audit,
+            Rollup rollup,
             Out<Person> person) throws BadRequestException {
         String by = CurrentUser.require(connection);
         String id = sheetId == null ? "" : sheetId.trim();
@@ -47,9 +49,6 @@ public class TransferPerson {
         if (to.equals(id)) {
             throw new BadRequestException("a person cannot be transferred to their own sheet");
         }
-        if (!people.sheetExists(to)) {
-            throw new BadRequestException("no such sheet " + to);
-        }
         if (settings.archived(to)) {
             throw new BadRequestException("sheet " + to + " is archived");
         }
@@ -65,6 +64,9 @@ public class TransferPerson {
             throw new BadRequestException(from.contact() + " is already on sheet " + to);
         }
 
+        if (!people.sheetExists(to)) {
+            sheets.loadOrCreate(to, by);
+        }
         Rollup.Snapshot beforeHere = rollup.take(id);
         Rollup.Snapshot beforeThere = rollup.take(to);
         long arrived = people.transferIn(id, pid, to);
