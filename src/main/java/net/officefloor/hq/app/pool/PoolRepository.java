@@ -36,6 +36,13 @@ public class PoolRepository {
         return known != null && known > 0;
     }
 
+    /** Whether the sheet has a crew of that name (a crew is also a pool of its name). */
+    public boolean crewExists(String sheetId, String name) {
+        Integer known = jdbc.queryForObject("SELECT COUNT(*) FROM crew WHERE sheet_id = ? AND name = ?",
+                Integer.class, sheetId, name);
+        return known != null && known > 0;
+    }
+
     /** The person's name, or null when they are not on the sheet. */
     public String personName(String sheetId, long personId) {
         List<String> names = jdbc.queryForList("SELECT name FROM person WHERE sheet_id = ? AND id = ?",
@@ -170,11 +177,56 @@ public class PoolRepository {
         return cut;
     }
 
+    /** Shares (two decimals) for a crew's people, lead first: 100.00 split equally as patrons' shares are, each
+     *  rounded half to even, the remainder (100.00 less the shares added up) given to the lead. */
+    private static List<BigDecimal> crewShares(int count) {
+        List<BigDecimal> shares = new ArrayList<>();
+        if (count == 0) return shares;
+        BigDecimal each = HUNDRED.divide(BigDecimal.valueOf(count), 2, RoundingMode.HALF_EVEN);
+        for (int i = 0; i < count; i++) shares.add(each);
+        shares.set(0, each.add(HUNDRED.subtract(each.multiply(BigDecimal.valueOf(count)))));
+        return shares;
+    }
+
+    /** The sheet's crews as pools, by name: each crew's lead then its members (people still on the sheet) in the
+     *  order they were added, at equal shares; always current, never dated. */
+    private Map<String, List<PoolMember>> crewPools(String sheetId) {
+        Map<String, List<PoolMember>> people = new LinkedHashMap<>();
+        jdbc.query("SELECT c.name, c.lead_id, p.name AS lead, p.retired_from FROM crew c"
+                + " LEFT JOIN person p ON p.id = c.lead_id WHERE c.sheet_id = ? ORDER BY c.id", rs -> {
+            List<PoolMember> of = new ArrayList<>();
+            if (rs.getString("lead") != null) {
+                of.add(new PoolMember(rs.getLong("lead_id"), null, rs.getString("lead"), null,
+                        rs.getDate("retired_from") != null, null, null, null, true));
+            }
+            people.put(rs.getString("name"), of);
+        }, sheetId);
+        jdbc.query("SELECT m.crew_name, m.person_id, p.name, p.retired_from FROM crew_member m"
+                + " JOIN person p ON p.id = m.person_id WHERE m.sheet_id = ? ORDER BY m.id", rs -> {
+            List<PoolMember> of = people.get(rs.getString("crew_name"));
+            if (of != null) of.add(new PoolMember(rs.getLong("person_id"), null, rs.getString("name"), null,
+                    rs.getDate("retired_from") != null, null, null, null, true));
+        }, sheetId);
+        Map<String, List<PoolMember>> crews = new LinkedHashMap<>();
+        for (Map.Entry<String, List<PoolMember>> crew : people.entrySet()) {
+            List<BigDecimal> shares = crewShares(crew.getValue().size());
+            List<PoolMember> of = new ArrayList<>();
+            for (int i = 0; i < shares.size(); i++) {
+                PoolMember m = crew.getValue().get(i);
+                of.add(new PoolMember(m.personId(), null, m.name(), shares.get(i).toPlainString(), m.retired(), null,
+                        null, null, true));
+            }
+            crews.put(crew.getKey(), of);
+        }
+        return crews;
+    }
+
     /** The sheet's pools, by name, each with its members (people and pools) in the order they were added, and
      *  their cuts of the pool's pot when the pool is balanced, has a pot and has a current member not retired. A
      *  pool's total share counts every current member's share, a retired member's included. A pool that is a member of none has
      *  the sheet's pot; a pool that is a member of another has its cut there as its pot (none when that pool
-     *  shows no cuts). */
+     *  shows no cuts). Each crew is also a pool of its name (its lead and members at equal shares), placed after
+     *  the pools in the order pools were added, crews in the order they were added. */
     public List<Pool> list(String sheetId) {
         Map<String, List<PoolMember>> members = new LinkedHashMap<>();
         Map<String, Integer> added = new HashMap<>();
@@ -182,9 +234,13 @@ public class PoolRepository {
                 sheetId)) {
             added.put(name, added.size());
         }
-        for (String name : jdbc.queryForList("SELECT name FROM pool WHERE sheet_id = ? ORDER BY name", String.class,
-                sheetId)) {
-            members.put(name, new ArrayList<>());
+        Map<String, List<PoolMember>> crews = crewPools(sheetId);
+        for (String name : crews.keySet()) {
+            added.putIfAbsent(name, added.size());
+        }
+        for (String name : jdbc.queryForList("SELECT name FROM pool WHERE sheet_id = ? UNION SELECT name FROM crew"
+                + " WHERE sheet_id = ? ORDER BY name", String.class, sheetId, sheetId)) {
+            members.put(name, crews.containsKey(name) ? crews.get(name) : new ArrayList<>());
         }
         Map<String, String> parents = new HashMap<>();
         jdbc.query("SELECT m.pool_name, m.person_id, m.member_pool, p.name, m.share, p.retired_from, m.from_date,"
@@ -193,7 +249,7 @@ public class PoolRepository {
                 + " FROM pool_member m JOIN sheet s ON s.id = m.sheet_id"
                 + " LEFT JOIN person p ON p.id = m.person_id WHERE m.sheet_id = ? ORDER BY m.id", rs -> {
             List<PoolMember> of = members.get(rs.getString("pool_name"));
-            if (of == null) return;
+            if (of == null || crews.containsKey(rs.getString("pool_name"))) return;
             String share = rs.getBigDecimal("share").setScale(2).toPlainString();
             String memberPool = rs.getString("member_pool");
             java.sql.Date fromDate = rs.getDate("from_date");

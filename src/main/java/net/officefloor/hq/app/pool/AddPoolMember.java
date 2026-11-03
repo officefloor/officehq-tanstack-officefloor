@@ -7,7 +7,8 @@ import net.officefloor.plugin.variable.Val;
 import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.web.bind.annotation.PathVariable;
 
-/** Add a person or another pool to a pool, refusing one already in it. A pool member is refused when it is
+/** Add a person or another pool (a crew included) to a pool, refusing one already in it, and refusing any member
+ *  for a crew's pool (its members are the crew's). A pool member is refused when it is
  *  already a member of a pool, when it would contain the pool through any chain (itself included), or when the
  *  chain of pools would be more than three deep. */
 public class AddPoolMember {
@@ -20,13 +21,16 @@ public class AddPoolMember {
         String by = CurrentUser.require(connection);
         String id = sheetId == null ? "" : sheetId.trim();
         String pool = input.pool();
+        if (repository.crewExists(id, pool)) {
+            throw new BadRequestException(pool + " is a crew: its members are its lead and crew members");
+        }
         if (!repository.exists(id, pool)) {
             throw new BadRequestException("no such pool");
         }
         String name;
         if (input.memberPool() != null) {
             name = input.memberPool();
-            if (!repository.exists(id, name)) {
+            if (!repository.exists(id, name) && !repository.crewExists(id, name)) {
                 throw new BadRequestException("no such pool: " + name);
             }
             if (repository.parentOf(id, name) != null) {

@@ -7,7 +7,7 @@ import net.officefloor.plugin.variable.Val;
 import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.web.bind.annotation.PathVariable;
 
-/** Add a crew, refusing a name the sheet already has or a lead not on the sheet. */
+/** Add a crew, refusing a name the sheet already has for a crew or a pool (a crew is also a pool), or a lead not on the sheet. */
 public class SaveCrew {
     public void save(@PathVariable("sheetId") String sheetId, @Val CrewRequest input, ServerHttpConnection connection,
             CrewRepository repository, Audit audit) throws BadRequestException {
@@ -19,6 +19,9 @@ public class SaveCrew {
         String lead = repository.personName(id, input.leadId());
         if (lead == null) {
             throw new BadRequestException("no such person");
+        }
+        if (repository.poolExists(id, input.name())) {
+            throw new BadRequestException("a pool of that name already exists");
         }
         if (!repository.add(id, input.name(), input.leadId())) {
             throw new BadRequestException("a crew of that name already exists");

@@ -29,6 +29,13 @@ public class CrewRepository {
         return names.isEmpty() ? null : names.get(0);
     }
 
+    /** Whether the sheet has a pool of that name (a crew is also a pool, so may not share a pool's name). */
+    public boolean poolExists(String sheetId, String name) {
+        Integer known = jdbc.queryForObject("SELECT COUNT(*) FROM pool WHERE sheet_id = ? AND name = ?",
+                Integer.class, sheetId, name);
+        return known != null && known > 0;
+    }
+
     /** The crew's lead (by id), or null when the sheet has no crew of that name. */
     public Long leadOf(String sheetId, String crew) {
         List<Long> found = jdbc.queryForList("SELECT lead_id FROM crew WHERE sheet_id = ? AND name = ?", Long.class,

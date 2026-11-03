@@ -8,6 +8,7 @@ import { useDueTotals } from '../rates/useDueTotals';
 import { useFigure } from '../locale/useLocale';
 import { crewDue } from './crewDue';
 import { crewsKey, useCrews, type Crew } from './useCrews';
+import { poolsKey } from '../pools/usePools';
 
 /** One crew: its lead, its members, its due-total (the lead's and the members' due-totals added up, 'n/a'
  *  skipped) and a form that adds a member (a person on the sheet, neither its lead nor already in it). */
@@ -24,7 +25,11 @@ function CrewRow({ sheetId, crew, people }: { sheetId: string; crew: Crew; peopl
       postJson<{ crews: Crew[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/crews/members`, f),
     onSuccess: async () => {
       setMember('');
-      await queryClient.invalidateQueries({ queryKey: crewsKey(sheetId) });
+      // A crew is also a pool of its name: its pool (and every pool's cuts) follow it.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: crewsKey(sheetId) }),
+        queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) }),
+      ]);
     },
   });
 
@@ -88,7 +93,11 @@ function Crews({ sheetId }: { sheetId: string }) {
     onSuccess: async () => {
       setName('');
       setLead('');
-      await queryClient.invalidateQueries({ queryKey: crewsKey(sheetId) });
+      // A crew is also a pool of its name: its pool (and every pool's cuts) follow it.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: crewsKey(sheetId) }),
+        queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) }),
+      ]);
     },
   });
 
