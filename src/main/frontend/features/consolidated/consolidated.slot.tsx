@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { getJson } from '../../api/http';
+import { getJson, getJsonNow } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useOverdue } from '../overdue/useOverdue';
-import { usePeople } from '../people/usePeople';
+import { peopleKey, type Person } from '../people/usePeople';
 import { useDueTotals } from '../rates/useDueTotals';
 import { hundredths, money, trimmedSum } from '../rates/useRates';
 
-/** One sheet's figures as its header shows them: its people (retired included), its due-total and overdue-total. */
+/** One sheet's figures: its people as the store holds them now (retired included; not as of the screen's as-of
+ *  date), and its due-total and overdue-total as its header shows them. */
 type Figures = { people: number; due: string; overdue: string };
 
 /** The sheet's descendants (the sheets naming it as their parent, theirs, and so on), re-read from the store.
@@ -24,9 +25,19 @@ function useDescendants(sheetId: string) {
   });
 }
 
-/** Works out one sheet's figures with the same hooks its header uses, and hands them up; shows nothing. */
+/** The number of the sheet's people as the store holds them now, whatever date the screen shows it as of. */
+function usePeopleNow(sheetId: string) {
+  return useQuery({
+    queryKey: [...peopleKey(sheetId), 'now'],
+    queryFn: async () =>
+      (await getJsonNow<{ people: Person[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/people`)).people.length,
+  });
+}
+
+/** Works out one sheet's figures with the same hooks its header uses (its people as the store holds them now), and
+ *  hands them up; shows nothing. */
 function SheetFigures({ sheetId, onFigures }: { sheetId: string; onFigures: (id: string, f: Figures) => void }) {
-  const people = (usePeople(sheetId).data ?? []).length;
+  const people = usePeopleNow(sheetId).data ?? 0;
   const due = trimmedSum([...useDueTotals(sheetId).values()]);
   const overdue = trimmedSum([...useOverdue(sheetId).values()].map((f) => f.total));
   useEffect(() => onFigures(sheetId, { people, due, overdue }), [sheetId, people, due, overdue, onFigures]);

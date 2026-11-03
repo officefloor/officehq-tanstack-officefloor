@@ -30,10 +30,10 @@ export function currentAsOfDate(): string {
   return asOfDate;
 }
 
-async function send<T>(path: string, init?: RequestInit): Promise<T> {
+async function send<T>(path: string, init?: RequestInit, asOf = asOfDate): Promise<T> {
   const headers = new Headers(init?.headers);
   if (signedInUser) headers.set('X-User', signedInUser);
-  if (asOfDate) headers.set('X-As-Of', asOfDate);
+  if (asOf) headers.set('X-As-Of', asOf);
   const res = await fetch(path, { ...init, headers });
   if (!res.ok) {
     let message = `${init?.method ?? 'GET'} ${path} -> ${res.status}`;
@@ -50,6 +50,11 @@ async function send<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function getJson<T>(path: string): Promise<T> {
   return send<T>(path);
+}
+
+/** A read that answers as the store holds the sheet now, whatever date this screen shows it as of. */
+export function getJsonNow<T>(path: string): Promise<T> {
+  return send<T>(path, undefined, '');
 }
 
 export function postJson<T>(path: string, body: unknown): Promise<T> {
