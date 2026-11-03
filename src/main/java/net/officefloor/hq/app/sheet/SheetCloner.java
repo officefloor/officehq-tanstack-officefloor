@@ -79,7 +79,7 @@ public class SheetCloner {
                 }
             }, from, p.getKey());
         }
-        jdbc.update("INSERT INTO pool (sheet_id, name) SELECT ?, name FROM pool WHERE sheet_id = ?", to, from);
+        jdbc.update("INSERT INTO pool (sheet_id, name, added) SELECT ?, name, added FROM pool WHERE sheet_id = ?", to, from);
         jdbc.query("SELECT pool_name, person_id, member_pool, share, from_date, to_date FROM pool_member WHERE sheet_id = ?"
                 + " ORDER BY id", rs -> {
                     long person = rs.getLong("person_id");

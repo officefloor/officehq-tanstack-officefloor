@@ -19,9 +19,9 @@ export type PoolMember = {
   current: boolean;
 };
 
-/** A pool: its name, its members in the order they were added, the total of their shares (two decimals)
- *  and whether that total is exactly 100.00. */
-export type Pool = { name: string; members: PoolMember[]; totalShare: string; balanced: boolean };
+/** A pool: its name, its members in the order they were added, the total of their shares (two decimals),
+ *  whether that total is exactly 100.00 and its place in the order the sheet's pools were added (0 for the first). */
+export type Pool = { name: string; members: PoolMember[]; totalShare: string; balanced: boolean; added: number };
 
 export function poolsKey(sheetId: string) {
   return ['sheet', sheetId, 'pools'];

@@ -173,6 +173,11 @@ public class PoolRepository {
      *  shows no cuts). */
     public List<Pool> list(String sheetId) {
         Map<String, List<PoolMember>> members = new LinkedHashMap<>();
+        Map<String, Integer> added = new HashMap<>();
+        for (String name : jdbc.queryForList("SELECT name FROM pool WHERE sheet_id = ? ORDER BY added", String.class,
+                sheetId)) {
+            added.put(name, added.size());
+        }
         for (String name : jdbc.queryForList("SELECT name FROM pool WHERE sheet_id = ? ORDER BY name", String.class,
                 sheetId)) {
             members.put(name, new ArrayList<>());
@@ -205,7 +210,7 @@ public class PoolRepository {
         Map<String, Pool> done = new HashMap<>();
         List<Pool> pools = new ArrayList<>();
         for (String name : members.keySet()) {
-            pools.add(resolve(name, members, parents, sheetPot, held, done));
+            pools.add(resolve(name, members, parents, sheetPot, held, done).withAdded(added.get(name)));
         }
         return pools;
     }
@@ -231,7 +236,7 @@ public class PoolRepository {
         boolean balanced = total.compareTo(HUNDRED) == 0;
         boolean allRetired = of.stream().filter(PoolMember::current).allMatch(PoolMember::retired);
         Pool pool = new Pool(name, balanced && pot != null && !allRetired ? cut(of, pot, held) : of,
-                total.toPlainString(), balanced);
+                total.toPlainString(), balanced, 0);
         done.put(name, pool);
         return pool;
     }
