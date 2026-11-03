@@ -9,7 +9,7 @@ import { useSettings } from '../settings/useSettings';
 import { fiscalYearOf, periodsKey, usePeriods, type Period } from './usePeriods';
 
 /** The sheet's periods: a form that adds one (a name unique on the sheet, a from- and to-date,
- *  inclusive, overlapping no other period), and each period with its due-total: the figures of the
+ *  inclusive, overlapping no other period, and an optional cap on each person's open claims in it), and each period with its due-total: the figures of the
  *  claims that count whose due-by falls in it (a settled claim's frozen due, else the figure its last
  *  statement bound it to, else its live due, with its late charge while overdue), skipping those with none — fixed once it is closed —
  *  and whether it is closed (soft for a soft-closed one), with buttons that close and soft-close it. */
@@ -21,15 +21,17 @@ function Periods({ sheetId }: { sheetId: string }) {
   const [name, setName] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [cap, setCap] = useState('');
 
   const submitOnce = useSingleFlight();
   const save = useMutation({
-    mutationFn: (f: { name: string; from: string; to: string }) =>
+    mutationFn: (f: { name: string; from: string; to: string; cap: string }) =>
       postJson<Period>(`/api/sheets/${encodeURIComponent(sheetId)}/periods`, f),
     onSuccess: async () => {
       setName('');
       setFrom('');
       setTo('');
+      setCap('');
       await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
     },
   });
@@ -47,7 +49,7 @@ function Periods({ sheetId }: { sheetId: string }) {
           e.preventDefault();
           submitOnce(() => {
             save.reset();
-            return save.mutateAsync({ name, from, to });
+            return save.mutateAsync({ name, from, to, cap });
           });
         }}
       >
@@ -60,6 +62,9 @@ function Periods({ sheetId }: { sheetId: string }) {
         </label>{' '}
         <label>
           To <input type="text" placeholder="yyyy-mm-dd" data-testid="period-form-to" value={to} onChange={field(setTo)} />
+        </label>{' '}
+        <label>
+          Cap <input data-testid="period-form-cap" value={cap} onChange={field(setCap)} />
         </label>{' '}
         <button type="submit" data-testid="period-form-submit" disabled={save.isPending}>
           Add period
@@ -76,6 +81,7 @@ function Periods({ sheetId }: { sheetId: string }) {
             <th>Due</th>
             <th>Closed</th>
             <th>Fiscal year</th>
+            <th>Cap</th>
             <th />
           </tr>
         </thead>
@@ -225,6 +231,7 @@ function PeriodRow({ sheetId, period: p, dueTotal, fiscalYear }: { sheetId: stri
       <td data-testid="period-due-total">{dueTotal}</td>
       <td data-testid="period-closed">{p.closed ? 'yes' : p.softClosed ? 'soft' : 'no'}</td>
       <td data-testid="period-fy">{fiscalYear}</td>
+      <td data-testid="period-cap">{p.cap ?? ''}</td>
       <td>
         <button
           type="button"

@@ -20,9 +20,9 @@ public class PeriodRepository {
             rs.getDate("from_date").toLocalDate().toString(), rs.getDate("to_date").toLocalDate().toString(),
             rs.getBoolean("closed"), rs.getBigDecimal("closed_total") == null ? null
                     : rs.getBigDecimal("closed_total").setScale(2).toPlainString(), Map.of(),
-            rs.getBoolean("soft_closed"));
+            rs.getBoolean("soft_closed"), (Integer) rs.getObject("claim_cap", Integer.class));
 
-    private static final String COLUMNS = "id, name, from_date, to_date, closed, closed_total, soft_closed";
+    private static final String COLUMNS = "id, name, from_date, to_date, closed, closed_total, soft_closed, claim_cap";
 
     private final JdbcTemplate jdbc;
 
@@ -53,7 +53,7 @@ public class PeriodRepository {
                             .put(Long.toString(rs.getLong("person_id")), rs.getBigDecimal("total").setScale(2).toPlainString());
                 }, sheetId);
         return periods.stream().map(p -> new Period(p.id(), p.name(), p.from(), p.to(), p.closed(), p.closedTotal(),
-                totals.getOrDefault(p.id(), Map.of()), p.softClosed())).toList();
+                totals.getOrDefault(p.id(), Map.of()), p.softClosed(), p.cap())).toList();
     }
 
     /** The sheet's period of this name (exactly); null when there is none. */
@@ -102,18 +102,42 @@ public class PeriodRepository {
         return n != null && n > 0;
     }
 
+    /** The sheet's period whose dates contain a date; null when none does. */
+    public Period containing(String sheetId, LocalDate on) {
+        List<Period> found = jdbc.query("SELECT " + COLUMNS + " FROM period WHERE sheet_id = ? AND from_date <= ? AND to_date >= ?",
+                ROW, sheetId, Date.valueOf(on), Date.valueOf(on));
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** How many OPEN or PENDING claims a person has whose due-by falls in a period. */
+    public int openIn(String sheetId, long personId, Period period) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND person_id = ?"
+                + " AND status IN ('OPEN', 'PENDING') AND due_by >= ? AND due_by <= ?", Integer.class, sheetId, personId,
+                Date.valueOf(LocalDate.parse(period.from())), Date.valueOf(LocalDate.parse(period.to())));
+        return n == null ? 0 : n;
+    }
+
     public Period add(String sheetId, String name, LocalDate from, LocalDate to) {
+        return add(sheetId, name, from, to, null);
+    }
+
+    public Period add(String sheetId, String name, LocalDate from, LocalDate to, Integer cap) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(c -> {
             PreparedStatement ps = c.prepareStatement(
-                    "INSERT INTO period (sheet_id, name, from_date, to_date) VALUES (?, ?, ?, ?)",
+                    "INSERT INTO period (sheet_id, name, from_date, to_date, claim_cap) VALUES (?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setString(2, name);
             ps.setDate(3, Date.valueOf(from));
             ps.setDate(4, Date.valueOf(to));
+            if (cap == null) {
+                ps.setNull(5, java.sql.Types.INTEGER);
+            } else {
+                ps.setInt(5, cap);
+            }
             return ps;
         }, keys);
-        return new Period(keys.getKey().longValue(), name, from.toString(), to.toString(), false, null, Map.of(), false);
+        return new Period(keys.getKey().longValue(), name, from.toString(), to.toString(), false, null, Map.of(), false, cap);
     }
 }

@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.util.List;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.BadRequestException;
+import net.officefloor.hq.app.period.Period;
 import net.officefloor.hq.app.period.PeriodGuard;
 import net.officefloor.hq.app.person.WatchRepository;
 import net.officefloor.hq.app.period.PeriodRepository;
@@ -144,6 +145,14 @@ final class ClaimStatusChange {
             if (limit != null && now != null && now.compareTo(limit) > 0) {
                 to = "PENDING";
                 event = "CLAIM_PENDING";
+            }
+        }
+        // A period with a cap opens no claim belonging to it (by due-by) for a person who already has that many
+        // OPEN or PENDING claims in it.
+        if (to.equals("OPEN") && found.status().equals("DRAFT")) {
+            Period in = periods.containing(id, LocalDate.parse(found.dueBy()));
+            if (in != null && in.cap() != null && periods.openIn(id, found.personId(), in) >= in.cap()) {
+                throw new BadRequestException("the person already has " + in.cap() + " open claims in the period " + in.name());
             }
         }
         if (checkOnly) {

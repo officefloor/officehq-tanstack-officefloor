@@ -64,7 +64,7 @@ public class SheetCloner {
         jdbc.update("INSERT INTO sheet_tag (sheet_id, tag) SELECT ?, tag FROM sheet_tag WHERE sheet_id = ?", to, from);
         jdbc.update("INSERT INTO claim_template (sheet_id, name, amount, note) SELECT ?, name, amount, note FROM claim_template"
                 + " WHERE sheet_id = ?", to, from);
-        jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date) SELECT ?, name, from_date, to_date FROM period"
+        jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, claim_cap) SELECT ?, name, from_date, to_date, claim_cap FROM period"
                 + " WHERE sheet_id = ? ORDER BY id", to, from);
 
         Map<Long, Long> people = new LinkedHashMap<>();

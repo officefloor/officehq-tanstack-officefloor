@@ -23,9 +23,9 @@ public class SavePeriod {
         if (repository.overlaps(id, input.from(), input.to())) {
             throw new BadRequestException("the period overlaps another period");
         }
-        Period saved = repository.add(id, input.name(), input.from(), input.to());
+        Period saved = repository.add(id, input.name(), input.from(), input.to(), input.cap());
         audit.record("PERIOD_ADDED sheet=" + id + " by=" + by + " period=" + saved.name() + " from=" + saved.from()
-                + " to=" + saved.to());
+                + " to=" + saved.to() + (saved.cap() == null ? "" : " cap=" + saved.cap()));
         period.set(saved);
     }
 }

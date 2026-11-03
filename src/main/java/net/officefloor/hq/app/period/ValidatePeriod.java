@@ -7,7 +7,7 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Bind the period form: the name is required (no spaces, as it names the period's row and audit
- *  field), the from- and to-date are yyyy-mm-dd and from is on or before to. */
+ *  field), the from- and to-date are yyyy-mm-dd and from is on or before to; the cap is blank (none) or a whole number of at least 1. */
 public class ValidatePeriod {
     public void validate(@RequestBody PeriodRequest request, Out<PeriodInput> period) throws BadRequestException {
         String name = request == null || request.name() == null ? "" : request.name().trim();
@@ -25,7 +25,15 @@ public class ValidatePeriod {
         if (from.isAfter(to)) {
             throw new BadRequestException("from-date must be on or before to-date");
         }
-        period.set(new PeriodInput(name, from, to));
+        String c = request.cap() == null ? "" : request.cap().trim();
+        Integer cap = null;
+        if (!c.isEmpty()) {
+            if (!c.matches("\\d{1,9}") || Integer.parseInt(c) < 1) {
+                throw new BadRequestException("cap must be a whole number of at least 1");
+            }
+            cap = Integer.parseInt(c);
+        }
+        period.set(new PeriodInput(name, from, to, cap));
     }
 
     private static LocalDate date(String value, String what) throws BadRequestException {
