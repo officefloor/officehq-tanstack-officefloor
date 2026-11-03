@@ -1,0 +1,101 @@
+diff --git a/src/main/frontend/features/months/months.slot.tsx b/src/main/frontend/features/months/months.slot.tsx
+new file mode 100644
+index 000000000..570417c1f
+--- /dev/null
++++ b/src/main/frontend/features/months/months.slot.tsx
+@@ -0,0 +1,48 @@
++import { SheetBody } from '../../slots/defs/sheetBody';
++import { counts, useClaims } from '../claims/useClaims';
++import { claimDueNow } from '../overdue/useOverdue';
++import { gradeOn, holdsById, usePeople } from '../people/usePeople';
++import { rateFor, sumDues, useRates } from '../rates/useRates';
++import { useSettings } from '../settings/useSettings';
++import { useSheetToday } from '../today/useSheetToday';
++
++/** Per calendar month (yyyy-mm) any claim on the sheet is dated in, its due-total: the dues of the
++ *  claims dated in it that count (as in a person's due-total) added up, skipping 'n/a'. */
++function MonthTotals({ sheetId }: { sheetId: string }) {
++  const claims = useClaims(sheetId);
++  const people = usePeople(sheetId);
++  const rates = useRates(sheetId);
++  const settings = useSettings(sheetId).data;
++  const today = useSheetToday(sheetId).data?.today;
++  const holds = holdsById(people.data, today);
++  const months = [...new Set((claims.data ?? []).map((c) => c.date.slice(0, 7)))].sort();
++  const dues = new Map<string, string[]>(months.map((m) => [m, []]));
++  for (const c of claims.data ?? []) {
++    if (!counts(c, holds, today)) continue;
++    const person = people.data?.find((p) => p.id === c.personId);
++    const grade = gradeOn(person, c.date);
++    dues.get(c.date.slice(0, 7))!.push(claimDueNow(c, claims.data, rateFor(rates.data, grade, c.date), settings, today, grade));
++  }
++  return (
++    <section data-testid="month-totals">
++      <table>
++        <thead>
++          <tr>
++            <th>Month</th>
++            <th>Due total</th>
++          </tr>
++        </thead>
++        <tbody>
++          {months.map((m) => (
++            <tr key={m}>
++              <td>{m}</td>
++              <td data-testid={`month-${m}-due-total`}>{sumDues(dues.get(m)!)}</td>
++            </tr>
++          ))}
++        </tbody>
++      </table>
++    </section>
++  );
++}
++
++export const contribution = SheetBody.fill({ order: 42, Component: ({ sheetId }) => <MonthTotals sheetId={sheetId} /> });
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 5ecad8dbe..323ca2800 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -497,13 +497,13 @@ public class ClaimRepository {
+         return keys.getKey().longValue();
+     }
+ 
+-    /** Change a DRAFT claim's amount, date, note, the number it corrects, its external reference (null: none) and
++    /** Change a DRAFT claim's amount, date (with the due-by it now has), note, the number it corrects, its external reference (null: none) and
+      *  its tags (null: none); false when the sheet has no such draft claim. */
+-    public boolean update(String sheetId, long claimId, BigDecimal amount, LocalDate date, String note, String corrects, String ref,
++    public boolean update(String sheetId, long claimId, BigDecimal amount, LocalDate date, LocalDate dueBy, String note, String corrects, String ref,
+             String tags) {
+-        boolean changed = kept(sheetId, claimId, jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ?,"
++        boolean changed = kept(sheetId, claimId, jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, due_by = ?, note = ?, corrects = ?, ref = ?,"
+                 + " tags = ? WHERE id = ? AND sheet_id = ? AND status = 'DRAFT'",
+-                amount, Date.valueOf(date), note, corrects, ref, tags, claimId, sheetId) > 0);
++                amount, Date.valueOf(date), Date.valueOf(dueBy), note, corrects, ref, tags, claimId, sheetId) > 0);
+         if (changed) used(sheetId, tags);
+         return changed;
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java b/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
+index 248cda850..f5250cd63 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
+@@ -43,8 +43,10 @@ public class SaveClaim {
+         people.claimAllowed(id, found.personId(), date);
+         input.checkCorrection(repository, id, found.personId());
+         input.checkRef(repository, id, cid);
++        // A draft's due-by follows its date: changing the date fixes the due-by afresh from the new one.
++        String dueBy = date.toString().equals(found.date()) ? found.dueBy() : repository.dueBy(id, found.personId(), date).toString();
+         Rollup.Snapshot before = rollup.take(id);
+-        if (!repository.update(id, cid, input.amount(), date, input.note(), input.corrects(), input.ref(), input.tags())) {
++        if (!repository.update(id, cid, input.amount(), date, LocalDate.parse(dueBy), input.note(), input.corrects(), input.ref(), input.tags())) {
+             throw new BadRequestException("only a DRAFT claim can be edited");
+         }
+         repository.editedBy(id, cid, by);
+@@ -52,7 +54,7 @@ public class SaveClaim {
+         long pid = found.personId();
+         Claim saved = new Claim(cid, pid, ClaimRepository.money(input.amount()), date.toString(), input.note(),
+                 found.status(), found.number(), found.due(), found.openedBy(), found.stated(), found.statedDue(), input.corrects(),
+-                found.dueBy(), found.statedNa(), found.deferredUntil(), found.deferred(), found.proofs(), found.splitFrom(), found.lateEntry(), found.reminded(), input.ref(), input.tags(), found.voidReason());
++                dueBy, found.statedNa(), found.deferredUntil(), found.deferred(), found.proofs(), found.splitFrom(), found.lateEntry(), found.reminded(), input.ref(), input.tags(), found.voidReason());
+         audit.record("CLAIM_EDITED sheet=" + id + " by=" + by + " person=" + repository.personName(id, pid)
+                 + " amount=" + saved.amount() + " date=" + saved.date() + Claim.auditNumber(saved.number()));
+         rollup.record(id, by, before);
