@@ -1,0 +1,122 @@
+diff --git a/src/main/frontend/features/export/csv.ts b/src/main/frontend/features/export/csv.ts
+new file mode 100644
+index 000000000..e7f2c2432
+--- /dev/null
++++ b/src/main/frontend/features/export/csv.ts
+@@ -0,0 +1,23 @@
++/** A query re-read now: its fresh data (as of the screen's as-of date, when one is set), else what it held. */
++export async function fresh<T>(q: { data: T | undefined; refetch: () => Promise<{ data: T | undefined }> }): Promise<T | undefined> {
++  return (await q.refetch()).data ?? q.data;
++}
++
++/** A CSV value: wrapped in double quotes (any quote inside doubled) when it holds a comma, a quote
++ *  or a line break. */
++function csvValue(v: string): string {
++  return /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
++}
++
++/** Download these lines as a CSV file of this name, each line ending with a line feed. */
++export function downloadCsv(lines: string[][], filename: string) {
++  const csv = lines.map((l) => l.map(csvValue).join(',') + '\n').join('');
++  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
++  const a = document.createElement('a');
++  a.href = url;
++  a.download = filename;
++  document.body.appendChild(a);
++  a.click();
++  a.remove();
++  setTimeout(() => URL.revokeObjectURL(url), 1000);
++}
+diff --git a/src/main/frontend/features/export/export.slot.tsx b/src/main/frontend/features/export/export.slot.tsx
+index eb5a0188e..9f9f1bbdc 100644
+--- a/src/main/frontend/features/export/export.slot.tsx
++++ b/src/main/frontend/features/export/export.slot.tsx
+@@ -8,30 +8,7 @@ import { dueTotalsOf } from '../rates/useDueTotals';
+ import { rateFor, useRates } from '../rates/useRates';
+ import { useSettings } from '../settings/useSettings';
+ import { useSheetToday } from '../today/useSheetToday';
+-
+-/** A query re-read now: its fresh data (as of the screen's as-of date, when one is set), else what it held. */
+-async function fresh<T>(q: { data: T | undefined; refetch: () => Promise<{ data: T | undefined }> }): Promise<T | undefined> {
+-  return (await q.refetch()).data ?? q.data;
+-}
+-
+-/** A CSV value: wrapped in double quotes (any quote inside doubled) when it holds a comma, a quote
+- *  or a line break. */
+-function csvValue(v: string): string {
+-  return /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+-}
+-
+-/** Download these lines as a CSV file of this name, each line ending with a line feed. */
+-function downloadCsv(lines: string[][], filename: string) {
+-  const csv = lines.map((l) => l.map(csvValue).join(',') + '\n').join('');
+-  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+-  const a = document.createElement('a');
+-  a.href = url;
+-  a.download = filename;
+-  document.body.appendChild(a);
+-  a.click();
+-  a.remove();
+-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+-}
++import { downloadCsv, fresh } from './csv';
+ 
+ /** A button that downloads the people as a CSV file: a header line, then one line per person in list
+  *  order, retired people included, with the grade in force on the sheet's today, the retired-from date
+diff --git a/src/main/frontend/features/statements/statements.slot.tsx b/src/main/frontend/features/statements/statements.slot.tsx
+index f74602b89..563585a46 100644
+--- a/src/main/frontend/features/statements/statements.slot.tsx
++++ b/src/main/frontend/features/statements/statements.slot.tsx
+@@ -2,7 +2,8 @@ import { useCallback, useState } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
+-import { claimsKey } from '../claims/useClaims';
++import { claimsKey, useClaims } from '../claims/useClaims';
++import { downloadCsv, fresh } from '../export/csv';
+ import { peopleKey, usePeople, type Person } from '../people/usePeople';
+ import { usePersonRowAction } from '../people/usePersonRowAction';
+ import { useFigure } from '../locale/useLocale';
+@@ -14,11 +15,14 @@ import { Col } from '../columns/useColumns';
+  *  steward can cancel the last one, its claims going live again. A date beside the button takes the
+  *  statement as of that date (on or before the sheet's today; blank: now); it is cleared once that statement is
+  *  taken or refused. Below, one line per statement still standing (in the order taken, oldest first), as its date and
+- *  due-total. */
++ *  due-total. A last button downloads the statement as a CSV file: a header line, then one line per claim of
++ *  theirs its last statement binds, oldest first, with the figure it was bound to ('n/a' when bound to n/a; the
++ *  claim's fixed due when bound with no figure). */
+ function PersonStatement({ sheetId, personId }: { sheetId: string; personId: number }) {
+   const fig = useFigure();
+   const people = usePeople(sheetId);
+   const queryClient = useQueryClient();
++  const claims = useClaims(sheetId);
+   const p = people.data?.find((x) => x.id === personId);
+   const [asof, setAsof] = useState('');
+ 
+@@ -54,6 +58,16 @@ function PersonStatement({ sheetId, personId }: { sheetId: string; personId: num
+   const announce = usePersonRowAction(sheetId, personId, reset);
+   const error = take.error ?? unstate.error;
+ 
++  // Re-read the claims first: another user may have stated, settled or changed them since they were loaded.
++  const exportStatement = async () => {
++    const mine = ((await fresh(claims)) ?? []).filter((c) => c.personId === personId && c.stated).reverse();
++    const lines = [['number', 'date', 'amount', 'figure', 'status']];
++    for (const c of mine) {
++      lines.push([c.number ?? '', c.date, c.amount, c.statedNa ? 'n/a' : c.statedDue ?? c.due ?? '', c.status]);
++    }
++    downloadCsv(lines, `statement-${sheetId}-${personId}.csv`);
++  };
++
+   return (
+     <>
+       <Col id="statement-count"><td data-testid="person-statement-count">{p?.statementCount ?? 0}</td></Col>
+@@ -102,6 +116,9 @@ function PersonStatement({ sheetId, personId }: { sheetId: string; personId: num
+         >
+           Cancel statement
+         </button>
++        <button type="button" data-testid="person-export-statement" onClick={() => void exportStatement()}>
++          Export statement (CSV)
++        </button>
+         {error && <span data-testid="person-error">{error.message}</span>}
+       </td>
+     </>
