@@ -6,7 +6,7 @@ import { useReader } from '../../api/readNow';
  *  given, oldest first; `version` goes up by one each time they are saved. Their statements: how many have been
  *  taken, and the last one's due-total and date (null before the first); the date they are retired
  *  from (null when not retired); their holds, oldest first, and whether they have any (their open (OPEN or PENDING)
- *  claims dated within a hold, unless bound by a statement, then count in no live total); their own terms in
+ *  claims dated within a hold, unless bound by a statement, then count in no live total); their own terms in force on the sheet's today, in
  *  days (null when they have none: their grade's, else the sheet's, apply); their contact (null when they have none); their tags (sorted, comma separated; null when none);
  *  the sheet they were transferred from (null when they were not transferred here); their past retirements,
  *  oldest first; their snapshots, one per SNAPSHOT written for them, oldest first; their statements still standing,

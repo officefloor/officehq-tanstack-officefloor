@@ -39,10 +39,18 @@ public final class NewPerson {
         if (!terms.isEmpty() && (!TERMS.matcher(terms).matches() || Integer.parseInt(terms) > 3650)) {
             throw new BadRequestException("terms must be a whole number of days from 0 to 3650");
         }
+        String termsFrom = request.termsFrom() == null ? "" : request.termsFrom().trim();
+        if (!termsFrom.isEmpty()) {
+            try {
+                termsFrom = LocalDate.parse(termsFrom).toString();
+            } catch (DateTimeParseException e) {
+                throw new BadRequestException("terms from-date must be yyyy-mm-dd");
+            }
+        }
         String contact = request.contact() == null ? "" : request.contact().trim().toLowerCase(java.util.Locale.ROOT);
         return new PersonRequest(name, grade, request.version(), from,
                 terms.isEmpty() ? "" : String.valueOf(Integer.parseInt(terms)), contact,
-                net.officefloor.hq.app.claim.Claim.tags(request.tags()));
+                net.officefloor.hq.app.claim.Claim.tags(request.tags()), termsFrom);
     }
 
     /** Refuse a validated person whose name or contact is already in use on the sheet. */
@@ -62,8 +70,13 @@ public final class NewPerson {
         Rollup.Snapshot before = rollup.take(id);
         Person added;
         try {
-            added = repository.add(id, request.name(), request.grade(),
-                    request.terms().isEmpty() ? null : Integer.valueOf(request.terms()), contact);
+            Integer terms = request.terms().isEmpty() ? null : Integer.valueOf(request.terms());
+            boolean dated = request.termsFrom() != null && !request.termsFrom().isEmpty();
+            added = repository.add(id, request.name(), request.grade(), dated ? null : terms, contact);
+            if (dated) {
+                repository.terms(id, added.id(), terms, LocalDate.parse(request.termsFrom()));
+                added = repository.find(id, added.id());
+            }
         } catch (DuplicateKeyException e) {
             throw new BadRequestException("name is already in use");
         }

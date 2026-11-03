@@ -8,7 +8,7 @@ import java.util.List;
  *  and the last one's due-total and date (both null before the first), and the date they are retired
  *  from (null when not retired; any date set means retired at once), and their holds (oldest first) and
  *  whether they have any (their open (OPEN or PENDING) claims dated within a hold, unless bound by a
- *  statement, then count in no live total), and their own terms in days (null when they have none), and their contact (null when they have none), and the sheet they were
+ *  statement, then count in no live total), and their own terms in days in force on the sheet's today (null when they have none), and their contact (null when they have none), and the sheet they were
  *  transferred from (null when they were not transferred here), and their past retirements (oldest first), and their tags (as {@link net.officefloor.hq.app.claim.Claim#tags(String)} keeps them; null when none),
  *  and their snapshots (one per SNAPSHOT line written for them, oldest first), and their statements still standing
  *  (by date, oldest first; those a merge or transfer brought over among them). */

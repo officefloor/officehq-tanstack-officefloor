@@ -22,7 +22,15 @@ public class PersonRepository {
             + " AND (g.from_date IS NULL OR g.from_date <= (SELECT s.today FROM sheet s WHERE s.id = person.sheet_id))"
             + " ORDER BY g.from_date DESC NULLS LAST LIMIT 1) AS grade";
 
-    private static final String COLUMNS = "id, name, " + GRADE_TODAY + ", version, statement_count, stated_total, statement_date, retired_from, terms, contact, origin_sheet, tags";
+    /** The person's own terms in force on the sheet's today: those with the latest from-date on or before it, else
+     *  the ones recorded from the beginning of time. */
+    private static final String TERMS_TODAY = "(CASE WHEN EXISTS (SELECT 1 FROM person_terms t WHERE t.person_id = person.id"
+            + " AND t.from_date <= (SELECT s.today FROM sheet s WHERE s.id = person.sheet_id))"
+            + " THEN (SELECT t.terms FROM person_terms t WHERE t.person_id = person.id"
+            + " AND t.from_date <= (SELECT s.today FROM sheet s WHERE s.id = person.sheet_id) ORDER BY t.from_date DESC LIMIT 1)"
+            + " ELSE person.terms END) AS terms";
+
+    private static final String COLUMNS = "id, name, " + GRADE_TODAY + ", version, statement_count, stated_total, statement_date, retired_from, " + TERMS_TODAY + ", contact, origin_sheet, tags";
 
     private static final RowMapper<Person> ROW = (rs, i) -> new Person(rs.getLong("id"), rs.getString("name"),
             rs.getString("grade"), rs.getLong("version"), rs.getLong("statement_count"), rs.getString("stated_total"),
@@ -357,6 +365,19 @@ public class PersonRepository {
     private Long position(String sheetId, long id) {
         return jdbc.queryForObject("SELECT list_position FROM person WHERE id = ? AND sheet_id = ?", Long.class, id, sheetId);
     }
+    /** A person's own terms recorded from the beginning of time (null: none). */
+    public Integer baseTerms(String sheetId, long id) {
+        return jdbc.queryForObject("SELECT terms FROM person WHERE id = ? AND sheet_id = ?", Integer.class, id, sheetId);
+    }
+
+    /** Record a person's own terms from a from-date (null terms: cleared from then), replacing those recorded
+     *  for that date and keeping the others. */
+    public void terms(String sheetId, long id, Integer terms, LocalDate from) {
+        jdbc.update("DELETE FROM person_terms WHERE sheet_id = ? AND person_id = ? AND from_date = ?",
+                sheetId, id, Date.valueOf(from));
+        jdbc.update("INSERT INTO person_terms (sheet_id, person_id, terms, from_date) VALUES (?, ?, ?, ?)",
+                sheetId, id, terms, Date.valueOf(from));
+    }
 
     /** Whether the sheet has this person. */
     public boolean exists(String sheetId, long id) {
@@ -412,6 +433,8 @@ public class PersonRepository {
         for (GradeFrom g : grades(fromSheet, id)) {
             grade(toSheet, arrived, g.grade(), g.from() == null ? null : LocalDate.parse(g.from()));
         }
+        jdbc.update("INSERT INTO person_terms (sheet_id, person_id, terms, from_date) SELECT ?, ?, terms, from_date"
+                + " FROM person_terms WHERE sheet_id = ? AND person_id = ? ORDER BY from_date", toSheet, arrived, fromSheet, id);
         jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias) SELECT ?, ?, alias FROM person_alias"
                 + " WHERE sheet_id = ? AND person_id = ? ORDER BY id", toSheet, arrived, fromSheet, id);
         return arrived;
@@ -457,6 +480,7 @@ public class PersonRepository {
         jdbc.update("DELETE FROM person_snapshot WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+        jdbc.update("DELETE FROM person_terms WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM person_alias WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM plan_claim WHERE sheet_id = ? AND plan_id IN (SELECT id FROM plan WHERE sheet_id = ? AND person_id = ?)",
                 sheetId, sheetId, id);
@@ -519,6 +543,7 @@ public class PersonRepository {
         joinStatements(sheetId, fromId, sheetId, intoId);
         jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
+        jdbc.update("DELETE FROM person_terms WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         // Plans follow the claims.
         jdbc.update("UPDATE plan SET person_id = ? WHERE sheet_id = ? AND person_id = ?", intoId, sheetId, fromId);
         jdbc.update("DELETE FROM person WHERE id = ? AND sheet_id = ?", fromId, sheetId);

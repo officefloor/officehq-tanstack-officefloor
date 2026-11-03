@@ -122,6 +122,8 @@ public class SheetCloner {
                             to, made, rs.getString("grade"), rs.getDate("from_date"));
                     history.grade(to, made, rs.getString("grade"), fromDate);
                 }, from, id);
+        jdbc.update("INSERT INTO person_terms (sheet_id, person_id, terms, from_date) SELECT ?, ?, terms, from_date"
+                + " FROM person_terms WHERE sheet_id = ? AND person_id = ? ORDER BY from_date", to, made, from, id);
         jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias) SELECT ?, ?, alias FROM person_alias"
                 + " WHERE sheet_id = ? AND person_id = ? ORDER BY id", to, made, from, id);
         jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date, held_on) SELECT ?, ?, from_date,"

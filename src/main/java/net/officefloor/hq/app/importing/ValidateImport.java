@@ -32,7 +32,7 @@ public class ValidateImport {
                     throw new BadRequestException("give name,grade,terms,contact");
                 }
                 PersonRequest person = NewPerson.check(new PersonRequest(f[0], f.length > 1 ? f[1] : "", null, "",
-                        f.length > 2 ? f[2] : "", f.length > 3 ? f[3] : "", null));
+                        f.length > 2 ? f[2] : "", f.length > 3 ? f[3] : "", null, ""));
                 if (!names.add(person.name().toLowerCase(Locale.ROOT))) {
                     throw new BadRequestException("name " + person.name() + " is given twice in the import");
                 }

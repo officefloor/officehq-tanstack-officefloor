@@ -16,8 +16,10 @@ import { Col } from '../columns/useColumns';
  *  list of everyone in list order (by position; new people go to the end) (retired people only when "show retired" is on), each
  *  with the grade in force on the sheet's today. An edit records the form's grade from its from-date
  *  (blank: the sheet's today); the first grade a person is given applies from the beginning of time.
- *  A person may have their own terms (days; blank for none), shown on their row: a claim's due-by is fixed
- *  from them when it is created, ahead of their grade's and the sheet's terms. A person may have a contact
+ *  A person may have their own terms (days; blank for none), dated by the terms from-date (blank: from the
+ *  beginning of time; a dated save keeps the others), the ones in force on the sheet's today shown on their row:
+ *  a claim's due-by is fixed when it is created from those in force on its date, ahead of their grade's and the
+ *  sheet's terms. A person may have a contact
  *  (stored trimmed and lower-cased; blank for none), shown on their row; another person's contact is refused.
  *  A person may carry tags (comma separated; trimmed, lower-cased, repeats dropped), shown sorted on their row.
  *  The editor remembers the version of the person it loaded; when someone else has saved them since,
@@ -70,17 +72,18 @@ function People({ sheetId }: { sheetId: string }) {
   const [grade, setGrade] = useState<string>('A');
   const [gradeFrom, setGradeFrom] = useState('');
   const [terms, setTerms] = useState('');
+  const [termsFrom, setTermsFrom] = useState('');
   const [contact, setContact] = useState('');
   const [tags, setTags] = useState('');
   const [version, setVersion] = useState<number | null>(null);
 
   const submitOnce = useSingleFlight();
   const save = useMutation({
-    mutationFn: (f: { id: number | null; name: string; grade: string; gradeFrom: string; terms: string; contact: string; tags: string; version: number | null }) => {
+    mutationFn: (f: { id: number | null; name: string; grade: string; gradeFrom: string; terms: string; termsFrom: string; contact: string; tags: string; version: number | null }) => {
       const base = `/api/sheets/${encodeURIComponent(sheetId)}/people`;
       return f.id === null
-        ? postJson<Person>(base, { name: f.name, grade: f.grade, terms: f.terms, contact: f.contact, tags: f.tags })
-        : postJson<Person>(`${base}/${f.id}`, { name: f.name, grade: f.grade, gradeFrom: f.gradeFrom, terms: f.terms, contact: f.contact, tags: f.tags, version: f.version });
+        ? postJson<Person>(base, { name: f.name, grade: f.grade, terms: f.terms, termsFrom: f.termsFrom, contact: f.contact, tags: f.tags })
+        : postJson<Person>(`${base}/${f.id}`, { name: f.name, grade: f.grade, gradeFrom: f.gradeFrom, terms: f.terms, termsFrom: f.termsFrom, contact: f.contact, tags: f.tags, version: f.version });
     },
     onSuccess: async () => {
       setEditing(null);
@@ -88,6 +91,8 @@ function People({ sheetId }: { sheetId: string }) {
       setGrade('A');
       setGradeFrom('');
       setTerms('');
+    setTermsFrom('');
+      setTermsFrom('');
       setContact('');
       setTags('');
       setVersion(null);
@@ -106,6 +111,9 @@ function People({ sheetId }: { sheetId: string }) {
         setGrade('A');
         setGradeFrom('');
         setTerms('');
+    setTermsFrom('');
+        setTermsFrom('');
+      setTermsFrom('');
         setContact('');
         setTags('');
         setVersion(null);
@@ -151,6 +159,7 @@ function People({ sheetId }: { sheetId: string }) {
     setGrade(p.grade);
     setGradeFrom('');
     setTerms(p.terms === null ? '' : String(p.terms));
+    setTermsFrom('');
     setContact(p.contact ?? '');
     setTags(shownTags(p.tags));
     setVersion(p.version);
@@ -163,6 +172,7 @@ function People({ sheetId }: { sheetId: string }) {
     setGrade('A');
     setGradeFrom('');
     setTerms('');
+    setTermsFrom('');
     setContact('');
     setTags('');
     setVersion(null);
@@ -176,7 +186,7 @@ function People({ sheetId }: { sheetId: string }) {
           e.preventDefault();
           submitOnce(() => {
             save.reset();
-            return save.mutateAsync({ id: editing, name, grade, gradeFrom, terms, contact, tags, version });
+            return save.mutateAsync({ id: editing, name, grade, gradeFrom, terms, termsFrom, contact, tags, version });
           });
         }}
       >
@@ -227,6 +237,18 @@ function People({ sheetId }: { sheetId: string }) {
             value={terms}
             onChange={(e) => {
               setTerms(e.target.value);
+              save.reset();
+            }}
+          />
+        </label>{' '}
+        <label>
+          from{' '}
+          <input
+            type="date"
+            data-testid="person-form-terms-from"
+            value={termsFrom}
+            onChange={(e) => {
+              setTermsFrom(e.target.value);
               save.reset();
             }}
           />

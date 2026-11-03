@@ -565,11 +565,19 @@ public class ClaimRepository {
     }
 
     /** The due-by of a claim created now for a person with a date: the terms-th business day after the date (skipping
-     *  Saturdays, Sundays and the sheet's holidays), for the person's own terms, else the terms, in force on it, of the
+     *  Saturdays, Sundays and the sheet's holidays), for the person's own terms in force on it, else the terms, in force on it, of the
      *  grade the person has on it, else the sheet's terms in force on it. */
     public LocalDate dueBy(String sheetId, long personId, LocalDate date) {
-        List<Integer> mine = jdbc.queryForList("SELECT terms FROM person WHERE sheet_id = ? AND id = ?", Integer.class,
-                sheetId, personId);
+        // the person's own terms in force on the date: the latest dated ones on or before it, else those from the beginning
+        List<Integer> mine = new java.util.ArrayList<>();
+        jdbc.query("SELECT terms FROM person_terms WHERE sheet_id = ? AND person_id = ? AND from_date <= ?"
+                + " ORDER BY from_date DESC LIMIT 1", rs -> {
+                    mine.add((Integer) rs.getObject("terms", Integer.class));
+                }, sheetId, personId, Date.valueOf(date));
+        if (mine.isEmpty()) {
+            mine.addAll(jdbc.queryForList("SELECT terms FROM person WHERE sheet_id = ? AND id = ?", Integer.class,
+                    sheetId, personId));
+        }
         if (!mine.isEmpty() && mine.get(0) != null) {
             return settings.businessDaysAfter(sheetId, date, mine.get(0));
         }
