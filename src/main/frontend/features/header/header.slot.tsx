@@ -1,9 +1,11 @@
 import { SheetBody } from '../../slots/defs/sheetBody';
+import { crewDue } from '../crews/crewDue';
+import { useCrews } from '../crews/useCrews';
 import { useClaims } from '../claims/useClaims';
 import { useOverdue } from '../overdue/useOverdue';
 import { useAliases, usePeople } from '../people/usePeople';
 import { useDueTotals } from '../rates/useDueTotals';
-import { trimmedSum } from '../rates/useRates';
+import { sumDues, trimmedSum } from '../rates/useRates';
 import { useSignedInUser } from '../session/useSession';
 import { countWithStatus, STATUSES } from '../summary/statusCounts';
 import { useFigure } from '../locale/useLocale';
@@ -12,7 +14,8 @@ import { useFigure } from '../locale/useLocale';
  *  included), how many claims have each status (as the summary counts them), and the sheet's
  *  due-total and overdue-total (as the totals show them, trimmed); and the signed-in user's own figures: the
  *  due-total and overdue-total of the person whose name or an alias is the user's name (ignoring case), blank
- *  when there is no such person. */
+ *  when there is no such person; and their crew total: the due-totals of the crews that person leads, added
+ *  up, blank when they lead none. */
 function Header({ sheetId }: { sheetId: string }) {
   const fig = useFigure();
   const people = usePeople(sheetId);
@@ -25,6 +28,9 @@ function Header({ sheetId }: { sheetId: string }) {
   const me = user.trim().toLowerCase();
   const mine = me === '' ? undefined : (people.data ?? []).find((p) => p.name.trim().toLowerCase() === me
     || (aliases.data ?? []).some((a) => a.personId === p.id && a.alias.trim().toLowerCase() === me));
+  const crews = useCrews(sheetId);
+  const led = mine === undefined ? [] : (crews.data ?? []).filter((c) => c.leadId === mine.id);
+  const myCrewDue = led.length === 0 ? '' : sumDues(led.map((c) => crewDue(c, dueTotals)));
   return (
     <header data-testid="header">
       People <strong data-testid="header-people-count">{(people.data ?? []).length}</strong>
@@ -37,7 +43,8 @@ function Header({ sheetId }: { sheetId: string }) {
       · Due total <strong data-testid="header-due-total">{fig(trimmedSum([...dueTotals.values()]))}</strong> · Overdue
       total <strong data-testid="header-overdue-total">{fig(trimmedSum(overdue.map((f) => f.total)))}</strong> · My
       due total <strong data-testid="my-due-total">{fig(mine === undefined ? '' : dueTotals.get(mine.id) ?? '')}</strong> · My
-      overdue total <strong data-testid="my-overdue-total">{fig(mine === undefined ? '' : overdueById.get(mine.id)?.total ?? '')}</strong>
+      overdue total <strong data-testid="my-overdue-total">{fig(mine === undefined ? '' : overdueById.get(mine.id)?.total ?? '')}</strong> · My
+      crew due total <strong data-testid="my-crew-due-total">{fig(myCrewDue)}</strong>
     </header>
   );
 }

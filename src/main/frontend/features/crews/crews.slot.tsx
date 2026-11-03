@@ -5,8 +5,8 @@ import { useSingleFlight } from '../../query/useSingleFlight';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { usePeople, type Person } from '../people/usePeople';
 import { useDueTotals } from '../rates/useDueTotals';
-import { sumDues } from '../rates/useRates';
 import { useFigure } from '../locale/useLocale';
+import { crewDue } from './crewDue';
 import { crewsKey, useCrews, type Crew } from './useCrews';
 
 /** One crew: its lead, its members, its due-total (the lead's and the members' due-totals added up, 'n/a'
@@ -16,9 +16,7 @@ function CrewRow({ sheetId, crew, people }: { sheetId: string; crew: Crew; peopl
   const queryClient = useQueryClient();
   const dueTotals = useDueTotals(sheetId);
   const [member, setMember] = useState('');
-  const due = sumDues([crew.leadId, ...crew.members.map((m) => m.personId)]
-    .map((id) => dueTotals.get(id))
-    .filter((d): d is string => d !== undefined));
+  const due = crewDue(crew, dueTotals);
 
   const submitOnce = useSingleFlight();
   const add = useMutation({
