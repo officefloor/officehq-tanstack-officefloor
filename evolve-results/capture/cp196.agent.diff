@@ -1,0 +1,109 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index e579799c9..930ba88e9 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -355,9 +355,9 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
+     fromTemplate.reset();
+   };
+ 
+-  // A claim's due: the one fixed when it was settled, else the greater of the floor in force on its date and its
+-  // figure (the rate figure its last statement bound it to, else its amount at the rate in force on its date for the
+-  // grade its person had on that date; 'n/a' when none applies) plus its late charge while it is overdue.
++  // A claim's due: the one fixed when it was settled, else the due its last statement bound it to, else the greater
++  // of the floor in force on its date and its figure (its amount at the rate in force on its date for the grade its
++  // person had on that date; 'n/a' when none applies) plus its late charge on that floored figure while it is overdue.
+   const person = people.data?.find((p) => p.id === personId);
+ 
+   return (
+diff --git a/src/main/frontend/features/overdue/useOverdue.ts b/src/main/frontend/features/overdue/useOverdue.ts
+index 7d37e7201..05485e80c 100644
+--- a/src/main/frontend/features/overdue/useOverdue.ts
++++ b/src/main/frontend/features/overdue/useOverdue.ts
+@@ -37,8 +37,8 @@ export function roundsHalfUp(c: Claim, claims: Claim[] | undefined, settings: Se
+ }
+ 
+ /** A claim's due now: a settled claim's frozen due; else the due as shown its last statement bound it to (late
+- *  charge and floor included: while bound, its charge no longer follows the sheet's today); else the greater of the floor (two decimals; none while
+- *  it is not loaded) and its live rate figure plus,
++ *  charge and floor included: while bound, its charge no longer follows the sheet's today); else its floored figure — the greater of the floor (two decimals; none
++ *  while it is not loaded) and its live rate figure — plus,
+  *  while it is overdue, for every full 30 days it is overdue the sheet's late percent in force on that boundary
+  *  date (the overdue-from day — the due-by plus the grade's grace — plus 30, 60, 90 ... days) of that figure plus the charges of the boundaries before it (compounding), each rounded like a due, the charges added up. A
+  *  correction (a negative amount) has no floor and no late charge, nor does a claim whose late charge a steward waived. No charge until the settings and the sheet's today are loaded. */
+@@ -54,7 +54,7 @@ export function dueNow(c: Claim, figure: string, floor: string | undefined, sett
+       pcts.push(settingOn(settings, 'late-pct', boundary) ?? '0.00');
+     }
+   }
+-  return atLeast(withCharge(figure, pcts, halfUp), floor);
++  return withCharge(atLeast(figure, floor), pcts, halfUp);
+ }
+ 
+ /** A claim's due now (see `dueNow`) from its fixed figure, else its live rate figure at this rate (a
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 9c06b9e08..010c2035b 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -255,7 +255,7 @@ public class ClaimRepository {
+      *  had on that date, falling back to the parent sheets' (see {@link #rateInForce})
+      *  (the one with the latest from-date on or before it; an undated rate applies from the beginning
+      *  of time; none applies when the claim's date is after that rate's to-date), rounded to two decimals by the claim's
+-     *  rounding (see {@link #rounding}) — the rate figure, not floored: the floor is applied last, in {@link #dueNow};
++     *  rounding (see {@link #rounding}) — the rate figure, not floored: the floor is applied before the late charge, in {@link #dueNow};
+      *  null when no rate applies. */
+     public BigDecimal due(String sheetId, Claim claim) {
+         BigDecimal pct = rateInForce(sheetId, claim.personId(), LocalDate.parse(claim.date()), added(sheetId, claim.id()));
+@@ -288,7 +288,7 @@ public class ClaimRepository {
+     }
+ 
+     /** A claim's figure now: the due fixed when it was settled, else the due as shown its last statement bound
+-     *  it to (late charge and floor included; none when it bound it to n/a), else its live rate figure (not floored);
++     *  it to (floor and late charge included; none when it bound it to n/a), else its live rate figure (not floored);
+      *  null when it has none. */
+     public BigDecimal figure(String sheetId, Claim claim) {
+         if (claim.due() != null) return new BigDecimal(claim.due());
+@@ -297,8 +297,8 @@ public class ClaimRepository {
+         return due(sheetId, claim);
+     }
+ 
+-    /** A claim's due now: a settled claim's frozen due; else the greater of the sheet's floor in force on the
+-     *  claim's date and its live rate figure plus, while it
++    /** A claim's due now: a settled claim's frozen due; else its floored figure (the greater of the sheet's floor in
++     *  force on the claim's date and its live rate figure) plus, while it
+      *  is overdue (OPEN or PENDING and its due-by — fixed when it was created — plus its grade's grace days before the
+      *  sheet's today), for every full 30 days it is overdue, the sheet's late percent in force on that boundary date (the
+      *  due-by plus the grace plus 30, 60,
+@@ -312,8 +312,8 @@ public class ClaimRepository {
+         if (claim.bound() && (claim.statedNa() || claim.statedDue() != null)) return figure(sheetId, claim);
+         BigDecimal figure = figure(sheetId, claim);
+         if (figure == null || new BigDecimal(claim.amount()).signum() < 0) return figure;
+-        BigDecimal due = figure.add(lateCharge(sheetId, claim, figure));
+-        return due.max(settings.floor(sheetId, LocalDate.parse(claim.date())));
++        BigDecimal floored = figure.max(settings.floor(sheetId, LocalDate.parse(claim.date())));
++        return floored.add(lateCharge(sheetId, claim, floored));
+     }
+ 
+     /** The day a claim's overdue days are counted from: its due-by plus the grace days, in force on the claim's date,
+diff --git a/src/main/java/net/officefloor/hq/app/history/SheetAsOf.java b/src/main/java/net/officefloor/hq/app/history/SheetAsOf.java
+index 862911644..8be912a53 100644
+--- a/src/main/java/net/officefloor/hq/app/history/SheetAsOf.java
++++ b/src/main/java/net/officefloor/hq/app/history/SheetAsOf.java
+@@ -161,15 +161,15 @@ public record SheetAsOf(LocalDate day, Map<Long, Claim> claims, Map<Long, TreeMa
+         return due(claim);
+     }
+ 
+-    /** A claim's due then: its settled due, else the due a statement bound it to (as shown then), else its figure plus its late charges on the day, at least the
+-     *  floor (a correction has neither); null when it had no figure. */
++    /** A claim's due then: its settled due, else the due a statement bound it to (as shown then), else its figure raised to at least the floor plus its late
++     *  charges on the day on that floored figure (a correction has neither); null when it had no figure. */
+     public BigDecimal dueNow(Claim claim) {
+         if (claim.due() != null) return new BigDecimal(claim.due());
+         if (claim.bound() && (claim.statedNa() || claim.statedDue() != null)) return figure(claim);
+         BigDecimal figure = figure(claim);
+         if (figure == null || new BigDecimal(claim.amount()).signum() < 0) return figure;
+-        BigDecimal due = figure.add(lateCharge(claim, figure));
+-        return due.max(floor(LocalDate.parse(claim.date())));
++        BigDecimal floored = figure.max(floor(LocalDate.parse(claim.date())));
++        return floored.add(lateCharge(claim, floored));
+     }
+ 
+     /** The day a claim's overdue days counted from then: its due-by plus the grace days, then in force on its date,
