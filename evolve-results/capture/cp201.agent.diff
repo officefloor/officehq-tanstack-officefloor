@@ -1,0 +1,79 @@
+diff --git a/src/main/frontend/features/consolidated/consolidated.slot.tsx b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+index 2b6812b4c..a0497b426 100644
+--- a/src/main/frontend/features/consolidated/consolidated.slot.tsx
++++ b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+@@ -3,15 +3,18 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { useOverdue } from '../overdue/useOverdue';
+-import { peopleKey, type Person } from '../people/usePeople';
++import { useClaims } from '../claims/useClaims';
++import { GRADES, peopleKey, type Person, usePeople } from '../people/usePeople';
+ import { useDueTotals } from '../rates/useDueTotals';
+-import { hundredths, money, trimmedSum } from '../rates/useRates';
++import { hundredths, money, sumDues, trimmedSum } from '../rates/useRates';
++import { countWithStatus, STATUSES } from '../summary/statusCounts';
+ import { useFigure } from '../locale/useLocale';
+ 
+ /** One sheet's figures, as its header shows them: its people (retired included), and its due-total and
+- *  overdue-total. While the screen shows a date, each sheet is read as it stood at the end of that day, with that
++ *  overdue-total; and, as its summary shows them, per grade the due-totals of the people on it (retired left
++ *  out) added up, and per status how many claims have it. While the screen shows a date, each sheet is read as it stood at the end of that day, with that
+  *  date as its today. */
+-type Figures = { people: number; due: string; overdue: string };
++type Figures = { people: number; due: string; overdue: string; grades: string; statuses: string };
+ 
+ /** The sheet's descendants (the sheets naming it as their parent, theirs, and so on), re-read from the store.
+  *  Their own cached reads are dropped first, so each is re-read from the store too. */
+@@ -41,12 +44,23 @@ function SheetFigures({ sheetId, onFigures }: { sheetId: string; onFigures: (id:
+   const people = usePeopleCount(sheetId).data ?? 0;
+   const due = trimmedSum([...useDueTotals(sheetId).values()]);
+   const overdue = trimmedSum([...useOverdue(sheetId).values()].map((f) => f.total));
+-  useEffect(() => onFigures(sheetId, { people, due, overdue }), [sheetId, people, due, overdue, onFigures]);
++  const dueTotals = useDueTotals(sheetId);
++  const current = (usePeople(sheetId).data ?? []).filter((p) => !p.retiredFrom);
++  const claims = useClaims(sheetId).data;
++  // Joined into strings so the effect below only fires when a figure changes.
++  const grades = GRADES.map((g) =>
++    sumDues(current.filter((p) => p.grade === g).map((p) => dueTotals.get(p.id) ?? 'n/a'))).join(',');
++  const statuses = STATUSES.map((s) => countWithStatus(claims, s)).join(',');
++  useEffect(
++    () => onFigures(sheetId, { people, due, overdue, grades, statuses }),
++    [sheetId, people, due, overdue, grades, statuses, onFigures],
++  );
+   return null;
+ }
+ 
+ /** The consolidated figures over the sheet and all its descendants: the number of people, and each sheet's
+- *  due-total and overdue-total (as that sheet shows them) added up, all as of the screen's as-of date when one is
++ *  due-total and overdue-total (as that sheet shows them) added up, per grade the due-totals of the people on
++ *  it added up, and per status the count of claims, all as of the screen's as-of date when one is
+  *  set. A sheet with no children shows its own. */
+ function Consolidated({ sheetId }: { sheetId: string }) {
+   const fig = useFigure();
+@@ -56,6 +70,8 @@ function Consolidated({ sheetId }: { sheetId: string }) {
+   const sheets = [sheetId, ...(descendants.data ?? [])];
+   const shown = sheets.map((id) => figures[id]).filter((f): f is Figures => f !== undefined);
+   const sum = (pick: (f: Figures) => string) => money(shown.reduce((s, f) => s + hundredths(pick(f)), 0n));
++  const gradeDue = (i: number) => sum((f) => f.grades.split(',')[i]);
++  const statusCount = (i: number) => shown.reduce((n, f) => n + Number(f.statuses.split(',')[i]), 0);
+   return (
+     <p data-testid="consolidated">
+       {sheets.map((id) => (
+@@ -64,6 +80,16 @@ function Consolidated({ sheetId }: { sheetId: string }) {
+       Consolidated: people <strong data-testid="consolidated-people-count">{shown.reduce((n, f) => n + f.people, 0)}</strong>
+       {' '}· due total <strong data-testid="consolidated-due-total">{fig(sum((f) => f.due))}</strong>
+       {' '}· overdue total <strong data-testid="consolidated-overdue-total">{fig(sum((f) => f.overdue))}</strong>
++      {GRADES.map((g, i) => (
++        <span key={g}>
++          {' '}· grade {g} due total <strong data-testid={`consolidated-grade-${g}-due-total`}>{fig(gradeDue(i))}</strong>
++        </span>
++      ))}
++      {STATUSES.map((s, i) => (
++        <span key={s}>
++          {' '}· {s} <strong data-testid={`consolidated-status-${s}-count`}>{statusCount(i)}</strong>
++        </span>
++      ))}
+     </p>
+   );
+ }
