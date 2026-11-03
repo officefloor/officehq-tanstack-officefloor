@@ -1,0 +1,552 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 907d94dd0..b266af7dd 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -65,6 +65,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
+   const [ref, setRef] = useState('');
+   const [tags, setTags] = useState('');
+   const [reasons, setReasons] = useState<Record<number, string>>({});
++  const [voidReasons, setVoidReasons] = useState<Record<number, string>>({});
+   const [targets, setTargets] = useState<Record<number, string>>({});
+   const [deferDates, setDeferDates] = useState<Record<number, string>>({});
+   const [splitAmounts, setSplitAmounts] = useState<Record<number, string>>({});
+@@ -136,6 +137,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
+       postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${a.id}/${a.action}`, { reason: a.reason, until: a.until, amount: a.amount, date: a.date }),
+     onSuccess: (_, a) => {
+       if (a.action === 'reject') setReasons((r) => ({ ...r, [a.id]: '' }));
++      if (a.action === 'void') setVoidReasons((r) => ({ ...r, [a.id]: '' }));
+       if (a.action === 'defer') setDeferDates((d) => ({ ...d, [a.id]: '' }));
+       if (a.action === 'split') setSplitAmounts((m) => ({ ...m, [a.id]: '' }));
+       if (a.action === 'redate') setNewDates((d) => ({ ...d, [a.id]: '' }));
+@@ -202,7 +204,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
+     action.mutate({
+       id,
+       action: a,
+-      reason: a === 'reject' ? reasons[id] ?? '' : '',
++      reason: a === 'reject' ? reasons[id] ?? '' : a === 'void' ? voidReasons[id] ?? '' : '',
+       until: a === 'defer' ? (deferDates[id] ?? '').trim() : '',
+       amount: a === 'split' ? (splitAmounts[id] ?? '').trim() : '',
+       date: a === 'redate' ? (newDates[id] ?? '').trim() : '',
+@@ -382,6 +384,24 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
+                       setReasons((r) => ({ ...r, [c.id]: v }));
+                     }}
+                   />{' '}
++                  {(settings?.voidReasons ?? []).length > 0 && (
++                    <select
++                      data-testid="claim-void-reason"
++                      value={voidReasons[c.id] ?? ''}
++                      onChange={(e) => {
++                        const v = e.target.value;
++                        setVoidReasons((r) => ({ ...r, [c.id]: v }));
++                        if (action.variables?.id === c.id) action.reset();
++                      }}
++                    >
++                      <option value="">void reason</option>
++                      {(settings?.voidReasons ?? []).map((r) => (
++                        <option key={r} value={r}>
++                          {r}
++                        </option>
++                      ))}
++                    </select>
++                  )}{' '}
+                   {ACTIONS.map(([a, label]) => (
+                     <button
+                       key={a}
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index ff13f97d0..492dba1f3 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -21,7 +21,8 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
+  *  and, for a claim split off another, the number of the claim it was split from (null otherwise), and the user
+  *  whose open editor locks it for everyone else (null when it is not locked), and the last day (the sheet's today
+  *  then) a reminder was written for it (null when never reminded), and its tags (lower-case, sorted and comma separated
+- *  with no spaces; null when none). */
++ *  with no spaces; null when none), and the reason it was voided with (one of the sheet's void reasons; null when none
++ *  was given). */
+ export type Claim = {
+   id: number;
+   personId: number;
+@@ -44,6 +45,7 @@ export type Claim = {
+   reminded: string | null;
+   ref: string | null;
+   tags: string | null;
++  voidReason: string | null;
+   log: string[];
+   lockedBy: string | null;
+ };
+diff --git a/src/main/frontend/features/settings/settings.slot.tsx b/src/main/frontend/features/settings/settings.slot.tsx
+index 3422893d8..d1f989694 100644
+--- a/src/main/frontend/features/settings/settings.slot.tsx
++++ b/src/main/frontend/features/settings/settings.slot.tsx
+@@ -78,6 +78,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
+   const [delegateTo, setDelegateTo] = useState('');
+ 
+   const [holidayDate, setHolidayDate] = useState('');
++  const [voidReason, setVoidReason] = useState('');
+ 
+   const saveOnce = useSingleFlight();
+   const save = useMutation({
+@@ -136,6 +137,16 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
+     },
+   });
+ 
++  const voidReasonOnce = useSingleFlight();
++  const addVoidReason = useMutation({
++    mutationFn: (f: { reason: string }) =>
++      postJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/void-reasons`, f),
++    onSuccess: (saved) => {
++      setVoidReason('');
++      queryClient.setQueryData(settingsKey(sheetId), saved);
++    },
++  });
++
+   return (
+     <section data-testid="settings">
+       <form
+@@ -522,6 +533,39 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
+           </li>
+         ))}
+       </ul>
++      <form
++        data-testid="void-reason-form"
++        onSubmit={(e) => {
++          e.preventDefault();
++          voidReasonOnce(() => {
++            addVoidReason.reset();
++            return addVoidReason.mutateAsync({ reason: voidReason });
++          });
++        }}
++      >
++        <label>
++          Void reason{' '}
++          <input
++            data-testid="void-reason-text"
++            value={voidReason}
++            onChange={(e) => {
++              setVoidReason(e.target.value);
++              addVoidReason.reset();
++            }}
++          />
++        </label>{' '}
++        <button type="submit" data-testid="void-reason-add" disabled={addVoidReason.isPending}>
++          Add void reason
++        </button>
++        {addVoidReason.isError && <p data-testid="void-reason-error">{addVoidReason.error.message}</p>}
++      </form>
++      <ul data-testid="void-reasons-list">
++        {(settings.data?.voidReasons ?? []).map((r) => (
++          <li key={r} data-testid={`void-reason-row-${r}`}>
++            {r}
++          </li>
++        ))}
++      </ul>
+       {settings.isError && <p data-testid="settings-load-error">{settings.error.message}</p>}
+     </section>
+   );
+diff --git a/src/main/frontend/features/settings/useSettings.ts b/src/main/frontend/features/settings/useSettings.ts
+index 1b6ac99d0..55b8ac2fc 100644
+--- a/src/main/frontend/features/settings/useSettings.ts
++++ b/src/main/frontend/features/settings/useSettings.ts
+@@ -23,11 +23,12 @@ export type Role = { user: string; role: string };
+  *  made on the sheet, oldest first. `entryDate` is the entry date (yyyy-mm-dd; null when blank: off; not dated): while
+  *  set, it is the default date of a new claim instead of the sheet's today. `holidays` is the sheet's holidays
+  *  (yyyy-mm-dd), earliest first: a claim's due-by, fixed when it is created, that falls on one is moved to the next
+- *  day that is not one. */
++ *  day that is not one. `voidReasons` is the sheet's void reasons, in the order they were added: while there is one,
++ *  voiding a claim needs one of them. */
+ export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; roles: Role[]; policyDate: string | null; periodNumberingFrom: string | null;
+   gradeTerms: Record<string, number>; cap: string | null; dated: Record<string, DatedValue[]>;
+   permissions: Record<string, string>; graceDays: number | null; delegations: Delegation[];
+-  entryDate: string | null; holidays: string[] };
++  entryDate: string | null; holidays: string[]; voidReasons: string[] };
+ 
+ /** A steward's (`by`) delegation of the steward role to a user, from a date to a date (yyyy-mm-dd, inclusive):
+  *  while the sheet's today is inside it the user acts as a steward. */
+diff --git a/src/main/frontend/features/summary/summary.slot.tsx b/src/main/frontend/features/summary/summary.slot.tsx
+index 4677abf84..e311a3ae2 100644
+--- a/src/main/frontend/features/summary/summary.slot.tsx
++++ b/src/main/frontend/features/summary/summary.slot.tsx
+@@ -4,13 +4,15 @@ import { useClaims } from '../claims/useClaims';
+ import { GRADES, usePeople } from '../people/usePeople';
+ import { usePeriodDueTotals } from '../periods/usePeriodDueTotals';
+ import { usePeriods } from '../periods/usePeriods';
++import { useSettings } from '../settings/useSettings';
+ import { useDueTotals } from '../rates/useDueTotals';
+ import { sumDues } from '../rates/useRates';
+ import { countWithStatus, STATUSES } from './statusCounts';
+ 
+ /** The sheet's summary, worked out from the same figures the lists show: per grade, how many people
+  *  have it on the sheet's today (retired people left out) and their due-totals added up (skipping
+- *  'n/a') and how many of them are active; per period, its due-total; per status, how many claims have it. */
++ *  'n/a') and how many of them are active; per period, its due-total; per status, how many claims have it; per void reason on the
++ *  sheet's list, how many VOID claims were voided with it. */
+ function Summary({ sheetId }: { sheetId: string }) {
+   const people = usePeople(sheetId);
+   const claims = useClaims(sheetId);
+@@ -18,6 +20,7 @@ function Summary({ sheetId }: { sheetId: string }) {
+   const dueTotals = useDueTotals(sheetId);
+   const periodTotals = usePeriodDueTotals(sheetId);
+   const activeById = useActive(sheetId);
++  const voidReasons = useSettings(sheetId).data?.voidReasons ?? [];
+   const current = (people.data ?? []).filter((p) => !p.retiredFrom);
+   return (
+     <section data-testid="summary">
+@@ -82,6 +85,24 @@ function Summary({ sheetId }: { sheetId: string }) {
+           ))}
+         </tbody>
+       </table>
++      <table>
++        <thead>
++          <tr>
++            <th>Void reason</th>
++            <th>Claims</th>
++          </tr>
++        </thead>
++        <tbody>
++          {voidReasons.map((r) => (
++            <tr key={r}>
++              <td>{r}</td>
++              <td data-testid={`summary-void-${r}-count`}>
++                {(claims.data ?? []).filter((c) => c.status === 'VOID' && c.voidReason === r).length}
++              </td>
++            </tr>
++          ))}
++        </tbody>
++      </table>
+     </section>
+   );
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index a7281f231..21b467055 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -17,11 +17,11 @@ import net.officefloor.hq.app.person.Hold;
+  *  split off another, the number of the claim it was split from (null otherwise), and whether it was a late entry
+  *  (added while the period its due-by falls in was soft-closed), and the last day (the sheet's today then) a reminder
+  *  was written for it (null when never reminded), and its external reference (null when none), and its tags (lower-case, sorted and
+- *  comma separated, with no spaces; null when none). */
++ *  comma separated, with no spaces; null when none), and the reason it was voided with (one of its sheet's void reasons; null when none was given). */
+ public record Claim(long id, long personId, String amount, String date, String note, String status,
+         String number, String due, String openedBy, boolean stated, String statedDue, String corrects,
+         String dueBy, boolean statedNa, String deferredUntil, boolean deferred, int proofs, String splitFrom,
+-        boolean lateEntry, String reminded, String ref, String tags) {
++        boolean lateEntry, String reminded, String ref, String tags, String voidReason) {
+ 
+     /** Whether the claim is open: OPEN, or PENDING (handled like OPEN everywhere but its statement binding). */
+     public boolean open() {
+@@ -48,7 +48,7 @@ public record Claim(long id, long personId, String amount, String date, String n
+         if (statusThen == null) return false;
+         boolean deferredNow = statusThen.equals("OPEN") && deferredUntil != null && today != null && today.compareTo(deferredUntil) < 0;
+         Claim then = new Claim(id, personId, amount, date, note, statusThen, number, due, openedBy, stated, statedDue,
+-                corrects, dueBy, statedNa, deferredUntil, deferredNow, proofs, splitFrom, lateEntry, reminded, ref, tags);
++                corrects, dueBy, statedNa, deferredUntil, deferredNow, proofs, splitFrom, lateEntry, reminded, ref, tags, voidReason);
+         return then.counts(open() ? holds : List.of());
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 2f5decbd4..85fc5acb0 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -20,7 +20,7 @@ import org.springframework.stereotype.Repository;
+ @Repository
+ public class ClaimRepository {
+ 
+-    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no, settled_due, opened_by, stated, stated_due, corrects, due_by, stated_na, deferred_until, proofs, split_from, late_entry, reminded, ref, tags,"
++    private static final String COLUMNS = "id, person_id, amount, claim_date, note, status, claim_no, settled_due, opened_by, stated, stated_due, corrects, due_by, stated_na, deferred_until, proofs, split_from, late_entry, reminded, ref, tags, void_reason,"
+             + " (status = 'OPEN' AND deferred_until IS NOT NULL AND deferred_until > (SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id)) AS deferred";
+ 
+     private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getLong("person_id"),
+@@ -34,7 +34,7 @@ public class ClaimRepository {
+             rs.getBoolean("deferred"), rs.getInt("proofs"), rs.getString("split_from"),
+             rs.getBoolean("late_entry"),
+             rs.getDate("reminded") == null ? null : rs.getDate("reminded").toLocalDate().toString(),
+-            rs.getString("ref"), rs.getString("tags"));
++            rs.getString("ref"), rs.getString("tags"), rs.getString("void_reason"));
+ 
+     /** The grade a person (sheet, person id) has on a date: the one with the latest from-date on
+      *  or before it, the first one they were given applying from the beginning of time. */
+@@ -91,6 +91,11 @@ public class ClaimRepository {
+                 args.toArray()) > 0);
+     }
+ 
++    /** Record the reason a claim was voided with. */
++    public void voidReason(String sheetId, long claimId, String reason) {
++        kept(sheetId, claimId, jdbc.update("UPDATE claim SET void_reason = ? WHERE id = ? AND sheet_id = ?", reason, claimId, sheetId) > 0);
++    }
++
+     /** Give an opened claim the sheet's next number. The sheet's row stays locked until the
+      *  transaction commits, so two claims opened at once get consecutive numbers. */
+     public String number(String sheetId, long claimId) {
+@@ -383,7 +388,7 @@ public class ClaimRepository {
+         kept(sheetId, keys.getKey().longValue(), true);
+         used(sheetId, tags);
+         return new Claim(keys.getKey().longValue(), personId, money(amount), date.toString(), note, "DRAFT", null, null, null, false, null, corrects,
+-                dueBy.toString(), false, null, false, 0, null, late, null, ref, tags);
++                dueBy.toString(), false, null, false, 0, null, late, null, ref, tags, null);
+     }
+ 
+     /** Whether a claim added now with a due-by is a late entry: the due-by falls in a soft-closed period of the sheet. */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+index 324029170..302b0ba15 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+@@ -86,6 +86,20 @@ final class ClaimStatusChange {
+         if (event.equals("CLAIM_REJECTED") && why.isEmpty()) {
+             throw new BadRequestException("give a reason to reject the claim");
+         }
++        // While the sheet has void reasons, a void needs one chosen from them; with none, a void takes no reason.
++        String voidReason = null;
++        if (to.equals("VOID")) {
++            List<String> reasons = settings.voidReasons(id);
++            if (!reasons.isEmpty()) {
++                if (why.isEmpty()) {
++                    throw new BadRequestException("choose a reason to void the claim");
++                }
++                if (!reasons.contains(why)) {
++                    throw new BadRequestException(why + " is not one of the sheet's void reasons");
++                }
++                voidReason = why;
++            }
++        }
+         // A claim whose due is above the note threshold in force on its date cannot be opened with an empty
+         // note ('n/a' is above none).
+         if (to.equals("OPEN") && found.status().equals("DRAFT") && (found.note() == null || found.note().trim().isEmpty())) {
+@@ -119,6 +133,9 @@ final class ClaimStatusChange {
+         if (!repository.changeStatus(id, cid, from, to)) {
+             throw new BadRequestException("a " + found.status() + " claim cannot be moved to " + to);
+         }
++        if (voidReason != null) {
++            repository.voidReason(id, cid, voidReason);
++        }
+         // Opening gives the sheet's next number; a rejected claim keeps its own; a voided claim keeps the number it had (never reused).
+         String number = found.number();
+         String openedBy = found.openedBy();
+@@ -136,6 +153,9 @@ final class ClaimStatusChange {
+         if (reversing) {
+             tail = " reversed=" + (found.due() == null ? "n/a" : found.due());
+         }
++        if (voidReason != null) {
++            tail += " reason=" + voidReason;
++        }
+         if (to.equals("SETTLED")) {
+             BigDecimal now = repository.dueNow(id, found);
+             repository.settleDue(id, cid, now);
+@@ -145,7 +165,8 @@ final class ClaimStatusChange {
+         repository.log(id, cid, by);
+         Claim changed = new Claim(found.id(), found.personId(), found.amount(), found.date(), found.note(), to,
+                 number, due, openedBy, found.stated(), found.statedDue(), found.corrects(), found.dueBy(),
+-                found.statedNa(), found.deferredUntil(), found.deferred(), found.proofs(), found.splitFrom(), found.lateEntry(), found.reminded(), found.ref(), found.tags());
++                found.statedNa(), found.deferredUntil(), found.deferred(), found.proofs(), found.splitFrom(), found.lateEntry(), found.reminded(), found.ref(), found.tags(),
++                voidReason != null ? voidReason : found.voidReason());
+         audit.record(event + " sheet=" + id + " by=" + by + " person=" + repository.personName(id, found.personId())
+                 + " amount=" + changed.amount() + " date=" + changed.date() + Claim.auditNumber(number) + tail);
+         // A settled (or approved) claim's watchers are told, after the claim's own line and before the rollup.
+@@ -172,7 +193,7 @@ final class ClaimStatusChange {
+         }
+         PeriodGuard.open(periods, id, LocalDate.parse(found.dueBy()));
+         Claim live = new Claim(found.id(), found.personId(), found.amount(), found.date(), found.note(), "OPEN",
+-                found.number(), null, found.openedBy(), false, null, found.corrects(), found.dueBy(), false, null, false, found.proofs(), found.splitFrom(), found.lateEntry(), found.reminded(), found.ref(), found.tags());
++                found.number(), null, found.openedBy(), false, null, found.corrects(), found.dueBy(), false, null, false, found.proofs(), found.splitFrom(), found.lateEntry(), found.reminded(), found.ref(), found.tags(), found.voidReason());
+         BigDecimal now = repository.dueNow(id, live);
+         Rollup.Snapshot before = rollup.take(id);
+         repository.settleDue(id, cid, now);
+@@ -181,7 +202,7 @@ final class ClaimStatusChange {
+         String due = ClaimRepository.dueOf(now);
+         Claim changed = new Claim(found.id(), found.personId(), found.amount(), found.date(), found.note(),
+                 found.status(), found.number(), due, found.openedBy(), found.stated(), found.statedDue(),
+-                found.corrects(), found.dueBy(), found.statedNa(), found.deferredUntil(), found.deferred(), found.proofs(), found.splitFrom(), found.lateEntry(), found.reminded(), found.ref(), found.tags());
++                found.corrects(), found.dueBy(), found.statedNa(), found.deferredUntil(), found.deferred(), found.proofs(), found.splitFrom(), found.lateEntry(), found.reminded(), found.ref(), found.tags(), found.voidReason());
+         audit.record("CLAIM_RESETTLED sheet=" + id + " by=" + by + " person=" + repository.personName(id, found.personId())
+                 + " amount=" + changed.amount() + " date=" + changed.date() + Claim.auditNumber(found.number())
+                 + " old=" + old + " new=" + (due == null ? "n/a" : due));
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ReassignClaim.java b/src/main/java/net/officefloor/hq/app/claim/ReassignClaim.java
+index 0f02b12d6..2d451028c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ReassignClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ReassignClaim.java
+@@ -55,7 +55,7 @@ public class ReassignClaim {
+         }
+         Claim moved = new Claim(found.id(), to, found.amount(), found.date(), found.note(), found.status(),
+                 found.number(), found.due(), found.openedBy(), false, null, found.corrects(), found.dueBy(), false,
+-                found.deferredUntil(), found.deferred(), found.proofs(), found.splitFrom(), found.lateEntry(), found.reminded(), found.ref(), found.tags());
++                found.deferredUntil(), found.deferred(), found.proofs(), found.splitFrom(), found.lateEntry(), found.reminded(), found.ref(), found.tags(), found.voidReason());
+         audit.record("CLAIM_REASSIGNED sheet=" + id + " by=" + by + " person=" + toName + " amount=" + moved.amount()
+                 + " date=" + moved.date() + Claim.auditNumber(moved.number()) + " from=" + fromName + " to=" + toName);
+         rollup.record(id, by, before);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java b/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
+index f9b0a5ccf..dc862b996 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
+@@ -51,7 +51,7 @@ public class SaveClaim {
+         long pid = found.personId();
+         Claim saved = new Claim(cid, pid, ClaimRepository.money(input.amount()), date.toString(), input.note(),
+                 found.status(), found.number(), found.due(), found.openedBy(), found.stated(), found.statedDue(), input.corrects(),
+-                found.dueBy(), found.statedNa(), found.deferredUntil(), found.deferred(), found.proofs(), found.splitFrom(), found.lateEntry(), found.reminded(), input.ref(), input.tags());
++                found.dueBy(), found.statedNa(), found.deferredUntil(), found.deferred(), found.proofs(), found.splitFrom(), found.lateEntry(), found.reminded(), input.ref(), input.tags(), found.voidReason());
+         audit.record("CLAIM_EDITED sheet=" + id + " by=" + by + " person=" + repository.personName(id, pid)
+                 + " amount=" + saved.amount() + " date=" + saved.date() + Claim.auditNumber(saved.number()));
+         rollup.record(id, by, before);
+diff --git a/src/main/java/net/officefloor/hq/app/history/HistoryRepository.java b/src/main/java/net/officefloor/hq/app/history/HistoryRepository.java
+index 7b486c3c9..0f0e08188 100644
+--- a/src/main/java/net/officefloor/hq/app/history/HistoryRepository.java
++++ b/src/main/java/net/officefloor/hq/app/history/HistoryRepository.java
+@@ -98,7 +98,7 @@ public class HistoryRepository {
+                             rs.getBoolean("stated"), stated == null ? null : stated.setScale(2).toPlainString(),
+                             rs.getString("corrects"), local(rs.getDate("due_by")).toString(), rs.getBoolean("stated_na"),
+                             deferredUntil == null ? null : deferredUntil.toString(),
+-                            status.equals("OPEN") && deferredUntil != null && deferredUntil.isAfter(day), 0, null, false, null, null, null));
++                            status.equals("OPEN") && deferredUntil != null && deferredUntil.isAfter(day), 0, null, false, null, null, null, null));
+                 }, sheetId, on);
+         Map<Long, TreeMap<LocalDate, String>> grades = new HashMap<>();
+         jdbc.query("SELECT person_id, grade, from_date FROM grade_history WHERE sheet_id = ? AND on_date <= ? ORDER BY id",
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SaveVoidReason.java b/src/main/java/net/officefloor/hq/app/settings/SaveVoidReason.java
+new file mode 100644
+index 000000000..9d702ef1f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/settings/SaveVoidReason.java
+@@ -0,0 +1,27 @@
++package net.officefloor.hq.app.settings;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.server.http.ServerHttpConnection;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Add a reason to the sheet's void reasons; one already on the list is refused. */
++public class SaveVoidReason {
++    public void save(@PathVariable("sheetId") String sheetId, @Val String voidReason, ServerHttpConnection connection,
++            SettingsRepository repository, Audit audit, Out<Settings> settings) throws BadRequestException {
++        String by = CurrentUser.require(connection);
++        String id = sheetId == null ? "" : sheetId.trim();
++        if (!repository.sheetExists(id)) {
++            throw new BadRequestException("no such sheet");
++        }
++        if (repository.voidReasons(id).contains(voidReason)) {
++            throw new BadRequestException(voidReason + " is already a void reason");
++        }
++        repository.addVoidReason(id, voidReason);
++        audit.record("VOID_REASON_ADDED sheet=" + id + " by=" + by + " reason=" + voidReason);
++        settings.set(repository.load(id));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/settings/Settings.java b/src/main/java/net/officefloor/hq/app/settings/Settings.java
+index b3b3ccad2..c4d63b609 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/Settings.java
+@@ -17,9 +17,11 @@ import java.util.List;
+  *  {@code delegations} is each delegation of the steward role made on the sheet, oldest first.
+  *  {@code entryDate} is the sheet's entry date (yyyy-MM-dd; null when blank: off; not dated): while set, it is the
+  *  default date of a new claim instead of the sheet's today. {@code holidays} is the sheet's holidays (yyyy-MM-dd),
+- *  earliest first: a claim's due-by, fixed when it is created, that falls on one is moved to the next day that is not one. */
++ *  earliest first: a claim's due-by, fixed when it is created, that falls on one is moved to the next day that is not one.
++ *  {@code voidReasons} is the sheet's void reasons, in the order they were added: while there is one, voiding a claim
++ *  needs one of them. */
+ public record Settings(String clerkLimit, String floor, int terms, String latePct, List<Role> roles, String policyDate,
+         String periodNumberingFrom, java.util.Map<String, Integer> gradeTerms, String cap,
+         java.util.Map<String, List<DatedValue>> dated, java.util.Map<String, String> permissions, Integer graceDays,
+-        List<Delegation> delegations, String entryDate, List<String> holidays) {
++        List<Delegation> delegations, String entryDate, List<String> holidays, List<String> voidReasons) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java b/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
+index a55497009..3b06d589a 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
+@@ -53,7 +53,8 @@ public class SettingsRepository {
+                 money(latePct(sheetId, today)), roles, policy == null ? null : policy.toString(),
+                 numbering == null ? null : numbering.toString(), gradeTerms(sheetId, today),
+                 cap == null ? null : money(cap), dated(sheetId), permissions(sheetId), graceDays(sheetId),
+-                delegations(sheetId), entry == null ? null : entry.toString(), holidays(sheetId));
++                delegations(sheetId), entry == null ? null : entry.toString(), holidays(sheetId),
++                voidReasons(sheetId));
+     }
+ 
+     /** The sheet's today; the real date when there is no such sheet. */
+@@ -292,6 +293,18 @@ public class SettingsRepository {
+         jdbc.update("INSERT INTO holiday (sheet_id, holiday_date) VALUES (?, ?)", sheetId, Date.valueOf(date));
+     }
+ 
++    /** The sheet's void reasons, in the order they were added. */
++    public List<String> voidReasons(String sheetId) {
++        return jdbc.query("SELECT reason FROM void_reason WHERE sheet_id = ? ORDER BY position",
++                (rs, i) -> rs.getString("reason"), sheetId);
++    }
++
++    public void addVoidReason(String sheetId, String reason) {
++        jdbc.update("INSERT INTO void_reason (sheet_id, position, reason)"
++                + " VALUES (?, (SELECT COALESCE(MAX(position), 0) + 1 FROM void_reason WHERE sheet_id = ?), ?)",
++                sheetId, sheetId, reason);
++    }
++
+     /** The terms-th business day after a date on the sheet: counting forward from the day after it, skipping
+      *  every Saturday, Sunday and holiday on the sheet; the date itself for terms 0. */
+     public LocalDate businessDaysAfter(String sheetId, LocalDate date, int terms) {
+diff --git a/src/main/java/net/officefloor/hq/app/settings/ValidateVoidReason.java b/src/main/java/net/officefloor/hq/app/settings/ValidateVoidReason.java
+new file mode 100644
+index 000000000..5975f95bd
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/settings/ValidateVoidReason.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.settings;
++
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Bind the void reason form: a reason, trimmed, that is not blank. */
++public class ValidateVoidReason {
++    public void validate(@RequestBody VoidReasonRequest request, Out<String> voidReason) throws BadRequestException {
++        String reason = request == null || request.reason() == null ? "" : request.reason().trim();
++        if (reason.isEmpty()) {
++            throw new BadRequestException("reason is required");
++        }
++        voidReason.set(reason);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/settings/VoidReasonRequest.java b/src/main/java/net/officefloor/hq/app/settings/VoidReasonRequest.java
+new file mode 100644
+index 000000000..9cf3332a2
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/settings/VoidReasonRequest.java
+@@ -0,0 +1,4 @@
++package net.officefloor.hq.app.settings;
++
++public record VoidReasonRequest(String reason) {
++}
+diff --git a/src/main/resources/db/migration/V56__void_reason.sql b/src/main/resources/db/migration/V56__void_reason.sql
+new file mode 100644
+index 000000000..7b6c0cfac
+--- /dev/null
++++ b/src/main/resources/db/migration/V56__void_reason.sql
+@@ -0,0 +1,11 @@
++-- The reason a VOID claim was voided with, chosen from its sheet's void reasons (null: none given).
++ALTER TABLE claim ADD COLUMN void_reason VARCHAR(600);
++
++-- The sheet's void reasons, trimmed, in the order they were added: while there is one, voiding a claim needs
++-- one of them. Each reason is on the sheet's list at most once.
++CREATE TABLE void_reason (
++    sheet_id VARCHAR(200) NOT NULL REFERENCES sheet (id),
++    position INT          NOT NULL,
++    reason   VARCHAR(600) NOT NULL,
++    PRIMARY KEY (sheet_id, reason)
++);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/void-reasons.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/void-reasons.POST.yml
+new file mode 100644
+index 000000000..f2510e8cd
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/void-reasons.POST.yml
+@@ -0,0 +1,13 @@
++# Add a reason to the sheet's void reasons; a blank one, or one already on the list, is refused.
++guard:
++  class: net.officefloor.hq.app.settings.RefuseViewer
++  next: validate
++validate:
++  class: net.officefloor.hq.app.settings.ValidateVoidReason
++  next: save
++save:
++  class: net.officefloor.hq.app.settings.SaveVoidReason
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.settings.RespondWithSettings
