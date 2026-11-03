@@ -10,8 +10,8 @@ import { useDueTotals, useExcess, useSettledOpenTotals } from './useDueTotals';
 import { useRatePreview } from './useRatePreview';
 import { rateFor, ratesKey, sumDues, trimmedSum, useRates, type Rate } from './useRates';
 
-/** The sheet's rates for each grade: a form that sets one from an optional from-date (replacing the
- *  grade's rate from that date; blank is from the beginning of time) through an optional to-date
+/** The sheet's rates for each grade: a form that sets one from an optional from-date (a new version of the
+ *  grade's rate from that date, the one in force; blank is from the beginning of time) through an optional to-date
  *  (blank is no end), the rates set, and the rate in
  *  force on the sheet's today for every grade ('n/a' when none is). */
 function Rates({ sheetId }: { sheetId: string }) {
@@ -114,6 +114,7 @@ function Rates({ sheetId }: { sheetId: string }) {
             <th>Rate %</th>
             <th>From</th>
             <th>To</th>
+            <th>Versions</th>
           </tr>
         </thead>
         <tbody>
@@ -123,6 +124,7 @@ function Rates({ sheetId }: { sheetId: string }) {
               <td data-testid="rate-pct">{r.pct}</td>
               <td data-testid="rate-from">{r.from ?? ''}</td>
               <td data-testid="rate-to">{r.to ?? ''}</td>
+              <td data-testid="rate-version">{r.version ?? 1}</td>
             </tr>
           ))}
         </tbody>

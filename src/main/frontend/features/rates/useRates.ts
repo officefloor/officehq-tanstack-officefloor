@@ -3,9 +3,10 @@ import { getJson } from '../../api/http';
 import { useReader } from '../../api/readNow';
 
 /** A grade's rate: a percent with two decimals, in force from its from-date (yyyy-mm-dd; null when it
- *  applies from the beginning of time) through its to-date (null when it has no end). `level` is the sheet it
+ *  applies from the beginning of time) through its to-date (null when it has no end), and its `version`: how many versions the grade's rate from that
+ *  from-date has had (this is the newest, the one in force). `level` is the sheet it
  *  is set on: 0 this sheet, 1 its parent, 2 the parent's parent, 3 the one above that. */
-export type Rate = { grade: string; pct: string; from: string | null; to: string | null; level?: number };
+export type Rate = { grade: string; pct: string; from: string | null; to: string | null; version?: number; level?: number };
 
 export function ratesKey(sheetId: string) {
   return ['sheet', sheetId, 'rates'];
