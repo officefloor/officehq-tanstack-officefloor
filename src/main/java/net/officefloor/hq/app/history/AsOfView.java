@@ -23,7 +23,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  *  was on or before the date counts, in the order made, every later one does not (the sheet itself always
  *  exists); the date stands in for the sheet's today. A read replays those changes into the asof schema's tables,
  *  runs the usual read against them, and removes them again, all in one transaction, so no other read sees them.
- *  The sheets it falls back to (its parent as it stood then, that one's parent and so on) are not shown as of the
+ *  The sheets it falls back to (its parent as it stood then, that one's parent and so on, and
+ *  the sheets it was cloned from) are not shown as of the
  *  date: their rows are read as they are now, so a rate it inherits applies as it does live.
  *  While the date is set, every change is refused. */
 @Component
@@ -90,10 +91,12 @@ public class AsOfView {
             List<String> shown = new ArrayList<>(List.of(sheetId));
             for (String at = parent("ASOF", sheetId); at != null && !shown.contains(at); at = parent("PUBLIC", at)) {
                 shown.add(at);
-                for (RowCaptureInstaller.Table table : installer.tables().values()) {
-                    jdbc.update("INSERT INTO ASOF.\"" + table.name() + "\" SELECT * FROM PUBLIC.\"" + table.name()
-                            + "\" WHERE \"" + table.columns().get(table.sheetColumn()) + "\" = ?", at);
-                }
+                copy(at);
+            }
+            for (String at : fallbacks(sheetId)) {
+                if (shown.contains(at)) continue;
+                shown.add(at);
+                copy(at);
             }
             jdbc.execute("SET SCHEMA ASOF");
             try {
@@ -108,6 +111,35 @@ public class AsOfView {
                 }
             }
         });
+    }
+
+    /** Copy a sheet's rows as they are now into the asof schema. */
+    private void copy(String sheetId) {
+        for (RowCaptureInstaller.Table table : installer.tables().values()) {
+            jdbc.update("INSERT INTO ASOF.\"" + table.name() + "\" SELECT * FROM PUBLIC.\"" + table.name()
+                    + "\" WHERE \"" + table.columns().get(table.sheetColumn()) + "\" = ?", sheetId);
+        }
+    }
+
+    /** Every sheet a sheet may fall back to: its parent and the sheet it was cloned from as they stood then, then
+     *  theirs as they are now, and so on. */
+    private List<String> fallbacks(String sheetId) {
+        List<String> found = new ArrayList<>();
+        java.util.Deque<String> pending = new java.util.ArrayDeque<>(List.of(sheetId));
+        while (!pending.isEmpty()) {
+            String at = pending.poll();
+            String schema = at.equals(sheetId) ? "ASOF" : "PUBLIC";
+            for (Map<String, Object> row : jdbc.queryForList("SELECT parent_id, cloned_from FROM " + schema + ".SHEET WHERE id = ?",
+                    at)) {
+                for (Object next : row.values()) {
+                    if (next != null && !next.equals(sheetId) && !found.contains(next)) {
+                        found.add((String) next);
+                        pending.add((String) next);
+                    }
+                }
+            }
+        }
+        return found;
     }
 
     /** A sheet's parent in a schema; null when it has none (or is not there). */

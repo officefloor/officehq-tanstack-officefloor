@@ -359,10 +359,27 @@ public class SettingsRepository {
         return found;
     }
 
-    /** The sheets whose rates a sheet's grade falls back to, nearest first: its ancestors up to three levels up. */
+    /** The sheets whose rates a sheet's grade falls back to, nearest first: its ancestors up to three levels up,
+     *  then (when it was cloned) the sheet it was cloned from and that one's own fallbacks (its ancestors, then its
+     *  source, and so on); each once and never the sheet itself. */
     public List<String> rateAncestors(String sheetId) {
-        List<String> found = lineage(sheetId);
-        return found.size() > 3 ? found.subList(0, 3) : found;
+        List<String> found = new java.util.ArrayList<>();
+        java.util.Set<String> sources = new java.util.HashSet<>();
+        for (String at = sheetId; at != null && sources.add(at); at = clonedFrom(at)) {
+            if (!at.equals(sheetId) && !found.contains(at)) found.add(at);
+            List<String> up = lineage(at);
+            for (String a : up.size() > 3 ? up.subList(0, 3) : up) {
+                if (!a.equals(sheetId) && !found.contains(a)) found.add(a);
+            }
+        }
+        return found;
+    }
+
+    /** The sheet a sheet was cloned from; null when it was not cloned. Not dated: read from the sheet as it is now. */
+    public String clonedFrom(String sheetId) {
+        List<String> found = jdbc.query("SELECT cloned_from FROM PUBLIC.sheet WHERE id = ?",
+                (rs, i) -> rs.getString("cloned_from"), sheetId);
+        return found.isEmpty() ? null : found.get(0);
     }
 
     /** The sheet's grace days; null when blank (off). */

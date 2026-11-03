@@ -32,13 +32,15 @@ public class SheetCloner {
      *  aliases, holds, retirements and patrons; its pools and their members; its periods, all open; and its claims,
      *  each person's in the order they are listed, with their status, settled figures, dates, notes, tags, status logs
      *  and comments. Statements are not copied (no claim is bound to one), nor locks, settle batches, watches or
-     *  delegations. Each claim that had a number takes the clone's next one, in the order the claims were opened (by
+     *  delegations. The clone remembers the sheet it was cloned from, whose rates its grades fall back
+     *  to (see {@link net.officefloor.hq.app.settings.SettingsRepository#rateAncestors}). Each claim that had a number takes the clone's next one, in the order the claims were opened (by
      *  the sheet's today when each was opened, then by the order they were added to the clone); a number one of them
      *  corrects or was split from follows it. The clone's history starts with all of this on its today. */
     public void cloneTo(String from, String to, String by) {
         jdbc.update("INSERT INTO sheet (id, created_by, today, policy_date, period_numbering_from, grace_days, entry_date, pot, fiscal_start_month, escalate_after, review_sla, proof_kinds)"
                 + " SELECT ?, ?, today, policy_date, period_numbering_from, grace_days, entry_date, pot, fiscal_start_month, escalate_after, review_sla, proof_kinds FROM sheet WHERE id = ?",
                 to, by, from);
+        jdbc.update("UPDATE sheet SET cloned_from = ? WHERE id = ?", from, to);
         jdbc.update("INSERT INTO setting_value (sheet_id, setting_key, from_date, setting) SELECT ?, setting_key, from_date,"
                 + " setting FROM setting_value WHERE sheet_id = ?", to, from);
         jdbc.query("SELECT setting_key, from_date, setting FROM setting_value WHERE sheet_id = ? ORDER BY setting_key, from_date",
