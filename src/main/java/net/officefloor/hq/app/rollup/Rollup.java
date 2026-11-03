@@ -105,9 +105,12 @@ public class Rollup {
     }
 
     /** Record one SNAPSHOT line per person (in list order) with their due-total as {@code before} had it,
-     *  ending with for=<steward> when {@code by} made the change under that steward's delegation (null when not). */
-    public void snapshot(String sheetId, String by, Snapshot before, String delegator) {
-        for (Figures f : before.people().values()) {
+     *  ending with for=<steward> when {@code by} made the change under that steward's delegation (null when not),
+     *  and keep it on the person with the day being left. */
+    public void snapshot(String sheetId, String by, Snapshot before, String delegator, LocalDate dayLeft) {
+        for (Map.Entry<Long, Figures> e : before.people().entrySet()) {
+            Figures f = e.getValue();
+            people.snapshot(sheetId, e.getKey(), dayLeft, f.dueTotal());
             audit.record("SNAPSHOT sheet=" + sheetId + " by=" + by + " name=" + f.name() + " due-total=" + f.dueTotal()
                     + (delegator == null ? "" : " for=" + delegator));
         }

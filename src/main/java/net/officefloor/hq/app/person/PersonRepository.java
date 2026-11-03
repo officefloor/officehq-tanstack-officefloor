@@ -29,7 +29,7 @@ public class PersonRepository {
             rs.getDate("statement_date") == null ? null : rs.getDate("statement_date").toLocalDate().toString(),
             rs.getDate("retired_from") == null ? null : rs.getDate("retired_from").toLocalDate().toString(),
             false, List.of(), List.of(), (Integer) rs.getObject("terms", Integer.class), rs.getString("contact"),
-            rs.getString("origin_sheet"), List.of(), rs.getString("tags"));
+            rs.getString("origin_sheet"), List.of(), rs.getString("tags"), List.of());
 
     /** The position after the last person's on the sheet being inserted into (the end of its list). */
     private static final String NEXT_POSITION = "(SELECT COALESCE(MAX(q.list_position), 0) + 1 FROM person q WHERE q.sheet_id = sheet.id)";
@@ -61,9 +61,32 @@ public class PersonRepository {
                 rs -> {
                     retirements.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(retirement(rs));
                 }, sheetId);
+        Map<Long, List<SnapshotLine>> snapshots = new HashMap<>();
+        jdbc.query("SELECT person_id, left_day, due_total FROM person_snapshot WHERE sheet_id = ? ORDER BY id",
+                rs -> {
+                    snapshots.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(snapshot(rs));
+                }, sheetId);
         return people.stream().map(p -> p.withGrades(grades.getOrDefault(p.id(), List.of()))
                 .withHolds(holds.getOrDefault(p.id(), List.of()))
-                .withRetirements(retirements.getOrDefault(p.id(), List.of()))).toList();
+                .withRetirements(retirements.getOrDefault(p.id(), List.of()))
+                .withSnapshots(snapshots.getOrDefault(p.id(), List.of()))).toList();
+    }
+
+    private static SnapshotLine snapshot(java.sql.ResultSet rs) throws java.sql.SQLException {
+        return new SnapshotLine(rs.getDate("left_day") == null ? null : rs.getDate("left_day").toLocalDate().toString(),
+                rs.getString("due_total"));
+    }
+
+    /** A person's snapshots, oldest first. */
+    public List<SnapshotLine> snapshots(String sheetId, long id) {
+        return jdbc.query("SELECT left_day, due_total FROM person_snapshot WHERE sheet_id = ? AND person_id = ? ORDER BY id",
+                (rs, i) -> snapshot(rs), sheetId, id);
+    }
+
+    /** Keep a snapshot of a person: their due-total as it stood on the day being left. */
+    public void snapshot(String sheetId, long id, LocalDate day, String dueTotal) {
+        jdbc.update("INSERT INTO person_snapshot (sheet_id, person_id, left_day, due_total) VALUES (?, ?, ?, ?)",
+                sheetId, id, day == null ? null : Date.valueOf(day), dueTotal);
     }
 
     private static Retirement retirement(java.sql.ResultSet rs) throws java.sql.SQLException {
@@ -124,7 +147,7 @@ public class PersonRepository {
         List<Person> found = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND id = ?", ROW,
                 sheetId, id);
         return found.isEmpty() ? null : found.get(0).withGrades(grades(sheetId, id)).withHolds(holds(sheetId, id))
-                .withRetirements(retirements(sheetId, id));
+                .withRetirements(retirements(sheetId, id)).withSnapshots(snapshots(sheetId, id));
     }
 
     /** Record a statement taken of a person: one more, with its due-total and date. */
@@ -303,7 +326,7 @@ public class PersonRepository {
         }, keys);
         long id = keys.getKey().longValue();
         grade(sheetId, id, grade, null);
-        return new Person(id, name, grade, 1, 0, null, null, null, false, List.of(new GradeFrom(grade, null)), List.of(), terms, contact, null, List.of(), null);
+        return new Person(id, name, grade, 1, 0, null, null, null, false, List.of(new GradeFrom(grade, null)), List.of(), terms, contact, null, List.of(), null, List.of());
     }
 
     /** Swap two people's places in the sheet's list. */
@@ -405,7 +428,7 @@ public class PersonRepository {
     }
 
     /** Take a person off the sheet entirely: their patron links (both ways), pool memberships, closed periods'
-     *  figures, watchers, holds, past retirements, statements, grades, aliases and plans go with them. Their claims must already be gone. */
+     *  figures, watchers, holds, past retirements, snapshots, statements, grades, aliases and plans go with them. Their claims must already be gone. */
     public void remove(String sheetId, long id) {
         jdbc.update("DELETE FROM patron WHERE sheet_id = ? AND (person_id = ? OR patron_id = ?)", sheetId, id, id);
         jdbc.update("DELETE FROM pool_member WHERE sheet_id = ? AND person_id = ?", sheetId, id);
@@ -413,6 +436,7 @@ public class PersonRepository {
         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+        jdbc.update("DELETE FROM person_snapshot WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM person_alias WHERE sheet_id = ? AND person_id = ?", sheetId, id);
@@ -426,7 +450,7 @@ public class PersonRepository {
      *  merged person's patrons are added to the other's (not themselves, no repeats), anyone naming the merged
      *  person names the other instead (no repeats); pool memberships move to the other (shares added, at most
      *  100.00, when the other is already a member); closed periods' figures are added to the other's. Their
-     *  statements are joined to the other's (see {@link #joinStatements}); their holds, past retirements, grades, watchers and contact go with them, their plans move to the other, and the merged person leaves the sheet.
+     *  statements are joined to the other's (see {@link #joinStatements}); their holds, past retirements, snapshots, grades, watchers and contact go with them, their plans move to the other, and the merged person leaves the sheet.
      *  Their claims must already have been moved. */
     public void merge(String sheetId, long fromId, long intoId) {
         String name = jdbc.queryForObject("SELECT name FROM person WHERE id = ? AND sheet_id = ?", String.class, fromId, sheetId);
@@ -472,6 +496,7 @@ public class PersonRepository {
         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
+        jdbc.update("DELETE FROM person_snapshot WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         joinStatements(sheetId, fromId, sheetId, intoId);
         jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);

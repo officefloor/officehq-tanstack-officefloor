@@ -29,7 +29,7 @@ public class SaveSheetToday {
             throw new BadRequestException("no such sheet");
         }
         if (!today.equals(was)) {
-            rollup.snapshot(id, by, before, delegator);
+            rollup.snapshot(id, by, before, delegator, was);
             claims.unlockAll(id);
         }
         closer.closeLapsed(id, by, today);
