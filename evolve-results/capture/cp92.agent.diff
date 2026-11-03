@@ -1,0 +1,58 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index e590d1580..0e0184676 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -150,6 +150,17 @@ public class ClaimRepository {
+                 Date.valueOf(date), claimId, sheetId) > 0);
+     }
+ 
++    /** Record who last edited a claim. */
++    public void editedBy(String sheetId, long claimId, String by) {
++        jdbc.update("UPDATE claim SET edited_by = ? WHERE id = ? AND sheet_id = ?", by, claimId, sheetId);
++    }
++
++    /** Who last edited a claim; null when it was never edited. */
++    public String editedBy(String sheetId, long claimId) {
++        List<String> by = jdbc.queryForList("SELECT edited_by FROM claim WHERE id = ? AND sheet_id = ?", String.class, claimId, sheetId);
++        return by.isEmpty() ? null : by.get(0);
++    }
++
+     /** Record who opened a claim. */
+     public void openedBy(String sheetId, long claimId, String by) {
+         jdbc.update("UPDATE claim SET opened_by = ? WHERE id = ? AND sheet_id = ?", by, claimId, sheetId);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+index 302b0ba15..5cf693e95 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+@@ -58,6 +58,11 @@ final class ClaimStatusChange {
+         if (to.equals("SETTLED") && found.status().equals("OPEN") && by.equals(found.openedBy())) {
+             throw new BadRequestException("the user who opened a claim cannot settle it");
+         }
++        // Nor can whoever last edited it settle or approve it.
++        if (to.equals("SETTLED") && (found.status().equals("OPEN") || found.status().equals("PENDING"))
++                && by.equals(repository.editedBy(id, cid))) {
++            throw new BadRequestException("the user who last edited a claim cannot " + act + " it");
++        }
+         // A deferred claim cannot be settled until the sheet's today reaches the date it is deferred until.
+         if (to.equals("SETTLED") && found.deferred()) {
+             throw new BadRequestException("a claim deferred until " + found.deferredUntil() + " cannot be settled");
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java b/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
+index dc862b996..248cda850 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
+@@ -47,6 +47,7 @@ public class SaveClaim {
+         if (!repository.update(id, cid, input.amount(), date, input.note(), input.corrects(), input.ref(), input.tags())) {
+             throw new BadRequestException("only a DRAFT claim can be edited");
+         }
++        repository.editedBy(id, cid, by);
+         repository.unlock(id, cid, by);
+         long pid = found.personId();
+         Claim saved = new Claim(cid, pid, ClaimRepository.money(input.amount()), date.toString(), input.note(),
+diff --git a/src/main/resources/db/migration/V58__claim_edited_by.sql b/src/main/resources/db/migration/V58__claim_edited_by.sql
+new file mode 100644
+index 000000000..0ede25ee6
+--- /dev/null
++++ b/src/main/resources/db/migration/V58__claim_edited_by.sql
+@@ -0,0 +1,2 @@
++-- Who last edited a claim: the signed-in user whose save (the claim form or the row's amount entry) last changed it. Null until edited.
++ALTER TABLE claim ADD COLUMN edited_by VARCHAR(255);
