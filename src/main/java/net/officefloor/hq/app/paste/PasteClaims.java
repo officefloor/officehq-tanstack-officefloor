@@ -115,7 +115,7 @@ public class PasteClaims {
                 }
                 PeriodGuard.open(periods, id, draft != null ? LocalDate.parse(draft.dueBy()) : claims.dueBy(id, person.id(), date));
                 people.claimAllowed(id, person.id(), date);
-                line.claim().checkCorrection(claims, id, person.id());
+                line.claim().checkCorrection(claims, id, person.id(), draft == null ? null : draft.id());
                 line.claim().checkRef(claims, id, draft == null ? null : draft.id());
                 if (line.claim().ref() != null && !refs.add(line.claim().ref().toLowerCase(Locale.ROOT))) {
                     throw new BadRequestException("reference " + line.claim().ref() + " is given twice in the paste");

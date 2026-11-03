@@ -47,7 +47,7 @@ public class SaveClaim {
         LocalDate date = input.date() != null ? input.date() : sheets.today(id);
         PeriodGuard.open(periods, id, LocalDate.parse(found.dueBy()));
         people.claimAllowed(id, found.personId(), date);
-        input.checkCorrection(repository, id, found.personId());
+        input.checkCorrection(repository, id, found.personId(), cid);
         input.checkRef(repository, id, cid);
         // A claim's due-by is fixed when it is created: editing its date leaves it as it is.
         String dueBy = found.dueBy();

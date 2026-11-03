@@ -53,6 +53,13 @@ public record ClaimInput(BigDecimal amount, LocalDate date, String note, String 
     /** Check the form against the person's claims: a negative amount must name, by number, a SETTLED
      *  claim of the same person; only a negative amount may name one. */
     public void checkCorrection(ClaimRepository repository, String sheetId, long personId) throws BadRequestException {
+        checkCorrection(repository, sheetId, personId, null);
+    }
+
+    /** As {@link #checkCorrection(ClaimRepository, String, long)}, and a correction may not exceed what remains of
+     *  the claim it corrects: its amount less the corrections already made against it (VOID and DELETED ones, and
+     *  {@code exceptId}, null: none, left out). */
+    public void checkCorrection(ClaimRepository repository, String sheetId, long personId, Long exceptId) throws BadRequestException {
         if (!correction()) {
             if (corrects != null) {
                 throw new BadRequestException("only a negative amount corrects a claim");
@@ -64,6 +71,11 @@ public record ClaimInput(BigDecimal amount, LocalDate date, String note, String 
         }
         if (!repository.settledOf(sheetId, personId, corrects)) {
             throw new BadRequestException("claim " + corrects + " is not a settled claim of this person");
+        }
+        BigDecimal remaining = repository.remainingOf(sheetId, personId, corrects, exceptId);
+        if (amount.negate().compareTo(remaining) > 0) {
+            throw new BadRequestException("the correction exceeds the " + ClaimRepository.money(remaining)
+                    + " that remains of claim " + corrects);
         }
     }
 }

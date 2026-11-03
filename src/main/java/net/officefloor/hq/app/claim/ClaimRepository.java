@@ -543,6 +543,17 @@ public class ClaimRepository {
         return n != null && n > 0;
     }
 
+    /** What remains of the person's SETTLED claim with this number: its amount plus the (negative) amounts of the
+     *  corrections made against it that are not VOID or DELETED, leaving out {@code exceptId} (null: none). */
+    public BigDecimal remainingOf(String sheetId, long personId, String number, Long exceptId) {
+        BigDecimal target = jdbc.queryForObject("SELECT amount FROM claim WHERE sheet_id = ? AND person_id = ?"
+                + " AND claim_no = ? AND status = 'SETTLED' ORDER BY id LIMIT 1", BigDecimal.class, sheetId, personId, number);
+        BigDecimal made = jdbc.queryForObject("SELECT COALESCE(SUM(amount), 0) FROM claim WHERE sheet_id = ? AND person_id = ?"
+                + " AND corrects = ? AND status NOT IN ('VOID', 'DELETED') AND id <> ?", BigDecimal.class,
+                sheetId, personId, number, exceptId == null ? -1L : exceptId);
+        return target.add(made).setScale(2);
+    }
+
     /** The due-by of a claim created now for a person with a date: the terms-th business day after the date (skipping
      *  Saturdays, Sundays and the sheet's holidays), for the person's own terms, else the terms, in force on it, of the
      *  grade the person has on it, else the sheet's terms in force on it. */
