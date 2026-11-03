@@ -1,9 +1,9 @@
-import { counts, fixedDue, useClaims } from '../claims/useClaims';
+import { type Claim, counts, fixedDue, useClaims } from '../claims/useClaims';
 import { claimDueNow } from '../overdue/useOverdue';
-import { gradeOn, holdsById, usePeople } from '../people/usePeople';
-import { settingOn, useSettings } from '../settings/useSettings';
+import { gradeOn, holdsById, type Person, usePeople } from '../people/usePeople';
+import { type Settings, settingOn, useSettings } from '../settings/useSettings';
 import { useSheetToday } from '../today/useSheetToday';
-import { hundredths, money, rateFor, sumDues, useRates } from './useRates';
+import { hundredths, money, type Rate, rateFor, sumDues, useRates } from './useRates';
 
 /** Each person's due-total, by person id: the sum of the figures of their claims that count (open (OPEN or PENDING)
  *  claims dated within one of their holds left out unless a statement binds them; a settled claim's frozen due, else the figure their last statement
@@ -41,14 +41,32 @@ function useDueFigures(sheetId: string): Map<number, { total: string; excess: st
   const rates = useRates(sheetId);
   const today = useSheetToday(sheetId);
   const settings = useSettings(sheetId).data;
-  const holds = holdsById(people.data, today.data?.today);
-  const cap = settingOn(settings, 'cap', today.data?.today);
+  return dueFigures(people.data, claims.data, rates.data, settings, today.data?.today);
+}
+
+/** Each person's due-total, by person id, from these people, claims, rates and settings on this today (as
+ *  useDueTotals shows them). */
+export function dueTotalsOf(...args: Parameters<typeof dueFigures>): Map<number, string> {
+  const totals = new Map<number, string>();
+  for (const [id, f] of dueFigures(...args)) totals.set(id, f.total);
+  return totals;
+}
+
+function dueFigures(
+  people: Person[] | undefined,
+  claims: Claim[] | undefined,
+  rates: Rate[] | undefined,
+  settings: Settings | undefined,
+  today: string | undefined,
+): Map<number, { total: string; excess: string; settled: string; open: string }> {
+  const holds = holdsById(people, today);
+  const cap = settingOn(settings, 'cap', today);
   const totals = new Map<number, { total: string; excess: string; settled: string; open: string }>();
-  for (const p of people.data ?? []) {
-    const counting = (claims.data ?? []).filter((c) => c.personId === p.id && counts(c, holds, today.data?.today));
-    const rated = rateFor(rates.data, p.grade, today.data?.today) !== undefined;
+  for (const p of people ?? []) {
+    const counting = (claims ?? []).filter((c) => c.personId === p.id && counts(c, holds, today));
+    const rated = rateFor(rates, p.grade, today) !== undefined;
     const dues = counting.map((c) =>
-      claimDueNow(c, claims.data, rateFor(rates.data, gradeOn(p, c.date), c.date, c.added), settings, today.data?.today, gradeOn(p, c.date)));
+      claimDueNow(c, claims, rateFor(rates, gradeOn(p, c.date), c.date, c.added), settings, today, gradeOn(p, c.date)));
     const shown = rated || counting.some((c) => fixedDue(c) !== null && fixedDue(c) !== 'n/a') || dues.some((d) => d !== 'n/a');
     const sum = sumDues(dues);
     const over = shown && cap !== null && hundredths(sum) > hundredths(cap);
