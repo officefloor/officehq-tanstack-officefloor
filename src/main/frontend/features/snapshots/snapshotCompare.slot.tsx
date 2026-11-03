@@ -1,0 +1,45 @@
+import { useState } from 'react';
+import { SheetBody } from '../../slots/defs/sheetBody';
+import { type Person, usePeople } from '../people/usePeople';
+import { useDueTotals } from '../rates/useDueTotals';
+
+/** A person's due-total in the SNAPSHOT written when the sheet's today was changed away from a day (the latest
+ *  such, when it was left more than once); empty when there is none. */
+function snapshotOn(p: Person, day: string): string {
+  const found = p.snapshots.filter((s) => s.day === day);
+  return found.length === 0 ? '' : found[found.length - 1].dueTotal;
+}
+
+/** Compares two snapshot dates: a from-date, a to-date and a button listing, per person in list order,
+ *  `<name> <then> <now>`: `then` their snapshot due-total for the from-date, `now` the one for the to-date, or
+ *  their due-total now when the to-date is blank (each empty when there is no snapshot). Each line is trimmed. */
+function SnapshotCompare({ sheetId }: { sheetId: string }) {
+  const people = usePeople(sheetId);
+  const dueTotals = useDueTotals(sheetId);
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [shown, setShown] = useState<{ from: string; to: string } | null>(null);
+  const lines = shown === null ? [] : (people.data ?? []).map((p) => {
+    const then = snapshotOn(p, shown.from);
+    const now = shown.to === '' ? (dueTotals.get(p.id) ?? 'n/a') : snapshotOn(p, shown.to);
+    return [p.name, then, now].join(' ').trim();
+  });
+  return (
+    <section>
+      <input type="date" data-testid="snapshot-from" value={from} onChange={(e) => setFrom(e.target.value)} />{' '}
+      <input type="date" data-testid="snapshot-to" value={to} onChange={(e) => setTo(e.target.value)} />{' '}
+      <button type="button" data-testid="snapshot-compare" onClick={() => setShown({ from: from.trim(), to: to.trim() })}>
+        Compare snapshots
+      </button>
+      <ul>
+        {lines.map((line, i) => (
+          <li key={i} data-testid="snapshot-line">
+            {line}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+export const contribution = SheetBody.fill({ order: 43, Component: ({ sheetId }) => <SnapshotCompare sheetId={sheetId} /> });
