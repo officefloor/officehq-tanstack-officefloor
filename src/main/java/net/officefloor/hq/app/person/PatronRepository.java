@@ -13,9 +13,9 @@ public class PatronRepository {
         this.jdbc = jdbc;
     }
 
-    /** Every patron named on the sheet, by person. */
+    /** Every patron named on the sheet, by person, in the order they were named. */
     public List<Patron> list(String sheetId) {
-        return jdbc.query("SELECT person_id, patron_id FROM patron WHERE sheet_id = ? ORDER BY person_id, patron_id",
+        return jdbc.query("SELECT person_id, patron_id FROM patron WHERE sheet_id = ? ORDER BY person_id, seq",
                 (rs, i) -> new Patron(rs.getLong("person_id"), rs.getLong("patron_id")), sheetId);
     }
 

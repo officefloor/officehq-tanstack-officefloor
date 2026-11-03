@@ -238,10 +238,10 @@ public class PersonRepository {
         // The merged person's patrons become the other's.
         jdbc.update("INSERT INTO patron (sheet_id, person_id, patron_id) SELECT sheet_id, ?, patron_id FROM patron p"
                 + " WHERE p.sheet_id = ? AND p.person_id = ? AND p.patron_id <> ? AND NOT EXISTS (SELECT 1 FROM patron q"
-                + " WHERE q.person_id = ? AND q.patron_id = p.patron_id)", intoId, sheetId, fromId, intoId, intoId);
+                + " WHERE q.person_id = ? AND q.patron_id = p.patron_id) ORDER BY p.seq", intoId, sheetId, fromId, intoId, intoId);
         jdbc.update("DELETE FROM patron WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
         // Anyone naming the merged person names the other instead.
-        jdbc.update("INSERT INTO patron (sheet_id, person_id, patron_id) SELECT sheet_id, person_id, ? FROM patron p"
+        jdbc.update("INSERT INTO patron (sheet_id, person_id, patron_id, seq) SELECT sheet_id, person_id, ?, seq FROM patron p"
                 + " WHERE p.sheet_id = ? AND p.patron_id = ? AND p.person_id <> ? AND NOT EXISTS (SELECT 1 FROM patron q"
                 + " WHERE q.person_id = p.person_id AND q.patron_id = ?)", intoId, sheetId, fromId, intoId, intoId);
         jdbc.update("DELETE FROM patron WHERE sheet_id = ? AND patron_id = ?", sheetId, fromId);

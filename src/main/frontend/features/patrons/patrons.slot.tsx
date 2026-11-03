@@ -4,7 +4,7 @@ import { postJson } from '../../api/http';
 import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
 import { patronsKey, usePatrons, usePeople, type Person } from '../people/usePeople';
 import { useClaims } from '../claims/useClaims';
-import { sumDues } from '../rates/useRates';
+import { hundredths, money, sumDues } from '../rates/useRates';
 import { useSheetToday } from '../today/useSheetToday';
 
 /** The first day (yyyy-mm-dd) of the 90 days up to and including a day. */
@@ -12,10 +12,24 @@ function windowStart(today: string): string {
   return new Date(Date.parse(`${today}T00:00:00Z`) - 89 * 86_400_000).toISOString().slice(0, 10);
 }
 
-/** A person's patrons: the other people on the sheet they have named (names sorted, comma and space
- *  separated), their backing (the due frozen when each of their patrons' SETTLED claims dated within the 90 days up
- *  to and including the sheet's today was settled, added up; 0.00 with none),
- *  and a picker that names one more. Naming themselves, or a patron twice, is refused. */
+/** Shares (in hundredths) for patrons in the order they were named: 100.00 split equally, each share rounded
+ *  half to even to two decimals, the remainder (100.00 less the shares added up) given to the first-named. */
+function shares(count: number): bigint[] {
+  if (count === 0) return [];
+  const n = BigInt(count);
+  let each = 10000n / n;
+  const rest = 10000n % n;
+  if (rest * 2n > n || (rest * 2n === n && each % 2n === 1n)) each += 1n;
+  const all = Array.from({ length: count }, () => each);
+  all[0] += 10000n - each * n;
+  return all;
+}
+
+/** A person's patrons: the other people on the sheet they have named, each with a share (shown as
+ *  `<name> <share>`, sorted by name, comma and space separated), their backing (over their patrons, the patron's
+ *  figure — the due frozen when each of their SETTLED claims dated within the 90 days up to and including the
+ *  sheet's today was settled, added up — times their share divided by 100, added up and rounded half to even;
+ *  0.00 with none), and a picker that names one more. Naming themselves, or a patron twice, is refused. */
 function PersonPatrons({ sheetId, personId }: { sheetId: string; personId: number }) {
   const people = usePeople(sheetId);
   const patrons = usePatrons(sheetId);
@@ -28,13 +42,23 @@ function PersonPatrons({ sheetId, personId }: { sheetId: string; personId: numbe
     .filter((x) => x.personId === personId)
     .map((x) => people.data?.find((p) => p.id === x.patronId))
     .filter((p): p is Person => p !== undefined);
-  const names = named.map((p) => p.name).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const split = shares(named.length);
+  const labels = named
+    .map((p, i) => ({ name: p.name, share: split[i] }))
+    .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+    .map((x) => `${x.name} ${money(x.share)}`);
   const from = today === undefined ? undefined : windowStart(today);
-  const patronIds = new Set(named.map((p) => p.id));
-  const backing = sumDues((claims.data ?? [])
-    .filter((c) => patronIds.has(c.personId) && c.status === 'SETTLED' && c.due !== null
+  const figure = (patronId: number) => hundredths(sumDues((claims.data ?? [])
+    .filter((c) => c.personId === patronId && c.status === 'SETTLED' && c.due !== null
       && from !== undefined && today !== undefined && c.date >= from && c.date <= today)
-    .map((c) => c.due as string));
+    .map((c) => c.due as string)));
+  // In 1/10000 of a hundredth: figure (hundredths) times share (hundredths of a percent).
+  const signed = named.reduce((sum, p, i) => sum + figure(p.id) * split[i], 0n);
+  const size = signed < 0n ? -signed : signed;
+  let cents = size / 10000n;
+  const rest = size % 10000n;
+  if (rest > 5000n || (rest === 5000n && cents % 2n === 1n)) cents += 1n;
+  const backing = money(signed < 0n ? -cents : cents);
 
   const add = useMutation({
     mutationFn: (patronId: number) =>
@@ -47,7 +71,7 @@ function PersonPatrons({ sheetId, personId }: { sheetId: string; personId: numbe
 
   return (
     <>
-      <td data-testid="person-patrons">{names.join(', ')}</td>
+      <td data-testid="person-patrons">{labels.join(', ')}</td>
       <td data-testid="person-backing">{backing}</td>
       <td>
         <select
