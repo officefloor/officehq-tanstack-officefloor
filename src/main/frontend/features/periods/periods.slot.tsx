@@ -108,18 +108,22 @@ function Periods({ sheetId }: { sheetId: string }) {
  *  (a blank from-date is the sheet's today), each named yyyy-mm, leaving out a month already named or
  *  overlapping a period. Shows how many were made (gone while it runs); a to-date before the
  *  from-date is refused with an error. A fiscal year (yyyy) and its button generate that fiscal year's twelve monthly
- *  periods the same way, from the sheet's fiscal year start month; the count and error are shared. */
+ *  periods the same way, from the sheet's fiscal year start month. A year (yyyy) and its button generate that calendar
+ *  year's four quarters, named yyyy-Q1 to yyyy-Q4, the same way; the count and error are shared. */
 function GeneratePeriods({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [fyYear, setFyYear] = useState('');
+  const [qYear, setQYear] = useState('');
   const submitOnce = useSingleFlight();
   const generate = useMutation({
-    mutationFn: (f: { from: string; to: string } | { year: string }) =>
+    mutationFn: (f: { from: string; to: string } | { year: string; quarters?: boolean }) =>
       postJson<{ made: number }>(
-        `/api/sheets/${encodeURIComponent(sheetId)}/${'year' in f ? 'period-generate-fy' : 'period-generate'}`,
-        f,
+        `/api/sheets/${encodeURIComponent(sheetId)}/${
+          'year' in f ? (f.quarters ? 'period-generate-quarters' : 'period-generate-fy') : 'period-generate'
+        }`,
+        'year' in f ? { year: f.year } : f,
       ),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
@@ -168,6 +172,23 @@ function GeneratePeriods({ sheetId }: { sheetId: string }) {
         }
       >
         Generate fiscal year
+      </button>{' '}
+      <label>
+        Quarters of{' '}
+        <input placeholder="yyyy" data-testid="period-generate-quarters-year" value={qYear} onChange={field(setQYear)} />
+      </label>{' '}
+      <button
+        type="button"
+        data-testid="period-generate-quarters"
+        disabled={generate.isPending}
+        onClick={() =>
+          submitOnce(() => {
+            generate.reset();
+            return generate.mutateAsync({ year: qYear, quarters: true });
+          })
+        }
+      >
+        Generate quarters
       </button>
       {generate.isSuccess && (
         <>
