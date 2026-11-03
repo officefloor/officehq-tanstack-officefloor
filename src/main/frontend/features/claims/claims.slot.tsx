@@ -674,6 +674,65 @@ function BulkSettle({ sheetId }: { sheetId: string }) {
   );
 }
 
+/** Move the selected claims to one person together: the server moves, in list order and by the rules of a
+ *  single reassign, each that can be moved and leaves the rest; the bar shows how many were moved and how
+ *  many refused (gone while it runs). */
+function BulkReassign({ sheetId }: { sheetId: string }) {
+  const selection = useClaimSelection(sheetId);
+  const people = usePeople(sheetId);
+  const queryClient = useQueryClient();
+  const submitOnce = useSingleFlight();
+  const [target, setTarget] = useState('');
+  const bulk = useMutation({
+    mutationFn: (r: { claimIds: number[]; personId: number | null }) =>
+      postJson<{ reassigned: number; refused: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/bulk-reassign`, r),
+    onSuccess: () => selection.clear(),
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+  });
+  return (
+    <p data-testid="bulk-reassign-bar">
+      <select
+        data-testid="bulk-reassign-to"
+        value={target}
+        onChange={(e) => {
+          setTarget(e.target.value);
+          bulk.reset();
+        }}
+      >
+        <option value="">move to…</option>
+        {(people.data ?? []).map((p) => (
+          <option key={p.id} value={String(p.id)}>
+            {p.name}
+          </option>
+        ))}
+      </select>{' '}
+      <button
+        type="button"
+        data-testid="bulk-reassign"
+        disabled={bulk.isPending}
+        onClick={() =>
+          submitOnce(() => {
+            bulk.reset();
+            return bulk.mutateAsync({ claimIds: [...selection.ids], personId: target === '' ? null : Number(target) });
+          })
+        }
+      >
+        Reassign selected ({selection.ids.size})
+      </button>
+      {bulk.isSuccess && (
+        <>
+          {' '}
+          Reassigned <strong data-testid="bulk-reassigned">{bulk.data.reassigned}</strong>, refused{' '}
+          <strong data-testid="bulk-reassign-refused">{bulk.data.refused}</strong>
+        </>
+      )}
+      {bulk.isError && <span data-testid="bulk-reassign-error">{bulk.error.message}</span>}
+    </p>
+  );
+}
+
 /** The sheet's claimed-total: everyone's claimed added up. */
 function ClaimedTotal({ sheetId }: { sheetId: string }) {
   const claims = useClaims(sheetId);
@@ -692,5 +751,6 @@ export const contributions = [
   PersonDetail.fill({ order: 10, Component: PersonClaims }),
   SheetBody.fill({ order: 15, Component: BulkOpen }),
   SheetBody.fill({ order: 16, Component: BulkSettle }),
+  SheetBody.fill({ order: 17, Component: BulkReassign }),
   SheetBody.fill({ order: 20, Component: ({ sheetId }) => <ClaimedTotal sheetId={sheetId} /> }),
 ];

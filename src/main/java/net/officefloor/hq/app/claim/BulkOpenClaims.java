@@ -1,7 +1,5 @@
 package net.officefloor.hq.app.claim;
 
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -35,14 +33,8 @@ public class BulkOpenClaims {
         if (selected.isEmpty()) {
             throw new BadRequestException("select at least one claim");
         }
-        List<Claim> found = new ArrayList<>();
-        int refused = 0;
-        for (Long cid : selected) {
-            Claim c = repository.find(id, cid);
-            if (c == null) refused++;
-            else found.add(c);
-        }
-        found.sort(Comparator.comparingLong(Claim::personId).thenComparing(Claim::id, Comparator.reverseOrder()));
+        List<Claim> found = repository.inListOrder(id, selected);
+        int refused = selected.size() - found.size();
         int opened = 0;
         for (Claim c : found) {
             try {

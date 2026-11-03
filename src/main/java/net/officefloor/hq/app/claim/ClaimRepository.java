@@ -7,6 +7,8 @@ import java.sql.PreparedStatement;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -68,6 +70,17 @@ public class ClaimRepository {
         Integer known = jdbc.queryForObject("SELECT COUNT(*) FROM person WHERE sheet_id = ? AND id = ?",
                 Integer.class, sheetId, personId);
         return known != null && known > 0;
+    }
+
+    /** The given claims as the sheet lists them: people in the order they were added, each person's claims
+     *  newest first (a reassigned claim counts as its new person's newest); ids the sheet does not have are left out. */
+    public List<Claim> inListOrder(String sheetId, Collection<Long> ids) {
+        List<Claim> out = new ArrayList<>();
+        for (Claim c : list(sheetId)) {
+            if (ids.contains(c.id())) out.add(c);
+        }
+        out.sort(Comparator.comparingLong(Claim::personId));
+        return out;
     }
 
     /** The sheet's claims, newest first. */
