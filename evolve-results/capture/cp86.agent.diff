@@ -1,0 +1,103 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 872763839..a3fcf90a5 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -66,6 +66,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
+   const [deferDates, setDeferDates] = useState<Record<number, string>>({});
+   const [splitAmounts, setSplitAmounts] = useState<Record<number, string>>({});
+   const [newDates, setNewDates] = useState<Record<number, string>>({});
++  const [inlineAmounts, setInlineAmounts] = useState<Record<number, string>>({});
+ 
+   const clearForm = () => {
+     setEditing(null);
+@@ -147,10 +148,39 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
+     },
+   });
+ 
++  // A claim's amount changed on its row: saved as the claim's editor would save it, keeping its date, note and
++  // corrects, so the server applies the same rules (and writes CLAIM_EDITED); a refusal shows on that claim's row.
++  const inline = useMutation({
++    mutationFn: (f: { claim: Claim; amount: string }) =>
++      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${f.claim.id}`, {
++        amount: f.amount,
++        date: f.claim.date,
++        note: f.claim.note,
++        corrects: f.claim.corrects === null ? '' : String(f.claim.corrects),
++      }),
++    onSuccess: (_, f) => {
++      setInlineAmounts((m) => ({ ...m, [f.claim.id]: '' }));
++      markLock(f.claim.id, null);
++      if (editing === f.claim.id) clearForm();
++    },
++    onSettled: async () => {
++      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
++    },
++  });
++
++  const saveInline = (c: Claim) => {
++    setRefused(null);
++    action.reset();
++    reassign.reset();
++    inline.reset();
++    inline.mutate({ claim: c, amount: (inlineAmounts[c.id] ?? '').trim() });
++  };
++
+   const move = (id: number) => {
+     setRefused(null);
+     action.reset();
+     reassign.reset();
++    inline.reset();
+     const target = targets[id] ?? '';
+     reassign.mutate({ id, personId: target === '' ? null : Number(target) });
+   };
+@@ -159,6 +189,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
+     setRefused(null);
+     action.reset();
+     reassign.reset();
++    inline.reset();
+     action.mutate({
+       id,
+       action: a,
+@@ -177,6 +208,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
+     save.reset();
+     action.reset();
+     reassign.reset();
++    inline.reset();
+     lock.reset();
+     const role = settings?.roles.find((r) => r.user === user)?.role;
+     const known =
+@@ -443,12 +475,34 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
+                   {reassign.isError && reassign.variables?.id === c.id && (
+                     <span data-testid="claim-error">{reassign.error.message}</span>
+                   )}
++                  {inline.isError && inline.variables?.claim.id === c.id && (
++                    <span data-testid="claim-error">{inline.error.message}</span>
++                  )}
+                   {action.isError && action.variables?.id === c.id && (
+                     <span data-testid="claim-error">{action.error.message}</span>
+                   )}
+                   {refused?.id === c.id && <span data-testid="claim-error">{refused.message}</span>}
+                 </td>
+                 <td>
++                  <input
++                    data-testid="claim-inline-amount"
++                    inputMode="decimal"
++                    placeholder="amount"
++                    value={inlineAmounts[c.id] ?? ''}
++                    onChange={(e) => {
++                      const v = e.target.value;
++                      setInlineAmounts((m) => ({ ...m, [c.id]: v }));
++                      if (inline.variables?.claim.id === c.id) inline.reset();
++                    }}
++                  />{' '}
++                  <button
++                    type="button"
++                    data-testid="claim-inline-save"
++                    disabled={inline.isPending}
++                    onClick={() => saveInline(c)}
++                  >
++                    Save amount
++                  </button>{' '}
+                   {editing === c.id ? (
+                     <button type="button" data-testid="claim-cancel" onClick={cancel}>
+                       Cancel
