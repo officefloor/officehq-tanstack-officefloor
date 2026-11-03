@@ -5,7 +5,9 @@ import { SheetBody } from '../../slots/defs/sheetBody';
 
 /** The audit viewer: the sheet's audit lines exactly as the audit file holds them, newest first. A name
  *  in the filter keeps only the lines about that person (name=<name> or person=<name>, compared ignoring
- *  case and surrounding spaces). It reads the file; it records nothing. */
+ *  case and surrounding spaces), followed by the matching lines of the sheet's descendants (each sheet's
+ *  newest first, sheets by id) and then those from the sheet a transferred person came from. It reads the
+ *  file; it records nothing. */
 function AuditViewer({ sheetId }: { sheetId: string }) {
   const [filter, setFilter] = useState('');
 
