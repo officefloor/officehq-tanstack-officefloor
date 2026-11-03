@@ -12,7 +12,7 @@ import { useSignedInUser } from '../session/useSession';
 import { roleOf, useSettings } from '../settings/useSettings';
 import { useSheetToday } from '../today/useSheetToday';
 import { useTemplates } from '../templates/useTemplates';
-import { claimed, claimsKey, shownDeferred, shownTags, useClaims, useLastBatch, type Claim } from './useClaims';
+import { claimed, claimsKey, shownDeferred, shownShares, shownTags, useClaims, useLastBatch, type Claim } from './useClaims';
 import { useClaimSelection } from './useClaimSelection';
 import { useFigure } from '../locale/useLocale';
 import { Col } from '../columns/useColumns';
@@ -32,7 +32,7 @@ function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: numbe
   );
 }
 
-type ClaimAction = 'open' | 'review' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | 'delete' | 'restore' | 'defer' | 'proof' | 'remind' | 'waive' | 'hold' | 'split' | 'settle-part' | 'redate' | 'comment' | 'line';
+type ClaimAction = 'open' | 'review' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | 'delete' | 'restore' | 'defer' | 'proof' | 'remind' | 'waive' | 'hold' | 'split' | 'settle-part' | 'redate' | 'comment' | 'line' | 'share';
 
 /** A claim's status changes; the server refuses one its status does not allow, a settle by the user
  *  who opened the claim, and an approve or reject by anyone but a steward or the person's approver (an approve also by the
@@ -41,7 +41,7 @@ type ClaimAction = 'open' | 'review' | 'settle' | 'approve' | 'reject' | 'void' 
  *  A settle or approve of a claim whose due is above the proof threshold in force on its date is refused while it has no proof.
  *  An open of a claim whose due is above the review threshold in force on its date makes it REVIEW; a claim gets its number only when settled or approved; a review
  *  by a steward makes it OPEN, by anyone else is refused. */
-const ACTIONS: [Exclude<ClaimAction, 'defer' | 'proof' | 'remind' | 'waive' | 'hold' | 'split' | 'settle-part' | 'redate' | 'comment' | 'line'>, string][] = [
+const ACTIONS: [Exclude<ClaimAction, 'defer' | 'proof' | 'remind' | 'waive' | 'hold' | 'split' | 'settle-part' | 'redate' | 'comment' | 'line' | 'share'>, string][] = [
   ['open', 'Open'],
   ['review', 'Review'],
   ['settle', 'Settle'],
@@ -125,6 +125,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   const [proofKinds, setProofKinds] = useState<Record<number, string>>({});
   const [lineFields, setLineFields] = useState<Record<number, { label: string; qty: string; unit: string }>>({});
   const [inlineAmounts, setInlineAmounts] = useState<Record<number, string>>({});
+  const [shareFields, setShareFields] = useState<Record<number, { with: string; share: string }>>({});
 
   const clearForm = () => {
     setEditing(null);
@@ -198,8 +199,8 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   // or adding the line (label, quantity, unit amount) typed on its row to a DRAFT one (its amount becomes its lines' total);
   // a refusal shows on that claim's row.
   const action = useMutation({
-    mutationFn: (a: { id: number; action: ClaimAction; reason: string; until: string; amount: string; date: string; text: string; label: string; qty: string; unit: string; kind: string; on: string }) =>
-      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${a.id}/${a.action}`, { reason: a.reason, until: a.until, amount: a.amount, date: a.date, text: a.text, label: a.label, qty: a.qty, unit: a.unit, kind: a.kind, on: a.on }),
+    mutationFn: (a: { id: number; action: ClaimAction; reason: string; until: string; amount: string; date: string; text: string; label: string; qty: string; unit: string; kind: string; on: string; with: string; share: string }) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${a.id}/${a.action}`, { reason: a.reason, until: a.until, amount: a.amount, date: a.date, text: a.text, label: a.label, qty: a.qty, unit: a.unit, kind: a.kind, on: a.on, with: a.with, share: a.share }),
     onSuccess: (changed, a) => {
       if (a.action === 'reject') setReasons((r) => ({ ...r, [a.id]: '' }));
       if (a.action === 'void') setVoidReasons((r) => ({ ...r, [a.id]: '' }));
@@ -210,6 +211,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
       if (a.action === 'comment') setComments((m) => ({ ...m, [a.id]: '' }));
       if (a.action === 'proof') setProofKinds((m) => ({ ...m, [a.id]: '' }));
       if (a.action === 'line') setLineFields((m) => ({ ...m, [a.id]: { label: '', qty: '', unit: '' } }));
+      if (a.action === 'share') setShareFields((m) => ({ ...m, [a.id]: { with: '', share: '' } }));
       // An open editor of the claim takes the amount its lines now add up to.
       if (a.action === 'line' && editing === a.id) setAmount(changed.amount);
     },
@@ -287,6 +289,8 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
       unit: a === 'line' ? (lineFields[id]?.unit ?? '').trim() : '',
       kind: a === 'proof' ? proofKinds[id] ?? '' : '',
       on: a === 'settle' ? (settleDates[id] ?? '').trim() : '',
+      with: a === 'share' ? shareFields[id]?.with ?? '' : '',
+      share: a === 'share' ? (shareFields[id]?.share ?? '').trim() : '',
     });
   };
 
@@ -359,6 +363,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   // of the floor in force on its date and its figure (its amount at the rate in force on its date for the grade its
   // person had on that date; 'n/a' when none applies) plus its late charge on that floored figure while it is overdue.
   const person = people.data?.find((p) => p.id === personId);
+  const names = new Map((people.data ?? []).map((p) => [p.id, p.name]));
 
   return (
     <tr>
@@ -479,6 +484,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                 <td data-testid="claim-review-late">{c.reviewLate ? 'yes' : 'no'}</td>
                 <td data-testid="claim-waived">{c.waived ? 'yes' : 'no'}</td>
                 <td data-testid="claim-held">{c.held ? 'yes' : 'no'}</td>
+                <td data-testid="claim-shares">{shownShares(c, names)}</td>
                 <td data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</td>
                 <td data-testid="claim-status">{c.status}</td>
                 <td data-testid="claim-batch">{c.batch ?? ''}</td>
@@ -725,6 +731,41 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                     onClick={() => act(c.id, 'redate')}
                   >
                     Re-date
+                  </button>{' '}
+                  <select
+                    data-testid="claim-share-select"
+                    value={shareFields[c.id]?.with ?? ''}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setShareFields((m) => ({ ...m, [c.id]: { with: v, share: m[c.id]?.share ?? '' } }));
+                      if (action.variables?.id === c.id) action.reset();
+                    }}
+                  >
+                    <option value="">share with…</option>
+                    {(people.data ?? []).map((p) => (
+                      <option key={p.id} value={String(p.id)}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>{' '}
+                  <input
+                    data-testid="claim-share-pct"
+                    inputMode="decimal"
+                    placeholder="share %"
+                    value={shareFields[c.id]?.share ?? ''}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setShareFields((m) => ({ ...m, [c.id]: { with: m[c.id]?.with ?? '', share: v } }));
+                      if (action.variables?.id === c.id) action.reset();
+                    }}
+                  />{' '}
+                  <button
+                    type="button"
+                    data-testid="claim-share-add"
+                    disabled={action.isPending}
+                    onClick={() => act(c.id, 'share')}
+                  >
+                    Share
                   </button>{' '}
                   <select
                     data-testid="claim-reassign-to"

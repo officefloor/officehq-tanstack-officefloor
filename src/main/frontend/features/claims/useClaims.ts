@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { useReader } from '../../api/readNow';
 import { heldOn, type Hold } from '../people/usePeople';
+import { due } from '../rates/useRates';
 
 /** A claim's status: DRAFT -> OPEN -> SETTLED; a clerk's settle above the clerk limit goes to PENDING
  *  instead, which a steward approves (SETTLED) or rejects (OPEN again); a DRAFT, OPEN or PENDING claim
@@ -28,7 +29,8 @@ export type ClaimStatus = 'DRAFT' | 'REVIEW' | 'OPEN' | 'PENDING' | 'SETTLED' | 
  *  number of the settle batch (a bulk settle) that settled it (null when settled one at a time, or not settled), and its
  *  lines, oldest first, as "<label> <qty> x <unit>" (a claim with lines has their total as its amount), and its added
  *  number: claims added later have higher ones; a forward-only rate applies only to claims added after it (see `rateFor`), and whether it is review-late (REVIEW, and its
- *  review day — the sheet's today when it went to REVIEW — plus the sheet's review SLA is before the sheet's today). */
+ *  review day — the sheet's today when it went to REVIEW — plus the sheet's review SLA is before the sheet's today), and its shares,
+ *  oldest first: another person holding a percent (two decimals) of its due (see `sharePart`). */
 export type Claim = {
   id: number;
   personId: number;
@@ -62,7 +64,22 @@ export type Claim = {
   batch: number | null;
   added: number;
   reviewLate: boolean;
+  shares: ClaimShare[];
 };
+
+/** A share of a claim: the person holding it and the percent of the claim's due they hold (two decimals). */
+export type ClaimShare = { personId: number; share: string };
+
+/** A holder's part of a claim's due: the due times their share divided by 100, rounded half to even, with two
+ *  decimals ('n/a' when the due is). */
+export function sharePart(dueNow: string, share: string): string {
+  return dueNow === 'n/a' ? 'n/a' : due(dueNow, share, false);
+}
+
+/** A claim's holders as the screen shows them: "<name> <share>", comma and space separated ('' when none). */
+export function shownShares(c: Claim, names: ReadonlyMap<number, string>): string {
+  return c.shares.map((s) => `${names.get(s.personId) ?? ''} ${s.share}`).join(', ');
+}
 
 /** Whether a claim is open: OPEN, or PENDING (handled like OPEN everywhere). */
 export function isOpen(c: Claim): boolean {
@@ -139,7 +156,7 @@ export function useClaims(sheetId: string) {
     queryKey: read.key(claimsKey(sheetId)),
     queryFn: async () => {
       const res = await read.get<{
-        claims: Omit<Claim, 'log' | 'comments' | 'lines' | 'lockedBy' | 'batch' | 'added' | 'reviewLate'>[];
+        claims: Omit<Claim, 'log' | 'comments' | 'lines' | 'lockedBy' | 'batch' | 'added' | 'reviewLate' | 'shares'>[];
         logs: Record<string, string[]>;
         locks: Record<string, string>;
         comments: Record<string, string[]>;
@@ -147,6 +164,7 @@ export function useClaims(sheetId: string) {
         batches: Record<string, number>;
         added: Record<string, number>;
         reviewLate: Record<string, boolean>;
+        shares: Record<string, ClaimShare[]>;
       }>(`/api/sheets/${encodeURIComponent(sheetId)}/claims`);
       return res.claims.map((c): Claim => ({
         ...c,
@@ -157,6 +175,7 @@ export function useClaims(sheetId: string) {
         batch: res.batches[String(c.id)] ?? null,
         added: res.added?.[String(c.id)] ?? 0,
         reviewLate: res.reviewLate?.[String(c.id)] ?? false,
+        shares: res.shares?.[String(c.id)] ?? [],
       }));
     },
   });

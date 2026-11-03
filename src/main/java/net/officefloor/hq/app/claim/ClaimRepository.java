@@ -938,6 +938,29 @@ public class ClaimRepository {
         return lines;
     }
 
+    /** Give a person a share (a percent, two decimals) of a claim. */
+    public void addShare(String sheetId, long claimId, long personId, BigDecimal share) {
+        jdbc.update("INSERT INTO claim_share (sheet_id, claim_id, person_id, share) VALUES (?, ?, ?, ?)",
+                sheetId, claimId, personId, share.setScale(2));
+    }
+
+    /** A claim's shares, oldest first. */
+    public List<ClaimShare> sharesOf(String sheetId, long claimId) {
+        return jdbc.query("SELECT person_id, share FROM claim_share WHERE sheet_id = ? AND claim_id = ? ORDER BY id",
+                (rs, i) -> new ClaimShare(rs.getLong("person_id"), money(rs.getBigDecimal("share"))), sheetId, claimId);
+    }
+
+    /** The shares of the sheet's claims, by claim id: each oldest first. */
+    public Map<String, List<ClaimShare>> shares(String sheetId) {
+        Map<String, List<ClaimShare>> shares = new LinkedHashMap<>();
+        jdbc.query("SELECT claim_id, person_id, share FROM claim_share WHERE sheet_id = ? ORDER BY id",
+                rs -> {
+                    shares.computeIfAbsent(String.valueOf(rs.getLong("claim_id")), k -> new ArrayList<>())
+                            .add(new ClaimShare(rs.getLong("person_id"), money(rs.getBigDecimal("share"))));
+                }, sheetId);
+        return shares;
+    }
+
     /** Each claim's status at the end of a day, by claim id, as its status log records it: the last line
      *  dated on or before it. A claim with no such line (added after that day) is absent. */
     public Map<Long, String> statusesOn(String sheetId, LocalDate day) {

@@ -11,6 +11,7 @@ import java.util.Map;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.claim.ClaimShare;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.settings.SettingsRepository;
@@ -57,7 +58,8 @@ public class Rollup {
 
     /** The sheet's figures now. A person's claimed is the sum of their counting claims' amounts, leaving out corrections
      *  (claims that correct another). A person's due-total is the sum of their counting claims' dues now (late charges included),
-     *  skipping those with none; 'n/a' when no rate for the grade they have on the sheet's today is in force
+     *  skipping those with none, less the parts of them its holders hold, plus their parts of the counting claims shared
+     *  with them (see {@link ClaimShare#part}); 'n/a' when no rate for the grade they have on the sheet's today is in force
      *  then and no counting claim keeps a fixed figure or has a due (at the grade it was claimed under). A due-total is at most the sheet's cap (an 'n/a' is not capped). The sheet's due-total skips 'n/a'.
      *  The sheet's due-total and overdue-total leave out the single highest and lowest person's figure when three or more
      *  people have one. */
@@ -71,6 +73,9 @@ public class Rollup {
             LocalDate today = sheets.today(sheetId);
             List<Claim> all = claims.list(sheetId);
             BigDecimal cap = settings.cap(sheetId);
+            Map<String, List<ClaimShare>> shares = claims.shares(sheetId);
+            Map<Long, Person> byId = new LinkedHashMap<>();
+            for (Person p : everyone) byId.put(p.id(), p);
             for (Person p : everyone) {
                 BigDecimal claimed = BigDecimal.ZERO.setScale(2);
                 BigDecimal due = BigDecimal.ZERO.setScale(2);
@@ -85,11 +90,23 @@ public class Rollup {
                     if (!c.counts(p.liveHolds(on))) continue;
                     fixed |= c.fixed();
                     BigDecimal now = claims.dueNow(sheetId, c);
-                    if (now != null) due = due.add(now);
+                    if (now != null) due = due.add(now).subtract(parts(now, shares.get(String.valueOf(c.id()))));
                     if (now != null && claims.overdue(sheetId, c, today)) overdue = overdue.add(now);
                     if (now != null && "SETTLED".equals(c.status()) && c.corrects() == null) settled = settled.add(now);
                     if (claims.overdue(sheetId, c, today)) overdueCount++;
                     fixed |= now != null;
+                }
+                for (Claim c : all) {
+                    List<ClaimShare> held = shares.get(String.valueOf(c.id()));
+                    if (held == null || c.personId() == p.id()) continue;
+                    ClaimShare mine = held.stream().filter(s -> s.personId() == p.id()).findFirst().orElse(null);
+                    Person owner = byId.get(c.personId());
+                    if (mine == null || owner == null) continue;
+                    if (!c.counts(owner.liveHolds(today == null ? null : today.toString()))) continue;
+                    BigDecimal now = claims.dueNow(sheetId, c);
+                    if (now == null) continue;
+                    due = due.add(ClaimShare.part(now, mine.share()));
+                    fixed = true;
                 }
                 boolean shown = fixed || claims.rated(sheetId, p.id(), today);
                 due = SettingsRepository.capped(due, cap);
@@ -103,6 +120,14 @@ public class Rollup {
         }
         return new Snapshot(figures, claimedTotal.toPlainString(), trimmed(dues).toPlainString(),
                 trimmed(overdues).toPlainString());
+    }
+
+    /** The holders' parts of a claim's due (see {@link ClaimShare#part}) added up; 0.00 when it has no shares. */
+    static BigDecimal parts(BigDecimal due, List<ClaimShare> shares) {
+        BigDecimal total = BigDecimal.ZERO.setScale(2);
+        if (shares == null) return total;
+        for (ClaimShare s : shares) total = total.add(ClaimShare.part(due, s.share()));
+        return total;
     }
 
     /** People's figures added up, leaving out the single highest and the single lowest when there are three or more. */

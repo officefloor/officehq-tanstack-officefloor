@@ -1,4 +1,4 @@
-import { type Claim, counts, fixedDue, useClaims } from '../claims/useClaims';
+import { type Claim, counts, fixedDue, sharePart, useClaims } from '../claims/useClaims';
 import { claimDueNow } from '../overdue/useOverdue';
 import { gradeOn, holdsById, type Person, usePeople } from '../people/usePeople';
 import { type Settings, settingOn, useSettings } from '../settings/useSettings';
@@ -10,6 +10,7 @@ import { hundredths, money, type Rate, rateFor, sumDues, useRates } from './useR
  *  bound it to, else its live due, with its late charge while overdue),
  *  skipping those with none; 'n/a' when no rate for the grade they have on the sheet's today is in force
  *  then and no counting claim of theirs keeps a fixed figure or has a due (at the grade it was claimed under).
+ *  A shared claim counts its due less its holders' parts for its own person, and each holder's part (see sharePart) for that holder.
  *  A due-total is at most the sheet's cap in force on its today ('n/a' is not capped). */
 export function useDueTotals(sheetId: string): Map<number, string> {
   const totals = new Map<number, string>();
@@ -35,7 +36,7 @@ export function useSettledOpenTotals(sheetId: string): Map<number, { settled: st
 }
 
 /** Each person's score figures, by person id: the sum of the figures of their counting SETTLED claims that
- *  correct nothing ('n/a' figures skipped). */
+ *  correct nothing ('n/a' figures skipped), whole whatever their shares. */
 export function useScoreSettled(sheetId: string): Map<number, string> {
   const scored = new Map<number, string>();
   for (const [id, f] of useDueFigures(sheetId)) scored.set(id, f.scored);
@@ -71,12 +72,28 @@ function dueFigures(
   const holds = holdsById(people, today);
   const cap = settingOn(settings, 'cap', today);
   const totals = new Map<number, { total: string; excess: string; settled: string; open: string; scored: string }>();
+  // Each counting claim's due now, by claim id, at its own person's grade.
+  const byId = new Map((people ?? []).map((p) => [p.id, p]));
+  const dueOf = new Map<number, string>();
+  for (const c of claims ?? []) {
+    const owner = byId.get(c.personId);
+    if (owner === undefined || !counts(c, holds, today)) continue;
+    dueOf.set(c.id, claimDueNow(c, claims, rateFor(rates, gradeOn(owner, c.date), c.date, c.added), settings, today, gradeOn(owner, c.date)));
+  }
   for (const p of people ?? []) {
-    const counting = (claims ?? []).filter((c) => c.personId === p.id && counts(c, holds, today));
+    const own = (claims ?? []).filter((c) => c.personId === p.id && dueOf.has(c.id));
+    // A shared claim's own person counts its due less its holders' parts; each holder counts their part.
+    const ownDues = own.map((c) => {
+      const d = dueOf.get(c.id)!;
+      if (d === 'n/a' || c.shares.length === 0) return d;
+      return money(hundredths(d) - c.shares.reduce((sum, s) => sum + hundredths(sharePart(d, s.share)), 0n));
+    });
+    const held = (claims ?? []).filter((c) => c.personId !== p.id && dueOf.has(c.id) && dueOf.get(c.id) !== 'n/a'
+      && c.shares.some((s) => s.personId === p.id));
+    const counting = [...own, ...held];
+    const dues = [...ownDues, ...held.map((c) => sharePart(dueOf.get(c.id)!, c.shares.find((s) => s.personId === p.id)!.share))];
     const rated = rateFor(rates, p.grade, today) !== undefined;
-    const dues = counting.map((c) =>
-      claimDueNow(c, claims, rateFor(rates, gradeOn(p, c.date), c.date, c.added), settings, today, gradeOn(p, c.date)));
-    const shown = rated || counting.some((c) => fixedDue(c) !== null && fixedDue(c) !== 'n/a') || dues.some((d) => d !== 'n/a');
+    const shown = rated || own.some((c) => fixedDue(c) !== null && fixedDue(c) !== 'n/a') || dues.some((d) => d !== 'n/a');
     const sum = sumDues(dues);
     const over = shown && cap !== null && hundredths(sum) > hundredths(cap);
     totals.set(p.id, {
@@ -84,7 +101,7 @@ function dueFigures(
       excess: over ? money(hundredths(sum) - hundredths(cap)) : '0.00',
       settled: sumDues(dues.filter((_, i) => counting[i].status === 'SETTLED')),
       open: sumDues(dues.filter((_, i) => counting[i].status !== 'SETTLED')),
-      scored: sumDues(dues.filter((_, i) => counting[i].status === 'SETTLED' && counting[i].corrects === null)),
+      scored: sumDues(own.filter((c) => c.status === 'SETTLED' && c.corrects === null).map((c) => dueOf.get(c.id)!)),
     });
   }
   return totals;
