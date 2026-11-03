@@ -1,0 +1,323 @@
+diff --git a/src/main/frontend/features/settings/settings.slot.tsx b/src/main/frontend/features/settings/settings.slot.tsx
+index 9eaf67cf6..dfe9fdaac 100644
+--- a/src/main/frontend/features/settings/settings.slot.tsx
++++ b/src/main/frontend/features/settings/settings.slot.tsx
+@@ -24,7 +24,9 @@ import { useFigure } from '../locale/useLocale';
+  *  (half-up or half-even: a claim whose date has one in force rounds its live figures by it instead of by the policy date;
+  *  blank is none), its permission matrix (for each of open, settle, void,
+  *  reassign, close and reopen, the roles that may do it, comma separated; blank keeps the standing rule; not dated), its grace days (changing the
+- *  sheet's today closes each open period whose to-date plus them is before the new today; blank is off; not dated), its entry date (while set, the default date of a new claim — the claim form, the
++ *  sheet's today closes each open period whose to-date plus them is before the new today; blank is off; not dated), its escalation gap
++ *  (reminding a claim whose previous reminder was at least that many days before the sheet's today escalates it, once per
++ *  claim ever; blank is off; not dated), its entry date (while set, the default date of a new claim — the claim form, the
+  *  quick-add bar, a pasted line with a blank date and a correction — instead of the sheet's today; blank is off; not dated), its pot (two
+  *  decimals, shared out as the cuts of each balanced pool; blank is none; not dated), its parent sheet (a grade with no
+  *  rate in force on a date takes the parent's, then the parent's parent's, up to three levels up; a sheet that has been
+@@ -82,6 +84,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
+   const [from, setFrom] = useState<Record<string, string>>({});
+   const [permissions, setPermissions] = useState<Record<string, string>>({});
+   const [graceDays, setGraceDays] = useState<string | null>(null);
++  const [escalateAfter, setEscalateAfter] = useState<string | null>(null);
+   const [entryDate, setEntryDate] = useState<string | null>(null);
+   const [pot, setPot] = useState<string | null>(null);
+   const [parent, setParent] = useState<string | null>(null);
+@@ -101,7 +104,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
+ 
+   const saveOnce = useSingleFlight();
+   const save = useMutation({
+-    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null; noteThreshold: string | null; permissions: Record<string, string>; graceDays: string | null; entryDate: string | null; gradeGrace: Record<string, string>; gradeProofThreshold: Record<string, string>; pot: string | null; parent: string | null; fiscalStartMonth: string | null; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null }) =>
++    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null; noteThreshold: string | null; permissions: Record<string, string>; graceDays: string | null; entryDate: string | null; gradeGrace: Record<string, string>; gradeProofThreshold: Record<string, string>; pot: string | null; parent: string | null; fiscalStartMonth: string | null; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null; escalateAfter: string | null }) =>
+       postJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, f),
+     onSuccess: (saved) => {
+       setLimit(null);
+@@ -120,6 +123,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
+       setFrom({});
+       setPermissions({});
+       setGraceDays(null);
++      setEscalateAfter(null);
+       setEntryDate(null);
+       setPot(null);
+       setParent(null);
+@@ -194,7 +198,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
+           e.preventDefault();
+           saveOnce(() => {
+             save.reset();
+-            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap, from, proofThreshold, noteThreshold, permissions, graceDays, entryDate, gradeGrace, gradeProofThreshold: gradeProof, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold });
++            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap, from, proofThreshold, noteThreshold, permissions, graceDays, entryDate, gradeGrace, gradeProofThreshold: gradeProof, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter });
+           });
+         }}
+       >
+@@ -426,6 +430,19 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
+             }}
+           />
+         </label>{' '}
++        <label>
++          Escalate after (days){' '}
++          <input
++            data-testid="setting-escalate-after"
++            inputMode="numeric"
++            value={escalateAfter ?? ''}
++            onFocus={() => setEscalateAfter((v) => v ?? '')}
++            onChange={(e) => {
++              setEscalateAfter(e.target.value);
++              save.reset();
++            }}
++          />
++        </label>{' '}
+         <label>
+           Entry date{' '}
+           <input
+@@ -526,6 +543,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
+           </span>
+         ))}
+         , grace days <strong data-testid="setting-grace-days-current">{fig(settings.data?.graceDays ?? '')}</strong>
++        , escalate after <strong data-testid="setting-escalate-after-current">{fig(settings.data?.escalateAfter ?? '')}</strong>
+         , entry date <strong data-testid="setting-entry-date-current">{fig(settings.data?.entryDate ?? '')}</strong>
+         , pot <strong data-testid="setting-pot-current">{fig(settings.data?.pot ?? '')}</strong>
+         , parent <strong data-testid="setting-parent-current">{fig(settings.data?.parent ?? '')}</strong>
+diff --git a/src/main/frontend/features/settings/useSettings.ts b/src/main/frontend/features/settings/useSettings.ts
+index d4c4dd44a..caf1a891e 100644
+--- a/src/main/frontend/features/settings/useSettings.ts
++++ b/src/main/frontend/features/settings/useSettings.ts
+@@ -30,12 +30,14 @@ export type Role = { user: string; role: string };
+  *  dated): a grade with no rate in force on a date takes the parent's, then its parent's, up to three levels up.
+  *  `fiscalStartMonth` is the month (1 to 12; 1 unless set; not dated) the sheet's fiscal year starts in.
+  *  `alertThreshold` is the sheet's alert threshold (two decimals; null when blank: off; not dated): a person whose
+- *  due-total goes from at or below it to above it is written an ALERT line. */
++ *  due-total goes from at or below it to above it is written an ALERT line. `escalateAfter` is the sheet's escalation
++ *  gap in days (null when blank: off; not dated): reminding a claim whose previous reminder was at least that many days
++ *  before the sheet's today escalates it, once per claim ever. */
+ export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; roles: Role[]; policyDate: string | null; periodNumberingFrom: string | null;
+   gradeTerms: Record<string, number>; cap: string | null; dated: Record<string, DatedValue[]>;
+   permissions: Record<string, string>; graceDays: number | null; delegations: Delegation[];
+   entryDate: string | null; holidays: string[]; voidReasons: string[]; pot: string | null;
+-  parent: string | null; fiscalStartMonth: number; alertThreshold: string | null };
++  parent: string | null; fiscalStartMonth: number; alertThreshold: string | null; escalateAfter: number | null };
+ 
+ /** A steward's (`by`) delegation of the steward role to a user, from a date to a date (yyyy-mm-dd, inclusive):
+  *  while the sheet's today is inside it the user acts as a steward. */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRemind.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRemind.java
+index ef5782a25..fe47a5bfa 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRemind.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRemind.java
+@@ -5,7 +5,8 @@ import net.officefloor.hq.app.BadRequestException;
+ 
+ /** Remind an OPEN or PENDING claim: its reminded date becomes the sheet's today, and REMIND is written. A claim can be
+  *  reminded once per sheet-today; a second reminder that day, or one of a claim in any other status, is refused and
+- *  writes nothing to the store or the audit. */
++ *  writes nothing to the store or the audit. A reminder whose previous one was at least the sheet's escalation gap
++ *  before today escalates the claim (once per claim ever): ESCALATE is written after REMIND. */
+ final class ClaimRemind {
+     private ClaimRemind() {
+     }
+@@ -21,8 +22,12 @@ final class ClaimRemind {
+         if (!repository.remind(id, cid)) {
+             throw new BadRequestException("the claim was already reminded today");
+         }
+-        audit.record("REMIND sheet=" + id + " by=" + by + " person=" + repository.personName(id, found.personId())
+-                + " amount=" + found.amount() + " date=" + found.date() + Claim.auditNumber(found.number()));
++        String named = " person=" + repository.personName(id, found.personId())
++                + " amount=" + found.amount() + " date=" + found.date() + Claim.auditNumber(found.number());
++        audit.record("REMIND sheet=" + id + " by=" + by + named);
++        if (repository.escalate(id, cid, found.reminded())) {
++            audit.record("ESCALATE sheet=" + id + " by=" + by + named);
++        }
+         return repository.find(id, cid);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 52ebf7db2..f799af18e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -525,6 +525,16 @@ public class ClaimRepository {
+                 claimId, sheetId) > 0;
+     }
+ 
++    /** Escalate a claim reminded on the sheet's today when the sheet has an escalation gap, it was reminded before
++     *  ({@code previous}) at least that many days before today, and it was never escalated; true when escalated. */
++    public boolean escalate(String sheetId, long claimId, String previous) {
++        Integer gap = settings.escalateAfter(sheetId);
++        if (gap == null || previous == null) return false;
++        if (LocalDate.parse(previous).plusDays(gap).isAfter(settings.today(sheetId))) return false;
++        return jdbc.update("UPDATE claim SET escalated = TRUE WHERE id = ? AND sheet_id = ? AND NOT escalated",
++                claimId, sheetId) > 0;
++    }
++
+     /** Fix a settled claim's due. */
+     public void settleDue(String sheetId, long claimId, BigDecimal due) {
+         kept(sheetId, claimId, jdbc.update("UPDATE claim SET settled_due = ? WHERE id = ? AND sheet_id = ?", due, claimId, sheetId) > 0);
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SaveSettings.java b/src/main/java/net/officefloor/hq/app/settings/SaveSettings.java
+index 0e2b964c5..467f50df4 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SaveSettings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SaveSettings.java
+@@ -105,6 +105,10 @@ public class SaveSettings {
+             repository.setGraceDays(id, input.graceDays());
+             audit.record(prefix + "grace-days value=" + (input.graceDays() == null ? "" : input.graceDays()));
+         }
++        if (input.setsEscalateAfter()) {
++            repository.setEscalateAfter(id, input.escalateAfter());
++            audit.record(prefix + "escalate-after value=" + (input.escalateAfter() == null ? "" : input.escalateAfter()));
++        }
+         if (input.setsEntryDate()) {
+             repository.setEntryDate(id, input.entryDate());
+             audit.record(prefix + "entry-date value=" + (input.entryDate() == null ? "" : input.entryDate().toString()));
+diff --git a/src/main/java/net/officefloor/hq/app/settings/Settings.java b/src/main/java/net/officefloor/hq/app/settings/Settings.java
+index 25f222657..2afdafb44 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/Settings.java
+@@ -25,10 +25,13 @@ import java.util.List;
+  *  {@code fiscalStartMonth} is the month (1 to 12; 1 unless set; not dated) the sheet's fiscal year starts in: a fiscal
+  *  year is named FY<yyyy> by the calendar year its first day falls in.
+  *  {@code alertThreshold} is the sheet's alert threshold (two decimals; null when blank: off; not dated): a person
+- *  whose due-total goes from at or below it to above it is written an ALERT line. */
++ *  whose due-total goes from at or below it to above it is written an ALERT line.
++ *  {@code escalateAfter} is the sheet's escalation gap in days (null when blank: off; not dated): reminding a claim
++ *  whose previous reminder was at least that many days before the sheet's today escalates it, once per claim ever. */
+ public record Settings(String clerkLimit, String floor, int terms, String latePct, List<Role> roles, String policyDate,
+         String periodNumberingFrom, java.util.Map<String, Integer> gradeTerms, String cap,
+         java.util.Map<String, List<DatedValue>> dated, java.util.Map<String, String> permissions, Integer graceDays,
+         List<Delegation> delegations, String entryDate, List<String> holidays, List<String> voidReasons,
+-        String pot, String parent, int fiscalStartMonth, String alertThreshold) {
++        String pot, String parent, int fiscalStartMonth, String alertThreshold,
++        Integer escalateAfter) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsInput.java b/src/main/java/net/officefloor/hq/app/settings/SettingsInput.java
+index 857de4129..ab652d34a 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsInput.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsInput.java
+@@ -10,7 +10,7 @@ import java.time.LocalDate;
+  *  permission matrix entries entered, by action (a comma separated list of roles; empty when blank: the standing rule), and the grace days (null when blank: off), and the note threshold
+  *  scaled to two decimals (null for none), and the entry date (null when blank: off), and the grade grace days entered, by grade (in grade order; null when blank: none), and the grade proof thresholds entered, by
+  *  grade, scaled to two decimals (in grade order; null when blank: none, the sheet's is then used), and the pot scaled to two decimals
+- *  (null for none), and the parent sheet's id (null when blank: none), and the fiscal year start month (1 to 12), and the alert threshold scaled to two decimals (null for off), and the rounding mode (half-up or half-even; null when blank: none), and the review threshold scaled to two decimals (null for none). */
++ *  (null for none), and the parent sheet's id (null when blank: none), and the fiscal year start month (1 to 12), and the alert threshold scaled to two decimals (null for off), and the rounding mode (half-up or half-even; null when blank: none), and the review threshold scaled to two decimals (null for none), and the escalation gap in days (null when blank: off). */
+ public record SettingsInput(boolean setsClerkLimit, BigDecimal clerkLimit, boolean setsFloor, BigDecimal floor, boolean setsTerms,
+         Integer terms, boolean setsLatePct, BigDecimal latePct,
+         boolean setsPolicyDate, LocalDate policyDate, boolean setsPeriodNumberingFrom, LocalDate periodNumberingFrom,
+@@ -21,5 +21,6 @@ public record SettingsInput(boolean setsClerkLimit, BigDecimal clerkLimit, boole
+         java.util.Map<String, BigDecimal> gradeProofThreshold, boolean setsPot, BigDecimal pot,
+         boolean setsParent, String parent, boolean setsFiscalStartMonth, Integer fiscalStartMonth,
+         boolean setsAlertThreshold, BigDecimal alertThreshold,
+-        boolean setsRounding, String rounding, boolean setsReviewThreshold, BigDecimal reviewThreshold) {
++        boolean setsRounding, String rounding, boolean setsReviewThreshold, BigDecimal reviewThreshold,
++        boolean setsEscalateAfter, Integer escalateAfter) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java b/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
+index cd033ae86..ddf179ebc 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
+@@ -57,7 +57,7 @@ public class SettingsRepository {
+                 cap == null ? null : money(cap), dated(sheetId), permissions(sheetId), graceDays(sheetId),
+                 delegations(sheetId), entry == null ? null : entry.toString(), holidays(sheetId),
+                 voidReasons(sheetId), pot == null ? null : money(pot), parent(sheetId), fiscalStartMonth(sheetId),
+-                alert == null ? null : money(alert));
++                alert == null ? null : money(alert), escalateAfter(sheetId));
+     }
+ 
+     /** The sheet's today; the real date when there is no such sheet. */
+@@ -376,6 +376,17 @@ public class SettingsRepository {
+         jdbc.update("UPDATE sheet SET grace_days = ? WHERE id = ?", days, sheetId);
+     }
+ 
++    /** The sheet's escalation gap in days; null when blank (off). */
++    public Integer escalateAfter(String sheetId) {
++        List<Integer> found = jdbc.query("SELECT escalate_after FROM sheet WHERE id = ?",
++                (rs, i) -> (Integer) rs.getObject("escalate_after", Integer.class), sheetId);
++        return found.isEmpty() ? null : found.get(0);
++    }
++
++    public void setEscalateAfter(String sheetId, Integer days) {
++        jdbc.update("UPDATE sheet SET escalate_after = ? WHERE id = ?", days, sheetId);
++    }
++
+     /** The role a user name acts in on the sheet: steward while a delegation to them covers the sheet's today,
+      *  else their own role. */
+     public String role(String sheetId, String user) {
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsRequest.java b/src/main/java/net/officefloor/hq/app/settings/SettingsRequest.java
+index eee8cb4f5..b387e308d 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsRequest.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsRequest.java
+@@ -10,11 +10,12 @@ package net.officefloor.hq.app.settings;
+  *  {@code pot} is the pot, blank meaning none (not dated). {@code parent} is the parent sheet's id, blank meaning none
+  *  (not dated). {@code fiscalStartMonth} is the fiscal year start month, 1 to 12 (not dated). {@code alertThreshold} is the alert threshold, blank meaning off (not dated).
+  *  {@code rounding} is the rounding mode, half-up or half-even, blank meaning none (dated, from-date key rounding).
+- *  {@code reviewThreshold} is the review threshold, blank meaning none (dated, from-date key review-threshold). */
++ *  {@code reviewThreshold} is the review threshold, blank meaning none (dated, from-date key review-threshold).
++ *  {@code escalateAfter} is the escalation gap in days, blank meaning off (not dated). */
+ public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom,
+         java.util.Map<String, String> gradeTerms, String cap, java.util.Map<String, String> from,
+         String proofThreshold, java.util.Map<String, String> permissions, String graceDays,
+         String noteThreshold, String entryDate, java.util.Map<String, String> gradeGrace,
+         java.util.Map<String, String> gradeProofThreshold, String pot, String parent,
+-        String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold) {
++        String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java b/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java
+index d70fba38d..9db66347a 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java
+@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+  *  numbering from-date is a date, blank meaning off; a grade's (A, B or C) terms are like the sheet's, blank
+  *  meaning the grade uses the sheet's terms; the cap is 0.00 or more with up to two decimals, blank meaning none; the proof threshold and the note threshold likewise. A from-date given for a
+  *  setting with a figure is a date; blank is the sheet's today. A permission matrix entry (open, settle, void, reassign, close or reopen) is a comma separated
+- *  list of roles (clerk, steward), blank keeping the standing rule. The grace days are a whole number of days, 0 to 3650, blank meaning off. The entry date is a date, blank meaning off. A grade's grace days are a whole number of days, 0 to 3650, blank meaning none. A grade's proof threshold is like the sheet's, blank meaning none. The pot is 0.00 or more with up to two decimals, blank meaning none. The parent is a sheet id, blank meaning none (checked when saved). The fiscal year start month is a month, 1 to 12. The alert threshold is 0.00 or more with up to two decimals, blank meaning off. The rounding mode is half-up or half-even, blank meaning none. A setting left out is not changed. */
++ *  list of roles (clerk, steward), blank keeping the standing rule. The grace days are a whole number of days, 0 to 3650, blank meaning off. The entry date is a date, blank meaning off. A grade's grace days are a whole number of days, 0 to 3650, blank meaning none. A grade's proof threshold is like the sheet's, blank meaning none. The pot is 0.00 or more with up to two decimals, blank meaning none. The parent is a sheet id, blank meaning none (checked when saved). The fiscal year start month is a month, 1 to 12. The alert threshold is 0.00 or more with up to two decimals, blank meaning off. The rounding mode is half-up or half-even, blank meaning none. The escalation gap is a whole number of days, 0 to 3650, blank meaning off. A setting left out is not changed. */
+ public class ValidateSettings {
+     private static final Pattern MONEY = Pattern.compile("\\d{1,9}(\\.\\d{1,2})?|\\.\\d{1,2}");
+     private static final List<String> GRADES = List.of("A", "B", "C");
+@@ -121,6 +121,10 @@ public class ValidateSettings {
+         if (grace != null && !grace.isEmpty() && (!TERMS.matcher(grace).matches() || Integer.parseInt(grace) > 3650)) {
+             throw new BadRequestException("grace days must be a whole number of days from 0 to 3650");
+         }
++        String escalate = request == null || request.escalateAfter() == null ? null : request.escalateAfter().trim();
++        if (escalate != null && !escalate.isEmpty() && (!TERMS.matcher(escalate).matches() || Integer.parseInt(escalate) > 3650)) {
++            throw new BadRequestException("escalation gap must be a whole number of days from 0 to 3650");
++        }
+         String policy = request == null || request.policyDate() == null ? null : request.policyDate().trim();
+         LocalDate policyDate = null;
+         if (policy != null && !policy.isEmpty()) {
+@@ -215,6 +219,7 @@ public class ValidateSettings {
+                 fiscal != null, fiscal == null ? null : Integer.parseInt(fiscal),
+                 alert != null, alert == null || alert.isEmpty() ? null : new BigDecimal(alert).setScale(2),
+                 rounding != null, rounding == null || rounding.isEmpty() ? null : rounding,
+-                review != null, review == null || review.isEmpty() ? null : new BigDecimal(review).setScale(2)));
++                review != null, review == null || review.isEmpty() ? null : new BigDecimal(review).setScale(2),
++                escalate != null, escalate == null || escalate.isEmpty() ? null : Integer.parseInt(escalate)));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+index 9c623c1a0..39ed47c76 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+@@ -36,8 +36,8 @@ public class SheetCloner {
+      *  the sheet's today when each was opened, then by the order they were added to the clone); a number one of them
+      *  corrects or was split from follows it. The clone's history starts with all of this on its today. */
+     public void cloneTo(String from, String to, String by) {
+-        jdbc.update("INSERT INTO sheet (id, created_by, today, policy_date, period_numbering_from, grace_days, entry_date, pot, fiscal_start_month)"
+-                + " SELECT ?, ?, today, policy_date, period_numbering_from, grace_days, entry_date, pot, fiscal_start_month FROM sheet WHERE id = ?",
++        jdbc.update("INSERT INTO sheet (id, created_by, today, policy_date, period_numbering_from, grace_days, entry_date, pot, fiscal_start_month, escalate_after)"
++                + " SELECT ?, ?, today, policy_date, period_numbering_from, grace_days, entry_date, pot, fiscal_start_month, escalate_after FROM sheet WHERE id = ?",
+                 to, by, from);
+         jdbc.update("INSERT INTO setting_value (sheet_id, setting_key, from_date, setting) SELECT ?, setting_key, from_date,"
+                 + " setting FROM setting_value WHERE sheet_id = ?", to, from);
+@@ -140,8 +140,8 @@ public class SheetCloner {
+         jdbc.update(c -> {
+             PreparedStatement ps = c.prepareStatement("INSERT INTO claim (sheet_id, person_id, amount, claim_date, note,"
+                     + " status, settled_due, opened_by, corrects, due_by, deferred_until, proofs, split_from, late_entry,"
+-                    + " reminded, ref, tags, void_reason, edited_by, added_seq) SELECT ?, ?, amount, claim_date, note, status, settled_due,"
+-                    + " opened_by, corrects, due_by, deferred_until, proofs, split_from, late_entry, reminded, ref, tags,"
++                    + " reminded, escalated, ref, tags, void_reason, edited_by, added_seq) SELECT ?, ?, amount, claim_date, note, status, settled_due,"
++                    + " opened_by, corrects, due_by, deferred_until, proofs, split_from, late_entry, reminded, escalated, ref, tags,"
+                     + " void_reason, edited_by, added_seq FROM claim WHERE id = ? AND sheet_id = ?", new String[] { "id" });
+             ps.setString(1, to);
+             ps.setLong(2, personId);
+diff --git a/src/main/resources/db/migration/V87__escalate_after.sql b/src/main/resources/db/migration/V87__escalate_after.sql
+new file mode 100644
+index 000000000..a3f256c35
+--- /dev/null
++++ b/src/main/resources/db/migration/V87__escalate_after.sql
+@@ -0,0 +1,4 @@
++-- A sheet's escalation gap (null means off; not dated): reminding a claim whose previous reminder was at least that
++-- many days before the sheet's today escalates it, once per claim ever.
++ALTER TABLE sheet ADD COLUMN escalate_after INT;
++ALTER TABLE claim ADD COLUMN escalated BOOLEAN NOT NULL DEFAULT FALSE;
