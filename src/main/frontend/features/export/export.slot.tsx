@@ -1,11 +1,30 @@
 import { SheetBody } from '../../slots/defs/sheetBody';
-import { usePeople } from '../people/usePeople';
+import { useClaims } from '../claims/useClaims';
+import { claimDueNow } from '../overdue/useOverdue';
+import { gradeOn, usePeople } from '../people/usePeople';
+import { periodOf, usePeriods } from '../periods/usePeriods';
 import { useDueTotals } from '../rates/useDueTotals';
+import { rateFor, useRates } from '../rates/useRates';
+import { useSettings } from '../settings/useSettings';
+import { useSheetToday } from '../today/useSheetToday';
 
 /** A CSV value: wrapped in double quotes (any quote inside doubled) when it holds a comma, a quote
  *  or a line break. */
 function csvValue(v: string): string {
   return /[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+}
+
+/** Download these lines as a CSV file of this name, each line ending with a line feed. */
+function downloadCsv(lines: string[][], filename: string) {
+  const csv = lines.map((l) => l.map(csvValue).join(',') + '\n').join('');
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 /** A button that downloads the people as a CSV file: a header line, then one line per person in list
@@ -20,27 +39,60 @@ function ExportPeople({ sheetId }: { sheetId: string }) {
     for (const p of people.data ?? []) {
       lines.push([p.name, p.grade, p.retiredFrom ?? '', dueTotals.get(p.id) ?? '']);
     }
-    const csv = lines.map((l) => l.map(csvValue).join(',') + '\n').join('');
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `people-${sheetId}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    downloadCsv(lines, `people-${sheetId}.csv`);
   };
 
   return (
-    <section data-testid="export">
-      <button type="button" data-testid="export-people" onClick={download}>
-        Export people (CSV)
-      </button>
-    </section>
+    <button type="button" data-testid="export-people" onClick={download}>
+      Export people (CSV)
+    </button>
+  );
+}
+
+/** A button that downloads the claims as a CSV file: a header line, then one line per claim, people in
+ *  list order (retired people included) and each person's claims oldest first, with the number, period
+ *  and due as the claim's row shows them (blank number or period, 'n/a' due, as shown). */
+function ExportClaims({ sheetId }: { sheetId: string }) {
+  const people = usePeople(sheetId);
+  const claims = useClaims(sheetId);
+  const rates = useRates(sheetId);
+  const periods = usePeriods(sheetId);
+  const settings = useSettings(sheetId).data;
+  const today = useSheetToday(sheetId).data?.today;
+
+  const download = () => {
+    const lines = [['person', 'number', 'date', 'amount', 'due', 'status', 'period']];
+    for (const p of people.data ?? []) {
+      const mine = (claims.data ?? []).filter((c) => c.personId === p.id).reverse();
+      for (const c of mine) {
+        const grade = gradeOn(p, c.date);
+        lines.push([
+          p.name,
+          c.number ?? '',
+          c.date,
+          c.amount,
+          claimDueNow(c, claims.data, rateFor(rates.data, grade, c.date), settings, today, grade),
+          c.status,
+          periodOf(periods.data, c.dueBy)?.name ?? '',
+        ]);
+      }
+    }
+    downloadCsv(lines, `claims-${sheetId}.csv`);
+  };
+
+  return (
+    <button type="button" data-testid="export-claims" onClick={download}>
+      Export claims (CSV)
+    </button>
   );
 }
 
 export const contribution = SheetBody.fill({
   order: 15,
-  Component: ({ sheetId }) => <ExportPeople sheetId={sheetId} />,
+  Component: ({ sheetId }) => (
+    <section data-testid="export">
+      <ExportPeople sheetId={sheetId} />
+      <ExportClaims sheetId={sheetId} />
+    </section>
+  ),
 });
