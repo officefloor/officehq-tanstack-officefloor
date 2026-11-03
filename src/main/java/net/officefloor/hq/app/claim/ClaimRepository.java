@@ -139,6 +139,22 @@ public class ClaimRepository {
         return late;
     }
 
+    /** The user each claim was assigned to review, by claim id (claims never assigned are left out). */
+    public Map<String, String> reviewAssigned(String sheetId) {
+        Map<String, String> assigned = new LinkedHashMap<>();
+        jdbc.query("SELECT id, review_assigned FROM claim WHERE sheet_id = ? AND review_assigned IS NOT NULL",
+                rs -> {
+                    assigned.put(String.valueOf(rs.getLong("id")), rs.getString("review_assigned"));
+                }, sheetId);
+        return assigned;
+    }
+
+    /** Assign a REVIEW claim to a user to review; false when the sheet has no such REVIEW claim. */
+    public boolean assignReview(String sheetId, long claimId, String user) {
+        return jdbc.update("UPDATE claim SET review_assigned = ? WHERE id = ? AND sheet_id = ? AND status = 'REVIEW'",
+                user, claimId, sheetId) > 0;
+    }
+
     /** Record the reason a claim was voided with. */
     public void voidReason(String sheetId, long claimId, String reason) {
         kept(sheetId, claimId, jdbc.update("UPDATE claim SET void_reason = ? WHERE id = ? AND sheet_id = ?", reason, claimId, sheetId) > 0);

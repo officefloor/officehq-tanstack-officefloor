@@ -15,7 +15,7 @@ import { useFigure } from '../locale/useLocale';
  *  due-total and overdue-total (as the totals show them, trimmed); and the signed-in user's own figures: the
  *  due-total and overdue-total of the person whose name or an alias is the user's name (ignoring case), blank
  *  when there is no such person; and their crew total: the due-totals of the crews that person leads, added
- *  up, blank when they lead none. */
+ *  up, blank when they lead none; and how many REVIEW claims are assigned to them to review. */
 function Header({ sheetId }: { sheetId: string }) {
   const fig = useFigure();
   const people = usePeople(sheetId);
@@ -30,6 +30,8 @@ function Header({ sheetId }: { sheetId: string }) {
     || (aliases.data ?? []).some((a) => a.personId === p.id && a.alias.trim().toLowerCase() === me));
   const crews = useCrews(sheetId);
   const led = mine === undefined ? [] : (crews.data ?? []).filter((c) => c.leadId === mine.id);
+  const myReviews = me === '' ? 0 : (claims.data ?? []).filter((c) => c.status === 'REVIEW'
+    && (c.reviewAssigned ?? '').trim().toLowerCase() === me).length;
   const myCrewDue = led.length === 0 ? '' : sumDues(led.map((c) => crewDue(c, dueTotals)));
   return (
     <header data-testid="header">
@@ -44,7 +46,8 @@ function Header({ sheetId }: { sheetId: string }) {
       total <strong data-testid="header-overdue-total">{fig(trimmedSum(overdue.map((f) => f.total)))}</strong> · My
       due total <strong data-testid="my-due-total">{fig(mine === undefined ? '' : dueTotals.get(mine.id) ?? '')}</strong> · My
       overdue total <strong data-testid="my-overdue-total">{fig(mine === undefined ? '' : overdueById.get(mine.id)?.total ?? '')}</strong> · My
-      crew due total <strong data-testid="my-crew-due-total">{fig(myCrewDue)}</strong>
+      crew due total <strong data-testid="my-crew-due-total">{fig(myCrewDue)}</strong> · My reviews{' '}
+      <strong data-testid="my-reviews-count">{myReviews}</strong>
     </header>
   );
 }

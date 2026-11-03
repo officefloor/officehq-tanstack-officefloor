@@ -30,7 +30,8 @@ export type ClaimStatus = 'DRAFT' | 'REVIEW' | 'OPEN' | 'PENDING' | 'SETTLED' | 
  *  lines, oldest first, as "<label> <qty> x <unit>" (a claim with lines has their total as its amount), and its added
  *  number: claims added later have higher ones; a forward-only rate applies only to claims added after it (see `rateFor`), and whether it is review-late (REVIEW, and its
  *  review day — the sheet's today when it went to REVIEW — plus the sheet's review SLA is before the sheet's today), and its shares,
- *  oldest first: another person holding a percent (two decimals) of its due (see `sharePart`). */
+ *  oldest first: another person holding a percent (two decimals) of its due (see `sharePart`), and the user a steward
+ *  assigned it to review (null when never assigned; kept once it leaves REVIEW). */
 export type Claim = {
   id: number;
   personId: number;
@@ -65,6 +66,7 @@ export type Claim = {
   added: number;
   reviewLate: boolean;
   shares: ClaimShare[];
+  reviewAssigned: string | null;
 };
 
 /** A share of a claim: the person holding it and the percent of the claim's due they hold (two decimals). */
@@ -156,7 +158,7 @@ export function useClaims(sheetId: string) {
     queryKey: read.key(claimsKey(sheetId)),
     queryFn: async () => {
       const res = await read.get<{
-        claims: Omit<Claim, 'log' | 'comments' | 'lines' | 'lockedBy' | 'batch' | 'added' | 'reviewLate' | 'shares'>[];
+        claims: Omit<Claim, 'log' | 'comments' | 'lines' | 'lockedBy' | 'batch' | 'added' | 'reviewLate' | 'shares' | 'reviewAssigned'>[];
         logs: Record<string, string[]>;
         locks: Record<string, string>;
         comments: Record<string, string[]>;
@@ -165,6 +167,7 @@ export function useClaims(sheetId: string) {
         added: Record<string, number>;
         reviewLate: Record<string, boolean>;
         shares: Record<string, ClaimShare[]>;
+        reviewAssigned: Record<string, string>;
       }>(`/api/sheets/${encodeURIComponent(sheetId)}/claims`);
       return res.claims.map((c): Claim => ({
         ...c,
@@ -176,6 +179,7 @@ export function useClaims(sheetId: string) {
         added: res.added?.[String(c.id)] ?? 0,
         reviewLate: res.reviewLate?.[String(c.id)] ?? false,
         shares: res.shares?.[String(c.id)] ?? [],
+        reviewAssigned: res.reviewAssigned?.[String(c.id)] ?? null,
       }));
     },
   });
