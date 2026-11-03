@@ -75,6 +75,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
   const [cap, setCap] = useState<string | null>(null);
   const [proofThreshold, setProofThreshold] = useState<string | null>(null);
   const [noteThreshold, setNoteThreshold] = useState<string | null>(null);
+  const [reviewThreshold, setReviewThreshold] = useState<string | null>(null);
   const [gradeProof, setGradeProof] = useState<Record<string, string>>({});
   const [from, setFrom] = useState<Record<string, string>>({});
   const [permissions, setPermissions] = useState<Record<string, string>>({});
@@ -98,7 +99,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
 
   const saveOnce = useSingleFlight();
   const save = useMutation({
-    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null; noteThreshold: string | null; permissions: Record<string, string>; graceDays: string | null; entryDate: string | null; gradeGrace: Record<string, string>; gradeProofThreshold: Record<string, string>; pot: string | null; parent: string | null; fiscalStartMonth: string | null; alertThreshold: string | null; rounding: string | null }) =>
+    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null; noteThreshold: string | null; permissions: Record<string, string>; graceDays: string | null; entryDate: string | null; gradeGrace: Record<string, string>; gradeProofThreshold: Record<string, string>; pot: string | null; parent: string | null; fiscalStartMonth: string | null; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null }) =>
       postJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, f),
     onSuccess: (saved) => {
       setLimit(null);
@@ -113,6 +114,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
       setCap(null);
       setProofThreshold(null);
       setNoteThreshold(null);
+      setReviewThreshold(null);
       setFrom({});
       setPermissions({});
       setGraceDays(null);
@@ -190,7 +192,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           e.preventDefault();
           saveOnce(() => {
             save.reset();
-            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap, from, proofThreshold, noteThreshold, permissions, graceDays, entryDate, gradeGrace, gradeProofThreshold: gradeProof, pot, parent, fiscalStartMonth, alertThreshold, rounding });
+            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap, from, proofThreshold, noteThreshold, permissions, graceDays, entryDate, gradeGrace, gradeProofThreshold: gradeProof, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold });
           });
         }}
       >
@@ -367,6 +369,20 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
         </label>{' '}
         <FromInput settingKey="note-threshold" from={from} setFrom={setFrom} onChange={() => save.reset()} />{' '}
         <label>
+          Review threshold{' '}
+          <input
+            data-testid="setting-review-threshold"
+            inputMode="decimal"
+            value={reviewThreshold ?? ''}
+            onFocus={() => setReviewThreshold((v) => v ?? '')}
+            onChange={(e) => {
+              setReviewThreshold(e.target.value);
+              save.reset();
+            }}
+          />
+        </label>{' '}
+        <FromInput settingKey="review-threshold" from={from} setFrom={setFrom} onChange={() => save.reset()} />{' '}
+        <label>
           Rounding mode{' '}
           <input
             data-testid="setting-rounding"
@@ -500,6 +516,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           </span>
         ))}
         note threshold <strong data-testid="setting-note-threshold-current">{settingOn(settings.data, 'note-threshold', today) ?? ''}</strong>
+        , review threshold <strong data-testid="setting-review-threshold-current">{settingOn(settings.data, 'review-threshold', today) ?? ''}</strong>
         , rounding <strong data-testid="setting-rounding-current">{settingOn(settings.data, 'rounding', today) ?? ''}</strong>
         {PERM_ACTIONS.map((a) => (
           <span key={a}>

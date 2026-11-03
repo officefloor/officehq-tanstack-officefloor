@@ -16,7 +16,7 @@ export type Role = { user: string; role: string };
  *  loaded; `dated` is every value recorded for each of them, by key (clerk-limit, floor, terms, terms-<grade>,
  *  late-pct, cap, proof-threshold: a claim whose due is above the one in force on its date cannot be settled or
  *  approved without a proof; proof-threshold-<grade>: the grade's own proof threshold, used for a claim of a
- *  person of that grade instead of the sheet's while one is in force on its date; note-threshold: one above it cannot be opened with an empty note; rounding: the rounding mode, half-up or half-even, a claim of a date with one in force rounds its live figures by it; grace-<grade>: the grade's grace days, see `overdueFrom`), oldest from-date first. `permissions` is the permission matrix entries set, by action
+ *  person of that grade instead of the sheet's while one is in force on its date; note-threshold: one above it cannot be opened with an empty note; review-threshold: one above it goes to REVIEW when opened; rounding: the rounding mode, half-up or half-even, a claim of a date with one in force rounds its live figures by it; grace-<grade>: the grade's grace days, see `overdueFrom`), oldest from-date first. `permissions` is the permission matrix entries set, by action
  *  (open, settle, void, reassign, close, reopen): the roles that may take it, comma separated; an action not listed
  *  keeps the standing rule (open, settle, void and close by clerk and steward; reassign and reopen by steward).
  *  `graceDays` is the days after a period's to-date it is left open (null when blank: off; not dated): changing the

@@ -90,6 +90,12 @@ public class SaveSettings {
                     + (input.noteThreshold() == null ? "" : SettingsRepository.money(input.noteThreshold()))
                     + given(input, "note-threshold"));
         }
+        if (input.setsReviewThreshold()) {
+            repository.setReviewThreshold(id, from(input, "review-threshold", today), input.reviewThreshold());
+            audit.record(prefix + "review-threshold value="
+                    + (input.reviewThreshold() == null ? "" : SettingsRepository.money(input.reviewThreshold()))
+                    + given(input, "review-threshold"));
+        }
         if (input.setsRounding()) {
             repository.setRounding(id, from(input, "rounding", today), input.rounding());
             audit.record(prefix + "rounding value=" + (input.rounding() == null ? "" : input.rounding())

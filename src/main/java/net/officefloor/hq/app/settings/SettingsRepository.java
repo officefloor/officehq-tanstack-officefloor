@@ -155,6 +155,17 @@ public class SettingsRepository {
         record(sheetId, "note-threshold", from, threshold == null ? null : money(threshold));
     }
 
+    /** The sheet's review threshold in force on a date: a claim of that date whose due is above it goes to review
+     *  when opened instead of open; null when it has none. */
+    public BigDecimal reviewThreshold(String sheetId, LocalDate date) {
+        List<String> found = on(sheetId, "review-threshold", date);
+        return found.isEmpty() || found.get(0) == null ? null : new BigDecimal(found.get(0));
+    }
+
+    public void setReviewThreshold(String sheetId, LocalDate from, BigDecimal threshold) {
+        record(sheetId, "review-threshold", from, threshold == null ? null : money(threshold));
+    }
+
     /** The sheet's rounding mode in force on a date (half-up or half-even); null when it has none. */
     public String rounding(String sheetId, LocalDate date) {
         List<String> found = on(sheetId, "rounding", date);

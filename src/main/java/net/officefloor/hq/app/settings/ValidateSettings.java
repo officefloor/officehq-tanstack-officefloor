@@ -95,6 +95,10 @@ public class ValidateSettings {
         if (note != null && !note.isEmpty() && !MONEY.matcher(note).matches()) {
             throw new BadRequestException("note threshold must be 0.00 or more with up to two decimals");
         }
+        String review = request == null || request.reviewThreshold() == null ? null : request.reviewThreshold().trim();
+        if (review != null && !review.isEmpty() && !MONEY.matcher(review).matches()) {
+            throw new BadRequestException("review threshold must be 0.00 or more with up to two decimals");
+        }
         String pot = request == null || request.pot() == null ? null : request.pot().trim();
         if (pot != null && !pot.isEmpty() && !MONEY.matcher(pot).matches()) {
             throw new BadRequestException("pot must be 0.00 or more with up to two decimals");
@@ -183,6 +187,7 @@ public class ValidateSettings {
                 case "proof-threshold" -> proof != null;
                 case "note-threshold" -> note != null;
                 case "rounding" -> rounding != null;
+                case "review-threshold" -> review != null;
                 default -> (key.startsWith("terms-") && gradeTerms.containsKey(key.substring(6)))
                         || (key.startsWith("grace-") && gradeGrace.containsKey(key.substring(6)))
                         || (key.startsWith("proof-threshold-") && gradeProof.containsKey(key.substring(16)));
@@ -209,6 +214,7 @@ public class ValidateSettings {
                 parent != null, parent == null || parent.isEmpty() ? null : parent,
                 fiscal != null, fiscal == null ? null : Integer.parseInt(fiscal),
                 alert != null, alert == null || alert.isEmpty() ? null : new BigDecimal(alert).setScale(2),
-                rounding != null, rounding == null || rounding.isEmpty() ? null : rounding));
+                rounding != null, rounding == null || rounding.isEmpty() ? null : rounding,
+                review != null, review == null || review.isEmpty() ? null : new BigDecimal(review).setScale(2)));
     }
 }

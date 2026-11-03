@@ -12,7 +12,8 @@ import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.settings.SettingsRepository;
 
-/** A claim's status change (open, settle, approve, reject or void — a SETTLED claim too, by a steward within 7 days of its settlement), shared by the single and the bulk actions. Every
+/** A claim's status change (open — to REVIEW instead when its due is above the review threshold in force on its date —,
+ *  review (a steward makes a REVIEW claim OPEN), settle, approve, reject or void — a SETTLED claim too, by a steward within 7 days of its settlement), shared by the single and the bulk actions. Every
  *  check is made before anything is written, so a refusal writes nothing to the store or the audit. */
 public final class ClaimStatusChange {
     private ClaimStatusChange() {
@@ -56,7 +57,8 @@ public final class ClaimStatusChange {
             case "settle" -> { to = "SETTLED"; from = List.of("OPEN"); event = "CLAIM_SETTLED"; }
             case "approve" -> { to = "SETTLED"; from = List.of("PENDING"); event = "CLAIM_APPROVED"; }
             case "reject" -> { to = "OPEN"; from = List.of("PENDING"); event = "CLAIM_REJECTED"; }
-            case "void" -> { to = "VOID"; from = List.of("DRAFT", "OPEN", "PENDING", "SETTLED"); event = "CLAIM_VOIDED"; }
+            case "review" -> { to = "OPEN"; from = List.of("REVIEW"); event = "CLAIM_OPENED"; }
+            case "void" -> { to = "VOID"; from = List.of("DRAFT", "REVIEW", "OPEN", "PENDING", "SETTLED"); event = "CLAIM_VOIDED"; }
             default -> throw new BadRequestException("no such action");
         }
         Claim found = repository.find(id, cid);
@@ -71,6 +73,10 @@ public final class ClaimStatusChange {
         String act = action.trim();
         if ((act.equals("open") || act.equals("settle") || act.equals("void")) && !settings.allows(id, act, by)) {
             throw new BadRequestException("a " + settings.role(id, by) + " cannot " + act + " a claim");
+        }
+        // Only a steward reviews a REVIEW claim, making it OPEN.
+        if (act.equals("review") && !settings.role(id, by).equals(SettingsRepository.STEWARD)) {
+            throw new BadRequestException("only a steward can review a claim");
         }
         // Four eyes: whoever opened a claim cannot settle it.
         if (to.equals("SETTLED") && found.status().equals("OPEN") && by.equals(found.openedBy())) {
@@ -155,10 +161,20 @@ public final class ClaimStatusChange {
         }
         // A period with a cap opens no claim belonging to it (by due-by) for a person who already has that many
         // OPEN or PENDING claims in it.
-        if (to.equals("OPEN") && found.status().equals("DRAFT")) {
+        if (to.equals("OPEN") && (found.status().equals("DRAFT") || found.status().equals("REVIEW"))) {
             Period in = periods.containing(id, LocalDate.parse(found.dueBy()));
             if (in != null && in.cap() != null && periods.openIn(id, found.personId(), in) >= in.cap()) {
                 throw new BadRequestException("the person already has " + in.cap() + " open claims in the period " + in.name());
+            }
+        }
+        // A claim whose due is above the review threshold in force on its date goes to REVIEW when opened, with
+        // no number until a steward reviews it ('n/a' is above none).
+        if (to.equals("OPEN") && found.status().equals("DRAFT")) {
+            BigDecimal threshold = settings.reviewThreshold(id, LocalDate.parse(found.date()));
+            BigDecimal now = repository.dueNow(id, found);
+            if (threshold != null && now != null && now.compareTo(threshold) > 0) {
+                to = "REVIEW";
+                event = "CLAIM_REVIEW";
             }
         }
         if (checkOnly) {
@@ -174,10 +190,13 @@ public final class ClaimStatusChange {
         // Opening gives the sheet's next number; a rejected claim keeps its own; a voided claim keeps the number it had (never reused).
         String number = found.number();
         String openedBy = found.openedBy();
-        if (found.status().equals("DRAFT") && to.equals("OPEN")) {
+        if ((found.status().equals("DRAFT") || found.status().equals("REVIEW")) && to.equals("OPEN")) {
             number = repository.numbersPerPeriod(id)
                     ? repository.numberInPeriod(id, cid, LocalDate.parse(found.dueBy()))
                     : repository.number(id, cid, LocalDate.parse(found.dueBy()));
+        }
+        // Who opened it is recorded when it is opened, also when it went to REVIEW; a review keeps it.
+        if (found.status().equals("DRAFT") && (to.equals("OPEN") || to.equals("REVIEW"))) {
             repository.openedBy(id, cid, by);
             openedBy = by;
         }
@@ -202,6 +221,10 @@ public final class ClaimStatusChange {
                 number, due, openedBy, found.stated(), found.statedDue(), found.corrects(), found.dueBy(),
                 found.statedNa(), found.deferredUntil(), found.deferred(), found.proofs(), found.splitFrom(), found.lateEntry(), found.reminded(), found.ref(), found.tags(),
                 voidReason != null ? voidReason : found.voidReason());
+        if (found.status().equals("REVIEW") && to.equals("OPEN")) {
+            audit.record("CLAIM_REVIEWED sheet=" + id + " by=" + by + " person=" + repository.personName(id, found.personId())
+                    + " amount=" + changed.amount() + " date=" + changed.date());
+        }
         audit.record(event + " sheet=" + id + " by=" + by + " person=" + repository.personName(id, found.personId())
                 + " amount=" + changed.amount() + " date=" + changed.date() + Claim.auditNumber(number) + tail);
         // A settled (or approved) claim's watchers are told, after the claim's own line and before the rollup.
