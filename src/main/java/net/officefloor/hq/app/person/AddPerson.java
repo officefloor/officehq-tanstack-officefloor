@@ -7,7 +7,6 @@ import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import net.officefloor.server.http.ServerHttpConnection;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.web.bind.annotation.PathVariable;
 
 public class AddPerson {
@@ -19,25 +18,7 @@ public class AddPerson {
         if (!repository.sheetExists(id)) {
             throw new BadRequestException("no such sheet");
         }
-        if (repository.nameTaken(id, request.name(), 0)) {
-            throw new BadRequestException("name is already in use");
-        }
-        String contact = request.contact().isEmpty() ? null : request.contact();
-        if (contact != null && repository.contactTaken(id, contact, 0)) {
-            throw new BadRequestException("contact is already in use");
-        }
-        Rollup.Snapshot before = rollup.take(id);
-        Person added;
-        try {
-            added = repository.add(id, request.name(), request.grade(),
-                    request.terms().isEmpty() ? null : Integer.valueOf(request.terms()), contact);
-        } catch (DuplicateKeyException e) {
-            throw new BadRequestException("name is already in use");
-        }
-        audit.record("PERSON_ADDED sheet=" + id + " by=" + by + " name=" + added.name()
-                + " grade=" + added.grade() + (added.terms() == null ? "" : " terms=" + added.terms())
-                + (added.contact() == null ? "" : " contact=" + added.contact()));
-        rollup.record(id, by, before);
-        person.set(added);
+        NewPerson.checkFree(repository, id, request);
+        person.set(NewPerson.add(repository, audit, rollup, id, by, request));
     }
 }
