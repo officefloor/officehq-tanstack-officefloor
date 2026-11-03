@@ -155,11 +155,10 @@ export function claimedHoldsById(people: Person[] | undefined, today: string | u
   return new Map((people ?? []).map((p) => [p.id, retiredOn(p, today) ? [{ from: null, to: null }] : []]));
 }
 
-/** These people's holds, by person id, as they act on live totals on the sheet's today: a person whose
- *  retirement date is reached (the sheet's today on or after it) is held over every date as well. */
+/** The holds that act on these people's live totals on the sheet's today, by person id: none of their own holds
+ *  (a hold acts only on pool cuts), only, for a person whose retirement date is reached, a hold over every date. */
 export function holdsById(people: Person[] | undefined, today: string | undefined): Map<number, Hold[]> {
-  return new Map((people ?? []).map((p) => [p.id, retiredOn(p, today)
-    ? [...(p.holds ?? []), { from: null, to: null }] : p.holds ?? []]));
+  return claimedHoldsById(people, today);
 }
 
 /** Whether a person's retirement date is reached on the sheet's today (unknown until it is loaded). */

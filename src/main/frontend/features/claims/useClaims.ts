@@ -90,11 +90,12 @@ export function isDeferred(c: Claim, today: string | undefined): boolean {
 }
 
 /** Whether a claim counts toward claimed and every live total, given the people's holds by person id
- *  and the sheet's today: only open (OPEN or PENDING) and SETTLED claims do, and an open claim dated within
- *  one of its person's holds, or held itself, does not, unless a statement binds it, nor does a deferred one. */
+ *  that act on totals (only retirements': see holdsById) and the sheet's today: only open (OPEN or PENDING) and SETTLED
+ *  claims do, and an open claim dated within one of those holds does not, unless a statement binds it, nor does a deferred
+ *  one. A hold of its own or of its person's no longer takes it out (a hold acts only on pool cuts). */
 export function counts(c: Claim, holds: ReadonlyMap<number, Hold[]>, today: string | undefined): boolean {
   return c.status === 'SETTLED'
-    || (isOpen(c) && !isDeferred(c, today) && (isBound(c) || (!c.held && !heldOn(holds.get(c.personId), c.date))));
+    || (isOpen(c) && !isDeferred(c, today) && (isBound(c) || !heldOn(holds.get(c.personId), c.date)));
 }
 
 /** Whether a claim counts toward claimed: as counts, except that a hold (its own or one of its person's) does not

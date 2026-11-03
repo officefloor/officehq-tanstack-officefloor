@@ -44,13 +44,10 @@ public record Person(long id, String name, String grade, long version, long stat
         return retiredFrom != null;
     }
 
-    /** Their holds as they act on live totals on the sheet's today: once their retirement date is reached
-     *  (the sheet's today on or after it) they are held over every date as well. */
+    /** The holds that act on live totals on the sheet's today: none of their own holds (a hold acts only on pool
+     *  cuts), only, once their retirement date is reached (the sheet's today on or after it), a hold over every date. */
     public List<Hold> liveHolds(String today) {
-        if (retiredFrom == null || today == null || retiredFrom.compareTo(today) > 0) return holds;
-        List<Hold> all = new java.util.ArrayList<>(holds);
-        all.add(new Hold(null, null));
-        return all;
+        return claimedHolds(today);
     }
 
     /** The holds that keep their claims out of claimed on the sheet's today: none of their own holds (a hold

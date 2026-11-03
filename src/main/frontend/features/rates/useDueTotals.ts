@@ -6,7 +6,7 @@ import { useSheetToday } from '../today/useSheetToday';
 import { hundredths, money, type Rate, rateFor, sumDues, useRates } from './useRates';
 
 /** Each person's due-total, by person id: the sum of the figures of their claims that count (open (OPEN or PENDING)
- *  claims dated within one of their holds left out unless a statement binds them; a settled claim's frozen due, else the figure their last statement
+ *  claims left out once their retirement date is reached (a hold leaves none out) unless a statement binds them; a settled claim's frozen due, else the figure their last statement
  *  bound it to, else its live due, with its late charge while overdue),
  *  skipping those with none; 'n/a' when no rate for the grade they have on the sheet's today is in force
  *  then and no counting claim of theirs keeps a fixed figure or has a due (at the grade it was claimed under).

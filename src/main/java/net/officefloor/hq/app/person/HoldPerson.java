@@ -12,8 +12,8 @@ import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.web.bind.annotation.PathVariable;
 
 /** Put a person on hold from a from-date (blank: the sheet's today) to an optional to-date. A person may
- *  have several holds; each ends on its to-date. Their open (OPEN or PENDING) claims dated within a hold,
- *  unless bound by a statement, count in no live total; their other claims still do. */
+ *  have several holds; each ends on its to-date. Their claims still count in every total; a hold acts
+ *  only on pool cuts (a person held on the sheet's today gets no cut, their share spread over the others). */
 public class HoldPerson {
     public void hold(@PathVariable("sheetId") String sheetId, @PathVariable("personId") String personId,
             @Val HoldInput input, ServerHttpConnection connection, PersonRepository repository,

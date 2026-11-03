@@ -5,8 +5,8 @@ import net.officefloor.hq.app.BadRequestException;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.settings.SettingsRepository;
 
-/** Hold an OPEN or PENDING claim, or release it when it is held: a held claim counts in no live total unless a
- *  statement binds it, exactly as a claim dated within one of its person's holds. A claim in any other status is
+/** Hold an OPEN or PENDING claim, or release it when it is held: a held claim still counts in every total (a hold
+ *  acts only on pool cuts, and only a person's). A claim in any other status is
  *  refused. Every check is made before anything is written, so a refusal writes nothing to the store or the audit. */
 final class ClaimHold {
     private ClaimHold() {

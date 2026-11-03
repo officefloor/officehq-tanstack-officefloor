@@ -51,10 +51,10 @@ public record SheetAsOf(LocalDate day, Map<Long, Claim> claims, Map<Long, TreeMa
         return mine;
     }
 
-    /** A person's holds as they acted on live totals then: once their retirement date was reached they are
-     *  held over every date as well. */
+    /** The holds that acted on a person's live totals then: none of their own holds (a hold acts only on pool cuts),
+     *  only, once their retirement date was reached, a hold over every date. */
     public List<Hold> liveHolds(long personId) {
-        List<Hold> all = new ArrayList<>(holds.getOrDefault(personId, List.of()));
+        List<Hold> all = new ArrayList<>();
         String retired = retiredFrom.get(personId);
         if (retired != null && retired.compareTo(day.toString()) <= 0) all.add(new Hold(null, null));
         return all;

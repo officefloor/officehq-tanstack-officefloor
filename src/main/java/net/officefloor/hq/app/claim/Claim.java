@@ -19,8 +19,8 @@ import net.officefloor.hq.app.person.Hold;
  *  was written for it (null when never reminded), and its external reference (null when none), and its tags (lower-case, sorted and
  *  comma separated, with no spaces; null when none), and the reason it was voided with (one of its sheet's void reasons; null when none was given), and whether a steward
  *  waived its late charge (it then bears none, whatever its overdue state), and how many of its proofs are photos (the
- *  rest are receipts), and whether it is held (an OPEN or PENDING claim held on its own: it then counts in no
- *  live total unless a statement binds it, exactly as a claim dated within one of its person's holds). */
+ *  rest are receipts), and whether it is held (an OPEN or PENDING claim held on its own: it still counts in every
+ *  total). */
 public record Claim(long id, long personId, String amount, String date, String note, String status,
         String number, String due, String openedBy, boolean stated, String statedDue, String corrects,
         String dueBy, boolean statedNa, String deferredUntil, boolean deferred, int proofs, String splitFrom,
@@ -44,11 +44,12 @@ public record Claim(long id, long personId, String amount, String date, String n
         return open() || status.equals("SETTLED");
     }
 
-    /** Whether the claim counts toward live totals (claimed, due-totals, a period's total) given its
-     *  person's holds: an open claim dated within a hold, or held itself, does not, unless a statement binds it; SETTLED
-     *  claims always do. A deferred claim does not. */
+    /** Whether the claim counts toward live totals (claimed, due-totals, a period's total) given the holds that
+     *  take its person's claims out (only their retirement's: see Person#liveHolds): an open claim dated within one does
+     *  not, unless a statement binds it; SETTLED claims always do. A deferred claim does not. A hold of its own or of its
+     *  person's no longer takes it out (a hold acts only on pool cuts). */
     public boolean counts(List<Hold> holds) {
-        return status.equals("SETTLED") || (open() && !deferred && (bound() || (!held && !Hold.anyCovers(holds, date))));
+        return status.equals("SETTLED") || (open() && !deferred && (bound() || !Hold.anyCovers(holds, date)));
     }
 
     /** Whether the claim counts toward claimed: as {@link #counts(List)}, except that a hold (its own or one of its
