@@ -1,0 +1,45 @@
+import { useState } from 'react';
+import { SheetBody } from '../../slots/defs/sheetBody';
+import { useClaims } from '../claims/useClaims';
+import { usePeople } from '../people/usePeople';
+
+/** The sheet's duplicate claims: for each person, date and amount with two or more claims (VOID and
+ *  DELETED claims left out), a line "<name> <date> <amount> x<count>", people in list order, then by
+ *  date, then by amount. Shown once "show" is pressed, and kept live from then on. */
+function SheetDups({ sheetId }: { sheetId: string }) {
+  const people = usePeople(sheetId);
+  const claims = useClaims(sheetId);
+  const [shown, setShown] = useState(false);
+  const lines: string[] = [];
+  for (const p of people.data ?? []) {
+    const groups = new Map<string, { date: string; amount: string; count: number }>();
+    for (const c of claims.data ?? []) {
+      if (c.personId !== p.id || c.status === 'VOID' || c.status === 'DELETED') continue;
+      const key = `${c.date} ${c.amount}`;
+      const g = groups.get(key);
+      if (g) g.count++;
+      else groups.set(key, { date: c.date, amount: c.amount, count: 1 });
+    }
+    [...groups.values()]
+      .filter((g) => g.count >= 2)
+      .sort((a, b) => a.date.localeCompare(b.date) || Number(a.amount) - Number(b.amount))
+      .forEach((g) => lines.push(`${p.name} ${g.date} ${g.amount} x${g.count}`));
+  }
+  return (
+    <section>
+      <h3>Duplicate claims</h3>
+      <button type="button" data-testid="dups-show" onClick={() => setShown(true)}>
+        Show duplicates
+      </button>
+      {shown && (
+        <ul>
+          {lines.map((l) => (
+            <li key={l} data-testid="dup-line">{l}</li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+export const contribution = SheetBody.fill({ order: 34, Component: ({ sheetId }) => <SheetDups sheetId={sheetId} /> });
