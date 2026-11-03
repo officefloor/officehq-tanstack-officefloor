@@ -1,0 +1,370 @@
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index ddc1aa220..4123e70e3 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -16,8 +16,10 @@ import { Col } from '../columns/useColumns';
+  *  list of everyone in list order (by position; new people go to the end) (retired people only when "show retired" is on), each
+  *  with the grade in force on the sheet's today. An edit records the form's grade from its from-date
+  *  (blank: the sheet's today); the first grade a person is given applies from the beginning of time.
+- *  A person may have their own terms (days; blank for none), shown on their row: a claim's due-by is fixed
+- *  from them when it is created, ahead of their grade's and the sheet's terms. A person may have a contact
++ *  A person may have their own terms (days; blank for none), dated by the terms from-date (blank: from the
++ *  beginning of time; a dated save keeps the others), the ones in force on the sheet's today shown on their row:
++ *  a claim's due-by is fixed when it is created from those in force on its date, ahead of their grade's and the
++ *  sheet's terms. A person may have a contact
+  *  (stored trimmed and lower-cased; blank for none), shown on their row; another person's contact is refused.
+  *  A person may carry tags (comma separated; trimmed, lower-cased, repeats dropped), shown sorted on their row.
+  *  The editor remembers the version of the person it loaded; when someone else has saved them since,
+@@ -70,17 +72,18 @@ function People({ sheetId }: { sheetId: string }) {
+   const [grade, setGrade] = useState<string>('A');
+   const [gradeFrom, setGradeFrom] = useState('');
+   const [terms, setTerms] = useState('');
++  const [termsFrom, setTermsFrom] = useState('');
+   const [contact, setContact] = useState('');
+   const [tags, setTags] = useState('');
+   const [version, setVersion] = useState<number | null>(null);
+ 
+   const submitOnce = useSingleFlight();
+   const save = useMutation({
+-    mutationFn: (f: { id: number | null; name: string; grade: string; gradeFrom: string; terms: string; contact: string; tags: string; version: number | null }) => {
++    mutationFn: (f: { id: number | null; name: string; grade: string; gradeFrom: string; terms: string; termsFrom: string; contact: string; tags: string; version: number | null }) => {
+       const base = `/api/sheets/${encodeURIComponent(sheetId)}/people`;
+       return f.id === null
+-        ? postJson<Person>(base, { name: f.name, grade: f.grade, terms: f.terms, contact: f.contact, tags: f.tags })
+-        : postJson<Person>(`${base}/${f.id}`, { name: f.name, grade: f.grade, gradeFrom: f.gradeFrom, terms: f.terms, contact: f.contact, tags: f.tags, version: f.version });
++        ? postJson<Person>(base, { name: f.name, grade: f.grade, terms: f.terms, termsFrom: f.termsFrom, contact: f.contact, tags: f.tags })
++        : postJson<Person>(`${base}/${f.id}`, { name: f.name, grade: f.grade, gradeFrom: f.gradeFrom, terms: f.terms, termsFrom: f.termsFrom, contact: f.contact, tags: f.tags, version: f.version });
+     },
+     onSuccess: async () => {
+       setEditing(null);
+@@ -88,6 +91,8 @@ function People({ sheetId }: { sheetId: string }) {
+       setGrade('A');
+       setGradeFrom('');
+       setTerms('');
++    setTermsFrom('');
++      setTermsFrom('');
+       setContact('');
+       setTags('');
+       setVersion(null);
+@@ -106,6 +111,9 @@ function People({ sheetId }: { sheetId: string }) {
+         setGrade('A');
+         setGradeFrom('');
+         setTerms('');
++    setTermsFrom('');
++        setTermsFrom('');
++      setTermsFrom('');
+         setContact('');
+         setTags('');
+         setVersion(null);
+@@ -151,6 +159,7 @@ function People({ sheetId }: { sheetId: string }) {
+     setGrade(p.grade);
+     setGradeFrom('');
+     setTerms(p.terms === null ? '' : String(p.terms));
++    setTermsFrom('');
+     setContact(p.contact ?? '');
+     setTags(shownTags(p.tags));
+     setVersion(p.version);
+@@ -163,6 +172,7 @@ function People({ sheetId }: { sheetId: string }) {
+     setGrade('A');
+     setGradeFrom('');
+     setTerms('');
++    setTermsFrom('');
+     setContact('');
+     setTags('');
+     setVersion(null);
+@@ -176,7 +186,7 @@ function People({ sheetId }: { sheetId: string }) {
+           e.preventDefault();
+           submitOnce(() => {
+             save.reset();
+-            return save.mutateAsync({ id: editing, name, grade, gradeFrom, terms, contact, tags, version });
++            return save.mutateAsync({ id: editing, name, grade, gradeFrom, terms, termsFrom, contact, tags, version });
+           });
+         }}
+       >
+@@ -231,6 +241,18 @@ function People({ sheetId }: { sheetId: string }) {
+             }}
+           />
+         </label>{' '}
++        <label>
++          from{' '}
++          <input
++            type="date"
++            data-testid="person-form-terms-from"
++            value={termsFrom}
++            onChange={(e) => {
++              setTermsFrom(e.target.value);
++              save.reset();
++            }}
++          />
++        </label>{' '}
+         <label>
+           Contact{' '}
+           <input
+diff --git a/src/main/frontend/features/people/usePeople.ts b/src/main/frontend/features/people/usePeople.ts
+index 0e1785be5..74c6742ab 100644
+--- a/src/main/frontend/features/people/usePeople.ts
++++ b/src/main/frontend/features/people/usePeople.ts
+@@ -6,7 +6,7 @@ import { useReader } from '../../api/readNow';
+  *  given, oldest first; `version` goes up by one each time they are saved. Their statements: how many have been
+  *  taken, and the last one's due-total and date (null before the first); the date they are retired
+  *  from (null when not retired); their holds, oldest first, and whether they have any (their open (OPEN or PENDING)
+- *  claims dated within a hold, unless bound by a statement, then count in no live total); their own terms in
++ *  claims dated within a hold, unless bound by a statement, then count in no live total); their own terms in force on the sheet's today, in
+  *  days (null when they have none: their grade's, else the sheet's, apply); their contact (null when they have none); their tags (sorted, comma separated; null when none);
+  *  the sheet they were transferred from (null when they were not transferred here); their past retirements,
+  *  oldest first; their snapshots, one per SNAPSHOT written for them, oldest first; their statements still standing,
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index f799af18e..ec28a09e9 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -565,11 +565,19 @@ public class ClaimRepository {
+     }
+ 
+     /** The due-by of a claim created now for a person with a date: the terms-th business day after the date (skipping
+-     *  Saturdays, Sundays and the sheet's holidays), for the person's own terms, else the terms, in force on it, of the
++     *  Saturdays, Sundays and the sheet's holidays), for the person's own terms in force on it, else the terms, in force on it, of the
+      *  grade the person has on it, else the sheet's terms in force on it. */
+     public LocalDate dueBy(String sheetId, long personId, LocalDate date) {
+-        List<Integer> mine = jdbc.queryForList("SELECT terms FROM person WHERE sheet_id = ? AND id = ?", Integer.class,
+-                sheetId, personId);
++        // the person's own terms in force on the date: the latest dated ones on or before it, else those from the beginning
++        List<Integer> mine = new java.util.ArrayList<>();
++        jdbc.query("SELECT terms FROM person_terms WHERE sheet_id = ? AND person_id = ? AND from_date <= ?"
++                + " ORDER BY from_date DESC LIMIT 1", rs -> {
++                    mine.add((Integer) rs.getObject("terms", Integer.class));
++                }, sheetId, personId, Date.valueOf(date));
++        if (mine.isEmpty()) {
++            mine.addAll(jdbc.queryForList("SELECT terms FROM person WHERE sheet_id = ? AND id = ?", Integer.class,
++                    sheetId, personId));
++        }
+         if (!mine.isEmpty() && mine.get(0) != null) {
+             return settings.businessDaysAfter(sheetId, date, mine.get(0));
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/importing/ValidateImport.java b/src/main/java/net/officefloor/hq/app/importing/ValidateImport.java
+index b9704b9d1..b6a6fdd78 100644
+--- a/src/main/java/net/officefloor/hq/app/importing/ValidateImport.java
++++ b/src/main/java/net/officefloor/hq/app/importing/ValidateImport.java
+@@ -32,7 +32,7 @@ public class ValidateImport {
+                     throw new BadRequestException("give name,grade,terms,contact");
+                 }
+                 PersonRequest person = NewPerson.check(new PersonRequest(f[0], f.length > 1 ? f[1] : "", null, "",
+-                        f.length > 2 ? f[2] : "", f.length > 3 ? f[3] : "", null));
++                        f.length > 2 ? f[2] : "", f.length > 3 ? f[3] : "", null, ""));
+                 if (!names.add(person.name().toLowerCase(Locale.ROOT))) {
+                     throw new BadRequestException("name " + person.name() + " is given twice in the import");
+                 }
+diff --git a/src/main/java/net/officefloor/hq/app/person/NewPerson.java b/src/main/java/net/officefloor/hq/app/person/NewPerson.java
+index 0ac63b160..6dfbbacc3 100644
+--- a/src/main/java/net/officefloor/hq/app/person/NewPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/NewPerson.java
+@@ -39,10 +39,18 @@ public final class NewPerson {
+         if (!terms.isEmpty() && (!TERMS.matcher(terms).matches() || Integer.parseInt(terms) > 3650)) {
+             throw new BadRequestException("terms must be a whole number of days from 0 to 3650");
+         }
++        String termsFrom = request.termsFrom() == null ? "" : request.termsFrom().trim();
++        if (!termsFrom.isEmpty()) {
++            try {
++                termsFrom = LocalDate.parse(termsFrom).toString();
++            } catch (DateTimeParseException e) {
++                throw new BadRequestException("terms from-date must be yyyy-mm-dd");
++            }
++        }
+         String contact = request.contact() == null ? "" : request.contact().trim().toLowerCase(java.util.Locale.ROOT);
+         return new PersonRequest(name, grade, request.version(), from,
+                 terms.isEmpty() ? "" : String.valueOf(Integer.parseInt(terms)), contact,
+-                net.officefloor.hq.app.claim.Claim.tags(request.tags()));
++                net.officefloor.hq.app.claim.Claim.tags(request.tags()), termsFrom);
+     }
+ 
+     /** Refuse a validated person whose name or contact is already in use on the sheet. */
+@@ -62,8 +70,13 @@ public final class NewPerson {
+         Rollup.Snapshot before = rollup.take(id);
+         Person added;
+         try {
+-            added = repository.add(id, request.name(), request.grade(),
+-                    request.terms().isEmpty() ? null : Integer.valueOf(request.terms()), contact);
++            Integer terms = request.terms().isEmpty() ? null : Integer.valueOf(request.terms());
++            boolean dated = request.termsFrom() != null && !request.termsFrom().isEmpty();
++            added = repository.add(id, request.name(), request.grade(), dated ? null : terms, contact);
++            if (dated) {
++                repository.terms(id, added.id(), terms, LocalDate.parse(request.termsFrom()));
++                added = repository.find(id, added.id());
++            }
+         } catch (DuplicateKeyException e) {
+             throw new BadRequestException("name is already in use");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 11601fd91..67137ddbd 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -8,7 +8,7 @@ import java.util.List;
+  *  and the last one's due-total and date (both null before the first), and the date they are retired
+  *  from (null when not retired; any date set means retired at once), and their holds (oldest first) and
+  *  whether they have any (their open (OPEN or PENDING) claims dated within a hold, unless bound by a
+- *  statement, then count in no live total), and their own terms in days (null when they have none), and their contact (null when they have none), and the sheet they were
++ *  statement, then count in no live total), and their own terms in days in force on the sheet's today (null when they have none), and their contact (null when they have none), and the sheet they were
+  *  transferred from (null when they were not transferred here), and their past retirements (oldest first), and their tags (as {@link net.officefloor.hq.app.claim.Claim#tags(String)} keeps them; null when none),
+  *  and their snapshots (one per SNAPSHOT line written for them, oldest first), and their statements still standing
+  *  (by date, oldest first; those a merge or transfer brought over among them). */
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 94f5541b9..297346e5e 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -22,7 +22,15 @@ public class PersonRepository {
+             + " AND (g.from_date IS NULL OR g.from_date <= (SELECT s.today FROM sheet s WHERE s.id = person.sheet_id))"
+             + " ORDER BY g.from_date DESC NULLS LAST LIMIT 1) AS grade";
+ 
+-    private static final String COLUMNS = "id, name, " + GRADE_TODAY + ", version, statement_count, stated_total, statement_date, retired_from, terms, contact, origin_sheet, tags";
++    /** The person's own terms in force on the sheet's today: those with the latest from-date on or before it, else
++     *  the ones recorded from the beginning of time. */
++    private static final String TERMS_TODAY = "(CASE WHEN EXISTS (SELECT 1 FROM person_terms t WHERE t.person_id = person.id"
++            + " AND t.from_date <= (SELECT s.today FROM sheet s WHERE s.id = person.sheet_id))"
++            + " THEN (SELECT t.terms FROM person_terms t WHERE t.person_id = person.id"
++            + " AND t.from_date <= (SELECT s.today FROM sheet s WHERE s.id = person.sheet_id) ORDER BY t.from_date DESC LIMIT 1)"
++            + " ELSE person.terms END) AS terms";
++
++    private static final String COLUMNS = "id, name, " + GRADE_TODAY + ", version, statement_count, stated_total, statement_date, retired_from, " + TERMS_TODAY + ", contact, origin_sheet, tags";
+ 
+     private static final RowMapper<Person> ROW = (rs, i) -> new Person(rs.getLong("id"), rs.getString("name"),
+             rs.getString("grade"), rs.getLong("version"), rs.getLong("statement_count"), rs.getString("stated_total"),
+@@ -357,6 +365,19 @@ public class PersonRepository {
+     private Long position(String sheetId, long id) {
+         return jdbc.queryForObject("SELECT list_position FROM person WHERE id = ? AND sheet_id = ?", Long.class, id, sheetId);
+     }
++    /** A person's own terms recorded from the beginning of time (null: none). */
++    public Integer baseTerms(String sheetId, long id) {
++        return jdbc.queryForObject("SELECT terms FROM person WHERE id = ? AND sheet_id = ?", Integer.class, id, sheetId);
++    }
++
++    /** Record a person's own terms from a from-date (null terms: cleared from then), replacing those recorded
++     *  for that date and keeping the others. */
++    public void terms(String sheetId, long id, Integer terms, LocalDate from) {
++        jdbc.update("DELETE FROM person_terms WHERE sheet_id = ? AND person_id = ? AND from_date = ?",
++                sheetId, id, Date.valueOf(from));
++        jdbc.update("INSERT INTO person_terms (sheet_id, person_id, terms, from_date) VALUES (?, ?, ?, ?)",
++                sheetId, id, terms, Date.valueOf(from));
++    }
+ 
+     /** Whether the sheet has this person. */
+     public boolean exists(String sheetId, long id) {
+@@ -412,6 +433,8 @@ public class PersonRepository {
+         for (GradeFrom g : grades(fromSheet, id)) {
+             grade(toSheet, arrived, g.grade(), g.from() == null ? null : LocalDate.parse(g.from()));
+         }
++        jdbc.update("INSERT INTO person_terms (sheet_id, person_id, terms, from_date) SELECT ?, ?, terms, from_date"
++                + " FROM person_terms WHERE sheet_id = ? AND person_id = ? ORDER BY from_date", toSheet, arrived, fromSheet, id);
+         jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias) SELECT ?, ?, alias FROM person_alias"
+                 + " WHERE sheet_id = ? AND person_id = ? ORDER BY id", toSheet, arrived, fromSheet, id);
+         return arrived;
+@@ -457,6 +480,7 @@ public class PersonRepository {
+         jdbc.update("DELETE FROM person_snapshot WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+         jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, id);
++        jdbc.update("DELETE FROM person_terms WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+         jdbc.update("DELETE FROM person_alias WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+         jdbc.update("DELETE FROM plan_claim WHERE sheet_id = ? AND plan_id IN (SELECT id FROM plan WHERE sheet_id = ? AND person_id = ?)",
+                 sheetId, sheetId, id);
+@@ -519,6 +543,7 @@ public class PersonRepository {
+         joinStatements(sheetId, fromId, sheetId, intoId);
+         jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
+         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
++        jdbc.update("DELETE FROM person_terms WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
+         // Plans follow the claims.
+         jdbc.update("UPDATE plan SET person_id = ? WHERE sheet_id = ? AND person_id = ?", intoId, sheetId, fromId);
+         jdbc.update("DELETE FROM person WHERE id = ? AND sheet_id = ?", fromId, sheetId);
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRequest.java b/src/main/java/net/officefloor/hq/app/person/PersonRequest.java
+index 464dba247..1a5aa7c34 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRequest.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRequest.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.person;
+ 
+ /** The person form; {@code gradeFrom} is the date the grade is in force from (yyyy-mm-dd; blank for the
+- *  sheet's today; an edit only), {@code terms} the person's own terms in days (blank for none), {@code contact} their contact (trimmed and lower-cased; blank for none), {@code tags} their tags (comma separated; kept as {@link net.officefloor.hq.app.claim.Claim#tags(String)} keeps them), {@code version} the version the editor loaded (an edit only). */
+-public record PersonRequest(String name, String grade, Long version, String gradeFrom, String terms, String contact, String tags) {
++ *  sheet's today; an edit only), {@code terms} the person's own terms in days (blank for none), {@code contact} their contact (trimmed and lower-cased; blank for none), {@code tags} their tags (comma separated; kept as {@link net.officefloor.hq.app.claim.Claim#tags(String)} keeps them), {@code version} the version the editor loaded (an edit only), {@code termsFrom} the date the terms are in force
++ *  from (yyyy-mm-dd; blank for the beginning of time). */
++public record PersonRequest(String name, String grade, Long version, String gradeFrom, String terms, String contact, String tags, String termsFrom) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/SavePerson.java b/src/main/java/net/officefloor/hq/app/person/SavePerson.java
+index d4a921141..d5e565267 100644
+--- a/src/main/java/net/officefloor/hq/app/person/SavePerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/SavePerson.java
+@@ -16,8 +16,10 @@ import org.springframework.web.bind.annotation.PathVariable;
+ /** Save an edited person; refused (409) when someone else has saved them since the editor loaded its version.
+  *  The form's grade is recorded from its from-date (blank: the sheet's today), keeping their other grades,
+  *  except that a save leaving the grade in force on the sheet's today as it is, with the from-date blank,
+- *  records no grade. PERSON_EDITED carries the grade in force on the sheet's today after the save, then
+- *  the person's own terms when the save changed them (empty when it cleared them), then their contact when
++ *  records no grade. The form's terms are recorded from their from-date, keeping the others (one already recorded
++ *  for that date is replaced), or, with the from-date blank, from the beginning of time, unless they are the terms
++ *  in force on the sheet's today (then none are recorded). PERSON_EDITED carries the grade in force on the sheet's today after the save, then
++ *  the person's own terms in force on the sheet's today when the save recorded terms (empty when none are), then their contact when
+  *  the save changed it (empty when it cleared it). */
+ public class SavePerson {
+     public void save(@PathVariable("sheetId") String sheetId, @PathVariable("personId") String personId,
+@@ -55,13 +57,15 @@ public class SavePerson {
+         boolean regrade = !request.gradeFrom().isEmpty() || !request.grade().equals(current.grade());
+         LocalDate from = request.gradeFrom().isEmpty() ? sheets.today(id) : LocalDate.parse(request.gradeFrom());
+         Integer terms = request.terms().isEmpty() ? null : Integer.valueOf(request.terms());
+-        boolean reterm = !java.util.Objects.equals(terms, current.terms());
++        boolean datedTerms = !request.termsFrom().isEmpty();
++        boolean reterm = datedTerms || !java.util.Objects.equals(terms, current.terms());
++        Integer baseTerms = datedTerms || !reterm ? repository.baseTerms(id, pid) : terms;
+         boolean recontact = !java.util.Objects.equals(contact, current.contact());
+         long version = request.version();
+         Rollup.Snapshot before = rollup.take(id);
+         boolean updated;
+         try {
+-            updated = repository.update(id, pid, version, request.name(), terms, contact);
++            updated = repository.update(id, pid, version, request.name(), baseTerms, contact);
+         } catch (DuplicateKeyException e) {
+             throw new BadRequestException("name is already in use");
+         }
+@@ -69,12 +73,15 @@ public class SavePerson {
+             throw new ConflictException("someone else has saved this person; showing their current values");
+         }
+         repository.tags(id, pid, request.tags());
++        if (datedTerms) {
++            repository.terms(id, pid, terms, LocalDate.parse(request.termsFrom()));
++        }
+         if (regrade) {
+             repository.grade(id, pid, request.grade(), from);
+         }
+         Person saved = repository.find(id, pid);
+         audit.record("PERSON_EDITED sheet=" + id + " by=" + by + " name=" + saved.name()
+-                + " grade=" + saved.grade() + (reterm ? " terms=" + (terms == null ? "" : terms) : "")
++                + " grade=" + saved.grade() + (reterm ? " terms=" + (saved.terms() == null ? "" : saved.terms()) : "")
+                 + (recontact ? " contact=" + (contact == null ? "" : contact) : ""));
+         rollup.record(id, by, before);
+         person.set(saved);
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+index 39ed47c76..82a31d8c4 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+@@ -122,6 +122,8 @@ public class SheetCloner {
+                             to, made, rs.getString("grade"), rs.getDate("from_date"));
+                     history.grade(to, made, rs.getString("grade"), fromDate);
+                 }, from, id);
++        jdbc.update("INSERT INTO person_terms (sheet_id, person_id, terms, from_date) SELECT ?, ?, terms, from_date"
++                + " FROM person_terms WHERE sheet_id = ? AND person_id = ? ORDER BY from_date", to, made, from, id);
+         jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias) SELECT ?, ?, alias FROM person_alias"
+                 + " WHERE sheet_id = ? AND person_id = ? ORDER BY id", to, made, from, id);
+         jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date, held_on) SELECT ?, ?, from_date,"
+diff --git a/src/main/resources/db/migration/V89__person_terms_from.sql b/src/main/resources/db/migration/V89__person_terms_from.sql
+new file mode 100644
+index 000000000..9b26fb4cc
+--- /dev/null
++++ b/src/main/resources/db/migration/V89__person_terms_from.sql
+@@ -0,0 +1,11 @@
++-- A person's own terms are dated: each terms given with a from-date is in force from it until the next one's.
++-- person.terms keeps the ones recorded from the beginning of time (in force before the first from-date).
++-- A person has at most one per from-date (giving one again replaces it); null terms clear them from that date
++-- (the grade's or sheet's terms then apply).
++CREATE TABLE person_terms (
++    sheet_id  VARCHAR(200) NOT NULL REFERENCES sheet (id),
++    person_id BIGINT       NOT NULL REFERENCES person (id),
++    terms     INT,
++    from_date DATE         NOT NULL
++);
++CREATE INDEX person_terms_person ON person_terms (person_id, from_date);
