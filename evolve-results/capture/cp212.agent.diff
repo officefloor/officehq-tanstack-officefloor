@@ -1,0 +1,96 @@
+diff --git a/src/main/frontend/features/rates/useDueTotals.ts b/src/main/frontend/features/rates/useDueTotals.ts
+index e5dd55312..15ef4acf1 100644
+--- a/src/main/frontend/features/rates/useDueTotals.ts
++++ b/src/main/frontend/features/rates/useDueTotals.ts
+@@ -34,8 +34,17 @@ export function useSettledOpenTotals(sheetId: string): Map<number, { settled: st
+   return split;
+ }
+ 
+-/** Each person's due-total held to the cap, their excess over it, and its settled and open parts. */
+-function useDueFigures(sheetId: string): Map<number, { total: string; excess: string; settled: string; open: string }> {
++/** Each person's score figures, by person id: the sum of the figures of their counting SETTLED claims that
++ *  correct nothing ('n/a' figures skipped). */
++export function useScoreSettled(sheetId: string): Map<number, string> {
++  const scored = new Map<number, string>();
++  for (const [id, f] of useDueFigures(sheetId)) scored.set(id, f.scored);
++  return scored;
++}
++
++/** Each person's due-total held to the cap, their excess over it, its settled and open parts, and the settled
++ *  figures their score counts. */
++function useDueFigures(sheetId: string): Map<number, { total: string; excess: string; settled: string; open: string; scored: string }> {
+   const people = usePeople(sheetId);
+   const claims = useClaims(sheetId);
+   const rates = useRates(sheetId);
+@@ -58,10 +67,10 @@ function dueFigures(
+   rates: Rate[] | undefined,
+   settings: Settings | undefined,
+   today: string | undefined,
+-): Map<number, { total: string; excess: string; settled: string; open: string }> {
++): Map<number, { total: string; excess: string; settled: string; open: string; scored: string }> {
+   const holds = holdsById(people, today);
+   const cap = settingOn(settings, 'cap', today);
+-  const totals = new Map<number, { total: string; excess: string; settled: string; open: string }>();
++  const totals = new Map<number, { total: string; excess: string; settled: string; open: string; scored: string }>();
+   for (const p of people ?? []) {
+     const counting = (claims ?? []).filter((c) => c.personId === p.id && counts(c, holds, today));
+     const rated = rateFor(rates, p.grade, today) !== undefined;
+@@ -75,6 +84,7 @@ function dueFigures(
+       excess: over ? money(hundredths(sum) - hundredths(cap)) : '0.00',
+       settled: sumDues(dues.filter((_, i) => counting[i].status === 'SETTLED')),
+       open: sumDues(dues.filter((_, i) => counting[i].status !== 'SETTLED')),
++      scored: sumDues(dues.filter((_, i) => counting[i].status === 'SETTLED' && counting[i].corrects === null)),
+     });
+   }
+   return totals;
+diff --git a/src/main/frontend/features/score/useScore.ts b/src/main/frontend/features/score/useScore.ts
+index f4e916c5f..77e9e1ab7 100644
+--- a/src/main/frontend/features/score/useScore.ts
++++ b/src/main/frontend/features/score/useScore.ts
+@@ -1,18 +1,18 @@
+ import { useOverdue } from '../overdue/useOverdue';
+ import { hundredths } from '../rates/useRates';
+-import { useSettledOpenTotals } from '../rates/useDueTotals';
++import { useScoreSettled } from '../rates/useDueTotals';
+ 
+-/** Each person's score, by person id: their settled figures (the settled-total of their counting SETTLED
+- *  claims) divided by 100, minus 5 for every overdue claim of theirs that counts, rounded half to even to a
++/** Each person's score, by person id: their settled figures (the sum of the figures of their counting SETTLED
++ *  claims that correct nothing) divided by 100, minus 5 for every overdue claim of theirs that counts, rounded half to even to a
+  *  whole number. Worked in whole numbers, so exact. Missing until their figures are loaded. */
+ export function useScores(sheetId: string): Map<number, bigint> {
+-  const split = useSettledOpenTotals(sheetId);
++  const scored = useScoreSettled(sheetId);
+   const overdue = useOverdue(sheetId);
+   const scores = new Map<number, bigint>();
+-  for (const [id, s] of split) {
++  for (const [id, s] of scored) {
+     const o = overdue.get(id);
+     if (o === undefined) continue;
+-    scores.set(id, halfEven(hundredths(s.settled), 10_000n) - 5n * BigInt(o.count));
++    scores.set(id, halfEven(hundredths(s), 10_000n) - 5n * BigInt(o.count));
+   }
+   return scores;
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index b9960e700..60b877f6c 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -27,7 +27,7 @@ public class Rollup {
+ 
+     /** A person's figures: claimed (two decimals), due-total (two decimals, or 'n/a') and overdue-total
+      *  (two decimals: the sum of the dues now of their counting claims that are overdue, skipping those with none), and
+-     *  score (the sum of the dues now of their counting SETTLED claims divided by 100, rounded half to even to a whole
++     *  score (the sum of the dues now of their counting SETTLED claims that correct nothing divided by 100, rounded half to even to a whole
+      *  number, minus 5 for every counting claim of theirs that is overdue). */
+     record Figures(String name, String claimed, String dueTotal, String overdueTotal, long score) {
+         boolean same(Figures other) {
+@@ -87,7 +87,7 @@ public class Rollup {
+                     BigDecimal now = claims.dueNow(sheetId, c);
+                     if (now != null) due = due.add(now);
+                     if (now != null && claims.overdue(sheetId, c, today)) overdue = overdue.add(now);
+-                    if (now != null && "SETTLED".equals(c.status())) settled = settled.add(now);
++                    if (now != null && "SETTLED".equals(c.status()) && c.corrects() == null) settled = settled.add(now);
+                     if (claims.overdue(sheetId, c, today)) overdueCount++;
+                     fixed |= now != null;
+                 }
