@@ -367,6 +367,13 @@ public class PersonRepository {
         return arrived;
     }
 
+    /** Add names (in order) to a person's aliases, as a merge joins the merged person's name and aliases. */
+    public void joinAliases(String sheetId, long id, List<String> names) {
+        for (String name : names) {
+            jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias) VALUES (?, ?, ?)", sheetId, id, name);
+        }
+    }
+
     /** Take a person off the sheet entirely: their patron links (both ways), pool memberships, closed periods'
      *  figures, watchers, holds, past retirements, statements, grades and aliases go with them. Their claims must already be gone. */
     public void remove(String sheetId, long id) {
