@@ -1,0 +1,328 @@
+diff --git a/src/main/frontend/features/settings/settings.slot.tsx b/src/main/frontend/features/settings/settings.slot.tsx
+index 970d4c612..de869fd8b 100644
+--- a/src/main/frontend/features/settings/settings.slot.tsx
++++ b/src/main/frontend/features/settings/settings.slot.tsx
+@@ -91,6 +91,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
+   const [reviewSla, setReviewSla] = useState<string | null>(null);
+   const [scoreMid, setScoreMid] = useState<string | null>(null);
+   const [scoreHigh, setScoreHigh] = useState<string | null>(null);
++  const [scoreLog, setScoreLog] = useState<string | null>(null);
+   const [proofKinds, setProofKinds] = useState<string | null>(null);
+   const [defaultGrade, setDefaultGrade] = useState<string | null>(null);
+   const [entryDate, setEntryDate] = useState<string | null>(null);
+@@ -112,7 +113,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
+ 
+   const saveOnce = useSingleFlight();
+   const save = useMutation({
+-    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null; noteThreshold: string | null; permissions: Record<string, string>; graceDays: string | null; entryDate: string | null; gradeGrace: Record<string, string>; gradeProofThreshold: Record<string, string>; pot: string | null; parent: string | null; fiscalStartMonth: string | null; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null; escalateAfter: string | null; reviewSla: string | null; proofKinds: string | null; defaultGrade: string | null; gradeClerkLimit: Record<string, string>; scoreMid: string | null; scoreHigh: string | null }) =>
++    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null; noteThreshold: string | null; permissions: Record<string, string>; graceDays: string | null; entryDate: string | null; gradeGrace: Record<string, string>; gradeProofThreshold: Record<string, string>; pot: string | null; parent: string | null; fiscalStartMonth: string | null; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null; escalateAfter: string | null; reviewSla: string | null; proofKinds: string | null; defaultGrade: string | null; gradeClerkLimit: Record<string, string>; scoreMid: string | null; scoreHigh: string | null; scoreLog: string | null }) =>
+       postJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, f),
+     onSuccess: (saved) => {
+       setLimit(null);
+@@ -136,6 +137,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
+       setReviewSla(null);
+       setScoreMid(null);
+       setScoreHigh(null);
++      setScoreLog(null);
+       setProofKinds(null);
+       setDefaultGrade(null);
+       setEntryDate(null);
+@@ -212,7 +214,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
+           e.preventDefault();
+           saveOnce(() => {
+             save.reset();
+-            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap, from, proofThreshold, noteThreshold, permissions, graceDays, entryDate, gradeGrace, gradeProofThreshold: gradeProof, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter, reviewSla, proofKinds, defaultGrade, gradeClerkLimit: gradeLimit, scoreMid, scoreHigh });
++            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap, from, proofThreshold, noteThreshold, permissions, graceDays, entryDate, gradeGrace, gradeProofThreshold: gradeProof, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter, reviewSla, proofKinds, defaultGrade, gradeClerkLimit: gradeLimit, scoreMid, scoreHigh, scoreLog });
+           });
+         }}
+       >
+@@ -512,6 +514,19 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
+             }}
+           />
+         </label>{' '}
++        <label>
++          Score log{' '}
++          <input
++            data-testid="setting-score-log"
++            placeholder="on"
++            value={scoreLog ?? ''}
++            onFocus={() => setScoreLog((v) => v ?? '')}
++            onChange={(e) => {
++              setScoreLog(e.target.value);
++              save.reset();
++            }}
++          />
++        </label>{' '}
+         <label>
+           Proof kinds{' '}
+           <input
+@@ -647,6 +662,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
+         , review SLA <strong data-testid="setting-review-sla-current">{fig(settings.data?.reviewSla ?? '')}</strong>
+         , score mid <strong data-testid="setting-score-mid-current">{fig(settings.data?.scoreMid ?? '')}</strong>
+         , score high <strong data-testid="setting-score-high-current">{fig(settings.data?.scoreHigh ?? '')}</strong>
++        , score log <strong data-testid="setting-score-log-current">{settings.data?.scoreLog ? 'on' : ''}</strong>
+         , proof kinds <strong data-testid="setting-proof-kinds-current">{fig(settings.data?.proofKinds ?? '')}</strong>
+         , default grade <strong data-testid="setting-default-grade-current">{fig(settings.data?.defaultGrade ?? '')}</strong>
+         , entry date <strong data-testid="setting-entry-date-current">{fig(settings.data?.entryDate ?? '')}</strong>
+diff --git a/src/main/frontend/features/settings/useSettings.ts b/src/main/frontend/features/settings/useSettings.ts
+index 73a5a6703..1c86c2902 100644
+--- a/src/main/frontend/features/settings/useSettings.ts
++++ b/src/main/frontend/features/settings/useSettings.ts
+@@ -39,13 +39,14 @@ export type Role = { user: string; role: string };
+  *  dated): a claim above the proof threshold needs a proof of each listed kind to be settled or approved.
+  *  `defaultGrade` is the sheet's default grade (A, B or C; null when blank: A; not dated): the grade the quick-add
+  *  bar gives a new person, and the grade of an imported line that leaves it blank. `scoreMid` and `scoreHigh` are the
+- *  sheet's score thresholds (whole numbers; null when blank; not dated): while both are set, each person shows a band. */
++ *  sheet's score thresholds (whole numbers; null when blank; not dated): while both are set, each person shows a band.
++ *  `scoreLog` is the sheet's score log switch (not dated): while on, changing the sheet's today writes each person's score. */
+ export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; roles: Role[]; policyDate: string | null; periodNumberingFrom: string | null;
+   gradeTerms: Record<string, number>; cap: string | null; dated: Record<string, DatedValue[]>;
+   permissions: Record<string, string>; graceDays: number | null; delegations: Delegation[];
+   entryDate: string | null; holidays: string[]; voidReasons: string[]; pot: string | null;
+   parent: string | null; fiscalStartMonth: number; alertThreshold: string | null; escalateAfter: number | null; reviewSla: number | null; proofKinds: string | null; defaultGrade: string | null;
+-  scoreMid: number | null; scoreHigh: number | null };
++  scoreMid: number | null; scoreHigh: number | null; scoreLog: boolean };
+ 
+ /** A steward's (`by`) delegation of the steward role to a user, from a date to a date (yyyy-mm-dd, inclusive):
+  *  while the sheet's today is inside it the user acts as a steward. */
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index d83bd60d4..b9960e700 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.rollup;
+ 
+ import java.math.BigDecimal;
++import java.math.RoundingMode;
+ import java.time.LocalDate;
+ import java.util.ArrayList;
+ import java.util.Collections;
+@@ -25,8 +26,10 @@ import org.springframework.stereotype.Service;
+ public class Rollup {
+ 
+     /** A person's figures: claimed (two decimals), due-total (two decimals, or 'n/a') and overdue-total
+-     *  (two decimals: the sum of the dues now of their counting claims that are overdue, skipping those with none). */
+-    record Figures(String name, String claimed, String dueTotal, String overdueTotal) {
++     *  (two decimals: the sum of the dues now of their counting claims that are overdue, skipping those with none), and
++     *  score (the sum of the dues now of their counting SETTLED claims divided by 100, rounded half to even to a whole
++     *  number, minus 5 for every counting claim of theirs that is overdue). */
++    record Figures(String name, String claimed, String dueTotal, String overdueTotal, long score) {
+         boolean same(Figures other) {
+             return other != null && claimed.equals(other.claimed) && dueTotal.equals(other.dueTotal)
+                     && overdueTotal.equals(other.overdueTotal);
+@@ -72,6 +75,8 @@ public class Rollup {
+                 BigDecimal claimed = BigDecimal.ZERO.setScale(2);
+                 BigDecimal due = BigDecimal.ZERO.setScale(2);
+                 BigDecimal overdue = BigDecimal.ZERO.setScale(2);
++                BigDecimal settled = BigDecimal.ZERO.setScale(2);
++                int overdueCount = 0;
+                 boolean fixed = false;
+                 for (Claim c : all) {
+                     if (c.personId() != p.id()) continue;
+@@ -82,12 +87,15 @@ public class Rollup {
+                     BigDecimal now = claims.dueNow(sheetId, c);
+                     if (now != null) due = due.add(now);
+                     if (now != null && claims.overdue(sheetId, c, today)) overdue = overdue.add(now);
++                    if (now != null && "SETTLED".equals(c.status())) settled = settled.add(now);
++                    if (claims.overdue(sheetId, c, today)) overdueCount++;
+                     fixed |= now != null;
+                 }
+                 boolean shown = fixed || claims.rated(sheetId, p.id(), today);
+                 due = SettingsRepository.capped(due, cap);
+                 figures.put(p.id(), new Figures(p.name(), claimed.toPlainString(),
+-                        shown ? due.toPlainString() : "n/a", overdue.toPlainString()));
++                        shown ? due.toPlainString() : "n/a", overdue.toPlainString(),
++                        settled.movePointLeft(2).setScale(0, RoundingMode.HALF_EVEN).longValueExact() - 5L * overdueCount));
+                 claimedTotal = claimedTotal.add(claimed);
+                 if (shown) dues.add(due);
+                 overdues.add(overdue);
+@@ -119,6 +127,13 @@ public class Rollup {
+         }
+     }
+ 
++    /** Record one SCORE line per person (in list order) with their score as {@code before} had it. */
++    public void scores(String sheetId, String by, Snapshot before) {
++        for (Figures f : before.people().values()) {
++            audit.record("SCORE sheet=" + sheetId + " by=" + by + " name=" + f.name() + " score=" + f.score());
++        }
++    }
++
+     /** Record the lines for every person (in list order) and the sheet's totals, moved or not. */
+     public void recordAll(String sheetId, String by) {
+         Map<Long, Figures> none = Map.of();
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SaveSettings.java b/src/main/java/net/officefloor/hq/app/settings/SaveSettings.java
+index 0dedca117..2ee636087 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SaveSettings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SaveSettings.java
+@@ -126,6 +126,10 @@ public class SaveSettings {
+             repository.setScoreHigh(id, input.scoreHigh());
+             audit.record(prefix + "score-high value=" + (input.scoreHigh() == null ? "" : input.scoreHigh()));
+         }
++        if (input.setsScoreLog()) {
++            repository.setScoreLog(id, input.scoreLog());
++            audit.record(prefix + "score-log value=" + (input.scoreLog() ? "on" : ""));
++        }
+         if (input.setsProofKinds()) {
+             repository.setProofKinds(id, input.proofKinds());
+             audit.record(prefix + "proof-kinds value=" + (input.proofKinds() == null ? "" : input.proofKinds()));
+diff --git a/src/main/java/net/officefloor/hq/app/settings/Settings.java b/src/main/java/net/officefloor/hq/app/settings/Settings.java
+index 51e9fee1b..0fbf9e2bb 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/Settings.java
+@@ -35,12 +35,14 @@ import java.util.List;
+  *  {@code defaultGrade} is the sheet's default grade (A, B or C; null when blank: A; not dated): the grade the
+  *  quick-add bar gives a new person, and the grade of an imported line that leaves it blank.
+  *  {@code scoreMid} and {@code scoreHigh} are the sheet's score thresholds (whole numbers; null when blank; not dated):
+- *  while both are set, each person shows a band: HIGH at or above the high one, MID at or above the mid one, else LOW. */
++ *  while both are set, each person shows a band: HIGH at or above the high one, MID at or above the mid one, else LOW.
++ *  {@code scoreLog} is the sheet's score log switch (not dated): while on, changing the sheet's today writes one SCORE
++ *  line per person with their score as it stood on the day being left. */
+ public record Settings(String clerkLimit, String floor, int terms, String latePct, List<Role> roles, String policyDate,
+         String periodNumberingFrom, java.util.Map<String, Integer> gradeTerms, String cap,
+         java.util.Map<String, List<DatedValue>> dated, java.util.Map<String, String> permissions, Integer graceDays,
+         List<Delegation> delegations, String entryDate, List<String> holidays, List<String> voidReasons,
+         String pot, String parent, int fiscalStartMonth, String alertThreshold,
+         Integer escalateAfter, Integer reviewSla, String proofKinds, String defaultGrade,
+-        Integer scoreMid, Integer scoreHigh) {
++        Integer scoreMid, Integer scoreHigh, boolean scoreLog) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsInput.java b/src/main/java/net/officefloor/hq/app/settings/SettingsInput.java
+index e4f072c4a..5cc9aef99 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsInput.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsInput.java
+@@ -10,7 +10,7 @@ import java.time.LocalDate;
+  *  permission matrix entries entered, by action (a comma separated list of roles; empty when blank: the standing rule), and the grace days (null when blank: off), and the note threshold
+  *  scaled to two decimals (null for none), and the entry date (null when blank: off), and the grade grace days entered, by grade (in grade order; null when blank: none), and the grade proof thresholds entered, by
+  *  grade, scaled to two decimals (in grade order; null when blank: none, the sheet's is then used), and the pot scaled to two decimals
+- *  (null for none), and the parent sheet's id (null when blank: none), and the fiscal year start month (1 to 12), and the alert threshold scaled to two decimals (null for off), and the rounding mode (half-up or half-even; null when blank: none), and the review threshold scaled to two decimals (null for none), and the escalation gap in days (null when blank: off), and the review SLA in days (null when blank: none), and the default grade (null when blank: A), and the grade clerk limits entered, by grade, scaled to two decimals (in grade order; null when blank: none, the sheet's is then used). */
++ *  (null for none), and the parent sheet's id (null when blank: none), and the fiscal year start month (1 to 12), and the alert threshold scaled to two decimals (null for off), and the rounding mode (half-up or half-even; null when blank: none), and the review threshold scaled to two decimals (null for none), and the escalation gap in days (null when blank: off), and the review SLA in days (null when blank: none), and the default grade (null when blank: A), and the grade clerk limits entered, by grade, scaled to two decimals (in grade order; null when blank: none, the sheet's is then used), and the score log switch. */
+ public record SettingsInput(boolean setsClerkLimit, BigDecimal clerkLimit, boolean setsFloor, BigDecimal floor, boolean setsTerms,
+         Integer terms, boolean setsLatePct, BigDecimal latePct,
+         boolean setsPolicyDate, LocalDate policyDate, boolean setsPeriodNumberingFrom, LocalDate periodNumberingFrom,
+@@ -25,5 +25,6 @@ public record SettingsInput(boolean setsClerkLimit, BigDecimal clerkLimit, boole
+         boolean setsEscalateAfter, Integer escalateAfter, boolean setsReviewSla, Integer reviewSla,
+         boolean setsProofKinds, String proofKinds, boolean setsDefaultGrade, String defaultGrade,
+         java.util.Map<String, BigDecimal> gradeClerkLimit,
+-        boolean setsScoreMid, Integer scoreMid, boolean setsScoreHigh, Integer scoreHigh) {
++        boolean setsScoreMid, Integer scoreMid, boolean setsScoreHigh, Integer scoreHigh,
++        boolean setsScoreLog, boolean scoreLog) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java b/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
+index ca9d08248..dff8dbe09 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
+@@ -61,7 +61,7 @@ public class SettingsRepository {
+                 delegations(sheetId), entry == null ? null : entry.toString(), holidays(sheetId),
+                 voidReasons(sheetId), pot == null ? null : money(pot), parent(sheetId), fiscalStartMonth(sheetId),
+                 alert == null ? null : money(alert), escalateAfter(sheetId), reviewSla(sheetId), proofKinds(sheetId),
+-                storedDefaultGrade(sheetId), scoreMid(sheetId), scoreHigh(sheetId));
++                storedDefaultGrade(sheetId), scoreMid(sheetId), scoreHigh(sheetId), scoreLog(sheetId));
+     }
+ 
+     /** The sheet's today; the real date when there is no such sheet. */
+@@ -448,6 +448,17 @@ public class SettingsRepository {
+         jdbc.update("UPDATE sheet SET score_mid = ? WHERE id = ?", score, sheetId);
+     }
+ 
++    /** Whether the sheet's score log switch is on. */
++    public boolean scoreLog(String sheetId) {
++        List<Boolean> found = jdbc.query("SELECT score_log FROM sheet WHERE id = ?",
++                (rs, i) -> rs.getBoolean("score_log"), sheetId);
++        return !found.isEmpty() && found.get(0);
++    }
++
++    public void setScoreLog(String sheetId, boolean on) {
++        jdbc.update("UPDATE sheet SET score_log = ? WHERE id = ?", on, sheetId);
++    }
++
+     /** The sheet's high score threshold; null when blank. */
+     public Integer scoreHigh(String sheetId) {
+         List<Integer> found = jdbc.query("SELECT score_high FROM sheet WHERE id = ?",
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsRequest.java b/src/main/java/net/officefloor/hq/app/settings/SettingsRequest.java
+index c90c30553..b7ad595af 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsRequest.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsRequest.java
+@@ -16,6 +16,7 @@ package net.officefloor.hq.app.settings;
+  *  {@code proofKinds} is the proof kinds, a comma separated list of receipt and photo, blank meaning none (not dated).
+  *  {@code defaultGrade} is the default grade, A, B or C, blank meaning A (not dated).
+  *  {@code scoreMid} and {@code scoreHigh} are the score thresholds, whole numbers, blank meaning none (not dated).
++ *  {@code scoreLog} is the score log switch, on or blank meaning off (not dated).
+  *  {@code gradeClerkLimit} is each grade's clerk limit given, by grade (dated, from-date key clerk-limit-<grade>), blank
+  *  meaning none (the sheet's is then used). */
+ public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom,
+@@ -25,5 +26,5 @@ public record SettingsRequest(String clerkLimit, String floor, String terms, Str
+         java.util.Map<String, String> gradeProofThreshold, String pot, String parent,
+         String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla,
+         String proofKinds, String defaultGrade, java.util.Map<String, String> gradeClerkLimit,
+-        String scoreMid, String scoreHigh) {
++        String scoreMid, String scoreHigh, String scoreLog) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java b/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java
+index 5e4289bed..985e64302 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java
+@@ -153,6 +153,10 @@ public class ValidateSettings {
+         if (scoreHigh != null && !scoreHigh.isEmpty() && !SCORE.matcher(scoreHigh).matches()) {
+             throw new BadRequestException("the high score threshold must be a whole number");
+         }
++        String scoreLog = request == null || request.scoreLog() == null ? null : request.scoreLog().trim();
++        if (scoreLog != null && !scoreLog.isEmpty() && !scoreLog.equals("on")) {
++            throw new BadRequestException("the score log must be on or blank");
++        }
+         String kinds = request == null || request.proofKinds() == null ? null : request.proofKinds().trim();
+         if (kinds != null && !kinds.isEmpty()) {
+             java.util.List<String> listed = new java.util.ArrayList<>();
+@@ -271,6 +275,7 @@ public class ValidateSettings {
+                 defaultGrade != null, defaultGrade == null || defaultGrade.isEmpty() ? null : defaultGrade,
+                 gradeLimit,
+                 scoreMid != null, scoreMid == null || scoreMid.isEmpty() ? null : Integer.parseInt(scoreMid),
+-                scoreHigh != null, scoreHigh == null || scoreHigh.isEmpty() ? null : Integer.parseInt(scoreHigh)));
++                scoreHigh != null, scoreHigh == null || scoreHigh.isEmpty() ? null : Integer.parseInt(scoreHigh),
++                scoreLog != null, scoreLog != null && !scoreLog.isEmpty()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SaveSheetToday.java b/src/main/java/net/officefloor/hq/app/sheet/SaveSheetToday.java
+index c1eb738f8..84b76e59d 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SaveSheetToday.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SaveSheetToday.java
+@@ -12,7 +12,7 @@ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.server.http.ServerHttpConnection;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+-/** Set the sheet's today (a new date first records each person's due-total as it stood on the day left, and releases every claim's editor lock), then close each open period lapsed past the sheet's grace days. */
++/** Set the sheet's today (a new date first records, while the score log is on, each person's score, then each person's due-total, as they stood on the day left, and releases every claim's editor lock), then close each open period lapsed past the sheet's grace days. */
+ public class SaveSheetToday {
+     public void save(@PathVariable("sheetId") String sheetId, @Val LocalDate today,
+             ServerHttpConnection connection, SheetRepository repository, Rollup rollup, PeriodCloser closer, ClaimRepository claims,
+@@ -29,6 +29,7 @@ public class SaveSheetToday {
+             throw new BadRequestException("no such sheet");
+         }
+         if (!today.equals(was)) {
++            if (settings.scoreLog(id)) rollup.scores(id, by, before);
+             rollup.snapshot(id, by, before, delegator, was);
+             claims.unlockAll(id);
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+index 75269b785..16d9d4de4 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+@@ -37,8 +37,8 @@ public class SheetCloner {
+      *  the sheet's today when each was opened, then by the order they were added to the clone); a number one of them
+      *  corrects or was split from follows it. The clone's history starts with all of this on its today. */
+     public void cloneTo(String from, String to, String by) {
+-        jdbc.update("INSERT INTO sheet (id, created_by, today, policy_date, period_numbering_from, grace_days, entry_date, pot, fiscal_start_month, escalate_after, review_sla, proof_kinds, default_grade, score_mid, score_high)"
+-                + " SELECT ?, ?, today, policy_date, period_numbering_from, grace_days, entry_date, pot, fiscal_start_month, escalate_after, review_sla, proof_kinds, default_grade, score_mid, score_high FROM sheet WHERE id = ?",
++        jdbc.update("INSERT INTO sheet (id, created_by, today, policy_date, period_numbering_from, grace_days, entry_date, pot, fiscal_start_month, escalate_after, review_sla, proof_kinds, default_grade, score_mid, score_high, score_log)"
++                + " SELECT ?, ?, today, policy_date, period_numbering_from, grace_days, entry_date, pot, fiscal_start_month, escalate_after, review_sla, proof_kinds, default_grade, score_mid, score_high, score_log FROM sheet WHERE id = ?",
+                 to, by, from);
+         jdbc.update("UPDATE sheet SET cloned_from = ? WHERE id = ?", from, to);
+         jdbc.update("INSERT INTO setting_value (sheet_id, setting_key, from_date, setting) SELECT ?, setting_key, from_date,"
+diff --git a/src/main/resources/db/migration/V105__score_log.sql b/src/main/resources/db/migration/V105__score_log.sql
+new file mode 100644
+index 000000000..040a09596
+--- /dev/null
++++ b/src/main/resources/db/migration/V105__score_log.sql
+@@ -0,0 +1,3 @@
++-- A sheet's score log switch (not dated): while on, changing the sheet's today writes one SCORE line per person
++-- with their score as it stood on the day being left.
++ALTER TABLE sheet ADD COLUMN score_log BOOLEAN NOT NULL DEFAULT FALSE;
