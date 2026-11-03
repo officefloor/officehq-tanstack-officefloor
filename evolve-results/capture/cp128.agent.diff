@@ -1,0 +1,110 @@
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 6c1e23663..9bcdb3b7e 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -367,6 +367,13 @@ public class PersonRepository {
+         return arrived;
+     }
+ 
++    /** Add names (in order) to a person's aliases, as a merge joins the merged person's name and aliases. */
++    public void joinAliases(String sheetId, long id, List<String> names) {
++        for (String name : names) {
++            jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias) VALUES (?, ?, ?)", sheetId, id, name);
++        }
++    }
++
+     /** Take a person off the sheet entirely: their patron links (both ways), pool memberships, closed periods'
+      *  figures, watchers, holds, past retirements, statements, grades and aliases go with them. Their claims must already be gone. */
+     public void remove(String sheetId, long id) {
+diff --git a/src/main/java/net/officefloor/hq/app/person/TransferPerson.java b/src/main/java/net/officefloor/hq/app/person/TransferPerson.java
+index ec0c87f1d..30d85dfe4 100644
+--- a/src/main/java/net/officefloor/hq/app/person/TransferPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/TransferPerson.java
+@@ -12,12 +12,18 @@ import net.officefloor.server.http.ServerHttpConnection;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
++import java.util.ArrayList;
++import java.util.List;
++
+ /** A steward transfers a person to another sheet by id: they arrive there with every grade they were given (and
+  *  its from-date), their terms, contact and aliases, and their claims (see {@link ClaimRepository#transferAll}), with
+  *  no statements; they leave this sheet entirely (patron links, pool memberships, holds and watches dropped).
+  *  A sheet id never used is made empty first, as loading it would. Refused for anyone but a steward, for a retired
+- *  person, for this sheet's own id, for an archived sheet, and when their name, an alias or their contact is already
+- *  on the other sheet. Each sheet writes its PERSON_TRANSFERRED line, then its rollup lines. */
++ *  person, for this sheet's own id, and for an archived sheet. When their name or an alias is already a name or alias
++ *  of someone on the other sheet, they are merged into that person there, as {@link MergePerson} does (claims after
++ *  theirs, aliases joined, bound figures lost; refused when that person is retired or more than one person matches);
++ *  otherwise refused when their name, an alias or their contact is already taken there. Each sheet writes its
++ *  PERSON_TRANSFERRED line (the other sheet then PERSON_MERGED when merged), then its rollup lines. */
+ public class TransferPerson {
+     public void transfer(@PathVariable("sheetId") String sheetId, @PathVariable("personId") String personId,
+             @RequestBody TransferRequest request, ServerHttpConnection connection, PersonRepository people,
+@@ -52,16 +58,32 @@ public class TransferPerson {
+         if (settings.archived(to)) {
+             throw new BadRequestException("sheet " + to + " is archived");
+         }
+-        if (people.nameTaken(to, from.name(), pid)) {
+-            throw new BadRequestException(from.name() + " is already on sheet " + to);
+-        }
++        List<String> names = new ArrayList<>(List.of(from.name()));
+         for (Alias alias : aliases.list(id)) {
+-            if (alias.personId() == pid && people.nameTaken(to, alias.alias(), pid)) {
+-                throw new BadRequestException(alias.alias() + " is already on sheet " + to);
++            if (alias.personId() == pid) names.add(alias.alias());
++        }
++        Person into = null;
++        for (String name : names) {
++            Person match = people.findByName(to, name);
++            if (match == null) continue;
++            if (into != null && into.id() != match.id()) {
++                throw new BadRequestException(name + " is already on sheet " + to);
+             }
++            into = match;
+         }
+-        if (from.contact() != null && people.contactTaken(to, from.contact(), 0)) {
+-            throw new BadRequestException(from.contact() + " is already on sheet " + to);
++        if (into != null) {
++            if (into.retired()) {
++                throw new BadRequestException(into.name() + " is retired");
++            }
++        } else {
++            for (String name : names) {
++                if (people.nameTaken(to, name, pid)) {
++                    throw new BadRequestException(name + " is already on sheet " + to);
++                }
++            }
++            if (from.contact() != null && people.contactTaken(to, from.contact(), 0)) {
++                throw new BadRequestException(from.contact() + " is already on sheet " + to);
++            }
+         }
+ 
+         if (!people.sheetExists(to)) {
+@@ -69,12 +91,24 @@ public class TransferPerson {
+         }
+         Rollup.Snapshot beforeHere = rollup.take(id);
+         Rollup.Snapshot beforeThere = rollup.take(to);
+-        long arrived = people.transferIn(id, pid, to);
+-        claims.transferAll(id, pid, to, arrived);
++        long arrived;
++        if (into == null) {
++            arrived = people.transferIn(id, pid, to);
++            claims.transferAll(id, pid, to, arrived);
++        } else {
++            // They arrive as merged into the person already there: their claims after that person's, their name
++            // and aliases joined to that person's aliases.
++            arrived = into.id();
++            claims.transferAll(id, pid, to, arrived);
++            people.joinAliases(to, arrived, names);
++        }
+         people.remove(id, pid);
+         audit.record("PERSON_TRANSFERRED sheet=" + id + " by=" + by + " name=" + from.name() + " to=" + to);
+         rollup.record(id, by, beforeHere);
+         audit.record("PERSON_TRANSFERRED sheet=" + to + " by=" + by + " name=" + from.name() + " from=" + id);
++        if (into != null) {
++            audit.record("PERSON_MERGED sheet=" + to + " by=" + by + " from=" + from.name() + " into=" + into.name());
++        }
+         rollup.record(to, by, beforeThere);
+         person.set(people.find(to, arrived));
+     }
