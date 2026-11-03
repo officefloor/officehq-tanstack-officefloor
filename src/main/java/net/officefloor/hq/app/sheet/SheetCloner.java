@@ -131,7 +131,7 @@ public class SheetCloner {
         return made;
     }
 
-    /** Copy one claim to a person on the clone, with its status log and comments, bound to no statement, unlocked,
+    /** Copy one claim to a person on the clone, with its status log, comments and lines, bound to no statement, unlocked,
      *  in no settle batch and (for now) with no number; the copy's id. */
     private long copyClaim(String from, String to, long id, long personId) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
@@ -152,6 +152,8 @@ public class SheetCloner {
                 + " by_user, on_date, due FROM claim_log WHERE sheet_id = ? AND claim_id = ? ORDER BY id", to, made, from, id);
         jdbc.update("INSERT INTO claim_comment (sheet_id, claim_id, by_user, on_date, text) SELECT ?, ?, by_user,"
                 + " on_date, text FROM claim_comment WHERE sheet_id = ? AND claim_id = ? ORDER BY id", to, made, from, id);
+        jdbc.update("INSERT INTO claim_line (sheet_id, claim_id, label, qty, unit) SELECT ?, ?, label, qty, unit"
+                + " FROM claim_line WHERE sheet_id = ? AND claim_id = ? ORDER BY id", to, made, from, id);
         return made;
     }
 

@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Move a claim along its status: open, settle, approve, reject (with a reason) or void, each only from the
- *  statuses it allows; or defer an OPEN claim until a date (see {@link ClaimDeferral}); or raise its proofs count (see {@link ClaimProof}); or split an amount off an OPEN claim (see {@link ClaimSplit}); or re-date an OPEN or PENDING claim (see {@link ClaimRedate}); or lock or unlock a claim's editor (see {@link ClaimLock}); or remind an OPEN or PENDING claim (see {@link ClaimRemind}); or comment a claim (see {@link ClaimComment}); or delete a DRAFT claim or restore it the same day (see {@link ClaimDelete}). */
+ *  statuses it allows; or defer an OPEN claim until a date (see {@link ClaimDeferral}); or raise its proofs count (see {@link ClaimProof}); or split an amount off an OPEN claim (see {@link ClaimSplit}); or re-date an OPEN or PENDING claim (see {@link ClaimRedate}); or lock or unlock a claim's editor (see {@link ClaimLock}); or remind an OPEN or PENDING claim (see {@link ClaimRemind}); or comment a claim (see {@link ClaimComment}); or delete a DRAFT claim or restore it the same day (see {@link ClaimDelete}); or add a line to a DRAFT claim (see {@link ClaimLine}). */
 public class ChangeClaimStatus {
     public void change(@PathVariable("sheetId") String sheetId, @PathVariable("claimId") String claimId,
             @PathVariable("action") String action, @RequestBody ClaimActionRequest request, ServerHttpConnection connection, ClaimRepository repository,
@@ -65,6 +65,11 @@ public class ChangeClaimStatus {
         }
         if ("restore".equals(action == null ? "" : action.trim())) {
             claim.set(ClaimDelete.restore(id, cid, by, repository, periods, settings, audit));
+            return;
+        }
+        if ("line".equals(action == null ? "" : action.trim())) {
+            claim.set(ClaimLine.apply(id, cid, request == null ? null : request.label(), request == null ? null : request.qty(),
+                    request == null ? null : request.unit(), by, repository, periods, settings, audit));
             return;
         }
         if ("proof".equals(action == null ? "" : action.trim())) {

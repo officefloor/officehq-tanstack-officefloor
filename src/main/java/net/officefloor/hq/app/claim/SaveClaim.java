@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.claim;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.BadRequestException;
@@ -37,6 +38,11 @@ public class SaveClaim {
         String holder = repository.lockedBy(id, cid);
         if (holder != null && !holder.equals(by)) {
             throw new BadRequestException("the claim is being edited by " + holder);
+        }
+        // A claim with lines has their total as its amount: an edit typing another amount is refused.
+        BigDecimal lines = repository.linesTotal(id, cid);
+        if (lines != null && lines.compareTo(input.amount()) != 0) {
+            throw new BadRequestException("a claim with lines has their total, " + ClaimRepository.money(lines) + ", as its amount");
         }
         LocalDate date = input.date() != null ? input.date() : sheets.today(id);
         PeriodGuard.open(periods, id, LocalDate.parse(found.dueBy()));

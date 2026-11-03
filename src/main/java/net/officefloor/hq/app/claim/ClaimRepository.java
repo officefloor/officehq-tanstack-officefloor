@@ -387,7 +387,7 @@ public class ClaimRepository {
     }
 
     /** Move every claim of a person to another sheet, as the claims of the person {@code toPersonId} there: each keeps
-     *  its status, dates, note, tags, settled due, status log, comments and any figure a statement bound it to, and is listed
+     *  its status, dates, note, tags, settled due, status log, comments, lines and any figure a statement bound it to, and is listed
      *  in the same order; it loses its external reference, its lock and its settle batch. Each claim that had
      *  a number takes the other sheet's next one (as opening it there would give it), in the order the claims were
      *  opened (by the sheet's today when each was opened, then by the order they were added); a number one of them
@@ -418,6 +418,8 @@ public class ClaimRepository {
             jdbc.update("INSERT INTO claim_comment (sheet_id, claim_id, by_user, on_date, text) SELECT ?, ?, by_user,"
                     + " on_date, text FROM claim_comment WHERE sheet_id = ? AND claim_id = ? ORDER BY id",
                     toSheet, arrived, fromSheet, claimId);
+            jdbc.update("INSERT INTO claim_line (sheet_id, claim_id, label, qty, unit) SELECT ?, ?, label, qty, unit"
+                    + " FROM claim_line WHERE sheet_id = ? AND claim_id = ? ORDER BY id", toSheet, arrived, fromSheet, claimId);
             used(toSheet, jdbc.queryForObject("SELECT tags FROM claim WHERE id = ?", String.class, arrived));
         }
 
@@ -446,6 +448,7 @@ public class ClaimRepository {
         for (Long claimId : ids) {
             jdbc.update("DELETE FROM claim_log WHERE sheet_id = ? AND claim_id = ?", fromSheet, claimId);
             jdbc.update("DELETE FROM claim_comment WHERE sheet_id = ? AND claim_id = ?", fromSheet, claimId);
+            jdbc.update("DELETE FROM claim_line WHERE sheet_id = ? AND claim_id = ?", fromSheet, claimId);
             jdbc.update("DELETE FROM claim WHERE id = ? AND sheet_id = ?", claimId, fromSheet);
         }
     }
@@ -779,6 +782,37 @@ public class ClaimRepository {
                             .add(rs.getString("by_user") + " on " + rs.getDate("on_date").toLocalDate() + ": " + rs.getString("text"));
                 }, sheetId);
         return comments;
+    }
+
+    /** Add a line to a DRAFT claim and make its amount its lines' quantities times their unit amounts, added up: that
+     *  amount, or null when the sheet has no such DRAFT claim (nothing is written then). */
+    public BigDecimal addLine(String sheetId, long claimId, String label, int qty, BigDecimal unit) {
+        Integer draft = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE id = ? AND sheet_id = ? AND status = 'DRAFT'",
+                Integer.class, claimId, sheetId);
+        if (draft == null || draft == 0) return null;
+        jdbc.update("INSERT INTO claim_line (sheet_id, claim_id, label, qty, unit) VALUES (?, ?, ?, ?, ?)",
+                sheetId, claimId, label, qty, unit);
+        BigDecimal amount = linesTotal(sheetId, claimId);
+        kept(sheetId, claimId, jdbc.update("UPDATE claim SET amount = ? WHERE id = ? AND sheet_id = ?", amount, claimId, sheetId) > 0);
+        return amount;
+    }
+
+    /** A claim's lines' quantities times their unit amounts, added up; null when it has no lines. */
+    public BigDecimal linesTotal(String sheetId, long claimId) {
+        List<BigDecimal> found = jdbc.queryForList("SELECT SUM(qty * unit) FROM claim_line WHERE sheet_id = ? AND claim_id = ?"
+                + " HAVING COUNT(*) > 0", BigDecimal.class, sheetId, claimId);
+        return found.isEmpty() || found.get(0) == null ? null : found.get(0).setScale(2);
+    }
+
+    /** The lines of the sheet's claims, by claim id: each oldest first, as "<label> <qty> x <unit>". */
+    public Map<String, List<String>> lines(String sheetId) {
+        Map<String, List<String>> lines = new LinkedHashMap<>();
+        jdbc.query("SELECT claim_id, label, qty, unit FROM claim_line WHERE sheet_id = ? ORDER BY id",
+                rs -> {
+                    lines.computeIfAbsent(String.valueOf(rs.getLong("claim_id")), k -> new ArrayList<>())
+                            .add(rs.getString("label") + " " + rs.getInt("qty") + " x " + money(rs.getBigDecimal("unit")));
+                }, sheetId);
+        return lines;
     }
 
     /** Each claim's status at the end of a day, by claim id, as its status log records it: the last line

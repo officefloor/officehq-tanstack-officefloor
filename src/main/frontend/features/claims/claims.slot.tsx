@@ -27,14 +27,14 @@ function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: numbe
   );
 }
 
-type ClaimAction = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | 'delete' | 'restore' | 'defer' | 'proof' | 'remind' | 'split' | 'redate' | 'comment';
+type ClaimAction = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | 'delete' | 'restore' | 'defer' | 'proof' | 'remind' | 'split' | 'redate' | 'comment' | 'line';
 
 /** A claim's status changes; the server refuses one its status does not allow, a settle by the user
  *  who opened the claim, and an approve or reject by anyone but a steward (an approve also by the
  *  user who opened the claim), a re-settle by anyone but a steward or of a claim not SETTLED, and a void of a SETTLED claim by anyone but a steward, more than 7 days after its settlement or in a closed period. A reject takes the reason typed on the claim's row.
  *  A delete moves a DRAFT claim (not in a closed period) to DELETED, where it counts nowhere; a restore makes it a DRAFT again, only on the sheet-today it was deleted.
  *  A settle or approve of a claim whose due is above the proof threshold in force on its date is refused while it has no proof. */
-const ACTIONS: [Exclude<ClaimAction, 'defer' | 'proof' | 'remind' | 'split' | 'redate' | 'comment'>, string][] = [
+const ACTIONS: [Exclude<ClaimAction, 'defer' | 'proof' | 'remind' | 'split' | 'redate' | 'comment' | 'line'>, string][] = [
   ['open', 'Open'],
   ['settle', 'Settle'],
   ['approve', 'Approve'],
@@ -77,6 +77,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   const [splitAmounts, setSplitAmounts] = useState<Record<number, string>>({});
   const [newDates, setNewDates] = useState<Record<number, string>>({});
   const [comments, setComments] = useState<Record<number, string>>({});
+  const [lineFields, setLineFields] = useState<Record<number, { label: string; qty: string; unit: string }>>({});
   const [inlineAmounts, setInlineAmounts] = useState<Record<number, string>>({});
 
   const clearForm = () => {
@@ -147,18 +148,22 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
 
   // A status change (open, settle, approve, reject, void) of one claim, or deferring an OPEN one until the
   // date typed on its row, or adding a proof to it, or reminding an OPEN or PENDING one (once per sheet-today), or splitting the amount typed on its row off an OPEN one
-  // (a new OPEN claim listed under the person), or re-dating an OPEN or PENDING one to the date typed on its row, or commenting it with the text typed on its row;
+  // (a new OPEN claim listed under the person), or re-dating an OPEN or PENDING one to the date typed on its row, or commenting it with the text typed on its row,
+  // or adding the line (label, quantity, unit amount) typed on its row to a DRAFT one (its amount becomes its lines' total);
   // a refusal shows on that claim's row.
   const action = useMutation({
-    mutationFn: (a: { id: number; action: ClaimAction; reason: string; until: string; amount: string; date: string; text: string }) =>
-      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${a.id}/${a.action}`, { reason: a.reason, until: a.until, amount: a.amount, date: a.date, text: a.text }),
-    onSuccess: (_, a) => {
+    mutationFn: (a: { id: number; action: ClaimAction; reason: string; until: string; amount: string; date: string; text: string; label: string; qty: string; unit: string }) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${a.id}/${a.action}`, { reason: a.reason, until: a.until, amount: a.amount, date: a.date, text: a.text, label: a.label, qty: a.qty, unit: a.unit }),
+    onSuccess: (changed, a) => {
       if (a.action === 'reject') setReasons((r) => ({ ...r, [a.id]: '' }));
       if (a.action === 'void') setVoidReasons((r) => ({ ...r, [a.id]: '' }));
       if (a.action === 'defer') setDeferDates((d) => ({ ...d, [a.id]: '' }));
       if (a.action === 'split') setSplitAmounts((m) => ({ ...m, [a.id]: '' }));
       if (a.action === 'redate') setNewDates((d) => ({ ...d, [a.id]: '' }));
       if (a.action === 'comment') setComments((m) => ({ ...m, [a.id]: '' }));
+      if (a.action === 'line') setLineFields((m) => ({ ...m, [a.id]: { label: '', qty: '', unit: '' } }));
+      // An open editor of the claim takes the amount its lines now add up to.
+      if (a.action === 'line' && editing === a.id) setAmount(changed.amount);
     },
     onSettled: async () => {
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
@@ -227,6 +232,9 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
       amount: a === 'split' ? (splitAmounts[id] ?? '').trim() : '',
       date: a === 'redate' ? (newDates[id] ?? '').trim() : '',
       text: a === 'comment' ? comments[id] ?? '' : '',
+      label: a === 'line' ? lineFields[id]?.label ?? '' : '',
+      qty: a === 'line' ? (lineFields[id]?.qty ?? '').trim() : '',
+      unit: a === 'line' ? (lineFields[id]?.unit ?? '').trim() : '',
     });
   };
 
@@ -456,6 +464,36 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                     onClick={() => act(c.id, 'comment')}
                   >
                     Comment
+                  </button>
+                </td>
+                <td data-testid="claim-lines">
+                  {c.lines.map((line, i) => (
+                    <div key={i} data-testid="claim-lines-line">
+                      {line}
+                    </div>
+                  ))}
+                  {(['label', 'qty', 'unit'] as const).map((k) => (
+                    <input
+                      key={k}
+                      type="text"
+                      data-testid={`claim-line-${k}`}
+                      placeholder={k}
+                      inputMode={k === 'label' ? undefined : k === 'qty' ? 'numeric' : 'decimal'}
+                      value={lineFields[c.id]?.[k] ?? ''}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setLineFields((m) => ({ ...m, [c.id]: { ...(m[c.id] ?? { label: '', qty: '', unit: '' }), [k]: v } }));
+                        if (action.variables?.id === c.id) action.reset();
+                      }}
+                    />
+                  ))}{' '}
+                  <button
+                    type="button"
+                    data-testid="claim-line-add"
+                    disabled={action.isPending}
+                    onClick={() => act(c.id, 'line')}
+                  >
+                    Add line
                   </button>
                 </td>
                 <td>
