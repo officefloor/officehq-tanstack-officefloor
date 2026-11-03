@@ -1,0 +1,140 @@
+diff --git a/src/main/frontend/features/plans/plans.slot.tsx b/src/main/frontend/features/plans/plans.slot.tsx
+index 444dd77a7..739b231a2 100644
+--- a/src/main/frontend/features/plans/plans.slot.tsx
++++ b/src/main/frontend/features/plans/plans.slot.tsx
+@@ -50,7 +50,7 @@ export function nextPlanDates(plan: Plan, today: string): string[] {
+ }
+ 
+ /** One plan's row: its figures, next dates and whether it is paused, with buttons that pause and resume it, an
+- *  entry that changes its amount from the sheet's today, and its amount changes, oldest first. A refused pause,
++ *  entry that changes its amount from the sheet's today (its DRAFT claims taking it too), and its amount changes, oldest first. A refused pause,
+  *  resume or change shows an error on the row, gone when the next one is pressed or the entry is changed. */
+ function PlanRow({ sheetId, plan, today }: { sheetId: string; plan: Plan; today: string | undefined }) {
+   const fig = useFigure();
+@@ -68,6 +68,9 @@ function PlanRow({ sheetId, plan, today }: { sheetId: string; plan: Plan; today:
+     onSuccess: (data) => {
+       setAmount('');
+       queryClient.setQueryData(plansKey(sheetId), data.plans);
++      // its DRAFT claims took the new amount too
++      void queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
++      void queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+     },
+   });
+   const save = () =>
+diff --git a/src/main/java/net/officefloor/hq/app/plan/ChangePlanAmount.java b/src/main/java/net/officefloor/hq/app/plan/ChangePlanAmount.java
+index 954107da3..95472422c 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/ChangePlanAmount.java
++++ b/src/main/java/net/officefloor/hq/app/plan/ChangePlanAmount.java
+@@ -4,27 +4,76 @@ import java.math.BigDecimal;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimAmountEdit;
+ import net.officefloor.hq.app.claim.ClaimInput;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.server.http.ServerHttpConnection;
++import org.springframework.transaction.PlatformTransactionManager;
++import org.springframework.transaction.support.TransactionTemplate;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ /** Change a plan's amount (more than zero, up to two decimals) from the sheet's today, written as PLAN_CHANGED. The
+- *  claims it generates from then on take the new amount; those already generated keep theirs. */
++ *  claims it generates from then on take the new amount; those already generated that are still DRAFT take it too,
++ *  in the order of their dates, each as the claim form would edit its amount (CLAIM_EDITED); claims in any other
++ *  status keep theirs. One change: if any draft's edit is refused, the whole change is refused — the store is rolled
++ *  back and no audit record is written. */
+ public class ChangePlanAmount {
++
++    /** Carries a refusal out of the transaction, which it rolls back. */
++    private static final class Refused extends RuntimeException {
++        final BadRequestException refusal;
++
++        Refused(BadRequestException refusal) {
++            super(refusal.getMessage(), null, false, false);
++            this.refusal = refusal;
++        }
++    }
++
+     public void change(@PathVariable("sheetId") String sheetId, @PathVariable("planId") String planId,
+             @RequestBody PlanAmountRequest request, ServerHttpConnection connection, PlanRepository repository,
+-            SheetRepository sheets, Audit audit) throws BadRequestException {
++            SheetRepository sheets, ClaimRepository claims, PeriodRepository periods, Rollup rollup, Audit audit,
++            PlatformTransactionManager transactions) throws BadRequestException {
+         String by = CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
+         BigDecimal value = ClaimInput.signedAmount(request == null || request.amount() == null ? "" : request.amount().trim());
+         if (value.signum() <= 0) {
+             throw new BadRequestException("amount must be more than 0");
+         }
++        TransactionTemplate transaction = new TransactionTemplate(transactions);
++        try {
++            audit.held(() -> transaction.execute(status -> {
++                try {
++                    apply(id, planId, value, by, repository, sheets, claims, periods, rollup, audit);
++                    return null;
++                } catch (BadRequestException e) {
++                    throw new Refused(e);
++                }
++            }));
++        } catch (Refused e) {
++            throw e.refusal;
++        }
++    }
++
++    private static void apply(String id, String planId, BigDecimal value, String by, PlanRepository repository,
++            SheetRepository sheets, ClaimRepository claims, PeriodRepository periods, Rollup rollup, Audit audit)
++            throws BadRequestException {
+         Plan plan = repository.lockedPlan(id, planId);
+         String amount = repository.changeAmount(id, plan.id(), sheets.today(id), value);
+         audit.record("PLAN_CHANGED sheet=" + id + " by=" + by + " name=" + repository.personName(id, plan.personId())
+                 + " start=" + plan.start() + " amount=" + amount);
++        // the plan's claims live on the sheet it names, if any
++        String target = plan.sheet() == null ? id : plan.sheet();
++        for (long cid : repository.claimsMade(plan.id())) {
++            Claim found = claims.find(target, cid);
++            if (found == null || !found.status().equals("DRAFT")) {
++                continue;
++            }
++            ClaimAmountEdit.apply(target, cid, value, by, claims, periods, audit, rollup);
++        }
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/PlanRepository.java b/src/main/java/net/officefloor/hq/app/plan/PlanRepository.java
+index 997c05285..2063bd450 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/PlanRepository.java
++++ b/src/main/java/net/officefloor/hq/app/plan/PlanRepository.java
+@@ -154,6 +154,11 @@ public class PlanRepository {
+                 (rs, i) -> rs.getDate("on_date").toLocalDate(), planId));
+     }
+ 
++    /** The ids of the claims a plan has made, in the order of their dates. */
++    public List<Long> claimsMade(long planId) {
++        return jdbc.queryForList("SELECT claim_id FROM plan_claim WHERE plan_id = ? ORDER BY on_date", Long.class, planId);
++    }
++
+     /** Keep that a plan made a claim for a date. */
+     public void made(String sheetId, long planId, LocalDate on, long claimId) {
+         jdbc.update("INSERT INTO plan_claim (sheet_id, plan_id, on_date, claim_id) VALUES (?, ?, ?, ?)",
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/{planId}/amount.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/{planId}/amount.POST.yml
+index 4beb31e89..b567083a5 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/{planId}/amount.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/{planId}/amount.POST.yml
+@@ -1,10 +1,11 @@
+-# Change a plan's amount from the sheet's today (a bad amount is refused). Answers the sheet's plans.
++# Change a plan's amount from the sheet's today (a bad amount is refused), its generated DRAFT claims taking it too.
++# One change: if any draft's edit is refused, nothing is written. The change step runs its own transaction
++# (rolled back on a refusal), so it is not governed here. Answers the sheet's plans.
+ guard:
+   class: net.officefloor.hq.app.settings.RefuseViewer
+   next: change
+ change:
+   class: net.officefloor.hq.app.plan.ChangePlanAmount
+-  govern: [ transaction ]
+   next: load
+ load:
+   class: net.officefloor.hq.app.plan.LoadPlans
