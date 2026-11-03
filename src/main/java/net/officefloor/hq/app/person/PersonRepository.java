@@ -444,11 +444,12 @@ public class PersonRepository {
         }
     }
 
-    /** Take a person off the sheet entirely: their patron links (both ways), pool memberships, closed periods'
+    /** Take a person off the sheet entirely: their patron links (both ways), pool and crew memberships, closed periods'
      *  figures, watchers, holds, past retirements, snapshots, statements, grades, aliases and plans go with them. Their claims must already be gone. */
     public void remove(String sheetId, long id) {
         jdbc.update("DELETE FROM patron WHERE sheet_id = ? AND (person_id = ? OR patron_id = ?)", sheetId, id, id);
         jdbc.update("DELETE FROM pool_member WHERE sheet_id = ? AND person_id = ?", sheetId, id);
+        jdbc.update("DELETE FROM crew_member WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, id);
         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, id);
