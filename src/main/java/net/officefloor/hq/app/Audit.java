@@ -6,6 +6,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import net.officefloor.hq.app.settings.SettingsRepository;
 import org.springframework.beans.factory.ObjectProvider;
@@ -61,6 +65,46 @@ public class Audit {
         }
         String delegator = settings.getObject().delegator(parts[1].substring("sheet=".length()), parts[2].substring("by=".length()));
         return delegator == null ? "" : " for=" + delegator;
+    }
+
+    /** The sheet's lines exactly as the file holds them, newest first. With a name (compared trimmed and
+     *  ignoring case) only the lines about that person: those carrying name=<the name> or person=<the name>. */
+    public synchronized List<String> read(String sheetId, String name) {
+        String who = name == null ? "" : name.trim().toLowerCase(Locale.ROOT);
+        List<String> lines = new ArrayList<>();
+        if (!Files.exists(file)) {
+            return lines;
+        }
+        List<String> all;
+        try {
+            all = Files.readAllLines(file, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        String sheet = "sheet=" + sheetId;
+        for (String line : all) {
+            String[] parts = line.split(" ");
+            if (parts.length < 2 || !parts[1].equals(sheet)) {
+                continue;
+            }
+            if (!who.isEmpty() && !isAbout(parts, who)) {
+                continue;
+            }
+            lines.add(line);
+        }
+        Collections.reverse(lines);
+        return lines;
+    }
+
+    private static boolean isAbout(String[] parts, String who) {
+        for (int i = 2; i < parts.length; i++) {
+            String p = parts[i];
+            String value = p.startsWith("name=") ? p.substring(5) : p.startsWith("person=") ? p.substring(7) : null;
+            if (value != null && value.trim().toLowerCase(Locale.ROOT).equals(who)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Remove the audit file. */
