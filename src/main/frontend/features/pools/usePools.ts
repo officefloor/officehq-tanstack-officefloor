@@ -7,8 +7,9 @@ import { getJson } from '../../api/http';
  *  the pool is not balanced, has no pot or has only retired members: a pool that is a member of another has its cut there as its pot; null
  *  too for a member that is not current), the membership's from-date and to-date (null when not given) and whether
  *  they include the sheet's today (a member that is not current counts in neither the total share nor the balance), and,
- *  for every period whose to-date is on or before the sheet's today, by period name in from-date order, their cut as it
- *  stood at the end of that period (null when they had none then). */
+ *  for every period whose to-date is on or before the sheet's today, or that is closed or soft-closed, by period name in
+ *  from-date order, their cut fixed when it was closed (a closed or soft-closed one) or as it stood at the end of that
+ *  period (null when they had none then). */
 export type PoolMember = {
   personId: number | null;
   pool: string | null;

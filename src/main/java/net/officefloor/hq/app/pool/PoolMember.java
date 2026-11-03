@@ -8,9 +8,9 @@ import java.util.Map;
  *  (two decimals; null when the pool is not balanced or has no pot, or the member is not current), the
  *  membership's from-date and to-date (yyyy-mm-dd; null when not given) and whether those dates include the
  *  sheet's today (a member that is not current is left out of the pool: its total share, balance and cuts),
- *  and, for every period whose to-date is on or before the sheet's today, by period name in from-date order, the
- *  member's cut as it stood at the end of that period (the period's to-date as the sheet's today; null when it had
- *  none then). */
+ *  and, for every period whose to-date is on or before the sheet's today, or that is closed or soft-closed, by period
+ *  name in from-date order, the member's cut fixed when the period was closed (a closed or soft-closed one) or as it
+ *  stood at the end of that period (the period's to-date as the sheet's today; null when it had none then). */
 public record PoolMember(Long personId, String pool, String name, String share, boolean retired, String cut,
         String from, String to, boolean current, Map<String, String> periodCuts) {
 

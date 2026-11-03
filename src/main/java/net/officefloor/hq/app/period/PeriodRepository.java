@@ -114,8 +114,33 @@ public class PeriodRepository {
         }
     }
 
+    /** Fix each pool member's cut for a period, by pool name then member key (null for a member with no cut),
+     *  replacing any fixed before. */
+    public void fixPoolCuts(String sheetId, long periodId, Map<String, Map<String, String>> cuts) {
+        jdbc.update("DELETE FROM period_pool_cut WHERE period_id = ? AND sheet_id = ?", periodId, sheetId);
+        for (Map.Entry<String, Map<String, String>> pool : cuts.entrySet()) {
+            for (Map.Entry<String, String> m : pool.getValue().entrySet()) {
+                jdbc.update("INSERT INTO period_pool_cut (period_id, sheet_id, pool_name, member_key, cut) VALUES (?, ?, ?, ?, ?)",
+                        periodId, sheetId, pool.getKey(), m.getKey(), m.getValue() == null ? null : new BigDecimal(m.getValue()));
+            }
+        }
+    }
+
+    /** Each closed or soft-closed period's fixed pool cuts, by period id, then pool name, then member key. */
+    public Map<Long, Map<String, Map<String, String>>> poolCuts(String sheetId) {
+        Map<Long, Map<String, Map<String, String>>> cuts = new HashMap<>();
+        jdbc.query("SELECT period_id, pool_name, member_key, cut FROM period_pool_cut WHERE sheet_id = ? ORDER BY id", rs -> {
+            BigDecimal cut = rs.getBigDecimal("cut");
+            cuts.computeIfAbsent(rs.getLong("period_id"), k -> new HashMap<>())
+                    .computeIfAbsent(rs.getString("pool_name"), k -> new HashMap<>())
+                    .put(rs.getString("member_key"), cut == null ? null : cut.setScale(2).toPlainString());
+        }, sheetId);
+        return cuts;
+    }
+
     /** Reopen a closed or soft-closed period, dropping its fixed due-total and figures. */
     public void reopen(String sheetId, long periodId) {
+        jdbc.update("DELETE FROM period_pool_cut WHERE period_id = ? AND sheet_id = ?", periodId, sheetId);
         jdbc.update("DELETE FROM period_person_total WHERE period_id = ? AND sheet_id = ?", periodId, sheetId);
         jdbc.update("UPDATE period SET closed = FALSE, soft_closed = FALSE, closed_total = NULL WHERE id = ? AND sheet_id = ?", periodId,
                 sheetId);

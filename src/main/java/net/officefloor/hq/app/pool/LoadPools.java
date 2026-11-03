@@ -15,12 +15,13 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.web.bind.annotation.PathVariable;
 
-/** The sheet's pools, each member with its cut at the end of every period whose to-date is on or before the
- *  sheet's today: the pools as they stood at the end of the period's to-date (see {@link AsOfView}). */
+/** The sheet's pools, each member with its cut for every period whose to-date is on or before the sheet's today,
+ *  and every closed or soft-closed period: for a closed or soft-closed one, the cut fixed when it was closed; for any
+ *  other, the pools as they stood at the end of the period's to-date (see {@link AsOfView}). */
 public class LoadPools {
 
-    /** The pools as shown, with the periods ended by the sheet's today as shown. */
-    private record Shown(List<Pool> pools, List<Period> ended) {
+    /** The pools as shown, with the periods ended by the sheet's today, or closed or soft-closed, as shown. */
+    private record Shown(List<Pool> pools, List<Period> ended, Map<Long, Map<String, Map<String, String>>> fixed) {
     }
 
     public void load(@PathVariable("sheetId") String sheetId, ServerHttpConnection connection,
@@ -30,13 +31,18 @@ public class LoadPools {
         String id = sheetId == null ? "" : sheetId.trim();
         Shown shown = view.read(connection, id, () -> {
             String today = periods.today(id);
-            List<Period> ended = today == null ? List.of()
-                    : periods.list(id).stream().filter(p -> p.to().compareTo(today) <= 0).toList();
-            return new Shown(repository.list(id), ended);
+            List<Period> ended = periods.list(id).stream().filter(p -> p.closed() || p.softClosed()
+                    || (today != null && p.to().compareTo(today) <= 0)).toList();
+            return new Shown(repository.list(id), ended, periods.poolCuts(id));
         });
         // Each period's cuts then, by pool name then member key.
         Map<String, Map<String, Map<String, String>>> then = new LinkedHashMap<>();
         for (Period period : shown.ended()) {
+            Map<String, Map<String, String>> fixed = shown.fixed().get(period.id());
+            if ((period.closed() || period.softClosed()) && fixed != null) {
+                then.put(period.name(), fixed);
+                continue;
+            }
             Map<String, Map<String, String>> cuts = new HashMap<>();
             for (Pool pool : view.readAt(id, LocalDate.parse(period.to()), () -> repository.list(id))) {
                 Map<String, String> of = new HashMap<>();

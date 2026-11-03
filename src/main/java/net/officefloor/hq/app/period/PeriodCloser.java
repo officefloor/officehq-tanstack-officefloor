@@ -13,6 +13,9 @@ import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.person.Hold;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
+import net.officefloor.hq.app.pool.Pool;
+import net.officefloor.hq.app.pool.PoolMember;
+import net.officefloor.hq.app.pool.PoolRepository;
 import net.officefloor.hq.app.settings.SettingsRepository;
 import org.springframework.stereotype.Service;
 
@@ -22,7 +25,8 @@ import org.springframework.stereotype.Service;
  *  rates do not alter it; and each person's due-total for it likewise, for every person on the sheet (0.00 for one
  *  with nothing in it), and each person's carried figure for it (their claims that count whose due-by falls in a
  *  period ending before it starts and that were still OPEN or PENDING at the end of its last day, plus their opening
- *  balance for it, 0.00 for one with none). Writes PERIOD_CLOSED, ending auto=yes when closed by the sheet's grace days. */
+ *  balance for it, 0.00 for one with none); and every pool member's cut as it stands now, shown for the period from then on
+ *  in place of its cut at the end of the period. Writes PERIOD_CLOSED, ending auto=yes when closed by the sheet's grace days. */
 @Service
 public class PeriodCloser {
 
@@ -30,10 +34,12 @@ public class PeriodCloser {
     private final ClaimRepository claims;
     private final PersonRepository people;
     private final SettingsRepository settings;
+    private final PoolRepository pools;
     private final Audit audit;
 
     public PeriodCloser(PeriodRepository periods, ClaimRepository claims, PersonRepository people,
-            SettingsRepository settings, Audit audit) {
+            SettingsRepository settings, PoolRepository pools, Audit audit) {
+        this.pools = pools;
         this.periods = periods;
         this.claims = claims;
         this.people = people;
@@ -84,6 +90,13 @@ public class PeriodCloser {
         }
         String shown = total.setScale(2).toPlainString();
         periods.close(sheetId, found.id(), total, personTotals, personCarried, soft);
+        Map<String, Map<String, String>> cuts = new LinkedHashMap<>();
+        for (Pool pool : pools.list(sheetId)) {
+            Map<String, String> of = new LinkedHashMap<>();
+            for (PoolMember m : pool.members()) of.put(m.key(), m.cut());
+            cuts.put(pool.name(), of);
+        }
+        periods.fixPoolCuts(sheetId, found.id(), cuts);
         audit.record((soft ? "PERIOD_SOFT_CLOSED" : "PERIOD_CLOSED") + " sheet=" + sheetId + " by=" + by + " period=" + found.name() + " total=" + shown
                 + (auto ? " auto=yes" : ""));
         return new Period(found.id(), found.name(), found.from(), found.to(), !soft, shown, personTotals.entrySet().stream().collect(Collectors.toMap(e -> Long.toString(e.getKey()),
