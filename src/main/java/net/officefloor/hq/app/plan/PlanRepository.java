@@ -38,11 +38,34 @@ public class PlanRepository {
         return names.isEmpty() ? null : names.get(0);
     }
 
+    /** Whether a sheet is a descendant of another: its parent, or that one's parent and so on, is that sheet. */
+    public boolean descendant(String sheetId, String of) {
+        Set<String> seen = new HashSet<>(List.of(sheetId));
+        for (String at = parentOf(sheetId); at != null && seen.add(at); at = parentOf(at)) {
+            if (at.equals(of)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String parentOf(String sheetId) {
+        List<String> found = jdbc.queryForList("SELECT parent_id FROM sheet WHERE id = ?", String.class, sheetId);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** The id of the person on the sheet with that name, or null when there is none. */
+    public Long personNamed(String sheetId, String name) {
+        List<Long> ids = jdbc.queryForList("SELECT id FROM person WHERE sheet_id = ? AND name = ? ORDER BY id",
+                Long.class, sheetId, name);
+        return ids.isEmpty() ? null : ids.get(0);
+    }
+
     public Plan add(String sheetId, long personId, PlanInput input) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(c -> {
             PreparedStatement ps = c.prepareStatement(
-                    "INSERT INTO plan (sheet_id, person_id, amount, start_date, every_days, day_of_month, end_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO plan (sheet_id, person_id, amount, start_date, every_days, day_of_month, end_date, target_sheet_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
@@ -51,10 +74,11 @@ public class PlanRepository {
             ps.setObject(5, input.every(), Types.INTEGER);
             ps.setObject(6, input.day(), Types.INTEGER);
             ps.setDate(7, Date.valueOf(input.end()));
+            ps.setString(8, input.sheet());
             return ps;
         }, keys);
         return new Plan(keys.getKey().longValue(), personId, money(input.amount()), input.start().toString(),
-                input.every(), input.day(), input.end().toString(), 0, false, List.of(), List.of());
+                input.every(), input.day(), input.end().toString(), input.sheet(), 0, false, List.of(), List.of());
     }
 
     /** The sheet's plans, in the order they were added, each with how many claims it has made, its pauses and its amount changes. */
@@ -72,7 +96,7 @@ public class PlanRepository {
                     changes.computeIfAbsent(rs.getLong("plan_id"), k -> new ArrayList<>()).add(new PlanChange(
                             rs.getDate("changed_on").toLocalDate().toString(), money(rs.getBigDecimal("amount"))));
                 }, sheetId);
-        return jdbc.query("SELECT p.id, p.person_id, p.amount, p.start_date, p.every_days, p.day_of_month, p.end_date,"
+        return jdbc.query("SELECT p.id, p.person_id, p.amount, p.start_date, p.every_days, p.day_of_month, p.end_date, p.target_sheet_id,"
                 + " (SELECT COUNT(*) FROM plan_claim c WHERE c.plan_id = p.id) AS generated"
                 + " FROM plan p WHERE p.sheet_id = ? ORDER BY p.id",
                 (rs, i) -> {
@@ -80,7 +104,7 @@ public class PlanRepository {
                     return new Plan(rs.getLong("id"), rs.getLong("person_id"), money(rs.getBigDecimal("amount")),
                             rs.getDate("start_date").toLocalDate().toString(), rs.getObject("every_days", Integer.class),
                             rs.getObject("day_of_month", Integer.class),
-                            rs.getDate("end_date").toLocalDate().toString(), rs.getInt("generated"),
+                            rs.getDate("end_date").toLocalDate().toString(), rs.getString("target_sheet_id"), rs.getInt("generated"),
                             mine.stream().anyMatch(p -> p.to() == null), mine,
                             changes.getOrDefault(rs.getLong("id"), List.of()));
                 },

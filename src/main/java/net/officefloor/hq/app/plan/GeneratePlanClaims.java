@@ -25,7 +25,9 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  plan date (the start, then every N days; or monthly on its day) up to the end and the sheet's today that has none yet and is not in one of
  *  the plan's pauses (such a date is skipped for good), dated that day
  *  with an empty note, written as CLAIM_ADDED. Each is checked by the claim form's rules: a date the form refuses
- *  is skipped (nothing written) and tried again next time. Answers how many were made. A viewer's makes none
+ *  is skipped (nothing written) and tried again next time. A plan naming a descendant sheet makes its claims for
+ *  the person of the same name on that sheet (none when there is none, or that sheet is archived), by that sheet's
+ *  rules and written in that sheet's audit; the plan still counts them. Answers how many were made. A viewer's makes none
  *  (nothing written); an archived sheet refuses it. */
 public class GeneratePlanClaims {
     public void generate(@PathVariable("sheetId") String sheetId, ServerHttpConnection connection,
@@ -51,6 +53,12 @@ public class GeneratePlanClaims {
             if (name == null) {
                 continue;
             }
+            // a plan naming a descendant sheet makes its claims for the person of the same name there
+            String target = plan.sheet() == null ? id : plan.sheet();
+            Long personId = plan.sheet() == null ? Long.valueOf(plan.personId()) : plans.personNamed(target, name);
+            if (personId == null || (plan.sheet() != null && settings.archived(target))) {
+                continue;
+            }
             Set<LocalDate> done = plans.madeOn(plan.id());
             LocalDate end = LocalDate.parse(plan.end());
             LocalDate last = today != null && today.isBefore(end) ? today : end;
@@ -60,22 +68,22 @@ public class GeneratePlanClaims {
                     continue;
                 }
                 try {
-                    PeriodGuard.open(periods, id, claims.dueBy(id, plan.personId(), on));
-                    people.claimAllowed(id, plan.personId(), on);
+                    PeriodGuard.open(periods, target, claims.dueBy(target, personId, on));
+                    people.claimAllowed(target, personId, on);
                 } catch (BadRequestException refused) {
                     continue;
                 }
-                Rollup.Snapshot before = rollup.take(id);
-                Claim added = claims.add(id, plan.personId(), amount, on, "", null);
-                claims.log(id, added.id(), by);
+                Rollup.Snapshot before = rollup.take(target);
+                Claim added = claims.add(target, personId, amount, on, "", null);
+                claims.log(target, added.id(), by);
                 plans.made(id, plan.id(), on, added.id());
-                audit.record("CLAIM_ADDED sheet=" + id + " by=" + by + " person=" + name
+                audit.record("CLAIM_ADDED sheet=" + target + " by=" + by + " person=" + name
                         + " amount=" + added.amount() + " date=" + added.date());
                 if (added.lateEntry()) {
-                    audit.record("LATE_ENTRY sheet=" + id + " by=" + by + " person=" + name
+                    audit.record("LATE_ENTRY sheet=" + target + " by=" + by + " person=" + name
                             + " amount=" + added.amount() + " date=" + added.date());
                 }
-                rollup.record(id, by, before);
+                rollup.record(target, by, before);
                 made++;
             }
         }

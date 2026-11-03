@@ -17,6 +17,8 @@ export type Plan = {
   every: number | null;
   day: number | null;
   end: string;
+  /** The descendant sheet its claims are generated on; null for its own. */
+  sheet: string | null;
   generated: number;
   paused: boolean;
   pauses: PlanPause[];

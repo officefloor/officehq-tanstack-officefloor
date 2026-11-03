@@ -9,7 +9,8 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Bind the plan form: an amount (more than zero, up to two decimals), a start date, every N days (a whole number,
- *  at least 1) or a day of the month (1 to 31), not both, and an end date not before the start are all required. */
+ *  at least 1) or a day of the month (1 to 31), not both, and an end date not before the start are all required. The sheet
+ *  (blank meaning the plan's own) is checked when saved. */
 public class ValidatePlan {
     public void validate(@RequestBody PlanRequest request, Out<PlanInput> plan) throws BadRequestException {
         String amount = request == null || request.amount() == null ? "" : request.amount().trim();
@@ -40,7 +41,8 @@ public class ValidatePlan {
         if (end.isBefore(start)) {
             throw new BadRequestException("end date must not be before start date");
         }
-        plan.set(new PlanInput(value, start, everyDays, dayOfMonth, end));
+        String sheet = request == null || request.sheet() == null ? "" : request.sheet().trim();
+        plan.set(new PlanInput(value, start, everyDays, dayOfMonth, end, sheet.isEmpty() ? null : sheet));
     }
 
     private static LocalDate date(String value, String what) throws BadRequestException {
