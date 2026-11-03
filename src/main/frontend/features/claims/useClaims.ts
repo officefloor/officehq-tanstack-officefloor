@@ -22,7 +22,7 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
  *  whose open editor locks it for everyone else (null when it is not locked), and the last day (the sheet's today
  *  then) a reminder was written for it (null when never reminded), and its tags (lower-case, sorted and comma separated
  *  with no spaces; null when none), and the reason it was voided with (one of the sheet's void reasons; null when none
- *  was given). */
+ *  was given), and its comments, oldest first, as "<user> on <date>: <text>" with the sheet's today when written. */
 export type Claim = {
   id: number;
   personId: number;
@@ -47,6 +47,7 @@ export type Claim = {
   tags: string | null;
   voidReason: string | null;
   log: string[];
+  comments: string[];
   lockedBy: string | null;
 };
 
@@ -111,13 +112,15 @@ export function useClaims(sheetId: string) {
     queryKey: claimsKey(sheetId),
     queryFn: async () => {
       const res = await getJson<{
-        claims: Omit<Claim, 'log' | 'lockedBy'>[];
+        claims: Omit<Claim, 'log' | 'comments' | 'lockedBy'>[];
         logs: Record<string, string[]>;
         locks: Record<string, string>;
+        comments: Record<string, string[]>;
       }>(`/api/sheets/${encodeURIComponent(sheetId)}/claims`);
       return res.claims.map((c): Claim => ({
         ...c,
         log: res.logs[String(c.id)] ?? [],
+        comments: res.comments[String(c.id)] ?? [],
         lockedBy: res.locks[String(c.id)] ?? null,
       }));
     },

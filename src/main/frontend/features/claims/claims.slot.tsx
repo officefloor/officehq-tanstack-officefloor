@@ -26,13 +26,13 @@ function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: numbe
   );
 }
 
-type ClaimAction = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | 'defer' | 'proof' | 'remind' | 'split' | 'redate';
+type ClaimAction = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | 'defer' | 'proof' | 'remind' | 'split' | 'redate' | 'comment';
 
 /** A claim's status changes; the server refuses one its status does not allow, a settle by the user
  *  who opened the claim, and an approve or reject by anyone but a steward (an approve also by the
  *  user who opened the claim), a re-settle by anyone but a steward or of a claim not SETTLED, and a void of a SETTLED claim by anyone but a steward, more than 7 days after its settlement or in a closed period. A reject takes the reason typed on the claim's row.
  *  A settle or approve of a claim whose due is above the proof threshold in force on its date is refused while it has no proof. */
-const ACTIONS: [Exclude<ClaimAction, 'defer' | 'proof' | 'remind' | 'split' | 'redate'>, string][] = [
+const ACTIONS: [Exclude<ClaimAction, 'defer' | 'proof' | 'remind' | 'split' | 'redate' | 'comment'>, string][] = [
   ['open', 'Open'],
   ['settle', 'Settle'],
   ['approve', 'Approve'],
@@ -70,6 +70,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   const [deferDates, setDeferDates] = useState<Record<number, string>>({});
   const [splitAmounts, setSplitAmounts] = useState<Record<number, string>>({});
   const [newDates, setNewDates] = useState<Record<number, string>>({});
+  const [comments, setComments] = useState<Record<number, string>>({});
   const [inlineAmounts, setInlineAmounts] = useState<Record<number, string>>({});
 
   const clearForm = () => {
@@ -130,17 +131,18 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
 
   // A status change (open, settle, approve, reject, void) of one claim, or deferring an OPEN one until the
   // date typed on its row, or adding a proof to it, or reminding an OPEN or PENDING one (once per sheet-today), or splitting the amount typed on its row off an OPEN one
-  // (a new OPEN claim listed under the person), or re-dating an OPEN or PENDING one to the date typed on its row;
+  // (a new OPEN claim listed under the person), or re-dating an OPEN or PENDING one to the date typed on its row, or commenting it with the text typed on its row;
   // a refusal shows on that claim's row.
   const action = useMutation({
-    mutationFn: (a: { id: number; action: ClaimAction; reason: string; until: string; amount: string; date: string }) =>
-      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${a.id}/${a.action}`, { reason: a.reason, until: a.until, amount: a.amount, date: a.date }),
+    mutationFn: (a: { id: number; action: ClaimAction; reason: string; until: string; amount: string; date: string; text: string }) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${a.id}/${a.action}`, { reason: a.reason, until: a.until, amount: a.amount, date: a.date, text: a.text }),
     onSuccess: (_, a) => {
       if (a.action === 'reject') setReasons((r) => ({ ...r, [a.id]: '' }));
       if (a.action === 'void') setVoidReasons((r) => ({ ...r, [a.id]: '' }));
       if (a.action === 'defer') setDeferDates((d) => ({ ...d, [a.id]: '' }));
       if (a.action === 'split') setSplitAmounts((m) => ({ ...m, [a.id]: '' }));
       if (a.action === 'redate') setNewDates((d) => ({ ...d, [a.id]: '' }));
+      if (a.action === 'comment') setComments((m) => ({ ...m, [a.id]: '' }));
     },
     onSettled: async () => {
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
@@ -208,6 +210,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
       until: a === 'defer' ? (deferDates[id] ?? '').trim() : '',
       amount: a === 'split' ? (splitAmounts[id] ?? '').trim() : '',
       date: a === 'redate' ? (newDates[id] ?? '').trim() : '',
+      text: a === 'comment' ? comments[id] ?? '' : '',
     });
   };
 
@@ -373,6 +376,32 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                       {line}
                     </div>
                   ))}
+                </td>
+                <td data-testid="claim-comments">
+                  {c.comments.map((line, i) => (
+                    <div key={i} data-testid="claim-comments-line">
+                      {line}
+                    </div>
+                  ))}
+                  <input
+                    type="text"
+                    data-testid="claim-comment-text"
+                    placeholder="comment"
+                    value={comments[c.id] ?? ''}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setComments((m) => ({ ...m, [c.id]: v }));
+                      if (action.variables?.id === c.id) action.reset();
+                    }}
+                  />{' '}
+                  <button
+                    type="button"
+                    data-testid="claim-comment-add"
+                    disabled={action.isPending}
+                    onClick={() => act(c.id, 'comment')}
+                  >
+                    Comment
+                  </button>
                 </td>
                 <td>
                   <input

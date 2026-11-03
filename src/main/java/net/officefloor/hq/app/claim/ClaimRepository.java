@@ -538,6 +538,23 @@ public class ClaimRepository {
         return logs;
     }
 
+    /** Keep a comment on a claim: its text, who wrote it and the sheet's today. */
+    public void comment(String sheetId, long claimId, String by, String text) {
+        jdbc.update("INSERT INTO claim_comment (sheet_id, claim_id, by_user, on_date, text)"
+                + " SELECT ?, ?, ?, today, ? FROM sheet WHERE id = ?", sheetId, claimId, by, text, sheetId);
+    }
+
+    /** The comments of the sheet's claims, by claim id: each oldest first, as "<user> on <date>: <text>". */
+    public Map<String, List<String>> comments(String sheetId) {
+        Map<String, List<String>> comments = new LinkedHashMap<>();
+        jdbc.query("SELECT claim_id, by_user, on_date, text FROM claim_comment WHERE sheet_id = ? ORDER BY id",
+                rs -> {
+                    comments.computeIfAbsent(String.valueOf(rs.getLong("claim_id")), k -> new ArrayList<>())
+                            .add(rs.getString("by_user") + " on " + rs.getDate("on_date").toLocalDate() + ": " + rs.getString("text"));
+                }, sheetId);
+        return comments;
+    }
+
     /** Each claim's status at the end of a day, by claim id, as its status log records it: the last line
      *  dated on or before it. A claim with no such line (added after that day) is absent. */
     public Map<Long, String> statusesOn(String sheetId, LocalDate day) {
