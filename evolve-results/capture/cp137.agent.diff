@@ -1,0 +1,420 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index f5f71323a..e685ecae3 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -27,14 +27,14 @@ function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: numbe
+   );
+ }
+ 
+-type ClaimAction = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | 'delete' | 'restore' | 'defer' | 'proof' | 'remind' | 'split' | 'redate' | 'comment';
++type ClaimAction = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | 'delete' | 'restore' | 'defer' | 'proof' | 'remind' | 'split' | 'redate' | 'comment' | 'line';
+ 
+ /** A claim's status changes; the server refuses one its status does not allow, a settle by the user
+  *  who opened the claim, and an approve or reject by anyone but a steward (an approve also by the
+  *  user who opened the claim), a re-settle by anyone but a steward or of a claim not SETTLED, and a void of a SETTLED claim by anyone but a steward, more than 7 days after its settlement or in a closed period. A reject takes the reason typed on the claim's row.
+  *  A delete moves a DRAFT claim (not in a closed period) to DELETED, where it counts nowhere; a restore makes it a DRAFT again, only on the sheet-today it was deleted.
+  *  A settle or approve of a claim whose due is above the proof threshold in force on its date is refused while it has no proof. */
+-const ACTIONS: [Exclude<ClaimAction, 'defer' | 'proof' | 'remind' | 'split' | 'redate' | 'comment'>, string][] = [
++const ACTIONS: [Exclude<ClaimAction, 'defer' | 'proof' | 'remind' | 'split' | 'redate' | 'comment' | 'line'>, string][] = [
+   ['open', 'Open'],
+   ['settle', 'Settle'],
+   ['approve', 'Approve'],
+@@ -77,6 +77,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
+   const [splitAmounts, setSplitAmounts] = useState<Record<number, string>>({});
+   const [newDates, setNewDates] = useState<Record<number, string>>({});
+   const [comments, setComments] = useState<Record<number, string>>({});
++  const [lineFields, setLineFields] = useState<Record<number, { label: string; qty: string; unit: string }>>({});
+   const [inlineAmounts, setInlineAmounts] = useState<Record<number, string>>({});
+ 
+   const clearForm = () => {
+@@ -147,18 +148,22 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
+ 
+   // A status change (open, settle, approve, reject, void) of one claim, or deferring an OPEN one until the
+   // date typed on its row, or adding a proof to it, or reminding an OPEN or PENDING one (once per sheet-today), or splitting the amount typed on its row off an OPEN one
+-  // (a new OPEN claim listed under the person), or re-dating an OPEN or PENDING one to the date typed on its row, or commenting it with the text typed on its row;
++  // (a new OPEN claim listed under the person), or re-dating an OPEN or PENDING one to the date typed on its row, or commenting it with the text typed on its row,
++  // or adding the line (label, quantity, unit amount) typed on its row to a DRAFT one (its amount becomes its lines' total);
+   // a refusal shows on that claim's row.
+   const action = useMutation({
+-    mutationFn: (a: { id: number; action: ClaimAction; reason: string; until: string; amount: string; date: string; text: string }) =>
+-      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${a.id}/${a.action}`, { reason: a.reason, until: a.until, amount: a.amount, date: a.date, text: a.text }),
+-    onSuccess: (_, a) => {
++    mutationFn: (a: { id: number; action: ClaimAction; reason: string; until: string; amount: string; date: string; text: string; label: string; qty: string; unit: string }) =>
++      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${a.id}/${a.action}`, { reason: a.reason, until: a.until, amount: a.amount, date: a.date, text: a.text, label: a.label, qty: a.qty, unit: a.unit }),
++    onSuccess: (changed, a) => {
+       if (a.action === 'reject') setReasons((r) => ({ ...r, [a.id]: '' }));
+       if (a.action === 'void') setVoidReasons((r) => ({ ...r, [a.id]: '' }));
+       if (a.action === 'defer') setDeferDates((d) => ({ ...d, [a.id]: '' }));
+       if (a.action === 'split') setSplitAmounts((m) => ({ ...m, [a.id]: '' }));
+       if (a.action === 'redate') setNewDates((d) => ({ ...d, [a.id]: '' }));
+       if (a.action === 'comment') setComments((m) => ({ ...m, [a.id]: '' }));
++      if (a.action === 'line') setLineFields((m) => ({ ...m, [a.id]: { label: '', qty: '', unit: '' } }));
++      // An open editor of the claim takes the amount its lines now add up to.
++      if (a.action === 'line' && editing === a.id) setAmount(changed.amount);
+     },
+     onSettled: async () => {
+       await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+@@ -227,6 +232,9 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
+       amount: a === 'split' ? (splitAmounts[id] ?? '').trim() : '',
+       date: a === 'redate' ? (newDates[id] ?? '').trim() : '',
+       text: a === 'comment' ? comments[id] ?? '' : '',
++      label: a === 'line' ? lineFields[id]?.label ?? '' : '',
++      qty: a === 'line' ? (lineFields[id]?.qty ?? '').trim() : '',
++      unit: a === 'line' ? (lineFields[id]?.unit ?? '').trim() : '',
+     });
+   };
+ 
+@@ -458,6 +466,36 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
+                     Comment
+                   </button>
+                 </td>
++                <td data-testid="claim-lines">
++                  {c.lines.map((line, i) => (
++                    <div key={i} data-testid="claim-lines-line">
++                      {line}
++                    </div>
++                  ))}
++                  {(['label', 'qty', 'unit'] as const).map((k) => (
++                    <input
++                      key={k}
++                      type="text"
++                      data-testid={`claim-line-${k}`}
++                      placeholder={k}
++                      inputMode={k === 'label' ? undefined : k === 'qty' ? 'numeric' : 'decimal'}
++                      value={lineFields[c.id]?.[k] ?? ''}
++                      onChange={(e) => {
++                        const v = e.target.value;
++                        setLineFields((m) => ({ ...m, [c.id]: { ...(m[c.id] ?? { label: '', qty: '', unit: '' }), [k]: v } }));
++                        if (action.variables?.id === c.id) action.reset();
++                      }}
++                    />
++                  ))}{' '}
++                  <button
++                    type="button"
++                    data-testid="claim-line-add"
++                    disabled={action.isPending}
++                    onClick={() => act(c.id, 'line')}
++                  >
++                    Add line
++                  </button>
++                </td>
+                 <td>
+                   <input
+                     data-testid="claim-reject-reason"
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index 7182babbe..0187866c7 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -24,7 +24,8 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'D
+  *  then) a reminder was written for it (null when never reminded), and its tags (lower-case, sorted and comma separated
+  *  with no spaces; null when none), and the reason it was voided with (one of the sheet's void reasons; null when none
+  *  was given), and its comments, oldest first, as "<user> on <date>: <text>" with the sheet's today when written, and the
+- *  number of the settle batch (a bulk settle) that settled it (null when settled one at a time, or not settled). */
++ *  number of the settle batch (a bulk settle) that settled it (null when settled one at a time, or not settled), and its
++ *  lines, oldest first, as "<label> <qty> x <unit>" (a claim with lines has their total as its amount). */
+ export type Claim = {
+   id: number;
+   personId: number;
+@@ -50,6 +51,7 @@ export type Claim = {
+   voidReason: string | null;
+   log: string[];
+   comments: string[];
++  lines: string[];
+   lockedBy: string | null;
+   batch: number | null;
+ };
+@@ -122,16 +124,18 @@ export function useClaims(sheetId: string) {
+     queryKey: read.key(claimsKey(sheetId)),
+     queryFn: async () => {
+       const res = await read.get<{
+-        claims: Omit<Claim, 'log' | 'comments' | 'lockedBy' | 'batch'>[];
++        claims: Omit<Claim, 'log' | 'comments' | 'lines' | 'lockedBy' | 'batch'>[];
+         logs: Record<string, string[]>;
+         locks: Record<string, string>;
+         comments: Record<string, string[]>;
++        lines: Record<string, string[]>;
+         batches: Record<string, number>;
+       }>(`/api/sheets/${encodeURIComponent(sheetId)}/claims`);
+       return res.claims.map((c): Claim => ({
+         ...c,
+         log: res.logs[String(c.id)] ?? [],
+         comments: res.comments[String(c.id)] ?? [],
++        lines: res.lines[String(c.id)] ?? [],
+         lockedBy: res.locks[String(c.id)] ?? null,
+         batch: res.batches[String(c.id)] ?? null,
+       }));
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ChangeClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ChangeClaimStatus.java
+index d321179a4..4240c1aab 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ChangeClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ChangeClaimStatus.java
+@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ /** Move a claim along its status: open, settle, approve, reject (with a reason) or void, each only from the
+- *  statuses it allows; or defer an OPEN claim until a date (see {@link ClaimDeferral}); or raise its proofs count (see {@link ClaimProof}); or split an amount off an OPEN claim (see {@link ClaimSplit}); or re-date an OPEN or PENDING claim (see {@link ClaimRedate}); or lock or unlock a claim's editor (see {@link ClaimLock}); or remind an OPEN or PENDING claim (see {@link ClaimRemind}); or comment a claim (see {@link ClaimComment}); or delete a DRAFT claim or restore it the same day (see {@link ClaimDelete}). */
++ *  statuses it allows; or defer an OPEN claim until a date (see {@link ClaimDeferral}); or raise its proofs count (see {@link ClaimProof}); or split an amount off an OPEN claim (see {@link ClaimSplit}); or re-date an OPEN or PENDING claim (see {@link ClaimRedate}); or lock or unlock a claim's editor (see {@link ClaimLock}); or remind an OPEN or PENDING claim (see {@link ClaimRemind}); or comment a claim (see {@link ClaimComment}); or delete a DRAFT claim or restore it the same day (see {@link ClaimDelete}); or add a line to a DRAFT claim (see {@link ClaimLine}). */
+ public class ChangeClaimStatus {
+     public void change(@PathVariable("sheetId") String sheetId, @PathVariable("claimId") String claimId,
+             @PathVariable("action") String action, @RequestBody ClaimActionRequest request, ServerHttpConnection connection, ClaimRepository repository,
+@@ -67,6 +67,11 @@ public class ChangeClaimStatus {
+             claim.set(ClaimDelete.restore(id, cid, by, repository, periods, settings, audit));
+             return;
+         }
++        if ("line".equals(action == null ? "" : action.trim())) {
++            claim.set(ClaimLine.apply(id, cid, request == null ? null : request.label(), request == null ? null : request.qty(),
++                    request == null ? null : request.unit(), by, repository, periods, settings, audit));
++            return;
++        }
+         if ("proof".equals(action == null ? "" : action.trim())) {
+             claim.set(ClaimProof.apply(id, cid, by, repository, periods, audit));
+             return;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimActionRequest.java b/src/main/java/net/officefloor/hq/app/claim/ClaimActionRequest.java
+index afb31c94f..08bc661e6 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimActionRequest.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimActionRequest.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.claim;
+ 
+-/** A claim's status change: the reason, for a reject, and the date to defer until, for a defer, and the amount to split off, for a split, and the new date, for a redate, and the text, for a comment (each ignored
++/** A claim's status change: the reason, for a reject, and the date to defer until, for a defer, and the amount to split off, for a split, and the new date, for a redate, and the text, for a comment, and the label, quantity and unit amount, for a line (each ignored
+  *  by the other actions). */
+-public record ClaimActionRequest(String reason, String until, String amount, String date, String text) {
++public record ClaimActionRequest(String reason, String until, String amount, String date, String text, String label, String qty,
++        String unit) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimLine.java b/src/main/java/net/officefloor/hq/app/claim/ClaimLine.java
+new file mode 100644
+index 000000000..c36fa2889
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimLine.java
+@@ -0,0 +1,60 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++import java.time.LocalDate;
++import java.util.regex.Pattern;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.period.PeriodGuard;
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.settings.SettingsRepository;
++
++/** Add a line to a DRAFT claim: a label (trimmed, required), a quantity (a whole number, 1 or more) and a unit amount
++ *  (up to two decimals, 0.00 or more). The claim's amount becomes its lines' quantities times their unit amounts,
++ *  added up, and CLAIM_LINE_ADDED is written. Adding a line counts as editing the claim. A claim that is not a DRAFT,
++ *  in a closed period, or locked by another user is refused; every check is made before anything is written, so a
++ *  refusal writes nothing to the store or the audit. */
++final class ClaimLine {
++    private ClaimLine() {
++    }
++
++    private static final Pattern QTY = Pattern.compile("\\d+");
++
++    static Claim apply(String id, long cid, String label, String qty, String unit, String by, ClaimRepository repository,
++            PeriodRepository periods, SettingsRepository settings, Audit audit) throws BadRequestException {
++        if (settings.archived(id)) {
++            throw new BadRequestException("the sheet is archived");
++        }
++        Claim found = repository.find(id, cid);
++        if (found == null) {
++            throw new BadRequestException("no such claim");
++        }
++        if (!found.status().equals("DRAFT")) {
++            throw new BadRequestException("only a DRAFT claim can be given a line");
++        }
++        PeriodGuard.open(periods, id, LocalDate.parse(found.dueBy()));
++        String holder = repository.lockedBy(id, cid);
++        if (holder != null && !holder.equals(by)) {
++            throw new BadRequestException("the claim is being edited by " + holder);
++        }
++        String name = label == null ? "" : label.trim();
++        if (name.isEmpty()) {
++            throw new BadRequestException("a line needs a label");
++        }
++        String count = qty == null ? "" : qty.trim();
++        if (!QTY.matcher(count).matches() || count.length() > 9 || Integer.parseInt(count) < 1) {
++            throw new BadRequestException("a line's quantity must be a whole number of 1 or more");
++        }
++        int q = Integer.parseInt(count);
++        BigDecimal u = ClaimInput.amount(unit == null ? "" : unit.trim());
++        BigDecimal amount = repository.addLine(id, cid, name, q, u);
++        if (amount == null) {
++            throw new BadRequestException("only a DRAFT claim can be given a line");
++        }
++        repository.editedBy(id, cid, by);
++        audit.record("CLAIM_LINE_ADDED sheet=" + id + " by=" + by + " person=" + repository.personName(id, found.personId())
++                + " amount=" + ClaimRepository.money(amount) + " date=" + found.date() + Claim.auditNumber(found.number())
++                + " label=" + name + " qty=" + q + " unit=" + ClaimRepository.money(u));
++        return repository.find(id, cid);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 5e7f05876..990b3c14c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -387,7 +387,7 @@ public class ClaimRepository {
+     }
+ 
+     /** Move every claim of a person to another sheet, as the claims of the person {@code toPersonId} there: each keeps
+-     *  its status, dates, note, tags, settled due, status log, comments and any figure a statement bound it to, and is listed
++     *  its status, dates, note, tags, settled due, status log, comments, lines and any figure a statement bound it to, and is listed
+      *  in the same order; it loses its external reference, its lock and its settle batch. Each claim that had
+      *  a number takes the other sheet's next one (as opening it there would give it), in the order the claims were
+      *  opened (by the sheet's today when each was opened, then by the order they were added); a number one of them
+@@ -418,6 +418,8 @@ public class ClaimRepository {
+             jdbc.update("INSERT INTO claim_comment (sheet_id, claim_id, by_user, on_date, text) SELECT ?, ?, by_user,"
+                     + " on_date, text FROM claim_comment WHERE sheet_id = ? AND claim_id = ? ORDER BY id",
+                     toSheet, arrived, fromSheet, claimId);
++            jdbc.update("INSERT INTO claim_line (sheet_id, claim_id, label, qty, unit) SELECT ?, ?, label, qty, unit"
++                    + " FROM claim_line WHERE sheet_id = ? AND claim_id = ? ORDER BY id", toSheet, arrived, fromSheet, claimId);
+             used(toSheet, jdbc.queryForObject("SELECT tags FROM claim WHERE id = ?", String.class, arrived));
+         }
+ 
+@@ -446,6 +448,7 @@ public class ClaimRepository {
+         for (Long claimId : ids) {
+             jdbc.update("DELETE FROM claim_log WHERE sheet_id = ? AND claim_id = ?", fromSheet, claimId);
+             jdbc.update("DELETE FROM claim_comment WHERE sheet_id = ? AND claim_id = ?", fromSheet, claimId);
++            jdbc.update("DELETE FROM claim_line WHERE sheet_id = ? AND claim_id = ?", fromSheet, claimId);
+             jdbc.update("DELETE FROM claim WHERE id = ? AND sheet_id = ?", claimId, fromSheet);
+         }
+     }
+@@ -781,6 +784,37 @@ public class ClaimRepository {
+         return comments;
+     }
+ 
++    /** Add a line to a DRAFT claim and make its amount its lines' quantities times their unit amounts, added up: that
++     *  amount, or null when the sheet has no such DRAFT claim (nothing is written then). */
++    public BigDecimal addLine(String sheetId, long claimId, String label, int qty, BigDecimal unit) {
++        Integer draft = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE id = ? AND sheet_id = ? AND status = 'DRAFT'",
++                Integer.class, claimId, sheetId);
++        if (draft == null || draft == 0) return null;
++        jdbc.update("INSERT INTO claim_line (sheet_id, claim_id, label, qty, unit) VALUES (?, ?, ?, ?, ?)",
++                sheetId, claimId, label, qty, unit);
++        BigDecimal amount = linesTotal(sheetId, claimId);
++        kept(sheetId, claimId, jdbc.update("UPDATE claim SET amount = ? WHERE id = ? AND sheet_id = ?", amount, claimId, sheetId) > 0);
++        return amount;
++    }
++
++    /** A claim's lines' quantities times their unit amounts, added up; null when it has no lines. */
++    public BigDecimal linesTotal(String sheetId, long claimId) {
++        List<BigDecimal> found = jdbc.queryForList("SELECT SUM(qty * unit) FROM claim_line WHERE sheet_id = ? AND claim_id = ?"
++                + " HAVING COUNT(*) > 0", BigDecimal.class, sheetId, claimId);
++        return found.isEmpty() || found.get(0) == null ? null : found.get(0).setScale(2);
++    }
++
++    /** The lines of the sheet's claims, by claim id: each oldest first, as "<label> <qty> x <unit>". */
++    public Map<String, List<String>> lines(String sheetId) {
++        Map<String, List<String>> lines = new LinkedHashMap<>();
++        jdbc.query("SELECT claim_id, label, qty, unit FROM claim_line WHERE sheet_id = ? ORDER BY id",
++                rs -> {
++                    lines.computeIfAbsent(String.valueOf(rs.getLong("claim_id")), k -> new ArrayList<>())
++                            .add(rs.getString("label") + " " + rs.getInt("qty") + " x " + money(rs.getBigDecimal("unit")));
++                }, sheetId);
++        return lines;
++    }
++
+     /** Each claim's status at the end of a day, by claim id, as its status log records it: the last line
+      *  dated on or before it. A claim with no such line (added after that day) is absent. */
+     public Map<Long, String> statusesOn(String sheetId, LocalDate day) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claims.java b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+index 79680a888..a4e6a8b75 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claims.java
+@@ -6,7 +6,9 @@ import java.util.Map;
+ /** A sheet's claims, newest first, and their status logs by claim id (see {@link ClaimRepository#logs}),
+  *  and who holds each locked claim's editor, by claim id (see {@link ClaimRepository#locks}), and every tag ever used on the sheet, sorted,
+  *  and their comments by claim id (see {@link ClaimRepository#comments}), and the settle batch of each claim a bulk settle
+- *  settled, by claim id, and the number of the sheet's last batch (null when none). */
++ *  settled, by claim id, and the number of the sheet's last batch (null when none), and their lines by claim id (see
++ *  {@link ClaimRepository#lines}). */
+ public record Claims(List<Claim> claims, Map<String, List<String>> logs, Map<String, String> locks, List<String> tags,
+-        Map<String, List<String>> comments, Map<String, Integer> batches, Integer lastBatch) {
++        Map<String, List<String>> comments, Map<String, Integer> batches, Integer lastBatch,
++        Map<String, List<String>> lines) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/LoadClaims.java b/src/main/java/net/officefloor/hq/app/claim/LoadClaims.java
+index 72d23f01d..08b85b5f9 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/LoadClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/LoadClaims.java
+@@ -12,6 +12,6 @@ public class LoadClaims {
+             ClaimRepository repository, AsOfView view, Out<Claims> claims) throws BadRequestException {
+         CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
+-        claims.set(view.read(connection, id, () -> new Claims(repository.list(id), repository.logs(id), repository.locks(id), repository.tagsUsed(id), repository.comments(id), repository.batches(id), repository.lastBatch(id))));
++        claims.set(view.read(connection, id, () -> new Claims(repository.list(id), repository.logs(id), repository.locks(id), repository.tagsUsed(id), repository.comments(id), repository.batches(id), repository.lastBatch(id), repository.lines(id))));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java b/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
+index 45a27e108..2ce22c1ad 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.math.BigDecimal;
+ import java.time.LocalDate;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.BadRequestException;
+@@ -38,6 +39,11 @@ public class SaveClaim {
+         if (holder != null && !holder.equals(by)) {
+             throw new BadRequestException("the claim is being edited by " + holder);
+         }
++        // A claim with lines has their total as its amount: an edit typing another amount is refused.
++        BigDecimal lines = repository.linesTotal(id, cid);
++        if (lines != null && lines.compareTo(input.amount()) != 0) {
++            throw new BadRequestException("a claim with lines has their total, " + ClaimRepository.money(lines) + ", as its amount");
++        }
+         LocalDate date = input.date() != null ? input.date() : sheets.today(id);
+         PeriodGuard.open(periods, id, LocalDate.parse(found.dueBy()));
+         people.claimAllowed(id, found.personId(), date);
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+index 1df6ca3e4..1cd0917cb 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+@@ -131,7 +131,7 @@ public class SheetCloner {
+         return made;
+     }
+ 
+-    /** Copy one claim to a person on the clone, with its status log and comments, bound to no statement, unlocked,
++    /** Copy one claim to a person on the clone, with its status log, comments and lines, bound to no statement, unlocked,
+      *  in no settle batch and (for now) with no number; the copy's id. */
+     private long copyClaim(String from, String to, long id, long personId) {
+         GeneratedKeyHolder keys = new GeneratedKeyHolder();
+@@ -152,6 +152,8 @@ public class SheetCloner {
+                 + " by_user, on_date, due FROM claim_log WHERE sheet_id = ? AND claim_id = ? ORDER BY id", to, made, from, id);
+         jdbc.update("INSERT INTO claim_comment (sheet_id, claim_id, by_user, on_date, text) SELECT ?, ?, by_user,"
+                 + " on_date, text FROM claim_comment WHERE sheet_id = ? AND claim_id = ? ORDER BY id", to, made, from, id);
++        jdbc.update("INSERT INTO claim_line (sheet_id, claim_id, label, qty, unit) SELECT ?, ?, label, qty, unit"
++                + " FROM claim_line WHERE sheet_id = ? AND claim_id = ? ORDER BY id", to, made, from, id);
+         return made;
+     }
+ 
+diff --git a/src/main/resources/db/migration/V75__claim_line.sql b/src/main/resources/db/migration/V75__claim_line.sql
+new file mode 100644
+index 000000000..9ed93d3fc
+--- /dev/null
++++ b/src/main/resources/db/migration/V75__claim_line.sql
+@@ -0,0 +1,11 @@
++-- A DRAFT claim's lines, oldest first: a label (trimmed, never empty), a quantity (a whole number, 1 or more) and a
++-- unit amount (two decimals). A claim with lines has the quantities times the unit amounts, added up, as its amount.
++CREATE TABLE claim_line (
++    id       BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id VARCHAR(200)   NOT NULL REFERENCES sheet (id),
++    claim_id BIGINT         NOT NULL,
++    label    VARCHAR(2000)  NOT NULL,
++    qty      INT            NOT NULL,
++    unit     DECIMAL(19, 2) NOT NULL
++);
++CREATE INDEX claim_line_sheet ON claim_line (sheet_id, claim_id, id);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
+index 4fdf50252..55d3cc7ab 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
+@@ -7,6 +7,7 @@
+ # Or lock / unlock: open or close the claim's editor, locking it for other users (see ClaimLock).
+ # Or comment: keep the text (body: text; refused when empty) with its writer and the sheet's today (see ClaimComment).
+ # Or delete a DRAFT claim (not in a closed period) to DELETED, or restore a DELETED one to DRAFT on the sheet-today it was deleted (see ClaimDelete).
++# Or line: add a line (body: label, qty, unit) to a DRAFT claim, making its amount the lines' total (see ClaimLine).
+ # Or proof: raise the proofs count of a claim not SETTLED or VOID (nor in a closed period) by one. Any other change is refused (400) and writes nothing.
+ guard:
+   class: net.officefloor.hq.app.settings.RefuseViewer
