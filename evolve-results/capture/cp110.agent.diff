@@ -1,0 +1,167 @@
+diff --git a/src/main/frontend/features/consolidated/consolidated.slot.tsx b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+new file mode 100644
+index 000000000..49138c1b1
+--- /dev/null
++++ b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+@@ -0,0 +1,57 @@
++import { useEffect, useState } from 'react';
++import { useQuery, useQueryClient } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { SheetBody } from '../../slots/defs/sheetBody';
++import { useOverdue } from '../overdue/useOverdue';
++import { usePeople } from '../people/usePeople';
++import { useDueTotals } from '../rates/useDueTotals';
++import { hundredths, money, trimmedSum } from '../rates/useRates';
++
++/** One sheet's figures as its header shows them: its people (retired included), its due-total and overdue-total. */
++type Figures = { people: number; due: string; overdue: string };
++
++/** The sheet's descendants (the sheets naming it as their parent, theirs, and so on), re-read from the store.
++ *  Their own cached reads are dropped first, so each is re-read from the store too. */
++function useDescendants(sheetId: string) {
++  const queryClient = useQueryClient();
++  return useQuery({
++    queryKey: ['sheet', sheetId, 'descendants'],
++    queryFn: async () => {
++      const { sheets } = await getJson<{ sheets: string[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/descendants`);
++      for (const id of sheets) queryClient.removeQueries({ queryKey: ['sheet', id] });
++      return sheets;
++    },
++  });
++}
++
++/** Works out one sheet's figures with the same hooks its header uses, and hands them up; shows nothing. */
++function SheetFigures({ sheetId, onFigures }: { sheetId: string; onFigures: (id: string, f: Figures) => void }) {
++  const people = (usePeople(sheetId).data ?? []).length;
++  const due = trimmedSum([...useDueTotals(sheetId).values()]);
++  const overdue = trimmedSum([...useOverdue(sheetId).values()].map((f) => f.total));
++  useEffect(() => onFigures(sheetId, { people, due, overdue }), [sheetId, people, due, overdue, onFigures]);
++  return null;
++}
++
++/** The consolidated figures over the sheet and all its descendants: the number of people, and each sheet's
++ *  due-total and overdue-total (as that sheet shows them) added up. A sheet with no children shows its own. */
++function Consolidated({ sheetId }: { sheetId: string }) {
++  const descendants = useDescendants(sheetId);
++  const [figures, setFigures] = useState<Record<string, Figures>>({});
++  const [onFigures] = useState(() => (id: string, f: Figures) => setFigures((all) => ({ ...all, [id]: f })));
++  const sheets = [sheetId, ...(descendants.data ?? [])];
++  const shown = sheets.map((id) => figures[id]).filter((f): f is Figures => f !== undefined);
++  const sum = (pick: (f: Figures) => string) => money(shown.reduce((s, f) => s + hundredths(pick(f)), 0n));
++  return (
++    <p data-testid="consolidated">
++      {sheets.map((id) => (
++        <SheetFigures key={id} sheetId={id} onFigures={onFigures} />
++      ))}
++      Consolidated: people <strong data-testid="consolidated-people-count">{shown.reduce((n, f) => n + f.people, 0)}</strong>
++      {' '}· due total <strong data-testid="consolidated-due-total">{sum((f) => f.due)}</strong>
++      {' '}· overdue total <strong data-testid="consolidated-overdue-total">{sum((f) => f.overdue)}</strong>
++    </p>
++  );
++}
++
++export const contribution = SheetBody.fill({ order: -9, Component: ({ sheetId }) => <Consolidated sheetId={sheetId} /> });
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java b/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
+index f5250cd63..45a27e108 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveClaim.java
+@@ -43,8 +43,8 @@ public class SaveClaim {
+         people.claimAllowed(id, found.personId(), date);
+         input.checkCorrection(repository, id, found.personId());
+         input.checkRef(repository, id, cid);
+-        // A draft's due-by follows its date: changing the date fixes the due-by afresh from the new one.
+-        String dueBy = date.toString().equals(found.date()) ? found.dueBy() : repository.dueBy(id, found.personId(), date).toString();
++        // A claim's due-by is fixed when it is created: editing its date leaves it as it is.
++        String dueBy = found.dueBy();
+         Rollup.Snapshot before = rollup.take(id);
+         if (!repository.update(id, cid, input.amount(), date, LocalDate.parse(dueBy), input.note(), input.corrects(), input.ref(), input.tags())) {
+             throw new BadRequestException("only a DRAFT claim can be edited");
+diff --git a/src/main/java/net/officefloor/hq/app/settings/Descendants.java b/src/main/java/net/officefloor/hq/app/settings/Descendants.java
+new file mode 100644
+index 000000000..73202de05
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/settings/Descendants.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.settings;
++
++import java.util.List;
++
++/** A sheet's descendants (see {@link SettingsRepository#descendants}), nearer first. */
++public record Descendants(List<String> sheets) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/settings/LoadDescendants.java b/src/main/java/net/officefloor/hq/app/settings/LoadDescendants.java
+new file mode 100644
+index 000000000..726f03470
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/settings/LoadDescendants.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.settings;
++
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.CurrentUser;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.server.http.ServerHttpConnection;
++import org.springframework.web.bind.annotation.PathVariable;
++
++public class LoadDescendants {
++    public void load(@PathVariable("sheetId") String sheetId, ServerHttpConnection connection,
++            SettingsRepository repository, Out<Descendants> descendants) throws BadRequestException {
++        CurrentUser.require(connection);
++        descendants.set(new Descendants(repository.descendants(sheetId == null ? "" : sheetId.trim())));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/settings/RespondWithDescendants.java b/src/main/java/net/officefloor/hq/app/settings/RespondWithDescendants.java
+new file mode 100644
+index 000000000..7540cfcb0
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/settings/RespondWithDescendants.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.settings;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithDescendants {
++    public void respond(@Val Descendants descendants, ObjectResponse<Descendants> response) {
++        response.send(descendants);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java b/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
+index 40c1b4c88..5924c7dc1 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
+@@ -292,6 +292,21 @@ public class SettingsRepository {
+         return found;
+     }
+ 
++    /** A sheet's descendants: the sheets naming it as their parent, their children and so on, nearer first,
++     *  each once and never the sheet itself. */
++    public List<String> descendants(String sheetId) {
++        List<String> found = new java.util.ArrayList<>();
++        java.util.Deque<String> pending = new java.util.ArrayDeque<>(List.of(sheetId));
++        while (!pending.isEmpty()) {
++            for (String child : jdbc.queryForList("SELECT id FROM sheet WHERE parent_id = ? ORDER BY id", String.class, pending.poll())) {
++                if (child.equals(sheetId) || found.contains(child)) continue;
++                found.add(child);
++                pending.add(child);
++            }
++        }
++        return found;
++    }
++
+     /** The sheets whose rates a sheet's grade falls back to, nearest first: its ancestors up to three levels up. */
+     public List<String> rateAncestors(String sheetId) {
+         List<String> found = lineage(sheetId);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/descendants.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/descendants.GET.yml
+new file mode 100644
+index 000000000..f8322760a
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/descendants.GET.yml
+@@ -0,0 +1,7 @@
++# The sheet's descendants (the sheets naming it as their parent, and theirs, and so on), re-read from the store.
++load:
++  class: net.officefloor.hq.app.settings.LoadDescendants
++  govern: [ readonly-transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.settings.RespondWithDescendants
