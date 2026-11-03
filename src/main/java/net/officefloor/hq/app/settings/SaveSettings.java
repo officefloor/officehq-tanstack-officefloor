@@ -118,6 +118,10 @@ public class SaveSettings {
             repository.setReviewSla(id, input.reviewSla());
             audit.record(prefix + "review-sla value=" + (input.reviewSla() == null ? "" : input.reviewSla()));
         }
+        if (input.setsMaxOpen()) {
+            repository.setMaxOpen(id, input.maxOpen());
+            audit.record(prefix + "max-open value=" + (input.maxOpen() == null ? "" : input.maxOpen()));
+        }
         if (input.setsScoreMid()) {
             repository.setScoreMid(id, input.scoreMid());
             audit.record(prefix + "score-mid value=" + (input.scoreMid() == null ? "" : input.scoreMid()));

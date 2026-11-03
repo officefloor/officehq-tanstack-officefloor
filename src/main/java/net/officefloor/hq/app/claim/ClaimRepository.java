@@ -972,4 +972,11 @@ public class ClaimRepository {
                 + " >= (SELECT s.today FROM sheet s WHERE s.id = person.sheet_id)", Integer.class, sheetId, personId);
         return n != null && n > 0;
     }
+
+    /** How many OPEN or PENDING claims a person has. */
+    public int openOf(String sheetId, long personId) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND person_id = ?"
+                + " AND status IN ('OPEN', 'PENDING')", Integer.class, sheetId, personId);
+        return n == null ? 0 : n;
+    }
 }

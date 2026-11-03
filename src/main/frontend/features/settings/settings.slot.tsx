@@ -89,6 +89,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
   const [graceDays, setGraceDays] = useState<string | null>(null);
   const [escalateAfter, setEscalateAfter] = useState<string | null>(null);
   const [reviewSla, setReviewSla] = useState<string | null>(null);
+  const [maxOpen, setMaxOpen] = useState<string | null>(null);
   const [scoreMid, setScoreMid] = useState<string | null>(null);
   const [scoreHigh, setScoreHigh] = useState<string | null>(null);
   const [scoreLog, setScoreLog] = useState<string | null>(null);
@@ -113,7 +114,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
 
   const saveOnce = useSingleFlight();
   const save = useMutation({
-    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null; noteThreshold: string | null; permissions: Record<string, string>; graceDays: string | null; entryDate: string | null; gradeGrace: Record<string, string>; gradeProofThreshold: Record<string, string>; pot: string | null; parent: string | null; fiscalStartMonth: string | null; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null; escalateAfter: string | null; reviewSla: string | null; proofKinds: string | null; defaultGrade: string | null; gradeClerkLimit: Record<string, string>; scoreMid: string | null; scoreHigh: string | null; scoreLog: string | null }) =>
+    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null; noteThreshold: string | null; permissions: Record<string, string>; graceDays: string | null; entryDate: string | null; gradeGrace: Record<string, string>; gradeProofThreshold: Record<string, string>; pot: string | null; parent: string | null; fiscalStartMonth: string | null; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null; escalateAfter: string | null; reviewSla: string | null; proofKinds: string | null; defaultGrade: string | null; gradeClerkLimit: Record<string, string>; scoreMid: string | null; scoreHigh: string | null; scoreLog: string | null; maxOpen: string | null }) =>
       postJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, f),
     onSuccess: (saved) => {
       setLimit(null);
@@ -135,6 +136,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
       setGraceDays(null);
       setEscalateAfter(null);
       setReviewSla(null);
+      setMaxOpen(null);
       setScoreMid(null);
       setScoreHigh(null);
       setScoreLog(null);
@@ -214,7 +216,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           e.preventDefault();
           saveOnce(() => {
             save.reset();
-            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap, from, proofThreshold, noteThreshold, permissions, graceDays, entryDate, gradeGrace, gradeProofThreshold: gradeProof, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter, reviewSla, proofKinds, defaultGrade, gradeClerkLimit: gradeLimit, scoreMid, scoreHigh, scoreLog });
+            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap, from, proofThreshold, noteThreshold, permissions, graceDays, entryDate, gradeGrace, gradeProofThreshold: gradeProof, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter, reviewSla, proofKinds, defaultGrade, gradeClerkLimit: gradeLimit, scoreMid, scoreHigh, scoreLog, maxOpen });
           });
         }}
       >
@@ -489,6 +491,19 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           />
         </label>{' '}
         <label>
+          Max open claims{' '}
+          <input
+            data-testid="setting-max-open"
+            inputMode="numeric"
+            value={maxOpen ?? ''}
+            onFocus={() => setMaxOpen((v) => v ?? '')}
+            onChange={(e) => {
+              setMaxOpen(e.target.value);
+              save.reset();
+            }}
+          />
+        </label>{' '}
+        <label>
           Score mid{' '}
           <input
             data-testid="setting-score-mid"
@@ -660,6 +675,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
         , grace days <strong data-testid="setting-grace-days-current">{fig(settings.data?.graceDays ?? '')}</strong>
         , escalate after <strong data-testid="setting-escalate-after-current">{fig(settings.data?.escalateAfter ?? '')}</strong>
         , review SLA <strong data-testid="setting-review-sla-current">{fig(settings.data?.reviewSla ?? '')}</strong>
+        , max open <strong data-testid="setting-max-open-current">{fig(settings.data?.maxOpen ?? '')}</strong>
         , score mid <strong data-testid="setting-score-mid-current">{fig(settings.data?.scoreMid ?? '')}</strong>
         , score high <strong data-testid="setting-score-high-current">{fig(settings.data?.scoreHigh ?? '')}</strong>
         , score log <strong data-testid="setting-score-log-current">{settings.data?.scoreLog ? 'on' : ''}</strong>

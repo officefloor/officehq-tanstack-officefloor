@@ -61,7 +61,7 @@ public class SettingsRepository {
                 delegations(sheetId), entry == null ? null : entry.toString(), holidays(sheetId),
                 voidReasons(sheetId), pot == null ? null : money(pot), parent(sheetId), fiscalStartMonth(sheetId),
                 alert == null ? null : money(alert), escalateAfter(sheetId), reviewSla(sheetId), proofKinds(sheetId),
-                storedDefaultGrade(sheetId), scoreMid(sheetId), scoreHigh(sheetId), scoreLog(sheetId));
+                storedDefaultGrade(sheetId), scoreMid(sheetId), scoreHigh(sheetId), scoreLog(sheetId), maxOpen(sheetId));
     }
 
     /** The sheet's today; the real date when there is no such sheet. */
@@ -435,6 +435,17 @@ public class SettingsRepository {
 
     public void setReviewSla(String sheetId, Integer days) {
         jdbc.update("UPDATE sheet SET review_sla = ? WHERE id = ?", days, sheetId);
+    }
+
+    /** The sheet's maximum of open claims per person; null when blank (none). */
+    public Integer maxOpen(String sheetId) {
+        List<Integer> found = jdbc.query("SELECT max_open FROM sheet WHERE id = ?",
+                (rs, i) -> (Integer) rs.getObject("max_open", Integer.class), sheetId);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    public void setMaxOpen(String sheetId, Integer max) {
+        jdbc.update("UPDATE sheet SET max_open = ? WHERE id = ?", max, sheetId);
     }
 
     /** The sheet's mid score threshold; null when blank. */

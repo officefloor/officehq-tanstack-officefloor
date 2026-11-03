@@ -207,6 +207,14 @@ public final class ClaimStatusChange {
                 throw new BadRequestException("the person already has " + in.cap() + " open claims in the period " + in.name());
             }
         }
+        // While the sheet has a maximum of open claims per person, no claim is opened for a person who already has
+        // that many OPEN or PENDING claims.
+        if (to.equals("OPEN") && (found.status().equals("DRAFT") || found.status().equals("REVIEW"))) {
+            Integer max = settings.maxOpen(id);
+            if (max != null && repository.openOf(id, found.personId()) >= max) {
+                throw new BadRequestException("the person already has " + max + " open claims, the most the sheet allows");
+            }
+        }
         // A claim whose due is above the review threshold in force on its date goes to REVIEW when opened, with
         // no number until a steward reviews it ('n/a' is above none).
         if (to.equals("OPEN") && found.status().equals("DRAFT")) {
@@ -218,9 +226,10 @@ public final class ClaimStatusChange {
             }
         }
         // Settled as of a date: on or before the sheet's today, and only a claim that existed then; its due is the one
-        // it had at the end of that day, worked out as the as-of view does.
+        // it had at the end of that day, worked out as the as-of view does. The date is checked also when the settle
+        // goes to PENDING instead.
         BigDecimal asOfDue = null;
-        if (on != null && to.equals("SETTLED")) {
+        if (on != null) {
             if (on.isAfter(settings.today(id))) {
                 throw new BadRequestException("a claim cannot be settled as of a date after the sheet's today");
             }

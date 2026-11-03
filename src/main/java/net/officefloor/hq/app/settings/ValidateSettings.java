@@ -145,6 +145,10 @@ public class ValidateSettings {
         if (sla != null && !sla.isEmpty() && (!TERMS.matcher(sla).matches() || Integer.parseInt(sla) > 3650)) {
             throw new BadRequestException("review SLA must be a whole number of days from 0 to 3650");
         }
+        String maxOpen = request == null || request.maxOpen() == null ? null : request.maxOpen().trim();
+        if (maxOpen != null && !maxOpen.isEmpty() && (!TERMS.matcher(maxOpen).matches() || Integer.parseInt(maxOpen) > 100000)) {
+            throw new BadRequestException("max open claims must be a whole number from 0 to 100000");
+        }
         String scoreMid = request == null || request.scoreMid() == null ? null : request.scoreMid().trim();
         if (scoreMid != null && !scoreMid.isEmpty() && !SCORE.matcher(scoreMid).matches()) {
             throw new BadRequestException("the mid score threshold must be a whole number");
@@ -276,6 +280,7 @@ public class ValidateSettings {
                 gradeLimit,
                 scoreMid != null, scoreMid == null || scoreMid.isEmpty() ? null : Integer.parseInt(scoreMid),
                 scoreHigh != null, scoreHigh == null || scoreHigh.isEmpty() ? null : Integer.parseInt(scoreHigh),
-                scoreLog != null, scoreLog != null && !scoreLog.isEmpty()));
+                scoreLog != null, scoreLog != null && !scoreLog.isEmpty(),
+                maxOpen != null, maxOpen == null || maxOpen.isEmpty() ? null : Integer.parseInt(maxOpen)));
     }
 }

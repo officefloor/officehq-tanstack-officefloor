@@ -18,7 +18,8 @@ package net.officefloor.hq.app.settings;
  *  {@code scoreMid} and {@code scoreHigh} are the score thresholds, whole numbers, blank meaning none (not dated).
  *  {@code scoreLog} is the score log switch, on or blank meaning off (not dated).
  *  {@code gradeClerkLimit} is each grade's clerk limit given, by grade (dated, from-date key clerk-limit-<grade>), blank
- *  meaning none (the sheet's is then used). */
+ *  meaning none (the sheet's is then used).
+ *  {@code maxOpen} is the maximum of open claims per person, a whole number, blank meaning none (not dated). */
 public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom,
         java.util.Map<String, String> gradeTerms, String cap, java.util.Map<String, String> from,
         String proofThreshold, java.util.Map<String, String> permissions, String graceDays,
@@ -26,5 +27,5 @@ public record SettingsRequest(String clerkLimit, String floor, String terms, Str
         java.util.Map<String, String> gradeProofThreshold, String pot, String parent,
         String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla,
         String proofKinds, String defaultGrade, java.util.Map<String, String> gradeClerkLimit,
-        String scoreMid, String scoreHigh, String scoreLog) {
+        String scoreMid, String scoreHigh, String scoreLog, String maxOpen) {
 }
