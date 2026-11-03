@@ -1,0 +1,290 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 4f643ac38..798b5b078 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -32,7 +32,7 @@ function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: numbe
+   );
+ }
+ 
+-type ClaimAction = 'open' | 'review' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | 'delete' | 'restore' | 'defer' | 'proof' | 'remind' | 'waive' | 'hold' | 'split' | 'redate' | 'comment' | 'line';
++type ClaimAction = 'open' | 'review' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | 'delete' | 'restore' | 'defer' | 'proof' | 'remind' | 'waive' | 'hold' | 'split' | 'settle-part' | 'redate' | 'comment' | 'line';
+ 
+ /** A claim's status changes; the server refuses one its status does not allow, a settle by the user
+  *  who opened the claim, and an approve or reject by anyone but a steward (an approve also by the
+@@ -41,7 +41,7 @@ type ClaimAction = 'open' | 'review' | 'settle' | 'approve' | 'reject' | 'void'
+  *  A settle or approve of a claim whose due is above the proof threshold in force on its date is refused while it has no proof.
+  *  An open of a claim whose due is above the review threshold in force on its date makes it REVIEW (no number yet); a review
+  *  by a steward makes it OPEN, by anyone else is refused. */
+-const ACTIONS: [Exclude<ClaimAction, 'defer' | 'proof' | 'remind' | 'waive' | 'hold' | 'split' | 'redate' | 'comment' | 'line'>, string][] = [
++const ACTIONS: [Exclude<ClaimAction, 'defer' | 'proof' | 'remind' | 'waive' | 'hold' | 'split' | 'settle-part' | 'redate' | 'comment' | 'line'>, string][] = [
+   ['open', 'Open'],
+   ['review', 'Review'],
+   ['settle', 'Settle'],
+@@ -118,6 +118,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
+   const [targets, setTargets] = useState<Record<number, string>>({});
+   const [deferDates, setDeferDates] = useState<Record<number, string>>({});
+   const [splitAmounts, setSplitAmounts] = useState<Record<number, string>>({});
++  const [settlePartAmounts, setSettlePartAmounts] = useState<Record<number, string>>({});
+   const [newDates, setNewDates] = useState<Record<number, string>>({});
+   const [comments, setComments] = useState<Record<number, string>>({});
+   const [proofKinds, setProofKinds] = useState<Record<number, string>>({});
+@@ -192,7 +193,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
+ 
+   // A status change (open, settle, approve, reject, void) of one claim, or deferring an OPEN one until the
+   // date typed on its row, or adding a proof to it, or reminding an OPEN or PENDING one (once per sheet-today), or splitting the amount typed on its row off an OPEN one
+-  // (a new OPEN claim listed under the person), or re-dating an OPEN or PENDING one to the date typed on its row, or commenting it with the text typed on its row,
++  // (a new OPEN claim listed under the person), or part-settling one (the amount typed on its row split off and settled at once), or re-dating an OPEN or PENDING one to the date typed on its row, or commenting it with the text typed on its row,
+   // or adding the line (label, quantity, unit amount) typed on its row to a DRAFT one (its amount becomes its lines' total);
+   // a refusal shows on that claim's row.
+   const action = useMutation({
+@@ -203,6 +204,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
+       if (a.action === 'void') setVoidReasons((r) => ({ ...r, [a.id]: '' }));
+       if (a.action === 'defer') setDeferDates((d) => ({ ...d, [a.id]: '' }));
+       if (a.action === 'split') setSplitAmounts((m) => ({ ...m, [a.id]: '' }));
++      if (a.action === 'settle-part') setSettlePartAmounts((m) => ({ ...m, [a.id]: '' }));
+       if (a.action === 'redate') setNewDates((d) => ({ ...d, [a.id]: '' }));
+       if (a.action === 'comment') setComments((m) => ({ ...m, [a.id]: '' }));
+       if (a.action === 'proof') setProofKinds((m) => ({ ...m, [a.id]: '' }));
+@@ -274,7 +276,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
+       action: a,
+       reason: a === 'reject' ? reasons[id] ?? '' : a === 'void' ? voidReasons[id] ?? '' : '',
+       until: a === 'defer' ? (deferDates[id] ?? '').trim() : '',
+-      amount: a === 'split' ? (splitAmounts[id] ?? '').trim() : '',
++      amount: a === 'split' ? (splitAmounts[id] ?? '').trim() : a === 'settle-part' ? (settlePartAmounts[id] ?? '').trim() : '',
+       date: a === 'redate' ? (newDates[id] ?? '').trim() : '',
+       text: a === 'comment' ? comments[id] ?? '' : '',
+       label: a === 'line' ? lineFields[id]?.label ?? '' : '',
+@@ -671,6 +673,25 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
+                   >
+                     Split
+                   </button>{' '}
++                  <input
++                    data-testid="claim-settle-part-amount"
++                    inputMode="decimal"
++                    placeholder="settle part amount"
++                    value={settlePartAmounts[c.id] ?? ''}
++                    onChange={(e) => {
++                      const v = e.target.value;
++                      setSettlePartAmounts((m) => ({ ...m, [c.id]: v }));
++                      if (action.variables?.id === c.id) action.reset();
++                    }}
++                  />{' '}
++                  <button
++                    type="button"
++                    data-testid="claim-settle-part"
++                    disabled={action.isPending}
++                    onClick={() => act(c.id, 'settle-part')}
++                  >
++                    Settle part
++                  </button>{' '}
+                   <input
+                     type="text"
+                     data-testid="claim-date-new"
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ChangeClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ChangeClaimStatus.java
+index c46903d27..e70d9cde4 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ChangeClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ChangeClaimStatus.java
+@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ /** Move a claim along its status: open, settle, approve, reject (with a reason) or void, each only from the
+- *  statuses it allows; or defer an OPEN claim until a date (see {@link ClaimDeferral}); or raise its proofs count (see {@link ClaimProof}); or split an amount off an OPEN claim (see {@link ClaimSplit}); or re-date an OPEN or PENDING claim (see {@link ClaimRedate}); or lock or unlock a claim's editor (see {@link ClaimLock}); or remind an OPEN or PENDING claim (see {@link ClaimRemind}); or comment a claim (see {@link ClaimComment}); or delete a DRAFT claim or restore it the same day (see {@link ClaimDelete}); or add a line to a DRAFT claim (see {@link ClaimLine}); or waive an OPEN or PENDING claim's late charge (see {@link ClaimWaive}); or hold or release an OPEN or PENDING claim (see {@link ClaimHold}). */
++ *  statuses it allows; or defer an OPEN claim until a date (see {@link ClaimDeferral}); or raise its proofs count (see {@link ClaimProof}); or split an amount off an OPEN claim (see {@link ClaimSplit}); or part-settle one (see {@link ClaimSettlePart}); or re-date an OPEN or PENDING claim (see {@link ClaimRedate}); or lock or unlock a claim's editor (see {@link ClaimLock}); or remind an OPEN or PENDING claim (see {@link ClaimRemind}); or comment a claim (see {@link ClaimComment}); or delete a DRAFT claim or restore it the same day (see {@link ClaimDelete}); or add a line to a DRAFT claim (see {@link ClaimLine}); or waive an OPEN or PENDING claim's late charge (see {@link ClaimWaive}); or hold or release an OPEN or PENDING claim (see {@link ClaimHold}). */
+ public class ChangeClaimStatus {
+     public void change(@PathVariable("sheetId") String sheetId, @PathVariable("claimId") String claimId,
+             @PathVariable("action") String action, @RequestBody ClaimActionRequest request, ServerHttpConnection connection, ClaimRepository repository,
+@@ -38,6 +38,11 @@ public class ChangeClaimStatus {
+                     settings, audit, rollup));
+             return;
+         }
++        if ("settle-part".equals(action == null ? "" : action.trim())) {
++            claim.set(ClaimSettlePart.apply(id, cid, request == null ? null : request.amount(), by, repository, periods,
++                    settings, audit, rollup, watches));
++            return;
++        }
+         if ("redate".equals(action == null ? "" : action.trim())) {
+             claim.set(ClaimRedate.apply(id, cid, request == null ? null : request.date(), by, repository, periods,
+                     settings, people, audit, rollup));
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimSettlePart.java b/src/main/java/net/officefloor/hq/app/claim/ClaimSettlePart.java
+new file mode 100644
+index 000000000..db2adf427
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimSettlePart.java
+@@ -0,0 +1,56 @@
++package net.officefloor.hq.app.claim;
++
++import java.time.LocalDate;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.period.PeriodGuard;
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.person.WatchRepository;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.settings.SettingsRepository;
++
++/** Part-settle an OPEN claim: split the amount off exactly as the split button does (see {@link ClaimSplit}), then
++ *  settle the new claim at once exactly as the settle button does (PENDING when the clerk limit says so), with the
++ *  four-eyes rules and the proof rule judged on the original claim (the new claim's opener is the user, who may still
++ *  part-settle). Every check of both is made before anything is written, so a refusal of either refuses the whole
++ *  action and writes nothing to the store or the audit. Answers the new claim. */
++final class ClaimSettlePart {
++    private ClaimSettlePart() {
++    }
++
++    /** Carries a refusal out of the held audit, which drops its records. */
++    private static final class Refused extends RuntimeException {
++        final BadRequestException refusal;
++
++        Refused(BadRequestException refusal) {
++            super(refusal.getMessage(), null, false, false);
++            this.refusal = refusal;
++        }
++    }
++
++    static Claim apply(String id, long cid, String amount, String by, ClaimRepository repository, PeriodRepository periods,
++            SettingsRepository settings, Audit audit, Rollup rollup, WatchRepository watches) throws BadRequestException {
++        Claim original = repository.find(id, cid);
++        if (original == null) {
++            throw new BadRequestException("no such claim");
++        }
++        ClaimSplit.check(id, cid, amount, by, repository, periods, settings);
++        // The settle's checks, made on the original (whose status, permission and rules the new claim shares) ...
++        ClaimStatusChange.settlePart(id, cid, original, by, true, repository, periods, settings, null, null, null);
++        // ... and on the new claim's own due-by.
++        PeriodGuard.open(periods, id, repository.dueBy(id, original.personId(), LocalDate.parse(original.date())));
++        try {
++            return audit.held(() -> {
++                try {
++                    Claim added = ClaimSplit.apply(id, cid, amount, by, repository, periods, settings, audit, rollup);
++                    return ClaimStatusChange.settlePart(id, added.id(), original, by, false, repository, periods, settings,
++                            audit, rollup, watches);
++                } catch (BadRequestException e) {
++                    throw new Refused(e);
++                }
++            });
++        } catch (Refused e) {
++            throw e.refusal;
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimSplit.java b/src/main/java/net/officefloor/hq/app/claim/ClaimSplit.java
+index 49773af62..4c4da5f37 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimSplit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimSplit.java
+@@ -20,6 +20,17 @@ final class ClaimSplit {
+ 
+     static Claim apply(String id, long cid, String amount, String by, ClaimRepository repository,
+             PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup) throws BadRequestException {
++        return apply(id, cid, amount, by, false, repository, periods, settings, audit, rollup);
++    }
++
++    /** Make every check of the split, writing nothing: throws the refusal the split would give. */
++    static void check(String id, long cid, String amount, String by, ClaimRepository repository,
++            PeriodRepository periods, SettingsRepository settings) throws BadRequestException {
++        apply(id, cid, amount, by, true, repository, periods, settings, null, null);
++    }
++
++    private static Claim apply(String id, long cid, String amount, String by, boolean checkOnly, ClaimRepository repository,
++            PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup) throws BadRequestException {
+         Claim found = repository.find(id, cid);
+         if (found == null) {
+             throw new BadRequestException("no such claim");
+@@ -38,6 +49,9 @@ final class ClaimSplit {
+         if (!settings.allows(id, "open", by)) {
+             throw new BadRequestException("a " + settings.role(id, by) + " cannot open a claim, so cannot split one");
+         }
++        if (checkOnly) {
++            return null;
++        }
+         Rollup.Snapshot before = rollup.take(id);
+         Long nid = repository.split(id, found, part, by);
+         if (nid == null) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+index 4676956f6..1663de5d6 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusChange.java
+@@ -32,16 +32,23 @@ public final class ClaimStatusChange {
+ 
+     static Claim apply(String id, long cid, String action, String reason, String by, ClaimRepository repository,
+             PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup, WatchRepository watches) throws BadRequestException {
+-        return apply(id, cid, action, reason, by, false, repository, periods, settings, audit, rollup, watches);
++        return apply(id, cid, action, reason, by, false, null, repository, periods, settings, audit, rollup, watches);
+     }
+ 
+     /** Make every check of the status change, writing nothing: throws the refusal the change would give. */
+     static void check(String id, long cid, String action, String by, ClaimRepository repository,
+             PeriodRepository periods, SettingsRepository settings) throws BadRequestException {
+-        apply(id, cid, action, null, by, true, repository, periods, settings, null, null, null);
++        apply(id, cid, action, null, by, true, null, repository, periods, settings, null, null, null);
+     }
+ 
+-    private static Claim apply(String id, long cid, String action, String reason, String by, boolean checkOnly, ClaimRepository repository,
++    /** Settle a claim split off {@code original} by a part-settle exactly as the settle button does, except that the
++     *  four-eyes rules and the proof rule are judged on the original claim; with {@code checkOnly}, write nothing. */
++    static Claim settlePart(String id, long cid, Claim original, String by, boolean checkOnly, ClaimRepository repository,
++            PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup, WatchRepository watches) throws BadRequestException {
++        return apply(id, cid, "settle", null, by, checkOnly, original, repository, periods, settings, audit, rollup, watches);
++    }
++
++    private static Claim apply(String id, long cid, String action, String reason, String by, boolean checkOnly, Claim original, ClaimRepository repository,
+             PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup, WatchRepository watches) throws BadRequestException {
+         if (settings.archived(id)) {
+             throw new BadRequestException("the sheet is archived");
+@@ -65,6 +72,8 @@ public final class ClaimStatusChange {
+         if (found == null) {
+             throw new BadRequestException("no such claim");
+         }
++        // The claim the four-eyes rules and the proof rule are judged on: the claim itself, or for a part-settle the original.
++        Claim judged = original != null ? original : found;
+         if (!from.contains(found.status())) {
+             throw new BadRequestException("a " + found.status() + " claim cannot be moved to " + to);
+         }
+@@ -84,12 +93,12 @@ public final class ClaimStatusChange {
+             throw new BadRequestException("only a steward can review a claim");
+         }
+         // Four eyes: whoever opened a claim cannot settle it.
+-        if (to.equals("SETTLED") && found.status().equals("OPEN") && by.equals(found.openedBy())) {
++        if (to.equals("SETTLED") && found.status().equals("OPEN") && by.equals(judged.openedBy())) {
+             throw new BadRequestException("the user who opened a claim cannot settle it");
+         }
+         // Nor can whoever last edited it settle or approve it.
+         if (to.equals("SETTLED") && (found.status().equals("OPEN") || found.status().equals("PENDING"))
+-                && by.equals(repository.editedBy(id, cid))) {
++                && by.equals(repository.editedBy(id, judged.id()))) {
+             throw new BadRequestException("the user who last edited a claim cannot " + act + " it");
+         }
+         // A deferred claim cannot be settled until the sheet's today reaches the date it is deferred until.
+@@ -147,15 +156,15 @@ public final class ClaimStatusChange {
+         // is set, else the sheet's) cannot be settled or approved without a proof ('n/a' is above none); this is
+         // decided before the clerk limit. While the sheet has proof kinds, such a claim needs a proof of each.
+         String kinds = settings.proofKinds(id);
+-        if (to.equals("SETTLED") && (found.proofs() == 0 || kinds != null)) {
+-            BigDecimal threshold = settings.proofThreshold(id, repository.gradeOn(id, found), LocalDate.parse(found.date()));
+-            BigDecimal now = repository.dueNow(id, found);
++        if (to.equals("SETTLED") && (judged.proofs() == 0 || kinds != null)) {
++            BigDecimal threshold = settings.proofThreshold(id, repository.gradeOn(id, judged), LocalDate.parse(judged.date()));
++            BigDecimal now = repository.dueNow(id, judged);
+             if (threshold != null && now != null && now.compareTo(threshold) > 0) {
+-                if (found.proofs() == 0) {
++                if (judged.proofs() == 0) {
+                     throw new BadRequestException("a claim with a due above the proof threshold needs a proof to be settled");
+                 }
+                 for (String kind : kinds.split(",")) {
+-                    if (found.proofs(kind) == 0) {
++                    if (judged.proofs(kind) == 0) {
+                         throw new BadRequestException("a claim with a due above the proof threshold needs a " + kind + " proof to be settled");
+                     }
+                 }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
+index 566b76eb6..d133babe6 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
+@@ -2,7 +2,7 @@
+ # above the clerk limit), approve (PENDING -> SETTLED), reject with a reason (PENDING -> OPEN) or void
+ # (DRAFT, OPEN or PENDING -> VOID; SETTLED -> VOID by a steward within 7 days of its settlement), or resettle (a steward refreezes a SETTLED claim at its figure today), or defer an
+ # OPEN claim (not in a closed period) until a date after the sheet's today (body: until).
+-# Or split an OPEN claim (body: amount; see ClaimSplit).
++# Or split an OPEN claim (body: amount; see ClaimSplit), or settle-part: split it and settle the new claim at once (body: amount; see ClaimSettlePart).
+ # Or redate: a steward re-dates an OPEN or PENDING claim (body: date; see ClaimRedate).
+ # Or lock / unlock: open or close the claim's editor, locking it for other users (see ClaimLock).
+ # Or comment: keep the text (body: text; refused when empty) with its writer and the sheet's today (see ClaimComment).
