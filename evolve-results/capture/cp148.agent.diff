@@ -1,0 +1,52 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 6414e5422..d3ab96ee9 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -15,7 +15,7 @@ import { useTemplates } from '../templates/useTemplates';
+ import { claimed, claimsKey, shownDeferred, shownTags, useClaims, useLastBatch, type Claim } from './useClaims';
+ import { useClaimSelection } from './useClaimSelection';
+ 
+-/** A person's claimed: the sum of their counted (OPEN, PENDING or SETTLED; an open one dated within a hold only when a statement binds it; not a deferred one) claims' amounts. */
++/** A person's claimed: the sum of their counted, non-correction (OPEN, PENDING or SETTLED; an open one dated within a hold only when a statement binds it; not a deferred one) claims' amounts. */
+ function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: number }) {
+   const claims = useClaims(sheetId);
+   const people = usePeople(sheetId);
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index 0187866c7..d4b69822e 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -168,9 +168,9 @@ export function shownTags(tags: string | null): string {
+   return tags === null ? '' : tags.split(',').join(', ');
+ }
+ 
+-/** The sum of the amounts of those of these claims that count (given the people's holds by person id and
++/** The sum of the amounts of those of these claims that count and correct no other claim (given the people's holds by person id and
+  *  the sheet's today), with two decimals (added up in cents, so no rounding drift). */
+ export function claimed(claims: Claim[], holds: ReadonlyMap<number, Hold[]>, today: string | undefined): string {
+-  const cents = claims.filter((c) => counts(c, holds, today)).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
++  const cents = claims.filter((c) => c.corrects === null && counts(c, holds, today)).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
+   return (cents / 100).toFixed(2);
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 29d8a2ade..c7987be38 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -52,7 +52,8 @@ public class Rollup {
+         this.audit = audit;
+     }
+ 
+-    /** The sheet's figures now. A person's due-total is the sum of their counting claims' dues now (late charges included),
++    /** The sheet's figures now. A person's claimed is the sum of their counting claims' amounts, leaving out corrections
++     *  (claims that correct another). A person's due-total is the sum of their counting claims' dues now (late charges included),
+      *  skipping those with none; 'n/a' when no rate for the grade they have on the sheet's today is in force
+      *  then and no counting claim keeps a fixed figure or has a due (at the grade it was claimed under). A due-total is at most the sheet's cap (an 'n/a' is not capped). The sheet's due-total skips 'n/a'.
+      *  The sheet's due-total and overdue-total leave out the single highest and lowest person's figure when three or more
+@@ -74,7 +75,7 @@ public class Rollup {
+                 boolean fixed = false;
+                 for (Claim c : all) {
+                     if (c.personId() != p.id() || !c.counts(p.liveHolds(today == null ? null : today.toString()))) continue;
+-                    claimed = claimed.add(new BigDecimal(c.amount()));
++                    if (c.corrects() == null) claimed = claimed.add(new BigDecimal(c.amount()));
+                     fixed |= c.fixed();
+                     BigDecimal now = claims.dueNow(sheetId, c);
+                     if (now != null) due = due.add(now);
