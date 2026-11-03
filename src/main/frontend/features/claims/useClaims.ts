@@ -168,9 +168,9 @@ export function shownTags(tags: string | null): string {
   return tags === null ? '' : tags.split(',').join(', ');
 }
 
-/** The sum of the amounts of those of these claims that count (given the people's holds by person id and
+/** The sum of the amounts of those of these claims that count and correct no other claim (given the people's holds by person id and
  *  the sheet's today), with two decimals (added up in cents, so no rounding drift). */
 export function claimed(claims: Claim[], holds: ReadonlyMap<number, Hold[]>, today: string | undefined): string {
-  const cents = claims.filter((c) => counts(c, holds, today)).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
+  const cents = claims.filter((c) => c.corrects === null && counts(c, holds, today)).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
   return (cents / 100).toFixed(2);
 }

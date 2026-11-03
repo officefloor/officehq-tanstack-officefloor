@@ -15,7 +15,7 @@ import { useTemplates } from '../templates/useTemplates';
 import { claimed, claimsKey, shownDeferred, shownTags, useClaims, useLastBatch, type Claim } from './useClaims';
 import { useClaimSelection } from './useClaimSelection';
 
-/** A person's claimed: the sum of their counted (OPEN, PENDING or SETTLED; an open one dated within a hold only when a statement binds it; not a deferred one) claims' amounts. */
+/** A person's claimed: the sum of their counted, non-correction (OPEN, PENDING or SETTLED; an open one dated within a hold only when a statement binds it; not a deferred one) claims' amounts. */
 function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: number }) {
   const claims = useClaims(sheetId);
   const people = usePeople(sheetId);

@@ -52,7 +52,8 @@ public class Rollup {
         this.audit = audit;
     }
 
-    /** The sheet's figures now. A person's due-total is the sum of their counting claims' dues now (late charges included),
+    /** The sheet's figures now. A person's claimed is the sum of their counting claims' amounts, leaving out corrections
+     *  (claims that correct another). A person's due-total is the sum of their counting claims' dues now (late charges included),
      *  skipping those with none; 'n/a' when no rate for the grade they have on the sheet's today is in force
      *  then and no counting claim keeps a fixed figure or has a due (at the grade it was claimed under). A due-total is at most the sheet's cap (an 'n/a' is not capped). The sheet's due-total skips 'n/a'.
      *  The sheet's due-total and overdue-total leave out the single highest and lowest person's figure when three or more
@@ -74,7 +75,7 @@ public class Rollup {
                 boolean fixed = false;
                 for (Claim c : all) {
                     if (c.personId() != p.id() || !c.counts(p.liveHolds(today == null ? null : today.toString()))) continue;
-                    claimed = claimed.add(new BigDecimal(c.amount()));
+                    if (c.corrects() == null) claimed = claimed.add(new BigDecimal(c.amount()));
                     fixed |= c.fixed();
                     BigDecimal now = claims.dueNow(sheetId, c);
                     if (now != null) due = due.add(now);
