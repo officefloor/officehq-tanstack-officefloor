@@ -1,0 +1,144 @@
+diff --git a/src/main/frontend/features/crews/crews.slot.tsx b/src/main/frontend/features/crews/crews.slot.tsx
+index 1093224fb..3a6da3f63 100644
+--- a/src/main/frontend/features/crews/crews.slot.tsx
++++ b/src/main/frontend/features/crews/crews.slot.tsx
+@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { useSingleFlight } from '../../query/useSingleFlight';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+-import { usePeople, type Person } from '../people/usePeople';
++import { shownName, usePeople, type Person } from '../people/usePeople';
+ import { useDueTotals } from '../rates/useDueTotals';
+ import { useFigure } from '../locale/useLocale';
+ import { crewDue } from './crewDue';
+@@ -18,6 +18,8 @@ function CrewRow({ sheetId, crew, people }: { sheetId: string; crew: Crew; peopl
+   const dueTotals = useDueTotals(sheetId);
+   const [member, setMember] = useState('');
+   const due = crewDue(crew, dueTotals);
++  const leadPerson = people.find((p) => p.id === crew.leadId);
++  const leadShown = leadPerson === undefined ? crew.lead : shownName(leadPerson);
+ 
+   const submitOnce = useSingleFlight();
+   const add = useMutation({
+@@ -36,7 +38,7 @@ function CrewRow({ sheetId, crew, people }: { sheetId: string; crew: Crew; peopl
+   return (
+     <div data-testid={`crew-row-${crew.name}`}>
+       <strong data-testid="crew-name">{crew.name}</strong>{' '}
+-      Lead <span data-testid="crew-lead">{crew.lead}</span>{' '}
++      Lead <span data-testid="crew-lead">{leadShown}</span>{' '}
+       Due-total <span data-testid="crew-due-total">{fig(due)}</span>
+       <ul>
+         {crew.members.map((m) => (
+diff --git a/src/main/frontend/features/patrons/patrons.slot.tsx b/src/main/frontend/features/patrons/patrons.slot.tsx
+index d6905bdcb..03f3d7995 100644
+--- a/src/main/frontend/features/patrons/patrons.slot.tsx
++++ b/src/main/frontend/features/patrons/patrons.slot.tsx
+@@ -2,7 +2,7 @@ import { useState } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
+-import { patronsKey, usePatrons, usePeople, type Person } from '../people/usePeople';
++import { patronsKey, shownName, usePatrons, usePeople, type Person } from '../people/usePeople';
+ import { useClaims } from '../claims/useClaims';
+ import { hundredths, money, sumDues } from '../rates/useRates';
+ import { useSheetToday } from '../today/useSheetToday';
+@@ -28,7 +28,7 @@ function shares(count: number): bigint[] {
+ }
+ 
+ /** A person's patrons: the other people on the sheet they have named, each with a share (shown as
+- *  `<name> <share>`, sorted by name, comma and space separated), their backing (over their patrons, the patron's
++ *  `<name> (<grade>) <share>`, sorted by name, comma and space separated), their backing (over their patrons, the patron's
+  *  figure — the due frozen when each of their SETTLED claims dated within the 90 days up to and including the
+  *  sheet's today was settled, added up — times their share divided by 100, added up and rounded half to even;
+  *  0.00 with none), and a picker that names one more. Naming themselves, or a patron twice, is refused. */
+@@ -47,9 +47,9 @@ function PersonPatrons({ sheetId, personId }: { sheetId: string; personId: numbe
+     .filter((p): p is Person => p !== undefined);
+   const split = shares(named.length);
+   const labels = named
+-    .map((p, i) => ({ name: p.name, share: split[i] }))
++    .map((p, i) => ({ name: p.name, shown: shownName(p), share: split[i] }))
+     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+-    .map((x) => `${x.name} ${money(x.share)}`);
++    .map((x) => `${x.shown} ${money(x.share)}`);
+   const from = today === undefined ? undefined : windowStart(today);
+   const figure = (patronId: number) => hundredths(sumDues((claims.data ?? [])
+     .filter((c) => c.personId === patronId && c.status === 'SETTLED' && c.due !== null
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index b8876d4d2..39f4ba6a6 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -9,7 +9,7 @@ import { useDueTotals } from '../rates/useDueTotals';
+ import { hundredths } from '../rates/useRates';
+ import { useShowRetired } from '../retire/useShowRetired';
+ import { asString, useSearchParam } from '../../url/useSearchParam';
+-import { GRADES, fetchPeople, peopleKey, usePeople, type Person } from './usePeople';
++import { GRADES, fetchPeople, peopleKey, shownName, usePeople, type Person } from './usePeople';
+ import { Col } from '../columns/useColumns';
+ 
+ /** The sheet's people: a form that adds a person, or edits one when their editor is open, and the
+@@ -354,7 +354,7 @@ function People({ sheetId }: { sheetId: string }) {
+         {sortPeople((people.data ?? []).filter((p) => showRetired || !p.retiredFrom), sortBy, dueTotals).map((p) => (
+           <tbody key={p.id} data-testid={`person-row-${p.id}`}>
+             <tr>
+-              <td data-testid="person-name">{p.name}</td>
++              <td data-testid="person-name">{shownName(p)}</td>
+               <td data-testid="person-grade">{p.grade}</td>
+               <Col id="terms"><td data-testid="person-terms">{p.terms ?? ''}</td></Col>
+               <Col id="contact"><td data-testid="person-contact">{p.contact ?? ''}</td></Col>
+diff --git a/src/main/frontend/features/people/usePeople.ts b/src/main/frontend/features/people/usePeople.ts
+index 6d03a0be4..31a909ecd 100644
+--- a/src/main/frontend/features/people/usePeople.ts
++++ b/src/main/frontend/features/people/usePeople.ts
+@@ -68,6 +68,12 @@ export function gradeOn(person: Person | undefined, on: string): string | undefi
+   return found?.grade;
+ }
+ 
++/** How the screen shows a person's name: `<name> (<grade in force on the sheet's today>)`. Exports, audit lines,
++ *  the import and paste boxes and the selects of names use the plain name. */
++export function shownName(person: Pick<Person, 'name' | 'grade'>): string {
++  return `${person.name} (${person.grade})`;
++}
++
+ /** One of a person's patrons: another person on the same sheet, by id. */
+ export type Patron = { personId: number; patronId: number };
+ 
+diff --git a/src/main/frontend/features/search/search.slot.tsx b/src/main/frontend/features/search/search.slot.tsx
+index 2834a446e..a36883dde 100644
+--- a/src/main/frontend/features/search/search.slot.tsx
++++ b/src/main/frontend/features/search/search.slot.tsx
+@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { useClaims } from '../claims/useClaims';
+-import { useAliases, usePeople } from '../people/usePeople';
++import { shownName, useAliases, usePeople } from '../people/usePeople';
+ import { useDueTotals } from '../rates/useDueTotals';
+ import { useRates } from '../rates/useRates';
+ import { useSettings } from '../settings/useSettings';
+@@ -12,7 +12,7 @@ import { useSheetToday } from '../today/useSheetToday';
+ /** One search: its text, and the sheets it runs over (this sheet first, then the others of its tree by id). */
+ type Run = { n: number; text: string; sheets: string[] };
+ 
+-/** Works out one sheet's matching lines (`<sheet id> <name> <due-total>`, in list order, retired people
++/** Works out one sheet's matching lines (`<sheet id> <name> (<grade>) <due-total>`, in list order, retired people
+  *  included) with the same hooks its own screen uses, and hands them up once all is read; shows nothing. */
+ function SheetMatches({ sheetId, text, onLines }: { sheetId: string; text: string; onLines: (id: string, lines: string[]) => void }) {
+   const people = usePeople(sheetId);
+@@ -24,7 +24,7 @@ function SheetMatches({ sheetId, text, onLines }: { sheetId: string; text: strin
+   const lines = (people.data ?? [])
+     .filter((p) => [p.name, ...(aliases.data ?? []).filter((a) => a.personId === p.id).map((a) => a.alias)]
+       .some((n) => n.toLowerCase().includes(wanted)))
+-    .map((p) => `${sheetId} ${p.name} ${due.get(p.id) ?? 'n/a'}`);
++    .map((p) => `${sheetId} ${shownName(p)} ${due.get(p.id) ?? 'n/a'}`);
+   const joined = lines.join('\n');
+   useEffect(() => {
+     if (ready) onLines(sheetId, joined === '' ? [] : joined.split('\n'));
+@@ -33,7 +33,7 @@ function SheetMatches({ sheetId, text, onLines }: { sheetId: string; text: strin
+ }
+ 
+ /** A search box and button listing, over this sheet and every other sheet of its tree, every person whose name or
+- *  an alias contains the typed text (case ignored): one line per person, `<sheet id> <name> <due-total>`, this
++ *  an alias contains the typed text (case ignored): one line per person, `<sheet id> <name> (<grade>) <due-total>`, this
+  *  sheet's people first in list order, then the other sheets' by sheet id. The other sheets are re-read from the
+  *  store on each press; the count is cleared while a search runs. */
+ function TreeSearch({ sheetId }: { sheetId: string }) {
