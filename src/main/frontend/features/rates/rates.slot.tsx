@@ -7,6 +7,7 @@ import { SheetBody } from '../../slots/defs/sheetBody';
 import { GRADES } from '../people/usePeople';
 import { useSheetToday } from '../today/useSheetToday';
 import { useDueTotals, useExcess, useSettledOpenTotals } from './useDueTotals';
+import { useRatePreview } from './useRatePreview';
 import { rateFor, ratesKey, sumDues, trimmedSum, useRates, type Rate } from './useRates';
 
 /** The sheet's rates for each grade: a form that sets one from an optional from-date (replacing the
@@ -134,8 +135,80 @@ function Rates({ sheetId }: { sheetId: string }) {
           </span>
         ))}
       </p>
+      <RatePreview sheetId={sheetId} />
       {rates.isError && <p data-testid="rates-error">{rates.error.message}</p>}
     </section>
+  );
+}
+
+/** A preview of a candidate rate for a grade (see `useRatePreview`): how many claims would show a different
+ *  due and the sum of the differences. Nothing is saved. The result is cleared when the form changes. */
+function RatePreview({ sheetId }: { sheetId: string }) {
+  const preview = useRatePreview(sheetId);
+  const [grade, setGrade] = useState<string>('A');
+  const [pct, setPct] = useState('');
+  const [result, setResult] = useState<{ count: number; diff: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const clear = () => {
+    setResult(null);
+    setError(null);
+  };
+
+  return (
+    <form
+      data-testid="rate-preview-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        clear();
+        try {
+          const r = preview(grade, pct);
+          setTimeout(() => setResult(r), 0);
+        } catch (err) {
+          setError((err as Error).message);
+        }
+      }}
+    >
+      <label>
+        Preview grade{' '}
+        <select
+          data-testid="rate-preview-grade"
+          value={grade}
+          onChange={(e) => {
+            setGrade(e.target.value);
+            clear();
+          }}
+        >
+          {GRADES.map((g) => (
+            <option key={g} value={g}>
+              {g}
+            </option>
+          ))}
+        </select>
+      </label>{' '}
+      <label>
+        Rate %{' '}
+        <input
+          data-testid="rate-preview-pct"
+          inputMode="decimal"
+          value={pct}
+          onChange={(e) => {
+            setPct(e.target.value);
+            clear();
+          }}
+        />
+      </label>{' '}
+      <button type="submit" data-testid="rate-preview">
+        Preview
+      </button>
+      {result !== null && (
+        <span>
+          {' '}
+          Would change <strong data-testid="rate-preview-count">{result.count}</strong> claims by{' '}
+          <strong data-testid="rate-preview-diff">{result.diff}</strong>
+        </span>
+      )}
+      {error !== null && <p data-testid="rate-preview-error">{error}</p>}
+    </form>
   );
 }
 
