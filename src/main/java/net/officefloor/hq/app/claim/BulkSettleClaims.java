@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.claim;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -16,10 +17,12 @@ import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
-/** Settle the selected claims together, in list order (people in the order they were added, each
- *  person's claims newest first), each by exactly the rules of settling one claim: a claim a clerk sends
- *  to PENDING counts as settled. A claim that cannot be settled is left as it is and counted as refused.
- *  When at least one is settled, they are the sheet's next batch, and each keeps its number. */
+/** Settle the selected claims together, all or nothing: when any of them cannot be settled by the signed-in
+ *  user (any refusal the single settle would give; going to PENDING is not one), none is settled, every one
+ *  counts as refused and nothing is written. Otherwise each is settled in list order (people in the order they
+ *  were added, each person's claims newest first) by exactly the rules of settling one claim (a claim a clerk
+ *  sends to PENDING counts as settled); they are the sheet's next batch, each keeps its number, and after the
+ *  claims' own lines BATCH_SETTLED batch=<n> count=<claims> total=<the frozen dues of those SETTLED> is written. */
 public class BulkSettleClaims {
     public void settle(@PathVariable("sheetId") String sheetId, @RequestBody BulkSettleRequest request,
             ServerHttpConnection connection, ClaimRepository repository, PeriodRepository periods,
@@ -36,17 +39,31 @@ public class BulkSettleClaims {
             throw new BadRequestException("select at least one claim");
         }
         List<Claim> found = repository.inListOrder(id, selected);
-        int refused = selected.size() - found.size();
-        List<Long> settled = new ArrayList<>();
+        boolean refusedAny = found.size() < selected.size();
         for (Claim c : found) {
+            if (refusedAny) break;
             try {
-                ClaimStatusChange.apply(id, c.id(), "settle", by, repository, periods, settings, audit, rollup, watches);
-                settled.add(c.id());
+                ClaimStatusChange.check(id, c.id(), "settle", by, repository, periods, settings);
             } catch (BadRequestException e) {
-                refused++;
+                refusedAny = true;
             }
         }
-        if (!settled.isEmpty()) repository.batch(id, settled);
-        result.set(new BulkSettleResult(settled.size(), refused));
+        if (refusedAny) {
+            result.set(new BulkSettleResult(0, selected.size()));
+            return;
+        }
+        List<Long> settled = new ArrayList<>();
+        BigDecimal total = BigDecimal.ZERO.setScale(2);
+        for (Claim c : found) {
+            Claim changed = ClaimStatusChange.apply(id, c.id(), "settle", by, repository, periods, settings, audit, rollup, watches);
+            settled.add(c.id());
+            if ("SETTLED".equals(changed.status()) && changed.due() != null) {
+                total = total.add(new BigDecimal(changed.due()));
+            }
+        }
+        int batch = repository.batch(id, settled);
+        audit.record("BATCH_SETTLED sheet=" + id + " by=" + by + " batch=" + batch + " count=" + settled.size()
+                + " total=" + total.toPlainString());
+        result.set(new BulkSettleResult(settled.size(), 0));
     }
 }

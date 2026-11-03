@@ -24,6 +24,17 @@ final class ClaimStatusChange {
 
     static Claim apply(String id, long cid, String action, String reason, String by, ClaimRepository repository,
             PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup, WatchRepository watches) throws BadRequestException {
+        return apply(id, cid, action, reason, by, false, repository, periods, settings, audit, rollup, watches);
+    }
+
+    /** Make every check of the status change, writing nothing: throws the refusal the change would give. */
+    static void check(String id, long cid, String action, String by, ClaimRepository repository,
+            PeriodRepository periods, SettingsRepository settings) throws BadRequestException {
+        apply(id, cid, action, null, by, true, repository, periods, settings, null, null, null);
+    }
+
+    private static Claim apply(String id, long cid, String action, String reason, String by, boolean checkOnly, ClaimRepository repository,
+            PeriodRepository periods, SettingsRepository settings, Audit audit, Rollup rollup, WatchRepository watches) throws BadRequestException {
         if (settings.archived(id)) {
             throw new BadRequestException("the sheet is archived");
         }
@@ -134,6 +145,9 @@ final class ClaimStatusChange {
                 to = "PENDING";
                 event = "CLAIM_PENDING";
             }
+        }
+        if (checkOnly) {
+            return null;
         }
         Rollup.Snapshot before = rollup.take(id);
         if (!repository.changeStatus(id, cid, from, to)) {
