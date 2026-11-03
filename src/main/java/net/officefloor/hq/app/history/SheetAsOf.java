@@ -162,7 +162,7 @@ public record SheetAsOf(LocalDate day, Map<Long, Claim> claims, Map<Long, TreeMa
         for (long n = 1; n <= periods; n++) {
             BigDecimal pct = latePct(dueBy.plusDays(30 * n));
             if (pct.signum() == 0) continue;
-            charge = charge.add(figure.multiply(pct).movePointLeft(2).setScale(2, rounding));
+            charge = charge.add(figure.add(charge).multiply(pct).movePointLeft(2).setScale(2, rounding));
         }
         return charge;
     }

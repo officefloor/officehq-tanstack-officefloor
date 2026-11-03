@@ -197,7 +197,7 @@ public class ClaimRepository {
      *  is overdue (OPEN or PENDING and its due-by — fixed when it was created — plus its grade's grace days before the
      *  sheet's today), for every full 30 days it is overdue, the sheet's late percent in force on that boundary date (the
      *  due-by plus the grace plus 30, 60,
-     *  90 ... days) of that figure, each rounded to two decimals by the claim's rounding, the charges added up (a
+     *  90 ... days) of that figure plus the charges of the boundaries before it (compounding), each rounded to two decimals by the claim's rounding, the charges added up (a
      *  boundary whose percent is 0.00 adds nothing). A statement never binds the charge: it keeps following the
      *  sheet's today until settling freezes it in. A correction (a negative amount) has no floor and no late charge,
      *  nor does a deferred claim have a charge (it is not overdue). Null when it has no figure. */
@@ -242,7 +242,7 @@ public class ClaimRepository {
         for (long n = 1; n <= periods; n++) {
             BigDecimal pct = settings.latePct(sheetId, dueBy.plusDays(30 * n));
             if (pct == null || pct.signum() == 0) continue;
-            charge = charge.add(figure.multiply(pct).movePointLeft(2).setScale(2, rounding));
+            charge = charge.add(figure.add(charge).multiply(pct).movePointLeft(2).setScale(2, rounding));
         }
         return charge;
     }

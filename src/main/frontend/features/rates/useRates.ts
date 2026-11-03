@@ -80,11 +80,11 @@ function percentOf(amount: string, pct: string, times: bigint, halfUp: boolean):
 }
 
 /** A figure (two decimals) with a late charge added on top: for each full 30 days, the late percent
- *  (two decimals) in force on that boundary of the figure, each rounded like a due, the charges added up;
+ *  (two decimals) in force on that boundary of the figure plus the charges of the boundaries before it (compounding), each rounded like a due, the charges added up;
  *  'n/a' stays 'n/a'. */
 export function withCharge(figure: string, latePcts: string[], halfUp: boolean): string {
   if (figure === 'n/a') return figure;
-  return money(latePcts.reduce((sum, pct) => sum + percentOf(figure, pct, 1n, halfUp), hundredths(figure)));
+  return money(latePcts.reduce((sum, pct) => sum + percentOf(money(sum), pct, 1n, halfUp), hundredths(figure)));
 }
 
 /** Dues added up, skipping 'n/a'. */

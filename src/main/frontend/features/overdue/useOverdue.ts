@@ -34,7 +34,7 @@ export function roundsHalfUp(c: Claim, claims: Claim[] | undefined, settings: Se
 /** A claim's due now: a settled claim's frozen due; else the greater of the floor (two decimals; none while
  *  it is not loaded) and its figure (the one its last statement bound it to, else its live rate figure) plus,
  *  while it is overdue, for every full 30 days it is overdue the sheet's late percent in force on that boundary
- *  date (the overdue-from day — the due-by plus the grade's grace — plus 30, 60, 90 ... days) of that figure, each rounded like a due, the charges added up. The
+ *  date (the overdue-from day — the due-by plus the grade's grace — plus 30, 60, 90 ... days) of that figure plus the charges of the boundaries before it (compounding), each rounded like a due, the charges added up. The
  *  charge is never bound by a statement: it follows the sheet's today until settling freezes it in. A correction
  *  (a negative amount) has no floor and no late charge. No charge until the settings and the sheet's today are loaded. */
 export function dueNow(c: Claim, figure: string, floor: string | undefined, settings: Settings | undefined,
