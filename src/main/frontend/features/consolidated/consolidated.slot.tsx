@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useOverdue } from '../overdue/useOverdue';
@@ -9,6 +9,7 @@ import { useDueTotals } from '../rates/useDueTotals';
 import { hundredths, money, sumDues, trimmedSum } from '../rates/useRates';
 import { countWithStatus, STATUSES } from '../summary/statusCounts';
 import { useFigure } from '../locale/useLocale';
+import { useDescendants } from './useDescendants';
 
 /** One sheet's figures: its people (retired included), each as the names they go by (their name and aliases, as
  *  names are compared: ignoring case), joined by '\t' within a person and '\n' between people; each person's
@@ -16,20 +17,6 @@ import { useFigure } from '../locale/useLocale';
  *  out) added up, and per status how many claims have it. While the screen shows a date, each sheet is read as it stood at the end of that day, with that
  *  date as its today. */
 type Figures = { people: string; due: string; overdue: string; grades: string; statuses: string };
-
-/** The sheet's descendants (the sheets naming it as their parent, theirs, and so on), re-read from the store.
- *  Their own cached reads are dropped first, so each is re-read from the store too. */
-function useDescendants(sheetId: string) {
-  const queryClient = useQueryClient();
-  return useQuery({
-    queryKey: ['sheet', sheetId, 'descendants'],
-    queryFn: async () => {
-      const { sheets } = await getJson<{ sheets: string[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/descendants`);
-      for (const id of sheets) queryClient.removeQueries({ queryKey: ['sheet', id] });
-      return sheets;
-    },
-  });
-}
 
 /** How names are compared: ignoring case (and surrounding spaces). */
 const nameKey = (name: string) => name.trim().toLowerCase();
