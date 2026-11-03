@@ -1,10 +1,10 @@
-import { useState, type ChangeEvent } from 'react';
+import { Fragment, useState, type ChangeEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useSingleFlight } from '../../query/useSingleFlight';
 import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
-import { usePeriodDueTotals, usePersonPeriodDueTotals } from './usePeriodDueTotals';
+import { usePeriodDueTotals, usePersonPeriodCarried, usePersonPeriodDueTotals } from './usePeriodDueTotals';
 import { useSettings } from '../settings/useSettings';
 import { fiscalYearOf, periodsKey, usePeriods, type Period } from './usePeriods';
 import { useFigure } from '../locale/useLocale';
@@ -271,23 +271,28 @@ function PeriodColumnHeads({ sheetId }: { sheetId: string }) {
   return (
     <>
       {(periods.data ?? []).map((p) => (
-        <th key={p.id}>Due {p.name}</th>
+        <Fragment key={p.id}>
+          <th>Due {p.name}</th>
+          <th>Carried {p.name}</th>
+        </Fragment>
       ))}
     </>
   );
 }
 
-/** A person's due-total for each period on the sheet (fixed while the period is closed). */
+/** A person's due-total for each period on the sheet (fixed while the period is closed), and what is carried into it. */
 function PersonPeriodDueTotals({ sheetId, personId }: { sheetId: string; personId: number }) {
   const fig = useFigure();
   const periods = usePeriods(sheetId);
   const totals = usePersonPeriodDueTotals(sheetId).get(personId);
+  const carried = usePersonPeriodCarried(sheetId).get(personId);
   return (
     <>
       {(periods.data ?? []).map((p) => (
-        <td key={p.id} data-testid={`person-period-${p.name}-due-total`}>
-          {fig(totals?.get(p.name) ?? '')}
-        </td>
+        <Fragment key={p.id}>
+          <td data-testid={`person-period-${p.name}-due-total`}>{fig(totals?.get(p.name) ?? '')}</td>
+          <td data-testid={`person-period-${p.name}-carried`}>{fig(carried?.get(p.name) ?? '')}</td>
+        </Fragment>
       ))}
     </>
   );
