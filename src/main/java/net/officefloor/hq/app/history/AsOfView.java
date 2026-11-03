@@ -23,6 +23,8 @@ import org.springframework.transaction.support.TransactionTemplate;
  *  was on or before the date counts, in the order made, every later one does not (the sheet itself always
  *  exists); the date stands in for the sheet's today. A read replays those changes into the asof schema's tables,
  *  runs the usual read against them, and removes them again, all in one transaction, so no other read sees them.
+ *  The sheets it falls back to (its parent as it stood then, that one's parent and so on) are not shown as of the
+ *  date: their rows are read as they are now, so a rate it inherits applies as it does live.
  *  While the date is set, every change is refused. */
 @Component
 public class AsOfView {
@@ -80,17 +82,33 @@ public class AsOfView {
                 jdbc.update("INSERT INTO ASOF.SHEET SELECT * FROM PUBLIC.SHEET WHERE id = ?", sheetId);
             }
             jdbc.update("UPDATE ASOF.SHEET SET today = ? WHERE id = ?", Date.valueOf(day), sheetId);
+            List<String> shown = new ArrayList<>(List.of(sheetId));
+            for (String at = parent("ASOF", sheetId); at != null && !shown.contains(at); at = parent("PUBLIC", at)) {
+                shown.add(at);
+                for (RowCaptureInstaller.Table table : installer.tables().values()) {
+                    jdbc.update("INSERT INTO ASOF.\"" + table.name() + "\" SELECT * FROM PUBLIC.\"" + table.name()
+                            + "\" WHERE \"" + table.columns().get(table.sheetColumn()) + "\" = ?", at);
+                }
+            }
             jdbc.execute("SET SCHEMA ASOF");
             try {
                 return read.get();
             } finally {
                 jdbc.execute("SET SCHEMA PUBLIC");
-                for (RowCaptureInstaller.Table table : installer.tables().values()) {
-                    jdbc.update("DELETE FROM ASOF.\"" + table.name() + "\" WHERE \"" + table.columns().get(table.sheetColumn())
-                            + "\" = ?", sheetId);
+                for (String at : shown) {
+                    for (RowCaptureInstaller.Table table : installer.tables().values()) {
+                        jdbc.update("DELETE FROM ASOF.\"" + table.name() + "\" WHERE \""
+                                + table.columns().get(table.sheetColumn()) + "\" = ?", at);
+                    }
                 }
             }
         });
+    }
+
+    /** A sheet's parent in a schema; null when it has none (or is not there). */
+    private String parent(String schema, String sheetId) {
+        List<String> found = jdbc.queryForList("SELECT parent_id FROM " + schema + ".SHEET WHERE id = ?", String.class, sheetId);
+        return found.isEmpty() ? null : found.get(0);
     }
 
     /** The sheet's rows as of the end of a day, by table: the kept changes made while its today was on or before

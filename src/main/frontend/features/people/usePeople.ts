@@ -9,7 +9,8 @@ import { useReader } from '../../api/readNow';
  *  claims dated within a hold, unless bound by a statement, then count in no live total); their own terms in
  *  days (null when they have none: their grade's, else the sheet's, apply); their contact (null when they have none); their tags (sorted, comma separated; null when none);
  *  the sheet they were transferred from (null when they were not transferred here); their past retirements,
- *  oldest first; their snapshots, one per SNAPSHOT written for them, oldest first. */
+ *  oldest first; their snapshots, one per SNAPSHOT written for them, oldest first; their statements still standing,
+ *  oldest first by date (those a merge or transfer brought over among them). */
 export type Person = {
   id: number;
   name: string;
@@ -28,11 +29,15 @@ export type Person = {
   origin: string | null;
   retirements: Retirement[];
   snapshots: SnapshotLine[];
+  statements: StatementLine[];
 };
 
 /** One of a person's snapshots: the day being left (yyyy-mm-dd; null when the sheet had no today) and their
  *  due-total as it stood then (two decimals, or 'n/a'). */
 export type SnapshotLine = { day: string | null; dueTotal: string };
+
+/** One of a person's statements still standing: its date (yyyy-mm-dd) and due-total (two decimals, or 'n/a'). */
+export type StatementLine = { date: string; dueTotal: string };
 
 /** One of a person's past retirements: from the date they were retired from to the sheet's today when they
  *  were unretired (yyyy-mm-dd). No claim of theirs may be dated after its from and before its to. */

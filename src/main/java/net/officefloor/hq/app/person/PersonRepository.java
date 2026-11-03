@@ -29,7 +29,7 @@ public class PersonRepository {
             rs.getDate("statement_date") == null ? null : rs.getDate("statement_date").toLocalDate().toString(),
             rs.getDate("retired_from") == null ? null : rs.getDate("retired_from").toLocalDate().toString(),
             false, List.of(), List.of(), (Integer) rs.getObject("terms", Integer.class), rs.getString("contact"),
-            rs.getString("origin_sheet"), List.of(), rs.getString("tags"), List.of());
+            rs.getString("origin_sheet"), List.of(), rs.getString("tags"), List.of(), List.of());
 
     /** The position after the last person's on the sheet being inserted into (the end of its list). */
     private static final String NEXT_POSITION = "(SELECT COALESCE(MAX(q.list_position), 0) + 1 FROM person q WHERE q.sheet_id = sheet.id)";
@@ -66,10 +66,16 @@ public class PersonRepository {
                 rs -> {
                     snapshots.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(snapshot(rs));
                 }, sheetId);
+        Map<Long, List<StatementLine>> statements = new HashMap<>();
+        jdbc.query("SELECT person_id, statement_date, due_total FROM person_statement WHERE sheet_id = ? ORDER BY statement_date, seq",
+                rs -> {
+                    statements.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(statementLine(rs));
+                }, sheetId);
         return people.stream().map(p -> p.withGrades(grades.getOrDefault(p.id(), List.of()))
                 .withHolds(holds.getOrDefault(p.id(), List.of()))
                 .withRetirements(retirements.getOrDefault(p.id(), List.of()))
-                .withSnapshots(snapshots.getOrDefault(p.id(), List.of()))).toList();
+                .withSnapshots(snapshots.getOrDefault(p.id(), List.of()))
+                .withStatements(statements.getOrDefault(p.id(), List.of()))).toList();
     }
 
     private static SnapshotLine snapshot(java.sql.ResultSet rs) throws java.sql.SQLException {
@@ -81,6 +87,16 @@ public class PersonRepository {
     public List<SnapshotLine> snapshots(String sheetId, long id) {
         return jdbc.query("SELECT left_day, due_total FROM person_snapshot WHERE sheet_id = ? AND person_id = ? ORDER BY id",
                 (rs, i) -> snapshot(rs), sheetId, id);
+    }
+
+    private static StatementLine statementLine(java.sql.ResultSet rs) throws java.sql.SQLException {
+        return new StatementLine(rs.getDate("statement_date").toLocalDate().toString(), rs.getString("due_total"));
+    }
+
+    /** A person's statements still standing, by date (oldest first; taken order among those of one date). */
+    public List<StatementLine> statements(String sheetId, long id) {
+        return jdbc.query("SELECT statement_date, due_total FROM person_statement WHERE sheet_id = ? AND person_id = ?"
+                + " ORDER BY statement_date, seq", (rs, i) -> statementLine(rs), sheetId, id);
     }
 
     /** Keep a snapshot of a person: their due-total as it stood on the day being left. */
@@ -147,7 +163,8 @@ public class PersonRepository {
         List<Person> found = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND id = ?", ROW,
                 sheetId, id);
         return found.isEmpty() ? null : found.get(0).withGrades(grades(sheetId, id)).withHolds(holds(sheetId, id))
-                .withRetirements(retirements(sheetId, id)).withSnapshots(snapshots(sheetId, id));
+                .withRetirements(retirements(sheetId, id)).withSnapshots(snapshots(sheetId, id))
+                .withStatements(statements(sheetId, id));
     }
 
     /** Record a statement taken of a person: one more, with its due-total and date. */
@@ -326,7 +343,7 @@ public class PersonRepository {
         }, keys);
         long id = keys.getKey().longValue();
         grade(sheetId, id, grade, null);
-        return new Person(id, name, grade, 1, 0, null, null, null, false, List.of(new GradeFrom(grade, null)), List.of(), terms, contact, null, List.of(), null, List.of());
+        return new Person(id, name, grade, 1, 0, null, null, null, false, List.of(new GradeFrom(grade, null)), List.of(), terms, contact, null, List.of(), null, List.of(), List.of());
     }
 
     /** Swap two people's places in the sheet's list. */

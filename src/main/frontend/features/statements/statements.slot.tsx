@@ -13,7 +13,8 @@ import { Col } from '../columns/useColumns';
  *  of their counting claims to the figure it has then (unbinding the rest), until the next one; a
  *  steward can cancel the last one, its claims going live again. A date beside the button takes the
  *  statement as of that date (on or before the sheet's today; blank: now); it is cleared once that statement is
- *  taken or refused. */
+ *  taken or refused. Below, one line per statement still standing (oldest first, by date), as its date and
+ *  due-total. */
 function PersonStatement({ sheetId, personId }: { sheetId: string; personId: number }) {
   const fig = useFigure();
   const people = usePeople(sheetId);
@@ -58,6 +59,13 @@ function PersonStatement({ sheetId, personId }: { sheetId: string; personId: num
       <Col id="statement-count"><td data-testid="person-statement-count">{p?.statementCount ?? 0}</td></Col>
       <Col id="stated-total"><td data-testid="person-stated-total">{fig(p?.statedTotal ?? '')}</td></Col>
       <Col id="statement-date"><td data-testid="person-statement-date">{p?.statementDate ?? ''}</td></Col>
+      <td>
+        {(p?.statements ?? []).map((s, i) => (
+          <div key={i} data-testid="person-statement-line-line">
+            {s.date} {fig(s.dueTotal)}
+          </div>
+        ))}
+      </td>
       <td>
         <input
           type="text"
@@ -108,6 +116,7 @@ export const contributions = [
         <Col id="statement-count"><th>Statements</th></Col>
         <Col id="stated-total"><th>Stated total</th></Col>
         <Col id="statement-date"><th>Stated on</th></Col>
+        <th>Statement lines</th>
         <th />
       </>
     ),
