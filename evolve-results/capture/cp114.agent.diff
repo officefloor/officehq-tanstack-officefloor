@@ -1,0 +1,227 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index af90f04de..f5f71323a 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -27,11 +27,12 @@ function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: numbe
+   );
+ }
+ 
+-type ClaimAction = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | 'defer' | 'proof' | 'remind' | 'split' | 'redate' | 'comment';
++type ClaimAction = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | 'delete' | 'restore' | 'defer' | 'proof' | 'remind' | 'split' | 'redate' | 'comment';
+ 
+ /** A claim's status changes; the server refuses one its status does not allow, a settle by the user
+  *  who opened the claim, and an approve or reject by anyone but a steward (an approve also by the
+  *  user who opened the claim), a re-settle by anyone but a steward or of a claim not SETTLED, and a void of a SETTLED claim by anyone but a steward, more than 7 days after its settlement or in a closed period. A reject takes the reason typed on the claim's row.
++ *  A delete moves a DRAFT claim (not in a closed period) to DELETED, where it counts nowhere; a restore makes it a DRAFT again, only on the sheet-today it was deleted.
+  *  A settle or approve of a claim whose due is above the proof threshold in force on its date is refused while it has no proof. */
+ const ACTIONS: [Exclude<ClaimAction, 'defer' | 'proof' | 'remind' | 'split' | 'redate' | 'comment'>, string][] = [
+   ['open', 'Open'],
+@@ -40,6 +41,8 @@ const ACTIONS: [Exclude<ClaimAction, 'defer' | 'proof' | 'remind' | 'split' | 'r
+   ['reject', 'Reject'],
+   ['void', 'Void'],
+   ['resettle', 'Re-settle'],
++  ['delete', 'Delete'],
++  ['restore', 'Restore'],
+ ];
+ 
+ /** A person's claims, newest first, under their row, with a form that adds a claim, or edits one
+diff --git a/src/main/frontend/features/claims/useClaims.ts b/src/main/frontend/features/claims/useClaims.ts
+index 1990eff97..9a0bd96e0 100644
+--- a/src/main/frontend/features/claims/useClaims.ts
++++ b/src/main/frontend/features/claims/useClaims.ts
+@@ -4,8 +4,8 @@ import { heldOn, type Hold } from '../people/usePeople';
+ 
+ /** A claim's status: DRAFT -> OPEN -> SETTLED; a clerk's settle above the clerk limit goes to PENDING
+  *  instead, which a steward approves (SETTLED) or rejects (OPEN again); a DRAFT, OPEN or PENDING claim
+- *  can become VOID. */
+-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
++ *  can become VOID; a DRAFT can be DELETED (counted nowhere) and restored to DRAFT on the day it was deleted. */
++export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED';
+ 
+ /** A claim: its amount with two decimals, its date (yyyy-mm-dd), its note, its status, its number on
+  *  the sheet (given when it is opened: 1, 2, ... or, under period numbering, <period>-<n> or X-<n>; null while a draft and once void) and the due fixed when it was
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ChangeClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ChangeClaimStatus.java
+index e51c002c6..d321179a4 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ChangeClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ChangeClaimStatus.java
+@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ /** Move a claim along its status: open, settle, approve, reject (with a reason) or void, each only from the
+- *  statuses it allows; or defer an OPEN claim until a date (see {@link ClaimDeferral}); or raise its proofs count (see {@link ClaimProof}); or split an amount off an OPEN claim (see {@link ClaimSplit}); or re-date an OPEN or PENDING claim (see {@link ClaimRedate}); or lock or unlock a claim's editor (see {@link ClaimLock}); or remind an OPEN or PENDING claim (see {@link ClaimRemind}); or comment a claim (see {@link ClaimComment}). */
++ *  statuses it allows; or defer an OPEN claim until a date (see {@link ClaimDeferral}); or raise its proofs count (see {@link ClaimProof}); or split an amount off an OPEN claim (see {@link ClaimSplit}); or re-date an OPEN or PENDING claim (see {@link ClaimRedate}); or lock or unlock a claim's editor (see {@link ClaimLock}); or remind an OPEN or PENDING claim (see {@link ClaimRemind}); or comment a claim (see {@link ClaimComment}); or delete a DRAFT claim or restore it the same day (see {@link ClaimDelete}). */
+ public class ChangeClaimStatus {
+     public void change(@PathVariable("sheetId") String sheetId, @PathVariable("claimId") String claimId,
+             @PathVariable("action") String action, @RequestBody ClaimActionRequest request, ServerHttpConnection connection, ClaimRepository repository,
+@@ -59,6 +59,14 @@ public class ChangeClaimStatus {
+             claim.set(ClaimComment.apply(id, cid, request == null ? null : request.text(), by, repository, audit));
+             return;
+         }
++        if ("delete".equals(action == null ? "" : action.trim())) {
++            claim.set(ClaimDelete.delete(id, cid, by, repository, periods, settings, audit));
++            return;
++        }
++        if ("restore".equals(action == null ? "" : action.trim())) {
++            claim.set(ClaimDelete.restore(id, cid, by, repository, periods, settings, audit));
++            return;
++        }
+         if ("proof".equals(action == null ? "" : action.trim())) {
+             claim.set(ClaimProof.apply(id, cid, by, repository, periods, audit));
+             return;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 21b467055..4600b86bc 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -4,7 +4,7 @@ import java.util.List;
+ import net.officefloor.hq.app.person.Hold;
+ 
+ /** A claim of a person on a sheet: its amount with two decimals, its date (ISO yyyy-MM-dd), note and status
+- *  (DRAFT, OPEN, PENDING — a clerk's settle above the clerk limit, awaiting a steward — SETTLED or VOID), its number on the sheet (a sheet-wide 1, 2, ... or, under period numbering, <period>-<n> or X-<n>; null while a draft; a voided claim keeps the one it had), and the due fixed when it was settled
++ *  (DRAFT, OPEN, PENDING — a clerk's settle above the clerk limit, awaiting a steward — SETTLED, VOID or DELETED — a deleted DRAFT, counted nowhere), its number on the sheet (a sheet-wide 1, 2, ... or, under period numbering, <period>-<n> or X-<n>; null while a draft; a voided claim keeps the one it had), and the due fixed when it was settled
+  *  (null unless settled with a rate; its due is then worked out live from the rates), and who opened it
+  *  (null until it is opened), whether its person's last statement bound it, and the figure it was bound to
+  *  (null when not bound, or bound with no figure: its due then stays live), and, for a correction (a negative
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimDelete.java b/src/main/java/net/officefloor/hq/app/claim/ClaimDelete.java
+new file mode 100644
+index 000000000..c7e9849d9
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimDelete.java
+@@ -0,0 +1,71 @@
++package net.officefloor.hq.app.claim;
++
++import java.time.LocalDate;
++import java.util.List;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.BadRequestException;
++import net.officefloor.hq.app.period.PeriodGuard;
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.settings.SettingsRepository;
++
++/** Delete a DRAFT claim (not in a closed period, nor held by another user's editor): it becomes DELETED, counts
++ *  nowhere and can be neither edited, opened nor voided; its log gains a DELETED line and CLAIM_DELETED is written.
++ *  Or restore a DELETED claim on the same sheet-today it was deleted: it is a DRAFT again, its log gains a DRAFT line
++ *  and CLAIM_RESTORED is written; on a later day the restore is refused. Every check is made before anything is
++ *  written, so a refusal writes nothing to the store or the audit. */
++final class ClaimDelete {
++    private ClaimDelete() {
++    }
++
++    static Claim delete(String id, long cid, String by, ClaimRepository repository, PeriodRepository periods,
++            SettingsRepository settings, Audit audit) throws BadRequestException {
++        if (settings.archived(id)) {
++            throw new BadRequestException("the sheet is archived");
++        }
++        Claim found = repository.find(id, cid);
++        if (found == null) {
++            throw new BadRequestException("no such claim");
++        }
++        if (!found.status().equals("DRAFT")) {
++            throw new BadRequestException("only a DRAFT claim can be deleted");
++        }
++        PeriodGuard.open(periods, id, LocalDate.parse(found.dueBy()));
++        String holder = repository.lockedBy(id, cid);
++        if (holder != null && !holder.equals(by)) {
++            throw new BadRequestException("the claim is being edited by " + holder);
++        }
++        if (!repository.changeStatus(id, cid, List.of("DRAFT"), "DELETED")) {
++            throw new BadRequestException("only a DRAFT claim can be deleted");
++        }
++        repository.unlock(id, cid, by);
++        repository.log(id, cid, by);
++        audit.record("CLAIM_DELETED sheet=" + id + " by=" + by + " person=" + repository.personName(id, found.personId())
++                + " amount=" + found.amount() + " date=" + found.date());
++        return repository.find(id, cid);
++    }
++
++    static Claim restore(String id, long cid, String by, ClaimRepository repository, PeriodRepository periods,
++            SettingsRepository settings, Audit audit) throws BadRequestException {
++        if (settings.archived(id)) {
++            throw new BadRequestException("the sheet is archived");
++        }
++        Claim found = repository.find(id, cid);
++        if (found == null) {
++            throw new BadRequestException("no such claim");
++        }
++        if (!found.status().equals("DELETED")) {
++            throw new BadRequestException("only a DELETED claim can be restored");
++        }
++        if (!repository.deletedToday(id, cid)) {
++            throw new BadRequestException("a claim can be restored only on the day it was deleted");
++        }
++        PeriodGuard.open(periods, id, LocalDate.parse(found.dueBy()));
++        if (!repository.changeStatus(id, cid, List.of("DELETED"), "DRAFT")) {
++            throw new BadRequestException("only a DELETED claim can be restored");
++        }
++        repository.log(id, cid, by);
++        audit.record("CLAIM_RESTORED sheet=" + id + " by=" + by + " person=" + repository.personName(id, found.personId())
++                + " amount=" + found.amount() + " date=" + found.date());
++        return repository.find(id, cid);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimProof.java b/src/main/java/net/officefloor/hq/app/claim/ClaimProof.java
+index 03116243c..f0f196161 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimProof.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimProof.java
+@@ -6,7 +6,7 @@ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.period.PeriodGuard;
+ import net.officefloor.hq.app.period.PeriodRepository;
+ 
+-/** Raise a claim's proofs count by one: not a SETTLED or VOID claim, nor one in a closed period. Every check is
++/** Raise a claim's proofs count by one: not a SETTLED, VOID or DELETED claim, nor one in a closed period. Every check is
+  *  made before anything is written, so a refusal writes nothing to the store or the audit. */
+ final class ClaimProof {
+     private ClaimProof() {
+@@ -18,7 +18,7 @@ final class ClaimProof {
+         if (found == null) {
+             throw new BadRequestException("no such claim");
+         }
+-        if (found.status().equals("SETTLED") || found.status().equals("VOID")) {
++        if (found.status().equals("SETTLED") || found.status().equals("VOID") || found.status().equals("DELETED")) {
+             throw new BadRequestException("a " + found.status() + " claim cannot be given a proof");
+         }
+         PeriodGuard.open(periods, id, LocalDate.parse(found.dueBy()));
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 4b3570131..f53d48ecc 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -423,11 +423,11 @@ public class ClaimRepository {
+                 Date.valueOf(until), claimId, sheetId) > 0);
+     }
+ 
+-    /** Raise a claim's proofs count by one, only when it is not SETTLED or VOID; the count now, or null when the
++    /** Raise a claim's proofs count by one, only when it is not SETTLED, VOID or DELETED; the count now, or null when the
+      *  sheet has no such claim in those statuses. */
+     public Integer addProof(String sheetId, long claimId) {
+         if (jdbc.update("UPDATE claim SET proofs = proofs + 1 WHERE id = ? AND sheet_id = ?"
+-                + " AND status NOT IN ('SETTLED', 'VOID')", claimId, sheetId) == 0) {
++                + " AND status NOT IN ('SETTLED', 'VOID', 'DELETED')", claimId, sheetId) == 0) {
+             return null;
+         }
+         return jdbc.queryForObject("SELECT proofs FROM claim WHERE id = ? AND sheet_id = ?", Integer.class, claimId, sheetId);
+@@ -709,6 +709,14 @@ public class ClaimRepository {
+         return found.isEmpty() ? null : found.get(0);
+     }
+ 
++    /** Whether a claim's status log last records it DELETED on the sheet's today. */
++    public boolean deletedToday(String sheetId, long claimId) {
++        List<Long> found = jdbc.query("SELECT DATEDIFF('DAY', l.on_date, s.today) AS days FROM claim_log l"
++                + " JOIN sheet s ON s.id = l.sheet_id WHERE l.sheet_id = ? AND l.claim_id = ? AND l.status = 'DELETED'"
++                + " ORDER BY l.id DESC LIMIT 1", (rs, i) -> rs.getLong("days"), sheetId, claimId);
++        return !found.isEmpty() && found.get(0) == 0;
++    }
++
+     /** The status logs of the sheet's claims, by claim id: each a line per status it has had, oldest first,
+      *  as "<STATUS> by <user> on <date> due=<due>" ('n/a' when it had no due). */
+     public Map<String, List<String>> logs(String sheetId) {
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
+index 567fd6676..4fdf50252 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
+@@ -6,6 +6,7 @@
+ # Or redate: a steward re-dates an OPEN or PENDING claim (body: date; see ClaimRedate).
+ # Or lock / unlock: open or close the claim's editor, locking it for other users (see ClaimLock).
+ # Or comment: keep the text (body: text; refused when empty) with its writer and the sheet's today (see ClaimComment).
++# Or delete a DRAFT claim (not in a closed period) to DELETED, or restore a DELETED one to DRAFT on the sheet-today it was deleted (see ClaimDelete).
+ # Or proof: raise the proofs count of a claim not SETTLED or VOID (nor in a closed period) by one. Any other change is refused (400) and writes nothing.
+ guard:
+   class: net.officefloor.hq.app.settings.RefuseViewer
