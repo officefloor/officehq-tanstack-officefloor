@@ -167,7 +167,8 @@ public class PoolRepository {
     }
 
     /** The sheet's pools, by name, each with its members (people and pools) in the order they were added, and
-     *  their cuts of the pool's pot when the pool is balanced and has a pot. A pool that is a member of none has
+     *  their cuts of the pool's pot when the pool is balanced, has a pot and has a current member not retired. A
+     *  pool's total share counts every current member's share, a retired member's included. A pool that is a member of none has
      *  the sheet's pot; a pool that is a member of another has its cut there as its pot (none when that pool
      *  shows no cuts). */
     public List<Pool> list(String sheetId) {
@@ -225,10 +226,12 @@ public class PoolRepository {
             }
         }
         List<PoolMember> of = members.get(name);
-        BigDecimal total = of.stream().filter(m -> m.current() && !m.retired()).map(m -> new BigDecimal(m.share()))
+        BigDecimal total = of.stream().filter(PoolMember::current).map(m -> new BigDecimal(m.share()))
                 .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
         boolean balanced = total.compareTo(HUNDRED) == 0;
-        Pool pool = new Pool(name, balanced && pot != null ? cut(of, pot, held) : of, total.toPlainString(), balanced);
+        boolean allRetired = of.stream().filter(PoolMember::current).allMatch(PoolMember::retired);
+        Pool pool = new Pool(name, balanced && pot != null && !allRetired ? cut(of, pot, held) : of,
+                total.toPlainString(), balanced);
         done.put(name, pool);
         return pool;
     }
