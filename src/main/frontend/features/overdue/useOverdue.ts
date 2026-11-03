@@ -4,9 +4,18 @@ import { atLeast, due, isCorrection, rateFor, sumDues, useRates, withCharge } fr
 import { settingOn, useSettings, type Settings } from '../settings/useSettings';
 import { useSheetToday } from '../today/useSheetToday';
 
-/** Whether a claim is overdue: it is open (OPEN or PENDING), not deferred, and its due-by is before the sheet's today. */
-export function isOverdue(c: Claim, today: string): boolean {
-  return isOpen(c) && !isDeferred(c, today) && c.dueBy < today;
+/** The day (yyyy-mm-dd) a claim's overdue days count from: its due-by plus the grace days, in force on the claim's
+ *  date, of the grade its person had on that date (`grade`); its due-by when that grade has none then. */
+export function overdueFrom(c: Claim, settings: Settings | undefined, grade: string | undefined): string {
+  const grace = grade === undefined ? null : settingOn(settings, `grace-${grade}`, c.date);
+  if (grace === null || grace === '') return c.dueBy;
+  return new Date(Date.parse(`${c.dueBy}T00:00:00Z`) + Number(grace) * 86_400_000).toISOString().slice(0, 10);
+}
+
+/** Whether a claim is overdue: it is open (OPEN or PENDING), not deferred, and its overdue-from day (see
+ *  `overdueFrom`; `grade` is the grade its person had on its date) is before the sheet's today. */
+export function isOverdue(c: Claim, today: string, settings: Settings | undefined, grade: string | undefined): boolean {
+  return isOpen(c) && !isDeferred(c, today) && overdueFrom(c, settings, grade) < today;
 }
 
 /** Whether a claim's live figures (its rate step and late charge) round half up: when the claim is
@@ -25,15 +34,15 @@ export function roundsHalfUp(c: Claim, claims: Claim[] | undefined, settings: Se
 /** A claim's due now: a settled claim's frozen due; else the greater of the floor (two decimals; none while
  *  it is not loaded) and its figure (the one its last statement bound it to, else its live rate figure) plus,
  *  while it is overdue, for every full 30 days it is overdue the sheet's late percent in force on that boundary
- *  date (the due-by plus 30, 60, 90 ... days) of that figure, each rounded like a due, the charges added up. The
+ *  date (the overdue-from day — the due-by plus the grade's grace — plus 30, 60, 90 ... days) of that figure, each rounded like a due, the charges added up. The
  *  charge is never bound by a statement: it follows the sheet's today until settling freezes it in. A correction
  *  (a negative amount) has no floor and no late charge. No charge until the settings and the sheet's today are loaded. */
 export function dueNow(c: Claim, figure: string, floor: string | undefined, settings: Settings | undefined,
-  today: string | undefined, halfUp: boolean): string {
+  today: string | undefined, halfUp: boolean, grade: string | undefined): string {
   if (c.due !== null || figure === 'n/a' || isCorrection(c.amount)) return figure;
   const pcts: string[] = [];
-  if (settings !== undefined && today !== undefined && isOverdue(c, today)) {
-    const dueBy = Date.parse(`${c.dueBy}T00:00:00Z`);
+  if (settings !== undefined && today !== undefined && isOverdue(c, today, settings, grade)) {
+    const dueBy = Date.parse(`${overdueFrom(c, settings, grade)}T00:00:00Z`);
     const periods = Math.floor((Date.parse(`${today}T00:00:00Z`) - dueBy) / 86_400_000 / 30);
     for (let n = 1; n <= periods; n++) {
       const boundary = new Date(dueBy + n * 30 * 86_400_000).toISOString().slice(0, 10);
@@ -48,10 +57,10 @@ export function dueNow(c: Claim, figure: string, floor: string | undefined, sett
  *  the claim's policy (see `roundsHalfUp`) — the other claims on the sheet are what a correction is looked up in.
  *  No floor until the settings are loaded. */
 export function claimDueNow(c: Claim, claims: Claim[] | undefined, pct: string | undefined,
-  settings: Settings | undefined, today: string | undefined): string {
+  settings: Settings | undefined, today: string | undefined, grade: string | undefined): string {
   const up = roundsHalfUp(c, claims, settings, today);
   const floor = settings === undefined ? undefined : settingOn(settings, 'floor', c.date) ?? undefined;
-  return dueNow(c, fixedDue(c) ?? due(c.amount, pct, up), floor, settings, today, up);
+  return dueNow(c, fixedDue(c) ?? due(c.amount, pct, up), floor, settings, today, up, grade);
 }
 
 /** Each person's overdue figures, by person id: how many of their claims that count are overdue, and
@@ -69,12 +78,12 @@ export function useOverdue(sheetId: string): Map<number, { count: number; total:
   if (settings === undefined || today === undefined) return figures;
   for (const p of people.data ?? []) {
     const overdue = (claims.data ?? []).filter(
-      (c) => c.personId === p.id && counts(c, holds, today) && isOverdue(c, today),
+      (c) => c.personId === p.id && counts(c, holds, today) && isOverdue(c, today, settings, gradeOn(p, c.date)),
     );
     figures.set(p.id, {
       count: overdue.length,
       total: sumDues(overdue.map((c) =>
-        claimDueNow(c, claims.data, rateFor(rates.data, gradeOn(p, c.date), c.date), settings, today))),
+        claimDueNow(c, claims.data, rateFor(rates.data, gradeOn(p, c.date), c.date), settings, today, gradeOn(p, c.date)))),
     });
   }
   return figures;

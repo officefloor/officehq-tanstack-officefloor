@@ -43,6 +43,10 @@ public class SaveSettings {
             repository.setGradeTerms(id, grade, from(input, "terms-" + grade, today), terms);
             audit.record(prefix + "terms-" + grade + " value=" + (terms == null ? "" : terms) + given(input, "terms-" + grade));
         });
+        input.gradeGrace().forEach((grade, days) -> {
+            repository.setGradeGrace(id, grade, from(input, "grace-" + grade, today), days);
+            audit.record(prefix + "grace-" + grade + " value=" + (days == null ? "" : days) + given(input, "grace-" + grade));
+        });
         if (input.setsLatePct()) {
             repository.setLatePct(id, from(input, "late-pct", today), input.latePct());
             audit.record(prefix + "late-pct value=" + SettingsRepository.money(input.latePct()) + given(input, "late-pct"));

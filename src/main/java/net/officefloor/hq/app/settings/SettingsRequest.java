@@ -4,9 +4,10 @@ package net.officefloor.hq.app.settings;
  *  {@code from} is the from-date given for a dated setting, by key (clerk-limit, floor, terms, terms-<grade>, late-pct,
  *  cap, proof-threshold, note-threshold); blank or left out is the sheet's today. {@code permissions} is the permission matrix entries
  *  given, by action: a comma separated list of roles, blank keeping the standing rule. {@code graceDays} is the grace days, blank meaning off.
- *  {@code entryDate} is the entry date, blank meaning off. */
+ *  {@code entryDate} is the entry date, blank meaning off. {@code gradeGrace} is each grade's grace days given, by grade
+ *  (dated, from-date key grace-<grade>), blank meaning none. */
 public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom,
         java.util.Map<String, String> gradeTerms, String cap, java.util.Map<String, String> from,
         String proofThreshold, java.util.Map<String, String> permissions, String graceDays,
-        String noteThreshold, String entryDate) {
+        String noteThreshold, String entryDate, java.util.Map<String, String> gradeGrace) {
 }

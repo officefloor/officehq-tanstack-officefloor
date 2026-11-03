@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  numbering from-date is a date, blank meaning off; a grade's (A, B or C) terms are like the sheet's, blank
  *  meaning the grade uses the sheet's terms; the cap is 0.00 or more with up to two decimals, blank meaning none; the proof threshold and the note threshold likewise. A from-date given for a
  *  setting with a figure is a date; blank is the sheet's today. A permission matrix entry (open, settle, void, reassign, close or reopen) is a comma separated
- *  list of roles (clerk, steward), blank keeping the standing rule. The grace days are a whole number of days, 0 to 3650, blank meaning off. The entry date is a date, blank meaning off. A setting left out is not changed. */
+ *  list of roles (clerk, steward), blank keeping the standing rule. The grace days are a whole number of days, 0 to 3650, blank meaning off. The entry date is a date, blank meaning off. A grade's grace days are a whole number of days, 0 to 3650, blank meaning none. A setting left out is not changed. */
 public class ValidateSettings {
     private static final Pattern MONEY = Pattern.compile("\\d{1,9}(\\.\\d{1,2})?|\\.\\d{1,2}");
     private static final List<String> GRADES = List.of("A", "B", "C");
@@ -50,6 +50,19 @@ public class ValidateSettings {
             gradeTerms.put(grade, value.isEmpty() ? null : Integer.parseInt(value));
         }
         for (String grade : grades.keySet()) {
+            if (!GRADES.contains(grade)) throw new BadRequestException("grade must be A, B or C");
+        }
+        Map<String, Integer> gradeGrace = new LinkedHashMap<>();
+        Map<String, String> graces = request == null || request.gradeGrace() == null ? Map.of() : request.gradeGrace();
+        for (String grade : GRADES) {
+            String value = graces.get(grade) == null ? null : graces.get(grade).trim();
+            if (value == null) continue;
+            if (!value.isEmpty() && (!TERMS.matcher(value).matches() || Integer.parseInt(value) > 3650)) {
+                throw new BadRequestException("grace days for grade " + grade + " must be a whole number of days from 0 to 3650");
+            }
+            gradeGrace.put(grade, value.isEmpty() ? null : Integer.parseInt(value));
+        }
+        for (String grade : graces.keySet()) {
             if (!GRADES.contains(grade)) throw new BadRequestException("grade must be A, B or C");
         }
         if (latePct != null && !MONEY.matcher(latePct).matches()) {
@@ -136,7 +149,8 @@ public class ValidateSettings {
                 case "cap" -> cap != null;
                 case "proof-threshold" -> proof != null;
                 case "note-threshold" -> note != null;
-                default -> key.startsWith("terms-") && gradeTerms.containsKey(key.substring(6));
+                default -> (key.startsWith("terms-") && gradeTerms.containsKey(key.substring(6)))
+                        || (key.startsWith("grace-") && gradeGrace.containsKey(key.substring(6)));
             };
             if (!saved) continue;
             try {
@@ -155,6 +169,6 @@ public class ValidateSettings {
                 proof != null, proof == null || proof.isEmpty() ? null : new BigDecimal(proof).setScale(2), permissions,
                 grace != null, grace == null || grace.isEmpty() ? null : Integer.parseInt(grace),
                 note != null, note == null || note.isEmpty() ? null : new BigDecimal(note).setScale(2),
-                entry != null, entryDate));
+                entry != null, entryDate, gradeGrace));
     }
 }

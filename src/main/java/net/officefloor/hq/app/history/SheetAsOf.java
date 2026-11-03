@@ -142,10 +142,21 @@ public record SheetAsOf(LocalDate day, Map<Long, Claim> claims, Map<Long, TreeMa
         return due.max(floor(LocalDate.parse(claim.date())));
     }
 
+    /** The day a claim's overdue days counted from then: its due-by plus the grace days, then in force on its date,
+     *  of the grade its person had on that date (its due-by when none). */
+    public LocalDate overdueFrom(Claim claim) {
+        LocalDate dueBy = LocalDate.parse(claim.dueBy());
+        LocalDate date = LocalDate.parse(claim.date());
+        String grade = gradeOn(claim.personId(), date);
+        if (grade == null) return dueBy;
+        List<String> found = setting("grace-" + grade, date);
+        return found.isEmpty() || found.get(0) == null ? dueBy : dueBy.plusDays(Integer.parseInt(found.get(0)));
+    }
+
     private BigDecimal lateCharge(Claim claim, BigDecimal figure) {
         BigDecimal charge = BigDecimal.ZERO.setScale(2);
         if (!claim.open() || claim.deferred()) return charge;
-        LocalDate dueBy = LocalDate.parse(claim.dueBy());
+        LocalDate dueBy = overdueFrom(claim);
         long periods = dueBy.isBefore(day) ? ChronoUnit.DAYS.between(dueBy, day) / 30 : 0;
         RoundingMode rounding = rounding(claim);
         for (long n = 1; n <= periods; n++) {

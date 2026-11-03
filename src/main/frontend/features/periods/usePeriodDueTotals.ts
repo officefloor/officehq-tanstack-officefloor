@@ -30,7 +30,7 @@ export function usePersonPeriodDueTotals(sheetId: string): Map<number, Map<strin
           : sumDues(
               own
                 .filter((c) => p.from <= c.dueBy && c.dueBy <= p.to && countsOn(c, p.to, holds, today))
-                .map((c) => claimDueNow(c, claims.data, rateFor(rates.data, gradeOn(person, c.date), c.date), settings, today)),
+                .map((c) => claimDueNow(c, claims.data, rateFor(rates.data, gradeOn(person, c.date), c.date), settings, today, gradeOn(person, c.date))),
             ),
       );
     }

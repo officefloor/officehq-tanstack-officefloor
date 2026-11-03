@@ -193,8 +193,9 @@ public class ClaimRepository {
 
     /** A claim's due now: a settled claim's frozen due; else the greater of the sheet's floor in force on the
      *  claim's date and its figure (the one its last statement bound it to, else its live rate figure) plus, while it
-     *  is overdue (OPEN or PENDING and its due-by — fixed when it was created — before the sheet's today), for every
-     *  full 30 days it is overdue, the sheet's late percent in force on that boundary date (the due-by plus 30, 60,
+     *  is overdue (OPEN or PENDING and its due-by — fixed when it was created — plus its grade's grace days before the
+     *  sheet's today), for every full 30 days it is overdue, the sheet's late percent in force on that boundary date (the
+     *  due-by plus the grace plus 30, 60,
      *  90 ... days) of that figure, each rounded to two decimals by the claim's rounding, the charges added up (a
      *  boundary whose percent is 0.00 adds nothing). A statement never binds the charge: it keeps following the
      *  sheet's today until settling freezes it in. A correction (a negative amount) has no floor and no late charge,
@@ -207,6 +208,25 @@ public class ClaimRepository {
         return due.max(settings.floor(sheetId, LocalDate.parse(claim.date())));
     }
 
+    /** The day a claim's overdue days are counted from: its due-by plus the grace days, in force on the claim's date,
+     *  of the grade its person had on that date (its due-by when that grade has no grace then). The claim is overdue
+     *  while open, not deferred, and this day is before the sheet's today; its 30-day late charge boundaries count
+     *  from it. */
+    public LocalDate overdueFrom(String sheetId, Claim claim) {
+        LocalDate dueBy = LocalDate.parse(claim.dueBy());
+        List<String> grade = jdbc.queryForList("SELECT " + GRADE_ON + " FROM DUAL", String.class, sheetId,
+                claim.personId(), claim.date());
+        if (grade.isEmpty() || grade.get(0) == null) return dueBy;
+        Integer grace = settings.gradeGrace(sheetId, grade.get(0), LocalDate.parse(claim.date()));
+        return grace == null ? dueBy : dueBy.plusDays(grace);
+    }
+
+    /** Whether a claim is overdue on a day: open, not deferred, and its overdue-from day (see {@link #overdueFrom})
+     *  before that day. */
+    public boolean overdue(String sheetId, Claim claim, LocalDate today) {
+        return claim.open() && !claim.deferred() && overdueFrom(sheetId, claim).isBefore(today);
+    }
+
     /** The late charge on a claim's figure now (see {@link #dueNow}); zero when it is not overdue. */
     private BigDecimal lateCharge(String sheetId, Claim claim, BigDecimal figure) {
         BigDecimal charge = BigDecimal.ZERO.setScale(2);
@@ -214,7 +234,7 @@ public class ClaimRepository {
         List<Date> found = jdbc.queryForList("SELECT today FROM sheet WHERE id = ?", Date.class, sheetId);
         if (found.isEmpty()) return charge;
         LocalDate today = found.get(0).toLocalDate();
-        LocalDate dueBy = LocalDate.parse(claim.dueBy());
+        LocalDate dueBy = overdueFrom(sheetId, claim);
         long periods = dueBy.isBefore(today) ? ChronoUnit.DAYS.between(dueBy, today) / 30 : 0;
         if (periods == 0) return charge;
         RoundingMode rounding = rounding(sheetId, claim);

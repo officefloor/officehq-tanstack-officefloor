@@ -77,7 +77,7 @@ public class Rollup {
                     fixed |= c.fixed();
                     BigDecimal now = claims.dueNow(sheetId, c);
                     if (now != null) due = due.add(now);
-                    if (now != null && c.open() && LocalDate.parse(c.dueBy()).isBefore(today)) overdue = overdue.add(now);
+                    if (now != null && claims.overdue(sheetId, c, today)) overdue = overdue.add(now);
                     fixed |= now != null;
                 }
                 boolean shown = fixed || claims.rated(sheetId, p.id(), today);

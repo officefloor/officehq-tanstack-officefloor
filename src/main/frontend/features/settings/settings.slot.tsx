@@ -58,6 +58,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
   const [floor, setFloor] = useState<string | null>(null);
   const [terms, setTerms] = useState<string | null>(null);
   const [gradeTerms, setGradeTerms] = useState<Record<string, string>>({});
+  const [gradeGrace, setGradeGrace] = useState<Record<string, string>>({});
   const [latePct, setLatePct] = useState<string | null>(null);
   const [policyDate, setPolicyDate] = useState<string | null>(null);
   const [numberingFrom, setNumberingFrom] = useState<string | null>(null);
@@ -80,13 +81,14 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
 
   const saveOnce = useSingleFlight();
   const save = useMutation({
-    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null; noteThreshold: string | null; permissions: Record<string, string>; graceDays: string | null; entryDate: string | null }) =>
+    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null; noteThreshold: string | null; permissions: Record<string, string>; graceDays: string | null; entryDate: string | null; gradeGrace: Record<string, string> }) =>
       postJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, f),
     onSuccess: (saved) => {
       setLimit(null);
       setFloor(null);
       setTerms(null);
       setGradeTerms({});
+      setGradeGrace({});
       setLatePct(null);
       setPolicyDate(null);
       setNumberingFrom(null);
@@ -142,7 +144,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           e.preventDefault();
           saveOnce(() => {
             save.reset();
-            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap, from, proofThreshold, noteThreshold, permissions, graceDays, entryDate });
+            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap, from, proofThreshold, noteThreshold, permissions, graceDays, entryDate, gradeGrace });
           });
         }}
       >
@@ -202,6 +204,22 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
               }}
             />{' '}
             <FromInput settingKey={`terms-${g}`} from={from} setFrom={setFrom} onChange={() => save.reset()} />{' '}
+          </label>
+        ))}
+        {GRADES.map((g) => (
+          <label key={g}>
+            Grace {g} (days){' '}
+            <input
+              data-testid={`setting-grace-${g}`}
+              inputMode="numeric"
+              value={gradeGrace[g] ?? ''}
+              onFocus={() => setGradeGrace((v) => (g in v ? v : { ...v, [g]: '' }))}
+              onChange={(e) => {
+                setGradeGrace((v) => ({ ...v, [g]: e.target.value }));
+                save.reset();
+              }}
+            />{' '}
+            <FromInput settingKey={`grace-${g}`} from={from} setFrom={setFrom} onChange={() => save.reset()} />{' '}
           </label>
         ))}
         <label>
@@ -336,6 +354,11 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
         {GRADES.map((g) => (
           <span key={g}>
             terms {g} <strong data-testid={`setting-terms-${g}-current`}>{settingOn(settings.data, `terms-${g}`, today) ?? ''}</strong>,{' '}
+          </span>
+        ))}
+        {GRADES.map((g) => (
+          <span key={g}>
+            grace {g} <strong data-testid={`setting-grace-${g}-current`}>{settingOn(settings.data, `grace-${g}`, today) ?? ''}</strong>,{' '}
           </span>
         ))}
         late % <strong data-testid="setting-late-pct-current">{settingOn(settings.data, 'late-pct', today) ?? ''}</strong>,

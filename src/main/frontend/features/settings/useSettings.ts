@@ -15,7 +15,7 @@ export type Role = { user: string; role: string };
  *  none: a person's due-total is at most it). Those with a figure are as in force on the sheet's today when
  *  loaded; `dated` is every value recorded for each of them, by key (clerk-limit, floor, terms, terms-<grade>,
  *  late-pct, cap, proof-threshold: a claim whose due is above the one in force on its date cannot be settled or
- *  approved without a proof; note-threshold: one above it cannot be opened with an empty note), oldest from-date first. `permissions` is the permission matrix entries set, by action
+ *  approved without a proof; note-threshold: one above it cannot be opened with an empty note; grace-<grade>: the grade's grace days, see `overdueFrom`), oldest from-date first. `permissions` is the permission matrix entries set, by action
  *  (open, settle, void, reassign, close, reopen): the roles that may take it, comma separated; an action not listed
  *  keeps the standing rule (open, settle, void and close by clerk and steward; reassign and reopen by steward).
  *  `graceDays` is the days after a period's to-date it is left open (null when blank: off; not dated): changing the

@@ -180,6 +180,18 @@ public class SettingsRepository {
         record(sheetId, "terms-" + grade, from, terms == null ? null : String.valueOf(terms));
     }
 
+    /** A grade's grace days in force on a date: the days past a claim's due-by before it is overdue; null when it
+     *  has none then. */
+    public Integer gradeGrace(String sheetId, String grade, LocalDate date) {
+        List<String> found = on(sheetId, "grace-" + grade, date);
+        return found.isEmpty() || found.get(0) == null ? null : Integer.valueOf(found.get(0));
+    }
+
+    /** Set a grade's grace days from a date; null means none from then. */
+    public void setGradeGrace(String sheetId, String grade, LocalDate from, Integer days) {
+        record(sheetId, "grace-" + grade, from, days == null ? null : String.valueOf(days));
+    }
+
     /** The sheet's late percent in force on a date: what an overdue claim's due gains, of its figure, for
      *  every full 30 days it is overdue; 0.00 before any is recorded. */
     public BigDecimal latePct(String sheetId, LocalDate date) {
