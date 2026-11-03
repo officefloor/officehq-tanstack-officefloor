@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 
-/** A person's plan: an amount (two decimals), a start date, every N days, an end date, and how many claims it
+/** A person's plan: an amount (two decimals), a start date, every N days or monthly on a day of the month (the other null), an end date, and how many claims it
  *  has made so far. */
-export type Plan = { id: number; personId: number; amount: string; start: string; every: number; end: string; generated: number };
+export type Plan = { id: number; personId: number; amount: string; start: string; every: number | null; day: number | null; end: string; generated: number };
 
 export function plansKey(sheetId: string) {
   return ['sheet', sheetId, 'plans'];

@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.Date;
 import java.sql.PreparedStatement;
+import java.sql.Types;
 import java.time.LocalDate;
 import java.util.HashSet;
 import java.util.List;
@@ -37,27 +38,29 @@ public class PlanRepository {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(c -> {
             PreparedStatement ps = c.prepareStatement(
-                    "INSERT INTO plan (sheet_id, person_id, amount, start_date, every_days, end_date) VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO plan (sheet_id, person_id, amount, start_date, every_days, day_of_month, end_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
             ps.setBigDecimal(3, input.amount());
             ps.setDate(4, Date.valueOf(input.start()));
-            ps.setInt(5, input.every());
-            ps.setDate(6, Date.valueOf(input.end()));
+            ps.setObject(5, input.every(), Types.INTEGER);
+            ps.setObject(6, input.day(), Types.INTEGER);
+            ps.setDate(7, Date.valueOf(input.end()));
             return ps;
         }, keys);
         return new Plan(keys.getKey().longValue(), personId, money(input.amount()), input.start().toString(),
-                input.every(), input.end().toString(), 0);
+                input.every(), input.day(), input.end().toString(), 0);
     }
 
     /** The sheet's plans, in the order they were added, each with how many claims it has made. */
     public List<Plan> list(String sheetId) {
-        return jdbc.query("SELECT p.id, p.person_id, p.amount, p.start_date, p.every_days, p.end_date,"
+        return jdbc.query("SELECT p.id, p.person_id, p.amount, p.start_date, p.every_days, p.day_of_month, p.end_date,"
                 + " (SELECT COUNT(*) FROM plan_claim c WHERE c.plan_id = p.id) AS generated"
                 + " FROM plan p WHERE p.sheet_id = ? ORDER BY p.id",
                 (rs, i) -> new Plan(rs.getLong("id"), rs.getLong("person_id"), money(rs.getBigDecimal("amount")),
-                        rs.getDate("start_date").toLocalDate().toString(), rs.getInt("every_days"),
+                        rs.getDate("start_date").toLocalDate().toString(), rs.getObject("every_days", Integer.class),
+                        rs.getObject("day_of_month", Integer.class),
                         rs.getDate("end_date").toLocalDate().toString(), rs.getInt("generated")),
                 sheetId);
     }

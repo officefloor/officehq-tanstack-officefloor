@@ -26,6 +26,7 @@ public class SavePlan {
         }
         Plan saved = repository.add(id, pid, input);
         audit.record("PLAN_ADDED sheet=" + id + " by=" + by + " name=" + name + " amount=" + saved.amount()
-                + " start=" + saved.start() + " every=" + saved.every() + " end=" + saved.end());
+                + " start=" + saved.start()
+                + (saved.day() != null ? " day=" + saved.day() : " every=" + saved.every()) + " end=" + saved.end());
     }
 }

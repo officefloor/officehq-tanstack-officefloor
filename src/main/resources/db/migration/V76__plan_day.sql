@@ -1,0 +1,5 @@
+-- A plan runs either every N days (every_days set) or monthly on a day of the month, 1 to 31 (day_of_month set):
+-- that day in every month from the start's month, a day beyond the month's length falling on its last day,
+-- dates before the start left out. Exactly one of the two is set.
+ALTER TABLE plan ALTER COLUMN every_days SET NULL;
+ALTER TABLE plan ADD COLUMN day_of_month INT CHECK (day_of_month BETWEEN 1 AND 31);

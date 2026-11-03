@@ -9,7 +9,7 @@ import { peopleKey } from '../people/usePeople';
 import { plansKey, usePlans, type Plan } from './usePlans';
 
 /** A person's plans, each with how many claims it has made so far, and a form that adds one: an amount, a
- *  start date, every N days (a whole number, at least 1) and an end date not before the start. A refused plan
+ *  start date, every N days (a whole number, at least 1) or a day of the month (1 to 31), and an end date not before the start. A refused plan
  *  shows an error on the row. */
 function PersonPlans({ sheetId, personId }: { sheetId: string; personId: number }) {
   const plans = usePlans(sheetId);
@@ -18,15 +18,17 @@ function PersonPlans({ sheetId, personId }: { sheetId: string; personId: number 
   const [amount, setAmount] = useState('');
   const [start, setStart] = useState('');
   const [every, setEvery] = useState('');
+  const [day, setDay] = useState('');
   const [end, setEnd] = useState('');
 
   const add = useMutation({
-    mutationFn: (f: { amount: string; start: string; every: string; end: string }) =>
+    mutationFn: (f: { amount: string; start: string; every: string; day: string; end: string }) =>
       postJson<{ plans: Plan[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/plans`, f),
     onSuccess: (data) => {
       setAmount('');
       setStart('');
       setEvery('');
+      setDay('');
       setEnd('');
       queryClient.setQueryData(plansKey(sheetId), data.plans);
     },
@@ -49,6 +51,7 @@ function PersonPlans({ sheetId, personId }: { sheetId: string; personId: number 
                 <th>Plan amount</th>
                 <th>Start</th>
                 <th>Every (days)</th>
+                <th>Day of month</th>
                 <th>End</th>
                 <th>Generated</th>
               </tr>
@@ -58,7 +61,8 @@ function PersonPlans({ sheetId, personId }: { sheetId: string; personId: number 
                 <tr key={p.id} data-testid={`plan-row-${p.id}`}>
                   <td data-testid="plan-amount-shown">{p.amount}</td>
                   <td data-testid="plan-start">{p.start}</td>
-                  <td data-testid="plan-every">{p.every}</td>
+                  <td data-testid="plan-every">{p.every ?? ''}</td>
+                  <td data-testid="plan-day">{p.day ?? ''}</td>
                   <td data-testid="plan-end">{p.end}</td>
                   <td data-testid="plan-generated">{p.generated}</td>
                 </tr>
@@ -72,7 +76,7 @@ function PersonPlans({ sheetId, personId }: { sheetId: string; personId: number 
             e.preventDefault();
             submitOnce(() => {
               add.reset();
-              return add.mutateAsync({ amount: amount.trim(), start: start.trim(), every: every.trim(), end: end.trim() });
+              return add.mutateAsync({ amount: amount.trim(), start: start.trim(), every: every.trim(), day: day.trim(), end: end.trim() });
             });
           }}
         >
@@ -80,6 +84,7 @@ function PersonPlans({ sheetId, personId }: { sheetId: string; personId: number 
           <input type="text" placeholder="amount" data-testid="plan-form-amount" value={amount} onChange={field(setAmount)} />{' '}
           <input type="text" placeholder="start yyyy-mm-dd" data-testid="plan-form-start" value={start} onChange={field(setStart)} />{' '}
           <input type="text" placeholder="every N days" data-testid="plan-form-every" value={every} onChange={field(setEvery)} />{' '}
+          <input type="text" placeholder="or day of month 1-31" data-testid="plan-form-day" value={day} onChange={field(setDay)} />{' '}
           <input type="text" placeholder="end yyyy-mm-dd" data-testid="plan-form-end" value={end} onChange={field(setEnd)} />{' '}
           <button type="submit" data-testid="plan-form-submit" disabled={add.isPending}>
             Add plan
