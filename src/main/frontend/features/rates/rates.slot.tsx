@@ -140,10 +140,43 @@ function Rates({ sheetId }: { sheetId: string }) {
           </span>
         ))}
       </p>
+      <RateCalendar sheetId={sheetId} />
       <ImportRates sheetId={sheetId} />
       <RatePreview sheetId={sheetId} />
       {rates.isError && <p data-testid="rates-error">{rates.error.message}</p>}
     </section>
+  );
+}
+
+/** The rate calendar: for every grade and each month of the sheet's today's calendar year, the rate in force
+ *  on the first day of that month ('n/a' when none is). */
+function RateCalendar({ sheetId }: { sheetId: string }) {
+  const fig = useFigure();
+  const rates = useRates(sheetId);
+  const year = useSheetToday(sheetId).data?.today?.slice(0, 4);
+  if (year === undefined) return null;
+  const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
+  return (
+    <table data-testid="rate-calendar">
+      <thead>
+        <tr>
+          <th>Grade</th>
+          {months.map((m) => (
+            <th key={m}>{m}</th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {GRADES.map((g) => (
+          <tr key={g}>
+            <td>{g}</td>
+            {months.map((m) => (
+              <td key={m} data-testid={`rate-month-${g}-${m}`}>{fig(rateFor(rates.data, g, `${m}-01`) ?? 'n/a')}</td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
