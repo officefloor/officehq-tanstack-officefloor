@@ -25,10 +25,13 @@ import java.util.List;
  *  {@code fiscalStartMonth} is the month (1 to 12; 1 unless set; not dated) the sheet's fiscal year starts in: a fiscal
  *  year is named FY<yyyy> by the calendar year its first day falls in.
  *  {@code alertThreshold} is the sheet's alert threshold (two decimals; null when blank: off; not dated): a person
- *  whose due-total goes from at or below it to above it is written an ALERT line. */
+ *  whose due-total goes from at or below it to above it is written an ALERT line.
+ *  {@code escalateAfter} is the sheet's escalation gap in days (null when blank: off; not dated): reminding a claim
+ *  whose previous reminder was at least that many days before the sheet's today escalates it, once per claim ever. */
 public record Settings(String clerkLimit, String floor, int terms, String latePct, List<Role> roles, String policyDate,
         String periodNumberingFrom, java.util.Map<String, Integer> gradeTerms, String cap,
         java.util.Map<String, List<DatedValue>> dated, java.util.Map<String, String> permissions, Integer graceDays,
         List<Delegation> delegations, String entryDate, List<String> holidays, List<String> voidReasons,
-        String pot, String parent, int fiscalStartMonth, String alertThreshold) {
+        String pot, String parent, int fiscalStartMonth, String alertThreshold,
+        Integer escalateAfter) {
 }

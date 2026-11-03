@@ -105,6 +105,10 @@ public class SaveSettings {
             repository.setGraceDays(id, input.graceDays());
             audit.record(prefix + "grace-days value=" + (input.graceDays() == null ? "" : input.graceDays()));
         }
+        if (input.setsEscalateAfter()) {
+            repository.setEscalateAfter(id, input.escalateAfter());
+            audit.record(prefix + "escalate-after value=" + (input.escalateAfter() == null ? "" : input.escalateAfter()));
+        }
         if (input.setsEntryDate()) {
             repository.setEntryDate(id, input.entryDate());
             audit.record(prefix + "entry-date value=" + (input.entryDate() == null ? "" : input.entryDate().toString()));

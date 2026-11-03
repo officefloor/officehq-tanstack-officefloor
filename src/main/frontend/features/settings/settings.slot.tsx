@@ -24,7 +24,9 @@ import { useFigure } from '../locale/useLocale';
  *  (half-up or half-even: a claim whose date has one in force rounds its live figures by it instead of by the policy date;
  *  blank is none), its permission matrix (for each of open, settle, void,
  *  reassign, close and reopen, the roles that may do it, comma separated; blank keeps the standing rule; not dated), its grace days (changing the
- *  sheet's today closes each open period whose to-date plus them is before the new today; blank is off; not dated), its entry date (while set, the default date of a new claim — the claim form, the
+ *  sheet's today closes each open period whose to-date plus them is before the new today; blank is off; not dated), its escalation gap
+ *  (reminding a claim whose previous reminder was at least that many days before the sheet's today escalates it, once per
+ *  claim ever; blank is off; not dated), its entry date (while set, the default date of a new claim — the claim form, the
  *  quick-add bar, a pasted line with a blank date and a correction — instead of the sheet's today; blank is off; not dated), its pot (two
  *  decimals, shared out as the cuts of each balanced pool; blank is none; not dated), its parent sheet (a grade with no
  *  rate in force on a date takes the parent's, then the parent's parent's, up to three levels up; a sheet that has been
@@ -82,6 +84,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
   const [from, setFrom] = useState<Record<string, string>>({});
   const [permissions, setPermissions] = useState<Record<string, string>>({});
   const [graceDays, setGraceDays] = useState<string | null>(null);
+  const [escalateAfter, setEscalateAfter] = useState<string | null>(null);
   const [entryDate, setEntryDate] = useState<string | null>(null);
   const [pot, setPot] = useState<string | null>(null);
   const [parent, setParent] = useState<string | null>(null);
@@ -101,7 +104,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
 
   const saveOnce = useSingleFlight();
   const save = useMutation({
-    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null; noteThreshold: string | null; permissions: Record<string, string>; graceDays: string | null; entryDate: string | null; gradeGrace: Record<string, string>; gradeProofThreshold: Record<string, string>; pot: string | null; parent: string | null; fiscalStartMonth: string | null; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null }) =>
+    mutationFn: (f: { clerkLimit: string | null; floor: string | null; terms: string | null; latePct: string | null; policyDate: string | null; periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; from: Record<string, string>; proofThreshold: string | null; noteThreshold: string | null; permissions: Record<string, string>; graceDays: string | null; entryDate: string | null; gradeGrace: Record<string, string>; gradeProofThreshold: Record<string, string>; pot: string | null; parent: string | null; fiscalStartMonth: string | null; alertThreshold: string | null; rounding: string | null; reviewThreshold: string | null; escalateAfter: string | null }) =>
       postJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, f),
     onSuccess: (saved) => {
       setLimit(null);
@@ -120,6 +123,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
       setFrom({});
       setPermissions({});
       setGraceDays(null);
+      setEscalateAfter(null);
       setEntryDate(null);
       setPot(null);
       setParent(null);
@@ -194,7 +198,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           e.preventDefault();
           saveOnce(() => {
             save.reset();
-            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap, from, proofThreshold, noteThreshold, permissions, graceDays, entryDate, gradeGrace, gradeProofThreshold: gradeProof, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold });
+            return save.mutateAsync({ clerkLimit: limit, floor, terms, latePct, policyDate, periodNumberingFrom: numberingFrom, gradeTerms, cap, from, proofThreshold, noteThreshold, permissions, graceDays, entryDate, gradeGrace, gradeProofThreshold: gradeProof, pot, parent, fiscalStartMonth, alertThreshold, rounding, reviewThreshold, escalateAfter });
           });
         }}
       >
@@ -427,6 +431,19 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           />
         </label>{' '}
         <label>
+          Escalate after (days){' '}
+          <input
+            data-testid="setting-escalate-after"
+            inputMode="numeric"
+            value={escalateAfter ?? ''}
+            onFocus={() => setEscalateAfter((v) => v ?? '')}
+            onChange={(e) => {
+              setEscalateAfter(e.target.value);
+              save.reset();
+            }}
+          />
+        </label>{' '}
+        <label>
           Entry date{' '}
           <input
             data-testid="setting-entry-date"
@@ -526,6 +543,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           </span>
         ))}
         , grace days <strong data-testid="setting-grace-days-current">{fig(settings.data?.graceDays ?? '')}</strong>
+        , escalate after <strong data-testid="setting-escalate-after-current">{fig(settings.data?.escalateAfter ?? '')}</strong>
         , entry date <strong data-testid="setting-entry-date-current">{fig(settings.data?.entryDate ?? '')}</strong>
         , pot <strong data-testid="setting-pot-current">{fig(settings.data?.pot ?? '')}</strong>
         , parent <strong data-testid="setting-parent-current">{fig(settings.data?.parent ?? '')}</strong>

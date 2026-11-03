@@ -525,6 +525,16 @@ public class ClaimRepository {
                 claimId, sheetId) > 0;
     }
 
+    /** Escalate a claim reminded on the sheet's today when the sheet has an escalation gap, it was reminded before
+     *  ({@code previous}) at least that many days before today, and it was never escalated; true when escalated. */
+    public boolean escalate(String sheetId, long claimId, String previous) {
+        Integer gap = settings.escalateAfter(sheetId);
+        if (gap == null || previous == null) return false;
+        if (LocalDate.parse(previous).plusDays(gap).isAfter(settings.today(sheetId))) return false;
+        return jdbc.update("UPDATE claim SET escalated = TRUE WHERE id = ? AND sheet_id = ? AND NOT escalated",
+                claimId, sheetId) > 0;
+    }
+
     /** Fix a settled claim's due. */
     public void settleDue(String sheetId, long claimId, BigDecimal due) {
         kept(sheetId, claimId, jdbc.update("UPDATE claim SET settled_due = ? WHERE id = ? AND sheet_id = ?", due, claimId, sheetId) > 0);

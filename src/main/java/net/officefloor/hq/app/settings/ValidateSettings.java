@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  numbering from-date is a date, blank meaning off; a grade's (A, B or C) terms are like the sheet's, blank
  *  meaning the grade uses the sheet's terms; the cap is 0.00 or more with up to two decimals, blank meaning none; the proof threshold and the note threshold likewise. A from-date given for a
  *  setting with a figure is a date; blank is the sheet's today. A permission matrix entry (open, settle, void, reassign, close or reopen) is a comma separated
- *  list of roles (clerk, steward), blank keeping the standing rule. The grace days are a whole number of days, 0 to 3650, blank meaning off. The entry date is a date, blank meaning off. A grade's grace days are a whole number of days, 0 to 3650, blank meaning none. A grade's proof threshold is like the sheet's, blank meaning none. The pot is 0.00 or more with up to two decimals, blank meaning none. The parent is a sheet id, blank meaning none (checked when saved). The fiscal year start month is a month, 1 to 12. The alert threshold is 0.00 or more with up to two decimals, blank meaning off. The rounding mode is half-up or half-even, blank meaning none. A setting left out is not changed. */
+ *  list of roles (clerk, steward), blank keeping the standing rule. The grace days are a whole number of days, 0 to 3650, blank meaning off. The entry date is a date, blank meaning off. A grade's grace days are a whole number of days, 0 to 3650, blank meaning none. A grade's proof threshold is like the sheet's, blank meaning none. The pot is 0.00 or more with up to two decimals, blank meaning none. The parent is a sheet id, blank meaning none (checked when saved). The fiscal year start month is a month, 1 to 12. The alert threshold is 0.00 or more with up to two decimals, blank meaning off. The rounding mode is half-up or half-even, blank meaning none. The escalation gap is a whole number of days, 0 to 3650, blank meaning off. A setting left out is not changed. */
 public class ValidateSettings {
     private static final Pattern MONEY = Pattern.compile("\\d{1,9}(\\.\\d{1,2})?|\\.\\d{1,2}");
     private static final List<String> GRADES = List.of("A", "B", "C");
@@ -121,6 +121,10 @@ public class ValidateSettings {
         if (grace != null && !grace.isEmpty() && (!TERMS.matcher(grace).matches() || Integer.parseInt(grace) > 3650)) {
             throw new BadRequestException("grace days must be a whole number of days from 0 to 3650");
         }
+        String escalate = request == null || request.escalateAfter() == null ? null : request.escalateAfter().trim();
+        if (escalate != null && !escalate.isEmpty() && (!TERMS.matcher(escalate).matches() || Integer.parseInt(escalate) > 3650)) {
+            throw new BadRequestException("escalation gap must be a whole number of days from 0 to 3650");
+        }
         String policy = request == null || request.policyDate() == null ? null : request.policyDate().trim();
         LocalDate policyDate = null;
         if (policy != null && !policy.isEmpty()) {
@@ -215,6 +219,7 @@ public class ValidateSettings {
                 fiscal != null, fiscal == null ? null : Integer.parseInt(fiscal),
                 alert != null, alert == null || alert.isEmpty() ? null : new BigDecimal(alert).setScale(2),
                 rounding != null, rounding == null || rounding.isEmpty() ? null : rounding,
-                review != null, review == null || review.isEmpty() ? null : new BigDecimal(review).setScale(2)));
+                review != null, review == null || review.isEmpty() ? null : new BigDecimal(review).setScale(2),
+                escalate != null, escalate == null || escalate.isEmpty() ? null : Integer.parseInt(escalate)));
     }
 }
