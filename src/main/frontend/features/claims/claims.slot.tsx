@@ -829,6 +829,59 @@ function BulkReassign({ sheetId }: { sheetId: string }) {
   );
 }
 
+/** Re-date the selected claims together to the date typed in the bar: the server re-dates, in list order and by
+ *  the rules of a single re-date, each that can be re-dated and leaves the rest; the bar shows how many were
+ *  re-dated and how many refused (gone while it runs). */
+function BulkRedate({ sheetId }: { sheetId: string }) {
+  const selection = useClaimSelection(sheetId);
+  const queryClient = useQueryClient();
+  const submitOnce = useSingleFlight();
+  const [date, setDate] = useState('');
+  const bulk = useMutation({
+    mutationFn: (r: { claimIds: number[]; date: string }) =>
+      postJson<{ redated: number; refused: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/bulk-redate`, r),
+    onSuccess: () => selection.clear(),
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+  });
+  return (
+    <p data-testid="bulk-redate-bar">
+      <input
+        type="text"
+        data-testid="bulk-redate-date"
+        placeholder="new date yyyy-mm-dd"
+        value={date}
+        onChange={(e) => {
+          setDate(e.target.value);
+          bulk.reset();
+        }}
+      />{' '}
+      <button
+        type="button"
+        data-testid="bulk-redate"
+        disabled={bulk.isPending}
+        onClick={() =>
+          submitOnce(() => {
+            bulk.reset();
+            return bulk.mutateAsync({ claimIds: [...selection.ids], date: date.trim() });
+          })
+        }
+      >
+        Re-date selected ({selection.ids.size})
+      </button>
+      {bulk.isSuccess && (
+        <>
+          {' '}
+          Re-dated <strong data-testid="bulk-redated">{bulk.data.redated}</strong>, refused{' '}
+          <strong data-testid="bulk-redate-refused">{bulk.data.refused}</strong>
+        </>
+      )}
+      {bulk.isError && <span data-testid="bulk-redate-error">{bulk.error.message}</span>}
+    </p>
+  );
+}
+
 /** The sheet's claimed-total: everyone's claimed added up. */
 function ClaimedTotal({ sheetId }: { sheetId: string }) {
   const claims = useClaims(sheetId);
@@ -848,5 +901,6 @@ export const contributions = [
   SheetBody.fill({ order: 15, Component: BulkOpen }),
   SheetBody.fill({ order: 16, Component: BulkSettle }),
   SheetBody.fill({ order: 17, Component: BulkReassign }),
+  SheetBody.fill({ order: 17.5, Component: BulkRedate }),
   SheetBody.fill({ order: 20, Component: ({ sheetId }) => <ClaimedTotal sheetId={sheetId} /> }),
 ];
