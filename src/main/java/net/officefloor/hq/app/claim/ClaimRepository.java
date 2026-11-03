@@ -959,6 +959,13 @@ public class ClaimRepository {
         return due == null ? null : money(due);
     }
 
+    /** Whether the user is the person's approver. */
+    public boolean approver(String sheetId, long personId, String user) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM person WHERE sheet_id = ? AND id = ? AND approver = ?",
+                Integer.class, sheetId, personId, user);
+        return n != null && n > 0;
+    }
+
     /** Whether a person's flag is in force: the sheet's today on or before its until-date. */
     public boolean flagged(String sheetId, long personId) {
         Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM person WHERE sheet_id = ? AND id = ? AND flag_until"

@@ -11,7 +11,8 @@ import { useReader } from '../../api/readNow';
  *  the sheet they were transferred from (null when they were not transferred here); their past retirements,
  *  oldest first; their snapshots, one per SNAPSHOT written for them, oldest first; their statements still standing,
  *  oldest first by date (those a merge or transfer brought over among them); the reason of their flag while it is in
- *  force (the sheet's today on or before its until-date; null otherwise). */
+ *  force (the sheet's today on or before its until-date; null otherwise); their approver, who may approve or reject
+ *  their pending claims as a steward may (null when none). */
 export type Person = {
   id: number;
   name: string;
@@ -32,6 +33,7 @@ export type Person = {
   snapshots: SnapshotLine[];
   statements: StatementLine[];
   flag: string | null;
+  approver: string | null;
 };
 
 /** One of a person's snapshots: the day being left (yyyy-mm-dd; null when the sheet had no today) and their

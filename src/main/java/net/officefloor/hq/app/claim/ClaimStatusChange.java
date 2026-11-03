@@ -123,9 +123,9 @@ public final class ClaimStatusChange {
         if (to.equals("SETTLED") && found.deferred()) {
             throw new BadRequestException("a claim deferred until " + found.deferredUntil() + " cannot be settled");
         }
-        // Only a steward approves or rejects a PENDING claim, and never one they opened themselves.
+        // Only a steward (or the person's approver) approves or rejects a PENDING claim, and never one they opened themselves.
         if (found.status().equals("PENDING") && !to.equals("VOID")) {
-            if (!settings.role(id, by).equals(SettingsRepository.STEWARD)) {
+            if (!settings.role(id, by).equals(SettingsRepository.STEWARD) && !repository.approver(id, found.personId(), by)) {
                 throw new BadRequestException("only a steward can " + action.trim() + " a pending claim");
             }
             if (to.equals("SETTLED") && by.equals(found.openedBy())) {

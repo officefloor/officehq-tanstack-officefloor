@@ -35,7 +35,7 @@ function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: numbe
 type ClaimAction = 'open' | 'review' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | 'delete' | 'restore' | 'defer' | 'proof' | 'remind' | 'waive' | 'hold' | 'split' | 'settle-part' | 'redate' | 'comment' | 'line';
 
 /** A claim's status changes; the server refuses one its status does not allow, a settle by the user
- *  who opened the claim, and an approve or reject by anyone but a steward (an approve also by the
+ *  who opened the claim, and an approve or reject by anyone but a steward or the person's approver (an approve also by the
  *  user who opened the claim), a re-settle by anyone but a steward or of a claim not SETTLED, and a void of a SETTLED claim by anyone but a steward, more than 7 days after its settlement or in a closed period. A reject takes the reason typed on the claim's row.
  *  A delete moves a DRAFT claim (not in a closed period) to DELETED, where it counts nowhere; a restore makes it a DRAFT again, only on the sheet-today it was deleted.
  *  A settle or approve of a claim whose due is above the proof threshold in force on its date is refused while it has no proof.
