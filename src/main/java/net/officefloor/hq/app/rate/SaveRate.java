@@ -18,12 +18,17 @@ public class SaveRate {
         if (!repository.sheetExists(id)) {
             throw new BadRequestException("no such sheet");
         }
+        rate.set(set(id, by, input, repository, audit, rollup));
+    }
+
+    /** Set a rate on the sheet, writing RATE_SET and the rollups it changes. */
+    static Rate set(String id, String by, RateInput input, RateRepository repository, Audit audit, Rollup rollup) {
         Rollup.Snapshot before = rollup.take(id);
         Rate saved = repository.set(id, input.grade(), input.pct(), input.from(), input.to());
         audit.record("RATE_SET sheet=" + id + " by=" + by + " grade=" + saved.grade() + " rate=" + saved.pct()
                 + (saved.from() == null ? "" : " from=" + saved.from())
                 + (saved.to() == null ? "" : " to=" + saved.to()));
         rollup.record(id, by, before);
-        rate.set(saved);
+        return saved;
     }
 }

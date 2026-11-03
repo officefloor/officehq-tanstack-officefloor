@@ -135,9 +135,61 @@ function Rates({ sheetId }: { sheetId: string }) {
           </span>
         ))}
       </p>
+      <ImportRates sheetId={sheetId} />
       <RatePreview sheetId={sheetId} />
       {rates.isError && <p data-testid="rates-error">{rates.error.message}</p>}
     </section>
+  );
+}
+
+/** A rate import box: lines of grade,rate,from,to (the from and to may be absent or blank), each set in
+ *  order as the rate form sets it. The server checks every line first: one refused line refuses the import
+ *  and sets nothing. Shows how many were set (gone while it runs). */
+function ImportRates({ sheetId }: { sheetId: string }) {
+  const [text, setText] = useState('');
+  const queryClient = useQueryClient();
+  const submitOnce = useSingleFlight();
+  const importRates = useMutation({
+    mutationFn: (t: string) =>
+      postJson<{ set: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/rate-import`, { text: t }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ratesKey(sheetId) });
+    },
+  });
+  return (
+    <form
+      data-testid="import-rates-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        submitOnce(() => {
+          importRates.reset();
+          return importRates.mutateAsync(text);
+        });
+      }}
+    >
+      <label>
+        Import rates (grade,rate,from,to per line){' '}
+        <textarea
+          data-testid="import-rates"
+          rows={3}
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            importRates.reset();
+          }}
+        />
+      </label>{' '}
+      <button type="submit" data-testid="import-rates-submit" disabled={importRates.isPending}>
+        Import rates
+      </button>
+      {importRates.isSuccess && (
+        <>
+          {' '}
+          Set <strong data-testid="import-rates-set">{importRates.data.set}</strong>
+        </>
+      )}
+      {importRates.isError && <p data-testid="import-rates-error">{importRates.error.message}</p>}
+    </form>
   );
 }
 

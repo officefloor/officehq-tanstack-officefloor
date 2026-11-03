@@ -17,6 +17,11 @@ public class ValidateRate {
     private static final Pattern PCT = Pattern.compile("\\d{1,5}(\\.\\d{1,2})?|\\.\\d{1,2}");
 
     public void validate(@RequestBody RateRequest request, Out<RateInput> rate) throws BadRequestException {
+        rate.set(check(request));
+    }
+
+    /** Check a rate form by these rules: the rate it sets. */
+    static RateInput check(RateRequest request) throws BadRequestException {
         String grade = request == null || request.grade() == null ? "" : request.grade().trim();
         String pct = request == null || request.pct() == null ? "" : request.pct().trim();
         String from = request == null || request.from() == null ? "" : request.from().trim();
@@ -49,6 +54,6 @@ public class ValidateRate {
         if (until != null && on != null && until.isBefore(on)) {
             throw new BadRequestException("to-date must not be before the from-date");
         }
-        rate.set(new RateInput(grade, new BigDecimal(pct).setScale(2), on, until));
+        return new RateInput(grade, new BigDecimal(pct).setScale(2), on, until);
     }
 }
