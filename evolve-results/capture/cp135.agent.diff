@@ -1,0 +1,144 @@
+diff --git a/src/main/frontend/features/export/export.slot.tsx b/src/main/frontend/features/export/export.slot.tsx
+index 53be31a4f..4edd84a8e 100644
+--- a/src/main/frontend/features/export/export.slot.tsx
++++ b/src/main/frontend/features/export/export.slot.tsx
+@@ -3,6 +3,7 @@ import { useClaims } from '../claims/useClaims';
+ import { claimDueNow } from '../overdue/useOverdue';
+ import { gradeOn, usePeople } from '../people/usePeople';
+ import { periodOf, usePeriods } from '../periods/usePeriods';
++import { usePools } from '../pools/usePools';
+ import { useDueTotals } from '../rates/useDueTotals';
+ import { rateFor, useRates } from '../rates/useRates';
+ import { useSettings } from '../settings/useSettings';
+@@ -87,12 +88,38 @@ function ExportClaims({ sheetId }: { sheetId: string }) {
+   );
+ }
+ 
++/** A button that downloads the pools as a CSV file: a header line, then one line per member, pools in the
++ *  order they were added and each pool's members in the order they were added, a pool member as
++ *  pool:<name>, and the cut as shown (blank when none). */
++function ExportPools({ sheetId }: { sheetId: string }) {
++  const pools = usePools(sheetId);
++
++  // Re-read the pools first: a cut follows people, settings and other pools changed since they were loaded.
++  const download = async () => {
++    const fresh = (await pools.refetch()).data ?? pools.data ?? [];
++    const lines = [['pool', 'member', 'share', 'cut']];
++    for (const p of [...fresh].sort((a, b) => a.added - b.added)) {
++      for (const m of p.members) {
++        lines.push([p.name, m.pool === null ? m.name : `pool:${m.pool}`, m.share, m.cut ?? '']);
++      }
++    }
++    downloadCsv(lines, `pools-${sheetId}.csv`);
++  };
++
++  return (
++    <button type="button" data-testid="export-pools" onClick={() => void download()}>
++      Export pools (CSV)
++    </button>
++  );
++}
++
+ export const contribution = SheetBody.fill({
+   order: 15,
+   Component: ({ sheetId }) => (
+     <section data-testid="export">
+       <ExportPeople sheetId={sheetId} />
+       <ExportClaims sheetId={sheetId} />
++      <ExportPools sheetId={sheetId} />
+     </section>
+   ),
+ });
+diff --git a/src/main/frontend/features/pools/usePools.ts b/src/main/frontend/features/pools/usePools.ts
+index a38dd7b26..802860e5b 100644
+--- a/src/main/frontend/features/pools/usePools.ts
++++ b/src/main/frontend/features/pools/usePools.ts
+@@ -19,9 +19,9 @@ export type PoolMember = {
+   current: boolean;
+ };
+ 
+-/** A pool: its name, its members in the order they were added, the total of their shares (two decimals)
+- *  and whether that total is exactly 100.00. */
+-export type Pool = { name: string; members: PoolMember[]; totalShare: string; balanced: boolean };
++/** A pool: its name, its members in the order they were added, the total of their shares (two decimals),
++ *  whether that total is exactly 100.00 and its place in the order the sheet's pools were added (0 for the first). */
++export type Pool = { name: string; members: PoolMember[]; totalShare: string; balanced: boolean; added: number };
+ 
+ export function poolsKey(sheetId: string) {
+   return ['sheet', sheetId, 'pools'];
+diff --git a/src/main/java/net/officefloor/hq/app/pool/Pool.java b/src/main/java/net/officefloor/hq/app/pool/Pool.java
+index f7362bd67..ac2c85182 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/Pool.java
++++ b/src/main/java/net/officefloor/hq/app/pool/Pool.java
+@@ -3,6 +3,11 @@ package net.officefloor.hq.app.pool;
+ import java.util.List;
+ 
+ /** A sheet's pool: its name, its members (people and pools) in the order they were added, the total of their shares (a
+- *  retired member's share counted as given, one whose dates do not include the sheet's today, counting as 0.00; two decimals) and whether that total is exactly 100.00. */
+-public record Pool(String name, List<PoolMember> members, String totalShare, boolean balanced) {
++ *  retired member's share counted as given, one whose dates do not include the sheet's today, counting as 0.00; two decimals),
++ *  whether that total is exactly 100.00 and its place in the order the sheet's pools were added (0 for the first). */
++public record Pool(String name, List<PoolMember> members, String totalShare, boolean balanced, int added) {
++
++    public Pool withAdded(int added) {
++        return new Pool(name, members, totalShare, balanced, added);
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+index 6a171d416..c71b5ddec 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+@@ -173,6 +173,11 @@ public class PoolRepository {
+      *  shows no cuts). */
+     public List<Pool> list(String sheetId) {
+         Map<String, List<PoolMember>> members = new LinkedHashMap<>();
++        Map<String, Integer> added = new HashMap<>();
++        for (String name : jdbc.queryForList("SELECT name FROM pool WHERE sheet_id = ? ORDER BY added", String.class,
++                sheetId)) {
++            added.put(name, added.size());
++        }
+         for (String name : jdbc.queryForList("SELECT name FROM pool WHERE sheet_id = ? ORDER BY name", String.class,
+                 sheetId)) {
+             members.put(name, new ArrayList<>());
+@@ -205,7 +210,7 @@ public class PoolRepository {
+         Map<String, Pool> done = new HashMap<>();
+         List<Pool> pools = new ArrayList<>();
+         for (String name : members.keySet()) {
+-            pools.add(resolve(name, members, parents, sheetPot, held, done));
++            pools.add(resolve(name, members, parents, sheetPot, held, done).withAdded(added.get(name)));
+         }
+         return pools;
+     }
+@@ -231,7 +236,7 @@ public class PoolRepository {
+         boolean balanced = total.compareTo(HUNDRED) == 0;
+         boolean allRetired = of.stream().filter(PoolMember::current).allMatch(PoolMember::retired);
+         Pool pool = new Pool(name, balanced && pot != null && !allRetired ? cut(of, pot, held) : of,
+-                total.toPlainString(), balanced);
++                total.toPlainString(), balanced, 0);
+         done.put(name, pool);
+         return pool;
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+index 711d7d20a..1df6ca3e4 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+@@ -79,7 +79,7 @@ public class SheetCloner {
+                 }
+             }, from, p.getKey());
+         }
+-        jdbc.update("INSERT INTO pool (sheet_id, name) SELECT ?, name FROM pool WHERE sheet_id = ?", to, from);
++        jdbc.update("INSERT INTO pool (sheet_id, name, added) SELECT ?, name, added FROM pool WHERE sheet_id = ?", to, from);
+         jdbc.query("SELECT pool_name, person_id, member_pool, share, from_date, to_date FROM pool_member WHERE sheet_id = ?"
+                 + " ORDER BY id", rs -> {
+                     long person = rs.getLong("person_id");
+diff --git a/src/main/resources/db/migration/V74__pool_added.sql b/src/main/resources/db/migration/V74__pool_added.sql
+new file mode 100644
+index 000000000..fd2b4c4cc
+--- /dev/null
++++ b/src/main/resources/db/migration/V74__pool_added.sql
+@@ -0,0 +1,5 @@
++-- A pool's place in the order pools were added to the sheet (from a sequence; a cloned sheet keeps its source's order).
++CREATE SEQUENCE pool_added_seq;
++ALTER TABLE pool ADD COLUMN added BIGINT DEFAULT NEXT VALUE FOR pool_added_seq;
++UPDATE pool SET added = NEXT VALUE FOR pool_added_seq WHERE added IS NULL;
++ALTER TABLE pool ALTER COLUMN added SET NOT NULL;
