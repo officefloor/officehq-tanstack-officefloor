@@ -8,8 +8,8 @@ import { useFloor, useLate } from '../access/access';
 import { useSheetToday } from '../sheet/sheet';
 import { periodDueTotal, usePeriods } from '../periods/periods';
 
-// Every status the summary counts; PENDING is listed though no claim takes it yet.
-const STATUSES: Array<ClaimStatus | 'PENDING'> = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'];
+// Every status the summary counts.
+const STATUSES: ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'];
 
 // The sheet's summary, worked from the same figures as the lists: per grade, the people on it today
 // (retired people left out) and their due-totals added up; per period, its due-total; per status,

@@ -72,6 +72,17 @@ public class Claim {
     public boolean isStated() { return stated; }
     /** The figure its person's last statement bound it to; null for n/a, or when it is not stated. */
     public BigDecimal getStatedDue() { return statedDue; }
+    /**
+     * The figure a statement binds it to now: its stated figure (null for n/a), but null when it
+     * is not stated or is PENDING (a PENDING claim shows its live figure; a rejection binds it again).
+     */
+    public BigDecimal boundDue() {
+        return isBound() ? statedDue : null;
+    }
+    /** Whether its stated figure is in force: it is stated and not PENDING. */
+    public boolean isBound() {
+        return stated && status != ClaimStatus.PENDING;
+    }
     /** Bind it to a figure (null: n/a), or leave it unbound (live) when {@code stated} is false. */
     public void bind(boolean stated, BigDecimal statedDue) {
         this.stated = stated;
@@ -79,15 +90,31 @@ public class Claim {
     }
     /**
      * Whether it counts toward its person's claimed and due-total, the sheet's totals and a
-     * period's total: OPEN and SETTLED do, except that while its person is on hold an OPEN one
-     * does not.
+     * period's total: OPEN, PENDING and SETTLED do, except that while its person is on hold an
+     * OPEN or PENDING one does not.
      */
     public boolean counts(boolean personHeld) {
-        return status == ClaimStatus.SETTLED || (status == ClaimStatus.OPEN && !personHeld);
+        return status == ClaimStatus.SETTLED || (isOpen() && !personHeld);
+    }
+    /** Whether it is open: OPEN, or PENDING a steward's approval. */
+    public boolean isOpen() {
+        return status == ClaimStatus.OPEN || status == ClaimStatus.PENDING;
     }
     /** Only a draft may be edited; to change an open claim, void it and add a new one. */
     public void checkEditable() throws InvalidClaimStatusException {
         if (status != ClaimStatus.DRAFT) throw new InvalidClaimStatusException(status);
+    }
+
+    /** A steward's approval of a PENDING claim: it is settled, its due fixed at {@code due}. */
+    public void approve(BigDecimal due) throws InvalidClaimStatusException {
+        if (status != ClaimStatus.PENDING) throw new InvalidClaimStatusException(status, ClaimStatus.SETTLED);
+        status = ClaimStatus.SETTLED;
+        settledDue = due;
+    }
+    /** A steward's rejection of a PENDING claim: it is OPEN again, bound again by its statement. */
+    public void reject() throws InvalidClaimStatusException {
+        if (status != ClaimStatus.PENDING) throw new InvalidClaimStatusException(status, ClaimStatus.OPEN);
+        status = ClaimStatus.OPEN;
     }
 
     /** Move to the next status, when the current one allows it. */

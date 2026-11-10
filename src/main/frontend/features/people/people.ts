@@ -18,7 +18,7 @@ export function gradeOn(grades: GradeFrom[], date: string): Grade {
 // `version` is raised by each save; an edit sends the version it was made from. `statementCount`
 // is how many statements have been taken for them; `statedTotal` and `statementDate` are the last
 // one's due-total and date ('' before the first). `retired` is set once they have a retirement
-// date, `retiredFrom` ('' when not retired), whatever that date is. `held` is whether they are on hold: their OPEN claims then count in no total.
+// date, `retiredFrom` ('' when not retired), whatever that date is. `held` is whether they are on hold: their OPEN and PENDING claims then count in no total.
 // `patronIds` are the ids of the people they name as their patrons. `grade` is the grade in force on
 // the sheet's today; `grades` every grade they have been given, by from-date, the first from ''.
 export type Person = {

@@ -16,11 +16,15 @@ import { useFloor, useLate, useTerms } from '../access/access';
 import { useSheetToday } from '../sheet/sheet';
 import { dueBy, isOverdue } from '../overdue/overdue';
 
-type Action = 'open' | 'settle' | 'void';
+// A clerk's settle above the clerk limit leaves the claim PENDING; a steward approves it or rejects
+// it with a reason (typed in the row).
+type Action = 'open' | 'settle' | 'void' | 'approve' | 'reject';
 const ACTIONS: { action: Action; label: string }[] = [
   { action: 'open', label: 'Open' },
   { action: 'settle', label: 'Settle' },
   { action: 'void', label: 'Void' },
+  { action: 'approve', label: 'Approve' },
+  { action: 'reject', label: 'Reject' },
 ];
 
 type Fields = { amount: string; date: string; note: string; corrects: string };
@@ -47,6 +51,8 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   // The claim whose last status change or edit was refused, and why: its error shows until its
   // next action.
   const [refused, setRefused] = useState<{ id: string; message: string } | null>(null);
+  // The reason typed for rejecting each claim, by claim id.
+  const [reasons, setReasons] = useState<Record<string, string>>({});
   const [user] = useUser();
   const rates = useRates(sheetId).data ?? [];
   const periods = usePeriods(sheetId).data ?? [];
@@ -90,15 +96,22 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
     mutationFn: ({ id, action }: { id: string; action: Action }) =>
       postJson<Claim>(
         `/api/sheets/${encodeURIComponent(sheetId)}/claims/${encodeURIComponent(id)}/${action}`,
-        {},
+        action === 'reject' ? { reason: (reasons[id] ?? '').trim() } : {},
         user,
       ),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+    onSuccess: (_c, { id, action }) => {
+      if (action === 'reject') setReasons((r) => ({ ...r, [id]: '' }));
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
     onError: (_e, { id }) => setRefused({ id, message: 'That status change is not allowed.' }),
   });
 
   const act = (id: string, action: Action) => {
     setRefused(null);
+    if (action === 'reject' && (reasons[id] ?? '').trim() === '') {
+      setRefused({ id, message: 'A rejection needs a reason.' });
+      return;
+    }
     move.mutate({ id, action });
   };
 
@@ -203,6 +216,15 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
               <span data-testid="claim-period">{periodOf(periods, c.date)?.name ?? ''}</span>{' '}
               <span data-testid="claim-due-by">{dueBy(c, terms)}</span>{' '}
               <span data-testid="claim-overdue">{isOverdue(c, terms, today) ? 'yes' : 'no'}</span>{' '}
+              <input
+                data-testid="claim-reject-reason"
+                placeholder="Reject reason"
+                value={reasons[c.id] ?? ''}
+                onChange={(e) => {
+                  setReasons((r) => ({ ...r, [c.id]: e.target.value }));
+                  setRefused((r) => (r !== null && r.id === c.id ? null : r));
+                }}
+              />{' '}
               {ACTIONS.map(({ action, label }) => (
                 <button
                   key={action}

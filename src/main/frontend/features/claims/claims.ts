@@ -1,8 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 
-/** A claim's status: DRAFT when made, then OPEN, then SETTLED; a DRAFT or OPEN claim may be VOID. */
-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+/**
+ * A claim's status: DRAFT when made, then OPEN, then SETTLED; a clerk's settle above the clerk
+ * limit makes it PENDING until a steward approves it (SETTLED) or rejects it (OPEN again). A DRAFT,
+ * OPEN or PENDING claim may be VOID.
+ */
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
 
 /**
  * A claim: its amount with two decimals, its date (yyyy-MM-dd), its note, its status and its
@@ -32,11 +36,20 @@ export type Claim = {
 /** Whether a claim is a correction: it has no floor and no late charge. */
 export const isCorrection = (c: Claim) => c.corrects !== '';
 
+/** Whether a claim is open: OPEN, or PENDING a steward's approval. */
+export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING';
+
 /**
- * Whether a claim counts toward claimed, due-total and every total: only OPEN and SETTLED do, and
- * an OPEN one not while its person is on hold (`held`).
+ * Whether a claim's stated figure is in force: its person's last statement bound it and it is not
+ * PENDING (a PENDING claim shows its live figure).
  */
-export const counts = (c: Claim, held: boolean) => c.status === 'SETTLED' || (c.status === 'OPEN' && !held);
+export const isBound = (c: Claim) => c.stated && c.status !== 'PENDING';
+
+/**
+ * Whether a claim counts toward claimed, due-total and every total: only OPEN, PENDING and SETTLED
+ * do, and an OPEN or PENDING one not while its person is on hold (`held`).
+ */
+export const counts = (c: Claim, held: boolean) => c.status === 'SETTLED' || (isOpen(c) && !held);
 
 export const claimsKey = (sheetId: string) => ['sheet', sheetId, 'claims'] as const;
 
@@ -64,7 +77,7 @@ export const CLAIM_AMOUNT = /^-?\d+(\.\d{1,2})?$/;
 export const CLAIM_NUMBER = /^(\d+|.+-\d+)$/;
 
 /**
- * The amounts of the claims that count (OPEN and SETTLED, but not OPEN of a person on hold:
+ * The amounts of the claims that count (OPEN, PENDING and SETTLED, but not open ones of a person on hold:
  * `held` tells by person id) added up, in whole cents so no rounding creeps in, shown with two
  * decimals.
  */

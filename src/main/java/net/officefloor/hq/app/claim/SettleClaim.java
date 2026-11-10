@@ -18,13 +18,14 @@ import net.officefloor.plugin.variable.Val;
  * claim's date, divided by 100 and rounded to two decimals as the claim rounds (by the sheet's policy date), at least the sheet's floor. With no such rate the due is
  * not fixed. A claim a statement bound is settled at its bound figure. The late charge it has gained
  * by the sheet's today is frozen in on top. The user who opened the claim may not settle it.
- * A clerk (any user not made a steward) may settle it only when its due is at or below the sheet's
- * clerk limit; a due of n/a is within any limit.
+ * When a clerk (any user not made a steward) settles a claim whose due is above the sheet's clerk
+ * limit, it goes to PENDING instead, its due left live until a steward approves or rejects it; a
+ * due of n/a is within any limit.
  */
 public class SettleClaim {
     public void apply(@Val Sheet sheet, @Val Claim claim, PersonRepository people, RateRepository rates,
             RoleRepository roles, SettingsRepository settingsStore, HttpServletRequest request)
-            throws InvalidClaimStatusException, SelfSettleException, ClerkLimitException {
+            throws InvalidClaimStatusException, SelfSettleException {
         Person person = people.find(sheet.id(), claim.getPersonId());
         Settings settings = settingsStore.find(sheet.id());
         BigDecimal figure = claim.isStated() ? claim.getStatedDue()
@@ -32,12 +33,17 @@ public class SettleClaim {
                         sheet.today());
         // The late charge is read while the claim is still OPEN.
         BigDecimal late = ClaimFigure.late(claim, figure, settings, sheet.today());
-        claim.moveTo(ClaimStatus.SETTLED);
+        if (!claim.getStatus().canMoveTo(ClaimStatus.SETTLED)) {
+            throw new InvalidClaimStatusException(claim.getStatus(), ClaimStatus.SETTLED);
+        }
         String user = Audit.user(request);
         if (user.equals(claim.getOpenedBy())) throw new SelfSettleException(user);
-        claim.setSettledDue(figure == null ? null : figure.add(late));
-        if (!settings.withinClerkLimit(claim.getSettledDue()) && Role.CLERK.equals(roles.roleOf(sheet.id(), user))) {
-            throw new ClerkLimitException(user, claim.getSettledDue(), settings.clerkLimit());
+        BigDecimal due = figure == null ? null : figure.add(late);
+        if (!settings.withinClerkLimit(due) && Role.CLERK.equals(roles.roleOf(sheet.id(), user))) {
+            claim.moveTo(ClaimStatus.PENDING);
+            return;
         }
+        claim.moveTo(ClaimStatus.SETTLED);
+        claim.setSettledDue(due);
     }
 }

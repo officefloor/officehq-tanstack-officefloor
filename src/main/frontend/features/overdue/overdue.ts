@@ -1,6 +1,6 @@
 import { gradeOn } from '../people/people';
 import type { GradeFrom } from '../people/people';
-import { counts } from '../claims/claims';
+import { counts, isOpen } from '../claims/claims';
 import type { Claim } from '../claims/claims';
 import { claimDue, rateOn, sumDue } from '../rates/rates';
 import type { Late, Rate } from '../rates/rates';
@@ -14,9 +14,9 @@ export function addDays(date: string, days: number): string {
 /** A claim's due-by: its date plus the sheet's terms (days). */
 export const dueBy = (claim: Claim, terms: number): string => addDays(claim.date, terms);
 
-/** Whether a claim is overdue: OPEN, and its due-by before the sheet's `today`. */
+/** Whether a claim is overdue: open (OPEN or PENDING), and its due-by before the sheet's `today`. */
 export const isOverdue = (claim: Claim, terms: number, today: string): boolean =>
-  claim.status === 'OPEN' && today !== '' && dueBy(claim, terms) < today;
+  isOpen(claim) && today !== '' && dueBy(claim, terms) < today;
 
 /**
  * A person's overdue claims that count (none while they are `held`, as an OPEN claim then counts in

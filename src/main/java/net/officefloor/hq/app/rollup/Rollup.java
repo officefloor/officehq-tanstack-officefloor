@@ -52,7 +52,7 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
                 if (claim.getPersonId() != person.getId()) continue;
                 if (!claim.counts(person.isHeld())) continue;
                 claimed = claimed.add(claim.getAmount());
-                if (claim.getSettledDue() != null || claim.getStatedDue() != null) fixed = true;
+                if (claim.getSettledDue() != null || claim.boundDue() != null) fixed = true;
                 String grade = person.gradeOn(claim.getDate());
                 BigDecimal figure = ClaimFigure.withLate(claim, all, grade, settings, today);
                 if (figure != null) due = due.add(figure);

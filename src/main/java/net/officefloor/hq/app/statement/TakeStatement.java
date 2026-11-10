@@ -35,7 +35,7 @@ public class TakeStatement {
             boolean counts = claim.counts(person.isHeld());
             if (counts) {
                 counted++;
-                if (claim.getSettledDue() != null || claim.getStatedDue() != null) fixed = true;
+                if (claim.getSettledDue() != null || claim.boundDue() != null) fixed = true;
                 String grade = person.gradeOn(claim.getDate());
                 BigDecimal figure = ClaimFigure.of(claim, all, grade, sheetSettings, sheet.today());
                 // A figure found under a grade other than today's is kept, whatever today's rate.

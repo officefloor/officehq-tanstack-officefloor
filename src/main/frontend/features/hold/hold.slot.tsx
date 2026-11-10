@@ -17,7 +17,7 @@ function HoldHead() {
 }
 
 // Whether a person is on hold, and a button that puts them on it or takes them off it. While held,
-// their OPEN claims count in no total; their SETTLED claims still do.
+// their OPEN and PENDING claims count in no total; their SETTLED claims still do.
 function PersonHold({ sheetId, person }: { sheetId: string; person: Person }) {
   const queryClient = useQueryClient();
   const [user] = useUser();

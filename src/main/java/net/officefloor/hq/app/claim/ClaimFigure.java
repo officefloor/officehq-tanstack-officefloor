@@ -10,7 +10,7 @@ import net.officefloor.hq.app.setting.Settings;
 
 /**
  * A claim's due figure, as the screen shows it: the due fixed when it was settled, else the figure
- * its person's last statement bound it to, else its live due: its amount times its grade's rate in
+ * its person's last statement bound it to (never while it is PENDING), else its live due: its amount times its grade's rate in
  * force on its date, divided by 100 and rounded to two decimals, raised to the sheet's floor when
  * below it (a correction, a negative amount, has no floor and no late charge). Null for n/a (no
  * floor applies to n/a). Every rounding of a claim's live figures is by the sheet's policy date
@@ -22,7 +22,7 @@ public final class ClaimFigure {
 
     public static BigDecimal of(Claim claim, List<Rate> rates, String grade, Settings settings, LocalDate today) {
         if (claim.getSettledDue() != null) return claim.getSettledDue();
-        if (claim.isStated()) return claim.getStatedDue();
+        if (claim.isBound()) return claim.getStatedDue();
         return live(claim, rates, grade, settings, today);
     }
 
@@ -42,7 +42,7 @@ public final class ClaimFigure {
 
     /**
      * The claim's due with its late charge on top: its figure ({@link #of}) plus the late charge
-     * an OPEN claim gains while overdue on {@code today}. Null for n/a.
+     * an OPEN or PENDING claim gains while overdue on {@code today}. Null for n/a.
      */
     public static BigDecimal withLate(Claim claim, List<Rate> rates, String grade, Settings settings,
             LocalDate today) {
@@ -51,14 +51,14 @@ public final class ClaimFigure {
     }
 
     /**
-     * The late charge on a figure: for an OPEN claim past its due-by (its date plus the sheet's
+     * The late charge on a figure: for an OPEN or PENDING claim past its due-by (its date plus the sheet's
      * terms) on {@code today}, the sheet's late percent of the figure for every full 30 days it is
      * overdue, rounded to two decimals as the claim rounds; else 0.00. Never bound by a statement:
      * it follows the sheet's today until the claim is settled.
      */
     public static BigDecimal late(Claim claim, BigDecimal figure, Settings settings, LocalDate today) {
         BigDecimal none = BigDecimal.ZERO.setScale(2);
-        if (claim.getStatus() != ClaimStatus.OPEN || figure == null || claim.isCorrection()) return none;
+        if (!claim.isOpen() || figure == null || claim.isCorrection()) return none;
         long overdue = ChronoUnit.DAYS.between(claim.getDate().plusDays(settings.terms()), today);
         long periods = overdue > 0 ? overdue / 30 : 0;
         if (periods == 0) return none;

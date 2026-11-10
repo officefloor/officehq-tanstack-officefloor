@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { gradeOn } from '../people/people';
 import type { Grade, GradeFrom } from '../people/people';
-import { counts, isCorrection } from '../claims/claims';
+import { counts, isBound, isCorrection, isOpen } from '../claims/claims';
 import type { Claim } from '../claims/claims';
 
 /**
@@ -114,12 +114,12 @@ function daysBetween(from: string, to: string): number {
 }
 
 /**
- * A claim's late charge on its `figure`: for an OPEN claim past its due-by (its date plus the
+ * A claim's late charge on its `figure`: for an OPEN or PENDING claim past its due-by (its date plus the
  * terms) on the sheet's today, the late percent of the figure for every full 30 days it is overdue,
  * rounded as the claim rounds; else nothing. A statement never binds it: it follows the sheet's today.
  */
 function lateCharge(claim: Claim, figure: string, late: Late): bigint {
-  if (claim.status !== 'OPEN' || figure === NA || late.today === '' || isCorrection(claim)) return 0n;
+  if (!isOpen(claim) || figure === NA || late.today === '' || isCorrection(claim)) return 0n;
   const overdue = daysBetween(claim.date, late.today) - late.terms;
   const periods = overdue > 0 ? Math.floor(overdue / 30) : 0;
   return periods === 0 ? 0n : percentOf(figure, late.pct, BigInt(periods), roundsHalfUp(claim, late));
@@ -132,12 +132,12 @@ export function sumDue(values: string[]): string {
 
 /**
  * A claim's due: the one fixed when it was settled (its late charge frozen in), else the figure its
- * person's last statement bound it to, else its amount at the rate in force on its date, at least
+ * person's last statement bound it to (never while it is PENDING), else its amount at the rate in force on its date, at least
  * the sheet's `floor`; an overdue claim's late charge added on top.
  */
 export function claimDue(claim: Claim, pct: string | null, floor: string, late: Late): string {
   if (claim.due !== '') return claim.due;
-  const figure = claim.stated ? claim.statedDue : due(claim.amount, pct, isCorrection(claim) ? null : floor, roundsHalfUp(claim, late));
+  const figure = isBound(claim) ? claim.statedDue : due(claim.amount, pct, isCorrection(claim) ? null : floor, roundsHalfUp(claim, late));
   const charge = lateCharge(claim, figure, late);
   return charge === 0n ? figure : showCents(hundredths(figure) + charge);
 }
@@ -159,7 +159,7 @@ export function personDueTotal(
 ): string {
   const counted = claims.filter((c) => counts(c, held));
   const grade = gradeOn(grades, today);
-  const kept = (c: Claim) => c.due !== '' || (c.stated && c.statedDue !== NA)
+  const kept = (c: Claim) => c.due !== '' || (isBound(c) && c.statedDue !== NA)
     || (gradeOn(grades, c.date) !== grade && rateOn(rates, gradeOn(grades, c.date), c.date) !== null);
   if (rateOn(rates, grade, today) === null && !counted.some(kept)) return NA;
   return sumDue(counted.map((c) => claimDue(c, rateOn(rates, gradeOn(grades, c.date), c.date), floor, late)));
