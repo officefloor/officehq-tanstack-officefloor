@@ -51,4 +51,14 @@ public class ClaimLogRepository {
                 }, sheetId, Date.valueOf(day));
         return statuses;
     }
+
+    /**
+     * The date the claim was settled: its first SETTLED log line's date (a re-settle does not move
+     * it); null when it was never settled.
+     */
+    public LocalDate settledOn(Claim claim) {
+        List<Date> found = jdbc.queryForList("SELECT on_date FROM claim_log WHERE sheet_id = ? AND claim_id = ?"
+                + " AND status = 'SETTLED' ORDER BY id", Date.class, claim.getSheetId(), claim.getId());
+        return found.isEmpty() ? null : found.get(0).toLocalDate();
+    }
 }
