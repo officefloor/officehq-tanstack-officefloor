@@ -1,0 +1,174 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 6727af4cd..92881b18a 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -39,13 +39,15 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person })
+   const [fields, setFields] = useState<Fields>(EMPTY);
+   const [editing, setEditing] = useState<string | null>(null);
+   const [error, setError] = useState('');
+-  // The claim whose last status change was refused: its error shows until its next action.
+-  const [refused, setRefused] = useState<string | null>(null);
++  // The claim whose last status change or edit was refused, and why: its error shows until its
++  // next action.
++  const [refused, setRefused] = useState<{ id: string; message: string } | null>(null);
+   const [user] = useUser();
+   const rates = useRates(sheetId).data ?? [];
+   const periods = usePeriods(sheetId).data ?? [];
+ 
+   const reset = () => {
++    setRefused(null);
+     setFields(EMPTY);
+     setEditing(null);
+     setError('');
+@@ -63,7 +65,15 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person })
+       reset();
+       void queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+     },
+-    onError: () => setError('That claim could not be saved.'),
++    onError: (_e, { id }) => {
++      // Only a draft can be edited: an edit of an open (or later) claim is refused on the claim.
++      const claim = id === null ? undefined : claims.find((c) => c.id === id);
++      if (claim !== undefined && claim.status !== 'DRAFT') {
++        setRefused({ id: claim.id, message: 'Only a draft claim can be edited.' });
++      } else {
++        setError('That claim could not be saved.');
++      }
++    },
+   });
+ 
+   const move = useMutation({
+@@ -74,7 +84,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person })
+         user,
+       ),
+     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+-    onError: (_e, { id }) => setRefused(id),
++    onError: (_e, { id }) => setRefused({ id, message: 'That status change is not allowed.' }),
+   });
+ 
+   const act = (id: string, action: Action) => {
+@@ -85,6 +95,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person })
+   const submit = (e: FormEvent) => {
+     e.preventDefault();
+     setError('');
++    setRefused(null);
+     const amount = fields.amount.trim();
+     if (amount === '') {
+       setError('An amount is required.');
+@@ -100,6 +111,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person })
+   const change = (next: Partial<Fields>) => {
+     setFields((f) => ({ ...f, ...next }));
+     setError('');
++    setRefused((r) => (r !== null && r.id === editing ? null : r));
+   };
+ 
+   const open = (c: Claim) => {
+@@ -178,9 +190,9 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person })
+                   Edit
+                 </button>
+               )}
+-              {refused === c.id && (
++              {refused?.id === c.id && (
+                 <p role="alert" data-testid="claim-error">
+-                  That status change is not allowed.
++                  {refused.message}
+                 </p>
+               )}
+             </li>
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+index b45d16873..0e027a781 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+@@ -4,7 +4,9 @@ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ 
+ public class ApplyClaim {
+-    public void apply(@Val ClaimInput input, @Val Sheet sheet, @Val Claim claim) {
++    public void apply(@Val ClaimInput input, @Val Sheet sheet, @Val Claim claim)
++            throws InvalidClaimStatusException {
++        claim.checkEditable();
+         claim.setAmount(input.amount());
+         claim.setDate(input.date() == null ? sheet.today() : input.date());
+         claim.setNote(input.note());
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 8099cc535..648b525e5 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -13,7 +13,6 @@ public class Claim {
+     private String note;
+     private ClaimStatus status;
+     private Integer number;
+-    private Integer voidedNumber;
+     private BigDecimal settledDue;
+     private String openedBy;
+     private boolean stated;
+@@ -45,7 +44,8 @@ public class Claim {
+     public String getNote() { return note; }
+     public void setNote(String note) { this.note = note; }
+     public ClaimStatus getStatus() { return status; }
+-    /** The claim's number on its sheet, given when it is opened; null for a draft or a voided claim. */
++    /** The claim's number on its sheet, given when it is opened; null for a draft. A voided claim
++     *  keeps the number it had; a number is never reused. */
+     public Integer getNumber() { return number; }
+     public void setNumber(Integer number) { this.number = number; }
+     /** The due fixed when it was settled; null while its due is live. */
+@@ -63,16 +63,14 @@ public class Claim {
+         this.stated = stated;
+         this.statedDue = stated ? statedDue : null;
+     }
+-    /** The number its audit lines carry: its number, or the one it had before it was voided. */
+-    public Integer getAuditNumber() { return number != null ? number : voidedNumber; }
++    /** Only a draft may be edited; to change an open claim, void it and add a new one. */
++    public void checkEditable() throws InvalidClaimStatusException {
++        if (status != ClaimStatus.DRAFT) throw new InvalidClaimStatusException(status);
++    }
+ 
+     /** Move to the next status, when the current one allows it. */
+     public void moveTo(ClaimStatus next) throws InvalidClaimStatusException {
+         if (!status.canMoveTo(next)) throw new InvalidClaimStatusException(status, next);
+         status = next;
+-        if (next == ClaimStatus.VOID) {
+-            voidedNumber = number;
+-            number = null;
+-        }
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimAudit.java b/src/main/java/net/officefloor/hq/app/claim/ClaimAudit.java
+index d29aa9e0f..96ffa08a9 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimAudit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimAudit.java
+@@ -5,7 +5,7 @@ import net.officefloor.hq.app.sheet.Sheet;
+ 
+ /**
+  * A claim's audit record: its person, its amount as the screen shows it, its date, and its number
+- * when it has one (a voided claim's line carries the number it had).
++ * when it has one (a voided claim keeps the number it had).
+  */
+ final class ClaimAudit {
+     private ClaimAudit() {}
+@@ -14,6 +14,6 @@ final class ClaimAudit {
+         ClaimResponse shown = ClaimResponse.from(claim);
+         return event + " sheet=" + sheet.id() + " by=" + user + " person=" + person.getName()
+                 + " amount=" + shown.amount() + " date=" + shown.date()
+-                + (claim.getAuditNumber() == null ? "" : " number=" + claim.getAuditNumber());
++                + (claim.getNumber() == null ? "" : " number=" + claim.getNumber());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/InvalidClaimStatusException.java b/src/main/java/net/officefloor/hq/app/claim/InvalidClaimStatusException.java
+index f536a53cb..9020a9834 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/InvalidClaimStatusException.java
++++ b/src/main/java/net/officefloor/hq/app/claim/InvalidClaimStatusException.java
+@@ -1,8 +1,13 @@
+ package net.officefloor.hq.app.claim;
+ 
+-/** A status change the claim's current status does not allow. */
++/** A status change, or an edit, the claim's current status does not allow. */
+ public class InvalidClaimStatusException extends Exception {
+     public InvalidClaimStatusException(ClaimStatus from, ClaimStatus to) {
+         super("A " + from + " claim cannot become " + to);
+     }
++
++    /** An edit of a claim that is no longer a draft. */
++    public InvalidClaimStatusException(ClaimStatus status) {
++        super("A " + status + " claim cannot be edited");
++    }
+ }
