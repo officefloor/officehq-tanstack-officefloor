@@ -1,0 +1,42 @@
+import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
+import { downloadCsv } from './csv';
+
+/** The person-row cells a person's export lists, in this order, each named by its data-testid. */
+const CELLS = [
+  'person-name',
+  'person-grade',
+  'person-claimed',
+  'person-due-total',
+  'person-statement-count',
+  'person-overdue-total',
+  'person-hold',
+  'person-retired',
+  'person-aliases',
+  'person-score',
+];
+
+/** A button that downloads the person's row as a CSV file: a header line `cell,value`, then one line per
+ *  cell in CELLS order with the value as the row shows it (blank for a column the user has switched off). */
+function PersonExport({ sheetId, personId }: { sheetId: string; personId: number }) {
+  const download = (button: HTMLElement) => {
+    const row = button.closest('tr');
+    const lines = [['cell', 'value']];
+    for (const id of CELLS) {
+      lines.push([id, row?.querySelector(`[data-testid="${id}"]`)?.textContent ?? '']);
+    }
+    downloadCsv(lines, `person-${sheetId}-${personId}.csv`);
+  };
+
+  return (
+    <td>
+      <button type="button" data-testid="person-export" onClick={(e) => download(e.currentTarget)}>
+        Export (CSV)
+      </button>
+    </td>
+  );
+}
+
+export const contributions = [
+  PersonColumnHead.fill({ order: 58, Component: () => <th>Export</th> }),
+  PersonCells.fill({ order: 58, Component: PersonExport }),
+];
