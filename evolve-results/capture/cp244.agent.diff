@@ -1,0 +1,129 @@
+diff --git a/src/main/frontend/features/consolidated/consolidated.slot.tsx b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+index 2525377bd..c5b3425a4 100644
+--- a/src/main/frontend/features/consolidated/consolidated.slot.tsx
++++ b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+@@ -5,7 +5,8 @@ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { useOverdue } from '../overdue/useOverdue';
+ import { useClaims } from '../claims/useClaims';
+ import { type Alias, peopleKey, useGrades, type Person, usePeople } from '../people/usePeople';
+-import { useDueTotals } from '../rates/useDueTotals';
++import { useDueTotals, useSettledOpenTotals } from '../rates/useDueTotals';
++import { useCutTotals } from '../cuts/useCutTotals';
+ import { hundredths, money, sumDues, trimmedSum } from '../rates/useRates';
+ import { countWithStatus, STATUSES } from '../summary/statusCounts';
+ import { useFigure } from '../locale/useLocale';
+@@ -13,10 +14,11 @@ import { useDescendants } from './useDescendants';
+ 
+ /** One sheet's figures: its people (retired included), each as the names they go by (their name and aliases, as
+  *  names are compared: ignoring case), joined by '\t' within a person and '\n' between people; each person's
+- *  due-total and overdue-total (as its header works them out), comma separated; and, as its summary shows them, per grade the due-totals of the people on it (retired left
++ *  due-total and overdue-total (as its header works them out), and settled-total, open-total and cut total (as its
++ *  row shows them), comma separated; and, as its summary shows them, per grade the due-totals of the people on it (retired left
+  *  out) added up, and per status how many claims have it. While the screen shows a date, each sheet is read as it stood at the end of that day, with that
+  *  date as its today. */
+-type Figures = { people: string; due: string; overdue: string; grades: string; statuses: string };
++type Figures = { people: string; due: string; overdue: string; settled: string; open: string; cut: string; grades: string; statuses: string };
+ 
+ /** How names are compared: ignoring case (and surrounding spaces). */
+ const nameKey = (name: string) => name.trim().toLowerCase();
+@@ -57,6 +59,10 @@ function SheetFigures({ sheetId, grades: shownGrades, onFigures }: { sheetId: st
+   const people = usePeopleNames(sheetId).data ?? '';
+   const due = [...useDueTotals(sheetId).values()].join(',');
+   const overdue = [...useOverdue(sheetId).values()].map((f) => f.total).join(',');
++  const settledOpen = [...useSettledOpenTotals(sheetId).values()];
++  const settled = settledOpen.map((s) => s.settled).join(',');
++  const open = settledOpen.map((s) => s.open).join(',');
++  const cut = [...useCutTotals(sheetId).values()].join(',');
+   const dueTotals = useDueTotals(sheetId);
+   const current = (usePeople(sheetId).data ?? []).filter((p) => !p.retiredFrom);
+   const claims = useClaims(sheetId).data;
+@@ -65,14 +71,15 @@ function SheetFigures({ sheetId, grades: shownGrades, onFigures }: { sheetId: st
+     sumDues(current.filter((p) => p.grade === g).map((p) => dueTotals.get(p.id) ?? 'n/a'))).join(',');
+   const statuses = STATUSES.map((s) => countWithStatus(claims, s)).join(',');
+   useEffect(
+-    () => onFigures(sheetId, { people, due, overdue, grades, statuses }),
+-    [sheetId, people, due, overdue, grades, statuses, onFigures],
++    () => onFigures(sheetId, { people, due, overdue, settled, open, cut, grades, statuses }),
++    [sheetId, people, due, overdue, settled, open, cut, grades, statuses, onFigures],
+   );
+   return null;
+ }
+ 
+ /** The consolidated figures over the sheet and all its descendants: the number of people (each counted once over
+- *  the tree: people whose names or aliases match are one person), the due-total and overdue-total of every person
++ *  the tree: people whose names or aliases match are one person), the due-total, overdue-total, settled-total,
++ *  open-total and cut total of every person
+  *  of the tree added up, leaving out the single highest and the single lowest figure over the whole tree when three
+  *  or more people have one, per grade the due-totals of the people on
+  *  it added up, and per status the count of claims, all as of the screen's as-of date when one is
+@@ -98,6 +105,9 @@ function Consolidated({ sheetId }: { sheetId: string }) {
+       Consolidated: people <strong data-testid="consolidated-people-count">{countPeople(shown.map((f) => f.people))}</strong>
+       {' '}· due total <strong data-testid="consolidated-due-total">{fig(trimmed((f) => f.due))}</strong>
+       {' '}· overdue total <strong data-testid="consolidated-overdue-total">{fig(trimmed((f) => f.overdue))}</strong>
++      {' '}· settled total <strong data-testid="consolidated-settled-total">{fig(trimmed((f) => f.settled))}</strong>
++      {' '}· open total <strong data-testid="consolidated-open-total">{fig(trimmed((f) => f.open))}</strong>
++      {' '}· cut total <strong data-testid="consolidated-cut-total">{fig(trimmed((f) => f.cut))}</strong>
+       {grades.map((g, i) => (
+         <span key={g}>
+           {' '}· grade {g} due total <strong data-testid={`consolidated-grade-${g}-due-total`}>{fig(gradeDue(i))}</strong>
+diff --git a/src/main/frontend/features/cuts/cuts.slot.tsx b/src/main/frontend/features/cuts/cuts.slot.tsx
+index c43377d00..c05ea50ea 100644
+--- a/src/main/frontend/features/cuts/cuts.slot.tsx
++++ b/src/main/frontend/features/cuts/cuts.slot.tsx
+@@ -1,6 +1,6 @@
+ import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+-import { sumDues } from '../rates/useRates';
++import { trimmedSum } from '../rates/useRates';
+ import { useCutTotals } from './useCutTotals';
+ import { useFigure } from '../locale/useLocale';
+ 
+@@ -11,13 +11,14 @@ function PersonCutTotal({ sheetId, personId }: { sheetId: string; personId: numb
+   return <td data-testid="person-cut-total">{fig(totals.get(personId) ?? '')}</td>;
+ }
+ 
+-/** The sheet's cut total: everyone's cut total added up. */
++/** The sheet's cut total: everyone's cut total added up, leaving out the highest and the lowest when three
++ *  or more people have one. */
+ function CutTotal({ sheetId }: { sheetId: string }) {
+   const fig = useFigure();
+   const totals = useCutTotals(sheetId);
+   return (
+     <p>
+-      Cut total: <strong data-testid="rollup-cut-total">{fig(sumDues([...totals.values()]))}</strong>
++      Cut total: <strong data-testid="rollup-cut-total">{fig(trimmedSum([...totals.values()]))}</strong>
+     </p>
+   );
+ }
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index f8c78b388..a8a6c61ee 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -8,7 +8,7 @@ import { useGrades } from '../people/usePeople';
+ import { useSheetToday } from '../today/useSheetToday';
+ import { useDueTotals, useExcess, useSettledOpenTotals } from './useDueTotals';
+ import { useRatePreview } from './useRatePreview';
+-import { rateFor, ratesKey, sumDues, trimmedSum, useRates, type Rate } from './useRates';
++import { rateFor, ratesKey, trimmedSum, useRates, type Rate } from './useRates';
+ import { useFigure } from '../locale/useLocale';
+ import { Col } from '../columns/useColumns';
+ 
+@@ -332,14 +332,15 @@ function PersonSettledOpen({ sheetId, personId }: { sheetId: string; personId: n
+   );
+ }
+ 
+-/** The sheet's settled-total and open-total: everyone's figure simply added up (not trimmed). */
++/** The sheet's settled-total and open-total: everyone's figure added up, leaving out the highest and the
++ *  lowest when three or more people have one. */
+ function SettledOpenTotals({ sheetId }: { sheetId: string }) {
+   const fig = useFigure();
+   const split = [...useSettledOpenTotals(sheetId).values()];
+   return (
+     <p>
+-      Settled total: <strong data-testid="rollup-settled-total">{fig(sumDues(split.map((s) => s.settled)))}</strong>,
+-      open total <strong data-testid="rollup-open-total">{fig(sumDues(split.map((s) => s.open)))}</strong>
++      Settled total: <strong data-testid="rollup-settled-total">{fig(trimmedSum(split.map((s) => s.settled)))}</strong>,
++      open total <strong data-testid="rollup-open-total">{fig(trimmedSum(split.map((s) => s.open)))}</strong>
+     </p>
+   );
+ }
