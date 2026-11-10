@@ -133,7 +133,7 @@ function daysBetween(from: string, to: string): number {
 }
 
 /** A date (yyyy-MM-dd) some whole days on, worked in UTC so no zone shifts it. */
-function addDays(date: string, days: number): string {
+export function addDays(date: string, days: number): string {
   const [y, m, d] = date.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
 }
