@@ -17,7 +17,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, late_entry, reminded_on, ext_ref, tags, void_reason,"
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, edited_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, late_entry, reminded_on, ext_ref, tags, void_reason,"
             + " (SELECT c.claim_date FROM claim c WHERE c.sheet_id = claim.sheet_id AND c.person_id = claim.person_id"
             + " AND c.claim_number = claim.corrects) AS corrected_date,"
             + " CASE WHEN locked_on = (SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id) THEN locked_by END AS locked_by_now";
@@ -29,6 +29,7 @@ public class ClaimRepository {
             ClaimStatus.valueOf(rs.getString("status")),
             rs.getString("claim_number"), rs.getBigDecimal("settled_due"),
             rs.getString("opened_by"));
+        claim.setEditedBy(rs.getString("edited_by"));
         claim.bind(rs.getBoolean("stated"), rs.getBigDecimal("stated_due"));
         claim.setCorrects(rs.getString("corrects"));
         claim.setDueBy(rs.getDate("due_by").toLocalDate());
@@ -215,9 +216,9 @@ public class ClaimRepository {
                         claim.getPersonId(), nextListed(claim.getSheetId()), claim.getId(), claim.getSheetId());
             }
             keepBinding(claim);
-            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?, stated = ?, stated_due = ?, corrects = ?, deferred_until = ?, proofs = ?, ext_ref = ?, tags = ?, void_reason = ? WHERE id = ? AND sheet_id = ?",
+            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?, edited_by = ?, stated = ?, stated_due = ?, corrects = ?, deferred_until = ?, proofs = ?, ext_ref = ?, tags = ?, void_reason = ? WHERE id = ? AND sheet_id = ?",
                     claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(),
-                    claim.getStatus().name(), claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(),
+                    claim.getStatus().name(), claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getEditedBy(),
                     claim.isStated(), claim.getStatedDue(), claim.getCorrects(),
                     claim.getDeferredUntil() == null ? null : Date.valueOf(claim.getDeferredUntil()), claim.getProofs(), claim.getRef(), claim.getTags(), claim.getVoidReason(), claim.getId(),
                     claim.getSheetId());

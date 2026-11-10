@@ -15,6 +15,7 @@ public class Claim {
     private String number;
     private BigDecimal settledDue;
     private String openedBy;
+    private String editedBy;
     private boolean stated;
     private BigDecimal statedDue;
     private String corrects;
@@ -174,6 +175,13 @@ public class Claim {
     /** The user who opened it; null until it is opened. */
     public String getOpenedBy() { return openedBy; }
     public void setOpenedBy(String openedBy) { this.openedBy = openedBy; }
+    /** The user who last edited it (its form or its row's amount entry); null when it was never edited. */
+    public String getEditedBy() { return editedBy; }
+    public void setEditedBy(String editedBy) { this.editedBy = editedBy; }
+    /** Whether {@code user} opened it or last edited it, and so may not settle or approve it. */
+    public boolean isOwnedBy(String user) {
+        return user.equals(openedBy) || user.equals(editedBy);
+    }
     /** Whether its person's last statement bound it to a figure. */
     public boolean isStated() { return stated; }
     /** The figure its person's last statement bound it to; null for n/a, or when it is not stated. */
@@ -233,6 +241,7 @@ public class Claim {
         then.ref = ref;
         then.tags = tags;
         then.voidReason = voidReason;
+        then.editedBy = editedBy;
         return then;
     }
     /** Whether it is open: OPEN, or PENDING a steward's approval. */

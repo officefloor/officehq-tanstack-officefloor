@@ -23,7 +23,7 @@ import net.officefloor.plugin.variable.Val;
  * Settles the selected claims in list order (people in the order they were added, each person's
  * claims newest first) by exactly the rules of settling one claim, as the signed-in user. A claim
  * sent to PENDING counts as settled; a claim that cannot be settled (its status does not allow it,
- * dated inside a closed period, opened by this user, not on the sheet) is refused and left as it is.
+ * dated inside a closed period, opened or last edited by this user, not on the sheet) is refused and left as it is.
  * Each claim settled is logged and audited as a single settle is: its status line, then the
  * watchers it notifies (once settled), then the figures it moved. A viewer, or anyone on an archived
  * sheet, settles none: every selected claim is refused.

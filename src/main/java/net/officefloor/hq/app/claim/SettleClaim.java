@@ -18,7 +18,7 @@ import net.officefloor.plugin.variable.Val;
  * claim's date, divided by 100 and rounded to two decimals as the claim rounds (by the sheet's policy date), or
  * for a claim a statement bound its bound figure; with the late charge it has gained on that figure
  * by the sheet's today frozen in on top, and at least the floor in force on its date (applied last).
- * With no such rate the due is not fixed. The user who opened the claim may not settle it.
+ * With no such rate the due is not fixed. The user who opened the claim, or last edited it, may not settle it.
  * When a clerk (any user not made a steward) settles a claim whose due is above the sheet's clerk
  * limit, it goes to PENDING instead, its due left live until a steward approves or rejects it; a
  * due of n/a is within any limit. Before the clerk limit is considered, a claim whose due is above
@@ -54,6 +54,7 @@ public class SettleClaim {
             throw new InvalidClaimStatusException(claim.getStatus(), ClaimStatus.SETTLED);
         }
         if (user.equals(claim.getOpenedBy())) throw new SelfSettleException(user);
+        if (claim.isOwnedBy(user)) throw new SelfSettleException(user, "last edited");
         BigDecimal due = ClaimFigure.floored(claim, figure, late, settings);
         if (settings.needsProof(due, claim.getDate(), claim.getProofs())) throw new InvalidClaimStatusException(ProofRequired.MESSAGE);
         if (!settings.withinClerkLimit(due, sheet.today()) && Role.CLERK.equals(role)) {
