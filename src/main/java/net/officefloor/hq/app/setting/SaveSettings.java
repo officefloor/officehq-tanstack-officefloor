@@ -26,6 +26,7 @@ public class SaveSettings {
         input.perms().forEach((action, roles) -> repository.recordPerm(sheet.id(), action, roles));
         java.util.Map<String, String> values = new java.util.LinkedHashMap<>(input.datedValues());
         values.putAll(input.gradeTermsValues());
+        values.putAll(input.gradeGraceValues());
         if (input.capValue() != null) values.put(Settings.CAP, input.capValue());
         if (input.proofThresholdValue() != null) values.put(Settings.PROOF_THRESHOLD, input.proofThresholdValue());
         if (input.noteThresholdValue() != null) values.put(Settings.NOTE_THRESHOLD, input.noteThresholdValue());

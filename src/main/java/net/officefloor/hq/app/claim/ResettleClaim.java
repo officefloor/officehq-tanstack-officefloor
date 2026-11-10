@@ -32,10 +32,10 @@ public class ResettleClaim {
         }
         Person person = people.find(sheet.id(), claim.getPersonId());
         Settings settings = settingsStore.find(sheet.id());
-        BigDecimal figure = ClaimFigure.live(claim, rates.findAll(sheet.id()), person.gradeOn(claim.getDate()),
-                settings, sheet.today());
+        String grade = person.gradeOn(claim.getDate());
+        BigDecimal figure = ClaimFigure.live(claim, rates.findAll(sheet.id()), grade, settings, sheet.today());
         BigDecimal due = ClaimFigure.floored(claim, figure,
-                ClaimFigure.lateAsOpen(claim, figure, settings, sheet.today()), settings);
+                ClaimFigure.lateAsOpen(claim, figure, grade, settings, sheet.today()), settings);
         BigDecimal old = claim.getSettledDue();
         claim.setSettledDue(due);
         resettlement.set(new Resettlement(old, due));

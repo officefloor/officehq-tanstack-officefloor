@@ -73,6 +73,28 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
         return "terms-" + grade;
     }
 
+    /** The key of a grade's grace days. */
+    public static String gradeGraceKey(String grade) {
+        return "grace-" + grade;
+    }
+
+    /** A grade's grace days in force on a date, or null when it has none. */
+    public Integer gradeGraceOn(String grade, LocalDate date) {
+        String value = valueOn(gradeGraceKey(grade), date);
+        return value == null || value.isEmpty() ? null : Integer.valueOf(value);
+    }
+
+    /**
+     * The day a claim's overdue count starts from: its due-by plus the grace days of its grade (the
+     * one in force on its date) in force on its date, or its due-by when that grade has none. A
+     * claim is overdue when this is before the sheet's today, and its late charge's 30-day
+     * boundaries are counted from it.
+     */
+    public LocalDate overdueFrom(LocalDate dueBy, String grade, LocalDate date) {
+        Integer grace = grade == null ? null : gradeGraceOn(grade, date);
+        return grace == null ? dueBy : dueBy.plusDays(grace);
+    }
+
     /** A sheet's floor until it is set. */
     public static final BigDecimal DEFAULT_FLOOR = new BigDecimal("1.00");
 

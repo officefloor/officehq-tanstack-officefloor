@@ -13,10 +13,11 @@ package net.officefloor.hq.app.setting;
  * matrix being changed, by action (open, settle, void, reassign, close, reopen), a comma separated
  * list of roles, clerk or steward (blank: the standing rule), and the grace days, a whole number of
  * days (blank: off), and the note threshold, with up to two decimals (blank: none), and the entry date as yyyy-MM-dd
- * (blank: off).
+ * (blank: off), and the grace days of each grade being changed, a whole number of days (blank:
+ * none), dated by its key (grace-A, grace-B, grace-C).
  */
 public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom,
         java.util.Map<String, String> gradeTerms, String cap, java.util.Map<String, String> from,
         String proofThreshold, java.util.Map<String, String> perms, String graceDays, String noteThreshold,
-        String entryDate) {
+        String entryDate, java.util.Map<String, String> gradeGrace) {
 }

@@ -11,7 +11,8 @@ import net.officefloor.plugin.variable.Val;
  * the floor, then the terms, then the late percent, then the policy date, then the period numbering
  * from, then each grade's terms (blank for the sheet's), then the cap (blank for none), then the proof threshold (blank for none), then the note threshold (blank for none), then each
  * action's entry in the permission matrix (blank for the standing rule, never dated), then the grace
- * days (blank for off, never dated), then the entry date (blank for off, never dated); a figure
+ * days (blank for off, never dated), then the entry date (blank for off, never dated), then each
+ * grade's grace days (blank for none); a figure
  * setting saved from a from-date given ends with it. Runs after every rule has passed, so a refused
  * change writes nothing.
  */
@@ -42,6 +43,7 @@ public class AuditSettingChanged {
         if (input.entryDateChanged()) {
             audit.record(head + " key=entry-date value=" + (input.entryDate() == null ? "" : input.entryDate()));
         }
+        input.gradeGraceValues().forEach((key, value) -> audit.record(line(head, key, value, input)));
     }
 
     private static String line(String head, String key, String value, SettingsInput input) {

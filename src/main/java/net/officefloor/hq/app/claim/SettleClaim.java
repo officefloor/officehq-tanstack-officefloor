@@ -42,11 +42,11 @@ public class SettleClaim {
         if (!settings.allows("settle", role)) {
             throw new InvalidClaimStatusException("A " + role + " may not settle a claim");
         }
+        String grade = person.gradeOn(claim.getDate());
         BigDecimal figure = claim.isStated() ? claim.getStatedDue()
-                : ClaimFigure.live(claim, rates.findAll(sheet.id()), person.gradeOn(claim.getDate()), settings,
-                        sheet.today());
+                : ClaimFigure.live(claim, rates.findAll(sheet.id()), grade, settings, sheet.today());
         // The late charge is read while the claim is still OPEN.
-        BigDecimal late = ClaimFigure.late(claim, figure, settings, sheet.today());
+        BigDecimal late = ClaimFigure.late(claim, figure, grade, settings, sheet.today());
         if (claim.isDeferredOn(sheet.today())) {
             throw new InvalidClaimStatusException("A claim deferred until " + claim.getDeferredUntil() + " cannot be settled");
         }

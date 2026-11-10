@@ -15,12 +15,13 @@ import java.util.Map;
  * recorded for each figure setting, by key, in from-date order; and the proof threshold with two
  * decimals ('' for none); and each action's entry in the permission matrix, in matrix order, as
  * saved ('' for the standing rule); and the grace days ('' for off); and the note threshold with two
- * decimals ('' for none); and the entry date as yyyy-MM-dd ('' for off).
+ * decimals ('' for none); and the entry date as yyyy-MM-dd ('' for off); and each grade's grace
+ * days ('' for none).
  */
 public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
         String periodNumberingFrom, Map<String, String> gradeTerms, String cap, Map<String, List<Dated>> dated,
         String proofThreshold, Map<String, String> perms, String graceDays, String noteThreshold,
-        String entryDate) {
+        String entryDate, Map<String, String> gradeGrace) {
 
     /** A value ('' for none) recorded from a date (yyyy-MM-dd). */
     public record Dated(String from, String value) {
@@ -40,7 +41,8 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
                 perms(settings),
                 settings.graceDays() == null ? "" : settings.graceDays().toString(),
                 show(settings.noteThresholdOn(today)),
-                settings.entryDate() == null ? "" : settings.entryDate().toString());
+                settings.entryDate() == null ? "" : settings.entryDate().toString(),
+                gradeGrace(settings));
     }
 
     private static String show(java.math.BigDecimal figure) {
@@ -52,6 +54,15 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
         for (String grade : Settings.GRADES) {
             Integer own = settings.gradeTermsOn(grade, settings.today());
             shown.put(grade, own == null ? "" : own.toString());
+        }
+        return shown;
+    }
+
+    private static Map<String, String> gradeGrace(Settings settings) {
+        Map<String, String> shown = new LinkedHashMap<>();
+        for (String grade : Settings.GRADES) {
+            Integer grace = settings.gradeGraceOn(grade, settings.today());
+            shown.put(grade, grace == null ? "" : grace.toString());
         }
         return shown;
     }

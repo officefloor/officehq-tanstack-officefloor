@@ -61,7 +61,7 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
                 String grade = person.gradeOn(claim.getDate());
                 BigDecimal figure = ClaimFigure.withLate(claim, all, grade, settings, today);
                 if (figure != null) due = due.add(figure);
-                if (figure != null && overdue(claim, today)) overdue = overdue.add(figure);
+                if (figure != null && overdue(claim, grade, settings, today)) overdue = overdue.add(figure);
                 // A figure found under a grade other than today's is kept, whatever today's rate.
                 if (figure != null && !grade.equals(person.gradeOn(today))) fixed = true;
                 // So is one dated on or before today, found under a rate that has since ended.
@@ -86,9 +86,13 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
         return sorted.stream().reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
     }
 
-    /** Whether a claim is overdue on {@code today}: open (OPEN or PENDING) and past its due-by. */
-    private static boolean overdue(Claim claim, LocalDate today) {
-        return claim.isOpen() && today != null && claim.getDueBy() != null && claim.getDueBy().isBefore(today);
+    /**
+     * Whether a claim is overdue on {@code today}: open (OPEN or PENDING) and past its due-by plus the
+     * grace days of its grade on its date ({@link Settings#overdueFrom}).
+     */
+    private static boolean overdue(Claim claim, String grade, Settings settings, LocalDate today) {
+        return claim.isOpen() && today != null && claim.getDueBy() != null
+                && settings.overdueFrom(claim.getDueBy(), grade, claim.getDate()).isBefore(today);
     }
 
     /**

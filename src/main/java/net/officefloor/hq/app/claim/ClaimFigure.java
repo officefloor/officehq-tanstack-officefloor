@@ -60,31 +60,34 @@ public final class ClaimFigure {
             LocalDate today) {
         if (claim.getSettledDue() != null) return claim.getSettledDue();
         BigDecimal figure = of(claim, rates, grade, settings, today);
-        return figure == null ? null : floored(claim, figure, late(claim, figure, settings, today), settings);
+        return figure == null ? null : floored(claim, figure, late(claim, figure, grade, settings, today), settings);
     }
 
     /**
      * The late charge on a figure: for an OPEN or PENDING claim past its due-by (fixed when it was made)
-     * on {@code today}, for every full 30 days it is overdue the sheet's late percent in force on
-     * that boundary date (its due-by plus 30, 60, 90 ... days) of the figure, each rounded to two
+     * plus the grace days of its grade ({@code grade}, the one in force on its date) on its date
+     * ({@link Settings#overdueFrom}) on {@code today}, for every full 30 days it is overdue the
+     * sheet's late percent in force on that boundary date (that day plus 30, 60, 90 ... days) of the figure, each rounded to two
      * decimals as the claim rounds, added up; else 0.00 (as for a claim deferred on today). Never bound by a statement:
      * it follows the sheet's today until the claim is settled.
      */
-    public static BigDecimal late(Claim claim, BigDecimal figure, Settings settings, LocalDate today) {
+    public static BigDecimal late(Claim claim, BigDecimal figure, String grade, Settings settings, LocalDate today) {
         if (!claim.isOpen() || claim.isDeferredOn(today)) return BigDecimal.ZERO.setScale(2);
-        return lateAsOpen(claim, figure, settings, today);
+        return lateAsOpen(claim, figure, grade, settings, today);
     }
 
     /** The late charge on a figure as {@link #late} reads it for an open claim, whatever the claim's status. */
-    public static BigDecimal lateAsOpen(Claim claim, BigDecimal figure, Settings settings, LocalDate today) {
+    public static BigDecimal lateAsOpen(Claim claim, BigDecimal figure, String grade, Settings settings,
+            LocalDate today) {
         BigDecimal none = BigDecimal.ZERO.setScale(2);
         if (figure == null || claim.isCorrection()) return none;
-        long overdue = ChronoUnit.DAYS.between(claim.getDueBy(), today);
+        LocalDate from = settings.overdueFrom(claim.getDueBy(), grade, claim.getDate());
+        long overdue = ChronoUnit.DAYS.between(from, today);
         long periods = overdue > 0 ? overdue / 30 : 0;
         RoundingMode mode = rounding(claim, settings, today);
         BigDecimal charge = none;
         for (long k = 1; k <= periods; k++) {
-            BigDecimal pct = settings.latePctOn(claim.getDueBy().plusDays(30 * k));
+            BigDecimal pct = settings.latePctOn(from.plusDays(30 * k));
             if (pct.signum() != 0) charge = charge.add(times(figure, pct, mode));
         }
         return charge;

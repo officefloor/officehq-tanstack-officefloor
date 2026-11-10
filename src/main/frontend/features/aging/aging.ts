@@ -26,7 +26,7 @@ export function personAged(
   const open = claims.filter((c) => isOpen(c) && counts(c, holds, today));
   const age = (c: Claim) => (today === '' ? 0 : daysBetween(c.date, today));
   const sum = (bucket: Claim[]) =>
-    sumDue(bucket.map((c) => claimDue(c, rateOn(rates, gradeOn(grades, c.date), c.date), floor, late)));
+    sumDue(bucket.map((c) => claimDue(c, rateOn(rates, gradeOn(grades, c.date), c.date), floor, late, gradeOn(grades, c.date))));
   return {
     upTo30: sum(open.filter((c) => age(c) <= 30)),
     upTo60: sum(open.filter((c) => age(c) > 30 && age(c) <= 60)),

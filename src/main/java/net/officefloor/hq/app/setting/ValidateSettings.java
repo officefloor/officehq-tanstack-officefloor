@@ -15,7 +15,8 @@ public class ValidateSettings {
     private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
     private static final java.util.Set<String> DATED = java.util.Set.of(Settings.CLERK_LIMIT, Settings.FLOOR,
             Settings.TERMS, Settings.LATE_PCT, Settings.CAP, Settings.gradeTermsKey("A"), Settings.gradeTermsKey("B"),
-            Settings.gradeTermsKey("C"), Settings.PROOF_THRESHOLD, Settings.NOTE_THRESHOLD);
+            Settings.gradeTermsKey("C"), Settings.PROOF_THRESHOLD, Settings.NOTE_THRESHOLD,
+            Settings.gradeGraceKey("A"), Settings.gradeGraceKey("B"), Settings.gradeGraceKey("C"));
 
     public void validate(@RequestBody SettingsRequest request, Out<SettingsInput> body)
             throws InvalidSettingException {
@@ -85,6 +86,24 @@ public class ValidateSettings {
                     throw new InvalidSettingException("Terms are a whole number of days, 0 or more, or blank");
                 } else {
                     gradeTerms.put(grade, Integer.valueOf(value));
+                }
+            }
+        }
+        Map<String, Integer> gradeGrace = new LinkedHashMap<>();
+        if (request != null && request.gradeGrace() != null) {
+            for (String grade : request.gradeGrace().keySet()) {
+                if (!Settings.GRADES.contains(grade)) throw new InvalidSettingException("A grade is one of A, B or C");
+            }
+            for (String grade : Settings.GRADES) {
+                String value = request.gradeGrace().get(grade);
+                if (value == null) continue;
+                value = value.trim();
+                if (value.isEmpty()) {
+                    gradeGrace.put(grade, null);
+                } else if (!DAYS.matcher(value).matches()) {
+                    throw new InvalidSettingException("Grace days are a whole number of days, 0 or more, or blank");
+                } else {
+                    gradeGrace.put(grade, Integer.valueOf(value));
                 }
             }
         }
@@ -173,6 +192,6 @@ public class ValidateSettings {
         body.set(new SettingsInput(limitChanged, limit, floor, terms, latePct, policyChanged, policyDate,
                 numberingChanged, numberingFrom, gradeTerms, capChanged, cap, from,
                 thresholdChanged, threshold, perms, graceChanged, graceDays, noteThresholdChanged, noteThreshold,
-                entryChanged, entryDate));
+                entryChanged, entryDate, gradeGrace));
     }
 }

@@ -5,10 +5,10 @@ import { useOnce } from '../../query/useOnce';
 import { postJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/session';
-import { ACTIONS, CAP, DATED_KEYS, FLOOR, GRADES, LATE_PCT, LIMIT, NOTE_THRESHOLD, PERM_ROLES, POLICY_DATE, PROOF_THRESHOLD, STANDING_RULE, TERMS, ROLES, rolesKey, settingsKey, useRoles, useSettings } from './access';
+import { ACTIONS, CAP, DATED_KEYS, FLOOR, GRADES, LATE_PCT, LIMIT, NOTE_THRESHOLD, PERM_ROLES, POLICY_DATE, PROOF_THRESHOLD, STANDING_RULE, TERMS, ROLES, gradeGraceKey, rolesKey, settingsKey, useRoles, useSettings } from './access';
 import type { Role, Settings, SettingsChange } from './access';
 
-type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms'>;
+type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms' | 'gradeGrace'>;
 
 // The sheet's settings: its clerk limit, the highest due a clerk may settle (blank: no limit), and
 // its floor, the least a claim's live due may be, and its terms, the days after a claim's date that
@@ -20,12 +20,13 @@ type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms'>;
 // which a claim's due, on its date, needs a proof to be settled or approved, and its note threshold
 // (blank: none), above which a claim's due, on its date, needs a note to be opened, and its permission
 // matrix: for each action the roles that may take it, comma separated (blank: the standing rule), and its
-// grace days (blank: off), past which an open period closes when today is changed. Only the settings typed in (or stepped into)
+// grace days (blank: off), past which an open period closes when today is changed, and each grade's
+// grace days (blank: none), dated, past a claim's due-by before it is overdue. Only the settings typed in (or stepped into)
 // since the last save are sent, so saving one leaves the other as it is.
 function SettingsForm({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const settings = useSettings(sheetId);
-  const [fields, setFields] = useState<Omit<Settings, 'gradeTerms' | 'perms'>>({
+  const [fields, setFields] = useState<Omit<Settings, 'gradeTerms' | 'perms' | 'gradeGrace'>>({
     cap: '',
     proofThreshold: '',
     noteThreshold: '',
@@ -41,6 +42,8 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
   const [touched, setTouched] = useState<Set<Key>>(new Set());
   const [gradeFields, setGradeFields] = useState<Record<string, string>>({});
   const [gradesTouched, setGradesTouched] = useState<Set<string>>(new Set());
+  const [graceFields, setGraceFields] = useState<Record<string, string>>({});
+  const [graceTouched, setGraceTouched] = useState<Set<string>>(new Set());
   const [permFields, setPermFields] = useState<Record<string, string>>({});
   const [permsTouched, setPermsTouched] = useState<Set<string>>(new Set());
   // The from-date typed for each figure setting, by its store key (blank: the sheet's today).
@@ -55,6 +58,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
     onSuccess: (saved) => {
       setTouched(new Set());
       setGradesTouched(new Set());
+      setGraceTouched(new Set());
       setPermsTouched(new Set());
       queryClient.setQueryData(settingsKey(sheetId), saved);
     },
@@ -166,6 +170,19 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
       }
       body.gradeTerms = gradeTerms;
     }
+    if (graceTouched.size > 0) {
+      const gradeGrace: Record<string, string> = {};
+      for (const grade of GRADES) {
+        if (!graceTouched.has(grade)) continue;
+        const days = (graceFields[grade] ?? '').trim();
+        if (days !== '' && !TERMS.test(days)) {
+          setError(`Grace days for grade ${grade} are a whole number of days, 0 or more, or blank.`);
+          return;
+        }
+        gradeGrace[grade] = days;
+      }
+      body.gradeGrace = gradeGrace;
+    }
     if (permsTouched.size > 0) {
       const perms: Record<string, string> = {};
       for (const action of ACTIONS) {
@@ -183,6 +200,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
     const datedKeys: string[] = [
       ...Object.entries(DATED_KEYS).filter(([key]) => touched.has(key as Key)).map(([, store]) => store),
       ...GRADES.filter((grade) => gradesTouched.has(grade)).map((grade) => `terms-${grade}`),
+      ...GRADES.filter((grade) => graceTouched.has(grade)).map(gradeGraceKey),
     ];
     for (const key of datedKeys) {
       const date = (fromFields[key] ?? '').trim();
@@ -227,6 +245,13 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
   const changeGrade = (grade: string, value: string) => {
     setGradeFields((f) => ({ ...f, [grade]: value }));
     touchGrade(grade);
+    setError('');
+  };
+
+  const touchGrace = (grade: string) => setGraceTouched((t) => (t.has(grade) ? t : new Set(t).add(grade)));
+  const changeGrace = (grade: string, value: string) => {
+    setGraceFields((f) => ({ ...f, [grade]: value }));
+    touchGrace(grade);
     setError('');
   };
 
@@ -299,6 +324,25 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
             {fromInput(`terms-${grade}`)}{' '}
             <span>
               now: <strong data-testid={`setting-terms-${grade}-current`}>{settings.data?.gradeTerms?.[grade] ?? ''}</strong>
+            </span>{' '}
+          </span>
+        ))}
+        {GRADES.map((grade) => (
+          <span key={grade}>
+            <label>
+              Grace days for grade {grade}{' '}
+              <input
+                data-testid={`setting-${gradeGraceKey(grade)}`}
+                inputMode="numeric"
+                placeholder="none"
+                value={graceFields[grade] ?? ''}
+                onFocus={() => touchGrace(grade)}
+                onChange={(e) => changeGrace(grade, e.target.value)}
+              />
+            </label>{' '}
+            {fromInput(gradeGraceKey(grade))}{' '}
+            <span>
+              now: <strong data-testid={`setting-${gradeGraceKey(grade)}-current`}>{settings.data?.gradeGrace?.[grade] ?? ''}</strong>
             </span>{' '}
           </span>
         ))}
