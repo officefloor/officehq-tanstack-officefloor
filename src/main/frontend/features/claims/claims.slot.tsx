@@ -7,7 +7,7 @@ import { PersonHead, PersonRow } from '../../slots/defs/personRow';
 import { gradeOn } from '../people/people';
 import type { Person } from '../people/people';
 import { useUser } from '../session/session';
-import { AMOUNT, claimsKey, sumAmounts, useClaims } from './claims';
+import { CLAIM_AMOUNT, CLAIM_NUMBER, claimsKey, sumAmounts, useClaims } from './claims';
 import type { Claim } from './claims';
 import { claimDue, rateOn, useRates } from '../rates/rates';
 import { periodOf, usePeriods } from '../periods/periods';
@@ -22,8 +22,8 @@ const ACTIONS: { action: Action; label: string }[] = [
   { action: 'void', label: 'Void' },
 ];
 
-type Fields = { amount: string; date: string; note: string };
-const EMPTY: Fields = { amount: '', date: '', note: '' };
+type Fields = { amount: string; date: string; note: string; corrects: string };
+const EMPTY: Fields = { amount: '', date: '', note: '', corrects: '' };
 
 function ClaimsHead() {
   return (
@@ -109,11 +109,16 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
       setError('An amount is required.');
       return;
     }
-    if (!AMOUNT.test(amount)) {
-      setError('An amount is a number of 0.00 or more, with up to two decimals.');
+    if (!CLAIM_AMOUNT.test(amount)) {
+      setError('An amount is a number with up to two decimals.');
       return;
     }
-    once((done) => save.mutate({ id: editing, body: { ...fields, amount } }, { onSettled: done }));
+    const corrects = fields.corrects.trim();
+    if (amount.startsWith('-') && !CLAIM_NUMBER.test(corrects)) {
+      setError('A negative amount is a correction: name the number of the settled claim it corrects.');
+      return;
+    }
+    once((done) => save.mutate({ id: editing, body: { ...fields, amount, corrects } }, { onSettled: done }));
   };
 
   const change = (next: Partial<Fields>) => {
@@ -125,7 +130,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   const open = (c: Claim) => {
     setRefused(null);
     setEditing(c.id);
-    setFields({ amount: c.amount, date: c.date, note: c.note });
+    setFields({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects });
     setError('');
   };
 
@@ -153,6 +158,13 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
             value={fields.note}
             onChange={(e) => change({ note: e.target.value })}
           />{' '}
+          <input
+            data-testid="claim-form-corrects"
+            placeholder="Corrects no."
+            inputMode="numeric"
+            value={fields.corrects}
+            onChange={(e) => change({ corrects: e.target.value })}
+          />{' '}
           <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
             {editing === null ? 'Add claim' : 'Save claim'}
           </button>
@@ -176,6 +188,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
               <span data-testid="claim-note">{c.note}</span>{' '}
               <span data-testid="claim-due">{claimDue(c, rateOn(rates, gradeOn(person.grades, c.date), c.date), floor, late)}</span>{' '}
               <span data-testid="claim-status">{c.status}</span>{' '}
+              <span data-testid="claim-corrects">{c.corrects}</span>{' '}
               <span data-testid="claim-opened-by">{c.openedBy}</span>{' '}
               <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-period">{periodOf(periods, c.date)?.name ?? ''}</span>{' '}

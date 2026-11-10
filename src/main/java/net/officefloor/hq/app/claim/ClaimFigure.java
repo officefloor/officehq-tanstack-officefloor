@@ -12,7 +12,8 @@ import net.officefloor.hq.app.setting.Settings;
  * A claim's due figure, as the screen shows it: the due fixed when it was settled, else the figure
  * its person's last statement bound it to, else its live due: its amount times its grade's rate in
  * force on its date, divided by 100 and rounded half to even to two decimals, raised to the sheet's
- * floor when below it. Null for n/a (no floor applies to n/a).
+ * floor when below it (a correction, a negative amount, has no floor and no late charge). Null for
+ * n/a (no floor applies to n/a).
  */
 public final class ClaimFigure {
     private ClaimFigure() {}
@@ -20,7 +21,14 @@ public final class ClaimFigure {
     public static BigDecimal of(Claim claim, List<Rate> rates, String grade, BigDecimal floor) {
         if (claim.getSettledDue() != null) return claim.getSettledDue();
         if (claim.isStated()) return claim.getStatedDue();
-        return live(claim.getAmount(), rates, grade, claim.getDate(), floor);
+        return live(claim, rates, grade, floor);
+    }
+
+    /** The claim's live due: {@link #live} at its grade's rate on its date; a correction has no floor. */
+    public static BigDecimal live(Claim claim, List<Rate> rates, String grade, BigDecimal floor) {
+        return claim.isCorrection()
+                ? Rate.inForce(rates, grade, claim.getDate()).map((pct) -> times(claim.getAmount(), pct)).orElse(null)
+                : live(claim.getAmount(), rates, grade, claim.getDate(), floor);
     }
 
     /**
@@ -41,7 +49,7 @@ public final class ClaimFigure {
      */
     public static BigDecimal late(Claim claim, BigDecimal figure, Settings settings, LocalDate today) {
         BigDecimal none = BigDecimal.ZERO.setScale(2);
-        if (claim.getStatus() != ClaimStatus.OPEN || figure == null) return none;
+        if (claim.getStatus() != ClaimStatus.OPEN || figure == null || claim.isCorrection()) return none;
         long overdue = ChronoUnit.DAYS.between(claim.getDate().plusDays(settings.terms()), today);
         long periods = overdue > 0 ? overdue / 30 : 0;
         if (periods == 0) return none;
@@ -53,8 +61,13 @@ public final class ClaimFigure {
     public static BigDecimal live(BigDecimal amount, List<Rate> rates, String grade, LocalDate date,
             BigDecimal floor) {
         return Rate.inForce(rates, grade, date)
-                .map((pct) -> amount.multiply(pct).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_EVEN))
+                .map((pct) -> times(amount, pct))
                 .map((due) -> due.max(floor))
                 .orElse(null);
+    }
+
+    /** The amount times the percent, divided by 100 and rounded half to even to two decimals. */
+    private static BigDecimal times(BigDecimal amount, BigDecimal pct) {
+        return amount.multiply(pct).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_EVEN);
     }
 }

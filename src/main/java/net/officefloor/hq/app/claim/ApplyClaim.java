@@ -10,5 +10,6 @@ public class ApplyClaim {
         claim.setAmount(input.amount());
         claim.setDate(input.date() == null ? sheet.today() : input.date());
         claim.setNote(input.note());
+        claim.setCorrects(input.corrects());
     }
 }

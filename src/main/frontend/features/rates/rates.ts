@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { gradeOn } from '../people/people';
 import type { Grade, GradeFrom } from '../people/people';
-import { counts } from '../claims/claims';
+import { counts, isCorrection } from '../claims/claims';
 import type { Claim } from '../claims/claims';
 
 /**
@@ -45,36 +45,43 @@ export const PCT = /^\d+(\.\d{1,2})?$/;
 
 export const NA = 'n/a';
 
-/** A two-decimal number as a whole count of hundredths. */
+/** A two-decimal number (negative for a correction) as a whole count of hundredths. */
 function hundredths(value: string): bigint {
-  const [whole, frac = ''] = value.trim().split('.');
-  return BigInt(whole || '0') * 100n + BigInt((frac + '00').slice(0, 2));
+  const trimmed = value.trim();
+  const negative = trimmed.startsWith('-');
+  const [whole, frac = ''] = (negative ? trimmed.slice(1) : trimmed).split('.');
+  const cents = BigInt(whole || '0') * 100n + BigInt((frac + '00').slice(0, 2));
+  return negative ? -cents : cents;
 }
 
 function showCents(cents: bigint): string {
-  return `${cents / 100n}.${(cents % 100n).toString().padStart(2, '0')}`;
+  const abs = cents < 0n ? -cents : cents;
+  return `${cents < 0n ? '-' : ''}${abs / 100n}.${(abs % 100n).toString().padStart(2, '0')}`;
 }
 
 /**
  * An amount times a rate, divided by 100, rounded half to even to two decimals, raised to the
  * sheet's `floor` when below it; n/a with no rate (no floor applies to n/a).
- * Worked in whole numbers so no floating-point error creeps in (amounts and rates are never
- * negative).
+ * Worked in whole numbers so no floating-point error creeps in. A correction (a negative amount)
+ * takes no floor (`floor` null).
  */
-export function due(amount: string, pct: string | null, floor: string): string {
+export function due(amount: string, pct: string | null, floor: string | null): string {
   if (pct === null) return NA;
   const rounded = percentOf(amount, pct, 1n);
+  if (floor === null) return showCents(rounded);
   const least = hundredths(floor);
   return showCents(rounded < least ? least : rounded);
 }
 
-/** `times` × a percent of a two-decimal figure, in cents, rounded half to even. */
+/** `times` × a percent of a two-decimal figure, in cents, rounded half to even (symmetric about 0). */
 function percentOf(figure: string, pct: string, times: bigint): bigint {
   // cents × basis points is the due in millionths of a unit: 10000 of them to the cent.
-  const x = hundredths(figure) * hundredths(pct) * times;
+  const signed = hundredths(figure) * hundredths(pct) * times;
+  const x = signed < 0n ? -signed : signed;
   const cents = x / 10000n;
   const rest = x % 10000n;
-  return rest > 5000n || (rest === 5000n && cents % 2n === 1n) ? cents + 1n : cents;
+  const rounded = rest > 5000n || (rest === 5000n && cents % 2n === 1n) ? cents + 1n : cents;
+  return signed < 0n ? -rounded : rounded;
 }
 
 /**
@@ -98,7 +105,7 @@ function daysBetween(from: string, to: string): number {
  * rounded half to even; else nothing. A statement never binds it: it follows the sheet's today.
  */
 function lateCharge(claim: Claim, figure: string, late: Late): bigint {
-  if (claim.status !== 'OPEN' || figure === NA || late.today === '') return 0n;
+  if (claim.status !== 'OPEN' || figure === NA || late.today === '' || isCorrection(claim)) return 0n;
   const overdue = daysBetween(claim.date, late.today) - late.terms;
   const periods = overdue > 0 ? Math.floor(overdue / 30) : 0;
   return periods === 0 ? 0n : percentOf(figure, late.pct, BigInt(periods));
@@ -116,7 +123,7 @@ export function sumDue(values: string[]): string {
  */
 export function claimDue(claim: Claim, pct: string | null, floor: string, late: Late): string {
   if (claim.due !== '') return claim.due;
-  const figure = claim.stated ? claim.statedDue : due(claim.amount, pct, floor);
+  const figure = claim.stated ? claim.statedDue : due(claim.amount, pct, isCorrection(claim) ? null : floor);
   const charge = lateCharge(claim, figure, late);
   return charge === 0n ? figure : showCents(hundredths(figure) + charge);
 }

@@ -28,8 +28,7 @@ public class SettleClaim {
         Person person = people.find(sheet.id(), claim.getPersonId());
         Settings settings = settingsStore.find(sheet.id());
         BigDecimal figure = claim.isStated() ? claim.getStatedDue()
-                : ClaimFigure.live(claim.getAmount(), rates.findAll(sheet.id()), person.gradeOn(claim.getDate()), claim.getDate(),
-                        settings.floor());
+                : ClaimFigure.live(claim, rates.findAll(sheet.id()), person.gradeOn(claim.getDate()), settings.floor());
         // The late charge is read while the claim is still OPEN.
         BigDecimal late = ClaimFigure.late(claim, figure, settings, sheet.today());
         claim.moveTo(ClaimStatus.SETTLED);

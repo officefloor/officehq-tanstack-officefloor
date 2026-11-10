@@ -17,6 +17,7 @@ public class Claim {
     private String openedBy;
     private boolean stated;
     private BigDecimal statedDue;
+    private Integer corrects;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, Integer number, BigDecimal settledDue,
@@ -44,6 +45,11 @@ public class Claim {
     public String getNote() { return note; }
     public void setNote(String note) { this.note = note; }
     public ClaimStatus getStatus() { return status; }
+    /** The number of the settled claim this correction corrects; null when it is no correction. */
+    public Integer getCorrects() { return corrects; }
+    public void setCorrects(Integer corrects) { this.corrects = corrects; }
+    /** A correction (a negative amount) has no floor and no late charge. */
+    public boolean isCorrection() { return corrects != null; }
     /** The claim's number on its sheet, given when it is opened; null for a draft. A voided claim
      *  keeps the number it had; a number is never reused. */
     public Integer getNumber() { return number; }

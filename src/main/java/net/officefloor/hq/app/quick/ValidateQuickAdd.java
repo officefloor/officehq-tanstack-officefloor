@@ -13,7 +13,7 @@ public class ValidateQuickAdd {
     public void validate(@RequestBody QuickAddRequest request, Out<QuickAdd> quickOut, Out<ClaimInput> claimOut)
             throws InvalidPersonException, InvalidClaimException {
         String name = PersonRequest.checkName(request == null ? null : request.name());
-        ClaimInput claim = ClaimInput.from(new ClaimRequest(request.amount(), "", ""));
+        ClaimInput claim = ClaimInput.from(new ClaimRequest(request.amount(), "", "", ""));
         quickOut.set(new QuickAdd(name));
         claimOut.set(claim);
     }
