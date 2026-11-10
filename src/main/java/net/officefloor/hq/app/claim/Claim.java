@@ -7,7 +7,7 @@ import java.time.LocalDate;
 public class Claim {
     private Long id;
     private final String sheetId;
-    private final long personId;
+    private long personId;
     private BigDecimal amount;
     private LocalDate date;
     private String note;
@@ -19,6 +19,7 @@ public class Claim {
     private BigDecimal statedDue;
     private String corrects;
     private LocalDate correctedDate;
+    private boolean relisted;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue,
@@ -39,6 +40,21 @@ public class Claim {
     public void setId(Long id) { this.id = id; }
     public String getSheetId() { return sheetId; }
     public long getPersonId() { return personId; }
+    /**
+     * Move it to another person: it keeps its number and date, but loses any figure a statement
+     * bound it to (it is live again until its new person's next statement). A SETTLED or VOID claim
+     * cannot move.
+     */
+    public void reassign(long toPersonId) throws InvalidClaimStatusException {
+        if (status == ClaimStatus.SETTLED || status == ClaimStatus.VOID) {
+            throw new InvalidClaimStatusException("A " + status + " claim cannot be moved to another person");
+        }
+        personId = toPersonId;
+        bind(false, null);
+        relisted = true;
+    }
+    /** Whether it was moved since read, so it is listed again as its new person's newest. */
+    public boolean isRelisted() { return relisted; }
     public BigDecimal getAmount() { return amount; }
     public void setAmount(BigDecimal amount) { this.amount = amount; }
     public LocalDate getDate() { return date; }

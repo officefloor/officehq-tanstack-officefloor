@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOnce } from '../../query/useOnce';
 import { postJson, putJson } from '../../api/http';
 import { PersonHead, PersonRow } from '../../slots/defs/personRow';
-import { gradeOn } from '../people/people';
+import { gradeOn, peopleKey, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { useUser } from '../session/session';
 import { CLAIM_AMOUNT, CLAIM_NUMBER, claimsKey, sumAmounts, useClaims } from './claims';
@@ -53,6 +53,9 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   const [refused, setRefused] = useState<{ id: string; message: string } | null>(null);
   // The reason typed for rejecting each claim, by claim id.
   const [reasons, setReasons] = useState<Record<string, string>>({});
+  // The person picked to move each claim to (a steward's move), by claim id.
+  const [moveTo, setMoveTo] = useState<Record<string, string>>({});
+  const others = (usePeople(sheetId).data ?? []).filter((p) => p.id !== person.id);
   const [user] = useUser();
   const rates = useRates(sheetId).data ?? [];
   const periods = usePeriods(sheetId).data ?? [];
@@ -105,6 +108,32 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
     },
     onError: (_e, { id }) => setRefused({ id, message: 'That status change is not allowed.' }),
   });
+
+  // A steward moves a DRAFT, OPEN or PENDING claim to another person; it is listed as theirs, newest.
+  const reassign = useMutation({
+    mutationFn: ({ id, personId }: { id: string; personId: string }) =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/claims/${encodeURIComponent(id)}/reassign`,
+        { personId },
+        user,
+      ),
+    onSuccess: (_c, { id }) => {
+      setMoveTo((m) => ({ ...m, [id]: '' }));
+      void queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+    onError: (_e, { id }) => setRefused({ id, message: 'That claim cannot be moved.' }),
+  });
+
+  const moveClaim = (id: string) => {
+    setRefused(null);
+    const personId = moveTo[id] ?? '';
+    if (personId === '') {
+      setRefused({ id, message: 'Pick the person to move the claim to.' });
+      return;
+    }
+    reassign.mutate({ id, personId });
+  };
 
   const act = (id: string, action: Action) => {
     setRefused(null);
@@ -235,6 +264,25 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
                   {label}
                 </button>
               ))}{' '}
+              <select
+                data-testid="claim-reassign-to"
+                aria-label="Move to"
+                value={moveTo[c.id] ?? ''}
+                onChange={(e) => {
+                  setMoveTo((m) => ({ ...m, [c.id]: e.target.value }));
+                  setRefused((r) => (r !== null && r.id === c.id ? null : r));
+                }}
+              >
+                <option value="">Move to…</option>
+                {others.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>{' '}
+              <button type="button" data-testid="claim-reassign" onClick={() => moveClaim(c.id)}>
+                Move
+              </button>{' '}
               {editing === c.id ? (
                 <button type="button" data-testid="claim-cancel" onClick={reset}>
                   Cancel

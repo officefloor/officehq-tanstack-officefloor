@@ -37,15 +37,15 @@ public class ClaimRepository {
         this.jdbc = jdbc;
     }
 
-    /** The sheet's claims, newest first. */
+    /** The sheet's claims, newest first (a moved claim listed as made when it was moved). */
     public List<Claim> findAll(String sheetId) {
-        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? ORDER BY id DESC",
+        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? ORDER BY listed DESC, id DESC",
                 ROW, sheetId);
     }
 
     /** The person's claims on the sheet, newest first. */
     public List<Claim> findByPerson(String sheetId, long personId) {
-        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY id DESC",
+        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY listed DESC, id DESC",
                 ROW, sheetId, personId);
     }
 
@@ -91,9 +91,20 @@ public class ClaimRepository {
                 Integer.class, sheetId, sequence);
     }
 
+    /** The sheet's next place in its claims list, taken in one statement; never given out again. */
+    private long nextListed(String sheetId) {
+        return jdbc.queryForObject("SELECT last_claim_listed FROM FINAL TABLE"
+                + " (UPDATE sheet SET last_claim_listed = last_claim_listed + 1 WHERE id = ?)",
+                Long.class, sheetId);
+    }
+
     /** Insert a new claim (assigning its id) or update an existing one. */
     public void save(Claim claim) {
         if (claim.getId() != null) {
+            if (claim.isRelisted()) {
+                jdbc.update("UPDATE claim SET person_id = ?, listed = ? WHERE id = ? AND sheet_id = ?",
+                        claim.getPersonId(), nextListed(claim.getSheetId()), claim.getId(), claim.getSheetId());
+            }
             jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?, stated = ?, stated_due = ?, corrects = ? WHERE id = ? AND sheet_id = ?",
                     claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(),
                     claim.getStatus().name(), claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(),
@@ -101,10 +112,11 @@ public class ClaimRepository {
                     claim.getSheetId());
             return;
         }
+        long listed = nextListed(claim.getSheetId());
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, corrects) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, corrects, listed) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, claim.getSheetId());
             ps.setLong(2, claim.getPersonId());
@@ -113,6 +125,7 @@ public class ClaimRepository {
             ps.setString(5, claim.getNote());
             ps.setString(6, claim.getStatus().name());
             ps.setString(7, claim.getCorrects());
+            ps.setLong(8, listed);
             return ps;
         }, keys);
         claim.setId(keys.getKey().longValue());

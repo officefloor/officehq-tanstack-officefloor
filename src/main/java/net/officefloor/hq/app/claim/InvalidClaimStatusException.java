@@ -10,4 +10,9 @@ public class InvalidClaimStatusException extends Exception {
     public InvalidClaimStatusException(ClaimStatus status) {
         super("A " + status + " claim cannot be edited");
     }
+
+    /** Any other change its status does not allow. */
+    public InvalidClaimStatusException(String message) {
+        super(message);
+    }
 }
