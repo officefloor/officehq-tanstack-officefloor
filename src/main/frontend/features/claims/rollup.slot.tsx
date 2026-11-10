@@ -5,10 +5,10 @@ import { sumAmounts, useClaims } from './claims';
 // The sheet's claimed-total: everyone's claims added up.
 function ClaimedTotal({ sheetId }: { sheetId: string }) {
   const claims = useClaims(sheetId);
-  const held = new Set((usePeople(sheetId).data ?? []).filter((p) => p.held).map((p) => p.id));
+  const holds = new Map((usePeople(sheetId).data ?? []).map((p) => [p.id, p.holds]));
   return (
     <p>
-      Claimed in all: <strong data-testid="rollup-claimed-total">{sumAmounts(claims.data ?? [], (id) => held.has(id))}</strong>
+      Claimed in all: <strong data-testid="rollup-claimed-total">{sumAmounts(claims.data ?? [], (id) => holds.get(id) ?? [])}</strong>
     </p>
   );
 }

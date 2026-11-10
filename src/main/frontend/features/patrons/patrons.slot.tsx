@@ -40,7 +40,7 @@ function PersonPatrons({ sheetId, person }: { sheetId: string; person: Person })
   const names = patrons.map((p) => p.name).sort((a, b) => a.localeCompare(b)).join(', ');
   const backing = sumDue(
     patrons.map((p) =>
-      personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), p.held, floor, late),
+      personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), p.holds, floor, late),
     ),
   );
 

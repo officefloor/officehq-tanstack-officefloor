@@ -16,7 +16,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PersonRepository {
 
-    private static final String COLUMNS = "id, sheet_id, name, grade, version, statement_count, stated_total, statement_date, retired_from, held";
+    private static final String COLUMNS = "id, sheet_id, name, grade, version, statement_count, stated_total, statement_date, retired_from";
 
     private static final RowMapper<Person> ROW = (rs, n) -> {
         Person person = new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
@@ -24,7 +24,6 @@ public class PersonRepository {
         person.setStatements(rs.getInt("statement_count"), rs.getString("stated_total"),
                 rs.getObject("statement_date", LocalDate.class));
         person.setRetiredFrom(rs.getObject("retired_from", LocalDate.class));
-        person.setHeld(rs.getBoolean("held"));
         return person;
     };
 
@@ -50,6 +49,11 @@ public class PersonRepository {
                     Person person = byId.get(rs.getLong("person_id"));
                     if (person != null) person.getPatronIds().add(rs.getLong("patron_id"));
                 }, sheetId);
+        jdbc.query("SELECT person_id, from_date, to_date FROM person_hold WHERE sheet_id = ? ORDER BY id",
+                (rs) -> {
+                    Person person = byId.get(rs.getLong("person_id"));
+                    if (person != null) person.getHolds().add(hold(rs));
+                }, sheetId);
         return people;
     }
 
@@ -61,6 +65,7 @@ public class PersonRepository {
         if (found.isEmpty()) return null;
         Person person = found.get(0);
         loadGrades(person);
+        loadHolds(person);
         person.getPatronIds().addAll(jdbc.queryForList(
                 "SELECT patron_id FROM person_patron WHERE sheet_id = ? AND person_id = ? ORDER BY patron_id",
                 Long.class, sheetId, id));
@@ -80,6 +85,7 @@ public class PersonRepository {
                 + " AND LOWER(TRIM(name)) = LOWER(TRIM(?)) ORDER BY id", ROW, sheetId, name);
         if (found.isEmpty()) return null;
         loadGrades(found.get(0));
+        loadHolds(found.get(0));
         return found.get(0);
     }
 
@@ -88,6 +94,17 @@ public class PersonRepository {
                 (rs) -> {
                     person.setGradeFrom(rs.getString("grade"), rs.getObject("from_date", LocalDate.class));
                 }, person.getSheetId(), person.getId());
+    }
+
+    private void loadHolds(Person person) {
+        jdbc.query("SELECT from_date, to_date FROM person_hold WHERE sheet_id = ? AND person_id = ? ORDER BY id",
+                (rs) -> {
+                    person.getHolds().add(hold(rs));
+                }, person.getSheetId(), person.getId());
+    }
+
+    private static Hold hold(java.sql.ResultSet rs) throws java.sql.SQLException {
+        return new Hold(rs.getObject("from_date", LocalDate.class), rs.getObject("to_date", LocalDate.class));
     }
 
     /** Record the person's dated grades as they hold them now, replacing those stored. */
@@ -123,10 +140,11 @@ public class PersonRepository {
                 person.getId(), person.getSheetId());
     }
 
-    /** Record whether the person is on hold, leaving the rest as stored. */
-    public void saveHeld(Person person) {
-        jdbc.update("UPDATE person SET held = ? WHERE id = ? AND sheet_id = ?",
-                person.isHeld(), person.getId(), person.getSheetId());
+    /** Record a new hold on the person, leaving the rest as stored. */
+    public void addHold(Person person, Hold hold) {
+        jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date) VALUES (?, ?, ?, ?)",
+                person.getSheetId(), person.getId(), Date.valueOf(hold.from()),
+                hold.to() == null ? null : Date.valueOf(hold.to()));
     }
 
     /**

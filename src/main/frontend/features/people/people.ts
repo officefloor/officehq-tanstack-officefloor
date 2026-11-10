@@ -18,7 +18,7 @@ export function gradeOn(grades: GradeFrom[], date: string): Grade {
 // `version` is raised by each save; an edit sends the version it was made from. `statementCount`
 // is how many statements have been taken for them; `statedTotal` and `statementDate` are the last
 // one's due-total and date ('' before the first). `retired` is set once they have a retirement
-// date, `retiredFrom` ('' when not retired), whatever that date is. `held` is whether they are on hold: their OPEN and PENDING claims then count in no total.
+// date, `retiredFrom` ('' when not retired), whatever that date is. `held` is whether they have any hold; `holds` their holds in the order added (see `Hold`).
 // `patronIds` are the ids of the people they name as their patrons. `grade` is the grade in force on
 // the sheet's today; `grades` every grade they have been given, by from-date, the first from ''.
 export type Person = {
@@ -32,9 +32,20 @@ export type Person = {
   retired: boolean;
   retiredFrom: string;
   held: boolean;
+  holds: Hold[];
   patronIds: string[];
   grades: GradeFrom[];
 };
+
+/**
+ * A hold on a person: from a date to a date (yyyy-MM-dd; `to` '' when open-ended), both inclusive.
+ * An OPEN or PENDING claim of theirs dated within one, unless a statement binds it, counts in no total.
+ */
+export type Hold = { from: string; to: string };
+
+/** Whether the date (yyyy-MM-dd) is within one of the holds. */
+export const heldOn = (holds: Hold[], date: string) =>
+  holds.some((h) => h.from <= date && (h.to === '' || date <= h.to));
 
 export const peopleKey = (sheetId: string) => ['sheet', sheetId, 'people'] as const;
 

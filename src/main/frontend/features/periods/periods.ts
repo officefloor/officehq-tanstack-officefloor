@@ -44,7 +44,7 @@ export function periodDueTotal(
   if (period.closed) return period.closedTotal;
   const dues = people.flatMap((person) =>
     claims
-      .filter((c) => c.personId === person.id && counts(c, person.held) && period.from <= c.date && c.date <= period.to)
+      .filter((c) => c.personId === person.id && counts(c, person.holds) && period.from <= c.date && c.date <= period.to)
       .map((c) => claimDue(c, rateOn(rates, gradeOn(person.grades, c.date), c.date), floor, late)),
   );
   return sumDue(dues);

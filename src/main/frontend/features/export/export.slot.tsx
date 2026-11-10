@@ -24,7 +24,7 @@ function ExportPeople({ sheetId }: { sheetId: string }) {
     const lines = [['name', 'grade', 'retired-from', 'due-total']];
     for (const p of people) {
       const own = claims.filter((c) => c.personId === p.id);
-      lines.push([p.name, p.grade, p.retiredFrom, personDueTotal(rates, p.grades, today, own, p.held, floor, late)]);
+      lines.push([p.name, p.grade, p.retiredFrom, personDueTotal(rates, p.grades, today, own, p.holds, floor, late)]);
     }
     const csv = lines.map((l) => l.map(csvValue).join(',') + '\n').join('');
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));

@@ -17,7 +17,7 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * Closes the period, fixing its due-total at this moment: the figures of the claims that count (OPEN
- * and SETTLED, but not OPEN of a person on hold) dated inside it (an overdue one with its late charge), added up, skipping n/a. A period already closed is refused.
+ * and SETTLED, but not an unbound OPEN one dated within a hold of its person) dated inside it (an overdue one with its late charge), added up, skipping n/a. A period already closed is refused.
  */
 public class ClosePeriod {
     public void close(@Val Sheet sheet, @Val Period period, PeriodRepository periods, PersonRepository people,
@@ -30,7 +30,7 @@ public class ClosePeriod {
         for (Person person : people.findAll(sheet.id())) {
             for (Claim claim : sheetClaims) {
                 if (claim.getPersonId() != person.getId() || !period.contains(claim.getDate())) continue;
-                if (!claim.counts(person.isHeld())) continue;
+                if (!claim.counts(person.heldOn(claim.getDate()))) continue;
                 BigDecimal figure = ClaimFigure.withLate(claim, all, person.gradeOn(claim.getDate()), sheetSettings, sheet.today());
                 if (figure != null) total = total.add(figure);
             }

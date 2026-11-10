@@ -110,11 +110,11 @@ public class Claim {
     }
     /**
      * Whether it counts toward its person's claimed and due-total, the sheet's totals and a
-     * period's total: OPEN, PENDING and SETTLED do, except that while its person is on hold an
-     * OPEN or PENDING one does not.
+     * period's total: OPEN, PENDING and SETTLED do, except an OPEN or PENDING one dated within one
+     * of its person's holds ({@code heldOnDate}), unless a statement binds it.
      */
-    public boolean counts(boolean personHeld) {
-        return status == ClaimStatus.SETTLED || (isOpen() && !personHeld);
+    public boolean counts(boolean heldOnDate) {
+        return status == ClaimStatus.SETTLED || (isOpen() && (isBound() || !heldOnDate));
     }
     /** Whether it is open: OPEN, or PENDING a steward's approval. */
     public boolean isOpen() {

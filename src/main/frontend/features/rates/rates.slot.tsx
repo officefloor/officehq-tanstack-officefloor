@@ -161,7 +161,7 @@ function PersonDueTotal({ sheetId, person }: { sheetId: string; person: Person }
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
-  return <td data-testid="person-due-total">{personDueTotal(rates, person.grades, today, claims, person.held, floor, late)}</td>;
+  return <td data-testid="person-due-total">{personDueTotal(rates, person.grades, today, claims, person.holds, floor, late)}</td>;
 }
 
 // The sheet's due-total: everyone's due-total added up, skipping those with no rate.
@@ -173,7 +173,7 @@ function DueTotal({ sheetId }: { sheetId: string }) {
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const totals = people.map((p) =>
-    personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), p.held, floor, late),
+    personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), p.holds, floor, late),
   );
   return (
     <p>

@@ -1,5 +1,5 @@
 import { gradeOn } from '../people/people';
-import type { GradeFrom } from '../people/people';
+import type { GradeFrom, Hold } from '../people/people';
 import { counts, isOpen } from '../claims/claims';
 import type { Claim } from '../claims/claims';
 import { claimDue, rateOn, sumDue } from '../rates/rates';
@@ -13,7 +13,7 @@ export const isOverdue = (claim: Claim, today: string): boolean =>
   isOpen(claim) && today !== '' && dueBy(claim) < today;
 
 /**
- * A person's overdue claims that count (none while they are `held`, as an OPEN claim then counts in
+ * A person's overdue claims that count (not an unbound OPEN one dated within one of their `holds`, as it then counts in
  * no total): how many, and their due figures (with their late charge) added up, skipping n/a.
  */
 export function personOverdue(
@@ -21,11 +21,11 @@ export function personOverdue(
   grades: GradeFrom[],
   today: string,
   claims: Claim[],
-  held: boolean,
+  holds: Hold[],
   floor: string,
   late: Late,
 ): { count: number; total: string } {
-  const overdue = claims.filter((c) => counts(c, held) && isOverdue(c, today));
+  const overdue = claims.filter((c) => counts(c, holds) && isOverdue(c, today));
   return {
     count: overdue.length,
     total: sumDue(overdue.map((c) => claimDue(c, rateOn(rates, gradeOn(grades, c.date), c.date), floor, late))),

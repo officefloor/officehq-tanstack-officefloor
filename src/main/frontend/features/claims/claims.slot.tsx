@@ -179,7 +179,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
 
   return (
     <>
-      <td data-testid="person-claimed">{sumAmounts(claims, () => person.held)}</td>
+      <td data-testid="person-claimed">{sumAmounts(claims, () => person.holds)}</td>
       <td>
         <form onSubmit={submit} data-testid="claim-form">
           <input

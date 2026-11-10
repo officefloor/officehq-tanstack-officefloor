@@ -25,7 +25,7 @@ function Summary({ sheetId }: { sheetId: string }) {
 
   const active = people.filter((p) => !p.retired);
   const dueOf = (p: Person) =>
-    personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), p.held, floor, late);
+    personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), p.holds, floor, late);
 
   return (
     <section data-testid="summary">

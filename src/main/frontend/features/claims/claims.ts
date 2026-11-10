@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
+import { heldOn } from '../people/people';
+import type { Hold } from '../people/people';
 
 /**
  * A claim's status: DRAFT when made, then OPEN, then SETTLED; a clerk's settle above the clerk
@@ -54,9 +56,11 @@ export const isBound = (c: Claim) => c.stated && c.status !== 'PENDING';
 
 /**
  * Whether a claim counts toward claimed, due-total and every total: only OPEN, PENDING and SETTLED
- * do, and an OPEN or PENDING one not while its person is on hold (`held`).
+ * do, and an OPEN or PENDING one not when it is dated within one of its person's `holds`, unless a
+ * statement binds it.
  */
-export const counts = (c: Claim, held: boolean) => c.status === 'SETTLED' || (isOpen(c) && !held);
+export const counts = (c: Claim, holds: Hold[]) =>
+  c.status === 'SETTLED' || (isOpen(c) && (isBound(c) || !heldOn(holds, c.date)));
 
 export const claimsKey = (sheetId: string) => ['sheet', sheetId, 'claims'] as const;
 
@@ -84,11 +88,11 @@ export const CLAIM_AMOUNT = /^-?\d+(\.\d{1,2})?$/;
 export const CLAIM_NUMBER = /^(\d+|.+-\d+)$/;
 
 /**
- * The amounts of the claims that count (OPEN, PENDING and SETTLED, but not open ones of a person on hold:
- * `held` tells by person id) added up, in whole cents so no rounding creeps in, shown with two
+ * The amounts of the claims that count (OPEN, PENDING and SETTLED, but not unbound open ones dated within
+ * a hold of their person: `holds` tells by person id) added up, in whole cents so no rounding creeps in, shown with two
  * decimals.
  */
-export function sumAmounts(claims: Claim[], held: (personId: string) => boolean): string {
-  const cents = claims.filter((c) => counts(c, held(c.personId))).reduce((n, c) => n + Math.round(Number(c.amount) * 100), 0);
+export function sumAmounts(claims: Claim[], holds: (personId: string) => Hold[]): string {
+  const cents = claims.filter((c) => counts(c, holds(c.personId))).reduce((n, c) => n + Math.round(Number(c.amount) * 100), 0);
   return (cents / 100).toFixed(2);
 }

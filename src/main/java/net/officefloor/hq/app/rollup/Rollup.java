@@ -30,7 +30,7 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
 
     /**
      * The sheet's figures now. A person's claimed is the amounts of their claims that count (OPEN
-     * and SETTLED, but not OPEN while they are on hold) added up; their due-total the figures of those claims added up, skipping n/a (a live figure is at least the sheet's floor; an overdue one gains its late
+     * and SETTLED, but not an unbound OPEN one dated within one of their holds) added up; their due-total the figures of those claims added up, skipping n/a (a live figure is at least the sheet's floor; an overdue one gains its late
      * charge on {@code today}), and
      * n/a when their grade in force today has no rate today and no claim that counts keeps a fixed
      * figure or has one under the grade in force on its date when that is another grade. Each claim
@@ -50,7 +50,7 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
             boolean fixed = false;
             for (Claim claim : sheetClaims) {
                 if (claim.getPersonId() != person.getId()) continue;
-                if (!claim.counts(person.isHeld())) continue;
+                if (!claim.counts(person.heldOn(claim.getDate()))) continue;
                 claimed = claimed.add(claim.getAmount());
                 if (claim.getSettledDue() != null || claim.boundDue() != null) fixed = true;
                 String grade = person.gradeOn(claim.getDate());

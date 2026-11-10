@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { gradeOn } from '../people/people';
-import type { Grade, GradeFrom } from '../people/people';
+import type { Grade, GradeFrom, Hold } from '../people/people';
 import { counts, isBound, isCorrection, isOpen } from '../claims/claims';
 import type { Claim } from '../claims/claims';
 
@@ -143,7 +143,7 @@ export function claimDue(claim: Claim, pct: string | null, floor: string, late: 
 }
 
 /**
- * A person's due-total: the figures of their claims that count (none OPEN while they are `held`) (each at the rate in force on its
+ * A person's due-total: the figures of their claims that count (an unbound OPEN one not when dated within one of their `holds`) (each at the rate in force on its
  * date for their grade in force on its date), added up, skipping n/a. With no rate for their grade
  * today it is n/a, unless a claim that counts keeps a fixed figure (settled, or bound by a
  * statement) or has a figure under another grade, in force on its date.
@@ -153,11 +153,11 @@ export function personDueTotal(
   grades: GradeFrom[],
   today: string,
   claims: Claim[],
-  held: boolean,
+  holds: Hold[],
   floor: string,
   late: Late,
 ): string {
-  const counted = claims.filter((c) => counts(c, held));
+  const counted = claims.filter((c) => counts(c, holds));
   const grade = gradeOn(grades, today);
   const kept = (c: Claim) => c.due !== '' || (isBound(c) && c.statedDue !== NA)
     || (gradeOn(grades, c.date) !== grade && rateOn(rates, gradeOn(grades, c.date), c.date) !== null);

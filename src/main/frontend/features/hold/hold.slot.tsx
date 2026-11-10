@@ -11,40 +11,75 @@ function HoldHead() {
   return (
     <>
       <th>On hold</th>
+      <th>Holds</th>
       <th />
     </>
   );
 }
 
-// Whether a person is on hold, and a button that puts them on it or takes them off it. While held,
-// their OPEN and PENDING claims count in no total; their SETTLED claims still do.
+// Whether a person has any hold, their holds, and a from-date (blank: the sheet's today) and an
+// optional to-date with a button that adds a hold over them. An OPEN or PENDING claim of theirs
+// dated within a hold counts in no total, unless a statement binds it; a hold ends on its to-date.
 function PersonHold({ sheetId, person }: { sheetId: string; person: Person }) {
   const queryClient = useQueryClient();
   const [user] = useUser();
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const [error, setError] = useState('');
   const once = useOnce();
   const hold = useMutation({
-    mutationFn: () =>
+    mutationFn: (dates: { from: string; to: string }) =>
       postJson<Person>(
         `/api/sheets/${encodeURIComponent(sheetId)}/people/${encodeURIComponent(person.id)}/hold`,
-        {},
+        dates,
         user,
       ),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
-    onError: () => setError('That person could not be put on or taken off hold.'),
+    onSuccess: () => {
+      setFrom('');
+      setTo('');
+      return queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+    },
+    onError: () => setError('That person could not be put on hold.'),
   });
 
-  const toggle = () => {
+  const submit = () => {
     setError('');
-    once((done) => hold.mutate(undefined, { onSettled: done }));
+    once((done) => hold.mutate({ from: from.trim(), to: to.trim() }, { onSettled: done }));
   };
 
   return (
     <>
       <td data-testid="person-hold">{person.held ? 'yes' : 'no'}</td>
       <td>
-        <button type="button" data-testid="person-hold-toggle" onClick={toggle} disabled={hold.isPending}>
-          {person.held ? 'Release' : 'Hold'}
+        {person.holds.map((h, i) => (
+          <div key={i} data-testid="person-hold-line">
+            {h.from} to {h.to === '' ? 'open' : h.to}
+          </div>
+        ))}
+      </td>
+      <td>
+        <input
+          type="date"
+          data-testid="person-hold-from"
+          aria-label="Hold from"
+          value={from}
+          onChange={(e) => {
+            setFrom(e.target.value);
+            setError('');
+          }}
+        />{' '}
+        <input
+          type="date"
+          data-testid="person-hold-to"
+          aria-label="Hold to"
+          value={to}
+          onChange={(e) => {
+            setTo(e.target.value);
+            setError('');
+          }}
+        />{' '}
+        <button type="button" data-testid="person-hold-toggle" onClick={submit} disabled={hold.isPending}>
+          Hold
         </button>
         {error && (
           <p role="alert" data-testid="person-error">
