@@ -123,6 +123,7 @@ function Rates({ sheetId }: { sheetId: string }) {
           </p>
         )}
       </form>
+      <RatePreview sheetId={sheetId} />
       {rates.isError && (
         <p role="alert" data-testid="rates-error">
           The rates could not be read.
@@ -165,6 +166,94 @@ function Rates({ sheetId }: { sheetId: string }) {
         </tbody>
       </table>
     </section>
+  );
+}
+
+type Preview = { count: number; diff: string };
+
+// A preview of a candidate rate for a grade: how many OPEN and PENDING claims on that grade would
+// show a different due were it the grade's rate on every date, and the differences added up.
+// Nothing is saved.
+function RatePreview({ sheetId }: { sheetId: string }) {
+  const [grade, setGrade] = useState<Grade>('A');
+  const [pct, setPct] = useState('');
+  const [result, setResult] = useState<Preview | null>(null);
+  const [error, setError] = useState('');
+  const [user] = useUser();
+
+  const preview = useMutation({
+    mutationFn: (body: { grade: Grade; pct: string }) =>
+      postJson<Preview>(`/api/sheets/${encodeURIComponent(sheetId)}/rates/preview`, body, user),
+    onSuccess: (data) => setResult(data),
+    onError: () => setError('That rate could not be previewed.'),
+  });
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setResult(null);
+    const value = pct.trim();
+    if (value === '') {
+      setError('A rate is required.');
+      return;
+    }
+    if (!PCT.test(value)) {
+      setError('A rate is a percent of 0.00 or more, with up to two decimals.');
+      return;
+    }
+    preview.mutate({ grade, pct: value });
+  };
+
+  const changed = () => {
+    setError('');
+  };
+
+  return (
+    <form onSubmit={submit} data-testid="rate-preview-form">
+      <label>
+        Preview grade{' '}
+        <select
+          data-testid="rate-preview-grade"
+          value={grade}
+          onChange={(e) => {
+            setGrade(e.target.value as Grade);
+            changed();
+          }}
+        >
+          {GRADES.map((g) => (
+            <option key={g} value={g}>
+              {g}
+            </option>
+          ))}
+        </select>
+      </label>{' '}
+      <label>
+        Rate %{' '}
+        <input
+          data-testid="rate-preview-pct"
+          inputMode="decimal"
+          value={pct}
+          onChange={(e) => {
+            setPct(e.target.value);
+            changed();
+          }}
+        />
+      </label>{' '}
+      <button type="submit" data-testid="rate-preview" disabled={preview.isPending}>
+        Preview
+      </button>
+      {result && (
+        <p>
+          Claims changed: <strong data-testid="rate-preview-count">{result.count}</strong>, difference:{' '}
+          <strong data-testid="rate-preview-diff">{result.diff}</strong>
+        </p>
+      )}
+      {error && (
+        <p role="alert" data-testid="rate-preview-error">
+          {error}
+        </p>
+      )}
+    </form>
   );
 }
 
