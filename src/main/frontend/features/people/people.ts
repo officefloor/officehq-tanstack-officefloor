@@ -1,12 +1,14 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
+import { asFlag, useSearchParam } from '../../url/useSearchParam';
 
 export type Grade = 'A' | 'B' | 'C';
 export const GRADES: Grade[] = ['A', 'B', 'C'];
 
 // `version` is raised by each save; an edit sends the version it was made from. `statementCount`
 // is how many statements have been taken for them; `statedTotal` and `statementDate` are the last
-// one's due-total and date ('' before the first).
+// one's due-total and date ('' before the first). `retired` is set once they have a retirement
+// date, `retiredFrom` ('' when not retired), whatever that date is.
 export type Person = {
   id: string;
   name: string;
@@ -15,6 +17,8 @@ export type Person = {
   statementCount: number;
   statedTotal: string;
   statementDate: string;
+  retired: boolean;
+  retiredFrom: string;
 };
 
 export const peopleKey = (sheetId: string) => ['sheet', sheetId, 'people'] as const;
@@ -29,3 +33,6 @@ export const peopleQuery = (sheetId: string) => ({
 export function usePeople(sheetId: string) {
   return useQuery(peopleQuery(sheetId));
 }
+
+/** Whether retired people are listed. Off when the screen is first opened; loading a sheet keeps it. */
+export const useShowRetired = () => useSearchParam('retired', asFlag);

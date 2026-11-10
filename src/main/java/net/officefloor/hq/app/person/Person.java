@@ -12,6 +12,7 @@ public class Person {
     private int statementCount;
     private String statedTotal;
     private LocalDate statementDate;
+    private LocalDate retiredFrom;
 
     public Person(Long id, String sheetId, String name, String grade) {
         this(id, sheetId, name, grade, 0);
@@ -46,4 +47,10 @@ public class Person {
         this.statedTotal = statedTotal;
         this.statementDate = statementDate;
     }
+    /** The date they are retired from; null when not retired. Set at all, they count as retired. */
+    public LocalDate getRetiredFrom() { return retiredFrom; }
+    public void setRetiredFrom(LocalDate retiredFrom) { this.retiredFrom = retiredFrom; }
+    public boolean isRetired() { return retiredFrom != null; }
+    /** Whether a claim on this date is refused: they are retired from an earlier date. */
+    public boolean retiredBefore(LocalDate date) { return retiredFrom != null && date.isAfter(retiredFrom); }
 }

@@ -14,13 +14,14 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PersonRepository {
 
-    private static final String COLUMNS = "id, sheet_id, name, grade, version, statement_count, stated_total, statement_date";
+    private static final String COLUMNS = "id, sheet_id, name, grade, version, statement_count, stated_total, statement_date, retired_from";
 
     private static final RowMapper<Person> ROW = (rs, n) -> {
         Person person = new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
                 rs.getString("grade"), rs.getLong("version"));
         person.setStatements(rs.getInt("statement_count"), rs.getString("stated_total"),
                 rs.getObject("statement_date", LocalDate.class));
+        person.setRetiredFrom(rs.getObject("retired_from", LocalDate.class));
         return person;
     };
 
@@ -65,6 +66,13 @@ public class PersonRepository {
         jdbc.update("UPDATE person SET statement_count = ?, stated_total = ?, statement_date = ? WHERE id = ? AND sheet_id = ?",
                 person.getStatementCount(), person.getStatedTotal(),
                 person.getStatementDate() == null ? null : Date.valueOf(person.getStatementDate()),
+                person.getId(), person.getSheetId());
+    }
+
+    /** Record the date the person is retired from, leaving the rest as stored. */
+    public void saveRetired(Person person) {
+        jdbc.update("UPDATE person SET retired_from = ? WHERE id = ? AND sheet_id = ?",
+                person.getRetiredFrom() == null ? null : Date.valueOf(person.getRetiredFrom()),
                 person.getId(), person.getSheetId());
     }
 

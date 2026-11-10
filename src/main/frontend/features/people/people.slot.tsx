@@ -6,14 +6,14 @@ import { HttpError, postJson, putJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { PersonHead, PersonRow } from '../../slots/defs/personRow';
 import { useUser } from '../session/session';
-import { GRADES, peopleKey, peopleQuery, usePeople } from './people';
+import { GRADES, peopleKey, peopleQuery, usePeople, useShowRetired } from './people';
 import type { Grade, Person } from './people';
 
 type Fields = { name: string; grade: Grade };
 const EMPTY: Fields = { name: '', grade: 'A' };
 
 // The people on the sheet: a form that adds a person, or edits the one whose editor is open, and
-// the list of everyone in the order they were added. The editor remembers the version of the person
+// the list of everyone in the order they were added (retired people only when "show retired" is on). The editor remembers the version of the person
 // it loaded: if someone else has saved them since, the save is refused and the editor shows the
 // person as stored now (and their version, so saving again goes through).
 function People({ sheetId }: { sheetId: string }) {
@@ -24,6 +24,7 @@ function People({ sheetId }: { sheetId: string }) {
   const [version, setVersion] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [user] = useUser();
+  const [showRetired, setShowRetired] = useShowRetired();
 
   const reset = () => {
     setFields(EMPTY);
@@ -134,6 +135,15 @@ function People({ sheetId }: { sheetId: string }) {
           The people could not be read.
         </p>
       )}
+      <label>
+        <input
+          type="checkbox"
+          data-testid="show-retired"
+          checked={showRetired}
+          onChange={(e) => setShowRetired(e.target.checked ? true : undefined)}
+        />{' '}
+        Show retired
+      </label>
       <table data-testid="people-list">
         <thead>
           <tr>
@@ -144,7 +154,7 @@ function People({ sheetId }: { sheetId: string }) {
           </tr>
         </thead>
         <tbody>
-          {(people.data ?? []).map((p) => (
+          {(people.data ?? []).filter((p) => showRetired || !p.retired).map((p) => (
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>
