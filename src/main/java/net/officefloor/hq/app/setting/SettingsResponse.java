@@ -13,11 +13,12 @@ import java.util.Map;
  * today), and the period numbering from as yyyy-MM-dd ('' for off), and each grade's own terms in
  * days ('' for the sheet's terms), and the cap with two decimals ('' for none); and every value
  * recorded for each figure setting, by key, in from-date order; and the proof threshold with two
- * decimals ('' for none).
+ * decimals ('' for none); and each action's entry in the permission matrix, in matrix order, as
+ * saved ('' for the standing rule).
  */
 public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
         String periodNumberingFrom, Map<String, String> gradeTerms, String cap, Map<String, List<Dated>> dated,
-        String proofThreshold) {
+        String proofThreshold, Map<String, String> perms) {
 
     /** A value ('' for none) recorded from a date (yyyy-MM-dd). */
     public record Dated(String from, String value) {
@@ -33,7 +34,8 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
                 gradeTerms(settings),
                 show(settings.capOn(today)),
                 dated(settings),
-                show(settings.proofThresholdOn(today)));
+                show(settings.proofThresholdOn(today)),
+                perms(settings));
     }
 
     private static String show(java.math.BigDecimal figure) {
@@ -45,6 +47,15 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
         for (String grade : Settings.GRADES) {
             Integer own = settings.gradeTermsOn(grade, settings.today());
             shown.put(grade, own == null ? "" : own.toString());
+        }
+        return shown;
+    }
+
+    private static Map<String, String> perms(Settings settings) {
+        Map<String, String> shown = new LinkedHashMap<>();
+        for (String action : Settings.ACTIONS) {
+            String roles = settings.perms() == null ? null : settings.perms().get(action);
+            shown.put(action, roles == null ? "" : roles);
         }
         return shown;
     }

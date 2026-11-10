@@ -25,6 +25,8 @@ export type Settings = {
   cap: string;
   /** The due above which a claim, on its date, needs a proof to be settled or approved ('' for none). */
   proofThreshold: string;
+  /** Each action's entry in the permission matrix, the roles that may take it, comma separated ('' for the standing rule). */
+  perms: Record<string, string>;
   /**
    * Every value recorded for each figure setting, by key (clerk-limit, floor, terms, late-pct,
    * terms-A, terms-B, terms-C, cap, proof-threshold), in from-date order ('' for none). The values above are those
@@ -45,6 +47,19 @@ export const DATED_KEYS = {
 
 /** The grades that may have their own terms. */
 export const GRADES = ['A', 'B', 'C'] as const;
+
+/** The actions of the permission matrix, in the order they are shown. */
+export const ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'] as const;
+
+/** Who may take each action while its entry is blank. */
+export const STANDING_RULE: Record<string, string> = {
+  open: 'clerk,steward',
+  settle: 'clerk,steward',
+  void: 'clerk,steward',
+  reassign: 'steward',
+  close: 'clerk,steward',
+  reopen: 'steward',
+};
 
 /** A save of the settings: only those being changed are sent. */
 export type SettingsChange = Partial<Omit<Settings, 'dated'>> & { from?: Record<string, string> };

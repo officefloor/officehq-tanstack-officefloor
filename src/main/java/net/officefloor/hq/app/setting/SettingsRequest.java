@@ -9,9 +9,11 @@ package net.officefloor.hq.app.setting;
  * sheet's terms), and the cap, with up to two decimals (blank: none), and the from-date of each
  * figure setting being changed, by its key (clerk-limit, floor, terms, late-pct, terms-A, terms-B,
  * terms-C, cap, proof-threshold), as yyyy-MM-dd (blank or missing: the sheet's today), and the proof
- * threshold, with up to two decimals (blank: none).
+ * threshold, with up to two decimals (blank: none), and the entry of each action of the permission
+ * matrix being changed, by action (open, settle, void, reassign, close, reopen), a comma separated
+ * list of roles, clerk or steward (blank: the standing rule).
  */
 public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom,
         java.util.Map<String, String> gradeTerms, String cap, java.util.Map<String, String> from,
-        String proofThreshold) {
+        String proofThreshold, java.util.Map<String, String> perms) {
 }

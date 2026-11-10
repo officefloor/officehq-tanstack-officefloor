@@ -21,7 +21,8 @@ import net.officefloor.plugin.variable.Val;
  * When a clerk (any user not made a steward) settles a claim whose due is above the sheet's clerk
  * limit, it goes to PENDING instead, its due left live until a steward approves or rejects it; a
  * due of n/a is within any limit. Before the clerk limit is considered, a claim whose due is above
- * the proof threshold in force on its date is refused while it has no proofs.
+ * the proof threshold in force on its date is refused while it has no proofs. Only a role the
+ * permission matrix allows may settle.
  */
 public class SettleClaim {
     public void apply(@Val Sheet sheet, @Val Claim claim, PersonRepository people, RateRepository rates,
@@ -36,6 +37,10 @@ public class SettleClaim {
             throws InvalidClaimStatusException, SelfSettleException {
         Person person = people.find(sheet.id(), claim.getPersonId());
         Settings settings = settingsStore.find(sheet.id());
+        String role = roles.roleOf(sheet.id(), user);
+        if (!settings.allows("settle", role)) {
+            throw new InvalidClaimStatusException("A " + role + " may not settle a claim");
+        }
         BigDecimal figure = claim.isStated() ? claim.getStatedDue()
                 : ClaimFigure.live(claim, rates.findAll(sheet.id()), person.gradeOn(claim.getDate()), settings,
                         sheet.today());
@@ -50,7 +55,7 @@ public class SettleClaim {
         if (user.equals(claim.getOpenedBy())) throw new SelfSettleException(user);
         BigDecimal due = figure == null ? null : figure.add(late);
         if (settings.needsProof(due, claim.getDate(), claim.getProofs())) throw new InvalidClaimStatusException(ProofRequired.MESSAGE);
-        if (!settings.withinClerkLimit(due, sheet.today()) && Role.CLERK.equals(roles.roleOf(sheet.id(), user))) {
+        if (!settings.withinClerkLimit(due, sheet.today()) && Role.CLERK.equals(role)) {
             claim.moveTo(ClaimStatus.PENDING);
             return;
         }

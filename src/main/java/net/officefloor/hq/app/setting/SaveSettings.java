@@ -8,7 +8,8 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Saves the settings being changed, leaving the others as they are: a figure setting's value is
  * recorded from its from-date (the sheet's today when none is given), keeping the values recorded
- * from other dates and replacing one recorded from the same date.
+ * from other dates and replacing one recorded from the same date. An action's entry in the
+ * permission matrix is not dated: it replaces the one before.
  */
 public class SaveSettings {
     public void save(@Val SettingsInput input, @Val Sheet sheet, SettingsRepository repository,
@@ -17,8 +18,9 @@ public class SaveSettings {
         if (input.policyDateChanged() || input.periodNumberingFromChanged()) {
             repository.saveUndated(new Settings(sheet.id(), now.today(), now.dated(),
                     input.policyDateChanged() ? input.policyDate() : now.policyDate(),
-                    input.periodNumberingFromChanged() ? input.periodNumberingFrom() : now.periodNumberingFrom()));
+                    input.periodNumberingFromChanged() ? input.periodNumberingFrom() : now.periodNumberingFrom(), now.perms()));
         }
+        input.perms().forEach((action, roles) -> repository.recordPerm(sheet.id(), action, roles));
         java.util.Map<String, String> values = new java.util.LinkedHashMap<>(input.datedValues());
         values.putAll(input.gradeTermsValues());
         if (input.capValue() != null) values.put(Settings.CAP, input.capValue());

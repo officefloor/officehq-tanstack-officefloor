@@ -1,9 +1,11 @@
 package net.officefloor.hq.app.period;
 
+import jakarta.servlet.http.HttpServletRequest;
 import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimFigure;
 import net.officefloor.hq.app.claim.ClaimLogRepository;
@@ -13,6 +15,7 @@ import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.role.RoleRepository;
 import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.hq.app.setting.SettingsRepository;
 import net.officefloor.hq.app.sheet.Sheet;
@@ -23,11 +26,16 @@ import net.officefloor.plugin.variable.Val;
  * Closes the period, fixing its due-total at this moment: the figures of the claims that counted at
  * the end of its last day, by the status their log records then (OPEN, PENDING and SETTLED, but not an
  * unbound open one dated within a hold of its person, nor one deferred now), dated inside it (an overdue one with its late charge), added up, skipping n/a. Each person's own figure for the period is fixed
- * too, and the period's due-total is the sum of them. A period already closed is refused.
+ * too, and the period's due-total is the sum of them. A period already closed is refused, and so is a role the permission matrix does not allow to close.
  */
 public class ClosePeriod {
     public void close(@Val Sheet sheet, @Val Period period, PeriodRepository periods, PersonRepository people,
-            ClaimRepository claims, ClaimLogRepository log, RateRepository rates, SettingsRepository settings, Out<Period> closedOut) throws InvalidPeriodException {
+            ClaimRepository claims, ClaimLogRepository log, RateRepository rates, SettingsRepository settings, RoleRepository roles,
+            HttpServletRequest request, Out<Period> closedOut) throws InvalidPeriodException {
+        String role = roles.roleOf(sheet.id(), Audit.user(request));
+        if (!settings.find(sheet.id()).allows("close", role)) {
+            throw new InvalidPeriodException("A " + role + " may not close period " + period.name());
+        }
         if (period.closed()) throw new InvalidPeriodException("Period " + period.name() + " is already closed");
         List<Rate> all = rates.findAll(sheet.id());
         Settings sheetSettings = settings.find(sheet.id());

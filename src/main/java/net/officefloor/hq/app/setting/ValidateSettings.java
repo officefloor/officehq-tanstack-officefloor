@@ -6,6 +6,7 @@ import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.regex.Pattern;
+import net.officefloor.hq.app.role.Role;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
@@ -105,6 +106,30 @@ public class ValidateSettings {
             }
             threshold = new BigDecimal(value).setScale(2);
         }
+        Map<String, String> perms = new LinkedHashMap<>();
+        if (request != null && request.perms() != null) {
+            for (String action : request.perms().keySet()) {
+                if (!Settings.ACTIONS.contains(action)) {
+                    throw new InvalidSettingException("An action is one of " + String.join(", ", Settings.ACTIONS));
+                }
+            }
+            for (String action : Settings.ACTIONS) {
+                String value = request.perms().get(action);
+                if (value == null) continue;
+                value = value.trim();
+                java.util.List<String> roles = new java.util.ArrayList<>();
+                if (!value.isEmpty()) {
+                    for (String role : value.split(",", -1)) {
+                        role = role.trim();
+                        if (!Role.CLERK.equals(role) && !Role.STEWARD.equals(role)) {
+                            throw new InvalidSettingException("Roles are clerk or steward, separated by commas, or blank");
+                        }
+                        if (!roles.contains(role)) roles.add(role);
+                    }
+                }
+                perms.put(action, String.join(",", roles));
+            }
+        }
         Map<String, LocalDate> from = new LinkedHashMap<>();
         if (request != null && request.from() != null) {
             for (Map.Entry<String, String> entry : request.from().entrySet()) {
@@ -120,6 +145,6 @@ public class ValidateSettings {
         }
         body.set(new SettingsInput(limitChanged, limit, floor, terms, latePct, policyChanged, policyDate,
                 numberingChanged, numberingFrom, gradeTerms, capChanged, cap, from,
-                thresholdChanged, threshold));
+                thresholdChanged, threshold, perms));
     }
 }

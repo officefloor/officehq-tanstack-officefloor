@@ -20,10 +20,12 @@ import java.util.NavigableMap;
  * its date; the clerk limit and the cap are those in force on the sheet's today ({@code today}).
  * Not dated: its policy date (null: the sheet's today): a claim dated before it rounds half up, one
  * on or after it half to even, and its period numbering from (null: off): while the sheet's today
- * is on or after it, a claim opened is numbered within its period.
+ * is on or after it, a claim opened is numbered within its period, and its permission matrix
+ * ({@code perms}, by action, the roles that may take it as a comma separated list; blank or missing:
+ * the standing rule, open, settle, void and close by clerk and steward, reassign and reopen by steward).
  */
 public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap<LocalDate, String>> dated,
-        LocalDate policyDate, LocalDate periodNumberingFrom) {
+        LocalDate policyDate, LocalDate periodNumberingFrom, Map<String, String> perms) {
     /** The grades that may have their own terms. */
     public static final List<String> GRADES = List.of("A", "B", "C");
 
@@ -33,6 +35,31 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
     public static final String LATE_PCT = "late-pct";
     public static final String CAP = "cap";
     public static final String PROOF_THRESHOLD = "proof-threshold";
+
+    /** The actions of the permission matrix, in the order they are shown and audited. */
+    public static final List<String> ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
+
+    /** The key of an action's entry in the permission matrix. */
+    public static String permKey(String action) {
+        return "perm-" + action;
+    }
+
+    /** The roles that may take an action by the standing rule. */
+    public static List<String> standingRoles(String action) {
+        return "reassign".equals(action) || "reopen".equals(action) ? List.of("steward") : List.of("clerk", "steward");
+    }
+
+    /** The roles that may take an action: its entry in the permission matrix, else the standing rule. */
+    public List<String> rolesFor(String action) {
+        String entry = perms == null ? null : perms.get(action);
+        if (entry == null || entry.isBlank()) return standingRoles(action);
+        return java.util.Arrays.stream(entry.split(",")).map(String::trim).filter((r) -> !r.isEmpty()).toList();
+    }
+
+    /** Whether a role may take an action. */
+    public boolean allows(String action, String role) {
+        return rolesFor(action).contains(role);
+    }
 
     /** The key of a grade's own terms. */
     public static String gradeTermsKey(String grade) {

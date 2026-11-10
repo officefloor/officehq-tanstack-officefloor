@@ -9,6 +9,7 @@ import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.role.RoleRepository;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.setting.SettingsRepository;
 import net.officefloor.hq.app.sheet.Sheet;
@@ -19,13 +20,14 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Opens the selected claims in list order (people in the order they were added, each person's
  * claims newest first), numbering each as it is opened. A claim that cannot be opened (not a
- * draft, dated inside a closed period, not on the sheet) is refused and left as it is. Each claim
+ * draft, dated inside a closed period, not on the sheet) is refused and left as it is; every one is
+ * refused when the permission matrix does not allow the user's role to open. Each claim
  * opened is logged and audited as a single open is: its CLAIM_OPENED line, then the figures it moved.
  */
 public class OpenSelectedClaims {
     public void open(@Val Sheet sheet, @Val BulkOpenRequest request, ClaimRepository claims,
             PersonRepository people, PeriodRepository periods, SheetRepository sheets, RateRepository rates,
-            SettingsRepository settings, ClaimLogRepository log, HttpServletRequest http, Audit audit,
+            RoleRepository roles, SettingsRepository settings, ClaimLogRepository log, HttpServletRequest http, Audit audit,
             Out<BulkOpenResponse> result) {
         String user = Audit.user(http);
         Set<Long> selected = new HashSet<>();
@@ -38,6 +40,10 @@ public class OpenSelectedClaims {
         }
         int requested = new HashSet<>(request.claimIds()).size();
         int opened = 0;
+        if (!settings.find(sheet.id()).allows("open", roles.roleOf(sheet.id(), user))) {
+            result.set(new BulkOpenResponse(0, requested));
+            return;
+        }
         Rollup before = rollup(sheet, sheets, people, claims, rates, settings);
         for (Person person : people.findAll(sheet.id())) {
             List<Claim> theirs = claims.findByPerson(sheet.id(), person.getId());
