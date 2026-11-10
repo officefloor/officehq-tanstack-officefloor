@@ -15,13 +15,13 @@ import java.util.List;
  * and how many proofs it has had added; and the number of the claim it was split off ("" when none);
  * and the user whose open editor locks it on the sheet's today ("" when no one's does);
  * and whether it was added while its period was soft-closed; and the last sheet's today it was reminded
- * as yyyy-MM-dd ("" when never); and its external reference ("" when none); and its tags, sorted (none: empty).
+ * as yyyy-MM-dd ("" when never); and its external reference ("" when none); and its tags, sorted (none: empty); and the reason it was voided with ("" when none).
  */
 public record ClaimResponse(String id, String personId, String amount, String date, String note,
         String status, String number, String due, String openedBy, boolean stated,
         String statedDue, String corrects, String roundDate, String dueBy, List<String> log, String deferredUntil,
         int proofs, String splitFrom, String lockedBy, boolean lateEntry, String remindedOn, String ref,
-        List<String> tags) {
+        List<String> tags, String voidReason) {
     public static ClaimResponse from(Claim claim) {
         return from(claim, List.of());
     }
@@ -44,6 +44,7 @@ public record ClaimResponse(String id, String personId, String amount, String da
                 claim.isLateEntry(),
                 claim.getRemindedOn() == null ? "" : claim.getRemindedOn().toString(),
                 claim.getRef() == null ? "" : claim.getRef(),
-                claim.tagList());
+                claim.tagList(),
+                claim.getVoidReason() == null ? "" : claim.getVoidReason());
     }
 }

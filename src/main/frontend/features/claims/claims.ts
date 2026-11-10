@@ -56,6 +56,8 @@ export type Claim = {
   ref: string;
   /** Its tags: trimmed, lower-cased, without repeats, sorted; empty when it has none. */
   tags: string[];
+  /** The reason it was voided with, from the sheet's list; '' when none. */
+  voidReason: string;
 };
 
 /** Whether a claim is a correction: it has no floor and no late charge. */

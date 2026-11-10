@@ -15,6 +15,7 @@ import { periodOf, usePeriods } from '../periods/periods';
 import { useFloor, useLate } from '../access/access';
 import { useSheetToday } from '../sheet/sheet';
 import { dueBy, isOverdue } from '../overdue/overdue';
+import { useVoidReasons } from '../voidreasons/voidReasons';
 
 // A clerk's settle above the clerk limit leaves the claim PENDING; a steward approves it or rejects
 // it with a reason (typed in the row). A steward re-settles a SETTLED claim at its figure today.
@@ -60,6 +61,9 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   const [refused, setRefused] = useState<{ id: string; message: string } | null>(null);
   // The reason typed for rejecting each claim, by claim id.
   const [reasons, setReasons] = useState<Record<string, string>>({});
+  // The void reason chosen for each claim, by claim id: needed while the sheet has any.
+  const [voidReasons, setVoidReasons] = useState<Record<string, string>>({});
+  const voidReasonList = (useVoidReasons(sheetId).data ?? []).map((r) => r.reason);
   // The person picked to move each claim to (a steward's move), by claim id.
   const [moveTo, setMoveTo] = useState<Record<string, string>>({});
   // The date typed to defer each claim until, by claim id.
@@ -114,11 +118,16 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
     mutationFn: ({ id, action }: { id: string; action: Action }) =>
       postJson<Claim>(
         `/api/sheets/${encodeURIComponent(sheetId)}/claims/${encodeURIComponent(id)}/${action}`,
-        action === 'reject' ? { reason: (reasons[id] ?? '').trim() } : {},
+        action === 'reject'
+          ? { reason: (reasons[id] ?? '').trim() }
+          : action === 'void'
+            ? { reason: voidReasons[id] ?? '' }
+            : {},
         user,
       ),
     onSuccess: (_c, { id, action }) => {
       if (action === 'reject') setReasons((r) => ({ ...r, [id]: '' }));
+      if (action === 'void') setVoidReasons((r) => ({ ...r, [id]: '' }));
       return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
     },
     onError: (_e, { id }) => setRefused({ id, message: 'That status change is not allowed.' }),
@@ -305,6 +314,10 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
     setRefused(null);
     if (action === 'reject' && (reasons[id] ?? '').trim() === '') {
       setRefused({ id, message: 'A rejection needs a reason.' });
+      return;
+    }
+    if (action === 'void' && voidReasonList.length > 0 && !voidReasonList.includes(voidReasons[id] ?? '')) {
+      setRefused({ id, message: 'A void needs a reason from the sheet\'s list.' });
       return;
     }
     move.mutate({ id, action });
@@ -497,6 +510,22 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
                   setRefused((r) => (r !== null && r.id === c.id ? null : r));
                 }}
               />{' '}
+              <select
+                data-testid="claim-void-reason"
+                aria-label="Void reason"
+                value={voidReasons[c.id] ?? ''}
+                onChange={(e) => {
+                  setVoidReasons((r) => ({ ...r, [c.id]: e.target.value }));
+                  setRefused((r) => (r !== null && r.id === c.id ? null : r));
+                }}
+              >
+                <option value="">No void reason</option>
+                {voidReasonList.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>{' '}
               {ACTIONS.map(({ action, label }) => (
                 <button
                   key={action}

@@ -8,13 +8,15 @@ import { useCap, useFloor, useLate } from '../access/access';
 import { useSheetToday } from '../sheet/sheet';
 import { periodDueTotal, usePeriods } from '../periods/periods';
 import { isActive } from '../active/active';
+import { useVoidReasons } from '../voidreasons/voidReasons';
 
 // Every status the summary counts.
 const STATUSES: ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'];
 
 // The sheet's summary, worked from the same figures as the lists: per grade, the people on it today
 // (retired people left out), their due-totals added up and how many of them are active; per
-// period, its due-total; per status, how many claims have it.
+// period, its due-total; per status, how many claims have it; per void reason on the list, how many
+// VOID claims were voided with it.
 function Summary({ sheetId }: { sheetId: string }) {
   const people = usePeople(sheetId).data ?? [];
   const claims = useClaims(sheetId).data ?? [];
@@ -24,6 +26,7 @@ function Summary({ sheetId }: { sheetId: string }) {
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const cap = useCap(sheetId);
+  const voidReasons = useVoidReasons(sheetId).data ?? [];
 
   const active = people.filter((p) => !p.retired);
   const claimsOf = (p: Person) => claims.filter((c) => c.personId === p.id);
@@ -87,6 +90,24 @@ function Summary({ sheetId }: { sheetId: string }) {
             <tr key={s}>
               <td>{s}</td>
               <td data-testid={`summary-status-${s}-count`}>{claims.filter((c) => c.status === s).length}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <table>
+        <thead>
+          <tr>
+            <th>Void reason</th>
+            <th>Claims</th>
+          </tr>
+        </thead>
+        <tbody>
+          {voidReasons.map(({ reason }) => (
+            <tr key={reason}>
+              <td>{reason}</td>
+              <td data-testid={`summary-void-${reason}-count`}>
+                {claims.filter((c) => c.status === 'VOID' && c.voidReason === reason).length}
+              </td>
             </tr>
           ))}
         </tbody>

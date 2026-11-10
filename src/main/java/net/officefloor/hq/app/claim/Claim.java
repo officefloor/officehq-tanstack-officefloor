@@ -29,6 +29,7 @@ public class Claim {
     private LocalDate remindedOn;
     private String ref;
     private String tags;
+    private String voidReason;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue,
@@ -141,6 +142,9 @@ public class Claim {
     /** Its tags: lower-cased, without repeats, sorted and comma separated; null when it has none. */
     public String getTags() { return tags; }
     public void setTags(String tags) { this.tags = tags; }
+    /** The reason it was voided with, from the sheet's list; null when it was voided without one or is not VOID. */
+    public String getVoidReason() { return voidReason; }
+    public void setVoidReason(String voidReason) { this.voidReason = voidReason; }
     /** Its tags, sorted; empty when it has none. */
     public java.util.List<String> tagList() {
         return tags == null ? java.util.List.of() : java.util.List.of(tags.split(","));
@@ -228,6 +232,7 @@ public class Claim {
         then.remindedOn = remindedOn;
         then.ref = ref;
         then.tags = tags;
+        then.voidReason = voidReason;
         return then;
     }
     /** Whether it is open: OPEN, or PENDING a steward's approval. */

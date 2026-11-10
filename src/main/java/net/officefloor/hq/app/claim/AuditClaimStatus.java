@@ -9,7 +9,7 @@ import jakarta.servlet.http.HttpServletRequest;
 /**
  * Records the claim's new status; a settled claim's line ends with the due it was settled at (n/a
  * when its grade had no rate); a voided claim that had been settled ends with the frozen figure
- * the void reversed out of every total.
+ * the void reversed out of every total, then the reason it was voided with, when it had one.
  * Runs after every rule has passed, so a refused change writes nothing.
  */
 public class AuditClaimStatus {
@@ -18,6 +18,9 @@ public class AuditClaimStatus {
         String line = line(sheet, claim, Audit.user(request), people);
         if (claim.getStatus() == ClaimStatus.VOID && log.settledOn(claim) != null) {
             line += " reversed=" + (claim.getSettledDue() == null ? "n/a" : claim.getSettledDue().toPlainString());
+        }
+        if (claim.getStatus() == ClaimStatus.VOID && claim.getVoidReason() != null) {
+            line += " reason=" + claim.getVoidReason();
         }
         audit.record(line);
     }

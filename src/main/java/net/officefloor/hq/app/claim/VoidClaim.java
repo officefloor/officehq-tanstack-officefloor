@@ -8,20 +8,24 @@ import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.role.RoleRepository;
 import net.officefloor.hq.app.setting.SettingsRepository;
 import net.officefloor.hq.app.sheet.Sheet;
+import net.officefloor.hq.app.voidreason.VoidReason;
+import net.officefloor.hq.app.voidreason.VoidReasonRepository;
 import net.officefloor.plugin.variable.Val;
 
 /**
  * Voids the claim. Only a role the permission matrix allows may void. A SETTLED claim may be
  * voided only by a steward, and only within {@link #SETTLED_DAYS} days of its settlement (its
  * status log's SETTLED date) by the sheet's today; it keeps its number and its frozen figure,
- * which leaves every total.
+ * which leaves every total. While the sheet has void reasons, a void needs one of them, kept on
+ * the claim.
  */
 public class VoidClaim {
     /** How many days after its settlement a SETTLED claim may still be voided. */
     static final long SETTLED_DAYS = 7;
 
-    public void apply(@Val Sheet sheet, @Val Claim claim, RoleRepository roles, SettingsRepository settings,
-            ClaimLogRepository log, HttpServletRequest request) throws InvalidClaimStatusException {
+    public void apply(@Val Sheet sheet, @Val Claim claim, @Val VoidRequest body, RoleRepository roles,
+            SettingsRepository settings, ClaimLogRepository log, VoidReasonRepository reasons,
+            HttpServletRequest request) throws InvalidClaimStatusException, InvalidClaimException {
         String user = Audit.user(request);
         String role = roles.roleOf(sheet.id(), user);
         if (!settings.find(sheet.id()).allows("void", role)) {
@@ -38,6 +42,15 @@ public class VoidClaim {
                         + " days of its settlement" + (settled == null ? "" : " on " + settled));
             }
         }
+        java.util.List<String> listed = reasons.findAll(sheet.id()).stream().map(VoidReason::reason).toList();
+        String reason = body.reason();
+        if (!listed.isEmpty()) {
+            if (reason == null) throw new InvalidClaimException("A void needs a reason from the sheet's list");
+            if (!listed.contains(reason)) throw new InvalidClaimException(reason + " is not on the sheet's void reasons");
+        } else if (reason != null) {
+            throw new InvalidClaimException("The sheet has no void reasons: " + reason + " is not one");
+        }
         claim.moveTo(ClaimStatus.VOID);
+        claim.setVoidReason(reason);
     }
 }
