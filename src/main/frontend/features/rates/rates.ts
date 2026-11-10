@@ -7,9 +7,9 @@ import type { Claim } from '../claims/claims';
 
 /**
  * A grade's rate: a percent with two decimals, from a date (yyyy-MM-dd; '' when it applies from the
- * beginning of time).
+ * beginning of time) through a date (yyyy-MM-dd; '' when it has no end).
  */
-export type Rate = { grade: Grade; pct: string; from: string };
+export type Rate = { grade: Grade; pct: string; from: string; to: string };
 
 export const ratesKey = (sheetId: string) => ['sheet', sheetId, 'rates'] as const;
 
@@ -24,7 +24,8 @@ export function useRates(sheetId: string) {
 
 /**
  * A grade's rate in force on a date (yyyy-MM-dd): the one whose from-date is the latest on or
- * before it. Null when the date is before every rate the grade has (or it has none).
+ * before it, unless its to-date is before the date. Null when the date is before every rate the
+ * grade has (or it has none), or after the to-date of the rate that would apply.
  */
 export function rateOn(rates: Rate[], grade: Grade, date: string): string | null {
   let best: Rate | null = null;
@@ -32,7 +33,8 @@ export function rateOn(rates: Rate[], grade: Grade, date: string): string | null
     if (r.grade !== grade || r.from > date) continue;
     if (best === null || r.from > best.from) best = r;
   }
-  return best?.pct ?? null;
+  if (best === null || (best.to !== '' && best.to < date)) return null;
+  return best.pct;
 }
 
 /** The sheet's rate for a grade on a date, or null when none is in force (or the rates are not read yet). */
@@ -146,7 +148,8 @@ export function claimDue(claim: Claim, pct: string | null, floor: string, late: 
  * A person's due-total: the figures of their claims that count (an unbound OPEN one not when dated within one of their `holds`) (each at the rate in force on its
  * date for their grade in force on its date), added up, skipping n/a. With no rate for their grade
  * today it is n/a, unless a claim that counts keeps a fixed figure (settled, or bound by a
- * statement) or has a figure under another grade, in force on its date.
+ * statement), has a figure under another grade in force on its date, or has a figure dated on or
+ * before today (under a rate that has since ended).
  */
 export function personDueTotal(
   rates: Rate[],
@@ -160,7 +163,8 @@ export function personDueTotal(
   const counted = claims.filter((c) => counts(c, holds));
   const grade = gradeOn(grades, today);
   const kept = (c: Claim) => c.due !== '' || (isBound(c) && c.statedDue !== NA)
-    || (gradeOn(grades, c.date) !== grade && rateOn(rates, gradeOn(grades, c.date), c.date) !== null);
+    || (gradeOn(grades, c.date) !== grade && rateOn(rates, gradeOn(grades, c.date), c.date) !== null)
+    || (c.date <= today && rateOn(rates, gradeOn(grades, c.date), c.date) !== null);
   if (rateOn(rates, grade, today) === null && !counted.some(kept)) return NA;
   return sumDue(counted.map((c) => claimDue(c, rateOn(rates, gradeOn(grades, c.date), c.date), floor, late)));
 }

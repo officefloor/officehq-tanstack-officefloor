@@ -14,10 +14,11 @@ import { useFloor, useLate } from '../access/access';
 import { NA, PCT, personDueTotal, rateOn, ratesKey, sumDue, useRates } from './rates';
 import type { Rate } from './rates';
 
-type Fields = { grade: Grade; pct: string; from: string };
-const EMPTY: Fields = { grade: 'A', pct: '', from: '' };
+type Fields = { grade: Grade; pct: string; from: string; to: string };
+const EMPTY: Fields = { grade: 'A', pct: '', from: '', to: '' };
 
-// The sheet's rates: a form that sets a grade's rate from a date (or from the beginning of time),
+// The sheet's rates: a form that sets a grade's rate from a date (or from the beginning of time)
+// through a date (or with no end),
 // every rate set, and each grade's rate in force on the sheet's today.
 function Rates({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
@@ -32,7 +33,7 @@ function Rates({ sheetId }: { sheetId: string }) {
     mutationFn: (body: Fields) =>
       postJson<Rate>(`/api/sheets/${encodeURIComponent(sheetId)}/rates`, body, user),
     onSuccess: () => {
-      setFields((f) => ({ ...f, pct: '', from: '' }));
+      setFields((f) => ({ ...f, pct: '', from: '', to: '' }));
       void queryClient.invalidateQueries({ queryKey: ratesKey(sheetId) });
     },
     onError: () => setError('That rate could not be set.'),
@@ -50,8 +51,14 @@ function Rates({ sheetId }: { sheetId: string }) {
       setError('A rate is a percent of 0.00 or more, with up to two decimals.');
       return;
     }
+    const from = fields.from.trim();
+    const to = fields.to.trim();
+    if (to !== '' && from !== '' && to < from) {
+      setError('A to-date is on or after the from-date.');
+      return;
+    }
     once((done) =>
-      save.mutate({ grade: fields.grade, pct, from: fields.from.trim() }, { onSettled: done }),
+      save.mutate({ grade: fields.grade, pct, from, to }, { onSettled: done }),
     );
   };
 
@@ -98,6 +105,15 @@ function Rates({ sheetId }: { sheetId: string }) {
             onChange={(e) => change({ from: e.target.value })}
           />
         </label>{' '}
+        <label>
+          To{' '}
+          <input
+            type="date"
+            data-testid="rate-form-to"
+            value={fields.to}
+            onChange={(e) => change({ to: e.target.value })}
+          />
+        </label>{' '}
         <button type="submit" data-testid="rate-form-submit" disabled={save.isPending}>
           Set rate
         </button>
@@ -133,6 +149,7 @@ function Rates({ sheetId }: { sheetId: string }) {
           <tr>
             <th>Grade</th>
             <th>From</th>
+            <th>To</th>
             <th>Rate %</th>
           </tr>
         </thead>
@@ -141,6 +158,7 @@ function Rates({ sheetId }: { sheetId: string }) {
             <tr key={`${r.grade}-${r.from}`} data-testid={`rate-row-${r.grade}-${r.from || 'start'}`}>
               <td>{r.grade}</td>
               <td data-testid="rate-from">{r.from || 'start'}</td>
+              <td data-testid="rate-to">{r.to}</td>
               <td data-testid="rate-pct">{r.pct}</td>
             </tr>
           ))}

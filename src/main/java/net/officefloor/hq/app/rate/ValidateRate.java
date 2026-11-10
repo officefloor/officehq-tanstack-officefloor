@@ -21,15 +21,22 @@ public class ValidateRate {
         if (!PCT.matcher(pct).matches()) {
             throw new InvalidRateException("A rate is a percent of 0.00 or more, with up to two decimals");
         }
-        String rawFrom = request.from() == null ? "" : request.from().trim();
-        LocalDate from = null;
-        if (!rawFrom.isEmpty()) {
-            try {
-                from = LocalDate.parse(rawFrom);
-            } catch (DateTimeParseException e) {
-                throw new InvalidRateException("A from-date is a date, yyyy-MM-dd");
-            }
+        LocalDate from = date(request.from(), "A from-date is a date, yyyy-MM-dd");
+        LocalDate to = date(request.to(), "A to-date is a date, yyyy-MM-dd");
+        if (to != null && from != null && to.isBefore(from)) {
+            throw new InvalidRateException("A to-date is on or after the from-date");
         }
-        body.set(new RateInput(grade, new BigDecimal(pct).setScale(2), from));
+        body.set(new RateInput(grade, new BigDecimal(pct).setScale(2), from, to));
+    }
+
+    /** A date (yyyy-MM-dd), or null when blank. */
+    private static LocalDate date(String raw, String message) throws InvalidRateException {
+        String trimmed = raw == null ? "" : raw.trim();
+        if (trimmed.isEmpty()) return null;
+        try {
+            return LocalDate.parse(trimmed);
+        } catch (DateTimeParseException e) {
+            throw new InvalidRateException(message);
+        }
     }
 }

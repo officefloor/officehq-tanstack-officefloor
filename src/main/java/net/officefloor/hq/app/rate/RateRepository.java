@@ -11,7 +11,8 @@ import org.springframework.stereotype.Repository;
 public class RateRepository {
 
     private static final RowMapper<Rate> ROW = (rs, n) -> new Rate(rs.getString("sheet_id"),
-            rs.getString("grade"), rs.getBigDecimal("pct"), rs.getObject("from_date", LocalDate.class));
+            rs.getString("grade"), rs.getBigDecimal("pct"), rs.getObject("from_date", LocalDate.class),
+            rs.getObject("to_date", LocalDate.class));
 
     private final JdbcTemplate jdbc;
 
@@ -21,7 +22,7 @@ public class RateRepository {
 
     /** The sheet's rates, by grade then from-date (none first). */
     public List<Rate> findAll(String sheetId) {
-        return jdbc.query("SELECT sheet_id, grade, pct, from_date FROM rate WHERE sheet_id = ?"
+        return jdbc.query("SELECT sheet_id, grade, pct, from_date, to_date FROM rate WHERE sheet_id = ?"
                 + " ORDER BY grade, from_date NULLS FIRST", ROW, sheetId);
     }
 
@@ -29,7 +30,7 @@ public class RateRepository {
     public void save(Rate rate) {
         jdbc.update("DELETE FROM rate WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?",
                 rate.sheetId(), rate.grade(), rate.from());
-        jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date) VALUES (?, ?, ?, ?)",
-                rate.sheetId(), rate.grade(), rate.pct(), rate.from());
+        jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date) VALUES (?, ?, ?, ?, ?)",
+                rate.sheetId(), rate.grade(), rate.pct(), rate.from(), rate.to());
     }
 }

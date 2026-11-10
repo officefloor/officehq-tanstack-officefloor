@@ -33,7 +33,8 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
      * and SETTLED, but not an unbound OPEN one dated within one of their holds) added up; their due-total the figures of those claims added up, skipping n/a (a live figure is at least the sheet's floor; an overdue one gains its late
      * charge on {@code today}), and
      * n/a when their grade in force today has no rate today and no claim that counts keeps a fixed
-     * figure or has one under the grade in force on its date when that is another grade. Each claim
+     * figure or has one under the grade in force on its date when that is another grade, or
+     * has one dated on or before today (under a rate that has since ended). Each claim
      * takes the rate of the grade in force on its date. The
      * sheet's totals add these up, skipping n/a.
      */
@@ -58,6 +59,8 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
                 if (figure != null) due = due.add(figure);
                 // A figure found under a grade other than today's is kept, whatever today's rate.
                 if (figure != null && !grade.equals(person.gradeOn(today))) fixed = true;
+                // So is one dated on or before today, found under a rate that has since ended.
+                if (figure != null && !claim.getDate().isAfter(today)) fixed = true;
             }
             boolean none = Rate.inForce(all, person.gradeOn(today), today).isEmpty() && !fixed;
             claimedTotal = claimedTotal.add(claimed);
