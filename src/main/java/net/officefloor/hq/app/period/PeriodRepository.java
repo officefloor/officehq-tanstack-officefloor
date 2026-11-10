@@ -1,7 +1,11 @@
 package net.officefloor.hq.app.period;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -63,5 +67,35 @@ public class PeriodRepository {
     public boolean markReopened(Period period) {
         return jdbc.update("UPDATE period SET closed = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ? AND closed",
                 period.sheetId(), period.name()) == 1;
+    }
+
+    /** Fix each person's due-total for the closed period. */
+    public void savePersonTotals(Period period, Map<Long, BigDecimal> totals) {
+        for (Map.Entry<Long, BigDecimal> e : totals.entrySet()) {
+            jdbc.update("INSERT INTO period_person_total (sheet_id, period_name, person_id, total) VALUES (?, ?, ?, ?)",
+                    period.sheetId(), period.name(), e.getKey(), e.getValue());
+        }
+    }
+
+    /** Clear the people's fixed due-totals for the reopened period. */
+    public void deletePersonTotals(Period period) {
+        jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_name = ?",
+                period.sheetId(), period.name());
+    }
+
+    /** The people's fixed due-totals for the sheet's closed periods: by period name, then person id. */
+    public Map<String, Map<Long, BigDecimal>> personTotals(String sheetId) {
+        Map<String, Map<Long, BigDecimal>> found = new HashMap<>();
+        jdbc.query("SELECT period_name, person_id, total FROM period_person_total WHERE sheet_id = ? ORDER BY person_id",
+                rs -> {
+                    found.computeIfAbsent(rs.getString("period_name"), n -> new LinkedHashMap<>())
+                            .put(rs.getLong("person_id"), rs.getBigDecimal("total"));
+                }, sheetId);
+        return found;
+    }
+
+    /** The people's fixed due-totals for the period, by person id (empty while it is open). */
+    public Map<Long, BigDecimal> personTotals(Period period) {
+        return personTotals(period.sheetId()).getOrDefault(period.name(), Map.of());
     }
 }

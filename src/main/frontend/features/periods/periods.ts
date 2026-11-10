@@ -9,9 +9,17 @@ import type { Late, Rate } from '../rates/rates';
 
 /**
  * A period: its name (unique on the sheet), its from and to dates (yyyy-MM-dd), inclusive, whether
- * it is closed, and the due-total fixed when it was closed ('' while open).
+ * it is closed, the due-total fixed when it was closed ('' while open), and each person's due-total
+ * fixed when it was closed, by person id (empty while open).
  */
-export type Period = { name: string; from: string; to: string; closed: boolean; closedTotal: string };
+export type Period = {
+  name: string;
+  from: string;
+  to: string;
+  closed: boolean;
+  closedTotal: string;
+  personTotals: Record<string, string>;
+};
 
 export const periodsKey = (sheetId: string) => ['sheet', sheetId, 'periods'] as const;
 
@@ -30,9 +38,26 @@ export function periodOf(periods: Period[], date: string): Period | null {
 }
 
 /**
- * A period's due-total: the one fixed when it was closed, else the due of the claims that count
- * whose date falls in it, added up.
+ * A person's due-total for a period: the one fixed when it was closed (0.00 for a person added
+ * after), else the due of their claims that count whose date falls in it, added up.
  */
+export function personPeriodDueTotal(
+  period: Period,
+  person: Person,
+  claims: Claim[],
+  rates: Rate[],
+  floor: string,
+  late: Late,
+): string {
+  if (period.closed) return period.personTotals[person.id] ?? '0.00';
+  return sumDue(
+    claims
+      .filter((c) => c.personId === person.id && counts(c, person.holds) && period.from <= c.date && c.date <= period.to)
+      .map((c) => claimDue(c, rateOn(rates, gradeOn(person.grades, c.date), c.date), floor, late)),
+  );
+}
+
+/** A period's due-total: the people's due-totals for it, added up. */
 export function periodDueTotal(
   period: Period,
   people: Person[],
@@ -41,11 +66,5 @@ export function periodDueTotal(
   floor: string,
   late: Late,
 ): string {
-  if (period.closed) return period.closedTotal;
-  const dues = people.flatMap((person) =>
-    claims
-      .filter((c) => c.personId === person.id && counts(c, person.holds) && period.from <= c.date && c.date <= period.to)
-      .map((c) => claimDue(c, rateOn(rates, gradeOn(person.grades, c.date), c.date), floor, late)),
-  );
-  return sumDue(dues);
+  return sumDue(people.map((person) => personPeriodDueTotal(period, person, claims, rates, floor, late)));
 }

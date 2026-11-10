@@ -24,6 +24,7 @@ public class ReopenPeriod {
         if (!periods.markReopened(reopened)) {
             throw new InvalidPeriodException("Period " + period.name() + " is not closed");
         }
+        periods.deletePersonTotals(reopened);
         reopenedOut.set(reopened);
     }
 }
