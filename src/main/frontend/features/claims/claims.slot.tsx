@@ -74,6 +74,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   const [inlineAmount, setInlineAmount] = useState<Record<string, string>>({});
   // The amount typed to split off each claim, by claim id.
   const [splitAmount, setSplitAmount] = useState<Record<string, string>>({});
+  const [commentText, setCommentText] = useState<Record<string, string>>({});
   const others = (usePeople(sheetId).data ?? []).filter((p) => p.id !== person.id);
   const [user] = useUser();
   const rates = useRates(sheetId).data ?? [];
@@ -279,6 +280,31 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
     onError: (_e, id) =>
       setRefused({ id, message: 'Only an OPEN or PENDING claim can be reminded, once a day.' }),
   });
+
+  // A comment is kept on a claim in any status, with who wrote it and the sheet's today.
+  const comment = useMutation({
+    mutationFn: ({ id, text }: { id: string; text: string }) =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/claims/${encodeURIComponent(id)}/comments`,
+        { text },
+        user,
+      ),
+    onSuccess: (_c, { id }) => {
+      setCommentText((t) => ({ ...t, [id]: '' }));
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+    onError: (_e, { id }) => setRefused({ id, message: 'That claim cannot be commented.' }),
+  });
+
+  const addComment = (id: string) => {
+    setRefused(null);
+    const text = (commentText[id] ?? '').trim();
+    if (text === '') {
+      setRefused({ id, message: 'A comment needs some text.' });
+      return;
+    }
+    comment.mutate({ id, text });
+  };
 
   const remindClaim = (id: string) => {
     setRefused(null);
@@ -617,6 +643,25 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
                   Edit
                 </button>
               )}
+              <input
+                data-testid="claim-comment-text"
+                placeholder="Comment"
+                value={commentText[c.id] ?? ''}
+                onChange={(e) => {
+                  setCommentText((t) => ({ ...t, [c.id]: e.target.value }));
+                  setRefused((r) => (r !== null && r.id === c.id ? null : r));
+                }}
+              />{' '}
+              <button type="button" data-testid="claim-comment-add" onClick={() => addComment(c.id)}>
+                Comment
+              </button>
+              <ol data-testid="claim-comments">
+                {c.comments.map((line, i) => (
+                  <li key={i} data-testid="claim-comments-line">
+                    {line}
+                  </li>
+                ))}
+              </ol>
               <ol data-testid="claim-log">
                 {c.log.map((line, i) => (
                   <li key={i} data-testid="claim-log-line">

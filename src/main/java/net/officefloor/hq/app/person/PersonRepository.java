@@ -7,6 +7,7 @@ import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -188,6 +189,8 @@ public class PersonRepository {
         if (person.getId() != null) {
             List<String> storedGrade = jdbc.queryForList("SELECT grade FROM person WHERE id = ? AND sheet_id = ?",
                     String.class, person.getId(), person.getSheetId());
+            List<Integer> storedTerms = jdbc.query("SELECT terms FROM person WHERE id = ? AND sheet_id = ?",
+                    (rs, n) -> rs.getObject("terms", Integer.class), person.getId(), person.getSheetId());
             Map<LocalDate, String> storedDated = new HashMap<>();
             jdbc.query("SELECT from_date, grade FROM person_grade WHERE sheet_id = ? AND person_id = ?",
                     (rs) -> {
@@ -203,6 +206,7 @@ public class PersonRepository {
             if (storedGrade.isEmpty() || !storedGrade.get(0).equals(person.getGrade())) {
                 gradeHistory(person, null, person.getGrade());
             }
+            if (storedTerms.isEmpty() || !Objects.equals(storedTerms.get(0), person.getTerms())) termsHistory(person);
             person.getDatedGrades().forEach((from, grade) -> {
                 if (!grade.equals(storedDated.get(from))) gradeHistory(person, from, grade);
             });
@@ -225,6 +229,7 @@ public class PersonRepository {
         person.setAddedOn(jdbc.queryForObject("SELECT added_on FROM person WHERE id = ?", LocalDate.class, person.getId()));
         saveGrades(person);
         gradeHistory(person, null, person.getGrade());
+        termsHistory(person);
         person.getDatedGrades().forEach((from, grade) -> gradeHistory(person, from, grade));
         return true;
     }
@@ -236,8 +241,15 @@ public class PersonRepository {
                 person.getSheetId(), person.getId(), from == null ? null : Date.valueOf(from), grade, person.getSheetId());
     }
 
+    /** Keeps the person's terms (null: none) in their history, with the sheet's today now. */
+    private void termsHistory(Person person) {
+        jdbc.update("INSERT INTO person_terms_history (sheet_id, person_id, terms, set_on)"
+                + " VALUES (?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
+                person.getSheetId(), person.getId(), person.getTerms(), person.getSheetId());
+    }
+
     /**
-     * The person as they stood at the end of {@code day}: their grades, holds, retirement, statements
+     * The person as they stood at the end of {@code day}: their grades, terms, holds, retirement, statements
      * and patrons as given while the sheet's today was on or before it; the rest as they are now.
      */
     public Person asOf(Person person, LocalDate day) {
@@ -251,7 +263,10 @@ public class PersonRepository {
                     else dated.put(from, rs.getString("grade"));
                 }, person.getSheetId(), person.getId(), on);
         Person then = new Person(person.getId(), person.getSheetId(), person.getName(), first[0], person.getVersion());
-        then.setTerms(person.getTerms());
+        List<Integer> terms = jdbc.query("SELECT terms FROM person_terms_history WHERE sheet_id = ? AND person_id = ?"
+                + " AND set_on <= ? ORDER BY id DESC LIMIT 1", (rs, n) -> rs.getObject("terms", Integer.class),
+                person.getSheetId(), person.getId(), on);
+        then.setTerms(terms.isEmpty() ? null : terms.get(0));
         then.setAddedOn(person.getAddedOn());
         then.setStatements(0, null, null);
         jdbc.query("SELECT statement_count, stated_total, statement_date FROM person_statement_history"
