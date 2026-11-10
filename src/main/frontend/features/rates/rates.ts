@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import type { Grade } from '../people/people';
+import { gradeOn } from '../people/people';
+import type { Grade, GradeFrom } from '../people/people';
 import { counts } from '../claims/claims';
 import type { Claim } from '../claims/claims';
 
@@ -122,12 +123,13 @@ export function claimDue(claim: Claim, pct: string | null, floor: string, late: 
 
 /**
  * A person's due-total: the figures of their claims that count (none OPEN while they are `held`) (each at the rate in force on its
- * date), added up, skipping n/a. With no rate for their grade today it is n/a, unless a settled
- * claim that counts keeps a fixed figure (settled, or bound by a statement).
+ * date for their grade in force on its date), added up, skipping n/a. With no rate for their grade
+ * today it is n/a, unless a claim that counts keeps a fixed figure (settled, or bound by a
+ * statement) or has a figure under another grade, in force on its date.
  */
 export function personDueTotal(
   rates: Rate[],
-  grade: Grade,
+  grades: GradeFrom[],
   today: string,
   claims: Claim[],
   held: boolean,
@@ -135,7 +137,10 @@ export function personDueTotal(
   late: Late,
 ): string {
   const counted = claims.filter((c) => counts(c, held));
-  if (rateOn(rates, grade, today) === null && !counted.some((c) => c.due !== '' || (c.stated && c.statedDue !== NA))) return NA;
-  return sumDue(counted.map((c) => claimDue(c, rateOn(rates, grade, c.date), floor, late)));
+  const grade = gradeOn(grades, today);
+  const kept = (c: Claim) => c.due !== '' || (c.stated && c.statedDue !== NA)
+    || (gradeOn(grades, c.date) !== grade && rateOn(rates, gradeOn(grades, c.date), c.date) !== null);
+  if (rateOn(rates, grade, today) === null && !counted.some(kept)) return NA;
+  return sumDue(counted.map((c) => claimDue(c, rateOn(rates, gradeOn(grades, c.date), c.date), floor, late)));
 }
 

@@ -1,4 +1,5 @@
-import type { Grade } from '../people/people';
+import { gradeOn } from '../people/people';
+import type { GradeFrom } from '../people/people';
 import { counts } from '../claims/claims';
 import type { Claim } from '../claims/claims';
 import { claimDue, rateOn, sumDue } from '../rates/rates';
@@ -23,7 +24,7 @@ export const isOverdue = (claim: Claim, terms: number, today: string): boolean =
  */
 export function personOverdue(
   rates: Rate[],
-  grade: Grade,
+  grades: GradeFrom[],
   today: string,
   terms: number,
   claims: Claim[],
@@ -34,6 +35,6 @@ export function personOverdue(
   const overdue = claims.filter((c) => counts(c, held) && isOverdue(c, terms, today));
   return {
     count: overdue.length,
-    total: sumDue(overdue.map((c) => claimDue(c, rateOn(rates, grade, c.date), floor, late))),
+    total: sumDue(overdue.map((c) => claimDue(c, rateOn(rates, gradeOn(grades, c.date), c.date), floor, late))),
   };
 }

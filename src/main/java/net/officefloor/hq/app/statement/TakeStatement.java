@@ -17,8 +17,8 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * Takes the person's statement: their due-total now (the figures of their claims that count, added
- * up, skipping n/a; n/a when their grade has no rate today and no claim that counts keeps a fixed
- * figure; an overdue claim's late charge on top), as the screen shows it. Every claim of theirs that counts is bound to its figure now (a live
+ * up, skipping n/a; n/a when their grade in force today has no rate today and no claim that counts keeps a fixed
+ * figure or has one under another grade in force on its date; each claim at its date's grade's rate; an overdue claim's late charge on top), as the screen shows it. Every claim of theirs that counts is bound to its figure now (a live
  * one at least the sheet's floor), never its late charge;
  * every other claim of theirs is left unbound (live). The person's statement count goes up by one,
  * and the due-total and the sheet's today are kept as the last statement's.
@@ -36,7 +36,10 @@ public class TakeStatement {
             if (counts) {
                 counted++;
                 if (claim.getSettledDue() != null || claim.getStatedDue() != null) fixed = true;
-                BigDecimal figure = ClaimFigure.of(claim, all, person.getGrade(), sheetSettings.floor());
+                String grade = person.gradeOn(claim.getDate());
+                BigDecimal figure = ClaimFigure.of(claim, all, grade, sheetSettings.floor());
+                // A figure found under a grade other than today's is kept, whatever today's rate.
+                if (figure != null && !grade.equals(person.gradeOn(sheet.today()))) fixed = true;
                 // The due-total carries the late charge; the claim is bound to the figure under it.
                 if (figure != null) total = total.add(figure).add(ClaimFigure.late(claim, figure, sheetSettings, sheet.today()));
                 claim.bind(true, figure);
@@ -45,7 +48,7 @@ public class TakeStatement {
             }
             claims.save(claim);
         }
-        String dueTotal = Rate.inForce(all, person.getGrade(), sheet.today()).isEmpty() && !fixed
+        String dueTotal = Rate.inForce(all, person.gradeOn(sheet.today()), sheet.today()).isEmpty() && !fixed
                 ? "n/a" : total.toPlainString();
         person.setStatements(person.getStatementCount() + 1, dueTotal, sheet.today());
         people.saveStatements(person);

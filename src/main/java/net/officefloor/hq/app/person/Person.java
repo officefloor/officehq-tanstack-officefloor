@@ -3,6 +3,8 @@ package net.officefloor.hq.app.person;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 
 /** A person on a sheet, as the store holds it. {@code id} is null until first saved. */
 public class Person {
@@ -17,6 +19,7 @@ public class Person {
     private LocalDate retiredFrom;
     private boolean held;
     private final List<Long> patronIds = new ArrayList<>();
+    private final TreeMap<LocalDate, String> datedGrades = new TreeMap<>();
 
     public Person(Long id, String sheetId, String name, String grade) {
         this(id, sheetId, name, grade, 0);
@@ -35,8 +38,18 @@ public class Person {
     public String getSheetId() { return sheetId; }
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
+    /** The first grade they were given: in force from the beginning of time, until their first dated grade. */
     public String getGrade() { return grade; }
     public void setGrade(String grade) { this.grade = grade; }
+    /** The grades recorded from a date, by from-date: each in force from it until the next. */
+    public Map<LocalDate, String> getDatedGrades() { return datedGrades; }
+    /** Record the grade from this date, replacing any recorded from the same date. */
+    public void setGradeFrom(String grade, LocalDate from) { datedGrades.put(from, grade); }
+    /** The grade in force on the date: the latest dated one on or before it, else the first grade. */
+    public String gradeOn(LocalDate date) {
+        Map.Entry<LocalDate, String> dated = datedGrades.floorEntry(date);
+        return dated == null ? grade : dated.getValue();
+    }
     /** Raised by one on each save; an edit names the version it was made from. */
     public long getVersion() { return version; }
     public void setVersion(long version) { this.version = version; }

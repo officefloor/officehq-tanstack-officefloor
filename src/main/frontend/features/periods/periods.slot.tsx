@@ -5,7 +5,7 @@ import { useOnce } from '../../query/useOnce';
 import { postJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { counts, useClaims } from '../claims/claims';
-import { usePeople } from '../people/people';
+import { gradeOn, usePeople } from '../people/people';
 import { useUser } from '../session/session';
 import { claimDue, rateOn, sumDue, useRates } from '../rates/rates';
 import { useFloor, useLate } from '../access/access';
@@ -85,7 +85,7 @@ function Periods({ sheetId }: { sheetId: string }) {
     const dues = people.flatMap((person) =>
       claims
         .filter((c) => c.personId === person.id && counts(c, person.held) && p.from <= c.date && c.date <= p.to)
-        .map((c) => claimDue(c, rateOn(rates, person.grade, c.date), floor, late)),
+        .map((c) => claimDue(c, rateOn(rates, gradeOn(person.grades, c.date), c.date), floor, late)),
     );
     return sumDue(dues);
   };

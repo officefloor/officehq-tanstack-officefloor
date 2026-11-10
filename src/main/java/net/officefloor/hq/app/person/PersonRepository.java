@@ -40,6 +40,11 @@ public class PersonRepository {
                 ROW, sheetId);
         Map<Long, Person> byId = new HashMap<>();
         people.forEach((p) -> byId.put(p.getId(), p));
+        jdbc.query("SELECT person_id, from_date, grade FROM person_grade WHERE sheet_id = ?",
+                (rs) -> {
+                    Person person = byId.get(rs.getLong("person_id"));
+                    if (person != null) person.setGradeFrom(rs.getString("grade"), rs.getObject("from_date", LocalDate.class));
+                }, sheetId);
         jdbc.query("SELECT person_id, patron_id FROM person_patron WHERE sheet_id = ? ORDER BY person_id, patron_id",
                 (rs) -> {
                     Person person = byId.get(rs.getLong("person_id"));
@@ -55,6 +60,7 @@ public class PersonRepository {
                 ROW, sheetId, id);
         if (found.isEmpty()) return null;
         Person person = found.get(0);
+        loadGrades(person);
         person.getPatronIds().addAll(jdbc.queryForList(
                 "SELECT patron_id FROM person_patron WHERE sheet_id = ? AND person_id = ? ORDER BY patron_id",
                 Long.class, sheetId, id));
@@ -72,7 +78,25 @@ public class PersonRepository {
     public Person findByName(String sheetId, String name) {
         List<Person> found = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ?"
                 + " AND LOWER(TRIM(name)) = LOWER(TRIM(?)) ORDER BY id", ROW, sheetId, name);
-        return found.isEmpty() ? null : found.get(0);
+        if (found.isEmpty()) return null;
+        loadGrades(found.get(0));
+        return found.get(0);
+    }
+
+    private void loadGrades(Person person) {
+        jdbc.query("SELECT from_date, grade FROM person_grade WHERE sheet_id = ? AND person_id = ?",
+                (rs) -> {
+                    person.setGradeFrom(rs.getString("grade"), rs.getObject("from_date", LocalDate.class));
+                }, person.getSheetId(), person.getId());
+    }
+
+    /** Record the person's dated grades as they hold them now, replacing those stored. */
+    private void saveGrades(Person person) {
+        jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?",
+                person.getSheetId(), person.getId());
+        person.getDatedGrades().forEach((from, grade) -> jdbc.update(
+                "INSERT INTO person_grade (sheet_id, person_id, from_date, grade) VALUES (?, ?, ?, ?)",
+                person.getSheetId(), person.getId(), Date.valueOf(from), grade));
     }
 
     /** Whether a person other than {@code exceptId} has this name on the sheet, ignoring case. */
@@ -117,6 +141,7 @@ public class PersonRepository {
                     person.getVersion());
             if (updated == 0) return false;
             person.setVersion(person.getVersion() + 1);
+            saveGrades(person);
             return true;
         }
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
@@ -130,6 +155,7 @@ public class PersonRepository {
             return ps;
         }, keys);
         person.setId(keys.getKey().longValue());
+        saveGrades(person);
         return true;
     }
 }

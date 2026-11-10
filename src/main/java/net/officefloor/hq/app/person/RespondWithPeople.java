@@ -8,6 +8,6 @@ public class RespondWithPeople {
     public void respond(@Val Sheet sheet, PersonRepository repository,
             ObjectResponse<PeopleResponse> response) {
         response.send(new PeopleResponse(
-                repository.findAll(sheet.id()).stream().map(PersonResponse::from).toList()));
+                repository.findAll(sheet.id()).stream().map((p) -> PersonResponse.from(p, sheet.today())).toList()));
     }
 }

@@ -14,7 +14,7 @@ import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Val;
 
 /**
- * Settles the claim and fixes its due: its amount times its person's grade's rate in force on the
+ * Settles the claim and fixes its due: its amount times the rate of its person's grade in force on its date, in force on the
  * claim's date, divided by 100 and rounded half to even to two decimals, at least the sheet's floor. With no such rate the due is
  * not fixed. A claim a statement bound is settled at its bound figure. The late charge it has gained
  * by the sheet's today is frozen in on top. The user who opened the claim may not settle it.
@@ -28,7 +28,7 @@ public class SettleClaim {
         Person person = people.find(sheet.id(), claim.getPersonId());
         Settings settings = settingsStore.find(sheet.id());
         BigDecimal figure = claim.isStated() ? claim.getStatedDue()
-                : ClaimFigure.live(claim.getAmount(), rates.findAll(sheet.id()), person.getGrade(), claim.getDate(),
+                : ClaimFigure.live(claim.getAmount(), rates.findAll(sheet.id()), person.gradeOn(claim.getDate()), claim.getDate(),
                         settings.floor());
         // The late charge is read while the claim is still OPEN.
         BigDecimal late = ClaimFigure.late(claim, figure, settings, sheet.today());

@@ -32,7 +32,9 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
      * The sheet's figures now. A person's claimed is the amounts of their claims that count (OPEN
      * and SETTLED, but not OPEN while they are on hold) added up; their due-total the figures of those claims added up, skipping n/a (a live figure is at least the sheet's floor; an overdue one gains its late
      * charge on {@code today}), and
-     * n/a when their grade has no rate today and no claim that counts keeps a fixed figure. The
+     * n/a when their grade in force today has no rate today and no claim that counts keeps a fixed
+     * figure or has one under the grade in force on its date when that is another grade. Each claim
+     * takes the rate of the grade in force on its date. The
      * sheet's totals add these up, skipping n/a.
      */
     public static Rollup of(String sheetId, LocalDate today, PersonRepository people, ClaimRepository claims,
@@ -51,10 +53,13 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
                 if (!claim.counts(person.isHeld())) continue;
                 claimed = claimed.add(claim.getAmount());
                 if (claim.getSettledDue() != null || claim.getStatedDue() != null) fixed = true;
-                BigDecimal figure = ClaimFigure.withLate(claim, all, person.getGrade(), settings, today);
+                String grade = person.gradeOn(claim.getDate());
+                BigDecimal figure = ClaimFigure.withLate(claim, all, grade, settings, today);
                 if (figure != null) due = due.add(figure);
+                // A figure found under a grade other than today's is kept, whatever today's rate.
+                if (figure != null && !grade.equals(person.gradeOn(today))) fixed = true;
             }
-            boolean none = Rate.inForce(all, person.getGrade(), today).isEmpty() && !fixed;
+            boolean none = Rate.inForce(all, person.gradeOn(today), today).isEmpty() && !fixed;
             claimedTotal = claimedTotal.add(claimed);
             if (!none) dueTotal = dueTotal.add(due);
             figures.put(person.getId(), new Figures(person.getName(), show(claimed), none ? "n/a" : show(due)));

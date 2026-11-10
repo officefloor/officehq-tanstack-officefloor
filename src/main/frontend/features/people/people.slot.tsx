@@ -9,8 +9,11 @@ import { useUser } from '../session/session';
 import { GRADES, peopleKey, peopleQuery, usePeople, useShowRetired } from './people';
 import type { Grade, Person } from './people';
 
-type Fields = { name: string; grade: Grade };
-const EMPTY: Fields = { name: '', grade: 'A' };
+// `gradeFrom` is the date the grade is from ('' for the sheet's today). A person's first grade
+// applies from the beginning of time; an edit records the grade from its date, keeping the others,
+// but records nothing when it leaves the grade as the row shows it with no from-date.
+type Fields = { name: string; grade: Grade; gradeFrom: string };
+const EMPTY: Fields = { name: '', grade: 'A', gradeFrom: '' };
 
 // The people on the sheet: a form that adds a person, or edits the one whose editor is open, and
 // the list of everyone in the order they were added (retired people only when "show retired" is on). The editor remembers the version of the person
@@ -52,7 +55,7 @@ function People({ sheetId }: { sheetId: string }) {
           (p) => p.id === id,
         );
         if (current) {
-          setFields({ name: current.name, grade: current.grade });
+          setFields({ name: current.name, grade: current.grade, gradeFrom: '' });
           setVersion(current.version);
         }
         return;
@@ -82,7 +85,7 @@ function People({ sheetId }: { sheetId: string }) {
 
   const open = (p: Person) => {
     setEditing(p.id);
-    setFields({ name: p.name, grade: p.grade });
+    setFields({ name: p.name, grade: p.grade, gradeFrom: '' });
     setVersion(p.version);
     setError('');
   };
@@ -112,6 +115,15 @@ function People({ sheetId }: { sheetId: string }) {
               </option>
             ))}
           </select>
+        </label>{' '}
+        <label>
+          From{' '}
+          <input
+            type="date"
+            data-testid="person-form-grade-from"
+            value={fields.gradeFrom}
+            onChange={(e) => change({ gradeFrom: e.target.value })}
+          />
         </label>{' '}
         <button type="submit" data-testid="person-form-submit" disabled={save.isPending}>
           {editing === null ? 'Add' : 'Save'}

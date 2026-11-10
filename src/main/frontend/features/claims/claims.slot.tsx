@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOnce } from '../../query/useOnce';
 import { postJson, putJson } from '../../api/http';
 import { PersonHead, PersonRow } from '../../slots/defs/personRow';
+import { gradeOn } from '../people/people';
 import type { Person } from '../people/people';
 import { useUser } from '../session/session';
 import { AMOUNT, claimsKey, sumAmounts, useClaims } from './claims';
@@ -173,7 +174,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
               <span data-testid="claim-amount">{c.amount}</span>{' '}
               <span data-testid="claim-date">{c.date}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}
-              <span data-testid="claim-due">{claimDue(c, rateOn(rates, person.grade, c.date), floor, late)}</span>{' '}
+              <span data-testid="claim-due">{claimDue(c, rateOn(rates, gradeOn(person.grades, c.date), c.date), floor, late)}</span>{' '}
               <span data-testid="claim-status">{c.status}</span>{' '}
               <span data-testid="claim-opened-by">{c.openedBy}</span>{' '}
               <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
