@@ -1,0 +1,178 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+index 6ece3cd6b..b890eeb66 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+@@ -1,10 +1,13 @@
+ package net.officefloor.hq.app.claim;
+ 
++import jakarta.servlet.http.HttpServletRequest;
++import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ 
++/** Applies an edit to a draft, recording the signed-in user as the one who last edited it. */
+ public class ApplyClaim {
+-    public void apply(@Val ClaimInput input, @Val Sheet sheet, @Val Claim claim)
++    public void apply(@Val ClaimInput input, @Val Sheet sheet, @Val Claim claim, HttpServletRequest request)
+             throws InvalidClaimStatusException {
+         claim.checkEditable();
+         claim.setAmount(input.amount());
+@@ -13,5 +16,6 @@ public class ApplyClaim {
+         claim.setCorrects(input.corrects());
+         claim.setRef(input.ref());
+         claim.setTags(input.tags());
++        claim.setEditedBy(Audit.user(request));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApproveClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApproveClaim.java
+index 057271e3a..80a812323 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApproveClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApproveClaim.java
+@@ -15,7 +15,7 @@ import net.officefloor.plugin.variable.Val;
+ /**
+  * Approves a PENDING claim: it is settled, its due fixed at this moment at its live figure (a
+  * PENDING claim is bound by no statement) with the late charge it has gained by the sheet's today.
+- * Only a steward may approve it, and not the user who opened it; and not while it has no proofs
++ * Only a steward may approve it, and not the user who opened it or last edited it; and not while it has no proofs
+  * when its due is above the proof threshold in force on its date.
+  */
+ public class ApproveClaim {
+@@ -32,6 +32,9 @@ public class ApproveClaim {
+         if (user.equals(claim.getOpenedBy())) {
+             throw new ApprovalException("A claim cannot be approved by " + user + ", who opened it");
+         }
++        if (claim.isOwnedBy(user)) {
++            throw new ApprovalException("A claim cannot be approved by " + user + ", who last edited it");
++        }
+         Person person = people.find(sheet.id(), claim.getPersonId());
+         Settings sheetSettings = settings.find(sheet.id());
+         // Read while the claim is still PENDING: its live figure and its late charge.
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index d05920f30..5478747aa 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -15,6 +15,7 @@ public class Claim {
+     private String number;
+     private BigDecimal settledDue;
+     private String openedBy;
++    private String editedBy;
+     private boolean stated;
+     private BigDecimal statedDue;
+     private String corrects;
+@@ -174,6 +175,13 @@ public class Claim {
+     /** The user who opened it; null until it is opened. */
+     public String getOpenedBy() { return openedBy; }
+     public void setOpenedBy(String openedBy) { this.openedBy = openedBy; }
++    /** The user who last edited it (its form or its row's amount entry); null when it was never edited. */
++    public String getEditedBy() { return editedBy; }
++    public void setEditedBy(String editedBy) { this.editedBy = editedBy; }
++    /** Whether {@code user} opened it or last edited it, and so may not settle or approve it. */
++    public boolean isOwnedBy(String user) {
++        return user.equals(openedBy) || user.equals(editedBy);
++    }
+     /** Whether its person's last statement bound it to a figure. */
+     public boolean isStated() { return stated; }
+     /** The figure its person's last statement bound it to; null for n/a, or when it is not stated. */
+@@ -233,6 +241,7 @@ public class Claim {
+         then.ref = ref;
+         then.tags = tags;
+         then.voidReason = voidReason;
++        then.editedBy = editedBy;
+         return then;
+     }
+     /** Whether it is open: OPEN, or PENDING a steward's approval. */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index a87e681aa..5bb5ee8eb 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -17,7 +17,7 @@ import org.springframework.stereotype.Repository;
+ @Repository
+ public class ClaimRepository {
+ 
+-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, late_entry, reminded_on, ext_ref, tags, void_reason,"
++    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, edited_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, late_entry, reminded_on, ext_ref, tags, void_reason,"
+             + " (SELECT c.claim_date FROM claim c WHERE c.sheet_id = claim.sheet_id AND c.person_id = claim.person_id"
+             + " AND c.claim_number = claim.corrects) AS corrected_date,"
+             + " CASE WHEN locked_on = (SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id) THEN locked_by END AS locked_by_now";
+@@ -29,6 +29,7 @@ public class ClaimRepository {
+             ClaimStatus.valueOf(rs.getString("status")),
+             rs.getString("claim_number"), rs.getBigDecimal("settled_due"),
+             rs.getString("opened_by"));
++        claim.setEditedBy(rs.getString("edited_by"));
+         claim.bind(rs.getBoolean("stated"), rs.getBigDecimal("stated_due"));
+         claim.setCorrects(rs.getString("corrects"));
+         claim.setDueBy(rs.getDate("due_by").toLocalDate());
+@@ -215,9 +216,9 @@ public class ClaimRepository {
+                         claim.getPersonId(), nextListed(claim.getSheetId()), claim.getId(), claim.getSheetId());
+             }
+             keepBinding(claim);
+-            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?, stated = ?, stated_due = ?, corrects = ?, deferred_until = ?, proofs = ?, ext_ref = ?, tags = ?, void_reason = ? WHERE id = ? AND sheet_id = ?",
++            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?, edited_by = ?, stated = ?, stated_due = ?, corrects = ?, deferred_until = ?, proofs = ?, ext_ref = ?, tags = ?, void_reason = ? WHERE id = ? AND sheet_id = ?",
+                     claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(),
+-                    claim.getStatus().name(), claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(),
++                    claim.getStatus().name(), claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getEditedBy(),
+                     claim.isStated(), claim.getStatedDue(), claim.getCorrects(),
+                     claim.getDeferredUntil() == null ? null : Date.valueOf(claim.getDeferredUntil()), claim.getProofs(), claim.getRef(), claim.getTags(), claim.getVoidReason(), claim.getId(),
+                     claim.getSheetId());
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SelfSettleException.java b/src/main/java/net/officefloor/hq/app/claim/SelfSettleException.java
+index 522157642..ff5e524b9 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SelfSettleException.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SelfSettleException.java
+@@ -1,8 +1,12 @@
+ package net.officefloor.hq.app.claim;
+ 
+-/** The user who opened a claim may not also settle it. */
++/** The user who opened a claim, or last edited it, may not also settle it. */
+ public class SelfSettleException extends Exception {
+     public SelfSettleException(String user) {
+-        super("A claim cannot be settled by " + user + ", who opened it");
++        this(user, "opened");
++    }
++
++    public SelfSettleException(String user, String did) {
++        super("A claim cannot be settled by " + user + ", who " + did + " it");
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java b/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
+index dd804fccb..15ce12c17 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
+@@ -18,7 +18,7 @@ import net.officefloor.plugin.variable.Val;
+  * claim's date, divided by 100 and rounded to two decimals as the claim rounds (by the sheet's policy date), or
+  * for a claim a statement bound its bound figure; with the late charge it has gained on that figure
+  * by the sheet's today frozen in on top, and at least the floor in force on its date (applied last).
+- * With no such rate the due is not fixed. The user who opened the claim may not settle it.
++ * With no such rate the due is not fixed. The user who opened the claim, or last edited it, may not settle it.
+  * When a clerk (any user not made a steward) settles a claim whose due is above the sheet's clerk
+  * limit, it goes to PENDING instead, its due left live until a steward approves or rejects it; a
+  * due of n/a is within any limit. Before the clerk limit is considered, a claim whose due is above
+@@ -54,6 +54,7 @@ public class SettleClaim {
+             throw new InvalidClaimStatusException(claim.getStatus(), ClaimStatus.SETTLED);
+         }
+         if (user.equals(claim.getOpenedBy())) throw new SelfSettleException(user);
++        if (claim.isOwnedBy(user)) throw new SelfSettleException(user, "last edited");
+         BigDecimal due = ClaimFigure.floored(claim, figure, late, settings);
+         if (settings.needsProof(due, claim.getDate(), claim.getProofs())) throw new InvalidClaimStatusException(ProofRequired.MESSAGE);
+         if (!settings.withinClerkLimit(due, sheet.today()) && Role.CLERK.equals(role)) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SettleSelectedClaims.java b/src/main/java/net/officefloor/hq/app/claim/SettleSelectedClaims.java
+index f0e1370ee..1f20f437e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SettleSelectedClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SettleSelectedClaims.java
+@@ -23,7 +23,7 @@ import net.officefloor.plugin.variable.Val;
+  * Settles the selected claims in list order (people in the order they were added, each person's
+  * claims newest first) by exactly the rules of settling one claim, as the signed-in user. A claim
+  * sent to PENDING counts as settled; a claim that cannot be settled (its status does not allow it,
+- * dated inside a closed period, opened by this user, not on the sheet) is refused and left as it is.
++ * dated inside a closed period, opened or last edited by this user, not on the sheet) is refused and left as it is.
+  * Each claim settled is logged and audited as a single settle is: its status line, then the
+  * watchers it notifies (once settled), then the figures it moved. A viewer, or anyone on an archived
+  * sheet, settles none: every selected claim is refused.
+diff --git a/src/main/resources/db/migration/V58__claim_edited_by.sql b/src/main/resources/db/migration/V58__claim_edited_by.sql
+new file mode 100644
+index 000000000..ca4c4ace7
+--- /dev/null
++++ b/src/main/resources/db/migration/V58__claim_edited_by.sql
+@@ -0,0 +1,3 @@
++-- The signed-in user who last edited a claim (its form or its row's amount entry); null when never edited.
++-- Like its opener, that user may not settle or approve it.
++ALTER TABLE claim ADD COLUMN edited_by VARCHAR(100);
