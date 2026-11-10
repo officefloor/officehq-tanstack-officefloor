@@ -11,7 +11,7 @@ import type { Grade, Person } from '../people/people';
 import { useUser } from '../session/session';
 import { useSheetToday } from '../sheet/sheet';
 import { useCap, useFloor, useLate } from '../access/access';
-import { NA, PCT, personDueTotal, personExcess, rateOn, ratesKey, sumDue, trimmedSumDue, useRates } from './rates';
+import { NA, PCT, personDueTotal, personExcess, personSplitTotals, rateOn, ratesKey, sumDue, trimmedSumDue, useRates } from './rates';
 import type { Rate } from './rates';
 
 type Fields = { grade: Grade; pct: string; from: string; to: string };
@@ -217,6 +217,51 @@ function DueTotal({ sheetId }: { sheetId: string }) {
   );
 }
 
+function SplitHead() {
+  return (
+    <>
+      <th>Settled</th>
+      <th>Open</th>
+    </>
+  );
+}
+
+// A person's settled-total and open-total: the due of their SETTLED claims that count, and of their
+// OPEN and PENDING ones, before the sheet's cap (together their due-total before the cap).
+function PersonSplitTotals({ sheetId, person }: { sheetId: string; person: Person }) {
+  const claims = (useClaims(sheetId).data ?? []).filter((c) => c.personId === person.id);
+  const rates = useRates(sheetId).data ?? [];
+  const today = useSheetToday(sheetId);
+  const floor = useFloor(sheetId);
+  const late = useLate(sheetId);
+  const split = personSplitTotals(rates, person.grades, today, claims, liveHolds(person, today), floor, late);
+  return (
+    <>
+      <td data-testid="person-settled-total">{split.settled}</td>
+      <td data-testid="person-open-total">{split.open}</td>
+    </>
+  );
+}
+
+// The sheet's settled-total and open-total: everyone's figure simply added up (not trimmed).
+function SplitTotals({ sheetId }: { sheetId: string }) {
+  const people = usePeople(sheetId).data ?? [];
+  const claims = useClaims(sheetId).data ?? [];
+  const rates = useRates(sheetId).data ?? [];
+  const today = useSheetToday(sheetId);
+  const floor = useFloor(sheetId);
+  const late = useLate(sheetId);
+  const splits = people.map((p) =>
+    personSplitTotals(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late),
+  );
+  return (
+    <p>
+      Settled in all: <strong data-testid="rollup-settled-total">{sumDue(splits.map((s) => s.settled))}</strong>, open in
+      all: <strong data-testid="rollup-open-total">{sumDue(splits.map((s) => s.open))}</strong>
+    </p>
+  );
+}
+
 export const contributions = [
   SheetBody.fill({ order: -10, Component: Rates }),
   SheetBody.fill({ order: 20, Component: DueTotal }),
@@ -224,4 +269,7 @@ export const contributions = [
   PersonRow.fill({ order: 20, Component: PersonDueTotal }),
   PersonHead.fill({ order: 21, Component: ExcessHead }),
   PersonRow.fill({ order: 21, Component: PersonExcess }),
+  SheetBody.fill({ order: 20.5, Component: SplitTotals }),
+  PersonHead.fill({ order: 20.5, Component: SplitHead }),
+  PersonRow.fill({ order: 20.5, Component: PersonSplitTotals }),
 ];

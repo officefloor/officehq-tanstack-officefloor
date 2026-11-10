@@ -245,3 +245,25 @@ function uncappedDueTotal(
   return sumDue(counted.map((c) => claimDue(c, rateOn(rates, gradeOn(grades, c.date), c.date), floor, late)));
 }
 
+
+/**
+ * A person's due-total split by status, before the sheet's cap: their settled-total (the dues of
+ * their SETTLED claims that count, at their frozen figures, corrections included) and their
+ * open-total (the dues of their OPEN and PENDING claims that count), each added up, skipping n/a.
+ */
+export function personSplitTotals(
+  rates: Rate[],
+  grades: GradeFrom[],
+  today: string,
+  claims: Claim[],
+  holds: Hold[],
+  floor: Dated,
+  late: Late,
+): { settled: string; open: string } {
+  const counted = claims.filter((c) => counts(c, holds, today));
+  const dueOf = (c: Claim) => claimDue(c, rateOn(rates, gradeOn(grades, c.date), c.date), floor, late);
+  return {
+    settled: sumDue(counted.filter((c) => c.status === 'SETTLED').map(dueOf)),
+    open: sumDue(counted.filter(isOpen).map(dueOf)),
+  };
+}
