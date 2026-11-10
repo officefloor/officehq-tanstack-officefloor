@@ -8,9 +8,11 @@ import java.util.List;
 /**
  * A pool, as the screen reads it: its members in the order added, the total of their shares (a retired
  * member's counting as 0.00) and whether that total is exactly 100.00. Each member of a balanced pool
- * has a cut of the sheet's pot: the pot times their share divided by 100, rounded half to even to two
- * decimals (a retired member's 0.00), with the remainder, the pot minus the cuts added up, going to the
- * member with the largest share, the earliest added on a tie, so the cuts total exactly the pot. An
+ * has a cut of the sheet's pot: the pot times their share divided by the shares of the members with a cut
+ * added up, rounded half to even to two decimals (a retired member's, and a member held on the sheet's
+ * today, 0.00), with the remainder, the pot minus the cuts added up, going to the member with a cut with
+ * the largest share, the earliest added on a tie, so the cuts total exactly the pot (each is 0.00 when no
+ * member has a cut). A hold changes neither the total nor whether the pool is balanced. An
  * unbalanced pool, or no pot, has no cuts. A pool that is a member of another has no pot of its own: its
  * pot is its cut in the pool above (none when that pool has no cuts).
  */
@@ -40,19 +42,26 @@ public record PoolResponse(String name, List<PoolMemberResponse> members, String
         return pot != null && total(members).compareTo(HUNDRED) == 0 ? cuts(members, pot) : null;
     }
 
+    /** Whether the member has a cut: neither retired nor held on the sheet's today. */
+    private static boolean hasCut(PoolMember m) {
+        return !m.retired() && !m.held();
+    }
+
     private static List<BigDecimal> cuts(List<PoolMember> members, BigDecimal pot) {
+        BigDecimal shares = BigDecimal.ZERO;
+        for (PoolMember m : members) if (hasCut(m)) shares = shares.add(m.share());
         List<BigDecimal> cuts = new ArrayList<>();
         BigDecimal sum = BigDecimal.ZERO.setScale(2);
         int largest = -1;
         for (int i = 0; i < members.size(); i++) {
             PoolMember m = members.get(i);
-            BigDecimal cut = m.retired() ? BigDecimal.ZERO.setScale(2)
-                    : pot.multiply(m.share()).divide(HUNDRED).setScale(2, RoundingMode.HALF_EVEN);
+            BigDecimal cut = !hasCut(m) || shares.signum() == 0 ? BigDecimal.ZERO.setScale(2)
+                    : pot.multiply(m.share()).divide(shares, 2, RoundingMode.HALF_EVEN);
             cuts.add(cut);
             sum = sum.add(cut);
-            if (!m.retired() && (largest < 0 || m.share().compareTo(members.get(largest).share()) > 0)) largest = i;
+            if (hasCut(m) && (largest < 0 || m.share().compareTo(members.get(largest).share()) > 0)) largest = i;
         }
-        if (largest >= 0) cuts.set(largest, cuts.get(largest).add(pot.subtract(sum)));
+        if (largest >= 0 && shares.signum() > 0) cuts.set(largest, cuts.get(largest).add(pot.subtract(sum)));
         return cuts;
     }
 }

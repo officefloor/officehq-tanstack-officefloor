@@ -1,6 +1,8 @@
 package net.officefloor.hq.app.pool;
 
 import java.math.BigDecimal;
+import java.sql.Date;
+import java.time.LocalDate;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -33,10 +35,14 @@ public class PoolRepository {
         return find(sheetId, name);
     }
 
-    /** The members of every pool on the sheet, each pool's in the order they were added: people and member pools. */
-    public List<PoolMember> members(String sheetId) {
+    /**
+     * The members of every pool on the sheet, each pool's in the order they were added: people and member pools,
+     * a person held when one of their holds covers {@code today}.
+     */
+    public List<PoolMember> members(String sheetId, LocalDate today) {
         return jdbc.query("SELECT pl.name AS pool, m.person_id, mp.name AS member_pool, COALESCE(p.name, mp.name) AS name,"
-                + " m.share, p.retired_from FROM pool_member m"
+                + " m.share, p.retired_from, EXISTS (SELECT 1 FROM person_hold h WHERE h.person_id = m.person_id"
+                + " AND h.from_date <= ? AND (h.to_date IS NULL OR h.to_date >= ?)) AS held FROM pool_member m"
                 + " JOIN pool pl ON pl.id = m.pool_id LEFT JOIN person p ON p.id = m.person_id"
                 + " LEFT JOIN pool mp ON mp.id = m.member_pool_id"
                 + " WHERE pl.sheet_id = ? ORDER BY pl.name, m.id",
@@ -44,8 +50,8 @@ public class PoolRepository {
                     long personId = rs.getLong("person_id");
                     return new PoolMember(sheetId, rs.getString("pool"), rs.wasNull() ? null : personId,
                             rs.getString("member_pool"), rs.getString("name"), rs.getBigDecimal("share"),
-                            rs.getDate("retired_from") != null);
-                }, sheetId);
+                            rs.getDate("retired_from") != null, rs.getBoolean("held"));
+                }, Date.valueOf(today), Date.valueOf(today), sheetId);
     }
 
     public boolean isMember(Pool pool, long personId) {

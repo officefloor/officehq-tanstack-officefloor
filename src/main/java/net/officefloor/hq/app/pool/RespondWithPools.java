@@ -16,7 +16,7 @@ import net.officefloor.web.ObjectResponse;
 public class RespondWithPools {
     public void respond(@Val Sheet sheet, PoolRepository repository, SettingsRepository settings,
             ObjectResponse<PoolsResponse> response) {
-        List<PoolMember> members = repository.members(sheet.id());
+        List<PoolMember> members = repository.members(sheet.id(), sheet.today());
         BigDecimal sheetPot = settings.find(sheet.id()).pot();
         Map<String, List<PoolMember>> byPool = new HashMap<>();
         for (Pool p : repository.findAll(sheet.id())) {

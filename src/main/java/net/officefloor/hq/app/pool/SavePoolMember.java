@@ -35,7 +35,7 @@ public class SavePoolMember {
             }
             pools.addMemberPool(pool, member, input.share());
             memberOut.set(new PoolMember(sheet.id(), pool.name(), null, member.name(), member.name(), input.share(),
-                    false));
+                    false, false));
             return;
         }
         Person person = people.find(sheet.id(), input.personId());
@@ -45,7 +45,7 @@ public class SavePoolMember {
         }
         pools.addMember(pool, person.getId(), input.share());
         memberOut.set(new PoolMember(sheet.id(), pool.name(), person.getId(), null, person.getName(), input.share(),
-                person.isRetired()));
+                person.isRetired(), person.getHolds().stream().anyMatch(h -> h.covers(sheet.today()))));
     }
 
     /** How many pools deep the chain below this pool goes, the pool itself counting as one. */
