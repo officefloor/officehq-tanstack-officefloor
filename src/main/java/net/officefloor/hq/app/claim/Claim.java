@@ -66,6 +66,15 @@ public class Claim {
         bind(false, null);
         relisted = true;
     }
+    /**
+     * Move it, whatever its status, with the rest of its person's claims to the person they were merged
+     * into: it keeps its number and date, loses any figure a statement bound it to, and is listed again.
+     */
+    public void mergeTo(long toPersonId) {
+        personId = toPersonId;
+        bind(false, null);
+        relisted = true;
+    }
     /** Whether it was moved since read, so it is listed again as its new person's newest. */
     public boolean isRelisted() { return relisted; }
     public BigDecimal getAmount() { return amount; }

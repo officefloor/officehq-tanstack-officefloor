@@ -51,4 +51,18 @@ public class PoolRepository {
     public void addMember(Pool pool, long personId, BigDecimal share) {
         jdbc.update("INSERT INTO pool_member (pool_id, person_id, share) VALUES (?, ?, ?)", pool.id(), personId, share);
     }
+
+    /**
+     * Move a merged person's memberships to the person they were merged into: their share is added to
+     * the other's in a pool the other is already in.
+     */
+    public void mergeMembers(long fromId, long intoId) {
+        jdbc.update("UPDATE pool_member m SET share = share + (SELECT f.share FROM pool_member f"
+                + " WHERE f.pool_id = m.pool_id AND f.person_id = ?) WHERE m.person_id = ?"
+                + " AND EXISTS (SELECT 1 FROM pool_member f WHERE f.pool_id = m.pool_id AND f.person_id = ?)",
+                fromId, intoId, fromId);
+        jdbc.update("DELETE FROM pool_member WHERE person_id = ? AND pool_id IN"
+                + " (SELECT pool_id FROM pool_member WHERE person_id = ?)", fromId, intoId);
+        jdbc.update("UPDATE pool_member SET person_id = ? WHERE person_id = ?", intoId, fromId);
+    }
 }

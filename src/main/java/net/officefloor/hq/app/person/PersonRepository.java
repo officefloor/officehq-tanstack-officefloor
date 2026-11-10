@@ -39,7 +39,7 @@ public class PersonRepository {
 
     /** The sheet's people, in the order they were added. */
     public List<Person> findAll(String sheetId) {
-        List<Person> people = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? ORDER BY id",
+        List<Person> people = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND merged_into IS NULL ORDER BY id",
                 ROW, sheetId);
         Map<Long, Person> byId = new HashMap<>();
         people.forEach((p) -> byId.put(p.getId(), p));
@@ -69,7 +69,7 @@ public class PersonRepository {
     /** The person with this id on the sheet, or null when there is none. */
     public Person find(String sheetId, long id) {
         List<Person> found = jdbc.query(
-                "SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND id = ?",
+                "SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND id = ? AND merged_into IS NULL",
                 ROW, sheetId, id);
         if (found.isEmpty()) return null;
         Person person = found.get(0);
@@ -95,6 +95,36 @@ public class PersonRepository {
                 String.class, person.getSheetId(), person.getId()));
     }
 
+    /**
+     * Merge {@code from} into {@code into}: {@code from}'s name and aliases become {@code into}'s aliases;
+     * their patrons are added to {@code into}'s (not {@code into} themselves, no repeats); anyone naming
+     * {@code from} as patron names {@code into} instead (no repeats). {@code from}'s holds, watchers and
+     * contact are dropped, and they are marked merged, leaving the list.
+     */
+    public void merge(Person from, Person into) {
+        String sheetId = from.getSheetId();
+        jdbc.update("DELETE FROM person_alias WHERE sheet_id = ? AND person_id = ?", sheetId, from.getId());
+        addAlias(into, from.getName());
+        for (String alias : from.getAliases()) addAlias(into, alias);
+        // Their own patrons go to the other, not the other themselves, nor one the other already names.
+        jdbc.update("DELETE FROM person_patron WHERE sheet_id = ? AND person_id = ? AND (patron_id = ?"
+                + " OR patron_id IN (SELECT p.patron_id FROM person_patron p WHERE p.person_id = ?))",
+                sheetId, from.getId(), into.getId(), into.getId());
+        jdbc.update("UPDATE person_patron SET person_id = ? WHERE sheet_id = ? AND person_id = ?",
+                into.getId(), sheetId, from.getId());
+        // Those naming them name the other instead: not the other themselves, nor anyone already naming the other.
+        jdbc.update("DELETE FROM person_patron WHERE sheet_id = ? AND patron_id = ? AND (person_id = ?"
+                + " OR person_id IN (SELECT p.person_id FROM person_patron p WHERE p.patron_id = ?))",
+                sheetId, from.getId(), into.getId(), into.getId());
+        jdbc.update("UPDATE person_patron SET patron_id = ? WHERE sheet_id = ? AND patron_id = ?",
+                into.getId(), sheetId, from.getId());
+        jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, from.getId());
+        jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, from.getId());
+        jdbc.update("UPDATE person SET contact = NULL, merged_into = ?, version = version + 1 WHERE id = ? AND sheet_id = ?",
+                into.getId(), from.getId(), sheetId);
+        jdbc.update("UPDATE person SET version = version + 1 WHERE id = ? AND sheet_id = ?", into.getId(), sheetId);
+    }
+
     /** Record {@code patron} as one of the person's patrons. */
     public void addPatron(Person person, Person patron) {
         jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id, added_on)"
@@ -108,7 +138,7 @@ public class PersonRepository {
      * when there is none.
      */
     public Person findByName(String sheetId, String name) {
-        List<Person> found = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ?"
+        List<Person> found = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND merged_into IS NULL"
                 + " AND (LOWER(TRIM(name)) = LOWER(TRIM(?)) OR id IN (SELECT person_id FROM person_alias"
                 + " WHERE sheet_id = ? AND LOWER(TRIM(alias)) = LOWER(TRIM(?)))) ORDER BY id",
                 ROW, sheetId, name, sheetId, name);
@@ -153,7 +183,7 @@ public class PersonRepository {
     public boolean nameTaken(String sheetId, String name, Long exceptId) {
         Integer count = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND LOWER(TRIM(name)) = LOWER(TRIM(?))"
-                        + " AND id <> ?",
+                        + " AND id <> ? AND merged_into IS NULL",
                 Integer.class, sheetId, name, exceptId == null ? -1L : exceptId);
         Integer aliases = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM person_alias WHERE sheet_id = ? AND LOWER(TRIM(alias)) = LOWER(TRIM(?))",
