@@ -1,0 +1,560 @@
+diff --git a/src/main/frontend/features/holidays/holidays.slot.tsx b/src/main/frontend/features/holidays/holidays.slot.tsx
+new file mode 100644
+index 000000000..667aaab2c
+--- /dev/null
++++ b/src/main/frontend/features/holidays/holidays.slot.tsx
+@@ -0,0 +1,80 @@
++import { useState } from 'react';
++import type { FormEvent } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { useOnce } from '../../query/useOnce';
++import { postJson } from '../../api/http';
++import { SheetBody } from '../../slots/defs/sheetBody';
++import { useUser } from '../session/session';
++import { DATE, holidaysKey, useHolidays } from './holidays';
++import type { Holiday } from './holidays';
++
++// The sheet's holidays: a date entry and an add button, each holiday listed below. A date already on the
++// list is refused. A claim's due-by, fixed when it is created, is moved past the holidays on the list then
++// to the next day that is not one; a holiday added later leaves existing due-by dates as they are.
++function Holidays({ sheetId }: { sheetId: string }) {
++  const queryClient = useQueryClient();
++  const holidays = useHolidays(sheetId);
++  const [date, setDate] = useState('');
++  const [error, setError] = useState('');
++  const [user] = useUser();
++
++  const once = useOnce();
++  const add = useMutation({
++    mutationFn: (body: { date: string }) =>
++      postJson<Holiday>(`/api/sheets/${encodeURIComponent(sheetId)}/holidays`, body, user),
++    onSuccess: () => queryClient.invalidateQueries({ queryKey: holidaysKey(sheetId) }),
++    onError: () => setError('That holiday could not be added.'),
++  });
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    setError('');
++    const value = date.trim();
++    if (!DATE.test(value) || Number.isNaN(Date.parse(value))) {
++      setError('A date is yyyy-MM-dd.');
++      return;
++    }
++    if ((holidays.data ?? []).some((h) => h.date === value)) {
++      setError(`${value} is already a holiday.`);
++      return;
++    }
++    once((done) => add.mutate({ date: value }, { onSettled: done }));
++  };
++
++  return (
++    <section data-testid="holidays">
++      <h2>Holidays</h2>
++      <form onSubmit={submit}>
++        <label>
++          Date{' '}
++          <input
++            data-testid="holiday-date"
++            placeholder="yyyy-MM-dd"
++            value={date}
++            onChange={(e) => {
++              setDate(e.target.value);
++              setError('');
++            }}
++          />
++        </label>{' '}
++        <button type="submit" data-testid="holiday-add" disabled={add.isPending}>
++          Add holiday
++        </button>
++        {error && (
++          <p role="alert" data-testid="holiday-error">
++            {error}
++          </p>
++        )}
++      </form>
++      <ul data-testid="holiday-list">
++        {(holidays.data ?? []).map((h) => (
++          <li key={h.date} data-testid={`holiday-row-${h.date}`}>
++            {h.date}
++          </li>
++        ))}
++      </ul>
++    </section>
++  );
++}
++
++export const contribution = SheetBody.fill({ order: -6, Component: Holidays });
+diff --git a/src/main/frontend/features/holidays/holidays.ts b/src/main/frontend/features/holidays/holidays.ts
+new file mode 100644
+index 000000000..c86dfd6cc
+--- /dev/null
++++ b/src/main/frontend/features/holidays/holidays.ts
+@@ -0,0 +1,19 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++
++/** A holiday on the sheet: a date (yyyy-MM-dd). A claim's due-by fixed at its creation is moved past it. */
++export type Holiday = { date: string };
++
++export const holidaysKey = (sheetId: string) => ['sheet', sheetId, 'holidays'] as const;
++
++/** The holidays on the sheet, by date. */
++export function useHolidays(sheetId: string) {
++  return useQuery({
++    queryKey: holidaysKey(sheetId),
++    queryFn: async () =>
++      (await getJson<{ holidays: Holiday[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/holidays`)).holidays,
++  });
++}
++
++/** A holiday's date as the screen takes it: yyyy-MM-dd. */
++export const DATE = /^\d{4}-\d{2}-\d{2}$/;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java b/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java
+index f76a215e2..5294be192 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java
+@@ -5,6 +5,7 @@ import java.time.LocalDate;
+ import java.util.ArrayList;
+ import java.util.List;
+ import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.holiday.HolidayRepository;
+ import net.officefloor.hq.app.period.CheckClaimPeriod;
+ import net.officefloor.hq.app.period.ClosedPeriodException;
+ import net.officefloor.hq.app.period.PeriodRepository;
+@@ -31,7 +32,7 @@ import net.officefloor.hq.app.paste.PasteResponse;
+ public class AddPastedClaims {
+     public void add(@Val Sheet sheet, @Val PasteLines paste, PersonRepository people, ClaimRepository claims,
+             PeriodRepository periods, RateRepository rates, SettingsRepository settings, ClaimLogRepository log,
+-            HttpServletRequest request, Audit audit, Out<PasteResponse> result)
++            HolidayRepository holidays, HttpServletRequest request, Audit audit, Out<PasteResponse> result)
+             throws InvalidClaimException, ClosedPeriodException, RetiredPersonException {
+         Settings terms = settings.find(sheet.id());
+         List<Person> persons = new ArrayList<>();
+@@ -42,7 +43,7 @@ public class AddPastedClaims {
+             LocalDate date = line.claim().date() == null ? terms.entryDay(sheet.today()) : line.claim().date();
+             Claim claim = new Claim(null, sheet.id(), person.getId(), line.claim().amount(), date, line.claim().note(),
+                     ClaimStatus.DRAFT, null, null, null);
+-            claim.setDueBy(date.plusDays(terms.termsFor(person, date)));
++            claim.setDueBy(holidays.pastHolidays(sheet.id(), date.plusDays(terms.termsFor(person, date))));
+             new CheckClaimPeriod().check(sheet, claim, periods);
+             claim.setLateEntry(periods.softClosedOn(sheet.id(), claim.getDueBy()) != null);
+             new CheckClaimRetired().check(sheet, claim, people);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java b/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
+index 5d530e182..fc468b47f 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.claim;
+ 
+ import java.time.LocalDate;
++import net.officefloor.hq.app.holiday.HolidayRepository;
+ import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.setting.Settings;
+@@ -10,19 +11,20 @@ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+- * A new DRAFT claim, dated (when left undated) the sheet's entry date while it is set, else its today, its due-by fixed now: its date plus its person's own terms, else the terms of their grade on that date, else the sheet's.
++ * A new DRAFT claim, dated (when left undated) the sheet's entry date while it is set, else its today, its due-by fixed now: its date plus its person's own terms, else the terms of their grade on that date, else the sheet's,
++ * moved past any holiday on the sheet now to the next day that is not one.
+  * Due by a date inside a soft-closed period (its period is the one containing its due-by), it is a late entry.
+  */
+ public class BuildClaim {
+     public void build(@Val ClaimInput input, @Val Sheet sheet, @Val Person person, SettingsRepository settings,
+-            PeriodRepository periods,
++            PeriodRepository periods, HolidayRepository holidays,
+             Out<Claim> claimOut) {
+         Settings terms = settings.find(sheet.id());
+         LocalDate date = input.date() == null ? terms.entryDay(sheet.today()) : input.date();
+         Claim claim = new Claim(null, sheet.id(), person.getId(), input.amount(), date, input.note(),
+                 ClaimStatus.DRAFT, null, null, null);
+         claim.setCorrects(input.corrects());
+-        claim.setDueBy(date.plusDays(terms.termsFor(person, date)));
++        claim.setDueBy(holidays.pastHolidays(sheet.id(), date.plusDays(terms.termsFor(person, date))));
+         claim.setLateEntry(periods.softClosedOn(sheet.id(), claim.getDueBy()) != null);
+         claimOut.set(claim);
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java b/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java
+index 85c7a73d9..519c91093 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java
+@@ -2,6 +2,7 @@ package net.officefloor.hq.app.claim;
+ 
+ import jakarta.servlet.http.HttpServletRequest;
+ import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.holiday.HolidayRepository;
+ import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
+@@ -15,13 +16,13 @@ import net.officefloor.plugin.variable.Val;
+ /**
+  * Splits an amount off an OPEN claim: the claim keeps the rest, unbound from any statement, and a new
+  * OPEN claim with the amount split off, its date and note, opened by the signed-in user and its
+- * due-by fixed now from the terms in force on its date, is made (a late entry when that due-by is
++ * due-by fixed now from the terms in force on its date (moved past any holiday on the sheet now), is made (a late entry when that due-by is
+  * inside a soft-closed period). Only a role the permission matrix
+  * allows to open a claim may split one (the new claim is theirs to open).
+  */
+ public class SplitClaim {
+     public void apply(@Val Sheet sheet, @Val Claim claim, @Val SplitAmount split, RoleRepository roles,
+-            SettingsRepository settingsRepository, PersonRepository people, PeriodRepository periods, HttpServletRequest request,
++            SettingsRepository settingsRepository, PersonRepository people, PeriodRepository periods, HolidayRepository holidays, HttpServletRequest request,
+             Out<Split> splitOut) throws InvalidClaimStatusException, InvalidClaimException {
+         String user = Audit.user(request);
+         String role = roles.roleOf(sheet.id(), user);
+@@ -34,7 +35,7 @@ public class SplitClaim {
+         Claim made = new Claim(null, sheet.id(), claim.getPersonId(), split.amount(), claim.getDate(),
+                 claim.getNote(), ClaimStatus.OPEN, null, null, user);
+         made.setSplitFrom(claim.getNumber());
+-        made.setDueBy(claim.getDate().plusDays(settings.termsFor(person, claim.getDate())));
++        made.setDueBy(holidays.pastHolidays(sheet.id(), claim.getDate().plusDays(settings.termsFor(person, claim.getDate()))));
+         made.setLateEntry(periods.softClosedOn(sheet.id(), made.getDueBy()) != null);
+         splitOut.set(new Split(made));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/holiday/AuditHolidayAdded.java b/src/main/java/net/officefloor/hq/app/holiday/AuditHolidayAdded.java
+new file mode 100644
+index 000000000..2a60d1f7b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/holiday/AuditHolidayAdded.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.holiday;
++
++import jakarta.servlet.http.HttpServletRequest;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++
++/** Records the holiday added. Runs after every rule has passed, so a refused change writes nothing. */
++public class AuditHolidayAdded {
++    public void audit(@Val Holiday holiday, HttpServletRequest request, Audit audit) {
++        audit.record("HOLIDAY_ADDED sheet=" + holiday.sheetId() + " by=" + Audit.user(request)
++                + " date=" + holiday.date());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/holiday/HandleInvalidHoliday.java b/src/main/java/net/officefloor/hq/app/holiday/HandleInvalidHoliday.java
+new file mode 100644
+index 000000000..cac91a84e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/holiday/HandleInvalidHoliday.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.holiday;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleInvalidHoliday {
++    public void handle(@Parameter InvalidHolidayException ex,
++            ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.BAD_REQUEST));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/holiday/Holiday.java b/src/main/java/net/officefloor/hq/app/holiday/Holiday.java
+new file mode 100644
+index 000000000..15f965da8
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/holiday/Holiday.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.holiday;
++
++import java.time.LocalDate;
++
++/** A holiday on a sheet: a claim's due-by fixed at its creation is never on one. */
++public record Holiday(String sheetId, LocalDate date) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/holiday/HolidayInput.java b/src/main/java/net/officefloor/hq/app/holiday/HolidayInput.java
+new file mode 100644
+index 000000000..32fa67f51
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/holiday/HolidayInput.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.holiday;
++
++import java.time.LocalDate;
++
++/** A holiday request, validated: its date. */
++public record HolidayInput(LocalDate date) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/holiday/HolidayRepository.java b/src/main/java/net/officefloor/hq/app/holiday/HolidayRepository.java
+new file mode 100644
+index 000000000..01ae7e846
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/holiday/HolidayRepository.java
+@@ -0,0 +1,45 @@
++package net.officefloor.hq.app.holiday;
++
++import java.sql.Date;
++import java.time.LocalDate;
++import java.util.HashSet;
++import java.util.List;
++import java.util.Set;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Repository;
++
++/** The holidays store, kept per sheet. */
++@Repository
++public class HolidayRepository {
++
++    private final JdbcTemplate jdbc;
++
++    public HolidayRepository(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /** The sheet's holidays, by date. */
++    public List<Holiday> findAll(String sheetId) {
++        return jdbc.query("SELECT sheet_id, holiday_date FROM sheet_holiday WHERE sheet_id = ? ORDER BY holiday_date",
++                (rs, n) -> new Holiday(rs.getString("sheet_id"), rs.getDate("holiday_date").toLocalDate()), sheetId);
++    }
++
++    public boolean exists(String sheetId, LocalDate date) {
++        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM sheet_holiday WHERE sheet_id = ? AND holiday_date = ?",
++                Integer.class, sheetId, Date.valueOf(date));
++        return n != null && n > 0;
++    }
++
++    public void save(Holiday holiday) {
++        jdbc.update("INSERT INTO sheet_holiday (sheet_id, holiday_date) VALUES (?, ?)", holiday.sheetId(),
++                Date.valueOf(holiday.date()));
++    }
++
++    /** The date, or when it falls on a holiday on the sheet now, the next day that is not a holiday. */
++    public LocalDate pastHolidays(String sheetId, LocalDate date) {
++        Set<LocalDate> holidays = new HashSet<>();
++        for (Holiday h : findAll(sheetId)) holidays.add(h.date());
++        while (holidays.contains(date)) date = date.plusDays(1);
++        return date;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/holiday/HolidayRequest.java b/src/main/java/net/officefloor/hq/app/holiday/HolidayRequest.java
+new file mode 100644
+index 000000000..d583f1614
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/holiday/HolidayRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.holiday;
++
++/** A holiday as the screen sends it: a date (yyyy-MM-dd). */
++public record HolidayRequest(String date) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/holiday/HolidayResponse.java b/src/main/java/net/officefloor/hq/app/holiday/HolidayResponse.java
+new file mode 100644
+index 000000000..e2261f18e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/holiday/HolidayResponse.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.holiday;
++
++/** A holiday, as the screen reads it. */
++public record HolidayResponse(String date) {
++    public static HolidayResponse from(Holiday h) {
++        return new HolidayResponse(h.date().toString());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/holiday/HolidaysResponse.java b/src/main/java/net/officefloor/hq/app/holiday/HolidaysResponse.java
+new file mode 100644
+index 000000000..31baba8e6
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/holiday/HolidaysResponse.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.holiday;
++
++import java.util.List;
++
++/** The holidays on a sheet, by date. */
++public record HolidaysResponse(List<HolidayResponse> holidays) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/holiday/InvalidHolidayException.java b/src/main/java/net/officefloor/hq/app/holiday/InvalidHolidayException.java
+new file mode 100644
+index 000000000..f2651ce76
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/holiday/InvalidHolidayException.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.holiday;
++
++/** A holiday with no date, a date not yyyy-MM-dd, or a date already on the sheet's list. */
++public class InvalidHolidayException extends Exception {
++    public InvalidHolidayException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/holiday/RespondWithHoliday.java b/src/main/java/net/officefloor/hq/app/holiday/RespondWithHoliday.java
+new file mode 100644
+index 000000000..14039582d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/holiday/RespondWithHoliday.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.holiday;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithHoliday {
++    public void respond(@Val Holiday holiday, ObjectResponse<HolidayResponse> response) {
++        response.send(HolidayResponse.from(holiday));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/holiday/RespondWithHolidays.java b/src/main/java/net/officefloor/hq/app/holiday/RespondWithHolidays.java
+new file mode 100644
+index 000000000..a33874379
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/holiday/RespondWithHolidays.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.holiday;
++
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithHolidays {
++    public void respond(@Val Sheet sheet, HolidayRepository repository, ObjectResponse<HolidaysResponse> response) {
++        response.send(new HolidaysResponse(
++                repository.findAll(sheet.id()).stream().map(HolidayResponse::from).toList()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/holiday/SaveHoliday.java b/src/main/java/net/officefloor/hq/app/holiday/SaveHoliday.java
+new file mode 100644
+index 000000000..25d21cfbf
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/holiday/SaveHoliday.java
+@@ -0,0 +1,18 @@
++package net.officefloor.hq.app.holiday;
++
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++/** A date already on the sheet's list of holidays is refused. */
++public class SaveHoliday {
++    public void save(@Val HolidayInput input, @Val Sheet sheet, HolidayRepository repository,
++            Out<Holiday> holidayOut) throws InvalidHolidayException {
++        if (repository.exists(sheet.id(), input.date())) {
++            throw new InvalidHolidayException(input.date() + " is already a holiday");
++        }
++        Holiday holiday = new Holiday(sheet.id(), input.date());
++        repository.save(holiday);
++        holidayOut.set(holiday);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/holiday/ValidateHoliday.java b/src/main/java/net/officefloor/hq/app/holiday/ValidateHoliday.java
+new file mode 100644
+index 000000000..2124a529e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/holiday/ValidateHoliday.java
+@@ -0,0 +1,18 @@
++package net.officefloor.hq.app.holiday;
++
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ValidateHoliday {
++    public void validate(@RequestBody HolidayRequest request, Out<HolidayInput> body) throws InvalidHolidayException {
++        String date = request == null || request.date() == null ? "" : request.date().trim();
++        if (date.isEmpty()) throw new InvalidHolidayException("A holiday's date is required");
++        try {
++            body.set(new HolidayInput(LocalDate.parse(date)));
++        } catch (DateTimeParseException e) {
++            throw new InvalidHolidayException("A date is yyyy-MM-dd");
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/quick/CheckQuickAddPeriod.java b/src/main/java/net/officefloor/hq/app/quick/CheckQuickAddPeriod.java
+index 67cf039ff..8efe17edf 100644
+--- a/src/main/java/net/officefloor/hq/app/quick/CheckQuickAddPeriod.java
++++ b/src/main/java/net/officefloor/hq/app/quick/CheckQuickAddPeriod.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.quick;
+ 
+ import java.time.LocalDate;
++import net.officefloor.hq.app.holiday.HolidayRepository;
+ import net.officefloor.hq.app.period.ClosedPeriodException;
+ import net.officefloor.hq.app.period.Period;
+ import net.officefloor.hq.app.period.PeriodRepository;
+@@ -12,14 +13,16 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+  * Refuses a quick-add while the due-by the claim would be fixed with (its date, the sheet's entry date
+- * while it is set, else its today, plus its person's terms) is inside a closed period, before anything is written.
++ * while it is set, else its today, plus its person's terms, moved past any holiday) is inside a closed period, before anything is written.
+  */
+ public class CheckQuickAddPeriod {
+-    public void check(@Val Sheet sheet, @Val Person person, PeriodRepository periods, SettingsRepository settings)
++    public void check(@Val Sheet sheet, @Val Person person, PeriodRepository periods, SettingsRepository settings,
++            HolidayRepository holidays)
+             throws ClosedPeriodException {
+         Settings terms = settings.find(sheet.id());
+         LocalDate date = terms.entryDay(sheet.today());
+-        Period closed = periods.closedOn(sheet.id(), date.plusDays(terms.termsFor(person, date)));
++        Period closed = periods.closedOn(sheet.id(),
++                holidays.pastHolidays(sheet.id(), date.plusDays(terms.termsFor(person, date))));
+         if (closed != null) throw new ClosedPeriodException(closed.name());
+     }
+ }
+diff --git a/src/main/resources/db/migration/V51__holiday.sql b/src/main/resources/db/migration/V51__holiday.sql
+new file mode 100644
+index 000000000..20f4d1332
+--- /dev/null
++++ b/src/main/resources/db/migration/V51__holiday.sql
+@@ -0,0 +1,7 @@
++-- A sheet's holidays: a date at most once per sheet. A claim's due-by fixed at its creation is moved
++-- past any holiday on the sheet then.
++CREATE TABLE sheet_holiday (
++    sheet_id VARCHAR(200) NOT NULL REFERENCES sheet(id),
++    holiday_date DATE NOT NULL,
++    PRIMARY KEY (sheet_id, holiday_date)
++);
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.holiday.InvalidHolidayException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.holiday.InvalidHolidayException.yml
+new file mode 100644
+index 000000000..d67871f7a
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.holiday.InvalidHolidayException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.holiday.HandleInvalidHoliday
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/holidays.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/holidays.GET.yml
+new file mode 100644
+index 000000000..afefd9e8e
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/holidays.GET.yml
+@@ -0,0 +1,8 @@
++# The holidays on a sheet, by date.
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ readonly-transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.holiday.RespondWithHolidays
++  govern: [ readonly-transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/holidays.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/holidays.POST.yml
+new file mode 100644
+index 000000000..1532ba623
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/holidays.POST.yml
+@@ -0,0 +1,24 @@
++# Add a holiday to the sheet. A date already on the list is refused (a 400) and writes nothing.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: validate
++validate:
++  class: net.officefloor.hq.app.holiday.ValidateHoliday
++  next: load
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.holiday.SaveHoliday
++  govern: [ transaction ]
++  next: audit
++# Last before the response: every rule has passed and the change is saved.
++audit:
++  class: net.officefloor.hq.app.holiday.AuditHolidayAdded
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.holiday.RespondWithHoliday
++  govern: [ transaction ]
