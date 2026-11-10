@@ -6,8 +6,10 @@ package net.officefloor.hq.app.setting;
  * the terms, a whole number of days, and the late percent, with up to two decimals, and the policy
  * date as yyyy-MM-dd (blank: the sheet's today), and the period numbering from as yyyy-MM-dd
  * (blank: off), and the terms of each grade being changed, a whole number of days (blank: the
- * sheet's terms), and the cap, with up to two decimals (blank: none).
+ * sheet's terms), and the cap, with up to two decimals (blank: none), and the from-date of each
+ * figure setting being changed, by its key (clerk-limit, floor, terms, late-pct, terms-A, terms-B,
+ * terms-C, cap), as yyyy-MM-dd (blank or missing: the sheet's today).
  */
 public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom,
-        java.util.Map<String, String> gradeTerms, String cap) {
+        java.util.Map<String, String> gradeTerms, String cap, java.util.Map<String, String> from) {
 }

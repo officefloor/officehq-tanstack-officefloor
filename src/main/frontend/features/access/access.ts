@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import type { Late } from '../rates/rates';
+import type { Dated, Late } from '../rates/rates';
 import { useSheetToday } from '../sheet/sheet';
 
 /**
@@ -23,13 +23,28 @@ export type Settings = {
   gradeTerms: Record<string, string>;
   /** The most a person's due-total may be, with two decimals ('' for none). */
   cap: string;
+  /**
+   * Every value recorded for each figure setting, by key (clerk-limit, floor, terms, late-pct,
+   * terms-A, terms-B, terms-C, cap), in from-date order ('' for none). The values above are those
+   * in force on the sheet's today.
+   */
+  dated?: Record<string, { from: string; value: string }[]>;
 };
+
+/** The figure settings, which are saved from a from-date, by the key the screen and the store use. */
+export const DATED_KEYS = {
+  clerkLimit: 'clerk-limit',
+  floor: 'floor',
+  terms: 'terms',
+  latePct: 'late-pct',
+  cap: 'cap',
+} as const;
 
 /** The grades that may have their own terms. */
 export const GRADES = ['A', 'B', 'C'] as const;
 
 /** A save of the settings: only those being changed are sent. */
-export type SettingsChange = Partial<Settings>;
+export type SettingsChange = Partial<Omit<Settings, 'dated'>> & { from?: Record<string, string> };
 
 /** A user's role on a sheet. A name with no role assigned is a clerk. */
 export type Role = { user: string; role: string };
@@ -46,9 +61,14 @@ export function useSettings(sheetId: string) {
   });
 }
 
-/** The sheet's floor ('0.00', no floor, until the settings are read). */
-export function useFloor(sheetId: string): string {
-  return useSettings(sheetId).data?.floor ?? '0.00';
+/**
+ * The sheet's floor, dated: 1.00 before every value recorded, each claim taking the one in force on
+ * its date ('0.00', no floor, until the settings are read).
+ */
+export function useFloor(sheetId: string): Dated {
+  const settings = useSettings(sheetId).data;
+  if (!settings) return { start: '0.00', values: [] };
+  return { start: '1.00', values: settings.dated?.floor ?? [] };
 }
 
 /**
@@ -57,7 +77,7 @@ export function useFloor(sheetId: string): string {
  */
 export function useLate(sheetId: string): Late {
   const settings = useSettings(sheetId).data;
-  const pct = settings?.latePct ?? '0.00';
+  const pct: Dated = { start: '0.00', values: settings?.dated?.['late-pct'] ?? [] };
   return { pct, today: useSheetToday(sheetId), policyDate: settings?.policyDate ?? '' };
 }
 

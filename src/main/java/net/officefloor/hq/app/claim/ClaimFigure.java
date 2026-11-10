@@ -31,7 +31,7 @@ public final class ClaimFigure {
         RoundingMode mode = rounding(claim, settings, today);
         return Rate.inForce(rates, grade, claim.getDate())
                 .map((pct) -> times(claim.getAmount(), pct, mode))
-                .map((due) -> claim.isCorrection() ? due : due.max(settings.floor()))
+                .map((due) -> claim.isCorrection() ? due : due.max(settings.floorOn(claim.getDate())))
                 .orElse(null);
     }
 
@@ -68,7 +68,7 @@ public final class ClaimFigure {
         long overdue = ChronoUnit.DAYS.between(claim.getDueBy(), today);
         long periods = overdue > 0 ? overdue / 30 : 0;
         if (periods == 0) return none;
-        return figure.multiply(settings.latePct()).multiply(BigDecimal.valueOf(periods))
+        return figure.multiply(settings.latePctOn(claim.getDate())).multiply(BigDecimal.valueOf(periods))
                 .divide(BigDecimal.valueOf(100), 2, rounding(claim, settings, today));
     }
 

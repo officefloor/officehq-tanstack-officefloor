@@ -12,6 +12,9 @@ import org.springframework.web.bind.annotation.RequestBody;
 public class ValidateSettings {
     private static final Pattern FIGURE = Pattern.compile("\\d{1,15}(\\.\\d{1,2})?");
     private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
+    private static final java.util.Set<String> DATED = java.util.Set.of(Settings.CLERK_LIMIT, Settings.FLOOR,
+            Settings.TERMS, Settings.LATE_PCT, Settings.CAP, Settings.gradeTermsKey("A"), Settings.gradeTermsKey("B"),
+            Settings.gradeTermsKey("C"));
 
     public void validate(@RequestBody SettingsRequest request, Out<SettingsInput> body)
             throws InvalidSettingException {
@@ -93,7 +96,20 @@ public class ValidateSettings {
             }
             cap = new BigDecimal(value).setScale(2);
         }
+        Map<String, LocalDate> from = new LinkedHashMap<>();
+        if (request != null && request.from() != null) {
+            for (Map.Entry<String, String> entry : request.from().entrySet()) {
+                if (!DATED.contains(entry.getKey())) throw new InvalidSettingException("Only a figure setting has a from-date");
+                String value = entry.getValue() == null ? "" : entry.getValue().trim();
+                if (value.isEmpty()) continue;
+                try {
+                    from.put(entry.getKey(), LocalDate.parse(value));
+                } catch (DateTimeParseException e) {
+                    throw new InvalidSettingException("A from-date is a date, yyyy-MM-dd, or blank");
+                }
+            }
+        }
         body.set(new SettingsInput(limitChanged, limit, floor, terms, latePct, policyChanged, policyDate,
-                numberingChanged, numberingFrom, gradeTerms, capChanged, cap));
+                numberingChanged, numberingFrom, gradeTerms, capChanged, cap, from));
     }
 }

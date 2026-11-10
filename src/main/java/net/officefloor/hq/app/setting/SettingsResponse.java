@@ -1,29 +1,58 @@
 package net.officefloor.hq.app.setting;
 
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
 /**
- * A sheet's settings, as the screen reads them: the clerk limit with two decimals ('' for none), the
- * floor with two decimals, the terms in days and the late percent with two decimals, and the policy date as yyyy-MM-dd ('' for
- * the sheet's today), and the period numbering from as yyyy-MM-dd ('' for off), and each grade's own
- * terms in days ('' for the sheet's terms), and the cap with two decimals ('' for none).
+ * A sheet's settings, as the screen reads them, each figure setting as it is in force on the sheet's
+ * today: the clerk limit with two decimals ('' for none), the floor with two decimals, the terms in
+ * days and the late percent with two decimals, and the policy date as yyyy-MM-dd ('' for the sheet's
+ * today), and the period numbering from as yyyy-MM-dd ('' for off), and each grade's own terms in
+ * days ('' for the sheet's terms), and the cap with two decimals ('' for none); and every value
+ * recorded for each figure setting, by key, in from-date order.
  */
 public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
-        String periodNumberingFrom, java.util.Map<String, String> gradeTerms, String cap) {
+        String periodNumberingFrom, Map<String, String> gradeTerms, String cap, Map<String, List<Dated>> dated) {
+
+    /** A value ('' for none) recorded from a date (yyyy-MM-dd). */
+    public record Dated(String from, String value) {
+    }
+
     public static SettingsResponse from(Settings settings) {
-        return new SettingsResponse(settings.clerkLimit() == null ? "" : settings.clerkLimit().toPlainString(),
-                settings.floor().setScale(2).toPlainString(), Integer.toString(settings.terms()),
-                settings.latePct().setScale(2).toPlainString(),
+        LocalDate today = settings.today();
+        return new SettingsResponse(show(settings.clerkLimitOn(today)),
+                show(settings.floorOn(today)), Integer.toString(settings.termsOn(today)),
+                show(settings.latePctOn(today)),
                 settings.policyDate() == null ? "" : settings.policyDate().toString(),
                 settings.periodNumberingFrom() == null ? "" : settings.periodNumberingFrom().toString(),
                 gradeTerms(settings),
-                settings.cap() == null ? "" : settings.cap().setScale(2).toPlainString());
+                show(settings.capOn(today)),
+                dated(settings));
     }
 
-    private static java.util.Map<String, String> gradeTerms(Settings settings) {
-        java.util.Map<String, String> shown = new java.util.LinkedHashMap<>();
+    private static String show(java.math.BigDecimal figure) {
+        return figure == null ? "" : figure.setScale(2).toPlainString();
+    }
+
+    private static Map<String, String> gradeTerms(Settings settings) {
+        Map<String, String> shown = new LinkedHashMap<>();
         for (String grade : Settings.GRADES) {
-            Integer own = settings.gradeTerms().get(grade);
+            Integer own = settings.gradeTermsOn(grade, settings.today());
             shown.put(grade, own == null ? "" : own.toString());
         }
+        return shown;
+    }
+
+    private static Map<String, List<Dated>> dated(Settings settings) {
+        Map<String, List<Dated>> shown = new LinkedHashMap<>();
+        settings.dated().forEach((key, values) -> {
+            List<Dated> list = new ArrayList<>();
+            values.forEach((from, value) -> list.add(new Dated(from.toString(), value)));
+            shown.put(key, list);
+        });
         return shown;
     }
 }

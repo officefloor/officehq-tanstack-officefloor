@@ -69,7 +69,7 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
             boolean none = Rate.inForce(all, person.gradeOn(today), today).isEmpty() && !fixed;
             claimedTotal = claimedTotal.add(claimed);
             overdueTotal = overdueTotal.add(overdue);
-            due = settings.capped(due);
+            due = settings.capped(due, today);
             if (!none) dueTotal = dueTotal.add(due);
             figures.put(person.getId(), new Figures(person.getName(), show(claimed), none ? "n/a" : show(due),
                     show(overdue)));

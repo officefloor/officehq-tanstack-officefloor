@@ -45,7 +45,7 @@ public class SettleClaim {
         }
         if (user.equals(claim.getOpenedBy())) throw new SelfSettleException(user);
         BigDecimal due = figure == null ? null : figure.add(late);
-        if (!settings.withinClerkLimit(due) && Role.CLERK.equals(roles.roleOf(sheet.id(), user))) {
+        if (!settings.withinClerkLimit(due, sheet.today()) && Role.CLERK.equals(roles.roleOf(sheet.id(), user))) {
             claim.moveTo(ClaimStatus.PENDING);
             return;
         }

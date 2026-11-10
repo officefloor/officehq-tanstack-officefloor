@@ -3,7 +3,7 @@ import type { GradeFrom, Hold } from '../people/people';
 import { counts, isOpen } from '../claims/claims';
 import type { Claim } from '../claims/claims';
 import { claimDue, rateOn, sumDue } from '../rates/rates';
-import type { Late, Rate } from '../rates/rates';
+import type { Dated, Late, Rate } from '../rates/rates';
 
 /** A claim's due-by: fixed when it was made, from its grade's terms then. */
 export const dueBy = (claim: Claim): string => claim.dueBy;
@@ -22,7 +22,7 @@ export function personOverdue(
   today: string,
   claims: Claim[],
   holds: Hold[],
-  floor: string,
+  floor: Dated,
   late: Late,
 ): { count: number; total: string } {
   const overdue = claims.filter((c) => counts(c, holds) && isOverdue(c, today));

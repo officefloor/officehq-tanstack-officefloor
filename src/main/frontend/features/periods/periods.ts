@@ -5,7 +5,7 @@ import type { Claim } from '../claims/claims';
 import { gradeOn } from '../people/people';
 import type { Person } from '../people/people';
 import { claimDue, rateOn, sumDue } from '../rates/rates';
-import type { Late, Rate } from '../rates/rates';
+import type { Dated, Late, Rate } from '../rates/rates';
 
 /**
  * A period: its name (unique on the sheet), its from and to dates (yyyy-MM-dd), inclusive, whether
@@ -46,7 +46,7 @@ export function personPeriodDueTotal(
   person: Person,
   claims: Claim[],
   rates: Rate[],
-  floor: string,
+  floor: Dated,
   late: Late,
 ): string {
   if (period.closed) return period.personTotals[person.id] ?? '0.00';
@@ -63,7 +63,7 @@ export function periodDueTotal(
   people: Person[],
   claims: Claim[],
   rates: Rate[],
-  floor: string,
+  floor: Dated,
   late: Late,
 ): string {
   return sumDue(people.map((person) => personPeriodDueTotal(period, person, claims, rates, floor, late)));

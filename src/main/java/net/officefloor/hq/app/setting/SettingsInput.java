@@ -9,10 +9,37 @@ import java.time.LocalDate;
  * and whether the policy date is changed and to what (null: the sheet's today), and whether the
  * period numbering from is changed and to what (null: off), and the grades whose terms are changed,
  * in A, B, C order, and to what (null: the sheet's terms), and whether the cap is changed and to
- * what (null: none).
+ * what (null: none), and the from-date given for each figure setting, by its key (none given: the
+ * sheet's today).
  */
 public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, BigDecimal floor, Integer terms, BigDecimal latePct,
         boolean policyDateChanged, LocalDate policyDate,
         boolean periodNumberingFromChanged, LocalDate periodNumberingFrom,
-        java.util.Map<String, Integer> gradeTerms, boolean capChanged, BigDecimal cap) {
+        java.util.Map<String, Integer> gradeTerms, boolean capChanged, BigDecimal cap,
+        java.util.Map<String, LocalDate> from) {
+
+    /**
+     * The figure settings being changed, by key in the order they are audited, each with the value
+     * it is recorded as ('' for none).
+     */
+    public java.util.Map<String, String> datedValues() {
+        java.util.Map<String, String> values = new java.util.LinkedHashMap<>();
+        if (clerkLimitChanged) values.put(Settings.CLERK_LIMIT, clerkLimit == null ? "" : clerkLimit.toPlainString());
+        if (floor != null) values.put(Settings.FLOOR, floor.toPlainString());
+        if (terms != null) values.put(Settings.TERMS, terms.toString());
+        if (latePct != null) values.put(Settings.LATE_PCT, latePct.toPlainString());
+        return values;
+    }
+
+    /** The grades whose terms are changed, by key, each with the value it is recorded as ('' for the sheet's). */
+    public java.util.Map<String, String> gradeTermsValues() {
+        java.util.Map<String, String> values = new java.util.LinkedHashMap<>();
+        gradeTerms.forEach((grade, days) -> values.put(Settings.gradeTermsKey(grade), days == null ? "" : days.toString()));
+        return values;
+    }
+
+    /** The cap as it is recorded ('' for none), or null when it is not changed. */
+    public String capValue() {
+        return !capChanged ? null : cap == null ? "" : cap.toPlainString();
+    }
 }

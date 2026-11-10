@@ -42,6 +42,22 @@ export function useGradeRate(sheetId: string, grade: Grade, date: string): strin
   return rateOn(useRates(sheetId).data ?? [], grade, date);
 }
 
+/**
+ * A dated setting: its starting value, in force before every recorded value, and the values recorded
+ * for it, each from a date (yyyy-MM-dd).
+ */
+export type Dated = { start: string; values: { from: string; value: string }[] };
+
+/** A dated setting's value in force on a date (yyyy-MM-dd): the one with the latest from-date on or before it, else its start. */
+export function valueOn(dated: Dated, date: string): string {
+  let best: { from: string; value: string } | null = null;
+  for (const v of dated.values) {
+    if (v.from > date) continue;
+    if (best === null || v.from > best.from) best = v;
+  }
+  return best === null || best.value === '' ? dated.start : best.value;
+}
+
 /** A percent as a rate takes it: 0.00 or more, with up to two decimals. */
 export const PCT = /^\d+(\.\d{1,2})?$/;
 
@@ -90,11 +106,12 @@ function percentOf(figure: string, pct: string, times: bigint, halfUp: boolean):
 }
 
 /**
- * What the late charge and a claim's rounding need: the sheet's late percent (two decimals), its
+ * What the late charge and a claim's rounding need: the sheet's late percent (two decimals, dated: a
+ * claim takes the one in force on its date), its
  * today (yyyy-MM-dd; '' until read) and its policy date (yyyy-MM-dd; '' for its
  * today).
  */
-export type Late = { pct: string; today: string; policyDate: string };
+export type Late = { pct: Dated; today: string; policyDate: string };
 
 /**
  * Whether a claim's live figures round half up: it rounds by a date (its own, or for a correction
@@ -124,7 +141,7 @@ function lateCharge(claim: Claim, figure: string, late: Late): bigint {
   if (!isOpen(claim) || figure === NA || late.today === '' || isCorrection(claim)) return 0n;
   const overdue = daysBetween(claim.dueBy, late.today);
   const periods = overdue > 0 ? Math.floor(overdue / 30) : 0;
-  return periods === 0 ? 0n : percentOf(figure, late.pct, BigInt(periods), roundsHalfUp(claim, late));
+  return periods === 0 ? 0n : percentOf(figure, valueOn(late.pct, claim.date), BigInt(periods), roundsHalfUp(claim, late));
 }
 
 /** Due values added up, skipping n/a. */
@@ -135,11 +152,12 @@ export function sumDue(values: string[]): string {
 /**
  * A claim's due: the one fixed when it was settled (its late charge frozen in), else the figure its
  * person's last statement bound it to (never while it is PENDING), else its amount at the rate in force on its date, at least
- * the sheet's `floor`; an overdue claim's late charge added on top.
+ * the sheet's `floor` in force on its date; an overdue claim's late charge added on top.
  */
-export function claimDue(claim: Claim, pct: string | null, floor: string, late: Late): string {
+export function claimDue(claim: Claim, pct: string | null, floor: Dated, late: Late): string {
   if (claim.due !== '') return claim.due;
-  const figure = isBound(claim) ? claim.statedDue : due(claim.amount, pct, isCorrection(claim) ? null : floor, roundsHalfUp(claim, late));
+  const least = isCorrection(claim) ? null : valueOn(floor, claim.date);
+  const figure = isBound(claim) ? claim.statedDue : due(claim.amount, pct, least, roundsHalfUp(claim, late));
   const charge = lateCharge(claim, figure, late);
   return charge === 0n ? figure : showCents(hundredths(figure) + charge);
 }
@@ -158,7 +176,7 @@ export function personDueTotal(
   today: string,
   claims: Claim[],
   holds: Hold[],
-  floor: string,
+  floor: Dated,
   late: Late,
   cap: string,
 ): string {
@@ -174,7 +192,7 @@ export function personExcess(
   today: string,
   claims: Claim[],
   holds: Hold[],
-  floor: string,
+  floor: Dated,
   late: Late,
   cap: string,
 ): string {
@@ -189,7 +207,7 @@ function uncappedDueTotal(
   today: string,
   claims: Claim[],
   holds: Hold[],
-  floor: string,
+  floor: Dated,
   late: Late,
 ): string {
   const counted = claims.filter((c) => counts(c, holds));

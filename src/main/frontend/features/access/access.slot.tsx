@@ -5,7 +5,7 @@ import { useOnce } from '../../query/useOnce';
 import { postJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/session';
-import { CAP, FLOOR, GRADES, LATE_PCT, LIMIT, POLICY_DATE, TERMS, ROLES, rolesKey, settingsKey, useRoles, useSettings } from './access';
+import { CAP, DATED_KEYS, FLOOR, GRADES, LATE_PCT, LIMIT, POLICY_DATE, TERMS, ROLES, rolesKey, settingsKey, useRoles, useSettings } from './access';
 import type { Role, Settings, SettingsChange } from './access';
 
 type Key = Exclude<keyof Settings, 'gradeTerms'>;
@@ -33,6 +33,8 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
   const [touched, setTouched] = useState<Set<Key>>(new Set());
   const [gradeFields, setGradeFields] = useState<Record<string, string>>({});
   const [gradesTouched, setGradesTouched] = useState<Set<string>>(new Set());
+  // The from-date typed for each figure setting, by its store key (blank: the sheet's today).
+  const [fromFields, setFromFields] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const [user] = useUser();
 
@@ -121,6 +123,21 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
       }
       body.gradeTerms = gradeTerms;
     }
+    const from: Record<string, string> = {};
+    const datedKeys: string[] = [
+      ...Object.entries(DATED_KEYS).filter(([key]) => touched.has(key as Key)).map(([, store]) => store),
+      ...GRADES.filter((grade) => gradesTouched.has(grade)).map((grade) => `terms-${grade}`),
+    ];
+    for (const key of datedKeys) {
+      const date = (fromFields[key] ?? '').trim();
+      if (date === '') continue;
+      if (!POLICY_DATE.test(date) || Number.isNaN(Date.parse(date))) {
+        setError('A from-date is a date, yyyy-MM-dd, or blank.');
+        return;
+      }
+      from[key] = date;
+    }
+    if (Object.keys(from).length > 0) body.from = from;
     if (Object.keys(body).length === 0) {
       setError('Type a setting to save.');
       return;
@@ -134,6 +151,22 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
     touch(key);
     setError('');
   };
+  const changeFrom = (key: string, value: string) => {
+    setFromFields((f) => ({ ...f, [key]: value }));
+    setError('');
+  };
+  // The from-date input of a figure setting: blank saves it from the sheet's today.
+  const fromInput = (key: string) => (
+    <label>
+      from{' '}
+      <input
+        data-testid={`setting-${key}-from`}
+        placeholder="today"
+        value={fromFields[key] ?? ''}
+        onChange={(e) => changeFrom(key, e.target.value)}
+      />
+    </label>
+  );
   const touchGrade = (grade: string) => setGradesTouched((t) => (t.has(grade) ? t : new Set(t).add(grade)));
   const changeGrade = (grade: string, value: string) => {
     setGradeFields((f) => ({ ...f, [grade]: value }));
@@ -155,6 +188,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
             onChange={(e) => change('clerkLimit', e.target.value)}
           />
         </label>{' '}
+        {fromInput('clerk-limit')}{' '}
         <span>
           now: <strong data-testid="setting-clerk-limit-current">{settings.data?.clerkLimit ?? ''}</strong>
         </span>{' '}
@@ -168,6 +202,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
             onChange={(e) => change('floor', e.target.value)}
           />
         </label>{' '}
+        {fromInput('floor')}{' '}
         <span>
           now: <strong data-testid="setting-floor-current">{settings.data?.floor ?? ''}</strong>
         </span>{' '}
@@ -181,6 +216,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
             onChange={(e) => change('terms', e.target.value)}
           />
         </label>{' '}
+        {fromInput('terms')}{' '}
         <span>
           now: <strong data-testid="setting-terms-current">{settings.data?.terms ?? ''}</strong>
         </span>{' '}
@@ -197,6 +233,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
                 onChange={(e) => changeGrade(grade, e.target.value)}
               />
             </label>{' '}
+            {fromInput(`terms-${grade}`)}{' '}
             <span>
               now: <strong data-testid={`setting-terms-${grade}-current`}>{settings.data?.gradeTerms?.[grade] ?? ''}</strong>
             </span>{' '}
@@ -212,6 +249,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
             onChange={(e) => change('latePct', e.target.value)}
           />
         </label>{' '}
+        {fromInput('late-pct')}{' '}
         <span>
           now: <strong data-testid="setting-late-pct-current">{settings.data?.latePct ?? ''}</strong>
         </span>{' '}
@@ -253,6 +291,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
             onChange={(e) => change('cap', e.target.value)}
           />
         </label>{' '}
+        {fromInput('cap')}{' '}
         <span>
           now: <strong data-testid="setting-cap-current">{settings.data?.cap ?? ''}</strong>
         </span>{' '}

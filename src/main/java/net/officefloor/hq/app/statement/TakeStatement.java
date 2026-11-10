@@ -52,7 +52,7 @@ public class TakeStatement {
             claims.save(claim);
         }
         String dueTotal = Rate.inForce(all, person.gradeOn(sheet.today()), sheet.today()).isEmpty() && !fixed
-                ? "n/a" : sheetSettings.capped(total).toPlainString();
+                ? "n/a" : sheetSettings.capped(total, sheet.today()).toPlainString();
         person.setStatements(person.getStatementCount() + 1, dueTotal, sheet.today());
         people.saveStatements(person);
         statementOut.set(new Statement(dueTotal, counted));

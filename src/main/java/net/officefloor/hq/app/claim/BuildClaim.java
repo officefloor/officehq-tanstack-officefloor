@@ -15,7 +15,7 @@ public class BuildClaim {
         Claim claim = new Claim(null, sheet.id(), person.getId(), input.amount(), date, input.note(),
                 ClaimStatus.DRAFT, null, null, null);
         claim.setCorrects(input.corrects());
-        claim.setDueBy(date.plusDays(settings.find(sheet.id()).termsFor(person.gradeOn(date))));
+        claim.setDueBy(date.plusDays(settings.find(sheet.id()).termsFor(person.gradeOn(date), date)));
         claimOut.set(claim);
     }
 }
