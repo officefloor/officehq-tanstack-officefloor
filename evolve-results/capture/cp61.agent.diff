@@ -1,0 +1,578 @@
+diff --git a/src/main/frontend/features/delegation/delegation.slot.tsx b/src/main/frontend/features/delegation/delegation.slot.tsx
+new file mode 100644
+index 000000000..8a144cda2
+--- /dev/null
++++ b/src/main/frontend/features/delegation/delegation.slot.tsx
+@@ -0,0 +1,108 @@
++import { useState } from 'react';
++import type { FormEvent } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { useOnce } from '../../query/useOnce';
++import { postJson } from '../../api/http';
++import { SheetBody } from '../../slots/defs/sheetBody';
++import { useUser } from '../session/session';
++import { DATE, delegationsKey, useDelegations } from './delegation';
++import type { Delegation, DelegationChange } from './delegation';
++
++// A steward delegates the steward role to a user for a from-date and a to-date, inclusive (blank from:
++// the sheet's today; blank to: the from-date). While the sheet's today is inside the range the user acts
++// as a steward in every rule. Anyone but a steward (by their own role) is refused, as is a to-date
++// before the from-date. Every delegation made is listed below the form.
++function Delegations({ sheetId }: { sheetId: string }) {
++  const queryClient = useQueryClient();
++  const delegations = useDelegations(sheetId);
++  const [fields, setFields] = useState<DelegationChange>({ user: '', from: '', to: '' });
++  const [error, setError] = useState('');
++  const [user] = useUser();
++
++  const once = useOnce();
++  const save = useMutation({
++    mutationFn: (body: DelegationChange) =>
++      postJson<Delegation>(`/api/sheets/${encodeURIComponent(sheetId)}/delegations`, body, user),
++    onSuccess: () => {
++      void queryClient.invalidateQueries({ queryKey: delegationsKey(sheetId) });
++    },
++    onError: () => setError('That delegation could not be made.'),
++  });
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    setError('');
++    const name = fields.user.trim();
++    const from = fields.from.trim();
++    const to = fields.to.trim();
++    if (name === '') {
++      setError('A user name is required.');
++      return;
++    }
++    for (const date of [from, to]) {
++      if (date !== '' && (!DATE.test(date) || Number.isNaN(Date.parse(date)))) {
++        setError('A date is yyyy-MM-dd, or blank.');
++        return;
++      }
++    }
++    if (from !== '' && to !== '' && to < from) {
++      setError('A to-date is on or after the from-date.');
++      return;
++    }
++    once((done) => save.mutate({ user: name, from, to }, { onSettled: done }));
++  };
++
++  const change = (next: Partial<DelegationChange>) => {
++    setFields((f) => ({ ...f, ...next }));
++    setError('');
++  };
++
++  return (
++    <section data-testid="delegations">
++      <h2>Delegations</h2>
++      <form onSubmit={submit} data-testid="delegate-form">
++        <label>
++          User{' '}
++          <input data-testid="delegate-user" value={fields.user} onChange={(e) => change({ user: e.target.value })} />
++        </label>{' '}
++        <label>
++          From{' '}
++          <input
++            data-testid="delegate-from"
++            placeholder="today"
++            value={fields.from}
++            onChange={(e) => change({ from: e.target.value })}
++          />
++        </label>{' '}
++        <label>
++          To{' '}
++          <input
++            data-testid="delegate-to"
++            placeholder="from-date"
++            value={fields.to}
++            onChange={(e) => change({ to: e.target.value })}
++          />
++        </label>{' '}
++        <button type="submit" data-testid="delegate-submit" disabled={save.isPending}>
++          Delegate steward
++        </button>
++        {error && (
++          <p role="alert" data-testid="delegate-error">
++            {error}
++          </p>
++        )}
++      </form>
++      <ul data-testid="delegate-list">
++        {(delegations.data ?? []).map((d) => (
++          <li key={d.id} data-testid="delegate-line">
++            <span data-testid="delegate-line-user">{d.user}</span> acts as steward from{' '}
++            <span data-testid="delegate-line-from">{d.from}</span> to <span data-testid="delegate-line-to">{d.to}</span>{' '}
++            for <span data-testid="delegate-line-by">{d.by}</span>
++          </li>
++        ))}
++      </ul>
++    </section>
++  );
++}
++
++export const contribution = SheetBody.fill({ order: -7, Component: Delegations });
+diff --git a/src/main/frontend/features/delegation/delegation.ts b/src/main/frontend/features/delegation/delegation.ts
+new file mode 100644
+index 000000000..828ca0620
+--- /dev/null
++++ b/src/main/frontend/features/delegation/delegation.ts
+@@ -0,0 +1,26 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++
++/**
++ * The steward role delegated by a steward (`by`) to a user from a date to a date (yyyy-MM-dd), inclusive,
++ * by the sheet's today: while today is inside the range the user acts as a steward.
++ */
++export type Delegation = { id: number; user: string; by: string; from: string; to: string };
++
++/** A delegation as the screen sends it (a blank from-date: the sheet's today; a blank to-date: the from-date). */
++export type DelegationChange = { user: string; from: string; to: string };
++
++export const delegationsKey = (sheetId: string) => ['sheet', sheetId, 'delegations'] as const;
++
++/** The delegations made on the sheet, in the order they were made. */
++export function useDelegations(sheetId: string) {
++  return useQuery({
++    queryKey: delegationsKey(sheetId),
++    queryFn: async () =>
++      (await getJson<{ delegations: Delegation[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/delegations`))
++        .delegations,
++  });
++}
++
++/** A from- or to-date as the screen takes it: blank, or a date yyyy-MM-dd. */
++export const DATE = /^\d{4}-\d{2}-\d{2}$/;
+diff --git a/src/main/java/net/officefloor/hq/app/Audit.java b/src/main/java/net/officefloor/hq/app/Audit.java
+index 980735f65..39cc21014 100644
+--- a/src/main/java/net/officefloor/hq/app/Audit.java
++++ b/src/main/java/net/officefloor/hq/app/Audit.java
+@@ -8,6 +8,10 @@ import java.nio.charset.StandardCharsets;
+ import java.nio.file.Files;
+ import java.nio.file.Path;
+ import java.nio.file.StandardOpenOption;
++import java.util.Set;
++import java.util.regex.Matcher;
++import java.util.regex.Pattern;
++import net.officefloor.hq.app.delegation.DelegationRepository;
+ import org.springframework.beans.factory.annotation.Value;
+ import org.springframework.stereotype.Service;
+ 
+@@ -23,14 +27,30 @@ import org.springframework.stereotype.Service;
+ @Service
+ public class Audit {
+ 
++    /** The lines that only report figures a change moved: they are never marked as made for a delegator. */
++    private static final Set<String> FIGURES = Set.of("ROLLUP", "TOTALS", "ALERT");
++
++    /** A record's head: its event name, then {@code sheet=<id> by=<user>}, the user up to the next field. */
++    private static final Pattern HEAD = Pattern.compile("^(\\S+) sheet=(\\S+) by=(.*?)(?= [a-z][a-z-]*=|$)");
++
+     private final Path file;
++    private final DelegationRepository delegations;
+ 
+-    public Audit(@Value("${app.audit.file:.run/audit.log}") String path) {
++    public Audit(@Value("${app.audit.file:.run/audit.log}") String path, DelegationRepository delegations) {
+         this.file = Path.of(path);
++        this.delegations = delegations;
+     }
+ 
+-    /** Append one audit record. Tests assert the exact line(s) in the file. */
++    /**
++     * Append one audit record. Tests assert the exact line(s) in the file. A change made by a user acting
++     * as a steward by a delegation, for the sheet's today, ends with {@code for=<the steward who delegated>}.
++     */
+     public synchronized void record(String entry) {
++        Matcher head = HEAD.matcher(entry);
++        if (head.find() && !FIGURES.contains(head.group(1))) {
++            String delegator = delegations.delegatorOf(head.group(2), head.group(3));
++            if (delegator != null) entry = entry + " for=" + delegator;
++        }
+         try {
+             Path parent = file.toAbsolutePath().getParent();
+             if (parent != null) {
+diff --git a/src/main/java/net/officefloor/hq/app/delegation/AuditDelegated.java b/src/main/java/net/officefloor/hq/app/delegation/AuditDelegated.java
+new file mode 100644
+index 000000000..87646c5d2
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/delegation/AuditDelegated.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.delegation;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++
++/** Records the delegation. Runs after every rule has passed, so a refused change writes nothing. */
++public class AuditDelegated {
++    public void audit(@Val Delegation d, Audit audit) {
++        audit.record("DELEGATED sheet=" + d.sheetId() + " by=" + d.by() + " user=" + d.user()
++                + " from=" + d.from() + " to=" + d.to());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/delegation/Delegation.java b/src/main/java/net/officefloor/hq/app/delegation/Delegation.java
+new file mode 100644
+index 000000000..ffb049104
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/delegation/Delegation.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.delegation;
++
++import java.time.LocalDate;
++
++/**
++ * The steward role delegated by a steward ({@code by}) to a user from a date to a date, inclusive, by the
++ * sheet's today: while today is inside the range the user acts as a steward.
++ */
++public record Delegation(long id, String sheetId, String user, String by, LocalDate from, LocalDate to) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/delegation/DelegationInput.java b/src/main/java/net/officefloor/hq/app/delegation/DelegationInput.java
+new file mode 100644
+index 000000000..058262616
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/delegation/DelegationInput.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.delegation;
++
++/** A delegation request, trimmed: the dates as typed (blank from: the sheet's today). */
++public record DelegationInput(String user, String from, String to) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/delegation/DelegationRepository.java b/src/main/java/net/officefloor/hq/app/delegation/DelegationRepository.java
+new file mode 100644
+index 000000000..dc5cf47ae
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/delegation/DelegationRepository.java
+@@ -0,0 +1,49 @@
++package net.officefloor.hq.app.delegation;
++
++import java.sql.Date;
++import java.util.List;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.jdbc.core.RowMapper;
++import org.springframework.stereotype.Repository;
++
++/** The delegations store, kept per sheet in the order they were made. */
++@Repository
++public class DelegationRepository {
++
++    private static final RowMapper<Delegation> ROW = (rs, n) -> new Delegation(rs.getLong("id"),
++            rs.getString("sheet_id"), rs.getString("user_name"), rs.getString("by_user"),
++            rs.getDate("from_date").toLocalDate(), rs.getDate("to_date").toLocalDate());
++
++    private final JdbcTemplate jdbc;
++
++    public DelegationRepository(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /** The sheet's delegations, in the order they were made. */
++    public List<Delegation> findAll(String sheetId) {
++        return jdbc.query("SELECT id, sheet_id, user_name, by_user, from_date, to_date FROM sheet_delegation"
++                + " WHERE sheet_id = ? ORDER BY id", ROW, sheetId);
++    }
++
++    /**
++     * The steward who delegated the steward role to the user for the sheet's today (the latest made, when
++     * more than one covers it), or null when none does.
++     */
++    public String delegatorOf(String sheetId, String user) {
++        List<String> found = jdbc.queryForList("SELECT d.by_user FROM sheet_delegation d JOIN sheet s ON s.id = d.sheet_id"
++                + " WHERE d.sheet_id = ? AND d.user_name = ? AND s.today BETWEEN d.from_date AND d.to_date"
++                + " ORDER BY d.id DESC", String.class, sheetId, user);
++        return found.isEmpty() ? null : found.get(0);
++    }
++
++    public Delegation save(Delegation delegation) {
++        jdbc.update("INSERT INTO sheet_delegation (sheet_id, user_name, by_user, from_date, to_date) VALUES (?, ?, ?, ?, ?)",
++                delegation.sheetId(), delegation.user(), delegation.by(),
++                Date.valueOf(delegation.from()), Date.valueOf(delegation.to()));
++        Long id = jdbc.queryForObject("SELECT MAX(id) FROM sheet_delegation WHERE sheet_id = ?", Long.class,
++                delegation.sheetId());
++        return new Delegation(id, delegation.sheetId(), delegation.user(), delegation.by(), delegation.from(),
++                delegation.to());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/delegation/DelegationRequest.java b/src/main/java/net/officefloor/hq/app/delegation/DelegationRequest.java
+new file mode 100644
+index 000000000..799721b9c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/delegation/DelegationRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.delegation;
++
++/** A delegation as the screen sends it: a user name, a from-date and a to-date (yyyy-MM-dd; blank from: today). */
++public record DelegationRequest(String user, String from, String to) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/delegation/DelegationResponse.java b/src/main/java/net/officefloor/hq/app/delegation/DelegationResponse.java
+new file mode 100644
+index 000000000..2db34ff25
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/delegation/DelegationResponse.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.delegation;
++
++/** A delegation, as the screen reads it. */
++public record DelegationResponse(long id, String user, String by, String from, String to) {
++    public static DelegationResponse from(Delegation d) {
++        return new DelegationResponse(d.id(), d.user(), d.by(), d.from().toString(), d.to().toString());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/delegation/DelegationsResponse.java b/src/main/java/net/officefloor/hq/app/delegation/DelegationsResponse.java
+new file mode 100644
+index 000000000..41d6f082a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/delegation/DelegationsResponse.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.delegation;
++
++import java.util.List;
++
++/** The delegations made on a sheet, in the order they were made. */
++public record DelegationsResponse(List<DelegationResponse> delegations) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/delegation/HandleInvalidDelegation.java b/src/main/java/net/officefloor/hq/app/delegation/HandleInvalidDelegation.java
+new file mode 100644
+index 000000000..8e7a08236
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/delegation/HandleInvalidDelegation.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.delegation;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleInvalidDelegation {
++    public void handle(@Parameter InvalidDelegationException ex,
++            ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.BAD_REQUEST));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/delegation/InvalidDelegationException.java b/src/main/java/net/officefloor/hq/app/delegation/InvalidDelegationException.java
+new file mode 100644
+index 000000000..42fbbb3ad
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/delegation/InvalidDelegationException.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.delegation;
++
++/** A delegation by anyone but a steward, with no user, or with a to-date before its from-date. */
++public class InvalidDelegationException extends Exception {
++    public InvalidDelegationException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/delegation/RespondWithDelegation.java b/src/main/java/net/officefloor/hq/app/delegation/RespondWithDelegation.java
+new file mode 100644
+index 000000000..4792f9328
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/delegation/RespondWithDelegation.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.delegation;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithDelegation {
++    public void respond(@Val Delegation delegation, ObjectResponse<DelegationResponse> response) {
++        response.send(DelegationResponse.from(delegation));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/delegation/RespondWithDelegations.java b/src/main/java/net/officefloor/hq/app/delegation/RespondWithDelegations.java
+new file mode 100644
+index 000000000..fa94aa8bc
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/delegation/RespondWithDelegations.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.delegation;
++
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithDelegations {
++    public void respond(@Val Sheet sheet, DelegationRepository repository,
++            ObjectResponse<DelegationsResponse> response) {
++        response.send(new DelegationsResponse(
++                repository.findAll(sheet.id()).stream().map(DelegationResponse::from).toList()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/delegation/SaveDelegation.java b/src/main/java/net/officefloor/hq/app/delegation/SaveDelegation.java
+new file mode 100644
+index 000000000..baaf3f887
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/delegation/SaveDelegation.java
+@@ -0,0 +1,38 @@
++package net.officefloor.hq.app.delegation;
++
++import jakarta.servlet.http.HttpServletRequest;
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.role.Role;
++import net.officefloor.hq.app.role.RoleRepository;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++/**
++ * Only a steward by their own role may delegate (not one acting as a steward by a delegation). A blank
++ * from-date is the sheet's today, a blank to-date the from-date; a to-date before the from-date is refused.
++ */
++public class SaveDelegation {
++    public void save(@Val DelegationInput input, @Val Sheet sheet, RoleRepository roles,
++            DelegationRepository repository, HttpServletRequest request, Out<Delegation> delegationOut)
++            throws InvalidDelegationException {
++        String by = Audit.user(request);
++        if (!Role.STEWARD.equals(roles.assignedRoleOf(sheet.id(), by))) {
++            throw new InvalidDelegationException("Only a steward may delegate the steward role");
++        }
++        LocalDate from = input.from().isEmpty() ? sheet.today() : date(input.from());
++        LocalDate to = input.to().isEmpty() ? from : date(input.to());
++        if (to.isBefore(from)) throw new InvalidDelegationException("A to-date is on or after the from-date");
++        delegationOut.set(repository.save(new Delegation(0, sheet.id(), input.user(), by, from, to)));
++    }
++
++    private static LocalDate date(String value) throws InvalidDelegationException {
++        try {
++            return LocalDate.parse(value);
++        } catch (DateTimeParseException e) {
++            throw new InvalidDelegationException("A date is yyyy-MM-dd");
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/delegation/ValidateDelegation.java b/src/main/java/net/officefloor/hq/app/delegation/ValidateDelegation.java
+new file mode 100644
+index 000000000..bb58788b1
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/delegation/ValidateDelegation.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.delegation;
++
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ValidateDelegation {
++    public void validate(@RequestBody DelegationRequest request, Out<DelegationInput> body)
++            throws InvalidDelegationException {
++        String user = request == null || request.user() == null ? "" : request.user().trim();
++        if (user.isEmpty()) throw new InvalidDelegationException("A user name is required");
++        String from = request.from() == null ? "" : request.from().trim();
++        String to = request.to() == null ? "" : request.to().trim();
++        body.set(new DelegationInput(user, from, to));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/role/RoleRepository.java b/src/main/java/net/officefloor/hq/app/role/RoleRepository.java
+index 5245f3b48..af66a7584 100644
+--- a/src/main/java/net/officefloor/hq/app/role/RoleRepository.java
++++ b/src/main/java/net/officefloor/hq/app/role/RoleRepository.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.role;
+ 
+ import java.util.List;
++import net.officefloor.hq.app.delegation.DelegationRepository;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.jdbc.core.RowMapper;
+ import org.springframework.stereotype.Repository;
+@@ -13,9 +14,11 @@ public class RoleRepository {
+             rs.getString("user_name"), rs.getString("role"));
+ 
+     private final JdbcTemplate jdbc;
++    private final DelegationRepository delegations;
+ 
+-    public RoleRepository(JdbcTemplate jdbc) {
++    public RoleRepository(JdbcTemplate jdbc, DelegationRepository delegations) {
+         this.jdbc = jdbc;
++        this.delegations = delegations;
+     }
+ 
+     /** The sheet's roles, by user name. */
+@@ -24,8 +27,17 @@ public class RoleRepository {
+                 + " ORDER BY user_name", ROW, sheetId);
+     }
+ 
+-    /** The user's role on the sheet: clerk when none was assigned. */
++    /**
++     * The role the user acts in on the sheet, in every rule: steward while the steward role is delegated to
++     * them for the sheet's today, otherwise the role assigned.
++     */
+     public String roleOf(String sheetId, String user) {
++        if (delegations.delegatorOf(sheetId, user) != null) return Role.STEWARD;
++        return assignedRoleOf(sheetId, user);
++    }
++
++    /** The user's own assigned role on the sheet, leaving out any delegation: clerk when none was assigned. */
++    public String assignedRoleOf(String sheetId, String user) {
+         List<String> found = jdbc.queryForList(
+                 "SELECT role FROM sheet_role WHERE sheet_id = ? AND user_name = ?", String.class, sheetId, user);
+         return found.isEmpty() ? Role.CLERK : found.get(0);
+diff --git a/src/main/resources/db/migration/V41__delegation.sql b/src/main/resources/db/migration/V41__delegation.sql
+new file mode 100644
+index 000000000..4d8994dd1
+--- /dev/null
++++ b/src/main/resources/db/migration/V41__delegation.sql
+@@ -0,0 +1,11 @@
++-- A steward's delegation of the steward role to a user for a from-date and a to-date, inclusive, by the
++-- sheet's today. The id keeps the order they were made in.
++CREATE TABLE sheet_delegation (
++    id BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id VARCHAR(200) NOT NULL REFERENCES sheet(id),
++    user_name VARCHAR(200) NOT NULL,
++    by_user VARCHAR(200) NOT NULL,
++    from_date DATE NOT NULL,
++    to_date DATE NOT NULL
++);
++CREATE INDEX sheet_delegation_sheet ON sheet_delegation(sheet_id, user_name, id);
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.delegation.InvalidDelegationException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.delegation.InvalidDelegationException.yml
+new file mode 100644
+index 000000000..6ff28abb8
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.delegation.InvalidDelegationException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.delegation.HandleInvalidDelegation
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/delegations.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/delegations.GET.yml
+new file mode 100644
+index 000000000..c608d6348
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/delegations.GET.yml
+@@ -0,0 +1,8 @@
++# The delegations of the steward role made on a sheet, in the order they were made.
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ readonly-transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.delegation.RespondWithDelegations
++  govern: [ readonly-transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/delegations.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/delegations.POST.yml
+new file mode 100644
+index 000000000..fcf7cb130
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/delegations.POST.yml
+@@ -0,0 +1,24 @@
++# A steward delegates the steward role to a user for a from-date and a to-date, inclusive.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: validate
++validate:
++  class: net.officefloor.hq.app.delegation.ValidateDelegation
++  next: load
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.delegation.SaveDelegation
++  govern: [ transaction ]
++  next: audit
++# Last before the response: every rule has passed and the change is saved.
++audit:
++  class: net.officefloor.hq.app.delegation.AuditDelegated
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.delegation.RespondWithDelegation
++  govern: [ transaction ]
