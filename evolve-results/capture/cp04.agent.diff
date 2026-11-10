@@ -1,0 +1,195 @@
+diff --git a/src/main/frontend/api/http.ts b/src/main/frontend/api/http.ts
+index 3aba447d2..b514c6e99 100644
+--- a/src/main/frontend/api/http.ts
++++ b/src/main/frontend/api/http.ts
+@@ -1,9 +1,16 @@
+ // The app's fetch surface. A non-2xx REJECTS, so useQuery/useMutation surface the failure instead
+ // of a silent `if (res.ok)` that leaves the UI showing stale data.
++// A non-2xx response, carrying its status so a caller can tell one refusal from another.
++export class HttpError extends Error {
++  constructor(message: string, readonly status: number) {
++    super(message);
++  }
++}
++
+ async function send<T>(path: string, init?: RequestInit): Promise<T> {
+   const res = await fetch(path, init);
+   if (!res.ok) {
+-    throw new Error(`${init?.method ?? 'GET'} ${path} -> ${res.status}`);
++    throw new HttpError(`${init?.method ?? 'GET'} ${path} -> ${res.status}`, res.status);
+   }
+   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
+ }
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index ad00d3d06..8699506c8 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -1,7 +1,7 @@
+ import { useState } from 'react';
+ import type { FormEvent } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+-import { postJson, putJson } from '../../api/http';
++import { HttpError, postJson, putJson } from '../../api/http';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { GRADES, peopleKey, usePeople } from './people';
+ import type { Grade, Person } from './people';
+@@ -35,7 +35,12 @@ function People({ sheetId }: { sheetId: string }) {
+       reset();
+       void queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+     },
+-    onError: () => setError('That person could not be saved.'),
++    onError: (e) =>
++      setError(
++        e instanceof HttpError && e.status === 409
++          ? 'That name is already in use.'
++          : 'That person could not be saved.',
++      ),
+   });
+ 
+   const submit = (e: FormEvent) => {
+diff --git a/src/main/java/net/officefloor/hq/app/person/CheckPersonName.java b/src/main/java/net/officefloor/hq/app/person/CheckPersonName.java
+new file mode 100644
+index 000000000..e3c094e1f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/CheckPersonName.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.variable.Val;
++
++/** Refuses a person whose name another person on the sheet already has. */
++public class CheckPersonName {
++    public void check(@Val Person person, PersonRepository repository)
++            throws DuplicatePersonNameException {
++        if (repository.nameTaken(person.getSheetId(), person.getName(), person.getId())) {
++            throw new DuplicatePersonNameException(person.getName());
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/DuplicatePersonNameException.java b/src/main/java/net/officefloor/hq/app/person/DuplicatePersonNameException.java
+new file mode 100644
+index 000000000..4f318d5b1
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/DuplicatePersonNameException.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.person;
++
++/** A name already in use by another person on the sheet (ignoring case and surrounding spaces). */
++public class DuplicatePersonNameException extends Exception {
++    public DuplicatePersonNameException(String name) {
++        super("The name " + name + " is already in use");
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/HandleDuplicatePersonName.java b/src/main/java/net/officefloor/hq/app/person/HandleDuplicatePersonName.java
+new file mode 100644
+index 000000000..4daeeaa84
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/HandleDuplicatePersonName.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleDuplicatePersonName {
++    public void handle(@Parameter DuplicatePersonNameException ex,
++            ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.CONFLICT));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index a4ed8e195..2078aeac6 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -35,6 +35,15 @@ public class PersonRepository {
+         return found.isEmpty() ? null : found.get(0);
+     }
+ 
++    /** Whether a person other than {@code exceptId} has this name on the sheet, ignoring case. */
++    public boolean nameTaken(String sheetId, String name, Long exceptId) {
++        Integer count = jdbc.queryForObject(
++                "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND LOWER(TRIM(name)) = LOWER(TRIM(?))"
++                        + " AND id <> ?",
++                Integer.class, sheetId, name, exceptId == null ? -1L : exceptId);
++        return count != null && count > 0;
++    }
++
+     /** Insert a new person (assigning its id) or update an existing one. */
+     public void save(Person person) {
+         if (person.getId() != null) {
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+index 4a994be93..e78be7c4a 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+@@ -9,8 +9,8 @@ public class ValidatePerson {
+ 
+     public void validate(@RequestBody PersonRequest request, Out<PersonRequest> body)
+             throws InvalidPersonException {
+-        String name = request == null || request.name() == null ? "" : request.name();
+-        if (name.trim().isEmpty()) throw new InvalidPersonException("A name is required");
++        String name = request == null || request.name() == null ? "" : request.name().trim();
++        if (name.isEmpty()) throw new InvalidPersonException("A name is required");
+         if (name.length() > 200) throw new InvalidPersonException("A name is at most 200 characters");
+         String grade = request.grade() == null ? "" : request.grade().trim();
+         if (!GRADES.contains(grade)) throw new InvalidPersonException("A grade is one of A, B or C");
+diff --git a/src/main/resources/db/migration/V4__person_name_trimmed.sql b/src/main/resources/db/migration/V4__person_name_trimmed.sql
+new file mode 100644
+index 000000000..42b6fb6ee
+--- /dev/null
++++ b/src/main/resources/db/migration/V4__person_name_trimmed.sql
+@@ -0,0 +1,3 @@
++-- A person's name is stored without surrounding spaces, and is unique on its sheet ignoring case
++-- (checked by the app before saving).
++UPDATE person SET name = TRIM(name);
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.person.DuplicatePersonNameException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.person.DuplicatePersonNameException.yml
+new file mode 100644
+index 000000000..8435b642c
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.person.DuplicatePersonNameException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.person.HandleDuplicatePersonName
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+index 01273642a..f468fcc29 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+@@ -1,4 +1,4 @@
+-# Add a person to a sheet. Validate first so a blank name or a bad grade is a 400.
++# Add a person to a sheet. Validate first so a blank name or a bad grade is a 400, and a name already in use is a 409.
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePerson
+   next: load
+@@ -9,6 +9,10 @@ load:
+ build:
+   class: net.officefloor.hq.app.person.BuildPerson
+   govern: [ transaction ]
++  next: check
++check:
++  class: net.officefloor.hq.app.person.CheckPersonName
++  govern: [ transaction ]
+   next: save
+ save:
+   class: net.officefloor.hq.app.person.SavePerson
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+index d763d660a..2ab9e25db 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+@@ -1,4 +1,5 @@
+ # Edit a person on a sheet. Validate first so a blank name or a bad grade is a 400, not a 404.
++# A name another person on the sheet already has is a 409.
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePerson
+   next: loadSheet
+@@ -13,6 +14,10 @@ load:
+ apply:
+   class: net.officefloor.hq.app.person.ApplyPerson
+   govern: [ transaction ]
++  next: check
++check:
++  class: net.officefloor.hq.app.person.CheckPersonName
++  govern: [ transaction ]
+   next: save
+ save:
+   class: net.officefloor.hq.app.person.SavePerson
