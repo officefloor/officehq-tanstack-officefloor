@@ -24,7 +24,7 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /**
- * Settles the selected claims in list order (people in the order they were added, each person's
+ * Settles the selected claims in list order (people by their position in the list, each person's
  * claims newest first) by exactly the rules of settling one claim, as the signed-in user. A claim
  * sent to PENDING counts as settled. It is all or nothing: if any selected claim cannot be settled (its
  * status does not allow it, dated inside a closed period, opened or last edited by this user, not on

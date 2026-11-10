@@ -18,7 +18,7 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /**
- * Opens the selected claims in list order (people in the order they were added, each person's
+ * Opens the selected claims in list order (people by their position in the list, each person's
  * claims newest first), numbering each as it is opened. A claim that cannot be opened (not a
  * draft, dated inside a closed period, not on the sheet, above the note threshold with an empty note) is refused and left as it is; every one is
  * refused when the permission matrix does not allow the user's role to open, or the sheet is

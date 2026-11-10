@@ -75,7 +75,7 @@ export const peopleQuery = (sheetId: string) => ({
     (await getJson<{ people: Person[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/people`)).people,
 });
 
-/** The sheet's people, in the order they were added. */
+/** The sheet's people, in list order: by their position, which the up and down buttons swap. */
 export function usePeople(sheetId: string) {
   return useQuery(peopleQuery(sheetId));
 }

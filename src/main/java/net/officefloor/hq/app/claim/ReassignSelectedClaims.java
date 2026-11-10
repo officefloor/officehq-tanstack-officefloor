@@ -19,7 +19,7 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /**
- * Moves the selected claims to one person in list order (people in the order they were added, each
+ * Moves the selected claims to one person in list order (people by their position in the list, each
  * person's claims newest first, as listed before any is moved) by the rules of moving one claim, as
  * the signed-in user. A claim that cannot be moved (a role the permission matrix does not allow, a
  * SETTLED or VOID claim, its due-by inside a closed period, dated after the person's retirement, the

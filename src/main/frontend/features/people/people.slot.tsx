@@ -17,7 +17,7 @@ type Fields = { name: string; grade: Grade; gradeFrom: string; terms: string; co
 const EMPTY: Fields = { name: '', grade: 'A', gradeFrom: '', terms: '', contact: '' };
 
 // The people on the sheet: a form that adds a person, or edits the one whose editor is open, and
-// the list of everyone in the order they were added (retired people only when "show retired" is on). The editor remembers the version of the person
+// the list of everyone in list order (new people at the end; up and down buttons move them) (retired people only when "show retired" is on). The editor remembers the version of the person
 // it loaded: if someone else has saved them since, the save is refused and the editor shows the
 // person as stored now (and their version, so saving again goes through).
 function People({ sheetId }: { sheetId: string }) {

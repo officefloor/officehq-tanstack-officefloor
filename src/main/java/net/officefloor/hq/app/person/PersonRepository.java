@@ -31,27 +31,31 @@ public class PersonRepository {
         return person;
     };
 
+    /** A position after everyone's on the sheet given by the one parameter: the end of its list. */
+    private static final String END_OF_LIST =
+            "(SELECT COALESCE(MAX(e.list_pos), 0) + 1 FROM person e WHERE e.sheet_id = ?)";
+
     private final JdbcTemplate jdbc;
 
     public PersonRepository(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 
-    /** The sheet's people, in the order they were added. */
+    /** The sheet's people, in list order (by their position). */
     public List<Person> findAll(String sheetId) {
         return findAll(sheetId, null);
     }
 
     /**
-     * The sheet's people, in the order they were added, as the list stood at the end of {@code day}
+     * The sheet's people, in list order (by their position), as the list stood at the end of {@code day}
      * (null: now): those merged into another later than it are still on it.
      */
     public List<Person> findAll(String sheetId, LocalDate day) {
         List<Person> people = day == null
-                ? jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND merged_into IS NULL ORDER BY id",
+                ? jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND merged_into IS NULL ORDER BY list_pos, id",
                         ROW, sheetId)
                 : jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND (merged_into IS NULL"
-                        + " OR merged_on > ?) ORDER BY id", ROW, sheetId, Date.valueOf(day));
+                        + " OR merged_on > ?) ORDER BY list_pos, id", ROW, sheetId, Date.valueOf(day));
         Map<Long, Person> byId = new HashMap<>();
         people.forEach((p) -> byId.put(p.getId(), p));
         jdbc.query("SELECT person_id, from_date, grade FROM person_grade WHERE sheet_id = ?",
@@ -91,6 +95,34 @@ public class PersonRepository {
                 Long.class, sheetId, id));
         loadAliases(person);
         return person;
+    }
+
+    /**
+     * Swap the person with the one next to them in the sheet's list: above ({@code up}) or below.
+     * Returns their new position, counting from 1; null when there is no one there (the top row
+     * cannot move up nor the bottom row down) and nothing is written.
+     */
+    public Integer move(Person person, boolean up) {
+        List<long[]> list = jdbc.query("SELECT id, list_pos FROM person WHERE sheet_id = ? AND merged_into IS NULL"
+                + " ORDER BY list_pos, id", (rs, n) -> new long[] { rs.getLong("id"), rs.getLong("list_pos") },
+                person.getSheetId());
+        int at = -1;
+        for (int i = 0; i < list.size(); i++) if (list.get(i)[0] == person.getId()) at = i;
+        int to = up ? at - 1 : at + 1;
+        if (at < 0 || to < 0 || to >= list.size()) return null;
+        long[] mine = list.get(at), theirs = list.get(to);
+        // Positions may tie (never in practice): give them distinct ones in the order listed.
+        long minePos = mine[1], theirsPos = theirs[1];
+        if (minePos == theirsPos) {
+            for (int i = 0; i < list.size(); i++) {
+                jdbc.update("UPDATE person SET list_pos = ? WHERE id = ?", i + 1L, list.get(i)[0]);
+            }
+            minePos = at + 1L;
+            theirsPos = to + 1L;
+        }
+        jdbc.update("UPDATE person SET list_pos = ? WHERE id = ?", theirsPos, mine[0]);
+        jdbc.update("UPDATE person SET list_pos = ? WHERE id = ?", minePos, theirs[0]);
+        return to + 1;
     }
 
     /** Record {@code alias} as one more of the person's aliases. */
@@ -158,8 +190,8 @@ public class PersonRepository {
         jdbc.update("UPDATE person_alias SET sheet_id = ?, added_on = (SELECT today FROM sheet WHERE id = ?)"
                 + " WHERE person_id = ?", toSheet, toSheet, id);
         jdbc.update("UPDATE person SET sheet_id = ?, statement_count = 0, stated_total = NULL, statement_date = NULL,"
-                + " retired_from = NULL, added_on = (SELECT today FROM sheet WHERE id = ?), version = version + 1"
-                + " WHERE id = ?", toSheet, toSheet, id);
+                + " retired_from = NULL, added_on = (SELECT today FROM sheet WHERE id = ?), list_pos = " + END_OF_LIST + ","
+                + " version = version + 1 WHERE id = ?", toSheet, toSheet, toSheet, id);
         Person moved = find(toSheet, id);
         gradeHistory(moved, null, moved.getGrade());
         termsHistory(moved);
@@ -367,8 +399,8 @@ public class PersonRepository {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade, terms, contact, added_on) VALUES (?, ?, ?, ?, ?,"
-                            + " (SELECT today FROM sheet WHERE id = ?))",
+                    "INSERT INTO person (sheet_id, name, grade, terms, contact, added_on, list_pos) VALUES (?, ?, ?, ?, ?,"
+                            + " (SELECT today FROM sheet WHERE id = ?), " + END_OF_LIST + ")",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, person.getSheetId());
             ps.setString(2, person.getName());
@@ -376,6 +408,7 @@ public class PersonRepository {
             ps.setObject(4, person.getTerms(), java.sql.Types.INTEGER);
             ps.setString(5, person.getContact());
             ps.setString(6, person.getSheetId());
+            ps.setString(7, person.getSheetId());
             return ps;
         }, keys);
         person.setId(keys.getKey().longValue());
