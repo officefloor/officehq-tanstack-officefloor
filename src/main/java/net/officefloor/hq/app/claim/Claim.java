@@ -11,14 +11,17 @@ public class Claim {
     private BigDecimal amount;
     private LocalDate date;
     private String note;
+    private ClaimStatus status;
 
-    public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note) {
+    public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
+            ClaimStatus status) {
         this.id = id;
         this.sheetId = sheetId;
         this.personId = personId;
         this.amount = amount;
         this.date = date;
         this.note = note;
+        this.status = status;
     }
 
     public Long getId() { return id; }
@@ -31,4 +34,11 @@ public class Claim {
     public void setDate(LocalDate date) { this.date = date; }
     public String getNote() { return note; }
     public void setNote(String note) { this.note = note; }
+    public ClaimStatus getStatus() { return status; }
+
+    /** Move to the next status, when the current one allows it. */
+    public void moveTo(ClaimStatus next) throws InvalidClaimStatusException {
+        if (!status.canMoveTo(next)) throw new InvalidClaimStatusException(status, next);
+        status = next;
+    }
 }

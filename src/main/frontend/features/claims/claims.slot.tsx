@@ -9,6 +9,13 @@ import { AMOUNT, claimsKey, sumAmounts, useClaims } from './claims';
 import type { Claim } from './claims';
 import { due, useGradeRate } from '../rates/rates';
 
+type Action = 'open' | 'settle' | 'void';
+const ACTIONS: { action: Action; label: string }[] = [
+  { action: 'open', label: 'Open' },
+  { action: 'settle', label: 'Settle' },
+  { action: 'void', label: 'Void' },
+];
+
 type Fields = { amount: string; date: string; note: string };
 const EMPTY: Fields = { amount: '', date: '', note: '' };
 
@@ -30,6 +37,8 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   const [fields, setFields] = useState<Fields>(EMPTY);
   const [editing, setEditing] = useState<string | null>(null);
   const [error, setError] = useState('');
+  // The claim whose last status change was refused: its error shows until its next action.
+  const [refused, setRefused] = useState<string | null>(null);
   const [user] = useUser();
   const pct = useGradeRate(sheetId, person.grade);
 
@@ -53,6 +62,22 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
     onError: () => setError('That claim could not be saved.'),
   });
 
+  const move = useMutation({
+    mutationFn: ({ id, action }: { id: string; action: Action }) =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/claims/${encodeURIComponent(id)}/${action}`,
+        {},
+        user,
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+    onError: (_e, { id }) => setRefused(id),
+  });
+
+  const act = (id: string, action: Action) => {
+    setRefused(null);
+    move.mutate({ id, action });
+  };
+
   const submit = (e: FormEvent) => {
     e.preventDefault();
     setError('');
@@ -74,6 +99,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   };
 
   const open = (c: Claim) => {
+    setRefused(null);
     setEditing(c.id);
     setFields({ amount: c.amount, date: c.date, note: c.note });
     setError('');
@@ -124,6 +150,17 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
               <span data-testid="claim-date">{c.date}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}
               <span data-testid="claim-due">{due(c.amount, pct)}</span>{' '}
+              <span data-testid="claim-status">{c.status}</span>{' '}
+              {ACTIONS.map(({ action, label }) => (
+                <button
+                  key={action}
+                  type="button"
+                  data-testid={`claim-${action}`}
+                  onClick={() => act(c.id, action)}
+                >
+                  {label}
+                </button>
+              ))}{' '}
               {editing === c.id ? (
                 <button type="button" data-testid="claim-cancel" onClick={reset}>
                   Cancel
@@ -132,6 +169,11 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
                 <button type="button" data-testid="claim-edit" onClick={() => open(c)}>
                   Edit
                 </button>
+              )}
+              {refused === c.id && (
+                <p role="alert" data-testid="claim-error">
+                  That status change is not allowed.
+                </p>
               )}
             </li>
           ))}
