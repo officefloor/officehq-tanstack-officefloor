@@ -173,16 +173,19 @@ export function trimmedSumDue(values: string[]): string {
 }
 
 /**
- * A claim's due: the one fixed when it was settled (its late charge frozen in), else the figure its
- * person's last statement bound it to (never while it is PENDING), else its amount at the rate in force on its date, at least
- * the sheet's `floor` in force on its date; an overdue claim's late charge added on top.
+ * A claim's due: the one fixed when it was settled (its late charge frozen in), else its live due:
+ * the greater of the sheet's `floor` in force on its date and its figure (the one its person's last
+ * statement bound it to, never while it is PENDING, else its amount at the rate in force on its date)
+ * plus the late charge an overdue claim gains on that figure. A correction takes no floor; n/a stays n/a.
  */
 export function claimDue(claim: Claim, pct: string | null, floor: Dated, late: Late): string {
   if (claim.due !== '') return claim.due;
-  const least = isCorrection(claim) ? null : valueOn(floor, claim.date);
-  const figure = isBound(claim) ? claim.statedDue : due(claim.amount, pct, least, roundsHalfUp(claim, late));
-  const charge = lateCharge(claim, figure, late);
-  return charge === 0n ? figure : showCents(hundredths(figure) + charge);
+  const figure = isBound(claim) ? claim.statedDue : due(claim.amount, pct, null, roundsHalfUp(claim, late));
+  if (figure === NA) return figure;
+  const total = hundredths(figure) + lateCharge(claim, figure, late);
+  if (isCorrection(claim)) return showCents(total);
+  const least = hundredths(valueOn(floor, claim.date));
+  return showCents(total < least ? least : total);
 }
 
 /**

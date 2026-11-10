@@ -15,9 +15,10 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * Settles the claim and fixes its due: its amount times the rate of its person's grade in force on its date, in force on the
- * claim's date, divided by 100 and rounded to two decimals as the claim rounds (by the sheet's policy date), at least the sheet's floor. With no such rate the due is
- * not fixed. A claim a statement bound is settled at its bound figure. The late charge it has gained
- * by the sheet's today is frozen in on top. The user who opened the claim may not settle it.
+ * claim's date, divided by 100 and rounded to two decimals as the claim rounds (by the sheet's policy date), or
+ * for a claim a statement bound its bound figure; with the late charge it has gained on that figure
+ * by the sheet's today frozen in on top, and at least the floor in force on its date (applied last).
+ * With no such rate the due is not fixed. The user who opened the claim may not settle it.
  * When a clerk (any user not made a steward) settles a claim whose due is above the sheet's clerk
  * limit, it goes to PENDING instead, its due left live until a steward approves or rejects it; a
  * due of n/a is within any limit. Before the clerk limit is considered, a claim whose due is above
@@ -53,7 +54,7 @@ public class SettleClaim {
             throw new InvalidClaimStatusException(claim.getStatus(), ClaimStatus.SETTLED);
         }
         if (user.equals(claim.getOpenedBy())) throw new SelfSettleException(user);
-        BigDecimal due = figure == null ? null : figure.add(late);
+        BigDecimal due = ClaimFigure.floored(claim, figure, late, settings);
         if (settings.needsProof(due, claim.getDate(), claim.getProofs())) throw new InvalidClaimStatusException(ProofRequired.MESSAGE);
         if (!settings.withinClerkLimit(due, sheet.today()) && Role.CLERK.equals(role)) {
             claim.moveTo(ClaimStatus.PENDING);

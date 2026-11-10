@@ -31,8 +31,8 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
 
     /**
      * The sheet's figures now. A person's claimed is the amounts of their claims that count (OPEN
-     * and SETTLED, but not an unbound OPEN one dated within one of their holds) added up; their due-total the figures of those claims added up, skipping n/a (a live figure is at least the sheet's floor; an overdue one gains its late
-     * charge on {@code today}), and
+     * and SETTLED, but not an unbound OPEN one dated within one of their holds) added up; their due-total the figures of those claims added up, skipping n/a (a live due is the greater of the floor on its date and its rate figure plus the late
+     * charge it gains on {@code today}), and
      * n/a when their grade in force today has no rate today and no claim that counts keeps a fixed
      * figure or has one under the grade in force on its date when that is another grade, or
      * has one dated on or before today (under a rate that has since ended), held to the sheet's cap. Each claim

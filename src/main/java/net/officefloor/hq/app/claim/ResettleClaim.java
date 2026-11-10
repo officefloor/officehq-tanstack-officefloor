@@ -16,8 +16,8 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * Re-settles a SETTLED claim: its due is fixed again at the figure it would have today as an OPEN
- * claim bound by no statement: its live figure (today's rates, grades and floor) with the late
- * charge it would have gained by the sheet's today. Only a steward may re-settle a claim.
+ * claim bound by no statement: its live rate figure (today's rates and grades) with the late
+ * charge it would have gained on it by the sheet's today, then at least the floor on its date. Only a steward may re-settle a claim.
  */
 public class ResettleClaim {
     public void apply(@Val Sheet sheet, @Val Claim claim, PersonRepository people, RateRepository rates,
@@ -34,8 +34,8 @@ public class ResettleClaim {
         Settings settings = settingsStore.find(sheet.id());
         BigDecimal figure = ClaimFigure.live(claim, rates.findAll(sheet.id()), person.gradeOn(claim.getDate()),
                 settings, sheet.today());
-        BigDecimal due = figure == null ? null
-                : figure.add(ClaimFigure.lateAsOpen(claim, figure, settings, sheet.today()));
+        BigDecimal due = ClaimFigure.floored(claim, figure,
+                ClaimFigure.lateAsOpen(claim, figure, settings, sheet.today()), settings);
         BigDecimal old = claim.getSettledDue();
         claim.setSettledDue(due);
         resettlement.set(new Resettlement(old, due));
