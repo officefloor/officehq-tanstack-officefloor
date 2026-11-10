@@ -15,7 +15,8 @@ type Fields = { name: string; from: string; to: string };
 const EMPTY: Fields = { name: '', from: '', to: '' };
 
 // The sheet's periods: a form that adds one (a from-date left blank is the sheet's today), and each
-// period with its due-total: the due of the claims that count whose date falls in it.
+// period with its due-total: the due of the claims that count whose date falls in it, fixed when the
+// period is closed. A closed period's claims cannot be changed.
 function Periods({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const periods = usePeriods(sheetId);
@@ -26,7 +27,27 @@ function Periods({ sheetId }: { sheetId: string }) {
   const [error, setError] = useState('');
   const [user] = useUser();
 
+  const [refused, setRefused] = useState('');
+
   const once = useOnce();
+  const close = useMutation({
+    mutationFn: (name: string) =>
+      postJson<Period>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/periods/${encodeURIComponent(name)}/close`,
+        {},
+        user,
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
+    },
+    onError: (_e, name) => setRefused(name),
+  });
+
+  const closePeriod = (name: string) => {
+    setRefused('');
+    once((done) => close.mutate(name, { onSettled: done }));
+  };
+
   const save = useMutation({
     mutationFn: (body: Fields) =>
       postJson<Period>(`/api/sheets/${encodeURIComponent(sheetId)}/periods`, body, user),
@@ -113,6 +134,8 @@ function Periods({ sheetId }: { sheetId: string }) {
             <th>From</th>
             <th>To</th>
             <th>Due</th>
+            <th>Closed</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -121,7 +144,23 @@ function Periods({ sheetId }: { sheetId: string }) {
               <td data-testid="period-name">{p.name}</td>
               <td data-testid="period-from">{p.from}</td>
               <td data-testid="period-to">{p.to}</td>
-              <td data-testid="period-due-total">{dueTotal(p)}</td>
+              <td data-testid="period-due-total">{p.closed ? p.closedTotal : dueTotal(p)}</td>
+              <td data-testid="period-closed">{p.closed ? 'yes' : 'no'}</td>
+              <td>
+                <button
+                  type="button"
+                  data-testid="period-close"
+                  disabled={close.isPending}
+                  onClick={() => closePeriod(p.name)}
+                >
+                  Close
+                </button>
+                {refused === p.name && (
+                  <p role="alert" data-testid="period-error">
+                    That period could not be closed.
+                  </p>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>

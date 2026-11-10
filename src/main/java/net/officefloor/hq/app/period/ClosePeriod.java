@@ -1,0 +1,42 @@
+package net.officefloor.hq.app.period;
+
+import java.math.BigDecimal;
+import java.util.List;
+import net.officefloor.hq.app.claim.Claim;
+import net.officefloor.hq.app.claim.ClaimFigure;
+import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.claim.ClaimStatus;
+import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.person.PersonRepository;
+import net.officefloor.hq.app.rate.Rate;
+import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.sheet.Sheet;
+import net.officefloor.plugin.variable.Out;
+import net.officefloor.plugin.variable.Val;
+
+/**
+ * Closes the period, fixing its due-total at this moment: the figures of the claims that count (OPEN
+ * and SETTLED) dated inside it, added up, skipping n/a. A period already closed is refused.
+ */
+public class ClosePeriod {
+    public void close(@Val Sheet sheet, @Val Period period, PeriodRepository periods, PersonRepository people,
+            ClaimRepository claims, RateRepository rates, Out<Period> closedOut) throws InvalidPeriodException {
+        if (period.closed()) throw new InvalidPeriodException("Period " + period.name() + " is already closed");
+        List<Rate> all = rates.findAll(sheet.id());
+        List<Claim> sheetClaims = claims.findAll(sheet.id());
+        BigDecimal total = BigDecimal.ZERO.setScale(2);
+        for (Person person : people.findAll(sheet.id())) {
+            for (Claim claim : sheetClaims) {
+                if (claim.getPersonId() != person.getId() || !period.contains(claim.getDate())) continue;
+                if (claim.getStatus() != ClaimStatus.OPEN && claim.getStatus() != ClaimStatus.SETTLED) continue;
+                BigDecimal figure = ClaimFigure.of(claim, all, person.getGrade());
+                if (figure != null) total = total.add(figure);
+            }
+        }
+        Period closed = period.close(total);
+        if (!periods.markClosed(closed)) {
+            throw new InvalidPeriodException("Period " + period.name() + " is already closed");
+        }
+        closedOut.set(closed);
+    }
+}

@@ -1,8 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 
-/** A period: its name (unique on the sheet) and its from and to dates (yyyy-MM-dd), inclusive. */
-export type Period = { name: string; from: string; to: string };
+/**
+ * A period: its name (unique on the sheet), its from and to dates (yyyy-MM-dd), inclusive, whether
+ * it is closed, and the due-total fixed when it was closed ('' while open).
+ */
+export type Period = { name: string; from: string; to: string; closed: boolean; closedTotal: string };
 
 export const periodsKey = (sheetId: string) => ['sheet', sheetId, 'periods'] as const;
 
