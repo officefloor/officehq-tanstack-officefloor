@@ -30,6 +30,15 @@ public class SaveSettings {
                 throw new BadRequestException("the parent sheet has this sheet as an ancestor");
             }
         }
+        java.util.Set<String> named = new java.util.LinkedHashSet<>();
+        named.addAll(input.gradeClerkLimit().keySet());
+        named.addAll(input.gradeTerms().keySet());
+        named.addAll(input.gradeGrace().keySet());
+        named.addAll(input.gradeProofThreshold().keySet());
+        if (input.setsDefaultGrade() && input.defaultGrade() != null) named.add(input.defaultGrade());
+        for (String grade : named) {
+            repository.requireGrade(id, grade);
+        }
         LocalDate today = sheets.today(id);
         Rollup.Snapshot before = rollup.take(id);
         String prefix = "SETTING_CHANGED sheet=" + id + " by=" + by + " key=";

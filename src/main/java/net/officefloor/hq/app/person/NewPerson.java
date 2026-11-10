@@ -2,7 +2,6 @@ package net.officefloor.hq.app.person;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
-import java.util.Set;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.BadRequestException;
@@ -11,7 +10,6 @@ import org.springframework.dao.DuplicateKeyException;
 
 /** Adding a person as the person form does: shared by the form and the people import. */
 public final class NewPerson {
-    private static final Set<String> GRADES = Set.of("A", "B", "C");
     private static final Pattern TERMS = Pattern.compile("\\d{1,4}");
 
     private NewPerson() {
@@ -24,8 +22,8 @@ public final class NewPerson {
         if (name.isEmpty()) {
             throw new BadRequestException("name is required");
         }
-        if (!GRADES.contains(grade)) {
-            throw new BadRequestException("grade must be A, B or C");
+        if (!net.officefloor.hq.app.settings.SettingsRepository.GRADE_CODE.matcher(grade).matches()) {
+            throw new BadRequestException("grade must be one to three capital letters");
         }
         String from = request.gradeFrom() == null ? "" : request.gradeFrom().trim();
         if (!from.isEmpty()) {
@@ -53,9 +51,10 @@ public final class NewPerson {
                 net.officefloor.hq.app.claim.Claim.tags(request.tags()), termsFrom);
     }
 
-    /** Refuse choosing a grade retired on the sheet. */
+    /** Refuse choosing a grade that is not one of the sheet's grades, or is retired on it. */
     public static void checkNotRetired(net.officefloor.hq.app.settings.SettingsRepository settings, String id, String grade)
             throws BadRequestException {
+        settings.requireGrade(id, grade);
         if (settings.retired(id, grade)) {
             throw new BadRequestException("grade " + grade + " is retired");
         }

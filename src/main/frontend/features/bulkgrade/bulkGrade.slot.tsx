@@ -5,12 +5,13 @@ import { useSingleFlight } from '../../query/useSingleFlight';
 import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { claimsKey } from '../claims/useClaims';
-import { GRADES, peopleKey } from '../people/usePeople';
+import { peopleKey, useGrades } from '../people/usePeople';
 import { usePersonSelection } from './usePersonSelection';
 
 /** A tick on the person's row that selects them for a bulk grade. */
 function PersonSelect({ sheetId, personId }: { sheetId: string; personId: number }) {
   const selection = usePersonSelection(sheetId);
+  const grades = useGrades(sheetId);
   return (
     <td>
       <input
@@ -28,6 +29,7 @@ function PersonSelect({ sheetId, personId }: { sheetId: string; personId: number
  *  changed (gone while it runs). */
 function BulkGrade({ sheetId }: { sheetId: string }) {
   const selection = usePersonSelection(sheetId);
+  const grades = useGrades(sheetId);
   const queryClient = useQueryClient();
   const submitOnce = useSingleFlight();
   const [grade, setGrade] = useState<string>('A');
@@ -55,7 +57,7 @@ function BulkGrade({ sheetId }: { sheetId: string }) {
             bulk.reset();
           }}
         >
-          {GRADES.map((g) => (
+          {grades.map((g) => (
             <option key={g} value={g}>
               {g}
             </option>

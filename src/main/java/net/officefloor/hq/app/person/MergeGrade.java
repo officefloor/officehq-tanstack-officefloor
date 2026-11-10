@@ -1,7 +1,6 @@
 package net.officefloor.hq.app.person;
 
 import java.time.LocalDate;
-import java.util.Set;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.BadRequestException;
 import net.officefloor.hq.app.CurrentUser;
@@ -20,7 +19,6 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  lines for whatever moved since before it. Merging into a retired grade, or on an
  *  archived sheet, is refused. */
 public class MergeGrade {
-    private static final Set<String> GRADES = Set.of("A", "B", "C");
 
     public void merge(@PathVariable("sheetId") String sheetId, @RequestBody GradeMergeRequest request,
             ServerHttpConnection connection, PersonRepository repository, SheetRepository sheets, Audit audit,
@@ -29,8 +27,8 @@ public class MergeGrade {
         String id = sheetId == null ? "" : sheetId.trim();
         String from = request == null || request.from() == null ? "" : request.from().trim();
         String into = request == null || request.into() == null ? "" : request.into().trim();
-        if (!GRADES.contains(from) || !GRADES.contains(into)) {
-            throw new BadRequestException("grades must be A, B or C");
+        if (!settings.gradeExists(id, from) || !settings.gradeExists(id, into)) {
+            throw new BadRequestException("grades must be grades of the sheet");
         }
         if (from.equals(into)) {
             throw new BadRequestException("a grade cannot be merged into itself");

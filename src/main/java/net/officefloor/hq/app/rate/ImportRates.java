@@ -13,11 +13,15 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class ImportRates {
     public void save(@PathVariable("sheetId") String sheetId, @Val RateImportInput input,
             ServerHttpConnection connection, RateRepository repository, Audit audit, Rollup rollup,
-            Out<RateImportResult> result) throws BadRequestException {
+            Out<RateImportResult> result, net.officefloor.hq.app.settings.SettingsRepository settings)
+            throws BadRequestException {
         String by = CurrentUser.require(connection);
         String id = sheetId == null ? "" : sheetId.trim();
         if (!repository.sheetExists(id)) {
             throw new BadRequestException("no such sheet");
+        }
+        for (RateInput rate : input.rates()) {
+            settings.requireGrade(id, rate.grade());
         }
         for (RateInput rate : input.rates()) {
             SaveRate.set(id, by, rate, repository, audit, rollup);

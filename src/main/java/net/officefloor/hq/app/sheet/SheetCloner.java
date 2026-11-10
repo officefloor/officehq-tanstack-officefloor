@@ -63,6 +63,8 @@ public class SheetCloner {
                             local(rs.getDate("to_date")), rs.getObject("after_seq", Long.class));
                 }, to);
         jdbc.update("INSERT INTO holiday (sheet_id, holiday_date) SELECT ?, holiday_date FROM holiday WHERE sheet_id = ?", to, from);
+        jdbc.update("INSERT INTO sheet_grade (sheet_id, grade) SELECT ?, grade FROM sheet_grade WHERE sheet_id = ? ORDER BY id",
+                to, from);
         jdbc.update("INSERT INTO retired_grade (sheet_id, grade) SELECT ?, grade FROM retired_grade WHERE sheet_id = ?", to, from);
         jdbc.update("INSERT INTO void_reason (sheet_id, position, reason) SELECT ?, position, reason FROM void_reason"
                 + " WHERE sheet_id = ?", to, from);

@@ -14,7 +14,7 @@ package net.officefloor.hq.app.settings;
  *  {@code escalateAfter} is the escalation gap in days, blank meaning off (not dated).
  *  {@code reviewSla} is the review SLA in days, blank meaning none (not dated).
  *  {@code proofKinds} is the proof kinds, a comma separated list of receipt and photo, blank meaning none (not dated).
- *  {@code defaultGrade} is the default grade, A, B or C, blank meaning A (not dated).
+ *  {@code defaultGrade} is the default grade, one of the sheet's grades, blank meaning A (not dated).
  *  {@code scoreMid} and {@code scoreHigh} are the score thresholds, whole numbers, blank meaning none (not dated).
  *  {@code scoreLog} is the score log switch, on or blank meaning off (not dated).
  *  {@code gradeClerkLimit} is each grade's clerk limit given, by grade (dated, from-date key clerk-limit-<grade>), blank

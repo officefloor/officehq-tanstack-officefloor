@@ -4,7 +4,7 @@ import { postJson } from '../../api/http';
 import { useSingleFlight } from '../../query/useSingleFlight';
 import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
-import { GRADES } from '../people/usePeople';
+import { useGrades } from '../people/usePeople';
 import { useSheetToday } from '../today/useSheetToday';
 import { useDueTotals, useExcess, useSettledOpenTotals } from './useDueTotals';
 import { useRatePreview } from './useRatePreview';
@@ -17,6 +17,7 @@ import { Col } from '../columns/useColumns';
  *  (blank is no end), the rates set, and the rate in
  *  force on the sheet's today for every grade ('n/a' when none is). */
 function Rates({ sheetId }: { sheetId: string }) {
+  const grades = useGrades(sheetId);
   const fig = useFigure();
   const rates = useRates(sheetId);
   const today = useSheetToday(sheetId);
@@ -60,7 +61,7 @@ function Rates({ sheetId }: { sheetId: string }) {
               save.reset();
             }}
           >
-            {GRADES.map((g) => (
+            {grades.map((g) => (
               <option key={g} value={g}>
                 {g}
               </option>
@@ -134,7 +135,7 @@ function Rates({ sheetId }: { sheetId: string }) {
       </table>
       <p>
         Current rates:{' '}
-        {GRADES.map((g) => (
+        {grades.map((g) => (
           <span key={g}>
             {g} <strong data-testid={`rate-current-${g}`}>{fig(rateFor(rates.data, g, today.data?.today) ?? 'n/a')}</strong>{' '}
           </span>
@@ -151,6 +152,7 @@ function Rates({ sheetId }: { sheetId: string }) {
 /** The rate calendar: for every grade and each month of the sheet's today's calendar year, the rate in force
  *  on the first day of that month ('n/a' when none is). */
 function RateCalendar({ sheetId }: { sheetId: string }) {
+  const grades = useGrades(sheetId);
   const fig = useFigure();
   const rates = useRates(sheetId);
   const year = useSheetToday(sheetId).data?.today?.slice(0, 4);
@@ -167,7 +169,7 @@ function RateCalendar({ sheetId }: { sheetId: string }) {
         </tr>
       </thead>
       <tbody>
-        {GRADES.map((g) => (
+        {grades.map((g) => (
           <tr key={g}>
             <td>{g}</td>
             {months.map((m) => (
@@ -234,6 +236,7 @@ function ImportRates({ sheetId }: { sheetId: string }) {
 /** A preview of a candidate rate for a grade (see `useRatePreview`): how many claims would show a different
  *  due and the sum of the differences. Nothing is saved. The result is cleared when the form changes. */
 function RatePreview({ sheetId }: { sheetId: string }) {
+  const grades = useGrades(sheetId);
   const fig = useFigure();
   const preview = useRatePreview(sheetId);
   const [grade, setGrade] = useState<string>('A');
@@ -269,7 +272,7 @@ function RatePreview({ sheetId }: { sheetId: string }) {
             clear();
           }}
         >
-          {GRADES.map((g) => (
+          {grades.map((g) => (
             <option key={g} value={g}>
               {g}
             </option>

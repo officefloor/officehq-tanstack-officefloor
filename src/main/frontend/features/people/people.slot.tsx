@@ -9,7 +9,7 @@ import { useDueTotals } from '../rates/useDueTotals';
 import { hundredths } from '../rates/useRates';
 import { useShowRetired } from '../retire/useShowRetired';
 import { asString, useSearchParam } from '../../url/useSearchParam';
-import { GRADES, fetchPeople, peopleKey, shownName, usePeople, type Person } from './usePeople';
+import { fetchPeople, peopleKey, shownName, useGrades, usePeople, type Person } from './usePeople';
 import { Col } from '../columns/useColumns';
 import { useVisiblePeople } from './useVisiblePeople';
 
@@ -65,6 +65,7 @@ function sortPeople(people: Person[], by: SortKey, dueTotals: Map<number, string
 }
 
 function People({ sheetId, user }: { sheetId: string; user: string }) {
+  const grades = useGrades(sheetId);
   const people = usePeople(sheetId);
   const visible = useVisiblePeople(sheetId, user, people.data);
   // the people added on this screen since the sheet was loaded: listed even for a restricted user
@@ -221,7 +222,7 @@ function People({ sheetId, user }: { sheetId: string; user: string }) {
               save.reset();
             }}
           >
-            {GRADES.map((g) => (
+            {grades.map((g) => (
               <option key={g} value={g}>
                 {g}
               </option>

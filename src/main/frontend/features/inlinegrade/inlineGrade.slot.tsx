@@ -3,13 +3,14 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
 import { claimsKey } from '../claims/useClaims';
-import { GRADES, peopleKey, usePeople, type Person } from '../people/usePeople';
+import { peopleKey, useGrades, usePeople, type Person } from '../people/usePeople';
 import { usePersonRowAction } from '../people/usePersonRowAction';
 
 /** A grade select on the person's row (showing their grade until another is chosen) and a button that
  *  records the chosen grade from the sheet's today, exactly as the person form would. */
 function PersonInlineGrade({ sheetId, personId }: { sheetId: string; personId: number }) {
   const people = usePeople(sheetId);
+  const grades = useGrades(sheetId);
   const queryClient = useQueryClient();
   const p = people.data?.find((x) => x.id === personId);
   const [chosen, setChosen] = useState<string | null>(null);
@@ -38,7 +39,7 @@ function PersonInlineGrade({ sheetId, personId }: { sheetId: string; personId: n
           save.reset();
         }}
       >
-        {GRADES.map((g) => (
+        {grades.map((g) => (
           <option key={g} value={g}>
             {g}
           </option>

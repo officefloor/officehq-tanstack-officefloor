@@ -2,7 +2,7 @@ package net.officefloor.hq.app.person;
 
 import java.util.List;
 
-/** A person on a sheet: the id the store assigned, their name and the grade (A, B or C) in force on
+/** A person on a sheet: the id the store assigned, their name and the grade (one of the sheet's grades) in force on
  *  the sheet's today, with every grade they have been given (oldest first), and the
  *  version of these values (up by one on each save), and their statements: how many have been taken,
  *  and the last one's due-total and date (both null before the first), and the date they are retired

@@ -3,17 +3,15 @@ package net.officefloor.hq.app.rate;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
-import java.util.Set;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.BadRequestException;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
-/** Bind the rate form: the grade must be A, B or C; the percent is required, 0.00 or more with up
+/** Bind the rate form: the grade must be a grade code (one of the sheet's grades, checked when saved); the percent is required, 0.00 or more with up
  *  to two decimals (below 100000); a from-date is yyyy-mm-dd, and blank means from the beginning of time; a to-date is yyyy-mm-dd, not before the from-date, and blank means
  *  no end. */
 public class ValidateRate {
-    private static final Set<String> GRADES = Set.of("A", "B", "C");
     private static final Pattern PCT = Pattern.compile("\\d{1,5}(\\.\\d{1,2})?|\\.\\d{1,2}");
 
     public void validate(@RequestBody RateRequest request, Out<RateInput> rate) throws BadRequestException {
@@ -26,8 +24,8 @@ public class ValidateRate {
         String pct = request == null || request.pct() == null ? "" : request.pct().trim();
         String from = request == null || request.from() == null ? "" : request.from().trim();
         String to = request == null || request.to() == null ? "" : request.to().trim();
-        if (!GRADES.contains(grade)) {
-            throw new BadRequestException("grade must be A, B or C");
+        if (!net.officefloor.hq.app.settings.SettingsRepository.GRADE_CODE.matcher(grade).matches()) {
+            throw new BadRequestException("grade must be one to three capital letters");
         }
         if (pct.isEmpty()) {
             throw new BadRequestException("rate is required");

@@ -1,7 +1,7 @@
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useActive } from '../active/useActive';
 import { useClaims } from '../claims/useClaims';
-import { GRADES, usePeople } from '../people/usePeople';
+import { useGrades, usePeople } from '../people/usePeople';
 import { usePeriodDueTotals } from '../periods/usePeriodDueTotals';
 import { usePeriods } from '../periods/usePeriods';
 import { useSettings } from '../settings/useSettings';
@@ -23,6 +23,7 @@ function Summary({ sheetId }: { sheetId: string }) {
   const periodTotals = usePeriodDueTotals(sheetId);
   const activeById = useActive(sheetId);
   const voidReasons = useSettings(sheetId).data?.voidReasons ?? [];
+  const grades = useGrades(sheetId);
   const current = (people.data ?? []).filter((p) => !p.retiredFrom);
   const byFrom = [...(periods.data ?? [])].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
   const changes = new Map<string, string>();
@@ -43,7 +44,7 @@ function Summary({ sheetId }: { sheetId: string }) {
           </tr>
         </thead>
         <tbody>
-          {GRADES.map((g) => {
+          {grades.map((g) => {
             const onGrade = current.filter((p) => p.grade === g);
             return (
               <tr key={g}>

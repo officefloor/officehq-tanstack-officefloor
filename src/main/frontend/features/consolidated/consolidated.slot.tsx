@@ -4,7 +4,7 @@ import { getJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useOverdue } from '../overdue/useOverdue';
 import { useClaims } from '../claims/useClaims';
-import { type Alias, GRADES, peopleKey, type Person, usePeople } from '../people/usePeople';
+import { type Alias, peopleKey, useGrades, type Person, usePeople } from '../people/usePeople';
 import { useDueTotals } from '../rates/useDueTotals';
 import { hundredths, money, sumDues, trimmedSum } from '../rates/useRates';
 import { countWithStatus, STATUSES } from '../summary/statusCounts';
@@ -53,7 +53,7 @@ function countPeople(sheets: string[]): number {
 }
 
 /** Works out one sheet's figures with the same hooks its header uses, and hands them up; shows nothing. */
-function SheetFigures({ sheetId, onFigures }: { sheetId: string; onFigures: (id: string, f: Figures) => void }) {
+function SheetFigures({ sheetId, grades: shownGrades, onFigures }: { sheetId: string; grades: readonly string[]; onFigures: (id: string, f: Figures) => void }) {
   const people = usePeopleNames(sheetId).data ?? '';
   const due = [...useDueTotals(sheetId).values()].join(',');
   const overdue = [...useOverdue(sheetId).values()].map((f) => f.total).join(',');
@@ -61,7 +61,7 @@ function SheetFigures({ sheetId, onFigures }: { sheetId: string; onFigures: (id:
   const current = (usePeople(sheetId).data ?? []).filter((p) => !p.retiredFrom);
   const claims = useClaims(sheetId).data;
   // Joined into strings so the effect below only fires when a figure changes.
-  const grades = GRADES.map((g) =>
+  const grades = shownGrades.map((g) =>
     sumDues(current.filter((p) => p.grade === g).map((p) => dueTotals.get(p.id) ?? 'n/a'))).join(',');
   const statuses = STATUSES.map((s) => countWithStatus(claims, s)).join(',');
   useEffect(
@@ -79,6 +79,7 @@ function SheetFigures({ sheetId, onFigures }: { sheetId: string; onFigures: (id:
  *  set. A sheet with no children shows its own. */
 function Consolidated({ sheetId }: { sheetId: string }) {
   const fig = useFigure();
+  const grades = useGrades(sheetId);
   const descendants = useDescendants(sheetId);
   const [figures, setFigures] = useState<Record<string, Figures>>({});
   const [onFigures] = useState(() => (id: string, f: Figures) => setFigures((all) => ({ ...all, [id]: f })));
@@ -87,17 +88,17 @@ function Consolidated({ sheetId }: { sheetId: string }) {
   const sum = (pick: (f: Figures) => string) => money(shown.reduce((s, f) => s + hundredths(pick(f)), 0n));
   const trimmed = (pick: (f: Figures) => string) =>
     trimmedSum(shown.flatMap((f) => (pick(f) === '' ? [] : pick(f).split(','))));
-  const gradeDue = (i: number) => sum((f) => f.grades.split(',')[i]);
+  const gradeDue = (i: number) => sum((f) => f.grades.split(',')[i] ?? '0.00');
   const statusCount = (i: number) => shown.reduce((n, f) => n + Number(f.statuses.split(',')[i]), 0);
   return (
     <p data-testid="consolidated">
       {sheets.map((id) => (
-        <SheetFigures key={id} sheetId={id} onFigures={onFigures} />
+        <SheetFigures key={id} sheetId={id} grades={grades} onFigures={onFigures} />
       ))}
       Consolidated: people <strong data-testid="consolidated-people-count">{countPeople(shown.map((f) => f.people))}</strong>
       {' '}· due total <strong data-testid="consolidated-due-total">{fig(trimmed((f) => f.due))}</strong>
       {' '}· overdue total <strong data-testid="consolidated-overdue-total">{fig(trimmed((f) => f.overdue))}</strong>
-      {GRADES.map((g, i) => (
+      {grades.map((g, i) => (
         <span key={g}>
           {' '}· grade {g} due total <strong data-testid={`consolidated-grade-${g}-due-total`}>{fig(gradeDue(i))}</strong>
         </span>

@@ -5,7 +5,7 @@ import { useSingleFlight } from '../../query/useSingleFlight';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useSheetToday } from '../today/useSheetToday';
 import { claimsKey } from '../claims/useClaims';
-import { peopleKey } from '../people/usePeople';
+import { peopleKey, useGrades } from '../people/usePeople';
 import { poolsKey } from '../pools/usePools';
 import { ratesKey } from '../rates/useRates';
 import { settingOn, settingsKey, useSettings, type Settings } from './useSettings';
@@ -40,9 +40,6 @@ import { useFigure } from '../locale/useLocale';
  *  in, even when left blank); the others stay as they are. A setting with a figure (the clerk limit, the
  *  floor, the terms, each grade's terms, the late percent, the cap, the proof threshold, the note threshold and the rounding mode) is saved from its from-date, blank
  *  meaning the sheet's today; each shows the value in force on the sheet's today. */
-/** The grades a person can have, each of which can have its own terms. */
-const GRADES = ['A', 'B', 'C'];
-
 /** The actions the permission matrix covers. */
 const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'];
 
@@ -67,6 +64,8 @@ function FromInput({ settingKey, from, setFrom, onChange }: { settingKey: string
 }
 
 function SettingsPanel({ sheetId }: { sheetId: string }) {
+  // The grades a person can have, each of which can have its own terms.
+  const grades = useGrades(sheetId);
   const fig = useFigure();
   const settings = useSettings(sheetId);
   const queryClient = useQueryClient();
@@ -234,7 +233,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           />
         </label>{' '}
         <FromInput settingKey="clerk-limit" from={from} setFrom={setFrom} onChange={() => save.reset()} />{' '}
-        {GRADES.map((g) => (
+        {grades.map((g) => (
           <label key={g}>
             Clerk limit {g}{' '}
             <input
@@ -278,7 +277,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           />
         </label>{' '}
         <FromInput settingKey="terms" from={from} setFrom={setFrom} onChange={() => save.reset()} />{' '}
-        {GRADES.map((g) => (
+        {grades.map((g) => (
           <label key={g}>
             Terms {g} (business days){' '}
             <input
@@ -294,7 +293,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
             <FromInput settingKey={`terms-${g}`} from={from} setFrom={setFrom} onChange={() => save.reset()} />{' '}
           </label>
         ))}
-        {GRADES.map((g) => (
+        {grades.map((g) => (
           <label key={g}>
             Grace {g} (days){' '}
             <input
@@ -378,7 +377,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           />
         </label>{' '}
         <FromInput settingKey="proof-threshold" from={from} setFrom={setFrom} onChange={() => save.reset()} />{' '}
-        {GRADES.map((g) => (
+        {grades.map((g) => (
           <label key={g}>
             Proof threshold {g}{' '}
             <input
@@ -636,19 +635,19 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
           Save settings
         </button>{' '}
         Current: clerk limit <strong data-testid="setting-clerk-limit-current">{fig(settingOn(settings.data, 'clerk-limit', today) ?? '')}</strong>,
-        {GRADES.map((g) => (
+        {grades.map((g) => (
           <span key={g}>
             clerk limit {g} <strong data-testid={`setting-clerk-limit-${g}-current`}>{fig(settingOn(settings.data, `clerk-limit-${g}`, today) ?? '')}</strong>,{' '}
           </span>
         ))}
         floor <strong data-testid="setting-floor-current">{fig(settingOn(settings.data, 'floor', today) ?? '')}</strong>,
         terms <strong data-testid="setting-terms-current">{fig(settingOn(settings.data, 'terms', today) ?? '')}</strong>,
-        {GRADES.map((g) => (
+        {grades.map((g) => (
           <span key={g}>
             terms {g} <strong data-testid={`setting-terms-${g}-current`}>{fig(settingOn(settings.data, `terms-${g}`, today) ?? '')}</strong>,{' '}
           </span>
         ))}
-        {GRADES.map((g) => (
+        {grades.map((g) => (
           <span key={g}>
             grace {g} <strong data-testid={`setting-grace-${g}-current`}>{fig(settingOn(settings.data, `grace-${g}`, today) ?? '')}</strong>,{' '}
           </span>
@@ -659,7 +658,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
         <strong data-testid="setting-period-numbering-from-current">{fig(settings.data?.periodNumberingFrom ?? '')}</strong>,
         cap <strong data-testid="setting-cap-current">{fig(settingOn(settings.data, 'cap', today) ?? '')}</strong>,
         proof threshold <strong data-testid="setting-proof-threshold-current">{fig(settingOn(settings.data, 'proof-threshold', today) ?? '')}</strong>,
-        {GRADES.map((g) => (
+        {grades.map((g) => (
           <span key={g}>
             proof threshold {g} <strong data-testid={`setting-proof-threshold-${g}-current`}>{fig(settingOn(settings.data, `proof-threshold-${g}`, today) ?? '')}</strong>,{' '}
           </span>

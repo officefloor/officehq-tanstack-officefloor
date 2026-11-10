@@ -62,7 +62,7 @@ public class SettingsRepository {
                 voidReasons(sheetId), pot == null ? null : money(pot), parent(sheetId), fiscalStartMonth(sheetId),
                 alert == null ? null : money(alert), escalateAfter(sheetId), reviewSla(sheetId), proofKinds(sheetId),
                 storedDefaultGrade(sheetId), scoreMid(sheetId), scoreHigh(sheetId), scoreLog(sheetId), maxOpen(sheetId),
-                retiredGrades(sheetId));
+                retiredGrades(sheetId), grades(sheetId));
     }
 
     /** The sheet's today; the real date when there is no such sheet. */
@@ -249,7 +249,7 @@ public class SettingsRepository {
     /** Each grade's own terms in force on a date, by grade, in grade order. */
     public Map<String, Integer> gradeTerms(String sheetId, LocalDate date) {
         Map<String, Integer> terms = new LinkedHashMap<>();
-        for (String grade : List.of("A", "B", "C")) {
+        for (String grade : grades(sheetId)) {
             Integer own = gradeTerms(sheetId, grade, date);
             if (own != null) terms.put(grade, own);
         }
@@ -512,6 +512,40 @@ public class SettingsRepository {
     public String defaultGrade(String sheetId) {
         String grade = storedDefaultGrade(sheetId);
         return grade == null || retired(sheetId, grade) ? "A" : grade;
+    }
+
+    /** The grades every sheet has. */
+    public static final List<String> STANDARD_GRADES = List.of("A", "B", "C");
+
+    /** The form of a grade code: one to three capital letters. */
+    public static final java.util.regex.Pattern GRADE_CODE = java.util.regex.Pattern.compile("[A-Z]{1,3}");
+
+    /** The sheet's grades: A, B and C, then those added to it in the order they were added. Grades are not dated, so
+     *  even a screen showing the sheet as of a date reads them as they are now (from the PUBLIC schema). */
+    public List<String> grades(String sheetId) {
+        List<String> grades = new java.util.ArrayList<>(STANDARD_GRADES);
+        grades.addAll(jdbc.query("SELECT grade FROM PUBLIC.sheet_grade WHERE sheet_id = ? ORDER BY id",
+                (rs, i) -> rs.getString("grade"), sheetId));
+        return grades;
+    }
+
+    /** Whether the grade is one of the sheet's grades. */
+    public boolean gradeExists(String sheetId, String grade) {
+        if (STANDARD_GRADES.contains(grade)) return true;
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM PUBLIC.sheet_grade WHERE sheet_id = ? AND grade = ?",
+                Integer.class, sheetId, grade);
+        return n != null && n > 0;
+    }
+
+    /** Refuse a grade that is not one of the sheet's grades. */
+    public void requireGrade(String sheetId, String grade) throws net.officefloor.hq.app.BadRequestException {
+        if (grade == null || !gradeExists(sheetId, grade)) {
+            throw new net.officefloor.hq.app.BadRequestException("grade " + grade + " is not a grade of the sheet");
+        }
+    }
+
+    public void addGrade(String sheetId, String grade) {
+        jdbc.update("INSERT INTO sheet_grade (sheet_id, grade) VALUES (?, ?)", sheetId, grade);
     }
 
     /** The sheet's retired grades, in grade order. */

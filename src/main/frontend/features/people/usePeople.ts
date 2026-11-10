@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { useReader } from '../../api/readNow';
+import { useSettings } from '../settings/useSettings';
 
 /** A person: `grade` is the one in force on the sheet's today, `grades` every grade they have been
  *  given, oldest first; `version` goes up by one each time they are saved. Their statements: how many have been
@@ -82,7 +83,13 @@ export type Patron = { personId: number; patronId: number };
 /** One of a person's aliases: another name they are known by on the sheet. */
 export type Alias = { personId: number; alias: string };
 
-export const GRADES = ['A', 'B', 'C'] as const;
+/** The grades every sheet has. */
+export const GRADES: readonly string[] = ['A', 'B', 'C'];
+
+/** The sheet's grades: A, B and C, then those added to it in the order they were added. */
+export function useGrades(sheetId: string): readonly string[] {
+  return useSettings(sheetId).data?.grades ?? GRADES;
+}
 
 export function peopleKey(sheetId: string) {
   return ['sheet', sheetId, 'people'];

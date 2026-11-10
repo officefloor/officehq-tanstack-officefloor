@@ -22,7 +22,6 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  person on the sheet is skipped. A viewer's selection is all refused: no one is graded. An archived sheet
  *  refuses it. */
 public class BulkGradePeople {
-    private static final Set<String> GRADES = Set.of("A", "B", "C");
 
     public void grade(@PathVariable("sheetId") String sheetId, @RequestBody BulkGradeRequest request,
             ServerHttpConnection connection, PersonRepository repository, SheetRepository sheets, Audit audit,
@@ -39,9 +38,7 @@ public class BulkGradePeople {
             throw new BadRequestException("select at least one person");
         }
         String grade = request.grade() == null ? "" : request.grade().trim();
-        if (!GRADES.contains(grade)) {
-            throw new BadRequestException("grade must be A, B or C");
-        }
+        settings.requireGrade(id, grade);
         String fromText = request.from() == null ? "" : request.from().trim();
         LocalDate from;
         try {

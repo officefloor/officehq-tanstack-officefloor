@@ -2,22 +2,22 @@ import { type ReactNode, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
-import { GRADES, usePeople } from '../people/usePeople';
+import { useGrades, usePeople } from '../people/usePeople';
 import { useDueTotals } from '../rates/useDueTotals';
 import { sumDues } from '../rates/useRates';
 
 /** Per grade, the due-totals of the people on it (retired left out) added up, as the sheet's summary shows them. */
-function useGradeDueTotals(sheetId: string): Map<string, string> | undefined {
+function useGradeDueTotals(sheetId: string, grades: readonly string[]): Map<string, string> | undefined {
   const people = usePeople(sheetId);
   const dueTotals = useDueTotals(sheetId);
   if (people.data === undefined) return undefined;
   const current = people.data.filter((p) => !p.retiredFrom);
-  return new Map(GRADES.map((g) => [g, sumDues(current.filter((p) => p.grade === g).map((p) => dueTotals.get(p.id) ?? 'n/a'))]));
+  return new Map(grades.map((g) => [g, sumDues(current.filter((p) => p.grade === g).map((p) => dueTotals.get(p.id) ?? 'n/a'))]));
 }
 
 /** Works out the other sheet's grade due-totals and shows them through `children` once they are read. */
-function OtherFigures({ sheetId, children }: { sheetId: string; children: (totals: Map<string, string>) => ReactNode }) {
-  const totals = useGradeDueTotals(sheetId);
+function OtherFigures({ sheetId, grades, children }: { sheetId: string; grades: readonly string[]; children: (totals: Map<string, string>) => ReactNode }) {
+  const totals = useGradeDueTotals(sheetId, grades);
   return totals === undefined ? null : children(totals);
 }
 
@@ -36,7 +36,8 @@ function useSheetExists(sheetId: string, round: number) {
  *  one on); a sheet that does not exist gives no lines. The other sheet is re-read from the store on each press. */
 function SheetCompare({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
-  const mine = useGradeDueTotals(sheetId);
+  const grades = useGrades(sheetId);
+  const mine = useGradeDueTotals(sheetId, grades);
   const [other, setOther] = useState('');
   // The other sheet being read (re-read from the store whenever `round` moves on), and whether to show it.
   const [reading, setReading] = useState<{ id: string; round: number }>({ id: '', round: 0 });
@@ -70,11 +71,11 @@ function SheetCompare({ sheetId }: { sheetId: string }) {
         Compare sheets
       </button>
       {reading.id !== '' && exists.data === true && mine !== undefined && (
-        <OtherFigures key={`${reading.id}#${reading.round}`} sheetId={reading.id}>
+        <OtherFigures key={`${reading.id}#${reading.round}`} sheetId={reading.id} grades={grades}>
           {(theirs) => (
             <ul>
               {shown &&
-                GRADES.map((g) => (
+                grades.map((g) => (
                   <li key={g} data-testid="compare-line">
                     {[g, mine.get(g) ?? '0.00', theirs.get(g) ?? '0.00'].join(' ')}
                   </li>

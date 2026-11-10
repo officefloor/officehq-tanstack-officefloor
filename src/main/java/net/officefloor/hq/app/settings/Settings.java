@@ -32,7 +32,7 @@ import java.util.List;
  *  day plus that many days is before the sheet's today is review-late.
  *  {@code proofKinds} is the sheet's proof kinds (a comma separated list of receipt and photo; null when blank: none;
  *  not dated): a claim above the proof threshold needs a proof of each to be settled or approved.
- *  {@code defaultGrade} is the sheet's default grade (A, B or C; null when blank: A; not dated): the grade the
+ *  {@code defaultGrade} is the sheet's default grade (one of its grades; null when blank: A; not dated): the grade the
  *  quick-add bar gives a new person, and the grade of an imported line that leaves it blank.
  *  {@code scoreMid} and {@code scoreHigh} are the sheet's score thresholds (whole numbers; null when blank; not dated):
  *  while both are set, each person shows a band: HIGH at or above the high one, MID at or above the mid one, else LOW.
@@ -41,7 +41,8 @@ import java.util.List;
  *  {@code maxOpen} is the sheet's maximum of open claims per person (null when blank: none; not dated): opening a
  *  claim is refused while its person already has that many OPEN or PENDING claims.
  *  {@code retiredGrades} is the sheet's retired grades (not dated): one cannot be chosen for a person any more (people
- *  already on it keep it), nor be the grade the default grade gives (A is given instead). */
+ *  already on it keep it), nor be the grade the default grade gives (A is given instead).
+ *  {@code grades} is the sheet's grades (not dated): A, B and C, then those added to it in the order added. */
 public record Settings(String clerkLimit, String floor, int terms, String latePct, List<Role> roles, String policyDate,
         String periodNumberingFrom, java.util.Map<String, Integer> gradeTerms, String cap,
         java.util.Map<String, List<DatedValue>> dated, java.util.Map<String, String> permissions, Integer graceDays,
@@ -49,5 +50,5 @@ public record Settings(String clerkLimit, String floor, int terms, String latePc
         String pot, String parent, int fiscalStartMonth, String alertThreshold,
         Integer escalateAfter, Integer reviewSla, String proofKinds, String defaultGrade,
         Integer scoreMid, Integer scoreHigh, boolean scoreLog, Integer maxOpen,
-        List<String> retiredGrades) {
+        List<String> retiredGrades, List<String> grades) {
 }

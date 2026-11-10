@@ -37,21 +37,22 @@ export type Role = { user: string; role: string };
  *  blank: none; not dated): a REVIEW claim whose review day plus it is before the sheet's today is review-late.
  *  `proofKinds` is the sheet's proof kinds (a comma separated list of receipt and photo; null when blank: none; not
  *  dated): a claim above the proof threshold needs a proof of each listed kind to be settled or approved.
- *  `defaultGrade` is the sheet's default grade (A, B or C; null when blank: A; not dated): the grade the quick-add
+ *  `defaultGrade` is the sheet's default grade (one of its grades; null when blank: A; not dated): the grade the quick-add
  *  bar gives a new person, and the grade of an imported line that leaves it blank. `scoreMid` and `scoreHigh` are the
  *  sheet's score thresholds (whole numbers; null when blank; not dated): while both are set, each person shows a band.
  *  `scoreLog` is the sheet's score log switch (not dated): while on, changing the sheet's today writes each person's score.
  *  `maxOpen` is the sheet's maximum of open claims per person (null when blank: none; not dated): opening a claim is
  *  refused while its person already has that many OPEN or PENDING claims. `retiredGrades` is the sheet's retired grades
  *  (not dated): one cannot be chosen for a person any more (people already on it keep it), and a default grade that is
- *  retired gives A instead. */
+ *  retired gives A instead. `grades` is the sheet's grades (not dated): A, B and C, then those added to it in the
+ *  order added. */
 export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; roles: Role[]; policyDate: string | null; periodNumberingFrom: string | null;
   gradeTerms: Record<string, number>; cap: string | null; dated: Record<string, DatedValue[]>;
   permissions: Record<string, string>; graceDays: number | null; delegations: Delegation[];
   entryDate: string | null; holidays: string[]; voidReasons: string[]; pot: string | null;
   parent: string | null; fiscalStartMonth: number; alertThreshold: string | null; escalateAfter: number | null; reviewSla: number | null; proofKinds: string | null; defaultGrade: string | null;
   scoreMid: number | null; scoreHigh: number | null; scoreLog: boolean; maxOpen: number | null;
-  retiredGrades: string[] };
+  retiredGrades: string[]; grades: string[] };
 
 /** A steward's (`by`) delegation of the steward role to a user, from a date to a date (yyyy-mm-dd, inclusive):
  *  while the sheet's today is inside it the user acts as a steward. */

@@ -16,13 +16,12 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  limit; the floor is 0.00 or more with up to two decimals; the terms are a whole number of days, 0 to
  *  3650; the late percent is 0.00 or more with up to two decimals; the policy date is a date
  *  (yyyy-mm-dd), blank meaning the sheet's today; the period
- *  numbering from-date is a date, blank meaning off; a grade's (A, B or C) terms are like the sheet's, blank
+ *  numbering from-date is a date, blank meaning off; a grade's terms are like the sheet's, blank
  *  meaning the grade uses the sheet's terms; the cap is 0.00 or more with up to two decimals, blank meaning none; the proof threshold and the note threshold likewise. A from-date given for a
  *  setting with a figure is a date; blank is the sheet's today. A permission matrix entry (open, settle, void, reassign, close or reopen) is a comma separated
- *  list of roles (clerk, steward), blank keeping the standing rule. The grace days are a whole number of days, 0 to 3650, blank meaning off. The entry date is a date, blank meaning off. A grade's grace days are a whole number of days, 0 to 3650, blank meaning none. A grade's proof threshold is like the sheet's, blank meaning none. A grade's clerk limit is like the sheet's, blank meaning none. The pot is 0.00 or more with up to two decimals, blank meaning none. The parent is a sheet id, blank meaning none (checked when saved). The fiscal year start month is a month, 1 to 12. The alert threshold is 0.00 or more with up to two decimals, blank meaning off. The rounding mode is half-up or half-even, blank meaning none. The escalation gap is a whole number of days, 0 to 3650, blank meaning off. The default grade is A, B or C, blank meaning A. A setting left out is not changed. */
+ *  list of roles (clerk, steward), blank keeping the standing rule. The grace days are a whole number of days, 0 to 3650, blank meaning off. The entry date is a date, blank meaning off. A grade's grace days are a whole number of days, 0 to 3650, blank meaning none. A grade's proof threshold is like the sheet's, blank meaning none. A grade's clerk limit is like the sheet's, blank meaning none. The pot is 0.00 or more with up to two decimals, blank meaning none. The parent is a sheet id, blank meaning none (checked when saved). The fiscal year start month is a month, 1 to 12. The alert threshold is 0.00 or more with up to two decimals, blank meaning off. The rounding mode is half-up or half-even, blank meaning none. The escalation gap is a whole number of days, 0 to 3650, blank meaning off. The default grade is a grade code, blank meaning A. Every grade named must be one of the sheet's grades (checked when saved). A setting left out is not changed. */
 public class ValidateSettings {
     private static final Pattern MONEY = Pattern.compile("\\d{1,9}(\\.\\d{1,2})?|\\.\\d{1,2}");
-    private static final List<String> GRADES = List.of("A", "B", "C");
     private static final Pattern FISCAL_MONTH = Pattern.compile("\\d{1,2}");
     private static final Pattern SCORE = Pattern.compile("-?\\d{1,9}");
     private static final Pattern TERMS = Pattern.compile("\\d{1,4}");
@@ -44,7 +43,7 @@ public class ValidateSettings {
         }
         Map<String, Integer> gradeTerms = new LinkedHashMap<>();
         Map<String, String> grades = request == null || request.gradeTerms() == null ? Map.of() : request.gradeTerms();
-        for (String grade : GRADES) {
+        for (String grade : gradeOrder(grades.keySet())) {
             String value = grades.get(grade) == null ? null : grades.get(grade).trim();
             if (value == null) continue;
             if (!value.isEmpty() && (!TERMS.matcher(value).matches() || Integer.parseInt(value) > 3650)) {
@@ -52,12 +51,9 @@ public class ValidateSettings {
             }
             gradeTerms.put(grade, value.isEmpty() ? null : Integer.parseInt(value));
         }
-        for (String grade : grades.keySet()) {
-            if (!GRADES.contains(grade)) throw new BadRequestException("grade must be A, B or C");
-        }
         Map<String, Integer> gradeGrace = new LinkedHashMap<>();
         Map<String, String> graces = request == null || request.gradeGrace() == null ? Map.of() : request.gradeGrace();
-        for (String grade : GRADES) {
+        for (String grade : gradeOrder(graces.keySet())) {
             String value = graces.get(grade) == null ? null : graces.get(grade).trim();
             if (value == null) continue;
             if (!value.isEmpty() && (!TERMS.matcher(value).matches() || Integer.parseInt(value) > 3650)) {
@@ -65,13 +61,10 @@ public class ValidateSettings {
             }
             gradeGrace.put(grade, value.isEmpty() ? null : Integer.parseInt(value));
         }
-        for (String grade : graces.keySet()) {
-            if (!GRADES.contains(grade)) throw new BadRequestException("grade must be A, B or C");
-        }
         Map<String, BigDecimal> gradeProof = new LinkedHashMap<>();
         Map<String, String> proofs = request == null || request.gradeProofThreshold() == null ? Map.of()
                 : request.gradeProofThreshold();
-        for (String grade : GRADES) {
+        for (String grade : gradeOrder(proofs.keySet())) {
             String value = proofs.get(grade) == null ? null : proofs.get(grade).trim();
             if (value == null) continue;
             if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
@@ -79,22 +72,16 @@ public class ValidateSettings {
             }
             gradeProof.put(grade, value.isEmpty() ? null : new BigDecimal(value).setScale(2));
         }
-        for (String grade : proofs.keySet()) {
-            if (!GRADES.contains(grade)) throw new BadRequestException("grade must be A, B or C");
-        }
         Map<String, BigDecimal> gradeLimit = new LinkedHashMap<>();
         Map<String, String> limits = request == null || request.gradeClerkLimit() == null ? Map.of()
                 : request.gradeClerkLimit();
-        for (String grade : GRADES) {
+        for (String grade : gradeOrder(limits.keySet())) {
             String value = limits.get(grade) == null ? null : limits.get(grade).trim();
             if (value == null) continue;
             if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
                 throw new BadRequestException("clerk limit for grade " + grade + " must be 0.00 or more with up to two decimals");
             }
             gradeLimit.put(grade, value.isEmpty() ? null : new BigDecimal(value).setScale(2));
-        }
-        for (String grade : limits.keySet()) {
-            if (!GRADES.contains(grade)) throw new BadRequestException("grade must be A, B or C");
         }
         if (latePct != null && !MONEY.matcher(latePct).matches()) {
             throw new BadRequestException("late percent must be 0.00 or more with up to two decimals");
@@ -174,8 +161,8 @@ public class ValidateSettings {
             kinds = String.join(",", listed);
         }
         String defaultGrade = request == null || request.defaultGrade() == null ? null : request.defaultGrade().trim();
-        if (defaultGrade != null && !defaultGrade.isEmpty() && !GRADES.contains(defaultGrade)) {
-            throw new BadRequestException("default grade must be A, B or C");
+        if (defaultGrade != null && !defaultGrade.isEmpty() && !SettingsRepository.GRADE_CODE.matcher(defaultGrade).matches()) {
+            throw new BadRequestException("default grade must be one to three capital letters");
         }
         String policy = request == null || request.policyDate() == null ? null : request.policyDate().trim();
         LocalDate policyDate = null;
@@ -282,5 +269,21 @@ public class ValidateSettings {
                 scoreHigh != null, scoreHigh == null || scoreHigh.isEmpty() ? null : Integer.parseInt(scoreHigh),
                 scoreLog != null, scoreLog != null && !scoreLog.isEmpty(),
                 maxOpen != null, maxOpen == null || maxOpen.isEmpty() ? null : Integer.parseInt(maxOpen)));
+    }
+
+    /** The grades a per-grade setting names, A, B and C first, then the others in the order given; a name that is not a
+     *  grade code is refused. */
+    private static List<String> gradeOrder(java.util.Set<String> named) throws BadRequestException {
+        List<String> ordered = new java.util.ArrayList<>();
+        for (String grade : SettingsRepository.STANDARD_GRADES) {
+            if (named.contains(grade)) ordered.add(grade);
+        }
+        for (String grade : named) {
+            if (grade == null || !SettingsRepository.GRADE_CODE.matcher(grade).matches()) {
+                throw new BadRequestException("grade must be one to three capital letters");
+            }
+            if (!ordered.contains(grade)) ordered.add(grade);
+        }
+        return ordered;
     }
 }

@@ -1,6 +1,5 @@
 package net.officefloor.hq.app.person;
 
-import java.util.Set;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.BadRequestException;
 import net.officefloor.hq.app.ConflictException;
@@ -17,7 +16,6 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  no grade. Writes PERSON_EDITED and its rollup lines, and moves the person's version on, so an editor
  *  opened before it is refused as stale. */
 public class GradePerson {
-    private static final Set<String> GRADES = Set.of("A", "B", "C");
 
     public void grade(@PathVariable("sheetId") String sheetId, @PathVariable("personId") String personId,
             @RequestBody GradeRequest request, ServerHttpConnection connection, PersonRepository repository,
@@ -37,9 +35,7 @@ public class GradePerson {
             throw new BadRequestException("no such person");
         }
         String grade = request == null || request.grade() == null ? "" : request.grade().trim();
-        if (!GRADES.contains(grade)) {
-            throw new BadRequestException("grade must be A, B or C");
-        }
+        settings.requireGrade(id, grade);
         boolean regrade = !grade.equals(current.grade());
         if (regrade) {
             NewPerson.checkNotRetired(settings, id, grade);
