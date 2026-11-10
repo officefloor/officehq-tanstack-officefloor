@@ -6,6 +6,6 @@ import net.officefloor.web.ObjectResponse;
 
 public class RespondWithPool {
     public void respond(@Val Pool pool, ObjectResponse<PoolResponse> response) {
-        response.send(PoolResponse.from(pool, List.of()));
+        response.send(PoolResponse.from(pool, List.of(), null));
     }
 }

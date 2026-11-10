@@ -16,12 +16,13 @@ public class SaveSettings {
             Out<Settings> settingsOut) {
         Settings now = repository.find(sheet.id());
         if (input.policyDateChanged() || input.periodNumberingFromChanged() || input.graceDaysChanged()
-                || input.entryDateChanged()) {
+                || input.entryDateChanged() || input.potChanged()) {
             repository.saveUndated(new Settings(sheet.id(), now.today(), now.dated(),
                     input.policyDateChanged() ? input.policyDate() : now.policyDate(),
                     input.periodNumberingFromChanged() ? input.periodNumberingFrom() : now.periodNumberingFrom(), now.perms(),
                     input.graceDaysChanged() ? input.graceDays() : now.graceDays(),
-                    input.entryDateChanged() ? input.entryDate() : now.entryDate()));
+                    input.entryDateChanged() ? input.entryDate() : now.entryDate(),
+                    input.potChanged() ? input.pot() : now.pot()));
         }
         input.perms().forEach((action, roles) -> repository.recordPerm(sheet.id(), action, roles));
         java.util.Map<String, String> values = new java.util.LinkedHashMap<>(input.datedValues());

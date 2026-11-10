@@ -11,7 +11,7 @@ import type { Pool } from './pools';
 
 // The sheet's pools: a name entry and an add button, each pool listed below with its total share, whether
 // it is balanced (the shares total exactly 100.00; a retired member's counts as 0.00) and its members, each
-// with their share. A member is added from the pool's row: a person and a share. The server decides what is
+// with their share and their cut of the pot (blank when the pool is unbalanced or there is no pot). A member is added from the pool's row: a person and a share. The server decides what is
 // refused — a taken or blank name, a person already in the pool, a share not more than 0.00 and at most
 // 100.00 with two decimals — and the form shows its error.
 function Pools({ sheetId }: { sheetId: string }) {
@@ -98,7 +98,8 @@ function PoolRow({ sheetId, pool }: { sheetId: string; pool: Pool }) {
         {pool.members.map((m) => (
           <li key={m.personId} data-testid={`pool-member-${pool.name}-${m.personId}`}>
             {m.name}
-            {m.retired ? ' (retired)' : ''}: <span data-testid="pool-share">{m.share}</span>%
+            {m.retired ? ' (retired)' : ''}: <span data-testid="pool-share">{m.share}</span>%, cut{' '}
+            <span data-testid="pool-cut">{m.cut}</span>
           </li>
         ))}
       </ul>

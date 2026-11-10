@@ -27,11 +27,12 @@ import java.util.NavigableMap;
  * the standing rule, open, settle, void and close by clerk and steward, reassign and reopen by steward),
  * and its grace days (null: off): when the sheet's today is changed, every open period whose to-date
  * plus the grace days is before the new today is closed, and its entry date (null: off): while it is
- * set, the date of a new claim left undated instead of the sheet's today.
+ * set, the date of a new claim left undated instead of the sheet's today, and its pot (null: none),
+ * shared out as cuts among a balanced pool's members.
  */
 public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap<LocalDate, String>> dated,
         LocalDate policyDate, LocalDate periodNumberingFrom, Map<String, String> perms, Integer graceDays,
-        LocalDate entryDate) {
+        LocalDate entryDate, BigDecimal pot) {
     /** The grades that may have their own terms. */
     public static final List<String> GRADES = List.of("A", "B", "C");
 

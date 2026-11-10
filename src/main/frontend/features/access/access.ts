@@ -37,6 +37,8 @@ export type Settings = {
   gradeGrace?: Record<string, string>;
   /** Each grade's own proof threshold ('' for none: a claim of the grade takes the sheet's). */
   gradeProofThreshold?: Record<string, string>;
+  /** The pot, with two decimals ('' for none), not dated: shared out as cuts among a balanced pool's members. */
+  pot: string;
   /**
    * Every value recorded for each figure setting, by key (clerk-limit, floor, terms, late-pct,
    * terms-A, terms-B, terms-C, cap, proof-threshold, note-threshold, grace-A, grace-B, grace-C, proof-threshold-A, proof-threshold-B,
@@ -142,6 +144,7 @@ export const LIMIT = /^\d+(\.\d{1,2})?$/;
 
 /** A cap as the screen takes it: blank, or 0.00 or more with up to two decimals. */
 export const CAP = /^\d+(\.\d{1,2})?$/;
+export const POT = /^\d+(\.\d{1,2})?$/;
 
 /** A proof threshold as the screen takes it: blank, or 0.00 or more with up to two decimals. */
 export const PROOF_THRESHOLD = /^\d+(\.\d{1,2})?$/;

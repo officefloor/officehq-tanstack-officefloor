@@ -5,7 +5,8 @@ import { useOnce } from '../../query/useOnce';
 import { postJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/session';
-import { ACTIONS, CAP, DATED_KEYS, FLOOR, GRADES, LATE_PCT, LIMIT, NOTE_THRESHOLD, PERM_ROLES, POLICY_DATE, PROOF_THRESHOLD, STANDING_RULE, TERMS, ROLES, gradeGraceKey, gradeProofThresholdKey, rolesKey, settingsKey, useRoles, useSettings } from './access';
+import { poolsKey } from '../pools/pools';
+import { ACTIONS, CAP, DATED_KEYS, FLOOR, GRADES, LATE_PCT, LIMIT, NOTE_THRESHOLD, PERM_ROLES, POLICY_DATE, POT, PROOF_THRESHOLD, STANDING_RULE, TERMS, ROLES, gradeGraceKey, gradeProofThresholdKey, rolesKey, settingsKey, useRoles, useSettings } from './access';
 import type { Role, Settings, SettingsChange } from './access';
 
 type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms' | 'gradeGrace' | 'gradeProofThreshold'>;
@@ -22,7 +23,8 @@ type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms' | 'gradeGrace' | 'grad
 // matrix: for each action the roles that may take it, comma separated (blank: the standing rule), and its
 // grace days (blank: off), past which an open period closes when today is changed, and each grade's
 // grace days (blank: none), dated, past a claim's due-by before it is overdue, and each grade's proof threshold
-// (blank: none, the sheet's), dated, in place of the sheet's for a claim of the grade. Only the settings typed in (or stepped into)
+// (blank: none, the sheet's), dated, in place of the sheet's for a claim of the grade, and its pot (blank:
+// none), not dated, shared out as cuts among a balanced pool's members. Only the settings typed in (or stepped into)
 // since the last save are sent, so saving one leaves the other as it is.
 function SettingsForm({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
@@ -39,6 +41,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
     periodNumberingFrom: '',
     graceDays: '',
     entryDate: '',
+    pot: '',
   });
   const [touched, setTouched] = useState<Set<Key>>(new Set());
   const [gradeFields, setGradeFields] = useState<Record<string, string>>({});
@@ -65,6 +68,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
       setThresholdsTouched(new Set());
       setPermsTouched(new Set());
       queryClient.setQueryData(settingsKey(sheetId), saved);
+      queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
     },
     onError: () => setError('Those settings could not be saved.'),
   });
@@ -136,6 +140,14 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         return;
       }
       body.entryDate = entryDate;
+    }
+    if (touched.has('pot')) {
+      const pot = fields.pot.trim();
+      if (pot !== '' && !POT.test(pot)) {
+        setError('A pot is 0.00 or more, with up to two decimals, or blank.');
+        return;
+      }
+      body.pot = pot;
     }
     if (touched.has('cap')) {
       const cap = fields.cap.trim();
@@ -438,6 +450,20 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         </label>{' '}
         <span>
           now: <strong data-testid="setting-entry-date-current">{settings.data?.entryDate ?? ''}</strong>
+        </span>{' '}
+        <label>
+          Pot{' '}
+          <input
+            data-testid="setting-pot"
+            inputMode="decimal"
+            placeholder="none"
+            value={fields.pot}
+            onFocus={() => touch('pot')}
+            onChange={(e) => change('pot', e.target.value)}
+          />
+        </label>{' '}
+        <span>
+          now: <strong data-testid="setting-pot-current">{settings.data?.pot ?? ''}</strong>
         </span>{' '}
         <label>
           Cap{' '}

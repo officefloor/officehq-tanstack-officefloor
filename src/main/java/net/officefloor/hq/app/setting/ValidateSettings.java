@@ -196,6 +196,15 @@ public class ValidateSettings {
                 throw new InvalidSettingException("An entry date is a date, yyyy-MM-dd, or blank");
             }
         }
+        boolean potChanged = request != null && request.pot() != null;
+        BigDecimal pot = null;
+        if (potChanged && !request.pot().trim().isEmpty()) {
+            String value = request.pot().trim();
+            if (!FIGURE.matcher(value).matches()) {
+                throw new InvalidSettingException("A pot is 0.00 or more, with up to two decimals, or blank");
+            }
+            pot = new BigDecimal(value).setScale(2);
+        }
         Map<String, LocalDate> from = new LinkedHashMap<>();
         if (request != null && request.from() != null) {
             for (Map.Entry<String, String> entry : request.from().entrySet()) {
@@ -212,6 +221,6 @@ public class ValidateSettings {
         body.set(new SettingsInput(limitChanged, limit, floor, terms, latePct, policyChanged, policyDate,
                 numberingChanged, numberingFrom, gradeTerms, capChanged, cap, from,
                 thresholdChanged, threshold, perms, graceChanged, graceDays, noteThresholdChanged, noteThreshold,
-                entryChanged, entryDate, gradeGrace, gradeProofThreshold));
+                entryChanged, entryDate, gradeGrace, gradeProofThreshold, potChanged, pot));
     }
 }

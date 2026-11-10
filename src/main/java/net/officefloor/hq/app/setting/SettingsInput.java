@@ -16,7 +16,7 @@ import java.time.LocalDate;
  * changed and to what (null: off), and whether the note threshold is changed and to what (null: none), and whether the entry date is
  * changed and to what (null: off), and the grades whose grace days are changed, in A, B, C order,
  * and to what (null: none), and the grades whose proof threshold is changed, in A, B, C order, and
- * to what (null: none).
+ * to what (null: none), and whether the pot is changed and to what (null: none).
  */
 public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, BigDecimal floor, Integer terms, BigDecimal latePct,
         boolean policyDateChanged, LocalDate policyDate,
@@ -26,7 +26,8 @@ public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, Bi
         java.util.Map<String, String> perms, boolean graceDaysChanged, Integer graceDays,
         boolean noteThresholdChanged, BigDecimal noteThreshold,
         boolean entryDateChanged, LocalDate entryDate, java.util.Map<String, Integer> gradeGrace,
-        java.util.Map<String, BigDecimal> gradeProofThreshold) {
+        java.util.Map<String, BigDecimal> gradeProofThreshold,
+        boolean potChanged, BigDecimal pot) {
 
     /**
      * The figure settings being changed, by key in the order they are audited, each with the value

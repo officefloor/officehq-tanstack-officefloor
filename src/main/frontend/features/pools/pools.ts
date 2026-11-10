@@ -2,8 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { peopleKey } from '../people/people';
 
-/** A person in a pool with a share percent (two decimals). A retired member's share counts as 0.00 toward the total. */
-export type PoolMember = { personId: string; name: string; share: string; retired: boolean };
+/** A person in a pool with a share percent (two decimals). A retired member's share counts as 0.00 toward the total.
+ *  Their cut is their part of the sheet's pot, two decimals ('' when the pool is unbalanced or there is no pot). */
+export type PoolMember = { personId: string; name: string; share: string; retired: boolean; cut: string };
 
 /** A pool on the sheet: its members in the order added, their total share, and balanced when it is exactly 100.00. */
 export type Pool = { name: string; members: PoolMember[]; totalShare: string; balanced: boolean };
