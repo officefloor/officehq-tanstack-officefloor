@@ -4,8 +4,18 @@ import { getJson } from '../../api/http';
 export type Grade = 'A' | 'B' | 'C';
 export const GRADES: Grade[] = ['A', 'B', 'C'];
 
-// `version` is raised by each save; an edit sends the version it was made from.
-export type Person = { id: string; name: string; grade: Grade; version: number };
+// `version` is raised by each save; an edit sends the version it was made from. `statementCount`
+// is how many statements have been taken for them; `statedTotal` and `statementDate` are the last
+// one's due-total and date ('' before the first).
+export type Person = {
+  id: string;
+  name: string;
+  grade: Grade;
+  version: number;
+  statementCount: number;
+  statedTotal: string;
+  statementDate: string;
+};
 
 export const peopleKey = (sheetId: string) => ['sheet', sheetId, 'people'] as const;
 

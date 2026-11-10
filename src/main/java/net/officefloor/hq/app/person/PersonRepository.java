@@ -1,7 +1,9 @@
 package net.officefloor.hq.app.person;
 
+import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.Statement;
+import java.time.LocalDate;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -12,8 +14,15 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PersonRepository {
 
-    private static final RowMapper<Person> ROW = (rs, n) -> new Person(rs.getLong("id"),
-            rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getLong("version"));
+    private static final String COLUMNS = "id, sheet_id, name, grade, version, statement_count, stated_total, statement_date";
+
+    private static final RowMapper<Person> ROW = (rs, n) -> {
+        Person person = new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
+                rs.getString("grade"), rs.getLong("version"));
+        person.setStatements(rs.getInt("statement_count"), rs.getString("stated_total"),
+                rs.getObject("statement_date", LocalDate.class));
+        return person;
+    };
 
     private final JdbcTemplate jdbc;
 
@@ -23,14 +32,14 @@ public class PersonRepository {
 
     /** The sheet's people, in the order they were added. */
     public List<Person> findAll(String sheetId) {
-        return jdbc.query("SELECT id, sheet_id, name, grade, version FROM person WHERE sheet_id = ? ORDER BY id",
+        return jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? ORDER BY id",
                 ROW, sheetId);
     }
 
     /** The person with this id on the sheet, or null when there is none. */
     public Person find(String sheetId, long id) {
         List<Person> found = jdbc.query(
-                "SELECT id, sheet_id, name, grade, version FROM person WHERE sheet_id = ? AND id = ?",
+                "SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND id = ?",
                 ROW, sheetId, id);
         return found.isEmpty() ? null : found.get(0);
     }
@@ -42,6 +51,14 @@ public class PersonRepository {
                         + " AND id <> ?",
                 Integer.class, sheetId, name, exceptId == null ? -1L : exceptId);
         return count != null && count > 0;
+    }
+
+    /** Record the person's statements (their count, last due-total and date), leaving the rest as stored. */
+    public void saveStatements(Person person) {
+        jdbc.update("UPDATE person SET statement_count = ?, stated_total = ?, statement_date = ? WHERE id = ? AND sheet_id = ?",
+                person.getStatementCount(), person.getStatedTotal(),
+                person.getStatementDate() == null ? null : Date.valueOf(person.getStatementDate()),
+                person.getId(), person.getSheetId());
     }
 
     /**

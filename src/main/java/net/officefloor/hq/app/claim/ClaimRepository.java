@@ -13,14 +13,18 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by";
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due";
 
-    private static final RowMapper<Claim> ROW = (rs, n) -> new Claim(rs.getLong("id"),
+    private static final RowMapper<Claim> ROW = (rs, n) -> {
+        Claim claim = new Claim(rs.getLong("id"),
             rs.getString("sheet_id"), rs.getLong("person_id"), rs.getBigDecimal("amount"),
             rs.getDate("claim_date").toLocalDate(), rs.getString("note"),
             ClaimStatus.valueOf(rs.getString("status")),
             (Integer) rs.getObject("claim_number", Integer.class), rs.getBigDecimal("settled_due"),
             rs.getString("opened_by"));
+        claim.bind(rs.getBoolean("stated"), rs.getBigDecimal("stated_due"));
+        return claim;
+    };
 
     private final JdbcTemplate jdbc;
 
@@ -32,6 +36,12 @@ public class ClaimRepository {
     public List<Claim> findAll(String sheetId) {
         return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? ORDER BY id DESC",
                 ROW, sheetId);
+    }
+
+    /** The person's claims on the sheet, newest first. */
+    public List<Claim> findByPerson(String sheetId, long personId) {
+        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY id DESC",
+                ROW, sheetId, personId);
     }
 
     /** The claim with this id on the sheet, or null when there is none. */
@@ -64,9 +74,10 @@ public class ClaimRepository {
     /** Insert a new claim (assigning its id) or update an existing one. */
     public void save(Claim claim) {
         if (claim.getId() != null) {
-            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ? WHERE id = ? AND sheet_id = ?",
+            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?, stated = ?, stated_due = ? WHERE id = ? AND sheet_id = ?",
                     claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(),
-                    claim.getStatus().name(), claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getId(),
+                    claim.getStatus().name(), claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(),
+                    claim.isStated(), claim.getStatedDue(), claim.getId(),
                     claim.getSheetId());
             return;
         }

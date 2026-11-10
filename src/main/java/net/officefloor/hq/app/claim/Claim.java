@@ -16,6 +16,8 @@ public class Claim {
     private Integer voidedNumber;
     private BigDecimal settledDue;
     private String openedBy;
+    private boolean stated;
+    private BigDecimal statedDue;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, Integer number, BigDecimal settledDue,
@@ -52,6 +54,15 @@ public class Claim {
     /** The user who opened it; null until it is opened. */
     public String getOpenedBy() { return openedBy; }
     public void setOpenedBy(String openedBy) { this.openedBy = openedBy; }
+    /** Whether its person's last statement bound it to a figure. */
+    public boolean isStated() { return stated; }
+    /** The figure its person's last statement bound it to; null for n/a, or when it is not stated. */
+    public BigDecimal getStatedDue() { return statedDue; }
+    /** Bind it to a figure (null: n/a), or leave it unbound (live) when {@code stated} is false. */
+    public void bind(boolean stated, BigDecimal statedDue) {
+        this.stated = stated;
+        this.statedDue = stated ? statedDue : null;
+    }
     /** The number its audit lines carry: its number, or the one it had before it was voided. */
     public Integer getAuditNumber() { return number != null ? number : voidedNumber; }
 
