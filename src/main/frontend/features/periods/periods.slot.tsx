@@ -4,12 +4,12 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOnce } from '../../query/useOnce';
 import { postJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
-import { counts, useClaims } from '../claims/claims';
-import { gradeOn, usePeople } from '../people/people';
+import { useClaims } from '../claims/claims';
+import { usePeople } from '../people/people';
 import { useUser } from '../session/session';
-import { claimDue, rateOn, sumDue, useRates } from '../rates/rates';
+import { useRates } from '../rates/rates';
 import { useFloor, useLate } from '../access/access';
-import { periodsKey, usePeriods } from './periods';
+import { periodDueTotal, periodsKey, usePeriods } from './periods';
 import type { Period } from './periods';
 
 type Fields = { name: string; from: string; to: string };
@@ -100,14 +100,6 @@ function Periods({ sheetId }: { sheetId: string }) {
     setError('');
   };
 
-  const dueTotal = (p: Period) => {
-    const dues = people.flatMap((person) =>
-      claims
-        .filter((c) => c.personId === person.id && counts(c, person.held) && p.from <= c.date && c.date <= p.to)
-        .map((c) => claimDue(c, rateOn(rates, gradeOn(person.grades, c.date), c.date), floor, late)),
-    );
-    return sumDue(dues);
-  };
 
   return (
     <section data-testid="periods">
@@ -166,7 +158,7 @@ function Periods({ sheetId }: { sheetId: string }) {
               <td data-testid="period-name">{p.name}</td>
               <td data-testid="period-from">{p.from}</td>
               <td data-testid="period-to">{p.to}</td>
-              <td data-testid="period-due-total">{p.closed ? p.closedTotal : dueTotal(p)}</td>
+              <td data-testid="period-due-total">{periodDueTotal(p, people, claims, rates, floor, late)}</td>
               <td data-testid="period-closed">{p.closed ? 'yes' : 'no'}</td>
               <td>
                 <button
