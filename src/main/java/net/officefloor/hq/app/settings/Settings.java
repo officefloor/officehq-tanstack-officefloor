@@ -47,7 +47,8 @@ import java.util.List;
  *  {@code grades} is the sheet's grades (not dated): A, B and C, then those added to it in the order added.
  *  {@code policyVersions} is the from-date of each of the sheet's policy versions (null: none, in force always),
  *  version 1 first: every change to the rounding mode, floor, cap, terms, late percent or clerk limit is the next
- *  one. The sheet's current policy version is their number; a claim's is the number in force on its date. */
+ *  one. The sheet's current policy version is their number; a claim's is the number in force on its date.
+ *  {@code policyVersionDetails} is the same versions, version 1 first, each with the setting it changed and its value. */
 public record Settings(String clerkLimit, String floor, int terms, String latePct, List<Role> roles, String policyDate,
         String periodNumberingFrom, java.util.Map<String, Integer> gradeTerms, String cap,
         java.util.Map<String, List<DatedValue>> dated, java.util.Map<String, String> permissions, Integer graceDays,
@@ -56,5 +57,5 @@ public record Settings(String clerkLimit, String floor, int terms, String latePc
         Integer escalateAfter, Integer reviewSla, String proofKinds, String defaultGrade,
         Integer scoreMid, Integer scoreHigh, boolean scoreLog, Integer maxOpen,
         List<String> retiredGrades, List<String> grades, Integer pendingSla,
-        List<String> policyVersions) {
+        List<String> policyVersions, List<PolicyVersion> policyVersionDetails) {
 }

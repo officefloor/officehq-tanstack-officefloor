@@ -62,7 +62,8 @@ public class SettingsRepository {
                 voidReasons(sheetId), pot == null ? null : money(pot), parent(sheetId), fiscalStartMonth(sheetId),
                 alert == null ? null : money(alert), escalateAfter(sheetId), reviewSla(sheetId), proofKinds(sheetId),
                 storedDefaultGrade(sheetId), scoreMid(sheetId), scoreHigh(sheetId), scoreLog(sheetId), maxOpen(sheetId),
-                retiredGrades(sheetId), grades(sheetId), pendingSla(sheetId), policyVersions(sheetId));
+                retiredGrades(sheetId), grades(sheetId), pendingSla(sheetId), policyVersions(sheetId),
+                policyVersionDetails(sheetId));
     }
 
     /** The sheet's today; the real date when there is no such sheet. */
@@ -89,9 +90,9 @@ public class SettingsRepository {
                 + " VALUES (?, ?, ?, ?)", sheetId, key, Date.valueOf(from), value);
         history.setting(sheetId, key, from, value);
         if (POLICY_KEYS.contains(key)) {
-            jdbc.update("INSERT INTO policy_version (sheet_id, version, setting_key, from_date) VALUES (?,"
-                    + " (SELECT COALESCE(MAX(version), 0) + 1 FROM policy_version WHERE sheet_id = ?), ?, ?)",
-                    sheetId, sheetId, key, Date.valueOf(from));
+            jdbc.update("INSERT INTO policy_version (sheet_id, version, setting_key, from_date, setting) VALUES (?,"
+                    + " (SELECT COALESCE(MAX(version), 0) + 1 FROM policy_version WHERE sheet_id = ?), ?, ?, ?)",
+                    sheetId, sheetId, key, Date.valueOf(from), value);
         }
     }
 
@@ -105,6 +106,16 @@ public class SettingsRepository {
         return jdbc.query("SELECT from_date FROM policy_version WHERE sheet_id = ? ORDER BY version", (rs, i) -> {
             Date from = rs.getDate("from_date");
             return from == null ? null : from.toLocalDate().toString();
+        }, sheetId);
+    }
+
+    /** Each of the sheet's policy versions with the setting it changed and the value it set, version 1 first. */
+    public List<PolicyVersion> policyVersionDetails(String sheetId) {
+        return jdbc.query("SELECT version, from_date, setting_key, setting FROM policy_version WHERE sheet_id = ?"
+                + " ORDER BY version", (rs, i) -> {
+            Date from = rs.getDate("from_date");
+            return new PolicyVersion(rs.getInt("version"), from == null ? null : from.toLocalDate().toString(),
+                    rs.getString("setting_key"), rs.getString("setting"));
         }, sheetId);
     }
 

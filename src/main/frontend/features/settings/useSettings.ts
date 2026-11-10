@@ -49,14 +49,20 @@ export type Role = { user: string; role: string };
  *  retired gives A instead. `grades` is the sheet's grades (not dated): A, B and C, then those added to it in the
  *  order added. `policyVersions` is the from-date of each of the sheet's policy versions (yyyy-mm-dd; null: none, in
  *  force always), version 1 first: every change to the rounding mode, floor, cap, terms, late percent or clerk limit
- *  is the next one; the sheet's current policy version is their number (see `policyVersionOn`). */
+ *  is the next one; the sheet's current policy version is their number (see `policyVersionOn`).
+ *  `policyVersionDetails` is the same versions, version 1 first, each with the setting it changed and its value. */
 export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; roles: Role[]; policyDate: string | null; periodNumberingFrom: string | null;
   gradeTerms: Record<string, number>; cap: string | null; dated: Record<string, DatedValue[]>;
   permissions: Record<string, string>; graceDays: number | null; delegations: Delegation[];
   entryDate: string | null; holidays: string[]; voidReasons: string[]; pot: string | null;
   parent: string | null; fiscalStartMonth: number; alertThreshold: string | null; escalateAfter: number | null; reviewSla: number | null; proofKinds: string | null; defaultGrade: string | null;
   scoreMid: number | null; scoreHigh: number | null; scoreLog: boolean; maxOpen: number | null;
-  retiredGrades: string[]; grades: string[]; pendingSla: number | null; policyVersions: (string | null)[] };
+  retiredGrades: string[]; grades: string[]; pendingSla: number | null; policyVersions: (string | null)[];
+  policyVersionDetails: PolicyVersion[] };
+
+/** One of the sheet's policy versions: its number, its from-date (yyyy-mm-dd; null: none, in force always), and the
+ *  policy setting it changed with the value it set (null: blank). */
+export type PolicyVersion = { version: number; from: string | null; key: string; value: string | null };
 
 /** A steward's (`by`) delegation of the steward role to a user, from a date to a date (yyyy-mm-dd, inclusive):
  *  while the sheet's today is inside it the user acts as a steward. */
