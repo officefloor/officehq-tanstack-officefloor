@@ -9,6 +9,7 @@ import type { Person } from '../people/people';
 import { useUser } from '../session/session';
 import { CLAIM_AMOUNT, CLAIM_NUMBER, claimsKey, sumAmounts, useClaims } from './claims';
 import type { Claim } from './claims';
+import { selectClaim, useSelectedClaims } from './selection';
 import { claimDue, rateOn, useRates } from '../rates/rates';
 import { periodOf, usePeriods } from '../periods/periods';
 import { useFloor, useLate, useTerms } from '../access/access';
@@ -53,6 +54,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   const terms = useTerms(sheetId);
   const today = useSheetToday(sheetId);
   const late = useLate(sheetId);
+  const selected = useSelectedClaims(sheetId);
 
   const reset = () => {
     setRefused(null);
@@ -182,6 +184,13 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
         <ul data-testid="claim-list">
           {claims.map((c) => (
             <li key={c.id} data-testid={`claim-row-${c.id}`}>
+              <input
+                type="checkbox"
+                data-testid="claim-select"
+                aria-label="Select claim"
+                checked={selected.has(c.id)}
+                onChange={(e) => selectClaim(sheetId, c.id, e.target.checked)}
+              />{' '}
               <span data-testid="claim-number">{c.number}</span>{' '}
               <span data-testid="claim-amount">{c.amount}</span>{' '}
               <span data-testid="claim-date">{c.date}</span>{' '}
