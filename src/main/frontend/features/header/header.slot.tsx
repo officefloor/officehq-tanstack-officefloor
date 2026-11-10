@@ -1,9 +1,9 @@
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useClaims } from '../claims/claims';
 import type { ClaimStatus } from '../claims/claims';
-import { liveHolds, usePeople } from '../people/people';
-import { personDueTotal, trimmedSumDue, useRates } from '../rates/rates';
-import { personOverdue } from '../overdue/overdue';
+import { usePeople } from '../people/people';
+import { useRates } from '../rates/rates';
+import { sheetFigures } from '../consolidated/consolidated';
 import { useSheetToday } from '../sheet/sheet';
 import { useCap, useFloor, useLate } from '../access/access';
 
@@ -22,13 +22,7 @@ function Header({ sheetId }: { sheetId: string }) {
   const late = useLate(sheetId);
   const cap = useCap(sheetId);
 
-  const claimsOf = (id: string) => claims.filter((c) => c.personId === id);
-  const dueTotal = trimmedSumDue(
-    people.map((p) => personDueTotal(rates, p.grades, today, claimsOf(p.id), liveHolds(p, today), floor, late, cap)),
-  );
-  const overdueTotal = trimmedSumDue(
-    people.map((p) => personOverdue(rates, p.grades, today, claimsOf(p.id), liveHolds(p, today), floor, late).total),
-  );
+  const { dueTotal, overdueTotal } = sheetFigures(people, claims, rates, today, floor, late, cap);
 
   return (
     <header data-testid="header">

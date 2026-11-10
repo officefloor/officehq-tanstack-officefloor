@@ -64,6 +64,11 @@ public class SheetRepository {
         return found.isEmpty() ? null : found.get(0);
     }
 
+    /** The ids of the sheets naming this one as their parent, in id order. */
+    public List<String> children(String id) {
+        return jdbc.query("SELECT id FROM sheet WHERE parent_id = ? ORDER BY id", (rs, n) -> rs.getString("id"), id);
+    }
+
     /** Names the sheet's parent sheet (null: none). */
     public void saveParent(String id, String parent) {
         jdbc.update("UPDATE sheet SET parent_id = ? WHERE id = ?", parent, id);

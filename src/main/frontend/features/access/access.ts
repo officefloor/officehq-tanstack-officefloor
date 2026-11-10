@@ -109,7 +109,11 @@ export function useSettings(sheetId: string) {
  * its date ('0.00', no floor, until the settings are read).
  */
 export function useFloor(sheetId: string): Dated {
-  const settings = useSettings(sheetId).data;
+  return floorOf(useSettings(sheetId).data);
+}
+
+/** The floor of settings as read (undefined until they are): as `useFloor`. */
+export function floorOf(settings: Settings | undefined): Dated {
   if (!settings) return { start: '0.00', values: [] };
   return { start: '1.00', values: settings.dated?.floor ?? [] };
 }
@@ -119,12 +123,16 @@ export function useFloor(sheetId: string): Dated {
  * today and policy date ('' until read).
  */
 export function useLate(sheetId: string): Late {
-  const settings = useSettings(sheetId).data;
+  return lateOf(useSettings(sheetId).data, useSheetToday(sheetId));
+}
+
+/** The late charge of settings as read (undefined until they are) on the sheet's today: as `useLate`. */
+export function lateOf(settings: Settings | undefined, today: string): Late {
   const pct: Dated = { start: '0.00', values: settings?.dated?.['late-pct'] ?? [] };
   const grace = Object.fromEntries(
     GRADES.map((g) => [g, { start: '', values: settings?.dated?.[gradeGraceKey(g)] ?? [] }]),
   );
-  return { pct, today: useSheetToday(sheetId), policyDate: settings?.policyDate ?? '', grace };
+  return { pct, today, policyDate: settings?.policyDate ?? '', grace };
 }
 
 /** The sheet's cap on a person's due-total ('' for none, until the settings are read). */
