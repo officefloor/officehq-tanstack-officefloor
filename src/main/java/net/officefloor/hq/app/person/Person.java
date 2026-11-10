@@ -20,6 +20,7 @@ public class Person {
     private LocalDate statementDate;
     private LocalDate retiredFrom;
     private LocalDate addedOn;
+    private String originSheet;
     private final List<Hold> holds = new ArrayList<>();
     private final List<Long> patronIds = new ArrayList<>();
     private final List<String> aliases = new ArrayList<>();
@@ -77,6 +78,9 @@ public class Person {
     /** The sheet's today when they were added; null when it was not kept (from the beginning of time). */
     public LocalDate getAddedOn() { return addedOn; }
     public void setAddedOn(LocalDate addedOn) { this.addedOn = addedOn; }
+    /** The sheet they were transferred from (their latest transfer); null when never transferred. */
+    public String getOriginSheet() { return originSheet; }
+    public void setOriginSheet(String originSheet) { this.originSheet = originSheet; }
     /** Whether they had been added by the end of {@code day}. */
     public boolean addedBy(LocalDate day) { return addedOn == null || !addedOn.isAfter(day); }
     /** The date they are retired from; null when not retired. Set at all, they count as retired. */

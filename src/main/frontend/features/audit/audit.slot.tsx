@@ -7,7 +7,8 @@ import { useUser } from '../session/session';
 
 // The audit viewer: a filter entry, a show button and the sheet's audit lines, read from the audit
 // file exactly as it holds them, newest first. A name in the filter keeps only the lines about that
-// person (name= or person= that name, case and surrounding spaces ignored). It writes nothing.
+// person (name= or person= that name, case and surrounding spaces ignored), followed, for someone
+// transferred here, by the lines about them from the sheet they came from. It writes nothing.
 function AuditViewer({ sheetId }: { sheetId: string }) {
   const [user] = useUser();
   const [filter, setFilter] = useState('');

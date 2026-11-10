@@ -17,7 +17,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PersonRepository {
 
-    private static final String COLUMNS = "id, sheet_id, name, grade, terms, contact, version, statement_count, stated_total, statement_date, retired_from, added_on";
+    private static final String COLUMNS = "id, sheet_id, name, grade, terms, contact, version, statement_count, stated_total, statement_date, retired_from, added_on, origin_sheet";
 
     private static final RowMapper<Person> ROW = (rs, n) -> {
         Person person = new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
@@ -28,6 +28,7 @@ public class PersonRepository {
                 rs.getObject("statement_date", LocalDate.class));
         person.setRetiredFrom(rs.getObject("retired_from", LocalDate.class));
         person.setAddedOn(rs.getObject("added_on", LocalDate.class));
+        person.setOriginSheet(rs.getString("origin_sheet"));
         return person;
     };
 
@@ -191,7 +192,7 @@ public class PersonRepository {
                 + " WHERE person_id = ?", toSheet, toSheet, id);
         jdbc.update("UPDATE person SET sheet_id = ?, statement_count = 0, stated_total = NULL, statement_date = NULL,"
                 + " retired_from = NULL, added_on = (SELECT today FROM sheet WHERE id = ?), list_pos = " + END_OF_LIST + ","
-                + " version = version + 1 WHERE id = ?", toSheet, toSheet, toSheet, id);
+                + " origin_sheet = ?, version = version + 1 WHERE id = ?", toSheet, toSheet, toSheet, person.getSheetId(), id);
         Person moved = find(toSheet, id);
         gradeHistory(moved, null, moved.getGrade());
         termsHistory(moved);

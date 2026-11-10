@@ -11,6 +11,15 @@ function TransferHead() {
   return <th>Transfer</th>;
 }
 
+function OriginHead() {
+  return <th>From sheet</th>;
+}
+
+// The sheet this person was transferred from (empty for anyone never transferred).
+function PersonOrigin({ person }: { sheetId: string; person: Person }) {
+  return <td data-testid="person-origin">{person.origin}</td>;
+}
+
 // An entry for another sheet's id and a button that transfers this person there (a steward): they
 // arrive with their grades, terms, contact, aliases and claims, and leave this sheet's list.
 function PersonTransfer({ sheetId, person }: { sheetId: string; person: Person }) {
@@ -62,6 +71,8 @@ function PersonTransfer({ sheetId, person }: { sheetId: string; person: Person }
 }
 
 export const contributions = [
+  PersonHead.fill({ order: 64, Component: OriginHead }),
+  PersonRow.fill({ order: 64, Component: PersonOrigin }),
   PersonHead.fill({ order: 66, Component: TransferHead }),
   PersonRow.fill({ order: 66, Component: PersonTransfer }),
 ];
