@@ -60,35 +60,49 @@ function showCents(cents: bigint): string {
 }
 
 /**
- * An amount times a rate, divided by 100, rounded half to even to two decimals, raised to the
- * sheet's `floor` when below it; n/a with no rate (no floor applies to n/a).
+ * An amount times a rate, divided by 100, rounded to two decimals (half up when `halfUp`, else half
+ * to even), raised to the sheet's `floor` when below it; n/a with no rate (no floor applies to n/a).
  * Worked in whole numbers so no floating-point error creeps in. A correction (a negative amount)
  * takes no floor (`floor` null).
  */
-export function due(amount: string, pct: string | null, floor: string | null): string {
+export function due(amount: string, pct: string | null, floor: string | null, halfUp: boolean): string {
   if (pct === null) return NA;
-  const rounded = percentOf(amount, pct, 1n);
+  const rounded = percentOf(amount, pct, 1n, halfUp);
   if (floor === null) return showCents(rounded);
   const least = hundredths(floor);
   return showCents(rounded < least ? least : rounded);
 }
 
-/** `times` × a percent of a two-decimal figure, in cents, rounded half to even (symmetric about 0). */
-function percentOf(figure: string, pct: string, times: bigint): bigint {
+/**
+ * `times` × a percent of a two-decimal figure, in cents, rounded half up when `halfUp`, else half
+ * to even (either symmetric about 0).
+ */
+function percentOf(figure: string, pct: string, times: bigint, halfUp: boolean): bigint {
   // cents × basis points is the due in millionths of a unit: 10000 of them to the cent.
   const signed = hundredths(figure) * hundredths(pct) * times;
   const x = signed < 0n ? -signed : signed;
   const cents = x / 10000n;
   const rest = x % 10000n;
-  const rounded = rest > 5000n || (rest === 5000n && cents % 2n === 1n) ? cents + 1n : cents;
+  const rounded = rest > 5000n || (rest === 5000n && (halfUp || cents % 2n === 1n)) ? cents + 1n : cents;
   return signed < 0n ? -rounded : rounded;
 }
 
 /**
- * What the late charge needs: the sheet's late percent (two decimals), its terms (days) and its
- * today (yyyy-MM-dd; '' until read).
+ * What the late charge and a claim's rounding need: the sheet's late percent (two decimals), its
+ * terms (days), its today (yyyy-MM-dd; '' until read) and its policy date (yyyy-MM-dd; '' for its
+ * today).
  */
-export type Late = { pct: string; terms: number; today: string };
+export type Late = { pct: string; terms: number; today: string; policyDate: string };
+
+/**
+ * Whether a claim's live figures round half up: it rounds by a date (its own, or for a correction
+ * the date of the claim it corrects) before the sheet's policy date (its today when blank); on or
+ * after it they round half to even.
+ */
+export function roundsHalfUp(claim: Claim, late: Late): boolean {
+  const policy = late.policyDate !== '' ? late.policyDate : late.today;
+  return (claim.roundDate || claim.date) < policy;
+}
 
 /** Whole days from one date (yyyy-MM-dd) to another, worked in UTC so no zone shifts it. */
 function daysBetween(from: string, to: string): number {
@@ -102,13 +116,13 @@ function daysBetween(from: string, to: string): number {
 /**
  * A claim's late charge on its `figure`: for an OPEN claim past its due-by (its date plus the
  * terms) on the sheet's today, the late percent of the figure for every full 30 days it is overdue,
- * rounded half to even; else nothing. A statement never binds it: it follows the sheet's today.
+ * rounded as the claim rounds; else nothing. A statement never binds it: it follows the sheet's today.
  */
 function lateCharge(claim: Claim, figure: string, late: Late): bigint {
   if (claim.status !== 'OPEN' || figure === NA || late.today === '' || isCorrection(claim)) return 0n;
   const overdue = daysBetween(claim.date, late.today) - late.terms;
   const periods = overdue > 0 ? Math.floor(overdue / 30) : 0;
-  return periods === 0 ? 0n : percentOf(figure, late.pct, BigInt(periods));
+  return periods === 0 ? 0n : percentOf(figure, late.pct, BigInt(periods), roundsHalfUp(claim, late));
 }
 
 /** Due values added up, skipping n/a. */
@@ -123,7 +137,7 @@ export function sumDue(values: string[]): string {
  */
 export function claimDue(claim: Claim, pct: string | null, floor: string, late: Late): string {
   if (claim.due !== '') return claim.due;
-  const figure = claim.stated ? claim.statedDue : due(claim.amount, pct, isCorrection(claim) ? null : floor);
+  const figure = claim.stated ? claim.statedDue : due(claim.amount, pct, isCorrection(claim) ? null : floor, roundsHalfUp(claim, late));
   const charge = lateCharge(claim, figure, late);
   return charge === 0n ? figure : showCents(hundredths(figure) + charge);
 }

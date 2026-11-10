@@ -10,7 +10,8 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
  * fixed when it was settled ('' while its due is live: unsettled, or settled with no rate), and
  * who opened it ('' until it is opened); whether its person's last statement bound it, and the
  * figure it was bound to ('' when not stated; n/a when it had none); and, for a correction (a
- * negative amount), the number of the settled claim it corrects ('' for any other claim).
+ * negative amount), the number of the settled claim it corrects ('' for any other claim); and the
+ * date (yyyy-MM-dd) its figures round by (a correction's is the date of the claim it corrects).
  */
 export type Claim = {
   id: string;
@@ -25,6 +26,7 @@ export type Claim = {
   stated: boolean;
   statedDue: string;
   corrects: string;
+  roundDate: string;
 };
 
 /** Whether a claim is a correction: it has no floor and no late charge. */

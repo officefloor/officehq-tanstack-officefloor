@@ -7,9 +7,10 @@ import { useSheetToday } from '../sheet/sheet';
  * A sheet's settings: its clerk limit, with two decimals ('' for no limit), and its floor, the
  * least a claim's live due may be, with two decimals, and its terms, the whole number of days after a
  * claim's date that it is due by, and its late percent, what an overdue claim's due gains per full 30
- * days overdue, with two decimals.
+ * days overdue, with two decimals, and its policy date (yyyy-MM-dd; '' for the sheet's today): a claim
+ * dated before it rounds half up, one on or after it half to even.
  */
-export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string };
+export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string };
 
 /** A save of the settings: only those being changed are sent. */
 export type SettingsChange = Partial<Settings>;
@@ -43,10 +44,14 @@ export function useTerms(sheetId: string): number {
   return terms === undefined ? DEFAULT_TERMS : Number(terms);
 }
 
-/** What the sheet's late charge needs: its late percent ('0.00' until read), terms and today. */
+/**
+ * What the sheet's late charge and rounding need: its late percent ('0.00' until read), terms,
+ * today and policy date ('' until read).
+ */
 export function useLate(sheetId: string): Late {
-  const pct = useSettings(sheetId).data?.latePct ?? '0.00';
-  return { pct, terms: useTerms(sheetId), today: useSheetToday(sheetId) };
+  const settings = useSettings(sheetId).data;
+  const pct = settings?.latePct ?? '0.00';
+  return { pct, terms: useTerms(sheetId), today: useSheetToday(sheetId), policyDate: settings?.policyDate ?? '' };
 }
 
 /** The roles assigned on the sheet, by user name. */
@@ -66,6 +71,9 @@ export const FLOOR = /^\d+(\.\d{1,2})?$/;
 
 /** A late percent as the screen takes it: 0.00 or more with up to two decimals. */
 export const LATE_PCT = /^\d+(\.\d{1,2})?$/;
+
+/** A policy date as the screen takes it: blank, or a date yyyy-MM-dd. */
+export const POLICY_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Terms as the screen takes them: a whole number of days, 0 or more. */
 export const TERMS = /^\d{1,5}$/;

@@ -11,24 +11,33 @@ import net.officefloor.hq.app.setting.Settings;
 /**
  * A claim's due figure, as the screen shows it: the due fixed when it was settled, else the figure
  * its person's last statement bound it to, else its live due: its amount times its grade's rate in
- * force on its date, divided by 100 and rounded half to even to two decimals, raised to the sheet's
- * floor when below it (a correction, a negative amount, has no floor and no late charge). Null for
- * n/a (no floor applies to n/a).
+ * force on its date, divided by 100 and rounded to two decimals, raised to the sheet's floor when
+ * below it (a correction, a negative amount, has no floor and no late charge). Null for n/a (no
+ * floor applies to n/a). Every rounding of a claim's live figures is by the sheet's policy date
+ * ({@link Settings#rounding}): half up when the claim is dated before it, half to even on or after;
+ * a correction rounds by the date of the claim it corrects.
  */
 public final class ClaimFigure {
     private ClaimFigure() {}
 
-    public static BigDecimal of(Claim claim, List<Rate> rates, String grade, BigDecimal floor) {
+    public static BigDecimal of(Claim claim, List<Rate> rates, String grade, Settings settings, LocalDate today) {
         if (claim.getSettledDue() != null) return claim.getSettledDue();
         if (claim.isStated()) return claim.getStatedDue();
-        return live(claim, rates, grade, floor);
+        return live(claim, rates, grade, settings, today);
     }
 
-    /** The claim's live due: {@link #live} at its grade's rate on its date; a correction has no floor. */
-    public static BigDecimal live(Claim claim, List<Rate> rates, String grade, BigDecimal floor) {
-        return claim.isCorrection()
-                ? Rate.inForce(rates, grade, claim.getDate()).map((pct) -> times(claim.getAmount(), pct)).orElse(null)
-                : live(claim.getAmount(), rates, grade, claim.getDate(), floor);
+    /** The claim's live due at its grade's rate on its date; a correction has no floor. */
+    public static BigDecimal live(Claim claim, List<Rate> rates, String grade, Settings settings, LocalDate today) {
+        RoundingMode mode = rounding(claim, settings, today);
+        return Rate.inForce(rates, grade, claim.getDate())
+                .map((pct) -> times(claim.getAmount(), pct, mode))
+                .map((due) -> claim.isCorrection() ? due : due.max(settings.floor()))
+                .orElse(null);
+    }
+
+    /** How the claim's live figures round, by the date it rounds by and the sheet's policy date. */
+    public static RoundingMode rounding(Claim claim, Settings settings, LocalDate today) {
+        return settings.rounding(claim.getRoundDate(), today);
     }
 
     /**
@@ -37,15 +46,15 @@ public final class ClaimFigure {
      */
     public static BigDecimal withLate(Claim claim, List<Rate> rates, String grade, Settings settings,
             LocalDate today) {
-        BigDecimal figure = of(claim, rates, grade, settings.floor());
+        BigDecimal figure = of(claim, rates, grade, settings, today);
         return figure == null ? null : figure.add(late(claim, figure, settings, today));
     }
 
     /**
      * The late charge on a figure: for an OPEN claim past its due-by (its date plus the sheet's
      * terms) on {@code today}, the sheet's late percent of the figure for every full 30 days it is
-     * overdue, rounded half to even to two decimals; else 0.00. Never bound by a statement: it
-     * follows the sheet's today until the claim is settled.
+     * overdue, rounded to two decimals as the claim rounds; else 0.00. Never bound by a statement:
+     * it follows the sheet's today until the claim is settled.
      */
     public static BigDecimal late(Claim claim, BigDecimal figure, Settings settings, LocalDate today) {
         BigDecimal none = BigDecimal.ZERO.setScale(2);
@@ -54,20 +63,11 @@ public final class ClaimFigure {
         long periods = overdue > 0 ? overdue / 30 : 0;
         if (periods == 0) return none;
         return figure.multiply(settings.latePct()).multiply(BigDecimal.valueOf(periods))
-                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_EVEN);
+                .divide(BigDecimal.valueOf(100), 2, rounding(claim, settings, today));
     }
 
-    /** The amount at the grade's rate in force on the date, at least the floor; null with no such rate. */
-    public static BigDecimal live(BigDecimal amount, List<Rate> rates, String grade, LocalDate date,
-            BigDecimal floor) {
-        return Rate.inForce(rates, grade, date)
-                .map((pct) -> times(amount, pct))
-                .map((due) -> due.max(floor))
-                .orElse(null);
-    }
-
-    /** The amount times the percent, divided by 100 and rounded half to even to two decimals. */
-    private static BigDecimal times(BigDecimal amount, BigDecimal pct) {
-        return amount.multiply(pct).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_EVEN);
+    /** The amount times the percent, divided by 100 and rounded to two decimals. */
+    private static BigDecimal times(BigDecimal amount, BigDecimal pct, RoundingMode mode) {
+        return amount.multiply(pct).divide(BigDecimal.valueOf(100), 2, mode);
     }
 }

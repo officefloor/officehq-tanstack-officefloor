@@ -37,7 +37,7 @@ public class TakeStatement {
                 counted++;
                 if (claim.getSettledDue() != null || claim.getStatedDue() != null) fixed = true;
                 String grade = person.gradeOn(claim.getDate());
-                BigDecimal figure = ClaimFigure.of(claim, all, grade, sheetSettings.floor());
+                BigDecimal figure = ClaimFigure.of(claim, all, grade, sheetSettings, sheet.today());
                 // A figure found under a grade other than today's is kept, whatever today's rate.
                 if (figure != null && !grade.equals(person.gradeOn(sheet.today()))) fixed = true;
                 // The due-total carries the late charge; the claim is bound to the figure under it.

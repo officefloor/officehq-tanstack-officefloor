@@ -13,7 +13,9 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects";
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects,"
+            + " (SELECT c.claim_date FROM claim c WHERE c.sheet_id = claim.sheet_id AND c.person_id = claim.person_id"
+            + " AND c.claim_number = claim.corrects) AS corrected_date";
 
     private static final RowMapper<Claim> ROW = (rs, n) -> {
         Claim claim = new Claim(rs.getLong("id"),
@@ -24,6 +26,8 @@ public class ClaimRepository {
             rs.getString("opened_by"));
         claim.bind(rs.getBoolean("stated"), rs.getBigDecimal("stated_due"));
         claim.setCorrects((Integer) rs.getObject("corrects", Integer.class));
+        java.sql.Date corrected = rs.getDate("corrected_date");
+        claim.setCorrectedDate(corrected == null ? null : corrected.toLocalDate());
         return claim;
     };
 

@@ -13,7 +13,8 @@ public class SaveSettings {
                 input.clerkLimitChanged() ? input.clerkLimit() : now.clerkLimit(),
                 input.floor() != null ? input.floor() : now.floor(),
                 input.terms() != null ? input.terms() : now.terms(),
-                input.latePct() != null ? input.latePct() : now.latePct());
+                input.latePct() != null ? input.latePct() : now.latePct(),
+                input.policyDateChanged() ? input.policyDate() : now.policyDate());
         repository.save(settings);
         settingsOut.set(settings);
     }

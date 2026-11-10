@@ -1,6 +1,8 @@
 package net.officefloor.hq.app.setting;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.regex.Pattern;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -44,6 +46,15 @@ public class ValidateSettings {
             }
             latePct = new BigDecimal(value).setScale(2);
         }
-        body.set(new SettingsInput(limitChanged, limit, floor, terms, latePct));
+        boolean policyChanged = request != null && request.policyDate() != null;
+        LocalDate policyDate = null;
+        if (policyChanged && !request.policyDate().trim().isEmpty()) {
+            try {
+                policyDate = LocalDate.parse(request.policyDate().trim());
+            } catch (DateTimeParseException e) {
+                throw new InvalidSettingException("A policy date is a date, yyyy-MM-dd, or blank");
+            }
+        }
+        body.set(new SettingsInput(limitChanged, limit, floor, terms, latePct, policyChanged, policyDate));
     }
 }

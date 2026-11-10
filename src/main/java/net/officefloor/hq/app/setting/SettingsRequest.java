@@ -3,7 +3,8 @@ package net.officefloor.hq.app.setting;
 /**
  * Settings as the screen sends them, each only when it is being changed (null: left as it is): the
  * clerk limit, with up to two decimals (blank: no limit), the floor, with up to two decimals, and
- * the terms, a whole number of days, and the late percent, with up to two decimals.
+ * the terms, a whole number of days, and the late percent, with up to two decimals, and the policy
+ * date as yyyy-MM-dd (blank: the sheet's today).
  */
-public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct) {
+public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String policyDate) {
 }
