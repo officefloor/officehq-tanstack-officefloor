@@ -8,7 +8,7 @@ import { useGrades } from '../people/usePeople';
 import { useSheetToday } from '../today/useSheetToday';
 import { useDueTotals, useExcess, useSettledOpenTotals } from './useDueTotals';
 import { useRatePreview } from './useRatePreview';
-import { rateFor, ratesKey, sumDues, trimmedSum, useRates, type Rate } from './useRates';
+import { rateFor, ratesKey, trimmedSum, useRates, type Rate } from './useRates';
 import { useFigure } from '../locale/useLocale';
 import { Col } from '../columns/useColumns';
 
@@ -332,14 +332,15 @@ function PersonSettledOpen({ sheetId, personId }: { sheetId: string; personId: n
   );
 }
 
-/** The sheet's settled-total and open-total: everyone's figure simply added up (not trimmed). */
+/** The sheet's settled-total and open-total: everyone's figure added up, leaving out the highest and the
+ *  lowest when three or more people have one. */
 function SettledOpenTotals({ sheetId }: { sheetId: string }) {
   const fig = useFigure();
   const split = [...useSettledOpenTotals(sheetId).values()];
   return (
     <p>
-      Settled total: <strong data-testid="rollup-settled-total">{fig(sumDues(split.map((s) => s.settled)))}</strong>,
-      open total <strong data-testid="rollup-open-total">{fig(sumDues(split.map((s) => s.open)))}</strong>
+      Settled total: <strong data-testid="rollup-settled-total">{fig(trimmedSum(split.map((s) => s.settled)))}</strong>,
+      open total <strong data-testid="rollup-open-total">{fig(trimmedSum(split.map((s) => s.open)))}</strong>
     </p>
   );
 }

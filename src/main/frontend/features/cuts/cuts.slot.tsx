@@ -1,6 +1,6 @@
 import { PersonCells, PersonColumnHead } from '../../slots/defs/personRow';
 import { SheetBody } from '../../slots/defs/sheetBody';
-import { sumDues } from '../rates/useRates';
+import { trimmedSum } from '../rates/useRates';
 import { useCutTotals } from './useCutTotals';
 import { useFigure } from '../locale/useLocale';
 
@@ -11,13 +11,14 @@ function PersonCutTotal({ sheetId, personId }: { sheetId: string; personId: numb
   return <td data-testid="person-cut-total">{fig(totals.get(personId) ?? '')}</td>;
 }
 
-/** The sheet's cut total: everyone's cut total added up. */
+/** The sheet's cut total: everyone's cut total added up, leaving out the highest and the lowest when three
+ *  or more people have one. */
 function CutTotal({ sheetId }: { sheetId: string }) {
   const fig = useFigure();
   const totals = useCutTotals(sheetId);
   return (
     <p>
-      Cut total: <strong data-testid="rollup-cut-total">{fig(sumDues([...totals.values()]))}</strong>
+      Cut total: <strong data-testid="rollup-cut-total">{fig(trimmedSum([...totals.values()]))}</strong>
     </p>
   );
 }
