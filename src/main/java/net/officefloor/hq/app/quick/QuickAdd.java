@@ -20,7 +20,7 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.web.bind.annotation.PathVariable;
 
 /** Add a draft claim, dated the sheet's entry date (its today when none is set) with an empty note, for the person with this name (ignoring
- *  case), adding them first with the sheet's default grade (A when it has none) when the sheet has no one by that name (refused when the name is already
+ *  case), adding them first with the sheet's default grade (A when it has none or it is retired) when the sheet has no one by that name (refused when the name is already
  *  a name or alias on another sheet of the sheet's tree). One change: every check
  *  runs before anything is written, so a refusal leaves no new person and no audit record behind. */
 public class QuickAdd {

@@ -53,6 +53,14 @@ public final class NewPerson {
                 net.officefloor.hq.app.claim.Claim.tags(request.tags()), termsFrom);
     }
 
+    /** Refuse choosing a grade retired on the sheet. */
+    public static void checkNotRetired(net.officefloor.hq.app.settings.SettingsRepository settings, String id, String grade)
+            throws BadRequestException {
+        if (settings.retired(id, grade)) {
+            throw new BadRequestException("grade " + grade + " is retired");
+        }
+    }
+
     /** Refuse a validated person whose name or contact is already in use on the sheet. */
     public static void checkFree(PersonRepository repository, String id, PersonRequest request) throws BadRequestException {
         if (repository.nameTaken(id, request.name(), 0)) {

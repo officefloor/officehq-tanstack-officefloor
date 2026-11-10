@@ -57,6 +57,13 @@ public class BulkGradePeople {
             result.set(new BulkGradeResult(graded));
             return;
         }
+        if (settings.retired(id, grade)) {
+            for (Person current : repository.list(id)) {
+                if (selected.contains(current.id()) && (!fromText.isEmpty() || !grade.equals(current.grade()))) {
+                    throw new BadRequestException("grade " + grade + " is retired");
+                }
+            }
+        }
         for (Person current : repository.list(id)) {
             if (!selected.contains(current.id())) continue;
             boolean regrade = !fromText.isEmpty() || !grade.equals(current.grade());

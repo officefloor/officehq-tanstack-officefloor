@@ -39,12 +39,15 @@ import java.util.List;
  *  {@code scoreLog} is the sheet's score log switch (not dated): while on, changing the sheet's today writes one SCORE
  *  line per person with their score as it stood on the day being left.
  *  {@code maxOpen} is the sheet's maximum of open claims per person (null when blank: none; not dated): opening a
- *  claim is refused while its person already has that many OPEN or PENDING claims. */
+ *  claim is refused while its person already has that many OPEN or PENDING claims.
+ *  {@code retiredGrades} is the sheet's retired grades (not dated): one cannot be chosen for a person any more (people
+ *  already on it keep it), nor be the grade the default grade gives (A is given instead). */
 public record Settings(String clerkLimit, String floor, int terms, String latePct, List<Role> roles, String policyDate,
         String periodNumberingFrom, java.util.Map<String, Integer> gradeTerms, String cap,
         java.util.Map<String, List<DatedValue>> dated, java.util.Map<String, String> permissions, Integer graceDays,
         List<Delegation> delegations, String entryDate, List<String> holidays, List<String> voidReasons,
         String pot, String parent, int fiscalStartMonth, String alertThreshold,
         Integer escalateAfter, Integer reviewSla, String proofKinds, String defaultGrade,
-        Integer scoreMid, Integer scoreHigh, boolean scoreLog, Integer maxOpen) {
+        Integer scoreMid, Integer scoreHigh, boolean scoreLog, Integer maxOpen,
+        List<String> retiredGrades) {
 }

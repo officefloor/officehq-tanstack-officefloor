@@ -21,7 +21,8 @@ public class GradePerson {
 
     public void grade(@PathVariable("sheetId") String sheetId, @PathVariable("personId") String personId,
             @RequestBody GradeRequest request, ServerHttpConnection connection, PersonRepository repository,
-            SheetRepository sheets, Audit audit, Rollup rollup, Out<Person> person)
+            SheetRepository sheets,
+            net.officefloor.hq.app.settings.SettingsRepository settings, Audit audit, Rollup rollup, Out<Person> person)
             throws BadRequestException, ConflictException {
         String by = CurrentUser.require(connection);
         String id = sheetId == null ? "" : sheetId.trim();
@@ -40,6 +41,9 @@ public class GradePerson {
             throw new BadRequestException("grade must be A, B or C");
         }
         boolean regrade = !grade.equals(current.grade());
+        if (regrade) {
+            NewPerson.checkNotRetired(settings, id, grade);
+        }
         Rollup.Snapshot before = rollup.take(id);
         if (!repository.update(id, pid, current.version(), current.name(), current.terms())) {
             throw new ConflictException("someone else has saved this person; showing their current values");

@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  sheet (ignoring case) updates that person as the person form would save them with their own name: the
  *  grade is recorded from the sheet's today (none when it is unchanged), and their terms and contact are set
  *  when the line gives them; written as PERSON_EDITED. Any other line adds a person as the person form does,
- *  written as PERSON_ADDED. A line with a blank grade takes the sheet's default grade (A when it has none). One change: every line is checked first, so a refused line (or two lines naming
+ *  written as PERSON_ADDED. A line with a blank grade takes the sheet's default grade (A when it has none, or when it is retired). A grade retired on the sheet is refused, unless the line leaves a person on it as they are. One change: every line is checked first, so a refused line (or two lines naming
  *  the same person) changes no one and writes no audit record. */
 public class ImportPeople {
     public void importPeople(@PathVariable("sheetId") String sheetId, @Val ImportInput input,
@@ -35,6 +35,7 @@ public class ImportPeople {
         if (!repository.sheetExists(id)) {
             throw new BadRequestException("no such sheet");
         }
+        String defaultGrade = settings.defaultGrade(id);
         List<Person> matches = new ArrayList<>();
         Set<Long> matched = new HashSet<>();
         int n = 0;
@@ -52,12 +53,15 @@ public class ImportPeople {
                         throw new BadRequestException("contact is already in use");
                     }
                 }
+                String grade = person.grade().isEmpty() ? defaultGrade : person.grade();
+                if (current == null || !grade.equals(current.grade())) {
+                    NewPerson.checkNotRetired(settings, id, grade);
+                }
                 matches.add(current);
             } catch (BadRequestException e) {
                 throw new BadRequestException("line " + n + ": " + e.getMessage());
             }
         }
-        String defaultGrade = settings.defaultGrade(id);
         LocalDate today = sheets.today(id);
         int added = 0;
         int updated = 0;

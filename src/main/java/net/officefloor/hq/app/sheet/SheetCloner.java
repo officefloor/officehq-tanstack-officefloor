@@ -28,7 +28,7 @@ public class SheetCloner {
     }
 
     /** Make sheet {@code to} (made by {@code by}) a copy of sheet {@code from}: its today, settings, roles, rates,
-     *  holidays, void reasons, tags and templates; its people in list order with their grades, terms, contacts,
+     *  holidays, retired grades, void reasons, tags and templates; its people in list order with their grades, terms, contacts,
      *  aliases, holds, retirements and patrons; its pools and their members; its periods, all open; and its claims,
      *  each person's in the order they are listed, with their status, settled figures, dates, notes, tags, status logs
      *  and comments. Statements are not copied (no claim is bound to one), nor locks, settle batches, watches or
@@ -63,6 +63,7 @@ public class SheetCloner {
                             local(rs.getDate("to_date")), rs.getObject("after_seq", Long.class));
                 }, to);
         jdbc.update("INSERT INTO holiday (sheet_id, holiday_date) SELECT ?, holiday_date FROM holiday WHERE sheet_id = ?", to, from);
+        jdbc.update("INSERT INTO retired_grade (sheet_id, grade) SELECT ?, grade FROM retired_grade WHERE sheet_id = ?", to, from);
         jdbc.update("INSERT INTO void_reason (sheet_id, position, reason) SELECT ?, position, reason FROM void_reason"
                 + " WHERE sheet_id = ?", to, from);
         jdbc.update("INSERT INTO sheet_tag (sheet_id, tag) SELECT ?, tag FROM sheet_tag WHERE sheet_id = ?", to, from);

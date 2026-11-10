@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 /** Save an edited person; refused (409) when someone else has saved them since the editor loaded its version.
  *  The form's grade is recorded from its from-date (blank: the sheet's today), keeping their other grades,
  *  except that a save leaving the grade in force on the sheet's today as it is, with the from-date blank,
- *  records no grade. The form's terms are recorded from their from-date, keeping the others (one already recorded
+ *  records no grade. A grade retired on the sheet cannot be recorded (a save leaving it as it is records none). The form's terms are recorded from their from-date, keeping the others (one already recorded
  *  for that date is replaced), or, with the from-date blank, from the beginning of time, unless they are the terms
  *  in force on the sheet's today (then none are recorded). PERSON_EDITED carries the grade in force on the sheet's today after the save, then
  *  the person's own terms in force on the sheet's today when the save recorded terms (empty when none are), then their contact when
@@ -24,7 +24,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class SavePerson {
     public void save(@PathVariable("sheetId") String sheetId, @PathVariable("personId") String personId,
             @Val PersonRequest request, ServerHttpConnection connection, PersonRepository repository,
-            SheetRepository sheets, Audit audit, Rollup rollup, Out<Person> person) throws BadRequestException, ConflictException {
+            SheetRepository sheets,
+            net.officefloor.hq.app.settings.SettingsRepository settings, Audit audit, Rollup rollup, Out<Person> person) throws BadRequestException, ConflictException {
         String by = CurrentUser.require(connection);
         String id = sheetId == null ? "" : sheetId.trim();
         long pid;
@@ -55,6 +56,9 @@ public class SavePerson {
             throw new BadRequestException("contact is already in use");
         }
         boolean regrade = !request.gradeFrom().isEmpty() || !request.grade().equals(current.grade());
+        if (regrade) {
+            NewPerson.checkNotRetired(settings, id, request.grade());
+        }
         LocalDate from = request.gradeFrom().isEmpty() ? sheets.today(id) : LocalDate.parse(request.gradeFrom());
         Integer terms = request.terms().isEmpty() ? null : Integer.valueOf(request.terms());
         boolean datedTerms = !request.termsFrom().isEmpty();

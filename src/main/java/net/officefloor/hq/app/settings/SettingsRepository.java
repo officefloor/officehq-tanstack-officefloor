@@ -61,7 +61,8 @@ public class SettingsRepository {
                 delegations(sheetId), entry == null ? null : entry.toString(), holidays(sheetId),
                 voidReasons(sheetId), pot == null ? null : money(pot), parent(sheetId), fiscalStartMonth(sheetId),
                 alert == null ? null : money(alert), escalateAfter(sheetId), reviewSla(sheetId), proofKinds(sheetId),
-                storedDefaultGrade(sheetId), scoreMid(sheetId), scoreHigh(sheetId), scoreLog(sheetId), maxOpen(sheetId));
+                storedDefaultGrade(sheetId), scoreMid(sheetId), scoreHigh(sheetId), scoreLog(sheetId), maxOpen(sheetId),
+                retiredGrades(sheetId));
     }
 
     /** The sheet's today; the real date when there is no such sheet. */
@@ -502,7 +503,24 @@ public class SettingsRepository {
     /** The grade a new person takes when none is given: the sheet's default grade, A when blank. */
     public String defaultGrade(String sheetId) {
         String grade = storedDefaultGrade(sheetId);
-        return grade == null ? "A" : grade;
+        return grade == null || retired(sheetId, grade) ? "A" : grade;
+    }
+
+    /** The sheet's retired grades, in grade order. */
+    public List<String> retiredGrades(String sheetId) {
+        return jdbc.query("SELECT grade FROM retired_grade WHERE sheet_id = ? ORDER BY grade",
+                (rs, i) -> rs.getString("grade"), sheetId);
+    }
+
+    /** Whether the grade is retired on the sheet: it cannot be chosen for a person any more. */
+    public boolean retired(String sheetId, String grade) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM retired_grade WHERE sheet_id = ? AND grade = ?",
+                Integer.class, sheetId, grade);
+        return n != null && n > 0;
+    }
+
+    public void retireGrade(String sheetId, String grade) {
+        jdbc.update("INSERT INTO retired_grade (sheet_id, grade) VALUES (?, ?)", sheetId, grade);
     }
 
     public void setDefaultGrade(String sheetId, String grade) {
