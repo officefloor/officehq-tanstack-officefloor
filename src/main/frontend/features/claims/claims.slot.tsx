@@ -16,6 +16,7 @@ import { useFloor, useLate } from '../access/access';
 import { useSheetToday } from '../sheet/sheet';
 import { dueBy, isOverdue } from '../overdue/overdue';
 import { useVoidReasons } from '../voidreasons/voidReasons';
+import { useTemplates } from '../templates/templates';
 
 // A clerk's settle above the clerk limit leaves the claim PENDING; a steward approves it or rejects
 // it with a reason (typed in the row). A steward re-settles a SETTLED claim at its figure today.
@@ -75,6 +76,9 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   // The amount typed to split off each claim, by claim id.
   const [splitAmount, setSplitAmount] = useState<Record<string, string>>({});
   const [commentText, setCommentText] = useState<Record<string, string>>({});
+  // The template picked to add a draft claim from.
+  const [template, setTemplate] = useState('');
+  const templates = useTemplates(sheetId).data ?? [];
   const others = (usePeople(sheetId).data ?? []).filter((p) => p.id !== person.id);
   const [user] = useUser();
   const rates = useRates(sheetId).data ?? [];
@@ -296,6 +300,29 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
     onError: (_e, { id }) => setRefused({ id, message: 'That claim cannot be commented.' }),
   });
 
+  // A draft claim from a template: its amount and note as the template has them now, undated, by
+  // every rule of the claim form; a refusal shows on the claim form.
+  const fromTemplate = useMutation({
+    mutationFn: (name: string) =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/people/${encodeURIComponent(person.id)}/template-claims`,
+        { template: name },
+        user,
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+    onError: () => setError('A claim could not be added from that template.'),
+  });
+
+  const addFromTemplate = () => {
+    setError('');
+    setRefused(null);
+    if (template === '') {
+      setError('Choose a template.');
+      return;
+    }
+    once((done) => fromTemplate.mutate(template, { onSettled: done }));
+  };
+
   const addComment = (id: string) => {
     setRefused(null);
     const text = (commentText[id] ?? '').trim();
@@ -479,6 +506,29 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
           />{' '}
           <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
             {editing === null ? 'Add claim' : 'Save claim'}
+          </button>
+          <select
+            data-testid="claim-template-select"
+            value={template}
+            onChange={(e) => {
+              setTemplate(e.target.value);
+              setError('');
+            }}
+          >
+            <option value="">Template…</option>
+            {templates.map((t) => (
+              <option key={t.name} value={t.name}>
+                {t.name}
+              </option>
+            ))}
+          </select>{' '}
+          <button
+            type="button"
+            data-testid="claim-template-add"
+            disabled={fromTemplate.isPending}
+            onClick={addFromTemplate}
+          >
+            Add from template
           </button>
           {error && (
             <p role="alert" data-testid="claim-form-error">
