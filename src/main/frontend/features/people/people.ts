@@ -8,7 +8,7 @@ export const GRADES: Grade[] = ['A', 'B', 'C'];
 // `version` is raised by each save; an edit sends the version it was made from. `statementCount`
 // is how many statements have been taken for them; `statedTotal` and `statementDate` are the last
 // one's due-total and date ('' before the first). `retired` is set once they have a retirement
-// date, `retiredFrom` ('' when not retired), whatever that date is.
+// date, `retiredFrom` ('' when not retired), whatever that date is. `held` is whether they are on hold: their OPEN claims then count in no total.
 export type Person = {
   id: string;
   name: string;
@@ -19,6 +19,7 @@ export type Person = {
   statementDate: string;
   retired: boolean;
   retiredFrom: string;
+  held: boolean;
 };
 
 export const peopleKey = (sheetId: string) => ['sheet', sheetId, 'people'] as const;

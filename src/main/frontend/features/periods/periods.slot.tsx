@@ -81,7 +81,7 @@ function Periods({ sheetId }: { sheetId: string }) {
   const dueTotal = (p: Period) => {
     const dues = people.flatMap((person) =>
       claims
-        .filter((c) => c.personId === person.id && counts(c) && p.from <= c.date && c.date <= p.to)
+        .filter((c) => c.personId === person.id && counts(c, person.held) && p.from <= c.date && c.date <= p.to)
         .map((c) => claimDue(c, rateOn(rates, person.grade, c.date))),
     );
     return sumDue(dues);

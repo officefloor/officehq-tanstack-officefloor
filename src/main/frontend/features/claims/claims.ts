@@ -25,8 +25,11 @@ export type Claim = {
   statedDue: string;
 };
 
-/** Whether a claim counts toward claimed, due-total and every total: only OPEN and SETTLED do. */
-export const counts = (c: Claim) => c.status === 'OPEN' || c.status === 'SETTLED';
+/**
+ * Whether a claim counts toward claimed, due-total and every total: only OPEN and SETTLED do, and
+ * an OPEN one not while its person is on hold (`held`).
+ */
+export const counts = (c: Claim, held: boolean) => c.status === 'SETTLED' || (c.status === 'OPEN' && !held);
 
 export const claimsKey = (sheetId: string) => ['sheet', sheetId, 'claims'] as const;
 
@@ -43,10 +46,11 @@ export function useClaims(sheetId: string) {
 export const AMOUNT = /^\d+(\.\d{1,2})?$/;
 
 /**
- * The amounts of the claims that count (OPEN and SETTLED) added up, in whole cents so no rounding
- * creeps in, shown with two decimals.
+ * The amounts of the claims that count (OPEN and SETTLED, but not OPEN of a person on hold:
+ * `held` tells by person id) added up, in whole cents so no rounding creeps in, shown with two
+ * decimals.
  */
-export function sumAmounts(claims: Claim[]): string {
-  const cents = claims.filter(counts).reduce((n, c) => n + Math.round(Number(c.amount) * 100), 0);
+export function sumAmounts(claims: Claim[], held: (personId: string) => boolean): string {
+  const cents = claims.filter((c) => counts(c, held(c.personId))).reduce((n, c) => n + Math.round(Number(c.amount) * 100), 0);
   return (cents / 100).toFixed(2);
 }

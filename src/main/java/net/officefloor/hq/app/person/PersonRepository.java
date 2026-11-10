@@ -14,7 +14,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PersonRepository {
 
-    private static final String COLUMNS = "id, sheet_id, name, grade, version, statement_count, stated_total, statement_date, retired_from";
+    private static final String COLUMNS = "id, sheet_id, name, grade, version, statement_count, stated_total, statement_date, retired_from, held";
 
     private static final RowMapper<Person> ROW = (rs, n) -> {
         Person person = new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
@@ -22,6 +22,7 @@ public class PersonRepository {
         person.setStatements(rs.getInt("statement_count"), rs.getString("stated_total"),
                 rs.getObject("statement_date", LocalDate.class));
         person.setRetiredFrom(rs.getObject("retired_from", LocalDate.class));
+        person.setHeld(rs.getBoolean("held"));
         return person;
     };
 
@@ -74,6 +75,12 @@ public class PersonRepository {
         jdbc.update("UPDATE person SET retired_from = ? WHERE id = ? AND sheet_id = ?",
                 person.getRetiredFrom() == null ? null : Date.valueOf(person.getRetiredFrom()),
                 person.getId(), person.getSheetId());
+    }
+
+    /** Record whether the person is on hold, leaving the rest as stored. */
+    public void saveHeld(Person person) {
+        jdbc.update("UPDATE person SET held = ? WHERE id = ? AND sheet_id = ?",
+                person.isHeld(), person.getId(), person.getSheetId());
     }
 
     /**

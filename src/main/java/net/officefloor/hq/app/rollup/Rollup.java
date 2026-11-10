@@ -9,7 +9,6 @@ import java.util.Map;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimFigure;
 import net.officefloor.hq.app.claim.ClaimRepository;
-import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.Rate;
@@ -30,7 +29,7 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
 
     /**
      * The sheet's figures now. A person's claimed is the amounts of their claims that count (OPEN
-     * and SETTLED) added up; their due-total the figures of those claims added up, skipping n/a, and
+     * and SETTLED, but not OPEN while they are on hold) added up; their due-total the figures of those claims added up, skipping n/a, and
      * n/a when their grade has no rate today and no claim that counts keeps a fixed figure. The
      * sheet's totals add these up, skipping n/a.
      */
@@ -47,7 +46,7 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
             boolean fixed = false;
             for (Claim claim : sheetClaims) {
                 if (claim.getPersonId() != person.getId()) continue;
-                if (claim.getStatus() != ClaimStatus.OPEN && claim.getStatus() != ClaimStatus.SETTLED) continue;
+                if (!claim.counts(person.isHeld())) continue;
                 claimed = claimed.add(claim.getAmount());
                 if (claim.getSettledDue() != null || claim.isStated()) fixed = true;
                 BigDecimal figure = ClaimFigure.of(claim, all, person.getGrade());

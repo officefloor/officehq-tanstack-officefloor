@@ -5,7 +5,6 @@ import java.util.List;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimFigure;
 import net.officefloor.hq.app.claim.ClaimRepository;
-import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.Rate;
@@ -16,7 +15,7 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * Closes the period, fixing its due-total at this moment: the figures of the claims that count (OPEN
- * and SETTLED) dated inside it, added up, skipping n/a. A period already closed is refused.
+ * and SETTLED, but not OPEN of a person on hold) dated inside it, added up, skipping n/a. A period already closed is refused.
  */
 public class ClosePeriod {
     public void close(@Val Sheet sheet, @Val Period period, PeriodRepository periods, PersonRepository people,
@@ -28,7 +27,7 @@ public class ClosePeriod {
         for (Person person : people.findAll(sheet.id())) {
             for (Claim claim : sheetClaims) {
                 if (claim.getPersonId() != person.getId() || !period.contains(claim.getDate())) continue;
-                if (claim.getStatus() != ClaimStatus.OPEN && claim.getStatus() != ClaimStatus.SETTLED) continue;
+                if (!claim.counts(person.isHeld())) continue;
                 BigDecimal figure = ClaimFigure.of(claim, all, person.getGrade());
                 if (figure != null) total = total.add(figure);
             }

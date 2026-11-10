@@ -63,6 +63,14 @@ public class Claim {
         this.stated = stated;
         this.statedDue = stated ? statedDue : null;
     }
+    /**
+     * Whether it counts toward its person's claimed and due-total, the sheet's totals and a
+     * period's total: OPEN and SETTLED do, except that while its person is on hold an OPEN one
+     * does not.
+     */
+    public boolean counts(boolean personHeld) {
+        return status == ClaimStatus.SETTLED || (status == ClaimStatus.OPEN && !personHeld);
+    }
     /** Only a draft may be edited; to change an open claim, void it and add a new one. */
     public void checkEditable() throws InvalidClaimStatusException {
         if (status != ClaimStatus.DRAFT) throw new InvalidClaimStatusException(status);

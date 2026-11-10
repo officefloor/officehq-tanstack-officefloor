@@ -83,12 +83,12 @@ export function claimDue(claim: Claim, pct: string | null): string {
 }
 
 /**
- * A person's due-total: the figures of their claims that count (each at the rate in force on its
+ * A person's due-total: the figures of their claims that count (none OPEN while they are `held`) (each at the rate in force on its
  * date), added up, skipping n/a. With no rate for their grade today it is n/a, unless a settled
  * claim that counts keeps a fixed figure (settled, or bound by a statement).
  */
-export function personDueTotal(rates: Rate[], grade: Grade, today: string, claims: Claim[]): string {
-  const counted = claims.filter(counts);
+export function personDueTotal(rates: Rate[], grade: Grade, today: string, claims: Claim[], held: boolean): string {
+  const counted = claims.filter((c) => counts(c, held));
   if (rateOn(rates, grade, today) === null && !counted.some((c) => c.due !== '' || c.stated)) return NA;
   return sumDue(counted.map((c) => claimDue(c, rateOn(rates, grade, c.date))));
 }

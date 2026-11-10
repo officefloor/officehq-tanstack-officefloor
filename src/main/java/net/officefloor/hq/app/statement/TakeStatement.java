@@ -5,7 +5,6 @@ import java.util.List;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimFigure;
 import net.officefloor.hq.app.claim.ClaimRepository;
-import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.Rate;
@@ -29,7 +28,7 @@ public class TakeStatement {
         boolean fixed = false;
         int counted = 0;
         for (Claim claim : claims.findByPerson(sheet.id(), person.getId())) {
-            boolean counts = claim.getStatus() == ClaimStatus.OPEN || claim.getStatus() == ClaimStatus.SETTLED;
+            boolean counts = claim.counts(person.isHeld());
             if (counts) {
                 counted++;
                 if (claim.getSettledDue() != null || claim.isStated()) fixed = true;

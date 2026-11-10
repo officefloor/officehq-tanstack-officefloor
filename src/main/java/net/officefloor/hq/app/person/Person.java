@@ -13,6 +13,7 @@ public class Person {
     private String statedTotal;
     private LocalDate statementDate;
     private LocalDate retiredFrom;
+    private boolean held;
 
     public Person(Long id, String sheetId, String name, String grade) {
         this(id, sheetId, name, grade, 0);
@@ -51,6 +52,9 @@ public class Person {
     public LocalDate getRetiredFrom() { return retiredFrom; }
     public void setRetiredFrom(LocalDate retiredFrom) { this.retiredFrom = retiredFrom; }
     public boolean isRetired() { return retiredFrom != null; }
+    /** Whether they are on hold: their OPEN claims count in no total until they are released. */
+    public boolean isHeld() { return held; }
+    public void setHeld(boolean held) { this.held = held; }
     /** Whether a claim on this date is refused: they are retired from an earlier date. */
     public boolean retiredBefore(LocalDate date) { return retiredFrom != null && date.isAfter(retiredFrom); }
 }
