@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, postJson, putJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
+import { PersonHead, PersonRow } from '../../slots/defs/personRow';
 import { GRADES, peopleKey, usePeople } from './people';
 import type { Grade, Person } from './people';
 
@@ -118,6 +119,7 @@ function People({ sheetId }: { sheetId: string }) {
             <th>Name</th>
             <th>Grade</th>
             <th />
+            <PersonHead.Slot sheetId={sheetId} />
           </tr>
         </thead>
         <tbody>
@@ -130,6 +132,7 @@ function People({ sheetId }: { sheetId: string }) {
                   Edit
                 </button>
               </td>
+              <PersonRow.Slot sheetId={sheetId} person={p} />
             </tr>
           ))}
         </tbody>
