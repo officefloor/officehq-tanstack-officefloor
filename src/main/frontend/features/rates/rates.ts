@@ -171,6 +171,11 @@ function lateCharge(claim: Claim, figure: string, late: Late, grade: string): bi
   return charge;
 }
 
+/** A share (a percent, two decimals) of a two-decimal figure, rounded half to even. */
+export function shareOf(figure: string, share: string): string {
+  return showCents(percentOf(figure, share, 1n, false));
+}
+
 /** Due values added up, skipping n/a. */
 export function sumDue(values: string[]): string {
   return showCents(values.filter((v) => v !== NA).reduce((n, v) => n + hundredths(v), 0n));

@@ -6,7 +6,7 @@ import { PersonHead, PersonRow } from '../../slots/defs/personRow';
 import { gradeOn, usePeople, peopleKey } from '../people/people';
 import type { Person } from '../people/people';
 import { useClaims } from '../claims/claims';
-import { addDays, claimDue, rateOn, sumDue, useRates } from '../rates/rates';
+import { addDays, claimDue, rateOn, shareOf, sumDue, useRates } from '../rates/rates';
 import { useSheetToday } from '../sheet/sheet';
 import { useFloor, useLate } from '../access/access';
 import { useUser } from '../session/session';
@@ -21,8 +21,10 @@ function PatronsHead() {
   );
 }
 
-// A person's patrons (names, sorted), their backing (the patrons' settled figures over their SETTLED
-// claims dated within the 90 days up to and including the sheet's today, added up, skipping n/a), and a picker that names one more person on the sheet as a patron.
+// A person's patrons (each as name and share, sorted by name), their backing (over the patrons, each
+// patron's settled figures over their SETTLED claims dated within the 90 days up to and including the
+// sheet's today, added up, skipping n/a, times their share divided by 100, rounded half to even; added
+// up), and a picker that names one more person on the sheet as a patron.
 function PersonPatrons({ sheetId, person }: { sheetId: string; person: Person }) {
   const queryClient = useQueryClient();
   const [user] = useUser();
@@ -36,14 +38,26 @@ function PersonPatrons({ sheetId, person }: { sheetId: string; person: Person })
   const [error, setError] = useState('');
   const once = useOnce();
 
-  const patrons = people.filter((p) => person.patronIds.includes(p.id));
-  const names = patrons.map((p) => p.name).sort((a, b) => a.localeCompare(b)).join(', ');
+  const patrons = person.patronIds.flatMap((id, i) => {
+    const p = people.find((q) => q.id === id);
+    return p ? [{ person: p, share: person.patronShares[i] }] : [];
+  });
+  const names = patrons
+    .slice()
+    .sort((a, b) => a.person.name.localeCompare(b.person.name))
+    .map(({ person: p, share }) => `${p.name} ${share}`)
+    .join(', ');
   const since = today === '' ? '' : addDays(today, -89);
   const backing = sumDue(
-    patrons.flatMap((p) =>
-      claims
-        .filter((c) => c.personId === p.id && c.status === 'SETTLED' && c.date >= since && c.date <= today)
-        .map((c) => claimDue(c, rateOn(rates, gradeOn(p.grades, c.date), c.date), floor, late, gradeOn(p.grades, c.date))),
+    patrons.map(({ person: p, share }) =>
+      shareOf(
+        sumDue(
+          claims
+            .filter((c) => c.personId === p.id && c.status === 'SETTLED' && c.date >= since && c.date <= today)
+            .map((c) => claimDue(c, rateOn(rates, gradeOn(p.grades, c.date), c.date), floor, late, gradeOn(p.grades, c.date))),
+        ),
+        share,
+      ),
     ),
   );
 

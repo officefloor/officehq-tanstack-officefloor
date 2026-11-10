@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.watch;
 
+import java.time.LocalDate;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -24,8 +25,8 @@ public class WatchRepository {
 
     /** {@code user} starts watching the person. */
     public void watch(String sheetId, long personId, String user) {
-        jdbc.update("INSERT INTO person_watch (sheet_id, person_id, user_name) VALUES (?, ?, ?)",
-                sheetId, personId, user);
+        jdbc.update("INSERT INTO person_watch (sheet_id, person_id, user_name, watched_on)"
+                + " VALUES (?, ?, ?, (SELECT today FROM sheet WHERE id = ?))", sheetId, personId, user, sheetId);
     }
 
     /** {@code user} stops watching the person. */
@@ -38,6 +39,12 @@ public class WatchRepository {
     public List<Long> watchedBy(String sheetId, String user) {
         return jdbc.queryForList("SELECT person_id FROM person_watch WHERE sheet_id = ? AND user_name = ? ORDER BY id",
                 Long.class, sheetId, user);
+    }
+
+    /** The ids of the people {@code user} watched at the end of {@code on}: started watching while the sheet's today was on or before it. */
+    public List<Long> watchedBy(String sheetId, String user, LocalDate on) {
+        return jdbc.queryForList("SELECT person_id FROM person_watch WHERE sheet_id = ? AND user_name = ?"
+                + " AND (watched_on IS NULL OR watched_on <= ?) ORDER BY id", Long.class, sheetId, user, on);
     }
 
     /** The users watching the person, in the order they started watching. */

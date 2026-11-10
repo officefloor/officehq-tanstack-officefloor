@@ -19,7 +19,8 @@ export function gradeOn(grades: GradeFrom[], date: string): Grade {
 // is how many statements have been taken for them; `statedTotal` and `statementDate` are the last
 // one's due-total and date ('' before the first). `retired` is set once they have a retirement
 // date, `retiredFrom` ('' when not retired), whatever that date is. `held` is whether they have any hold; `holds` their holds in the order added (see `Hold`).
-// `patronIds` are the ids of the people they name as their patrons. `grade` is the grade in force on
+// `patronIds` are the ids of the people they name as their patrons, in the order named, and
+// `patronShares` their shares (two decimals, adding up to 100.00), in the same order. `grade` is the grade in force on
 // the sheet's today; `grades` every grade they have been given, by from-date, the first from ''.
 // `terms` are their own terms in days, ahead of their grade's and the sheet's ('' for none).
 // `contact` is their contact, trimmed and lower-cased ('' for none); no two people on a sheet share one.
@@ -38,6 +39,7 @@ export type Person = {
   held: boolean;
   holds: Hold[];
   patronIds: string[];
+  patronShares: string[];
   grades: GradeFrom[];
   terms: string;
   contact: string;

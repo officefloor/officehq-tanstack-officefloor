@@ -39,8 +39,19 @@ public class PersonRepository {
 
     /** The sheet's people, in the order they were added. */
     public List<Person> findAll(String sheetId) {
-        List<Person> people = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND merged_into IS NULL ORDER BY id",
-                ROW, sheetId);
+        return findAll(sheetId, null);
+    }
+
+    /**
+     * The sheet's people, in the order they were added, as the list stood at the end of {@code day}
+     * (null: now): those merged into another later than it are still on it.
+     */
+    public List<Person> findAll(String sheetId, LocalDate day) {
+        List<Person> people = day == null
+                ? jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND merged_into IS NULL ORDER BY id",
+                        ROW, sheetId)
+                : jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND (merged_into IS NULL"
+                        + " OR merged_on > ?) ORDER BY id", ROW, sheetId, Date.valueOf(day));
         Map<Long, Person> byId = new HashMap<>();
         people.forEach((p) -> byId.put(p.getId(), p));
         jdbc.query("SELECT person_id, from_date, grade FROM person_grade WHERE sheet_id = ?",
@@ -48,7 +59,7 @@ public class PersonRepository {
                     Person person = byId.get(rs.getLong("person_id"));
                     if (person != null) person.setGradeFrom(rs.getString("grade"), rs.getObject("from_date", LocalDate.class));
                 }, sheetId);
-        jdbc.query("SELECT person_id, patron_id FROM person_patron WHERE sheet_id = ? ORDER BY person_id, patron_id",
+        jdbc.query("SELECT person_id, patron_id FROM person_patron WHERE sheet_id = ? ORDER BY person_id, named_seq NULLS FIRST, patron_id",
                 (rs) -> {
                     Person person = byId.get(rs.getLong("person_id"));
                     if (person != null) person.getPatronIds().add(rs.getLong("patron_id"));
@@ -76,7 +87,7 @@ public class PersonRepository {
         loadGrades(person);
         loadHolds(person);
         person.getPatronIds().addAll(jdbc.queryForList(
-                "SELECT patron_id FROM person_patron WHERE sheet_id = ? AND person_id = ? ORDER BY patron_id",
+                "SELECT patron_id FROM person_patron WHERE sheet_id = ? AND person_id = ? ORDER BY named_seq NULLS FIRST, patron_id",
                 Long.class, sheetId, id));
         loadAliases(person);
         return person;
@@ -84,8 +95,9 @@ public class PersonRepository {
 
     /** Record {@code alias} as one more of the person's aliases. */
     public void addAlias(Person person, String alias) {
-        jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias) VALUES (?, ?, ?)",
-                person.getSheetId(), person.getId(), alias);
+        jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias, added_on)"
+                + " VALUES (?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
+                person.getSheetId(), person.getId(), alias, person.getSheetId());
         person.getAliases().add(alias);
     }
 
@@ -120,15 +132,15 @@ public class PersonRepository {
                 into.getId(), sheetId, from.getId());
         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, from.getId());
         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, from.getId());
-        jdbc.update("UPDATE person SET contact = NULL, merged_into = ?, version = version + 1 WHERE id = ? AND sheet_id = ?",
-                into.getId(), from.getId(), sheetId);
+        jdbc.update("UPDATE person SET contact = NULL, merged_into = ?, merged_on = (SELECT today FROM sheet WHERE id = ?),"
+                + " version = version + 1 WHERE id = ? AND sheet_id = ?", into.getId(), sheetId, from.getId(), sheetId);
         jdbc.update("UPDATE person SET version = version + 1 WHERE id = ? AND sheet_id = ?", into.getId(), sheetId);
     }
 
     /** Record {@code patron} as one of the person's patrons. */
     public void addPatron(Person person, Person patron) {
-        jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id, added_on)"
-                + " VALUES (?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
+        jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id, added_on, named_seq)"
+                + " VALUES (?, ?, ?, (SELECT today FROM sheet WHERE id = ?), NEXT VALUE FOR person_patron_seq)",
                 person.getSheetId(), person.getId(), patron.getId(), person.getSheetId());
         person.getPatronIds().add(patron.getId());
     }
@@ -320,8 +332,8 @@ public class PersonRepository {
     }
 
     /**
-     * The person as they stood at the end of {@code day}: their grades, terms, holds, retirement, statements
-     * and patrons as given while the sheet's today was on or before it; the rest as they are now.
+     * The person as they stood at the end of {@code day}: their grades, terms, holds, retirement, statements,
+     * aliases and patrons as given while the sheet's today was on or before it; the rest as they are now.
      */
     public Person asOf(Person person, LocalDate day) {
         Date on = Date.valueOf(day);
@@ -339,7 +351,8 @@ public class PersonRepository {
                 person.getSheetId(), person.getId(), on);
         then.setTerms(terms.isEmpty() ? null : terms.get(0));
         then.setContact(person.getContact());
-        then.getAliases().addAll(person.getAliases());
+        then.getAliases().addAll(jdbc.queryForList("SELECT alias FROM person_alias WHERE sheet_id = ? AND person_id = ?"
+                + " AND (added_on IS NULL OR added_on <= ?) ORDER BY id", String.class, person.getSheetId(), person.getId(), on));
         then.setAddedOn(person.getAddedOn());
         then.setStatements(0, null, null);
         jdbc.query("SELECT statement_count, stated_total, statement_date FROM person_statement_history"
@@ -357,7 +370,7 @@ public class PersonRepository {
                 person.getSheetId(), person.getId(), on);
         then.setRetiredFrom(retired.isEmpty() ? null : retired.get(0));
         then.getPatronIds().addAll(jdbc.queryForList("SELECT patron_id FROM person_patron WHERE sheet_id = ?"
-                + " AND person_id = ? AND (added_on IS NULL OR added_on <= ?) ORDER BY patron_id", Long.class,
+                + " AND person_id = ? AND (added_on IS NULL OR added_on <= ?) ORDER BY named_seq NULLS FIRST, patron_id", Long.class,
                 person.getSheetId(), person.getId(), on));
         return then;
     }

@@ -12,7 +12,7 @@ public class RespondWithPeople {
     public void respond(@Val Sheet sheet, PersonRepository repository, HttpServletRequest request,
             ObjectResponse<PeopleResponse> response) {
         LocalDate asOf = AsOf.of(request);
-        response.send(new PeopleResponse(repository.findAll(sheet.id()).stream()
+        response.send(new PeopleResponse(repository.findAll(sheet.id(), asOf).stream()
                 .filter((p) -> asOf == null || p.addedBy(asOf))
                 .map((p) -> asOf == null ? p : repository.asOf(p, asOf))
                 .map((p) -> PersonResponse.from(p, sheet.today())).toList()));
