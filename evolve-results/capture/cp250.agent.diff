@@ -1,0 +1,84 @@
+diff --git a/src/main/frontend/features/export/export.slot.tsx b/src/main/frontend/features/export/export.slot.tsx
+index f6ba21b6f..b8594cfed 100644
+--- a/src/main/frontend/features/export/export.slot.tsx
++++ b/src/main/frontend/features/export/export.slot.tsx
+@@ -2,17 +2,17 @@ import { useEffect, useState } from 'react';
+ import { useQueryClient } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+-import { useClaims } from '../claims/useClaims';
++import { counts, useClaims } from '../claims/useClaims';
+ import { claimDueNow } from '../overdue/useOverdue';
+-import { gradeOn, usePeople } from '../people/usePeople';
++import { gradeOn, holdsById, usePeople } from '../people/usePeople';
+ import { periodOf, usePeriods } from '../periods/usePeriods';
+ import { usePersonPeriodCarried, usePersonPeriodDueTotals } from '../periods/usePeriodDueTotals';
+ import { useFigure } from '../locale/useLocale';
+ import { usePools } from '../pools/usePools';
+ import { cutTotalsOf } from '../cuts/useCutTotals';
+ import { dueTotalsOf, useDueTotals } from '../rates/useDueTotals';
+-import { rateFor, useRates } from '../rates/useRates';
+-import { useSettings } from '../settings/useSettings';
++import { rateFor, sumDues, useRates } from '../rates/useRates';
++import { policyVersionOn, useSettings } from '../settings/useSettings';
+ import { useSheetToday } from '../today/useSheetToday';
+ import { downloadCsv, fresh } from './csv';
+ 
+@@ -149,6 +149,49 @@ function ExportPeriods({ sheetId }: { sheetId: string }) {
+   );
+ }
+ 
++/** A button that downloads the policy versions as a CSV file: a header line, then one line per version, oldest
++ *  first, with its from-date (blank when it has none), the setting it changed and its value (blank when blank), how
++ *  many claims have it as their policy version, and the due now of those of them that count, added up. */
++function ExportPolicy({ sheetId }: { sheetId: string }) {
++  const people = usePeople(sheetId);
++  const claims = useClaims(sheetId);
++  const rates = useRates(sheetId);
++  const settingsQ = useSettings(sheetId);
++  const todayQ = useSheetToday(sheetId);
++
++  // Re-read everything first: another user may have changed the claims or settings since they were loaded.
++  const download = async () => {
++    const [ps, cs, rs, settings, td] = await Promise.all(
++      [fresh(people), fresh(claims), fresh(rates), fresh(settingsQ), fresh(todayQ)]);
++    const today = td?.today;
++    const holds = holdsById(ps, today);
++    const byId = new Map((ps ?? []).map((p) => [p.id, p]));
++    const count = new Map<number, number>();
++    const dues = new Map<number, string[]>();
++    if (settings !== undefined) {
++      for (const c of cs ?? []) {
++        const v = policyVersionOn(settings, c.date);
++        count.set(v, (count.get(v) ?? 0) + 1);
++        const owner = byId.get(c.personId);
++        if (owner === undefined || !counts(c, holds, today)) continue;
++        const grade = gradeOn(owner, c.date);
++        dues.set(v, [...(dues.get(v) ?? []), claimDueNow(c, cs, rateFor(rs, grade, c.date, c.added), settings, today, grade)]);
++      }
++    }
++    const lines = [['version', 'from', 'key', 'value', 'claims', 'due-total']];
++    for (const p of settings?.policyVersionDetails ?? []) {
++      lines.push([String(p.version), p.from ?? '', p.key, p.value ?? '', String(count.get(p.version) ?? 0), sumDues(dues.get(p.version) ?? [])]);
++    }
++    downloadCsv(lines, `policy-${sheetId}.csv`);
++  };
++
++  return (
++    <button type="button" data-testid="export-policy" onClick={() => void download()}>
++      Export policy versions (CSV)
++    </button>
++  );
++}
++
+ /** One tree export: the sheets it runs over (this sheet first, then the others of its tree by id). */
+ type TreeRun = { n: number; sheets: string[] };
+ 
+@@ -217,6 +260,7 @@ export const contribution = SheetBody.fill({
+       <ExportPools sheetId={sheetId} />
+       <ExportPeriods sheetId={sheetId} />
+       <ExportTree sheetId={sheetId} />
++      <ExportPolicy sheetId={sheetId} />
+     </section>
+   ),
+ });
