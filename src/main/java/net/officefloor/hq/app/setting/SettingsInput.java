@@ -13,7 +13,8 @@ import java.time.LocalDate;
  * sheet's today), and whether the proof threshold is changed and to what (null: none), and the
  * actions whose entry in the permission matrix is changed, in matrix order, each to the roles that
  * may take it as a comma separated list ('' for the standing rule), and whether the grace days are
- * changed and to what (null: off), and whether the note threshold is changed and to what (null: none).
+ * changed and to what (null: off), and whether the note threshold is changed and to what (null: none), and whether the entry date is
+ * changed and to what (null: off).
  */
 public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, BigDecimal floor, Integer terms, BigDecimal latePct,
         boolean policyDateChanged, LocalDate policyDate,
@@ -21,7 +22,8 @@ public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, Bi
         java.util.Map<String, Integer> gradeTerms, boolean capChanged, BigDecimal cap,
         java.util.Map<String, LocalDate> from, boolean proofThresholdChanged, BigDecimal proofThreshold,
         java.util.Map<String, String> perms, boolean graceDaysChanged, Integer graceDays,
-        boolean noteThresholdChanged, BigDecimal noteThreshold) {
+        boolean noteThresholdChanged, BigDecimal noteThreshold,
+        boolean entryDateChanged, LocalDate entryDate) {
 
     /**
      * The figure settings being changed, by key in the order they are audited, each with the value

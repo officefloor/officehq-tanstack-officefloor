@@ -7,6 +7,8 @@ import java.util.Set;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.role.Role;
+import net.officefloor.hq.app.role.RoleRepository;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.setting.SettingsRepository;
 import net.officefloor.hq.app.sheet.Sheet;
@@ -17,13 +19,18 @@ import net.officefloor.plugin.variable.Val;
  * Gives each selected person, in list order (the order they were added), the grade from the
  * from-date exactly as the person form would (see {@link ApplyPerson}): their name and terms are
  * kept, and a grade left as the row shows it with the from-date blank records nothing. Each is
- * audited as a single edit is: its PERSON_EDITED line, then the figures it moved.
+ * audited as a single edit is: its PERSON_EDITED line, then the figures it moved. A viewer, or anyone
+ * on an archived sheet, has every selected person refused: none is graded and nothing is written.
  */
 public class GradeSelectedPeople {
     public void grade(@Val Sheet sheet, @Val BulkGradeRequest request, PersonRepository people,
-            ClaimRepository claims, RateRepository rates, SettingsRepository settings, HttpServletRequest http,
+            ClaimRepository claims, RateRepository rates, SettingsRepository settings, RoleRepository roles, HttpServletRequest http,
             Audit audit, Out<BulkGradeResponse> result) {
         String user = Audit.user(http);
+        if (sheet.archived() || Role.VIEWER.equals(roles.roleOf(sheet.id(), user))) {
+            result.set(new BulkGradeResponse(0));
+            return;
+        }
         Set<Long> selected = new HashSet<>();
         for (String id : request.personIds()) {
             try {

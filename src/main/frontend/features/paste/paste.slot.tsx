@@ -10,7 +10,7 @@ import { claimsKey } from '../claims/claims';
 
 type Result = { added: number };
 
-// The paste box: lines of name,amount,date,note (the date may be blank for the sheet's today, the
+// The paste box: lines of name,amount,date,note (the date may be blank for the sheet's entry date while set, else its today, the
 // note may be absent and may hold commas) each add a DRAFT claim, in order, for the named person on
 // the sheet. The server checks every line by the claim form's rules first: one bad line refuses the
 // whole paste and adds nothing. The box shows how many were added; the count is cleared while it runs.

@@ -15,11 +15,12 @@ import java.util.Map;
  * recorded for each figure setting, by key, in from-date order; and the proof threshold with two
  * decimals ('' for none); and each action's entry in the permission matrix, in matrix order, as
  * saved ('' for the standing rule); and the grace days ('' for off); and the note threshold with two
- * decimals ('' for none).
+ * decimals ('' for none); and the entry date as yyyy-MM-dd ('' for off).
  */
 public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
         String periodNumberingFrom, Map<String, String> gradeTerms, String cap, Map<String, List<Dated>> dated,
-        String proofThreshold, Map<String, String> perms, String graceDays, String noteThreshold) {
+        String proofThreshold, Map<String, String> perms, String graceDays, String noteThreshold,
+        String entryDate) {
 
     /** A value ('' for none) recorded from a date (yyyy-MM-dd). */
     public record Dated(String from, String value) {
@@ -38,7 +39,8 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
                 show(settings.proofThresholdOn(today)),
                 perms(settings),
                 settings.graceDays() == null ? "" : settings.graceDays().toString(),
-                show(settings.noteThresholdOn(today)));
+                show(settings.noteThresholdOn(today)),
+                settings.entryDate() == null ? "" : settings.entryDate().toString());
     }
 
     private static String show(java.math.BigDecimal figure) {

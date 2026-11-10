@@ -36,6 +36,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
     policyDate: '',
     periodNumberingFrom: '',
     graceDays: '',
+    entryDate: '',
   });
   const [touched, setTouched] = useState<Set<Key>>(new Set());
   const [gradeFields, setGradeFields] = useState<Record<string, string>>({});
@@ -119,6 +120,14 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         return;
       }
       body.graceDays = graceDays;
+    }
+    if (touched.has('entryDate')) {
+      const entryDate = fields.entryDate.trim();
+      if (entryDate !== '' && (!POLICY_DATE.test(entryDate) || Number.isNaN(Date.parse(entryDate)))) {
+        setError('An entry date is a date, yyyy-MM-dd, or blank.');
+        return;
+      }
+      body.entryDate = entryDate;
     }
     if (touched.has('cap')) {
       const cap = fields.cap.trim();
@@ -347,6 +356,19 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         </label>{' '}
         <span>
           now: <strong data-testid="setting-grace-days-current">{settings.data?.graceDays ?? ''}</strong>
+        </span>{' '}
+        <label>
+          Entry date{' '}
+          <input
+            data-testid="setting-entry-date"
+            placeholder="off"
+            value={fields.entryDate}
+            onFocus={() => touch('entryDate')}
+            onChange={(e) => change('entryDate', e.target.value)}
+          />
+        </label>{' '}
+        <span>
+          now: <strong data-testid="setting-entry-date-current">{settings.data?.entryDate ?? ''}</strong>
         </span>{' '}
         <label>
           Cap{' '}

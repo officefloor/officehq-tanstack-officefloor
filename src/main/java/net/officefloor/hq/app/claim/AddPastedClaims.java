@@ -39,7 +39,7 @@ public class AddPastedClaims {
         for (PasteLine line : paste.lines()) {
             Person person = people.findByName(sheet.id(), line.name());
             if (person == null) throw new InvalidClaimException("No one named " + line.name() + " is on the sheet");
-            LocalDate date = line.claim().date() == null ? sheet.today() : line.claim().date();
+            LocalDate date = line.claim().date() == null ? terms.entryDay(sheet.today()) : line.claim().date();
             Claim claim = new Claim(null, sheet.id(), person.getId(), line.claim().amount(), date, line.claim().note(),
                     ClaimStatus.DRAFT, null, null, null);
             claim.setDueBy(date.plusDays(terms.termsFor(person, date)));

@@ -25,10 +25,12 @@ import java.util.NavigableMap;
  * ({@code perms}, by action, the roles that may take it as a comma separated list; blank or missing:
  * the standing rule, open, settle, void and close by clerk and steward, reassign and reopen by steward),
  * and its grace days (null: off): when the sheet's today is changed, every open period whose to-date
- * plus the grace days is before the new today is closed.
+ * plus the grace days is before the new today is closed, and its entry date (null: off): while it is
+ * set, the date of a new claim left undated instead of the sheet's today.
  */
 public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap<LocalDate, String>> dated,
-        LocalDate policyDate, LocalDate periodNumberingFrom, Map<String, String> perms, Integer graceDays) {
+        LocalDate policyDate, LocalDate periodNumberingFrom, Map<String, String> perms, Integer graceDays,
+        LocalDate entryDate) {
     /** The grades that may have their own terms. */
     public static final List<String> GRADES = List.of("A", "B", "C");
 
@@ -176,6 +178,11 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
     public RoundingMode rounding(LocalDate date, LocalDate today) {
         LocalDate policy = policyDate != null ? policyDate : today;
         return date.isBefore(policy) ? RoundingMode.HALF_UP : RoundingMode.HALF_EVEN;
+    }
+
+    /** The date of a new claim left undated: the entry date while it is set, else the sheet's today. */
+    public LocalDate entryDay(LocalDate today) {
+        return entryDate != null ? entryDate : today;
     }
 
     /** Whether a period ending {@code to} is past its grace days on {@code today}: never while they are off. */

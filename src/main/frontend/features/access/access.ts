@@ -31,6 +31,8 @@ export type Settings = {
   graceDays: string;
   /** The due above which a claim, on its date, needs a note to be opened ('' for none). */
   noteThreshold: string;
+  /** The entry date (yyyy-MM-dd; '' for off): while set, a new claim left undated takes it instead of the sheet's today. */
+  entryDate: string;
   /**
    * Every value recorded for each figure setting, by key (clerk-limit, floor, terms, late-pct,
    * terms-A, terms-B, terms-C, cap, proof-threshold, note-threshold), in from-date order ('' for none). The values above are those

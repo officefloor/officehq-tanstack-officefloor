@@ -12,9 +12,11 @@ package net.officefloor.hq.app.setting;
  * threshold, with up to two decimals (blank: none), and the entry of each action of the permission
  * matrix being changed, by action (open, settle, void, reassign, close, reopen), a comma separated
  * list of roles, clerk or steward (blank: the standing rule), and the grace days, a whole number of
- * days (blank: off), and the note threshold, with up to two decimals (blank: none).
+ * days (blank: off), and the note threshold, with up to two decimals (blank: none), and the entry date as yyyy-MM-dd
+ * (blank: off).
  */
 public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom,
         java.util.Map<String, String> gradeTerms, String cap, java.util.Map<String, String> from,
-        String proofThreshold, java.util.Map<String, String> perms, String graceDays, String noteThreshold) {
+        String proofThreshold, java.util.Map<String, String> perms, String graceDays, String noteThreshold,
+        String entryDate) {
 }

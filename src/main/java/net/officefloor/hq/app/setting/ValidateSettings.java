@@ -148,6 +148,15 @@ public class ValidateSettings {
             }
             graceDays = Integer.valueOf(value);
         }
+        boolean entryChanged = request != null && request.entryDate() != null;
+        LocalDate entryDate = null;
+        if (entryChanged && !request.entryDate().trim().isEmpty()) {
+            try {
+                entryDate = LocalDate.parse(request.entryDate().trim());
+            } catch (DateTimeParseException e) {
+                throw new InvalidSettingException("An entry date is a date, yyyy-MM-dd, or blank");
+            }
+        }
         Map<String, LocalDate> from = new LinkedHashMap<>();
         if (request != null && request.from() != null) {
             for (Map.Entry<String, String> entry : request.from().entrySet()) {
@@ -163,6 +172,7 @@ public class ValidateSettings {
         }
         body.set(new SettingsInput(limitChanged, limit, floor, terms, latePct, policyChanged, policyDate,
                 numberingChanged, numberingFrom, gradeTerms, capChanged, cap, from,
-                thresholdChanged, threshold, perms, graceChanged, graceDays, noteThresholdChanged, noteThreshold));
+                thresholdChanged, threshold, perms, graceChanged, graceDays, noteThresholdChanged, noteThreshold,
+                entryChanged, entryDate));
     }
 }

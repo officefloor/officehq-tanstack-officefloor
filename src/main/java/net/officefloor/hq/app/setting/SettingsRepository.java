@@ -28,13 +28,14 @@ public class SettingsRepository {
         Map<String, String> perms = new HashMap<>();
         jdbc.query("SELECT action, roles FROM setting_perm WHERE sheet_id = ?",
                 (RowCallbackHandler) (rs) -> perms.put(rs.getString("action"), rs.getString("roles")), sheetId);
-        List<Settings> found = jdbc.query("SELECT today, policy_date, period_numbering_from, grace_days FROM sheet WHERE id = ?",
+        List<Settings> found = jdbc.query("SELECT today, policy_date, period_numbering_from, grace_days, entry_date FROM sheet WHERE id = ?",
                 (rs, n) -> new Settings(sheetId, rs.getDate("today").toLocalDate(), dated,
                         rs.getDate("policy_date") == null ? null : rs.getDate("policy_date").toLocalDate(),
                         rs.getDate("period_numbering_from") == null ? null : rs.getDate("period_numbering_from").toLocalDate(), perms,
-                        rs.getObject("grace_days", Integer.class)),
+                        rs.getObject("grace_days", Integer.class),
+                        rs.getDate("entry_date") == null ? null : rs.getDate("entry_date").toLocalDate()),
                 sheetId);
-        return found.isEmpty() ? new Settings(sheetId, null, dated, null, null, perms, null) : found.get(0);
+        return found.isEmpty() ? new Settings(sheetId, null, dated, null, null, perms, null, null) : found.get(0);
     }
 
     /** Records a dated setting's value from a date, replacing any value already recorded from it. */
@@ -74,7 +75,7 @@ public class SettingsRepository {
                     }
                 }, sheetId);
         return new Settings(sheetId, day, dated, policyKept[0] ? policy[0] : now.policyDate(),
-                now.periodNumberingFrom(), now.perms(), now.graceDays());
+                now.periodNumberingFrom(), now.perms(), now.graceDays(), now.entryDate());
     }
 
     private static final String POLICY_DATE = "policy-date";
@@ -87,10 +88,11 @@ public class SettingsRepository {
 
     /** Saves the undated settings. */
     public void saveUndated(Settings settings) {
-        jdbc.update("UPDATE sheet SET policy_date = ?, period_numbering_from = ?, grace_days = ? WHERE id = ?",
+        jdbc.update("UPDATE sheet SET policy_date = ?, period_numbering_from = ?, grace_days = ?, entry_date = ? WHERE id = ?",
                 settings.policyDate() == null ? null : java.sql.Date.valueOf(settings.policyDate()),
                 settings.periodNumberingFrom() == null ? null : java.sql.Date.valueOf(settings.periodNumberingFrom()),
-                settings.graceDays(), settings.sheetId());
+                settings.graceDays(),
+                settings.entryDate() == null ? null : java.sql.Date.valueOf(settings.entryDate()), settings.sheetId());
         history(settings.sheetId(), POLICY_DATE, null,
                 settings.policyDate() == null ? "" : settings.policyDate().toString());
     }

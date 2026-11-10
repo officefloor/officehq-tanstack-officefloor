@@ -6,7 +6,7 @@ import java.time.format.DateTimeParseException;
 import java.util.regex.Pattern;
 
 /**
- * A validated claim request. {@code date} is null when left blank: the sheet's today.
+ * A validated claim request. {@code date} is null when left blank: the sheet's entry date while it is set, else its today.
  * {@code corrects} is the number of the claim a correction (a negative amount) corrects; null for
  * any other claim.
  */
