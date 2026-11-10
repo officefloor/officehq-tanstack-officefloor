@@ -1,0 +1,369 @@
+diff --git a/src/main/frontend/features/patrons/patrons.slot.tsx b/src/main/frontend/features/patrons/patrons.slot.tsx
+index cbeec22d0..98a612455 100644
+--- a/src/main/frontend/features/patrons/patrons.slot.tsx
++++ b/src/main/frontend/features/patrons/patrons.slot.tsx
+@@ -6,7 +6,7 @@ import { PersonHead, PersonRow } from '../../slots/defs/personRow';
+ import { gradeOn, usePeople, peopleKey } from '../people/people';
+ import type { Person } from '../people/people';
+ import { useClaims } from '../claims/claims';
+-import { addDays, claimDue, rateOn, sumDue, useRates } from '../rates/rates';
++import { addDays, claimDue, rateOn, shareOf, sumDue, useRates } from '../rates/rates';
+ import { useSheetToday } from '../sheet/sheet';
+ import { useFloor, useLate } from '../access/access';
+ import { useUser } from '../session/session';
+@@ -21,8 +21,10 @@ function PatronsHead() {
+   );
+ }
+ 
+-// A person's patrons (names, sorted), their backing (the patrons' settled figures over their SETTLED
+-// claims dated within the 90 days up to and including the sheet's today, added up, skipping n/a), and a picker that names one more person on the sheet as a patron.
++// A person's patrons (each as name and share, sorted by name), their backing (over the patrons, each
++// patron's settled figures over their SETTLED claims dated within the 90 days up to and including the
++// sheet's today, added up, skipping n/a, times their share divided by 100, rounded half to even; added
++// up), and a picker that names one more person on the sheet as a patron.
+ function PersonPatrons({ sheetId, person }: { sheetId: string; person: Person }) {
+   const queryClient = useQueryClient();
+   const [user] = useUser();
+@@ -36,14 +38,26 @@ function PersonPatrons({ sheetId, person }: { sheetId: string; person: Person })
+   const [error, setError] = useState('');
+   const once = useOnce();
+ 
+-  const patrons = people.filter((p) => person.patronIds.includes(p.id));
+-  const names = patrons.map((p) => p.name).sort((a, b) => a.localeCompare(b)).join(', ');
++  const patrons = person.patronIds.flatMap((id, i) => {
++    const p = people.find((q) => q.id === id);
++    return p ? [{ person: p, share: person.patronShares[i] }] : [];
++  });
++  const names = patrons
++    .slice()
++    .sort((a, b) => a.person.name.localeCompare(b.person.name))
++    .map(({ person: p, share }) => `${p.name} ${share}`)
++    .join(', ');
+   const since = today === '' ? '' : addDays(today, -89);
+   const backing = sumDue(
+-    patrons.flatMap((p) =>
+-      claims
+-        .filter((c) => c.personId === p.id && c.status === 'SETTLED' && c.date >= since && c.date <= today)
+-        .map((c) => claimDue(c, rateOn(rates, gradeOn(p.grades, c.date), c.date), floor, late, gradeOn(p.grades, c.date))),
++    patrons.map(({ person: p, share }) =>
++      shareOf(
++        sumDue(
++          claims
++            .filter((c) => c.personId === p.id && c.status === 'SETTLED' && c.date >= since && c.date <= today)
++            .map((c) => claimDue(c, rateOn(rates, gradeOn(p.grades, c.date), c.date), floor, late, gradeOn(p.grades, c.date))),
++        ),
++        share,
++      ),
+     ),
+   );
+ 
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index 60dc0bc61..05240a48a 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -19,7 +19,8 @@ export function gradeOn(grades: GradeFrom[], date: string): Grade {
+ // is how many statements have been taken for them; `statedTotal` and `statementDate` are the last
+ // one's due-total and date ('' before the first). `retired` is set once they have a retirement
+ // date, `retiredFrom` ('' when not retired), whatever that date is. `held` is whether they have any hold; `holds` their holds in the order added (see `Hold`).
+-// `patronIds` are the ids of the people they name as their patrons. `grade` is the grade in force on
++// `patronIds` are the ids of the people they name as their patrons, in the order named, and
++// `patronShares` their shares (two decimals, adding up to 100.00), in the same order. `grade` is the grade in force on
+ // the sheet's today; `grades` every grade they have been given, by from-date, the first from ''.
+ // `terms` are their own terms in days, ahead of their grade's and the sheet's ('' for none).
+ // `contact` is their contact, trimmed and lower-cased ('' for none); no two people on a sheet share one.
+@@ -38,6 +39,7 @@ export type Person = {
+   held: boolean;
+   holds: Hold[];
+   patronIds: string[];
++  patronShares: string[];
+   grades: GradeFrom[];
+   terms: string;
+   contact: string;
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 53999e1f2..0ea07b2f7 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -171,6 +171,11 @@ function lateCharge(claim: Claim, figure: string, late: Late, grade: string): bi
+   return charge;
+ }
+ 
++/** A share (a percent, two decimals) of a two-decimal figure, rounded half to even. */
++export function shareOf(figure: string, share: string): string {
++  return showCents(percentOf(figure, share, 1n, false));
++}
++
+ /** Due values added up, skipping n/a. */
+ export function sumDue(values: string[]): string {
+   return showCents(values.filter((v) => v !== NA).reduce((n, v) => n + hundredths(v), 0n));
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 529d0b46d..342add579 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -39,8 +39,19 @@ public class PersonRepository {
+ 
+     /** The sheet's people, in the order they were added. */
+     public List<Person> findAll(String sheetId) {
+-        List<Person> people = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND merged_into IS NULL ORDER BY id",
+-                ROW, sheetId);
++        return findAll(sheetId, null);
++    }
++
++    /**
++     * The sheet's people, in the order they were added, as the list stood at the end of {@code day}
++     * (null: now): those merged into another later than it are still on it.
++     */
++    public List<Person> findAll(String sheetId, LocalDate day) {
++        List<Person> people = day == null
++                ? jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND merged_into IS NULL ORDER BY id",
++                        ROW, sheetId)
++                : jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND (merged_into IS NULL"
++                        + " OR merged_on > ?) ORDER BY id", ROW, sheetId, Date.valueOf(day));
+         Map<Long, Person> byId = new HashMap<>();
+         people.forEach((p) -> byId.put(p.getId(), p));
+         jdbc.query("SELECT person_id, from_date, grade FROM person_grade WHERE sheet_id = ?",
+@@ -48,7 +59,7 @@ public class PersonRepository {
+                     Person person = byId.get(rs.getLong("person_id"));
+                     if (person != null) person.setGradeFrom(rs.getString("grade"), rs.getObject("from_date", LocalDate.class));
+                 }, sheetId);
+-        jdbc.query("SELECT person_id, patron_id FROM person_patron WHERE sheet_id = ? ORDER BY person_id, patron_id",
++        jdbc.query("SELECT person_id, patron_id FROM person_patron WHERE sheet_id = ? ORDER BY person_id, named_seq NULLS FIRST, patron_id",
+                 (rs) -> {
+                     Person person = byId.get(rs.getLong("person_id"));
+                     if (person != null) person.getPatronIds().add(rs.getLong("patron_id"));
+@@ -76,7 +87,7 @@ public class PersonRepository {
+         loadGrades(person);
+         loadHolds(person);
+         person.getPatronIds().addAll(jdbc.queryForList(
+-                "SELECT patron_id FROM person_patron WHERE sheet_id = ? AND person_id = ? ORDER BY patron_id",
++                "SELECT patron_id FROM person_patron WHERE sheet_id = ? AND person_id = ? ORDER BY named_seq NULLS FIRST, patron_id",
+                 Long.class, sheetId, id));
+         loadAliases(person);
+         return person;
+@@ -84,8 +95,9 @@ public class PersonRepository {
+ 
+     /** Record {@code alias} as one more of the person's aliases. */
+     public void addAlias(Person person, String alias) {
+-        jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias) VALUES (?, ?, ?)",
+-                person.getSheetId(), person.getId(), alias);
++        jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias, added_on)"
++                + " VALUES (?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
++                person.getSheetId(), person.getId(), alias, person.getSheetId());
+         person.getAliases().add(alias);
+     }
+ 
+@@ -120,15 +132,15 @@ public class PersonRepository {
+                 into.getId(), sheetId, from.getId());
+         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, from.getId());
+         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, from.getId());
+-        jdbc.update("UPDATE person SET contact = NULL, merged_into = ?, version = version + 1 WHERE id = ? AND sheet_id = ?",
+-                into.getId(), from.getId(), sheetId);
++        jdbc.update("UPDATE person SET contact = NULL, merged_into = ?, merged_on = (SELECT today FROM sheet WHERE id = ?),"
++                + " version = version + 1 WHERE id = ? AND sheet_id = ?", into.getId(), sheetId, from.getId(), sheetId);
+         jdbc.update("UPDATE person SET version = version + 1 WHERE id = ? AND sheet_id = ?", into.getId(), sheetId);
+     }
+ 
+     /** Record {@code patron} as one of the person's patrons. */
+     public void addPatron(Person person, Person patron) {
+-        jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id, added_on)"
+-                + " VALUES (?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
++        jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id, added_on, named_seq)"
++                + " VALUES (?, ?, ?, (SELECT today FROM sheet WHERE id = ?), NEXT VALUE FOR person_patron_seq)",
+                 person.getSheetId(), person.getId(), patron.getId(), person.getSheetId());
+         person.getPatronIds().add(patron.getId());
+     }
+@@ -320,8 +332,8 @@ public class PersonRepository {
+     }
+ 
+     /**
+-     * The person as they stood at the end of {@code day}: their grades, terms, holds, retirement, statements
+-     * and patrons as given while the sheet's today was on or before it; the rest as they are now.
++     * The person as they stood at the end of {@code day}: their grades, terms, holds, retirement, statements,
++     * aliases and patrons as given while the sheet's today was on or before it; the rest as they are now.
+      */
+     public Person asOf(Person person, LocalDate day) {
+         Date on = Date.valueOf(day);
+@@ -339,7 +351,8 @@ public class PersonRepository {
+                 person.getSheetId(), person.getId(), on);
+         then.setTerms(terms.isEmpty() ? null : terms.get(0));
+         then.setContact(person.getContact());
+-        then.getAliases().addAll(person.getAliases());
++        then.getAliases().addAll(jdbc.queryForList("SELECT alias FROM person_alias WHERE sheet_id = ? AND person_id = ?"
++                + " AND (added_on IS NULL OR added_on <= ?) ORDER BY id", String.class, person.getSheetId(), person.getId(), on));
+         then.setAddedOn(person.getAddedOn());
+         then.setStatements(0, null, null);
+         jdbc.query("SELECT statement_count, stated_total, statement_date FROM person_statement_history"
+@@ -357,7 +370,7 @@ public class PersonRepository {
+                 person.getSheetId(), person.getId(), on);
+         then.setRetiredFrom(retired.isEmpty() ? null : retired.get(0));
+         then.getPatronIds().addAll(jdbc.queryForList("SELECT patron_id FROM person_patron WHERE sheet_id = ?"
+-                + " AND person_id = ? AND (added_on IS NULL OR added_on <= ?) ORDER BY patron_id", Long.class,
++                + " AND person_id = ? AND (added_on IS NULL OR added_on <= ?) ORDER BY named_seq NULLS FIRST, patron_id", Long.class,
+                 person.getSheetId(), person.getId(), on));
+         return then;
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+index 1f36445b8..ea6cb2272 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+@@ -1,5 +1,7 @@
+ package net.officefloor.hq.app.person;
+ 
++import java.math.BigDecimal;
++import java.math.RoundingMode;
+ import java.time.LocalDate;
+ import java.util.ArrayList;
+ import java.util.List;
+@@ -7,14 +9,15 @@ import java.util.List;
+ /**
+  * A person, as the screen reads it (their grade the one in force on the sheet's today), with their statement count, and the last statement's due-total
+  * and date ("" before the first), whether they are retired and the date they are retired from
+- * ("" when not), whether they have any hold, their holds (in the order added), the ids of the people they name as patrons, and every
++ * ("" when not), whether they have any hold, their holds (in the order added), the ids of the people they name as patrons (in the order named) with their
++ * shares (see {@link #shares}), and every
+  * grade they have been given with the date it is from (the first "", from the beginning of time),
+  * by from-date, their own terms in days ("" for none), their contact ("" for none), and their aliases
+  * (in the order given).
+  */
+ public record PersonResponse(String id, String name, String grade, long version, int statementCount,
+         String statedTotal, String statementDate, boolean retired, String retiredFrom,
+-        boolean held, List<HoldFrom> holds, java.util.List<String> patronIds, List<GradeFrom> grades, String terms,
++        boolean held, List<HoldFrom> holds, java.util.List<String> patronIds, List<String> patronShares, List<GradeFrom> grades, String terms,
+         String contact, List<String> aliases) {
+ 
+     /** A hold from a date to a date (yyyy-MM-dd; to "" when open-ended), both inclusive. */
+@@ -23,6 +26,20 @@ public record PersonResponse(String id, String name, String grade, long version,
+     /** A grade in force from a date (yyyy-MM-dd; "" from the beginning of time). */
+     public record GradeFrom(String from, String grade) {}
+ 
++    /**
++     * The patrons' shares, in the order named: 100.00 split equally among {@code count} patrons, each
++     * rounded half to even to two decimals, the remainder (100.00 less the shares added up) to the first.
++     */
++    static List<String> shares(int count) {
++        if (count == 0) return List.of();
++        BigDecimal whole = new BigDecimal("100.00");
++        BigDecimal each = whole.divide(BigDecimal.valueOf(count), 2, RoundingMode.HALF_EVEN);
++        List<String> shares = new ArrayList<>();
++        shares.add(whole.subtract(each.multiply(BigDecimal.valueOf(count - 1))).toPlainString());
++        for (int i = 1; i < count; i++) shares.add(each.toPlainString());
++        return shares;
++    }
++
+     /** The person as the screen reads it on the sheet's today: their grade is the one in force on it. */
+     public static PersonResponse from(Person person, LocalDate today) {
+         List<GradeFrom> grades = new ArrayList<>();
+@@ -35,7 +52,7 @@ public record PersonResponse(String id, String name, String grade, long version,
+                 person.isRetired(), person.getRetiredFrom() == null ? "" : person.getRetiredFrom().toString(),
+                 person.isHeld(),
+                 person.getHolds().stream().map((h) -> new HoldFrom(h.from().toString(), h.to() == null ? "" : h.to().toString())).toList(),
+-                person.getPatronIds().stream().map(String::valueOf).toList(), grades,
++                person.getPatronIds().stream().map(String::valueOf).toList(), shares(person.getPatronIds().size()), grades,
+                 person.getTerms() == null ? "" : person.getTerms().toString(),
+                 person.getContact() == null ? "" : person.getContact(), List.copyOf(person.getAliases()));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+index bbc1f9981..c4e160708 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+@@ -12,7 +12,7 @@ public class RespondWithPeople {
+     public void respond(@Val Sheet sheet, PersonRepository repository, HttpServletRequest request,
+             ObjectResponse<PeopleResponse> response) {
+         LocalDate asOf = AsOf.of(request);
+-        response.send(new PeopleResponse(repository.findAll(sheet.id()).stream()
++        response.send(new PeopleResponse(repository.findAll(sheet.id(), asOf).stream()
+                 .filter((p) -> asOf == null || p.addedBy(asOf))
+                 .map((p) -> asOf == null ? p : repository.asOf(p, asOf))
+                 .map((p) -> PersonResponse.from(p, sheet.today())).toList()));
+diff --git a/src/main/java/net/officefloor/hq/app/watch/RespondWithWatches.java b/src/main/java/net/officefloor/hq/app/watch/RespondWithWatches.java
+index e82f14bd9..3fd8d4db8 100644
+--- a/src/main/java/net/officefloor/hq/app/watch/RespondWithWatches.java
++++ b/src/main/java/net/officefloor/hq/app/watch/RespondWithWatches.java
+@@ -1,16 +1,21 @@
+ package net.officefloor.hq.app.watch;
+ 
+ import jakarta.servlet.http.HttpServletRequest;
++import java.time.LocalDate;
++import java.util.List;
++import net.officefloor.hq.app.AsOf;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
+ 
+-/** The people the signed-in user watches on the sheet. */
++/** The people the signed-in user watches on the sheet; read as of a date, those they watched by then. */
+ public class RespondWithWatches {
+     public void respond(@Val Sheet sheet, WatchRepository watches, HttpServletRequest request,
+             ObjectResponse<WatchesResponse> response) {
+-        response.send(new WatchesResponse(
+-                watches.watchedBy(sheet.id(), Audit.user(request)).stream().map(String::valueOf).toList()));
++        LocalDate asOf = AsOf.of(request);
++        List<Long> ids = asOf == null ? watches.watchedBy(sheet.id(), Audit.user(request))
++                : watches.watchedBy(sheet.id(), Audit.user(request), asOf);
++        response.send(new WatchesResponse(ids.stream().map(String::valueOf).toList()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/watch/WatchRepository.java b/src/main/java/net/officefloor/hq/app/watch/WatchRepository.java
+index ca75e6b22..d37ad1d82 100644
+--- a/src/main/java/net/officefloor/hq/app/watch/WatchRepository.java
++++ b/src/main/java/net/officefloor/hq/app/watch/WatchRepository.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.watch;
+ 
++import java.time.LocalDate;
+ import java.util.List;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+@@ -24,8 +25,8 @@ public class WatchRepository {
+ 
+     /** {@code user} starts watching the person. */
+     public void watch(String sheetId, long personId, String user) {
+-        jdbc.update("INSERT INTO person_watch (sheet_id, person_id, user_name) VALUES (?, ?, ?)",
+-                sheetId, personId, user);
++        jdbc.update("INSERT INTO person_watch (sheet_id, person_id, user_name, watched_on)"
++                + " VALUES (?, ?, ?, (SELECT today FROM sheet WHERE id = ?))", sheetId, personId, user, sheetId);
+     }
+ 
+     /** {@code user} stops watching the person. */
+@@ -40,6 +41,12 @@ public class WatchRepository {
+                 Long.class, sheetId, user);
+     }
+ 
++    /** The ids of the people {@code user} watched at the end of {@code on}: started watching while the sheet's today was on or before it. */
++    public List<Long> watchedBy(String sheetId, String user, LocalDate on) {
++        return jdbc.queryForList("SELECT person_id FROM person_watch WHERE sheet_id = ? AND user_name = ?"
++                + " AND (watched_on IS NULL OR watched_on <= ?) ORDER BY id", Long.class, sheetId, user, on);
++    }
++
+     /** The users watching the person, in the order they started watching. */
+     public List<String> watchers(String sheetId, long personId) {
+         return jdbc.queryForList("SELECT user_name FROM person_watch WHERE sheet_id = ? AND person_id = ? ORDER BY id",
+diff --git a/src/main/resources/db/migration/V68__person_patron_order.sql b/src/main/resources/db/migration/V68__person_patron_order.sql
+new file mode 100644
+index 000000000..76e4022b4
+--- /dev/null
++++ b/src/main/resources/db/migration/V68__person_patron_order.sql
+@@ -0,0 +1,4 @@
++-- The order a person's patrons were named in (null for those named before it was kept: before the
++-- rest, by patron id). The first-named patron takes the remainder of the shares.
++CREATE SEQUENCE person_patron_seq;
++ALTER TABLE person_patron ADD COLUMN named_seq BIGINT;
+diff --git a/src/main/resources/db/migration/V69__person_watch_on.sql b/src/main/resources/db/migration/V69__person_watch_on.sql
+new file mode 100644
+index 000000000..4d42e06f4
+--- /dev/null
++++ b/src/main/resources/db/migration/V69__person_watch_on.sql
+@@ -0,0 +1,2 @@
++-- The sheet's today when a user started watching a person (null: from the beginning of time).
++ALTER TABLE person_watch ADD COLUMN watched_on DATE;
+diff --git a/src/main/resources/db/migration/V70__merge_alias_dates.sql b/src/main/resources/db/migration/V70__merge_alias_dates.sql
+new file mode 100644
+index 000000000..2160976f3
+--- /dev/null
++++ b/src/main/resources/db/migration/V70__merge_alias_dates.sql
+@@ -0,0 +1,5 @@
++-- The sheet's today when an alias was given (null: from the beginning of time).
++ALTER TABLE person_alias ADD COLUMN added_on DATE;
++-- The sheet's today when a person was merged into another (null: not merged, or not kept): read as
++-- of an earlier date, they are still on the list.
++ALTER TABLE person ADD COLUMN merged_on DATE;
