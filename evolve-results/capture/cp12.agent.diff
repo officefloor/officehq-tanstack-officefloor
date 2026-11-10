@@ -1,0 +1,117 @@
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index 10f9a9a70..fd97ed62a 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -4,12 +4,12 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { PersonHead, PersonRow } from '../../slots/defs/personRow';
+-import { sumAmounts, useClaims } from '../claims/claims';
++import { useClaims } from '../claims/claims';
+ import { GRADES, usePeople } from '../people/people';
+ import type { Grade, Person } from '../people/people';
+ import { useUser } from '../session/session';
+ import { useSheetToday } from '../sheet/sheet';
+-import { NA, PCT, due, rateOn, ratesKey, sumDue, useGradeRate, useRates } from './rates';
++import { NA, PCT, personDueTotal, rateOn, ratesKey, sumDue, useRates } from './rates';
+ import type { Rate } from './rates';
+ 
+ type Fields = { grade: Grade; pct: string; from: string };
+@@ -149,11 +149,12 @@ function DueHead() {
+   return <th>Due</th>;
+ }
+ 
+-// A person's due-total: what they have claimed in all, times their grade's rate in force today.
++// A person's due-total: the due figures of their claims that count, added up.
+ function PersonDueTotal({ sheetId, person }: { sheetId: string; person: Person }) {
+   const claims = (useClaims(sheetId).data ?? []).filter((c) => c.personId === person.id);
+-  const pct = useGradeRate(sheetId, person.grade, useSheetToday(sheetId));
+-  return <td data-testid="person-due-total">{due(sumAmounts(claims), pct)}</td>;
++  const rates = useRates(sheetId).data ?? [];
++  const today = useSheetToday(sheetId);
++  return <td data-testid="person-due-total">{personDueTotal(rates, person.grade, today, claims)}</td>;
+ }
+ 
+ // The sheet's due-total: everyone's due-total added up, skipping those with no rate.
+@@ -163,10 +164,7 @@ function DueTotal({ sheetId }: { sheetId: string }) {
+   const rates = useRates(sheetId).data ?? [];
+   const today = useSheetToday(sheetId);
+   const totals = people.map((p) =>
+-    due(
+-      sumAmounts(claims.filter((c) => c.personId === p.id)),
+-      rateOn(rates, p.grade, today),
+-    ),
++    personDueTotal(rates, p.grade, today, claims.filter((c) => c.personId === p.id)),
+   );
+   return (
+     <p>
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index a7e1fa295..9ba49849e 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -1,6 +1,7 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ import type { Grade } from '../people/people';
++import { counts } from '../claims/claims';
+ import type { Claim } from '../claims/claims';
+ 
+ /**
+@@ -54,15 +55,17 @@ function showCents(cents: bigint): string {
+ }
+ 
+ /**
+- * An amount times a rate, divided by 100, rounded half up to two decimals; n/a with no rate.
++ * An amount times a rate, divided by 100, rounded half to even to two decimals; n/a with no rate.
+  * Worked in whole numbers so no floating-point error creeps in (amounts and rates are never
+- * negative, so half up is half away from zero).
++ * negative).
+  */
+ export function due(amount: string, pct: string | null): string {
+   if (pct === null) return NA;
+   // cents × basis points is the due in millionths of a unit: 10000 of them to the cent.
+   const x = hundredths(amount) * hundredths(pct);
+-  return showCents((x + 5000n) / 10000n);
++  const cents = x / 10000n;
++  const rest = x % 10000n;
++  return showCents(rest > 5000n || (rest === 5000n && cents % 2n === 1n) ? cents + 1n : cents);
+ }
+ 
+ /** Due values added up, skipping n/a. */
+@@ -75,3 +78,14 @@ export function claimDue(claim: Claim, pct: string | null): string {
+   return claim.due !== '' ? claim.due : due(claim.amount, pct);
+ }
+ 
++/**
++ * A person's due-total: the figures of their claims that count (each at the rate in force on its
++ * date), added up, skipping n/a. With no rate for their grade today it is n/a, unless a settled
++ * claim that counts keeps a fixed figure.
++ */
++export function personDueTotal(rates: Rate[], grade: Grade, today: string, claims: Claim[]): string {
++  const counted = claims.filter(counts);
++  if (rateOn(rates, grade, today) === null && !counted.some((c) => c.due !== '')) return NA;
++  return sumDue(counted.map((c) => claimDue(c, rateOn(rates, grade, c.date))));
++}
++
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java b/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
+index 1a8b62fc1..2085d7f9d 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
+@@ -11,7 +11,7 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+  * Settles the claim and fixes its due: its amount times its person's grade's rate in force on the
+- * claim's date, divided by 100 and rounded half up to two decimals. With no such rate the due is
++ * claim's date, divided by 100 and rounded half to even to two decimals. With no such rate the due is
+  * not fixed.
+  */
+ public class SettleClaim {
+@@ -21,7 +21,7 @@ public class SettleClaim {
+         Person person = people.find(sheet.id(), claim.getPersonId());
+         claim.setSettledDue(Rate.inForce(rates.findAll(sheet.id()), person.getGrade(), claim.getDate())
+                 .map((pct) -> claim.getAmount().multiply(pct).divide(BigDecimal.valueOf(100), 2,
+-                        RoundingMode.HALF_UP))
++                        RoundingMode.HALF_EVEN))
+                 .orElse(null));
+     }
+ }
