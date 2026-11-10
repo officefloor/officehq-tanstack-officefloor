@@ -10,7 +10,8 @@ import net.officefloor.plugin.variable.Val;
  * Records each setting saved, with the value saved (blank for no clerk limit): the clerk limit, then
  * the floor, then the terms, then the late percent, then the policy date, then the period numbering
  * from, then each grade's terms (blank for the sheet's), then the cap (blank for none), then the proof threshold (blank for none), then each
- * action's entry in the permission matrix (blank for the standing rule, never dated); a figure
+ * action's entry in the permission matrix (blank for the standing rule, never dated), then the grace
+ * days (blank for off, never dated); a figure
  * setting saved from a from-date given ends with it. Runs after every rule has passed, so a refused
  * change writes nothing.
  */
@@ -32,6 +33,9 @@ public class AuditSettingChanged {
             audit.record(line(head, Settings.PROOF_THRESHOLD, input.proofThresholdValue(), input));
         }
         input.perms().forEach((action, roles) -> audit.record(head + " key=" + Settings.permKey(action) + " value=" + roles));
+        if (input.graceDaysChanged()) {
+            audit.record(head + " key=grace-days value=" + (input.graceDays() == null ? "" : input.graceDays()));
+        }
     }
 
     private static String line(String head, String key, String value, SettingsInput input) {

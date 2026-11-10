@@ -18,7 +18,8 @@ type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms'>;
 // grade's own terms (blank: the sheet's terms), fixing the due-by of a claim made for it, and its cap
 // (blank: none), the most a person's due-total may be, and its proof threshold (blank: none), above
 // which a claim's due, on its date, needs a proof to be settled or approved, and its permission
-// matrix: for each action the roles that may take it, comma separated (blank: the standing rule). Only the settings typed in (or stepped into)
+// matrix: for each action the roles that may take it, comma separated (blank: the standing rule), and its
+// grace days (blank: off), past which an open period closes when today is changed. Only the settings typed in (or stepped into)
 // since the last save are sent, so saving one leaves the other as it is.
 function SettingsForm({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
@@ -32,6 +33,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
     latePct: '',
     policyDate: '',
     periodNumberingFrom: '',
+    graceDays: '',
   });
   const [touched, setTouched] = useState<Set<Key>>(new Set());
   const [gradeFields, setGradeFields] = useState<Record<string, string>>({});
@@ -107,6 +109,14 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         return;
       }
       body.periodNumberingFrom = from;
+    }
+    if (touched.has('graceDays')) {
+      const graceDays = fields.graceDays.trim();
+      if (graceDays !== '' && !TERMS.test(graceDays)) {
+        setError('Grace days are a whole number of days, 0 or more, or blank.');
+        return;
+      }
+      body.graceDays = graceDays;
     }
     if (touched.has('cap')) {
       const cap = fields.cap.trim();
@@ -313,6 +323,20 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         <span>
           now:{' '}
           <strong data-testid="setting-period-numbering-from-current">{settings.data?.periodNumberingFrom ?? ''}</strong>
+        </span>{' '}
+        <label>
+          Grace days{' '}
+          <input
+            data-testid="setting-grace-days"
+            inputMode="numeric"
+            placeholder="off"
+            value={fields.graceDays}
+            onFocus={() => touch('graceDays')}
+            onChange={(e) => change('graceDays', e.target.value)}
+          />
+        </label>{' '}
+        <span>
+          now: <strong data-testid="setting-grace-days-current">{settings.data?.graceDays ?? ''}</strong>
         </span>{' '}
         <label>
           Cap{' '}

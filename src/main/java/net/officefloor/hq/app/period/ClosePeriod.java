@@ -37,6 +37,17 @@ public class ClosePeriod {
             throw new InvalidPeriodException("A " + role + " may not close period " + period.name());
         }
         if (period.closed()) throw new InvalidPeriodException("Period " + period.name() + " is already closed");
+        Period closed = fix(sheet, period, periods, people, claims, log, rates, settings);
+        if (closed == null) throw new InvalidPeriodException("Period " + period.name() + " is already closed");
+        closedOut.set(closed);
+    }
+
+    /**
+     * Fixes the open period's due-total, and each person's, as at the sheet's today, and marks it
+     * closed in the store: the closed period, or null when another request closed it first.
+     */
+    static Period fix(Sheet sheet, Period period, PeriodRepository periods, PersonRepository people,
+            ClaimRepository claims, ClaimLogRepository log, RateRepository rates, SettingsRepository settings) {
         List<Rate> all = rates.findAll(sheet.id());
         Settings sheetSettings = settings.find(sheet.id());
         List<Claim> sheetClaims = claims.findAll(sheet.id());
@@ -55,10 +66,8 @@ public class ClosePeriod {
             total = total.add(personTotal);
         }
         Period closed = period.close(total);
-        if (!periods.markClosed(closed)) {
-            throw new InvalidPeriodException("Period " + period.name() + " is already closed");
-        }
+        if (!periods.markClosed(closed)) return null;
         periods.savePersonTotals(closed, personTotals);
-        closedOut.set(closed);
+        return closed;
     }
 }

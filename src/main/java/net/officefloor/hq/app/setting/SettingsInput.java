@@ -12,14 +12,15 @@ import java.time.LocalDate;
  * what (null: none), and the from-date given for each figure setting, by its key (none given: the
  * sheet's today), and whether the proof threshold is changed and to what (null: none), and the
  * actions whose entry in the permission matrix is changed, in matrix order, each to the roles that
- * may take it as a comma separated list ('' for the standing rule).
+ * may take it as a comma separated list ('' for the standing rule), and whether the grace days are
+ * changed and to what (null: off).
  */
 public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, BigDecimal floor, Integer terms, BigDecimal latePct,
         boolean policyDateChanged, LocalDate policyDate,
         boolean periodNumberingFromChanged, LocalDate periodNumberingFrom,
         java.util.Map<String, Integer> gradeTerms, boolean capChanged, BigDecimal cap,
         java.util.Map<String, LocalDate> from, boolean proofThresholdChanged, BigDecimal proofThreshold,
-        java.util.Map<String, String> perms) {
+        java.util.Map<String, String> perms, boolean graceDaysChanged, Integer graceDays) {
 
     /**
      * The figure settings being changed, by key in the order they are audited, each with the value

@@ -27,6 +27,8 @@ export type Settings = {
   proofThreshold: string;
   /** Each action's entry in the permission matrix, the roles that may take it, comma separated ('' for the standing rule). */
   perms: Record<string, string>;
+  /** Grace days, a whole number ('' for off): when today is changed, every open period whose to-date plus them is before it closes. */
+  graceDays: string;
   /**
    * Every value recorded for each figure setting, by key (clerk-limit, floor, terms, late-pct,
    * terms-A, terms-B, terms-C, cap, proof-threshold), in from-date order ('' for none). The values above are those

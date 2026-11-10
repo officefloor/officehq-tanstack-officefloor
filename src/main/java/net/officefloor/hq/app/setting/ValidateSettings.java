@@ -130,6 +130,15 @@ public class ValidateSettings {
                 perms.put(action, String.join(",", roles));
             }
         }
+        boolean graceChanged = request != null && request.graceDays() != null;
+        Integer graceDays = null;
+        if (graceChanged && !request.graceDays().trim().isEmpty()) {
+            String value = request.graceDays().trim();
+            if (!DAYS.matcher(value).matches()) {
+                throw new InvalidSettingException("Grace days are a whole number of days, 0 or more, or blank");
+            }
+            graceDays = Integer.valueOf(value);
+        }
         Map<String, LocalDate> from = new LinkedHashMap<>();
         if (request != null && request.from() != null) {
             for (Map.Entry<String, String> entry : request.from().entrySet()) {
@@ -145,6 +154,6 @@ public class ValidateSettings {
         }
         body.set(new SettingsInput(limitChanged, limit, floor, terms, latePct, policyChanged, policyDate,
                 numberingChanged, numberingFrom, gradeTerms, capChanged, cap, from,
-                thresholdChanged, threshold, perms));
+                thresholdChanged, threshold, perms, graceChanged, graceDays));
     }
 }

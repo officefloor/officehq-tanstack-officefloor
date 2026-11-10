@@ -22,10 +22,12 @@ import java.util.NavigableMap;
  * on or after it half to even, and its period numbering from (null: off): while the sheet's today
  * is on or after it, a claim opened is numbered within its period, and its permission matrix
  * ({@code perms}, by action, the roles that may take it as a comma separated list; blank or missing:
- * the standing rule, open, settle, void and close by clerk and steward, reassign and reopen by steward).
+ * the standing rule, open, settle, void and close by clerk and steward, reassign and reopen by steward),
+ * and its grace days (null: off): when the sheet's today is changed, every open period whose to-date
+ * plus the grace days is before the new today is closed.
  */
 public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap<LocalDate, String>> dated,
-        LocalDate policyDate, LocalDate periodNumberingFrom, Map<String, String> perms) {
+        LocalDate policyDate, LocalDate periodNumberingFrom, Map<String, String> perms, Integer graceDays) {
     /** The grades that may have their own terms. */
     public static final List<String> GRADES = List.of("A", "B", "C");
 
@@ -151,6 +153,11 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
     public RoundingMode rounding(LocalDate date, LocalDate today) {
         LocalDate policy = policyDate != null ? policyDate : today;
         return date.isBefore(policy) ? RoundingMode.HALF_UP : RoundingMode.HALF_EVEN;
+    }
+
+    /** Whether a period ending {@code to} is past its grace days on {@code today}: never while they are off. */
+    public boolean pastGrace(LocalDate to, LocalDate today) {
+        return graceDays != null && to.plusDays(graceDays).isBefore(today);
     }
 
     /** Whether a claim opened on {@code today} is numbered within its period. */

@@ -28,12 +28,13 @@ public class SettingsRepository {
         Map<String, String> perms = new HashMap<>();
         jdbc.query("SELECT action, roles FROM setting_perm WHERE sheet_id = ?",
                 (RowCallbackHandler) (rs) -> perms.put(rs.getString("action"), rs.getString("roles")), sheetId);
-        List<Settings> found = jdbc.query("SELECT today, policy_date, period_numbering_from FROM sheet WHERE id = ?",
+        List<Settings> found = jdbc.query("SELECT today, policy_date, period_numbering_from, grace_days FROM sheet WHERE id = ?",
                 (rs, n) -> new Settings(sheetId, rs.getDate("today").toLocalDate(), dated,
                         rs.getDate("policy_date") == null ? null : rs.getDate("policy_date").toLocalDate(),
-                        rs.getDate("period_numbering_from") == null ? null : rs.getDate("period_numbering_from").toLocalDate(), perms),
+                        rs.getDate("period_numbering_from") == null ? null : rs.getDate("period_numbering_from").toLocalDate(), perms,
+                        rs.getObject("grace_days", Integer.class)),
                 sheetId);
-        return found.isEmpty() ? new Settings(sheetId, null, dated, null, null, perms) : found.get(0);
+        return found.isEmpty() ? new Settings(sheetId, null, dated, null, null, perms, null) : found.get(0);
     }
 
     /** Records a dated setting's value from a date, replacing any value already recorded from it. */
@@ -50,8 +51,9 @@ public class SettingsRepository {
 
     /** Saves the undated settings. */
     public void saveUndated(Settings settings) {
-        jdbc.update("UPDATE sheet SET policy_date = ?, period_numbering_from = ? WHERE id = ?",
+        jdbc.update("UPDATE sheet SET policy_date = ?, period_numbering_from = ?, grace_days = ? WHERE id = ?",
                 settings.policyDate() == null ? null : java.sql.Date.valueOf(settings.policyDate()),
-                settings.periodNumberingFrom() == null ? null : java.sql.Date.valueOf(settings.periodNumberingFrom()), settings.sheetId());
+                settings.periodNumberingFrom() == null ? null : java.sql.Date.valueOf(settings.periodNumberingFrom()),
+                settings.graceDays(), settings.sheetId());
     }
 }
