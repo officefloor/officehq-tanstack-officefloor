@@ -124,7 +124,7 @@ export function roundsHalfUp(claim: Claim, late: Late): boolean {
 }
 
 /** Whole days from one date (yyyy-MM-dd) to another, worked in UTC so no zone shifts it. */
-function daysBetween(from: string, to: string): number {
+export function daysBetween(from: string, to: string): number {
   const utc = (date: string) => {
     const [y, m, d] = date.split('-').map(Number);
     return Date.UTC(y, m - 1, d);
