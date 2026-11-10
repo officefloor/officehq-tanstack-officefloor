@@ -15,9 +15,11 @@ public class Claim {
     private Integer number;
     private Integer voidedNumber;
     private BigDecimal settledDue;
+    private String openedBy;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
-            ClaimStatus status, Integer number, BigDecimal settledDue) {
+            ClaimStatus status, Integer number, BigDecimal settledDue,
+            String openedBy) {
         this.id = id;
         this.sheetId = sheetId;
         this.personId = personId;
@@ -27,6 +29,7 @@ public class Claim {
         this.status = status;
         this.number = number;
         this.settledDue = settledDue;
+        this.openedBy = openedBy;
     }
 
     public Long getId() { return id; }
@@ -46,6 +49,9 @@ public class Claim {
     /** The due fixed when it was settled; null while its due is live. */
     public BigDecimal getSettledDue() { return settledDue; }
     public void setSettledDue(BigDecimal settledDue) { this.settledDue = settledDue; }
+    /** The user who opened it; null until it is opened. */
+    public String getOpenedBy() { return openedBy; }
+    public void setOpenedBy(String openedBy) { this.openedBy = openedBy; }
     /** The number its audit lines carry: its number, or the one it had before it was voided. */
     public Integer getAuditNumber() { return number != null ? number : voidedNumber; }
 
