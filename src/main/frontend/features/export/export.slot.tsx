@@ -1,3 +1,6 @@
+import { useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { getJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useClaims } from '../claims/useClaims';
 import { claimDueNow } from '../overdue/useOverdue';
@@ -7,7 +10,7 @@ import { usePersonPeriodCarried, usePersonPeriodDueTotals } from '../periods/use
 import { useFigure } from '../locale/useLocale';
 import { usePools } from '../pools/usePools';
 import { cutTotalsOf } from '../cuts/useCutTotals';
-import { dueTotalsOf } from '../rates/useDueTotals';
+import { dueTotalsOf, useDueTotals } from '../rates/useDueTotals';
 import { rateFor, useRates } from '../rates/useRates';
 import { useSettings } from '../settings/useSettings';
 import { useSheetToday } from '../today/useSheetToday';
@@ -146,6 +149,65 @@ function ExportPeriods({ sheetId }: { sheetId: string }) {
   );
 }
 
+/** One tree export: the sheets it runs over (this sheet first, then the others of its tree by id). */
+type TreeRun = { n: number; sheets: string[] };
+
+/** Works out one sheet's lines (sheet id, name, grade, due-total as shown, 'n/a' when none; in list order, retired
+ *  people included) with the same hooks its own screen uses, and hands them up once all is read; shows nothing. */
+function SheetPeopleLines({ sheetId, onLines }: { sheetId: string; onLines: (id: string, lines: string[][]) => void }) {
+  const people = usePeople(sheetId);
+  const ready = [people, useClaims(sheetId), useRates(sheetId), useSheetToday(sheetId), useSettings(sheetId), usePools(sheetId)]
+    .every((q) => q.isSuccess);
+  const due = useDueTotals(sheetId);
+  const lines = (people.data ?? []).map((p) => [sheetId, p.name, p.grade, due.get(p.id) ?? 'n/a']);
+  // Joined into a string so the effect below only fires when a line changes.
+  const joined = JSON.stringify(lines);
+  useEffect(() => {
+    if (ready) onLines(sheetId, JSON.parse(joined) as string[][]);
+  }, [ready, sheetId, joined, onLines]);
+  return null;
+}
+
+/** A button that downloads the people of the whole tree as a CSV file: a header line, then one line per person,
+ *  this sheet's people first in list order, then the other sheets' of its tree by sheet id. The other sheets are
+ *  re-read from the store on each press. */
+function ExportTree({ sheetId }: { sheetId: string }) {
+  const queryClient = useQueryClient();
+  const [run, setRun] = useState<TreeRun | null>(null);
+  const [found, setFound] = useState<{ n: number; lines: Record<string, string[][]> }>({ n: 0, lines: {} });
+  const [counter, setCounter] = useState(0);
+  const [onLines] = useState(() => (id: string, lines: string[][]) =>
+    setFound((f) => ({ ...f, lines: { ...f.lines, [id]: lines } })));
+
+  const start = async () => {
+    const n = counter + 1;
+    setCounter(n);
+    setRun(null);
+    setFound({ n, lines: {} });
+    const { sheets } = await getJson<{ sheets: string[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/tree`);
+    for (const id of sheets) queryClient.removeQueries({ queryKey: ['sheet', id] });
+    setRun({ n, sheets: [sheetId, ...sheets] });
+  };
+
+  const done = run !== null && found.n === run.n && run.sheets.every((id) => found.lines[id] !== undefined);
+  useEffect(() => {
+    if (!done || run === null) return;
+    downloadCsv([['sheet', 'name', 'grade', 'due-total'], ...run.sheets.flatMap((id) => found.lines[id])], `tree-${sheetId}.csv`);
+    setRun(null);
+  }, [done, run, found, sheetId]);
+
+  return (
+    <>
+      <button type="button" data-testid="export-tree" onClick={() => void start()}>
+        Export tree (CSV)
+      </button>
+      {run?.sheets.map((id) => (
+        <SheetPeopleLines key={`${run.n}-${id}`} sheetId={id} onLines={onLines} />
+      ))}
+    </>
+  );
+}
+
 export const contribution = SheetBody.fill({
   order: 15,
   Component: ({ sheetId }) => (
@@ -154,6 +216,7 @@ export const contribution = SheetBody.fill({
       <ExportClaims sheetId={sheetId} />
       <ExportPools sheetId={sheetId} />
       <ExportPeriods sheetId={sheetId} />
+      <ExportTree sheetId={sheetId} />
     </section>
   ),
 });
