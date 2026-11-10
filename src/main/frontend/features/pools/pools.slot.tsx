@@ -4,8 +4,11 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOnce } from '../../query/useOnce';
 import { postJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
+import { PersonHead, PersonRow } from '../../slots/defs/personRow';
 import { useUser } from '../session/session';
 import { usePeople } from '../people/people';
+import type { Person } from '../people/people';
+import { sumDue } from '../rates/rates';
 import { poolsKey, usePools } from './pools';
 import type { Pool } from './pools';
 
@@ -157,4 +160,36 @@ function PoolRow({ sheetId, pool }: { sheetId: string; pool: Pool }) {
   );
 }
 
-export const contribution = SheetBody.fill({ order: -5.3, Component: Pools });
+/** A person's cut total: their cuts in every pool they are a member of, added up (a pool with no cuts adds nothing). */
+function cutTotal(pools: Pool[], personId: string): string {
+  return sumDue(
+    pools.flatMap((p) => p.members.filter((m) => !m.memberPool && m.personId === personId && m.cut !== '').map((m) => m.cut)),
+  );
+}
+
+function CutHead() {
+  return <th>Cut</th>;
+}
+
+function PersonCutTotal({ sheetId, person }: { sheetId: string; person: Person }) {
+  const pools = usePools(sheetId).data ?? [];
+  return <td data-testid="person-cut-total">{cutTotal(pools, person.id)}</td>;
+}
+
+// The sheet's cut total: everyone's cut total added up.
+function SheetCutTotal({ sheetId }: { sheetId: string }) {
+  const people = usePeople(sheetId).data ?? [];
+  const pools = usePools(sheetId).data ?? [];
+  return (
+    <p>
+      Cut in all: <strong data-testid="rollup-cut-total">{sumDue(people.map((p) => cutTotal(pools, p.id)))}</strong>
+    </p>
+  );
+}
+
+export const contributions = [
+  SheetBody.fill({ order: -5.3, Component: Pools }),
+  SheetBody.fill({ order: 20.8, Component: SheetCutTotal }),
+  PersonHead.fill({ order: 22, Component: CutHead }),
+  PersonRow.fill({ order: 22, Component: PersonCutTotal }),
+];
