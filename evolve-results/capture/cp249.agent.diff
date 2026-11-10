@@ -1,0 +1,175 @@
+diff --git a/src/main/frontend/features/policyviewer/policyViewer.slot.tsx b/src/main/frontend/features/policyviewer/policyViewer.slot.tsx
+new file mode 100644
+index 000000000..242a89f7f
+--- /dev/null
++++ b/src/main/frontend/features/policyviewer/policyViewer.slot.tsx
+@@ -0,0 +1,37 @@
++import { useState } from 'react';
++import { SheetBody } from '../../slots/defs/sheetBody';
++import { useClaims } from '../claims/useClaims';
++import { policyVersionOn, useSettings } from '../settings/useSettings';
++
++/** The sheet's policy versions, shown on request: one line per version, oldest first, with its from-date (start when
++ *  it has none), the setting it changed and its value, and how many claims have it as their policy version. */
++function PolicyViewer({ sheetId }: { sheetId: string }) {
++  const [shown, setShown] = useState(false);
++  const settings = useSettings(sheetId);
++  const claims = useClaims(sheetId);
++  const counts = new Map<number, number>();
++  if (settings.data !== undefined) {
++    for (const c of claims.data ?? []) {
++      const v = policyVersionOn(settings.data, c.date);
++      counts.set(v, (counts.get(v) ?? 0) + 1);
++    }
++  }
++  return (
++    <section>
++      <button type="button" data-testid="policy-show" onClick={() => setShown(true)}>
++        Show policy versions
++      </button>
++      {shown && (
++        <ul>
++          {(settings.data?.policyVersionDetails ?? []).map((p) => (
++            <li key={p.version} data-testid="policy-line">
++              {p.version} {p.from ?? 'start'} {p.key}={p.value ?? ''} {counts.get(p.version) ?? 0}
++            </li>
++          ))}
++        </ul>
++      )}
++    </section>
++  );
++}
++
++export const contribution = SheetBody.fill({ order: 33, Component: ({ sheetId }) => <PolicyViewer sheetId={sheetId} /> });
+diff --git a/src/main/frontend/features/settings/useSettings.ts b/src/main/frontend/features/settings/useSettings.ts
+index 50b213bc8..c8e1c8b5f 100644
+--- a/src/main/frontend/features/settings/useSettings.ts
++++ b/src/main/frontend/features/settings/useSettings.ts
+@@ -49,14 +49,20 @@ export type Role = { user: string; role: string };
+  *  retired gives A instead. `grades` is the sheet's grades (not dated): A, B and C, then those added to it in the
+  *  order added. `policyVersions` is the from-date of each of the sheet's policy versions (yyyy-mm-dd; null: none, in
+  *  force always), version 1 first: every change to the rounding mode, floor, cap, terms, late percent or clerk limit
+- *  is the next one; the sheet's current policy version is their number (see `policyVersionOn`). */
++ *  is the next one; the sheet's current policy version is their number (see `policyVersionOn`).
++ *  `policyVersionDetails` is the same versions, version 1 first, each with the setting it changed and its value. */
+ export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; roles: Role[]; policyDate: string | null; periodNumberingFrom: string | null;
+   gradeTerms: Record<string, number>; cap: string | null; dated: Record<string, DatedValue[]>;
+   permissions: Record<string, string>; graceDays: number | null; delegations: Delegation[];
+   entryDate: string | null; holidays: string[]; voidReasons: string[]; pot: string | null;
+   parent: string | null; fiscalStartMonth: number; alertThreshold: string | null; escalateAfter: number | null; reviewSla: number | null; proofKinds: string | null; defaultGrade: string | null;
+   scoreMid: number | null; scoreHigh: number | null; scoreLog: boolean; maxOpen: number | null;
+-  retiredGrades: string[]; grades: string[]; pendingSla: number | null; policyVersions: (string | null)[] };
++  retiredGrades: string[]; grades: string[]; pendingSla: number | null; policyVersions: (string | null)[];
++  policyVersionDetails: PolicyVersion[] };
++
++/** One of the sheet's policy versions: its number, its from-date (yyyy-mm-dd; null: none, in force always), and the
++ *  policy setting it changed with the value it set (null: blank). */
++export type PolicyVersion = { version: number; from: string | null; key: string; value: string | null };
+ 
+ /** A steward's (`by`) delegation of the steward role to a user, from a date to a date (yyyy-mm-dd, inclusive):
+  *  while the sheet's today is inside it the user acts as a steward. */
+diff --git a/src/main/java/net/officefloor/hq/app/settings/PolicyVersion.java b/src/main/java/net/officefloor/hq/app/settings/PolicyVersion.java
+new file mode 100644
+index 000000000..7f0ad9ba2
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/settings/PolicyVersion.java
+@@ -0,0 +1,6 @@
++package net.officefloor.hq.app.settings;
++
++/** One of a sheet's policy versions: its number (from 1, in the order made), the from-date it was recorded from
++ *  (yyyy-MM-dd; null: none, in force always), and the policy setting it changed with the value it set (null: blank). */
++public record PolicyVersion(int version, String from, String key, String value) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/settings/Settings.java b/src/main/java/net/officefloor/hq/app/settings/Settings.java
+index ae3912cf0..5abaab0e0 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/Settings.java
+@@ -47,7 +47,8 @@ import java.util.List;
+  *  {@code grades} is the sheet's grades (not dated): A, B and C, then those added to it in the order added.
+  *  {@code policyVersions} is the from-date of each of the sheet's policy versions (null: none, in force always),
+  *  version 1 first: every change to the rounding mode, floor, cap, terms, late percent or clerk limit is the next
+- *  one. The sheet's current policy version is their number; a claim's is the number in force on its date. */
++ *  one. The sheet's current policy version is their number; a claim's is the number in force on its date.
++ *  {@code policyVersionDetails} is the same versions, version 1 first, each with the setting it changed and its value. */
+ public record Settings(String clerkLimit, String floor, int terms, String latePct, List<Role> roles, String policyDate,
+         String periodNumberingFrom, java.util.Map<String, Integer> gradeTerms, String cap,
+         java.util.Map<String, List<DatedValue>> dated, java.util.Map<String, String> permissions, Integer graceDays,
+@@ -56,5 +57,5 @@ public record Settings(String clerkLimit, String floor, int terms, String latePc
+         Integer escalateAfter, Integer reviewSla, String proofKinds, String defaultGrade,
+         Integer scoreMid, Integer scoreHigh, boolean scoreLog, Integer maxOpen,
+         List<String> retiredGrades, List<String> grades, Integer pendingSla,
+-        List<String> policyVersions) {
++        List<String> policyVersions, List<PolicyVersion> policyVersionDetails) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java b/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
+index 6a2041737..a80d3f5cf 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
+@@ -62,7 +62,8 @@ public class SettingsRepository {
+                 voidReasons(sheetId), pot == null ? null : money(pot), parent(sheetId), fiscalStartMonth(sheetId),
+                 alert == null ? null : money(alert), escalateAfter(sheetId), reviewSla(sheetId), proofKinds(sheetId),
+                 storedDefaultGrade(sheetId), scoreMid(sheetId), scoreHigh(sheetId), scoreLog(sheetId), maxOpen(sheetId),
+-                retiredGrades(sheetId), grades(sheetId), pendingSla(sheetId), policyVersions(sheetId));
++                retiredGrades(sheetId), grades(sheetId), pendingSla(sheetId), policyVersions(sheetId),
++                policyVersionDetails(sheetId));
+     }
+ 
+     /** The sheet's today; the real date when there is no such sheet. */
+@@ -89,9 +90,9 @@ public class SettingsRepository {
+                 + " VALUES (?, ?, ?, ?)", sheetId, key, Date.valueOf(from), value);
+         history.setting(sheetId, key, from, value);
+         if (POLICY_KEYS.contains(key)) {
+-            jdbc.update("INSERT INTO policy_version (sheet_id, version, setting_key, from_date) VALUES (?,"
+-                    + " (SELECT COALESCE(MAX(version), 0) + 1 FROM policy_version WHERE sheet_id = ?), ?, ?)",
+-                    sheetId, sheetId, key, Date.valueOf(from));
++            jdbc.update("INSERT INTO policy_version (sheet_id, version, setting_key, from_date, setting) VALUES (?,"
++                    + " (SELECT COALESCE(MAX(version), 0) + 1 FROM policy_version WHERE sheet_id = ?), ?, ?, ?)",
++                    sheetId, sheetId, key, Date.valueOf(from), value);
+         }
+     }
+ 
+@@ -108,6 +109,16 @@ public class SettingsRepository {
+         }, sheetId);
+     }
+ 
++    /** Each of the sheet's policy versions with the setting it changed and the value it set, version 1 first. */
++    public List<PolicyVersion> policyVersionDetails(String sheetId) {
++        return jdbc.query("SELECT version, from_date, setting_key, setting FROM policy_version WHERE sheet_id = ?"
++                + " ORDER BY version", (rs, i) -> {
++            Date from = rs.getDate("from_date");
++            return new PolicyVersion(rs.getInt("version"), from == null ? null : from.toLocalDate().toString(),
++                    rs.getString("setting_key"), rs.getString("setting"));
++        }, sheetId);
++    }
++
+     /** Every value recorded for each dated setting, by key, each oldest from-date first. */
+     public Map<String, List<DatedValue>> dated(String sheetId) {
+         Map<String, List<DatedValue>> dated = new LinkedHashMap<>();
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+index f610a2f4a..9cca41f60 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloner.java
+@@ -47,8 +47,8 @@ public class SheetCloner {
+                 rs -> {
+                     history.setting(to, rs.getString("setting_key"), rs.getDate("from_date").toLocalDate(), rs.getString("setting"));
+                 }, to);
+-        jdbc.update("INSERT INTO policy_version (sheet_id, version, setting_key, from_date) SELECT ?, version, setting_key,"
+-                + " from_date FROM policy_version WHERE sheet_id = ?", to, from);
++        jdbc.update("INSERT INTO policy_version (sheet_id, version, setting_key, from_date, setting) SELECT ?, version,"
++                + " setting_key, from_date, setting FROM policy_version WHERE sheet_id = ?", to, from);
+         Date policy = jdbc.queryForObject("SELECT policy_date FROM sheet WHERE id = ?", Date.class, to);
+         if (policy != null) history.policy(to, policy.toLocalDate());
+         jdbc.update("INSERT INTO sheet_role (sheet_id, user_name, role) SELECT ?, user_name, role FROM sheet_role"
+diff --git a/src/main/resources/db/migration/V120__policy_version_value.sql b/src/main/resources/db/migration/V120__policy_version_value.sql
+new file mode 100644
+index 000000000..cec8c5921
+--- /dev/null
++++ b/src/main/resources/db/migration/V120__policy_version_value.sql
+@@ -0,0 +1,7 @@
++-- Each policy version keeps the value its change set the setting to (null: blank), so the versions can be listed
++-- as they were made even once a later change from the same date replaces the setting's value.
++ALTER TABLE policy_version ADD COLUMN setting VARCHAR(20);
++
++-- The versions already recorded take the value recorded for their setting from their from-date.
++UPDATE policy_version v SET setting = (SELECT s.setting FROM setting_value s WHERE s.sheet_id = v.sheet_id
++    AND s.setting_key = v.setting_key AND s.from_date = v.from_date);
