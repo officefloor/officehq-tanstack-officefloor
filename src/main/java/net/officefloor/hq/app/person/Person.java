@@ -6,12 +6,18 @@ public class Person {
     private final String sheetId;
     private String name;
     private String grade;
+    private long version;
 
     public Person(Long id, String sheetId, String name, String grade) {
+        this(id, sheetId, name, grade, 0);
+    }
+
+    public Person(Long id, String sheetId, String name, String grade, long version) {
         this.id = id;
         this.sheetId = sheetId;
         this.name = name;
         this.grade = grade;
+        this.version = version;
     }
 
     public Long getId() { return id; }
@@ -21,4 +27,7 @@ public class Person {
     public void setName(String name) { this.name = name; }
     public String getGrade() { return grade; }
     public void setGrade(String grade) { this.grade = grade; }
+    /** Raised by one on each save; an edit names the version it was made from. */
+    public long getVersion() { return version; }
+    public void setVersion(long version) { this.version = version; }
 }

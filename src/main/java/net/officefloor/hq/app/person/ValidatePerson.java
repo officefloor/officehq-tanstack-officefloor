@@ -14,6 +14,6 @@ public class ValidatePerson {
         if (name.length() > 200) throw new InvalidPersonException("A name is at most 200 characters");
         String grade = request.grade() == null ? "" : request.grade().trim();
         if (!GRADES.contains(grade)) throw new InvalidPersonException("A grade is one of A, B or C");
-        body.set(new PersonRequest(name, grade));
+        body.set(new PersonRequest(name, grade, request.version()));
     }
 }

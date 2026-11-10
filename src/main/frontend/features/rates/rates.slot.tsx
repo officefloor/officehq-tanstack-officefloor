@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useOnce } from '../../query/useOnce';
 import { postJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { PersonHead, PersonRow } from '../../slots/defs/personRow';
@@ -25,6 +26,7 @@ function Rates({ sheetId }: { sheetId: string }) {
   const [error, setError] = useState('');
   const [user] = useUser();
 
+  const once = useOnce();
   const save = useMutation({
     mutationFn: (body: Fields) =>
       postJson<Rate>(`/api/sheets/${encodeURIComponent(sheetId)}/rates`, body, user),
@@ -47,7 +49,9 @@ function Rates({ sheetId }: { sheetId: string }) {
       setError('A rate is a percent of 0.00 or more, with up to two decimals.');
       return;
     }
-    save.mutate({ grade: fields.grade, pct, from: fields.from.trim() });
+    once((done) =>
+      save.mutate({ grade: fields.grade, pct, from: fields.from.trim() }, { onSettled: done }),
+    );
   };
 
   const change = (next: Partial<Fields>) => {

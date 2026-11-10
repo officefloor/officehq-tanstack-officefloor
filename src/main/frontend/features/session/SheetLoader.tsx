@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useOnce } from '../../query/useOnce';
 import { postJson } from '../../api/http';
 import { useSheetId } from './session';
 
@@ -14,6 +15,7 @@ export function SheetLoader({ onLoaded }: { onLoaded: () => void }) {
   const [input, setInput] = useState('');
   const [error, setError] = useState('');
 
+  const once = useOnce();
   const load = useMutation({
     mutationFn: (id: string) => postJson<Sheet>(`/api/sheets/${encodeURIComponent(id)}/load`, {}),
     onSuccess: (sheet) => {
@@ -32,7 +34,7 @@ export function SheetLoader({ onLoaded }: { onLoaded: () => void }) {
       setError('Type a sheet id to load.');
       return;
     }
-    load.mutate(id);
+    once((done) => load.mutate(id, { onSettled: done }));
   };
 
   return (

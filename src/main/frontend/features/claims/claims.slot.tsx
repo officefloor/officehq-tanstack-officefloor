@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useOnce } from '../../query/useOnce';
 import { postJson, putJson } from '../../api/http';
 import { PersonHead, PersonRow } from '../../slots/defs/personRow';
 import type { Person } from '../people/people';
@@ -48,6 +49,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
     setError('');
   };
 
+  const once = useOnce();
   const save = useMutation({
     mutationFn: ({ id, body }: { id: string | null; body: Fields }) => {
       const sheet = `/api/sheets/${encodeURIComponent(sheetId)}`;
@@ -90,7 +92,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
       setError('An amount is a number of 0.00 or more, with up to two decimals.');
       return;
     }
-    save.mutate({ id: editing, body: { ...fields, amount } });
+    once((done) => save.mutate({ id: editing, body: { ...fields, amount } }, { onSettled: done }));
   };
 
   const change = (next: Partial<Fields>) => {

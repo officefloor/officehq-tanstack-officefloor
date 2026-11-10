@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useOnce } from '../../query/useOnce';
 import { postJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { sheetKey, useSheet } from './sheet';
@@ -14,6 +15,7 @@ function SheetToday({ sheetId }: { sheetId: string }) {
   const [input, setInput] = useState('');
   const [error, setError] = useState('');
 
+  const once = useOnce();
   const save = useMutation({
     mutationFn: (today: string) =>
       postJson<Sheet>(`/api/sheets/${encodeURIComponent(sheetId)}/today`, { today }),
@@ -35,7 +37,7 @@ function SheetToday({ sheetId }: { sheetId: string }) {
       setError('Choose a date for today.');
       return;
     }
-    save.mutate(today);
+    once((done) => save.mutate(today, { onSettled: done }));
   };
 
   return (

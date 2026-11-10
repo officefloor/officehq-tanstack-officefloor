@@ -1,34 +1,40 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useOnce } from '../../query/useOnce';
 import { HttpError, postJson, putJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { PersonHead, PersonRow } from '../../slots/defs/personRow';
 import { useUser } from '../session/session';
-import { GRADES, peopleKey, usePeople } from './people';
+import { GRADES, peopleKey, peopleQuery, usePeople } from './people';
 import type { Grade, Person } from './people';
 
 type Fields = { name: string; grade: Grade };
 const EMPTY: Fields = { name: '', grade: 'A' };
 
 // The people on the sheet: a form that adds a person, or edits the one whose editor is open, and
-// the list of everyone in the order they were added.
+// the list of everyone in the order they were added. The editor remembers the version of the person
+// it loaded: if someone else has saved them since, the save is refused and the editor shows the
+// person as stored now (and their version, so saving again goes through).
 function People({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const people = usePeople(sheetId);
   const [fields, setFields] = useState<Fields>(EMPTY);
   const [editing, setEditing] = useState<string | null>(null);
+  const [version, setVersion] = useState<number | null>(null);
   const [error, setError] = useState('');
   const [user] = useUser();
 
   const reset = () => {
     setFields(EMPTY);
     setEditing(null);
+    setVersion(null);
     setError('');
   };
 
+  const once = useOnce();
   const save = useMutation({
-    mutationFn: ({ id, body }: { id: string | null; body: Fields }) => {
+    mutationFn: ({ id, body }: { id: string | null; body: Fields & { version?: number } }) => {
       const base = `/api/sheets/${encodeURIComponent(sheetId)}/people`;
       return id === null
         ? postJson<Person>(base, body, user)
@@ -38,12 +44,24 @@ function People({ sheetId }: { sheetId: string }) {
       reset();
       void queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
     },
-    onError: (e) =>
+    onError: async (e, { id }) => {
+      if (e instanceof HttpError && e.status === 412 && id !== null) {
+        setError('Someone else has changed this person. Their values are shown; save again to change them.');
+        const current = (await queryClient.fetchQuery({ ...peopleQuery(sheetId), staleTime: 0 })).find(
+          (p) => p.id === id,
+        );
+        if (current) {
+          setFields({ name: current.name, grade: current.grade });
+          setVersion(current.version);
+        }
+        return;
+      }
       setError(
         e instanceof HttpError && e.status === 409
           ? 'That name is already in use.'
           : 'That person could not be saved.',
-      ),
+      );
+    },
   });
 
   const submit = (e: FormEvent) => {
@@ -53,7 +71,7 @@ function People({ sheetId }: { sheetId: string }) {
       setError('A name is required.');
       return;
     }
-    save.mutate({ id: editing, body: fields });
+    once((done) => save.mutate({ id: editing, body: version === null ? fields : { ...fields, version } }, { onSettled: done }));
   };
 
   const change = (next: Partial<Fields>) => {
@@ -64,6 +82,7 @@ function People({ sheetId }: { sheetId: string }) {
   const open = (p: Person) => {
     setEditing(p.id);
     setFields({ name: p.name, grade: p.grade });
+    setVersion(p.version);
     setError('');
   };
 
