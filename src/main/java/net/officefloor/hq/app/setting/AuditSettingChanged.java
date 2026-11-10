@@ -8,7 +8,7 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Records each setting saved (blank for no clerk limit): the clerk limit, then the floor, then
  * the terms, then the late percent, then the policy date, then the period numbering from, then each
- * grade's terms (blank for the sheet's). Runs after
+ * grade's terms (blank for the sheet's), then the cap (blank for none). Runs after
  * every rule has passed, so a refused change writes nothing.
  */
 public class AuditSettingChanged {
@@ -27,5 +27,6 @@ public class AuditSettingChanged {
         for (String grade : input.gradeTerms().keySet()) {
             audit.record(head + " key=terms-" + grade + " value=" + shown.gradeTerms().get(grade));
         }
+        if (input.capChanged()) audit.record(head + " key=cap value=" + shown.cap());
     }
 }

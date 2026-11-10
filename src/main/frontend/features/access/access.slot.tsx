@@ -5,7 +5,7 @@ import { useOnce } from '../../query/useOnce';
 import { postJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/session';
-import { FLOOR, GRADES, LATE_PCT, LIMIT, POLICY_DATE, TERMS, ROLES, rolesKey, settingsKey, useRoles, useSettings } from './access';
+import { CAP, FLOOR, GRADES, LATE_PCT, LIMIT, POLICY_DATE, TERMS, ROLES, rolesKey, settingsKey, useRoles, useSettings } from './access';
 import type { Role, Settings, SettingsChange } from './access';
 
 type Key = Exclude<keyof Settings, 'gradeTerms'>;
@@ -15,12 +15,14 @@ type Key = Exclude<keyof Settings, 'gradeTerms'>;
 // it is due by, and its late percent, what an overdue claim's due gains per full 30 days overdue, and
 // its policy date (blank: the sheet's today), before which a claim rounds half up, and its period
 // numbering from (blank: off), from which a claim opened is numbered within its period, and each
-// grade's own terms (blank: the sheet's terms), fixing the due-by of a claim made for it. Only the settings typed in (or stepped into)
+// grade's own terms (blank: the sheet's terms), fixing the due-by of a claim made for it, and its cap
+// (blank: none), the most a person's due-total may be. Only the settings typed in (or stepped into)
 // since the last save are sent, so saving one leaves the other as it is.
 function SettingsForm({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const settings = useSettings(sheetId);
   const [fields, setFields] = useState<Omit<Settings, 'gradeTerms'>>({
+    cap: '',
     clerkLimit: '',
     floor: '',
     terms: '',
@@ -97,6 +99,14 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         return;
       }
       body.periodNumberingFrom = from;
+    }
+    if (touched.has('cap')) {
+      const cap = fields.cap.trim();
+      if (cap !== '' && !CAP.test(cap)) {
+        setError('A cap is 0.00 or more, with up to two decimals, or blank.');
+        return;
+      }
+      body.cap = cap;
     }
     if (gradesTouched.size > 0) {
       const gradeTerms: Record<string, string> = {};
@@ -231,6 +241,20 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         <span>
           now:{' '}
           <strong data-testid="setting-period-numbering-from-current">{settings.data?.periodNumberingFrom ?? ''}</strong>
+        </span>{' '}
+        <label>
+          Cap{' '}
+          <input
+            data-testid="setting-cap"
+            inputMode="decimal"
+            placeholder="none"
+            value={fields.cap}
+            onFocus={() => touch('cap')}
+            onChange={(e) => change('cap', e.target.value)}
+          />
+        </label>{' '}
+        <span>
+          now: <strong data-testid="setting-cap-current">{settings.data?.cap ?? ''}</strong>
         </span>{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings

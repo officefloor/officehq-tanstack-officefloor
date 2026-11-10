@@ -8,7 +8,7 @@ import type { Person } from '../people/people';
 import { useClaims } from '../claims/claims';
 import { personDueTotal, sumDue, useRates } from '../rates/rates';
 import { useSheetToday } from '../sheet/sheet';
-import { useFloor, useLate } from '../access/access';
+import { useCap, useFloor, useLate } from '../access/access';
 import { useUser } from '../session/session';
 
 function PatronsHead() {
@@ -32,6 +32,7 @@ function PersonPatrons({ sheetId, person }: { sheetId: string; person: Person })
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
+  const cap = useCap(sheetId);
   const [choice, setChoice] = useState('');
   const [error, setError] = useState('');
   const once = useOnce();
@@ -40,7 +41,7 @@ function PersonPatrons({ sheetId, person }: { sheetId: string; person: Person })
   const names = patrons.map((p) => p.name).sort((a, b) => a.localeCompare(b)).join(', ');
   const backing = sumDue(
     patrons.map((p) =>
-      personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), p.holds, floor, late),
+      personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), p.holds, floor, late, cap),
     ),
   );
 

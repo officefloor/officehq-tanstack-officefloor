@@ -21,6 +21,8 @@ export type Settings = {
   periodNumberingFrom: string;
   /** Each grade's own terms in days ('' for the sheet's terms). */
   gradeTerms: Record<string, string>;
+  /** The most a person's due-total may be, with two decimals ('' for none). */
+  cap: string;
 };
 
 /** The grades that may have their own terms. */
@@ -59,6 +61,11 @@ export function useLate(sheetId: string): Late {
   return { pct, today: useSheetToday(sheetId), policyDate: settings?.policyDate ?? '' };
 }
 
+/** The sheet's cap on a person's due-total ('' for none, until the settings are read). */
+export function useCap(sheetId: string): string {
+  return useSettings(sheetId).data?.cap ?? '';
+}
+
 /** The roles assigned on the sheet, by user name. */
 export function useRoles(sheetId: string) {
   return useQuery({
@@ -70,6 +77,9 @@ export function useRoles(sheetId: string) {
 
 /** A clerk limit as the screen takes it: blank, or 0.00 or more with up to two decimals. */
 export const LIMIT = /^\d+(\.\d{1,2})?$/;
+
+/** A cap as the screen takes it: blank, or 0.00 or more with up to two decimals. */
+export const CAP = /^\d+(\.\d{1,2})?$/;
 
 /** A floor as the screen takes it: 0.00 or more with up to two decimals. */
 export const FLOOR = /^\d+(\.\d{1,2})?$/;

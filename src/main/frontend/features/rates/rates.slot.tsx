@@ -10,8 +10,8 @@ import { GRADES, usePeople } from '../people/people';
 import type { Grade, Person } from '../people/people';
 import { useUser } from '../session/session';
 import { useSheetToday } from '../sheet/sheet';
-import { useFloor, useLate } from '../access/access';
-import { NA, PCT, personDueTotal, rateOn, ratesKey, sumDue, useRates } from './rates';
+import { useCap, useFloor, useLate } from '../access/access';
+import { NA, PCT, personDueTotal, personExcess, rateOn, ratesKey, sumDue, useRates } from './rates';
 import type { Rate } from './rates';
 
 type Fields = { grade: Grade; pct: string; from: string; to: string };
@@ -172,14 +172,30 @@ function DueHead() {
   return <th>Due</th>;
 }
 
-// A person's due-total: the due figures of their claims that count, added up.
+// A person's due-total: the due figures of their claims that count, added up, held to the sheet's cap.
 function PersonDueTotal({ sheetId, person }: { sheetId: string; person: Person }) {
   const claims = (useClaims(sheetId).data ?? []).filter((c) => c.personId === person.id);
   const rates = useRates(sheetId).data ?? [];
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
-  return <td data-testid="person-due-total">{personDueTotal(rates, person.grades, today, claims, person.holds, floor, late)}</td>;
+  const cap = useCap(sheetId);
+  return <td data-testid="person-due-total">{personDueTotal(rates, person.grades, today, claims, person.holds, floor, late, cap)}</td>;
+}
+
+function ExcessHead() {
+  return <th>Excess</th>;
+}
+
+// A person's excess: how far the due figures of their claims that count go above the sheet's cap.
+function PersonExcess({ sheetId, person }: { sheetId: string; person: Person }) {
+  const claims = (useClaims(sheetId).data ?? []).filter((c) => c.personId === person.id);
+  const rates = useRates(sheetId).data ?? [];
+  const today = useSheetToday(sheetId);
+  const floor = useFloor(sheetId);
+  const late = useLate(sheetId);
+  const cap = useCap(sheetId);
+  return <td data-testid="person-excess">{personExcess(rates, person.grades, today, claims, person.holds, floor, late, cap)}</td>;
 }
 
 // The sheet's due-total: everyone's due-total added up, skipping those with no rate.
@@ -190,8 +206,9 @@ function DueTotal({ sheetId }: { sheetId: string }) {
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
+  const cap = useCap(sheetId);
   const totals = people.map((p) =>
-    personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), p.holds, floor, late),
+    personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), p.holds, floor, late, cap),
   );
   return (
     <p>
@@ -205,4 +222,6 @@ export const contributions = [
   SheetBody.fill({ order: 20, Component: DueTotal }),
   PersonHead.fill({ order: 20, Component: DueHead }),
   PersonRow.fill({ order: 20, Component: PersonDueTotal }),
+  PersonHead.fill({ order: 21, Component: ExcessHead }),
+  PersonRow.fill({ order: 21, Component: PersonExcess }),
 ];

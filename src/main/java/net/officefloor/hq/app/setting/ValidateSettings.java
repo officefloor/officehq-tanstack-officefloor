@@ -84,7 +84,16 @@ public class ValidateSettings {
                 }
             }
         }
+        boolean capChanged = request != null && request.cap() != null;
+        BigDecimal cap = null;
+        if (capChanged && !request.cap().trim().isEmpty()) {
+            String value = request.cap().trim();
+            if (!FIGURE.matcher(value).matches()) {
+                throw new InvalidSettingException("A cap is 0.00 or more, with up to two decimals, or blank");
+            }
+            cap = new BigDecimal(value).setScale(2);
+        }
         body.set(new SettingsInput(limitChanged, limit, floor, terms, latePct, policyChanged, policyDate,
-                numberingChanged, numberingFrom, gradeTerms));
+                numberingChanged, numberingFrom, gradeTerms, capChanged, cap));
     }
 }

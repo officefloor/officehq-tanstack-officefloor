@@ -13,10 +13,10 @@ import java.util.Map;
  * its policy date (null: the sheet's today): a claim dated before it rounds half up, one on or after
  * it half to even, and its period numbering from (null: off): while the sheet's today is on or
  * after it, a claim opened is numbered within its period, and its terms per grade (a grade with none
- * uses the sheet's terms).
+ * uses the sheet's terms), and its cap (null: none), the most a person's due-total may be.
  */
 public record Settings(String sheetId, BigDecimal clerkLimit, BigDecimal floor, int terms, BigDecimal latePct,
-        LocalDate policyDate, LocalDate periodNumberingFrom, Map<String, Integer> gradeTerms) {
+        LocalDate policyDate, LocalDate periodNumberingFrom, Map<String, Integer> gradeTerms, BigDecimal cap) {
     /** The grades that may have their own terms. */
     public static final List<String> GRADES = List.of("A", "B", "C");
 
@@ -47,6 +47,11 @@ public record Settings(String sheetId, BigDecimal clerkLimit, BigDecimal floor, 
     /** Whether a claim opened on {@code today} is numbered within its period. */
     public boolean numbersByPeriod(LocalDate today) {
         return periodNumberingFrom != null && !today.isBefore(periodNumberingFrom);
+    }
+
+    /** A person's due-total (null: n/a) held to the cap. A due-total of n/a is not capped. */
+    public BigDecimal capped(BigDecimal dueTotal) {
+        return cap == null || dueTotal == null || dueTotal.compareTo(cap) <= 0 ? dueTotal : cap;
     }
 
     /** Whether a due (null: n/a) is within the clerk limit. A due of n/a is within any limit. */

@@ -34,7 +34,7 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
      * charge on {@code today}), and
      * n/a when their grade in force today has no rate today and no claim that counts keeps a fixed
      * figure or has one under the grade in force on its date when that is another grade, or
-     * has one dated on or before today (under a rate that has since ended). Each claim
+     * has one dated on or before today (under a rate that has since ended), held to the sheet's cap. Each claim
      * takes the rate of the grade in force on its date. The
      * sheet's totals add these up, skipping n/a.
      */
@@ -64,6 +64,7 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
             }
             boolean none = Rate.inForce(all, person.gradeOn(today), today).isEmpty() && !fixed;
             claimedTotal = claimedTotal.add(claimed);
+            due = settings.capped(due);
             if (!none) dueTotal = dueTotal.add(due);
             figures.put(person.getId(), new Figures(person.getName(), show(claimed), none ? "n/a" : show(due)));
         }

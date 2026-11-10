@@ -18,7 +18,8 @@ public class SaveSettings {
                 input.latePct() != null ? input.latePct() : now.latePct(),
                 input.policyDateChanged() ? input.policyDate() : now.policyDate(),
                 input.periodNumberingFromChanged() ? input.periodNumberingFrom() : now.periodNumberingFrom(),
-                gradeTerms(now, input));
+                gradeTerms(now, input),
+                input.capChanged() ? input.cap() : now.cap());
         repository.save(settings);
         settingsOut.set(settings);
     }

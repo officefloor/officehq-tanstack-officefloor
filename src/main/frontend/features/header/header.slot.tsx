@@ -5,7 +5,7 @@ import { usePeople } from '../people/people';
 import { personDueTotal, sumDue, useRates } from '../rates/rates';
 import { personOverdue } from '../overdue/overdue';
 import { useSheetToday } from '../sheet/sheet';
-import { useFloor, useLate } from '../access/access';
+import { useCap, useFloor, useLate } from '../access/access';
 
 // Every status the header counts — the same as the summary's.
 const STATUSES: ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'];
@@ -20,10 +20,11 @@ function Header({ sheetId }: { sheetId: string }) {
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
+  const cap = useCap(sheetId);
 
   const claimsOf = (id: string) => claims.filter((c) => c.personId === id);
   const dueTotal = sumDue(
-    people.map((p) => personDueTotal(rates, p.grades, today, claimsOf(p.id), p.holds, floor, late)),
+    people.map((p) => personDueTotal(rates, p.grades, today, claimsOf(p.id), p.holds, floor, late, cap)),
   );
   const overdueTotal = sumDue(
     people.map((p) => personOverdue(rates, p.grades, today, claimsOf(p.id), p.holds, floor, late).total),

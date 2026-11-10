@@ -19,7 +19,7 @@ import net.officefloor.plugin.variable.Val;
  * Takes the person's statement: their due-total now (the figures of their claims that count, added
  * up, skipping n/a; n/a when their grade in force today has no rate today and no claim that counts keeps a fixed
  * figure, has one under another grade in force on its date, or has one dated on or before today (under a
- * rate that has since ended); each claim at its date's grade's rate; an overdue claim's late charge on top), as the screen shows it. Every claim of theirs that counts is bound to its figure now (a live
+ * rate that has since ended); held to the sheet's cap; each claim at its date's grade's rate; an overdue claim's late charge on top), as the screen shows it. Every claim of theirs that counts is bound to its figure now (a live
  * one at least the sheet's floor), never its late charge;
  * every other claim of theirs is left unbound (live). The person's statement count goes up by one,
  * and the due-total and the sheet's today are kept as the last statement's.
@@ -52,7 +52,7 @@ public class TakeStatement {
             claims.save(claim);
         }
         String dueTotal = Rate.inForce(all, person.gradeOn(sheet.today()), sheet.today()).isEmpty() && !fixed
-                ? "n/a" : total.toPlainString();
+                ? "n/a" : sheetSettings.capped(total).toPlainString();
         person.setStatements(person.getStatementCount() + 1, dueTotal, sheet.today());
         people.saveStatements(person);
         statementOut.set(new Statement(dueTotal, counted));

@@ -2,7 +2,7 @@ import { SheetBody } from '../../slots/defs/sheetBody';
 import { useClaims } from '../claims/claims';
 import { usePeople } from '../people/people';
 import { personDueTotal, useRates } from '../rates/rates';
-import { useFloor, useLate } from '../access/access';
+import { useCap, useFloor, useLate } from '../access/access';
 import { useSheetToday } from '../sheet/sheet';
 
 // A CSV value: wrapped in double quotes (any quote inside doubled) when it holds a comma, a quote
@@ -19,12 +19,13 @@ function ExportPeople({ sheetId }: { sheetId: string }) {
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
+  const cap = useCap(sheetId);
 
   const download = () => {
     const lines = [['name', 'grade', 'retired-from', 'due-total']];
     for (const p of people) {
       const own = claims.filter((c) => c.personId === p.id);
-      lines.push([p.name, p.grade, p.retiredFrom, personDueTotal(rates, p.grades, today, own, p.holds, floor, late)]);
+      lines.push([p.name, p.grade, p.retiredFrom, personDueTotal(rates, p.grades, today, own, p.holds, floor, late, cap)]);
     }
     const csv = lines.map((l) => l.map(csvValue).join(',') + '\n').join('');
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));

@@ -149,9 +149,41 @@ export function claimDue(claim: Claim, pct: string | null, floor: string, late: 
  * date for their grade in force on its date), added up, skipping n/a. With no rate for their grade
  * today it is n/a, unless a claim that counts keeps a fixed figure (settled, or bound by a
  * statement), has a figure under another grade in force on its date, or has a figure dated on or
- * before today (under a rate that has since ended).
+ * before today (under a rate that has since ended). Held to the sheet's `cap` ('' for none); n/a is
+ * not capped.
  */
 export function personDueTotal(
+  rates: Rate[],
+  grades: GradeFrom[],
+  today: string,
+  claims: Claim[],
+  holds: Hold[],
+  floor: string,
+  late: Late,
+  cap: string,
+): string {
+  const total = uncappedDueTotal(rates, grades, today, claims, holds, floor, late);
+  if (total === NA || cap === '' || hundredths(total) <= hundredths(cap)) return total;
+  return showCents(hundredths(cap));
+}
+
+/** How far a person's due-total, before the sheet's `cap` ('' for none), goes above it: 0.00 when it does not. */
+export function personExcess(
+  rates: Rate[],
+  grades: GradeFrom[],
+  today: string,
+  claims: Claim[],
+  holds: Hold[],
+  floor: string,
+  late: Late,
+  cap: string,
+): string {
+  const total = uncappedDueTotal(rates, grades, today, claims, holds, floor, late);
+  if (total === NA || cap === '' || hundredths(total) <= hundredths(cap)) return '0.00';
+  return showCents(hundredths(total) - hundredths(cap));
+}
+
+function uncappedDueTotal(
   rates: Rate[],
   grades: GradeFrom[],
   today: string,
