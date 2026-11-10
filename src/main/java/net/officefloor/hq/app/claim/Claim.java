@@ -12,16 +12,16 @@ public class Claim {
     private LocalDate date;
     private String note;
     private ClaimStatus status;
-    private Integer number;
+    private String number;
     private BigDecimal settledDue;
     private String openedBy;
     private boolean stated;
     private BigDecimal statedDue;
-    private Integer corrects;
+    private String corrects;
     private LocalDate correctedDate;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
-            ClaimStatus status, Integer number, BigDecimal settledDue,
+            ClaimStatus status, String number, BigDecimal settledDue,
             String openedBy) {
         this.id = id;
         this.sheetId = sheetId;
@@ -47,8 +47,8 @@ public class Claim {
     public void setNote(String note) { this.note = note; }
     public ClaimStatus getStatus() { return status; }
     /** The number of the settled claim this correction corrects; null when it is no correction. */
-    public Integer getCorrects() { return corrects; }
-    public void setCorrects(Integer corrects) { this.corrects = corrects; }
+    public String getCorrects() { return corrects; }
+    public void setCorrects(String corrects) { this.corrects = corrects; }
     /** A correction (a negative amount) has no floor and no late charge. */
     public boolean isCorrection() { return corrects != null; }
     /** The date of the claim this correction corrects; null when it is no correction or not yet read. */
@@ -60,8 +60,8 @@ public class Claim {
     }
     /** The claim's number on its sheet, given when it is opened; null for a draft. A voided claim
      *  keeps the number it had; a number is never reused. */
-    public Integer getNumber() { return number; }
-    public void setNumber(Integer number) { this.number = number; }
+    public String getNumber() { return number; }
+    public void setNumber(String number) { this.number = number; }
     /** The due fixed when it was settled; null while its due is live. */
     public BigDecimal getSettledDue() { return settledDue; }
     public void setSettledDue(BigDecimal settledDue) { this.settledDue = settledDue; }

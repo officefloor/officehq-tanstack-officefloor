@@ -22,10 +22,10 @@ public class ClaimRepository {
             rs.getString("sheet_id"), rs.getLong("person_id"), rs.getBigDecimal("amount"),
             rs.getDate("claim_date").toLocalDate(), rs.getString("note"),
             ClaimStatus.valueOf(rs.getString("status")),
-            (Integer) rs.getObject("claim_number", Integer.class), rs.getBigDecimal("settled_due"),
+            rs.getString("claim_number"), rs.getBigDecimal("settled_due"),
             rs.getString("opened_by"));
         claim.bind(rs.getBoolean("stated"), rs.getBigDecimal("stated_due"));
-        claim.setCorrects((Integer) rs.getObject("corrects", Integer.class));
+        claim.setCorrects(rs.getString("corrects"));
         java.sql.Date corrected = rs.getDate("corrected_date");
         claim.setCorrectedDate(corrected == null ? null : corrected.toLocalDate());
         return claim;
@@ -76,6 +76,21 @@ public class ClaimRepository {
                 Integer.class, sheetId);
     }
 
+    /**
+     * The next number in one period's sequence on the sheet ({@code sequence} '' for claims in no
+     * period), counting from 1; taken in one statement so two claims opened at the same moment
+     * never share a number, and never given out again.
+     */
+    public int nextNumberIn(String sheetId, String sequence) {
+        jdbc.update("MERGE INTO period_number p USING (VALUES (CAST(? AS VARCHAR(200)), CAST(? AS VARCHAR(200)))) v (sheet_id, seq_name)"
+                + " ON p.sheet_id = v.sheet_id AND p.seq_name = v.seq_name"
+                + " WHEN NOT MATCHED THEN INSERT (sheet_id, seq_name, last_number) VALUES (v.sheet_id, v.seq_name, 0)",
+                sheetId, sequence);
+        return jdbc.queryForObject("SELECT last_number FROM FINAL TABLE"
+                + " (UPDATE period_number SET last_number = last_number + 1 WHERE sheet_id = ? AND seq_name = ?)",
+                Integer.class, sheetId, sequence);
+    }
+
     /** Insert a new claim (assigning its id) or update an existing one. */
     public void save(Claim claim) {
         if (claim.getId() != null) {
@@ -97,7 +112,7 @@ public class ClaimRepository {
             ps.setDate(4, Date.valueOf(claim.getDate()));
             ps.setString(5, claim.getNote());
             ps.setString(6, claim.getStatus().name());
-            ps.setObject(7, claim.getCorrects(), java.sql.Types.INTEGER);
+            ps.setString(7, claim.getCorrects());
             return ps;
         }, keys);
         claim.setId(keys.getKey().longValue());

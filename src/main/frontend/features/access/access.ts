@@ -8,9 +8,18 @@ import { useSheetToday } from '../sheet/sheet';
  * least a claim's live due may be, with two decimals, and its terms, the whole number of days after a
  * claim's date that it is due by, and its late percent, what an overdue claim's due gains per full 30
  * days overdue, with two decimals, and its policy date (yyyy-MM-dd; '' for the sheet's today): a claim
- * dated before it rounds half up, one on or after it half to even.
+ * dated before it rounds half up, one on or after it half to even, and its period numbering from
+ * (yyyy-MM-dd; '' for off): while the sheet's today is on or after it, a claim opened is numbered
+ * within its period.
  */
-export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string; policyDate: string };
+export type Settings = {
+  clerkLimit: string;
+  floor: string;
+  terms: string;
+  latePct: string;
+  policyDate: string;
+  periodNumberingFrom: string;
+};
 
 /** A save of the settings: only those being changed are sent. */
 export type SettingsChange = Partial<Settings>;

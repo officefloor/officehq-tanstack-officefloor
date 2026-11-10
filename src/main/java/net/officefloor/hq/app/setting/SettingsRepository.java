@@ -15,16 +15,18 @@ public class SettingsRepository {
     }
 
     public Settings find(String sheetId) {
-        List<Settings> found = jdbc.query("SELECT clerk_limit, due_floor, terms, late_pct, policy_date FROM sheet WHERE id = ?",
+        List<Settings> found = jdbc.query("SELECT clerk_limit, due_floor, terms, late_pct, policy_date, period_numbering_from FROM sheet WHERE id = ?",
                 (rs, n) -> new Settings(sheetId, rs.getBigDecimal("clerk_limit"), rs.getBigDecimal("due_floor"),
                         rs.getInt("terms"), rs.getBigDecimal("late_pct"),
-                        rs.getDate("policy_date") == null ? null : rs.getDate("policy_date").toLocalDate()), sheetId);
-        return found.isEmpty() ? new Settings(sheetId, null, Settings.DEFAULT_FLOOR, Settings.DEFAULT_TERMS, Settings.DEFAULT_LATE_PCT, null) : found.get(0);
+                        rs.getDate("policy_date") == null ? null : rs.getDate("policy_date").toLocalDate(),
+                        rs.getDate("period_numbering_from") == null ? null : rs.getDate("period_numbering_from").toLocalDate()), sheetId);
+        return found.isEmpty() ? new Settings(sheetId, null, Settings.DEFAULT_FLOOR, Settings.DEFAULT_TERMS, Settings.DEFAULT_LATE_PCT, null, null) : found.get(0);
     }
 
     public void save(Settings settings) {
-        jdbc.update("UPDATE sheet SET clerk_limit = ?, due_floor = ?, terms = ?, late_pct = ?, policy_date = ? WHERE id = ?",
+        jdbc.update("UPDATE sheet SET clerk_limit = ?, due_floor = ?, terms = ?, late_pct = ?, policy_date = ?, period_numbering_from = ? WHERE id = ?",
                 settings.clerkLimit(), settings.floor(), settings.terms(), settings.latePct(),
-                settings.policyDate() == null ? null : java.sql.Date.valueOf(settings.policyDate()), settings.sheetId());
+                settings.policyDate() == null ? null : java.sql.Date.valueOf(settings.policyDate()),
+                settings.periodNumberingFrom() == null ? null : java.sql.Date.valueOf(settings.periodNumberingFrom()), settings.sheetId());
     }
 }

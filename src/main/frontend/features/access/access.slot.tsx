@@ -13,12 +13,20 @@ type Key = keyof Settings;
 // The sheet's settings: its clerk limit, the highest due a clerk may settle (blank: no limit), and
 // its floor, the least a claim's live due may be, and its terms, the days after a claim's date that
 // it is due by, and its late percent, what an overdue claim's due gains per full 30 days overdue, and
-// its policy date (blank: the sheet's today), before which a claim rounds half up. Only the settings typed in (or stepped into)
+// its policy date (blank: the sheet's today), before which a claim rounds half up, and its period
+// numbering from (blank: off), from which a claim opened is numbered within its period. Only the settings typed in (or stepped into)
 // since the last save are sent, so saving one leaves the other as it is.
 function SettingsForm({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const settings = useSettings(sheetId);
-  const [fields, setFields] = useState<Settings>({ clerkLimit: '', floor: '', terms: '', latePct: '', policyDate: '' });
+  const [fields, setFields] = useState<Settings>({
+    clerkLimit: '',
+    floor: '',
+    terms: '',
+    latePct: '',
+    policyDate: '',
+    periodNumberingFrom: '',
+  });
   const [touched, setTouched] = useState<Set<Key>>(new Set());
   const [error, setError] = useState('');
   const [user] = useUser();
@@ -77,6 +85,14 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         return;
       }
       body.policyDate = policyDate;
+    }
+    if (touched.has('periodNumberingFrom')) {
+      const from = fields.periodNumberingFrom.trim();
+      if (from !== '' && (!POLICY_DATE.test(from) || Number.isNaN(Date.parse(from)))) {
+        setError('A period numbering from is a date, yyyy-MM-dd, or blank.');
+        return;
+      }
+      body.periodNumberingFrom = from;
     }
     if (Object.keys(body).length === 0) {
       setError('Type a setting to save.');
@@ -160,6 +176,20 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         </label>{' '}
         <span>
           now: <strong data-testid="setting-policy-date-current">{settings.data?.policyDate ?? ''}</strong>
+        </span>{' '}
+        <label>
+          Period numbering from{' '}
+          <input
+            data-testid="setting-period-numbering-from"
+            placeholder="yyyy-mm-dd"
+            value={fields.periodNumberingFrom}
+            onFocus={() => touch('periodNumberingFrom')}
+            onChange={(e) => change('periodNumberingFrom', e.target.value)}
+          />
+        </label>{' '}
+        <span>
+          now:{' '}
+          <strong data-testid="setting-period-numbering-from-current">{settings.data?.periodNumberingFrom ?? ''}</strong>
         </span>{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings

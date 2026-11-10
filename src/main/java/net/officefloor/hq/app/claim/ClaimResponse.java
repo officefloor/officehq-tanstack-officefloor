@@ -15,12 +15,12 @@ public record ClaimResponse(String id, String personId, String amount, String da
         return new ClaimResponse(String.valueOf(claim.getId()), String.valueOf(claim.getPersonId()),
                 claim.getAmount().toPlainString(), claim.getDate().toString(), claim.getNote(),
                 claim.getStatus().name(),
-                claim.getNumber() == null ? "" : String.valueOf(claim.getNumber()),
+                claim.getNumber() == null ? "" : claim.getNumber(),
                 claim.getSettledDue() == null ? "" : claim.getSettledDue().toPlainString(),
                 claim.getOpenedBy() == null ? "" : claim.getOpenedBy(),
                 claim.isStated(),
                 !claim.isStated() ? "" : claim.getStatedDue() == null ? "n/a" : claim.getStatedDue().toPlainString(),
-                claim.getCorrects() == null ? "" : String.valueOf(claim.getCorrects()),
+                claim.getCorrects() == null ? "" : claim.getCorrects(),
                 claim.getRoundDate().toString());
     }
 }

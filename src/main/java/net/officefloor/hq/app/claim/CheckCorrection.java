@@ -8,7 +8,7 @@ import net.officefloor.plugin.variable.Val;
  */
 public class CheckCorrection {
     public void check(@Val Claim claim, ClaimRepository repository) throws InvalidClaimException {
-        Integer corrects = claim.getCorrects();
+        String corrects = claim.getCorrects();
         if (corrects == null) return;
         Claim corrected = repository.findByPerson(claim.getSheetId(), claim.getPersonId()).stream()
                 .filter((c) -> corrects.equals(c.getNumber()) && c.getStatus() == ClaimStatus.SETTLED)

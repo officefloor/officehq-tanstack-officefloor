@@ -14,7 +14,8 @@ public class SaveSettings {
                 input.floor() != null ? input.floor() : now.floor(),
                 input.terms() != null ? input.terms() : now.terms(),
                 input.latePct() != null ? input.latePct() : now.latePct(),
-                input.policyDateChanged() ? input.policyDate() : now.policyDate());
+                input.policyDateChanged() ? input.policyDate() : now.policyDate(),
+                input.periodNumberingFromChanged() ? input.periodNumberingFrom() : now.periodNumberingFrom());
         repository.save(settings);
         settingsOut.set(settings);
     }

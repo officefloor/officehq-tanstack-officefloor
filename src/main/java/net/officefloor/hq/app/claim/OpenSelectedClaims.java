@@ -44,7 +44,7 @@ public class OpenSelectedClaims {
                 if (!selected.contains(claim.getId())) continue;
                 if (!opens(sheet, claim, periods, claims)) continue;
                 claim.setOpenedBy(user);
-                claim.setNumber(claims.nextNumber(sheet.id()));
+                claim.setNumber(ClaimNumbers.next(sheet, claim, settings.find(sheet.id()), periods, claims));
                 claims.save(claim);
                 opened++;
                 audit.record(ClaimAudit.line(claim.getStatus().auditEvent(), sheet, user, person, claim));

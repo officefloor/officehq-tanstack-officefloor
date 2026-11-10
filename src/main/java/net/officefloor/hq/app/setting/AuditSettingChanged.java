@@ -7,7 +7,7 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * Records each setting saved (blank for no clerk limit): the clerk limit, then the floor, then
- * the terms, then the late percent, then the policy date. Runs after
+ * the terms, then the late percent, then the policy date, then the period numbering from. Runs after
  * every rule has passed, so a refused change writes nothing.
  */
 public class AuditSettingChanged {
@@ -20,5 +20,8 @@ public class AuditSettingChanged {
         if (input.terms() != null) audit.record(head + " key=terms value=" + shown.terms());
         if (input.latePct() != null) audit.record(head + " key=late-pct value=" + shown.latePct());
         if (input.policyDateChanged()) audit.record(head + " key=policy-date value=" + shown.policyDate());
+        if (input.periodNumberingFromChanged()) {
+            audit.record(head + " key=period-numbering-from value=" + shown.periodNumberingFrom());
+        }
     }
 }

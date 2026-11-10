@@ -55,6 +55,16 @@ public class ValidateSettings {
                 throw new InvalidSettingException("A policy date is a date, yyyy-MM-dd, or blank");
             }
         }
-        body.set(new SettingsInput(limitChanged, limit, floor, terms, latePct, policyChanged, policyDate));
+        boolean numberingChanged = request != null && request.periodNumberingFrom() != null;
+        LocalDate numberingFrom = null;
+        if (numberingChanged && !request.periodNumberingFrom().trim().isEmpty()) {
+            try {
+                numberingFrom = LocalDate.parse(request.periodNumberingFrom().trim());
+            } catch (DateTimeParseException e) {
+                throw new InvalidSettingException("A period numbering from is a date, yyyy-MM-dd, or blank");
+            }
+        }
+        body.set(new SettingsInput(limitChanged, limit, floor, terms, latePct, policyChanged, policyDate,
+                numberingChanged, numberingFrom));
     }
 }

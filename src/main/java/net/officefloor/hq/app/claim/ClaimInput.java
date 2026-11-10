@@ -10,9 +10,9 @@ import java.util.regex.Pattern;
  * {@code corrects} is the number of the claim a correction (a negative amount) corrects; null for
  * any other claim.
  */
-public record ClaimInput(BigDecimal amount, LocalDate date, String note, Integer corrects) {
+public record ClaimInput(BigDecimal amount, LocalDate date, String note, String corrects) {
     private static final Pattern AMOUNT = Pattern.compile("-?\\d{1,15}(\\.\\d{1,2})?");
-    private static final Pattern NUMBER = Pattern.compile("\\d{1,9}");
+    private static final Pattern NUMBER = Pattern.compile("\\d{1,9}|.{1,190}-\\d{1,9}");
 
     /** A claim request checked by the claim form's rules. */
     public static ClaimInput from(ClaimRequest request) throws InvalidClaimException {
@@ -34,7 +34,7 @@ public record ClaimInput(BigDecimal amount, LocalDate date, String note, Integer
         if (note.length() > 1000) throw new InvalidClaimException("A note is at most 1000 characters");
         BigDecimal value = new BigDecimal(amount).setScale(2);
         String rawCorrects = request.corrects() == null ? "" : request.corrects().trim();
-        Integer corrects = null;
+        String corrects = null;
         if (value.signum() < 0) {
             if (rawCorrects.isEmpty()) {
                 throw new InvalidClaimException("A negative amount is a correction: name the claim it corrects");
@@ -42,7 +42,7 @@ public record ClaimInput(BigDecimal amount, LocalDate date, String note, Integer
             if (!NUMBER.matcher(rawCorrects).matches()) {
                 throw new InvalidClaimException("A correction names a claim by its number");
             }
-            corrects = Integer.valueOf(rawCorrects);
+            corrects = rawCorrects;
         } else if (!rawCorrects.isEmpty()) {
             throw new InvalidClaimException("Only a negative amount corrects a claim");
         }

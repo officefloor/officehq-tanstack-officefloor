@@ -57,8 +57,11 @@ export const AMOUNT = /^\d+(\.\d{1,2})?$/;
 /** An amount as the claim form takes it: up to two decimals, negative for a correction. */
 export const CLAIM_AMOUNT = /^-?\d+(\.\d{1,2})?$/;
 
-/** A claim number, as a correction names the claim it corrects. */
-export const CLAIM_NUMBER = /^\d+$/;
+/**
+ * A claim number, as a correction names the claim it corrects: a sheet-wide number, or a number
+ * within a period (<period name>-<n>, X-<n> for a claim in no period).
+ */
+export const CLAIM_NUMBER = /^(\d+|.+-\d+)$/;
 
 /**
  * The amounts of the claims that count (OPEN and SETTLED, but not OPEN of a person on hold:
