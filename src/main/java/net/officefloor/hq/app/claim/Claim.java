@@ -54,7 +54,7 @@ public class Claim {
     public String getSheetId() { return sheetId; }
     public long getPersonId() { return personId; }
     /**
-     * Move it to another person: it keeps its number and date, but loses any figure a statement
+     * Move it to another person: it keeps its date (its new number is given by {@link RenumberClaim}), but loses any figure a statement
      * bound it to (it is live again until its new person's next statement). A SETTLED or VOID claim
      * cannot move.
      */

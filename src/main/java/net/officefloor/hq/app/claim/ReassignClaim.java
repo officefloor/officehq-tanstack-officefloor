@@ -14,7 +14,7 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Moves a DRAFT, OPEN or PENDING claim to another person on the sheet. Only a role the permission matrix
  * allows (by the standing rule, a steward) may move it.
- * It keeps its number and date, loses any figure a statement bound it to, and is listed as its new
+ * It keeps its date, takes a new number (see {@link RenumberClaim}), loses any figure a statement bound it to, and is listed as its new
  * person's newest claim.
  */
 public class ReassignClaim {

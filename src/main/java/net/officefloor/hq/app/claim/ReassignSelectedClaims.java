@@ -69,6 +69,7 @@ public class ReassignSelectedClaims {
             } catch (InvalidClaimStatusException e) {
                 continue;
             }
+            RenumberClaim.give(sheet, claim, claims, settings, periods);
             claims.save(claim);
             reassigned++;
             audit.record(ClaimAudit.line("CLAIM_REASSIGNED", sheet, user, to, claim)
