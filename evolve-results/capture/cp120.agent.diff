@@ -1,0 +1,157 @@
+diff --git a/src/main/frontend/features/pools/pools.ts b/src/main/frontend/features/pools/pools.ts
+index 0f5cb94b4..827d04fab 100644
+--- a/src/main/frontend/features/pools/pools.ts
++++ b/src/main/frontend/features/pools/pools.ts
+@@ -4,7 +4,8 @@ import { peopleKey } from '../people/people';
+ 
+ /** A person in a pool, or another pool (memberPool its name, personId ''), with a share percent (two decimals). A
+  *  retired member's share counts as 0.00 toward the total. Their cut is their part of the pool's pot, two decimals
+- *  ('' when the pool is unbalanced or there is no pot). A pool that is a member of no pool has the sheet's pot; one
++ *  ('' when the pool is unbalanced or there is no pot); a person with a hold in force on the sheet's today
++ *  gets 0.00, their share spread over the members with a cut. A pool that is a member of no pool has the sheet's pot; one
+  *  that is a member of another has its cut there as its pot. */
+ export type PoolMember = {
+   personId: string;
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolMember.java b/src/main/java/net/officefloor/hq/app/pool/PoolMember.java
+index 1f8532eed..27ba8705d 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolMember.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolMember.java
+@@ -5,8 +5,9 @@ import java.math.BigDecimal;
+ /**
+  * A member of a pool with a share percent: a person (personId set, memberPool null), or another pool
+  * (memberPool its name, personId null; name the pool's name). A retired person's share counts as 0.00
+- * toward the pool's total.
++ * toward the pool's total. {@code held} is whether a person has a hold in force on the sheet's today: they
++ * get no cut, their share being spread over the members with one, though it still counts toward the total.
+  */
+ public record PoolMember(String sheetId, String pool, Long personId, String memberPool, String name, BigDecimal share,
+-        boolean retired) {
++        boolean retired, boolean held) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+index 30c6f6e13..cb27cdaa1 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+@@ -1,6 +1,8 @@
+ package net.officefloor.hq.app.pool;
+ 
+ import java.math.BigDecimal;
++import java.sql.Date;
++import java.time.LocalDate;
+ import java.util.List;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+@@ -33,10 +35,14 @@ public class PoolRepository {
+         return find(sheetId, name);
+     }
+ 
+-    /** The members of every pool on the sheet, each pool's in the order they were added: people and member pools. */
+-    public List<PoolMember> members(String sheetId) {
++    /**
++     * The members of every pool on the sheet, each pool's in the order they were added: people and member pools,
++     * a person held when one of their holds covers {@code today}.
++     */
++    public List<PoolMember> members(String sheetId, LocalDate today) {
+         return jdbc.query("SELECT pl.name AS pool, m.person_id, mp.name AS member_pool, COALESCE(p.name, mp.name) AS name,"
+-                + " m.share, p.retired_from FROM pool_member m"
++                + " m.share, p.retired_from, EXISTS (SELECT 1 FROM person_hold h WHERE h.person_id = m.person_id"
++                + " AND h.from_date <= ? AND (h.to_date IS NULL OR h.to_date >= ?)) AS held FROM pool_member m"
+                 + " JOIN pool pl ON pl.id = m.pool_id LEFT JOIN person p ON p.id = m.person_id"
+                 + " LEFT JOIN pool mp ON mp.id = m.member_pool_id"
+                 + " WHERE pl.sheet_id = ? ORDER BY pl.name, m.id",
+@@ -44,8 +50,8 @@ public class PoolRepository {
+                     long personId = rs.getLong("person_id");
+                     return new PoolMember(sheetId, rs.getString("pool"), rs.wasNull() ? null : personId,
+                             rs.getString("member_pool"), rs.getString("name"), rs.getBigDecimal("share"),
+-                            rs.getDate("retired_from") != null);
+-                }, sheetId);
++                            rs.getDate("retired_from") != null, rs.getBoolean("held"));
++                }, Date.valueOf(today), Date.valueOf(today), sheetId);
+     }
+ 
+     public boolean isMember(Pool pool, long personId) {
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java b/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
+index 20a874aab..a44ff85fb 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
+@@ -8,9 +8,11 @@ import java.util.List;
+ /**
+  * A pool, as the screen reads it: its members in the order added, the total of their shares (a retired
+  * member's counting as 0.00) and whether that total is exactly 100.00. Each member of a balanced pool
+- * has a cut of the sheet's pot: the pot times their share divided by 100, rounded half to even to two
+- * decimals (a retired member's 0.00), with the remainder, the pot minus the cuts added up, going to the
+- * member with the largest share, the earliest added on a tie, so the cuts total exactly the pot. An
++ * has a cut of the sheet's pot: the pot times their share divided by the shares of the members with a cut
++ * added up, rounded half to even to two decimals (a retired member's, and a member held on the sheet's
++ * today, 0.00), with the remainder, the pot minus the cuts added up, going to the member with a cut with
++ * the largest share, the earliest added on a tie, so the cuts total exactly the pot (each is 0.00 when no
++ * member has a cut). A hold changes neither the total nor whether the pool is balanced. An
+  * unbalanced pool, or no pot, has no cuts. A pool that is a member of another has no pot of its own: its
+  * pot is its cut in the pool above (none when that pool has no cuts).
+  */
+@@ -40,19 +42,26 @@ public record PoolResponse(String name, List<PoolMemberResponse> members, String
+         return pot != null && total(members).compareTo(HUNDRED) == 0 ? cuts(members, pot) : null;
+     }
+ 
++    /** Whether the member has a cut: neither retired nor held on the sheet's today. */
++    private static boolean hasCut(PoolMember m) {
++        return !m.retired() && !m.held();
++    }
++
+     private static List<BigDecimal> cuts(List<PoolMember> members, BigDecimal pot) {
++        BigDecimal shares = BigDecimal.ZERO;
++        for (PoolMember m : members) if (hasCut(m)) shares = shares.add(m.share());
+         List<BigDecimal> cuts = new ArrayList<>();
+         BigDecimal sum = BigDecimal.ZERO.setScale(2);
+         int largest = -1;
+         for (int i = 0; i < members.size(); i++) {
+             PoolMember m = members.get(i);
+-            BigDecimal cut = m.retired() ? BigDecimal.ZERO.setScale(2)
+-                    : pot.multiply(m.share()).divide(HUNDRED).setScale(2, RoundingMode.HALF_EVEN);
++            BigDecimal cut = !hasCut(m) || shares.signum() == 0 ? BigDecimal.ZERO.setScale(2)
++                    : pot.multiply(m.share()).divide(shares, 2, RoundingMode.HALF_EVEN);
+             cuts.add(cut);
+             sum = sum.add(cut);
+-            if (!m.retired() && (largest < 0 || m.share().compareTo(members.get(largest).share()) > 0)) largest = i;
++            if (hasCut(m) && (largest < 0 || m.share().compareTo(members.get(largest).share()) > 0)) largest = i;
+         }
+-        if (largest >= 0) cuts.set(largest, cuts.get(largest).add(pot.subtract(sum)));
++        if (largest >= 0 && shares.signum() > 0) cuts.set(largest, cuts.get(largest).add(pot.subtract(sum)));
+         return cuts;
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+index ab87387e2..d25196ed3 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+@@ -16,7 +16,7 @@ import net.officefloor.web.ObjectResponse;
+ public class RespondWithPools {
+     public void respond(@Val Sheet sheet, PoolRepository repository, SettingsRepository settings,
+             ObjectResponse<PoolsResponse> response) {
+-        List<PoolMember> members = repository.members(sheet.id());
++        List<PoolMember> members = repository.members(sheet.id(), sheet.today());
+         BigDecimal sheetPot = settings.find(sheet.id()).pot();
+         Map<String, List<PoolMember>> byPool = new HashMap<>();
+         for (Pool p : repository.findAll(sheet.id())) {
+diff --git a/src/main/java/net/officefloor/hq/app/pool/SavePoolMember.java b/src/main/java/net/officefloor/hq/app/pool/SavePoolMember.java
+index 6d035a8ce..c1522fd5b 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/SavePoolMember.java
++++ b/src/main/java/net/officefloor/hq/app/pool/SavePoolMember.java
+@@ -35,7 +35,7 @@ public class SavePoolMember {
+             }
+             pools.addMemberPool(pool, member, input.share());
+             memberOut.set(new PoolMember(sheet.id(), pool.name(), null, member.name(), member.name(), input.share(),
+-                    false));
++                    false, false));
+             return;
+         }
+         Person person = people.find(sheet.id(), input.personId());
+@@ -45,7 +45,7 @@ public class SavePoolMember {
+         }
+         pools.addMember(pool, person.getId(), input.share());
+         memberOut.set(new PoolMember(sheet.id(), pool.name(), person.getId(), null, person.getName(), input.share(),
+-                person.isRetired()));
++                person.isRetired(), person.getHolds().stream().anyMatch(h -> h.covers(sheet.today()))));
+     }
+ 
+     /** How many pools deep the chain below this pool goes, the pool itself counting as one. */
