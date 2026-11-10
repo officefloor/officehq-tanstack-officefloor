@@ -33,7 +33,7 @@ public class TakeStatement {
         boolean fixed = false;
         int counted = 0;
         for (Claim claim : claims.findByPerson(sheet.id(), person.getId())) {
-            boolean counts = claim.counts(person.heldOn(claim.getDate()));
+            boolean counts = claim.counts(person.heldOn(claim.getDate()), sheet.today());
             if (counts) {
                 counted++;
                 if (claim.getSettledDue() != null || claim.boundDue() != null) fixed = true;

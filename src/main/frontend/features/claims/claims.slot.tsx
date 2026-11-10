@@ -7,7 +7,7 @@ import { PersonHead, PersonRow } from '../../slots/defs/personRow';
 import { gradeOn, peopleKey, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { useUser } from '../session/session';
-import { CLAIM_AMOUNT, CLAIM_NUMBER, claimsKey, sumAmounts, useClaims } from './claims';
+import { CLAIM_AMOUNT, CLAIM_NUMBER, claimsKey, isDeferred, sumAmounts, useClaims } from './claims';
 import type { Claim } from './claims';
 import { selectClaim, useSelectedClaims } from './selection';
 import { claimDue, rateOn, useRates } from '../rates/rates';
@@ -56,6 +56,8 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   const [reasons, setReasons] = useState<Record<string, string>>({});
   // The person picked to move each claim to (a steward's move), by claim id.
   const [moveTo, setMoveTo] = useState<Record<string, string>>({});
+  // The date typed to defer each claim until, by claim id.
+  const [deferUntil, setDeferUntil] = useState<Record<string, string>>({});
   const others = (usePeople(sheetId).data ?? []).filter((p) => p.id !== person.id);
   const [user] = useUser();
   const rates = useRates(sheetId).data ?? [];
@@ -125,6 +127,32 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
     onError: (_e, { id }) => setRefused({ id, message: 'That claim cannot be moved.' }),
   });
 
+  // An OPEN claim is deferred until a date after the sheet's today.
+  const defer = useMutation({
+    mutationFn: ({ id, until }: { id: string; until: string }) =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/claims/${encodeURIComponent(id)}/defer`,
+        { until },
+        user,
+      ),
+    onSuccess: (_c, { id }) => {
+      setDeferUntil((d) => ({ ...d, [id]: '' }));
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+    onError: (_e, { id }) =>
+      setRefused({ id, message: 'Only an OPEN claim can be deferred, to a date after today.' }),
+  });
+
+  const deferClaim = (id: string) => {
+    setRefused(null);
+    const until = (deferUntil[id] ?? '').trim();
+    if (until === '') {
+      setRefused({ id, message: 'Choose the date to defer the claim until.' });
+      return;
+    }
+    defer.mutate({ id, until });
+  };
+
   const moveClaim = (id: string) => {
     setRefused(null);
     const personId = moveTo[id] ?? '';
@@ -180,7 +208,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
 
   return (
     <>
-      <td data-testid="person-claimed">{sumAmounts(claims, () => person.holds)}</td>
+      <td data-testid="person-claimed">{sumAmounts(claims, () => person.holds, today)}</td>
       <td>
         <form onSubmit={submit} data-testid="claim-form">
           <input
@@ -245,6 +273,8 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
               <span data-testid="claim-period">{periodOf(periods, c.date)?.name ?? ''}</span>{' '}
               <span data-testid="claim-due-by">{dueBy(c)}</span>{' '}
               <span data-testid="claim-overdue">{isOverdue(c, today) ? 'yes' : 'no'}</span>{' '}
+              <span data-testid="claim-deferred">{isDeferred(c, today) ? 'yes' : 'no'}</span>{' '}
+              <span data-testid="claim-deferred-until">{isDeferred(c, today) ? c.deferredUntil : ''}</span>{' '}
               <input
                 data-testid="claim-reject-reason"
                 placeholder="Reject reason"
@@ -264,6 +294,19 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
                   {label}
                 </button>
               ))}{' '}
+              <input
+                type="date"
+                data-testid="claim-defer-date"
+                aria-label="Defer until"
+                value={deferUntil[c.id] ?? ''}
+                onChange={(e) => {
+                  setDeferUntil((d) => ({ ...d, [c.id]: e.target.value }));
+                  setRefused((r) => (r !== null && r.id === c.id ? null : r));
+                }}
+              />{' '}
+              <button type="button" data-testid="claim-defer" onClick={() => deferClaim(c.id)}>
+                Defer
+              </button>{' '}
               <select
                 data-testid="claim-reassign-to"
                 aria-label="Move to"

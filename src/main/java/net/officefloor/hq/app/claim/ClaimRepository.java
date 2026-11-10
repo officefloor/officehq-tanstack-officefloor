@@ -13,7 +13,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_by,"
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until,"
             + " (SELECT c.claim_date FROM claim c WHERE c.sheet_id = claim.sheet_id AND c.person_id = claim.person_id"
             + " AND c.claim_number = claim.corrects) AS corrected_date";
 
@@ -27,6 +27,8 @@ public class ClaimRepository {
         claim.bind(rs.getBoolean("stated"), rs.getBigDecimal("stated_due"));
         claim.setCorrects(rs.getString("corrects"));
         claim.setDueBy(rs.getDate("due_by").toLocalDate());
+        java.sql.Date deferred = rs.getDate("deferred_until");
+        claim.setDeferredUntil(deferred == null ? null : deferred.toLocalDate());
         java.sql.Date corrected = rs.getDate("corrected_date");
         claim.setCorrectedDate(corrected == null ? null : corrected.toLocalDate());
         return claim;
@@ -106,10 +108,11 @@ public class ClaimRepository {
                 jdbc.update("UPDATE claim SET person_id = ?, listed = ? WHERE id = ? AND sheet_id = ?",
                         claim.getPersonId(), nextListed(claim.getSheetId()), claim.getId(), claim.getSheetId());
             }
-            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?, stated = ?, stated_due = ?, corrects = ? WHERE id = ? AND sheet_id = ?",
+            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?, stated = ?, stated_due = ?, corrects = ?, deferred_until = ? WHERE id = ? AND sheet_id = ?",
                     claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(),
                     claim.getStatus().name(), claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(),
-                    claim.isStated(), claim.getStatedDue(), claim.getCorrects(), claim.getId(),
+                    claim.isStated(), claim.getStatedDue(), claim.getCorrects(),
+                    claim.getDeferredUntil() == null ? null : Date.valueOf(claim.getDeferredUntil()), claim.getId(),
                     claim.getSheetId());
             return;
         }

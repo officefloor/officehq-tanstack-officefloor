@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { gradeOn } from '../people/people';
 import type { Grade, GradeFrom, Hold } from '../people/people';
-import { counts, isBound, isCorrection, isOpen } from '../claims/claims';
+import { counts, isBound, isCorrection, isDeferred, isOpen } from '../claims/claims';
 import type { Claim } from '../claims/claims';
 
 /**
@@ -135,10 +135,10 @@ function daysBetween(from: string, to: string): number {
 /**
  * A claim's late charge on its `figure`: for an OPEN or PENDING claim past its due-by (fixed when it was
  * made) on the sheet's today, the late percent of the figure for every full 30 days it is overdue,
- * rounded as the claim rounds; else nothing. A statement never binds it: it follows the sheet's today.
+ * rounded as the claim rounds; else nothing (as for a claim deferred on the sheet's today). A statement never binds it: it follows the sheet's today.
  */
 function lateCharge(claim: Claim, figure: string, late: Late): bigint {
-  if (!isOpen(claim) || figure === NA || late.today === '' || isCorrection(claim)) return 0n;
+  if (!isOpen(claim) || isDeferred(claim, late.today) || figure === NA || late.today === '' || isCorrection(claim)) return 0n;
   const overdue = daysBetween(claim.dueBy, late.today);
   const periods = overdue > 0 ? Math.floor(overdue / 30) : 0;
   return periods === 0 ? 0n : percentOf(figure, valueOn(late.pct, claim.date), BigInt(periods), roundsHalfUp(claim, late));
@@ -210,7 +210,7 @@ function uncappedDueTotal(
   floor: Dated,
   late: Late,
 ): string {
-  const counted = claims.filter((c) => counts(c, holds));
+  const counted = claims.filter((c) => counts(c, holds, today));
   const grade = gradeOn(grades, today);
   const kept = (c: Claim) => c.due !== '' || (isBound(c) && c.statedDue !== NA)
     || (gradeOn(grades, c.date) !== grade && rateOn(rates, gradeOn(grades, c.date), c.date) !== null)

@@ -40,6 +40,8 @@ export type Claim = {
    * `<STATUS> by <user> on <date> due=<due>` (the sheet's today and its due at that moment).
    */
   log: string[];
+  /** The date (yyyy-MM-dd) it is deferred until; '' when it was never deferred. */
+  deferredUntil: string;
 };
 
 /** Whether a claim is a correction: it has no floor and no late charge. */
@@ -55,12 +57,19 @@ export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING
 export const isBound = (c: Claim) => c.stated && c.status !== 'PENDING';
 
 /**
+ * Whether a claim is deferred on the sheet's `today`: OPEN and deferred until a date after today.
+ * From that date on it is an OPEN claim like any other.
+ */
+export const isDeferred = (c: Claim, today: string) =>
+  c.status === 'OPEN' && c.deferredUntil !== '' && today !== '' && today < c.deferredUntil;
+
+/**
  * Whether a claim counts toward claimed, due-total and every total: only OPEN, PENDING and SETTLED
  * do, and an OPEN or PENDING one not when it is dated within one of its person's `holds`, unless a
- * statement binds it.
+ * statement binds it; never one deferred on `today`.
  */
-export const counts = (c: Claim, holds: Hold[]) =>
-  c.status === 'SETTLED' || (isOpen(c) && (isBound(c) || !heldOn(holds, c.date)));
+export const counts = (c: Claim, holds: Hold[], today: string) =>
+  !isDeferred(c, today) && (c.status === 'SETTLED' || (isOpen(c) && (isBound(c) || !heldOn(holds, c.date))));
 
 export const claimsKey = (sheetId: string) => ['sheet', sheetId, 'claims'] as const;
 
@@ -89,10 +98,10 @@ export const CLAIM_NUMBER = /^(\d+|.+-\d+)$/;
 
 /**
  * The amounts of the claims that count (OPEN, PENDING and SETTLED, but not unbound open ones dated within
- * a hold of their person: `holds` tells by person id) added up, in whole cents so no rounding creeps in, shown with two
+ * a hold of their person: `holds` tells by person id, nor ones deferred on `today`) added up, in whole cents so no rounding creeps in, shown with two
  * decimals.
  */
-export function sumAmounts(claims: Claim[], holds: (personId: string) => Hold[]): string {
-  const cents = claims.filter((c) => counts(c, holds(c.personId))).reduce((n, c) => n + Math.round(Number(c.amount) * 100), 0);
+export function sumAmounts(claims: Claim[], holds: (personId: string) => Hold[], today: string): string {
+  const cents = claims.filter((c) => counts(c, holds(c.personId), today)).reduce((n, c) => n + Math.round(Number(c.amount) * 100), 0);
   return (cents / 100).toFixed(2);
 }

@@ -40,6 +40,9 @@ public class SettleClaim {
                         sheet.today());
         // The late charge is read while the claim is still OPEN.
         BigDecimal late = ClaimFigure.late(claim, figure, settings, sheet.today());
+        if (claim.isDeferredOn(sheet.today())) {
+            throw new InvalidClaimStatusException("A claim deferred until " + claim.getDeferredUntil() + " cannot be settled");
+        }
         if (!claim.getStatus().canMoveTo(ClaimStatus.SETTLED)) {
             throw new InvalidClaimStatusException(claim.getStatus(), ClaimStatus.SETTLED);
         }

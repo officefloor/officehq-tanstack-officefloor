@@ -54,7 +54,7 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
             boolean fixed = false;
             for (Claim claim : sheetClaims) {
                 if (claim.getPersonId() != person.getId()) continue;
-                if (!claim.counts(person.heldOn(claim.getDate()))) continue;
+                if (!claim.counts(person.heldOn(claim.getDate()), today)) continue;
                 claimed = claimed.add(claim.getAmount());
                 if (claim.getSettledDue() != null || claim.boundDue() != null) fixed = true;
                 String grade = person.gradeOn(claim.getDate());

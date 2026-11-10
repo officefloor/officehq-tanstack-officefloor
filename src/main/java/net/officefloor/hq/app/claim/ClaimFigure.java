@@ -53,11 +53,11 @@ public final class ClaimFigure {
     /**
      * The late charge on a figure: for an OPEN or PENDING claim past its due-by (fixed when it was made)
      * on {@code today}, the sheet's late percent of the figure for every full 30 days it is
-     * overdue, rounded to two decimals as the claim rounds; else 0.00. Never bound by a statement:
+     * overdue, rounded to two decimals as the claim rounds; else 0.00 (as for a claim deferred on today). Never bound by a statement:
      * it follows the sheet's today until the claim is settled.
      */
     public static BigDecimal late(Claim claim, BigDecimal figure, Settings settings, LocalDate today) {
-        if (!claim.isOpen()) return BigDecimal.ZERO.setScale(2);
+        if (!claim.isOpen() || claim.isDeferredOn(today)) return BigDecimal.ZERO.setScale(2);
         return lateAsOpen(claim, figure, settings, today);
     }
 

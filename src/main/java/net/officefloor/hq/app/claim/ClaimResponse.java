@@ -10,11 +10,12 @@ import java.util.List;
  * and the number of the claim it corrects ("" when it is no correction); and the date its figures
  * round by (a correction's is the date of the claim it corrects); and its due-by as yyyy-MM-dd, fixed
  * when it was made; and its status log, oldest first, one line per status it has had as
- * {@code <STATUS> by <user> on <date> due=<due>}.
+ * {@code <STATUS> by <user> on <date> due=<due>}; and the date it is deferred until as yyyy-MM-dd
+ * ("" when it was never deferred; it is deferred only while OPEN and the sheet's today is before it).
  */
 public record ClaimResponse(String id, String personId, String amount, String date, String note,
         String status, String number, String due, String openedBy, boolean stated,
-        String statedDue, String corrects, String roundDate, String dueBy, List<String> log) {
+        String statedDue, String corrects, String roundDate, String dueBy, List<String> log, String deferredUntil) {
     public static ClaimResponse from(Claim claim) {
         return from(claim, List.of());
     }
@@ -29,6 +30,7 @@ public record ClaimResponse(String id, String personId, String amount, String da
                 claim.isStated(),
                 !claim.isStated() ? "" : claim.getStatedDue() == null ? "n/a" : claim.getStatedDue().toPlainString(),
                 claim.getCorrects() == null ? "" : claim.getCorrects(),
-                claim.getRoundDate().toString(), claim.getDueBy().toString(), log);
+                claim.getRoundDate().toString(), claim.getDueBy().toString(), log,
+                claim.getDeferredUntil() == null ? "" : claim.getDeferredUntil().toString());
     }
 }

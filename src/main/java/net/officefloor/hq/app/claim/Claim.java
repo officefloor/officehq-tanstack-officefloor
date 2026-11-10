@@ -21,6 +21,7 @@ public class Claim {
     private LocalDate correctedDate;
     private boolean relisted;
     private LocalDate dueBy;
+    private LocalDate deferredUntil;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue,
@@ -63,6 +64,26 @@ public class Claim {
     /** Its due-by, fixed when it was made: its date plus its grade's terms then. Kept when its date changes. */
     public LocalDate getDueBy() { return dueBy; }
     public void setDueBy(LocalDate dueBy) { this.dueBy = dueBy; }
+    /** The date it is deferred until; null when it was never deferred. */
+    public LocalDate getDeferredUntil() { return deferredUntil; }
+    public void setDeferredUntil(LocalDate deferredUntil) { this.deferredUntil = deferredUntil; }
+    /**
+     * Whether it is deferred on {@code today}: OPEN, and deferred until a date after today. From
+     * that date on it is an OPEN claim like any other.
+     */
+    public boolean isDeferredOn(LocalDate today) {
+        return status == ClaimStatus.OPEN && deferredUntil != null && today != null && today.isBefore(deferredUntil);
+    }
+    /**
+     * Defer it until a date after {@code today}: only an OPEN claim may be deferred.
+     */
+    public void defer(LocalDate until, LocalDate today) throws InvalidClaimStatusException, InvalidClaimException {
+        if (status != ClaimStatus.OPEN) {
+            throw new InvalidClaimStatusException("A " + status + " claim cannot be deferred");
+        }
+        if (!until.isAfter(today)) throw new InvalidClaimException("A claim is deferred to a date after today");
+        deferredUntil = until;
+    }
     public String getNote() { return note; }
     public void setNote(String note) { this.note = note; }
     public ClaimStatus getStatus() { return status; }
@@ -111,9 +132,11 @@ public class Claim {
     /**
      * Whether it counts toward its person's claimed and due-total, the sheet's totals and a
      * period's total: OPEN, PENDING and SETTLED do, except an OPEN or PENDING one dated within one
-     * of its person's holds ({@code heldOnDate}), unless a statement binds it.
+     * of its person's holds ({@code heldOnDate}), unless a statement binds it; and never one
+     * deferred on {@code today}.
      */
-    public boolean counts(boolean heldOnDate) {
+    public boolean counts(boolean heldOnDate, LocalDate today) {
+        if (isDeferredOn(today)) return false;
         return status == ClaimStatus.SETTLED || (isOpen() && (isBound() || !heldOnDate));
     }
     /** Whether it is open: OPEN, or PENDING a steward's approval. */
