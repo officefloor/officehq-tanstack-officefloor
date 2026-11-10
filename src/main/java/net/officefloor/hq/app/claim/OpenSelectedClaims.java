@@ -21,8 +21,9 @@ import net.officefloor.plugin.variable.Val;
  * Opens the selected claims in list order (people in the order they were added, each person's
  * claims newest first), numbering each as it is opened. A claim that cannot be opened (not a
  * draft, dated inside a closed period, not on the sheet) is refused and left as it is; every one is
- * refused when the permission matrix does not allow the user's role to open. Each claim
- * opened is logged and audited as a single open is: its CLAIM_OPENED line, then the figures it moved.
+ * refused when the permission matrix does not allow the user's role to open, or the sheet is
+ * archived. Each claim opened is logged and audited as a single open is: its CLAIM_OPENED line,
+ * then the figures it moved.
  */
 public class OpenSelectedClaims {
     public void open(@Val Sheet sheet, @Val BulkOpenRequest request, ClaimRepository claims,
@@ -40,7 +41,7 @@ public class OpenSelectedClaims {
         }
         int requested = new HashSet<>(request.claimIds()).size();
         int opened = 0;
-        if (!settings.find(sheet.id()).allows("open", roles.roleOf(sheet.id(), user))) {
+        if (sheet.archived() || !settings.find(sheet.id()).allows("open", roles.roleOf(sheet.id(), user))) {
             result.set(new BulkOpenResponse(0, requested));
             return;
         }

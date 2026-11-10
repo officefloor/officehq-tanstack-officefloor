@@ -25,8 +25,8 @@ import net.officefloor.plugin.variable.Val;
  * sent to PENDING counts as settled; a claim that cannot be settled (its status does not allow it,
  * dated inside a closed period, opened by this user, not on the sheet) is refused and left as it is.
  * Each claim settled is logged and audited as a single settle is: its status line, then the
- * watchers it notifies (once settled), then the figures it moved. A viewer settles none: every
- * selected claim is refused.
+ * watchers it notifies (once settled), then the figures it moved. A viewer, or anyone on an archived
+ * sheet, settles none: every selected claim is refused.
  */
 public class SettleSelectedClaims {
     public void settle(@Val Sheet sheet, @Val BulkSettleRequest request, ClaimRepository claims,
@@ -44,8 +44,8 @@ public class SettleSelectedClaims {
         }
         int requested = new HashSet<>(request.claimIds()).size();
         int settled = 0;
-        if (Role.VIEWER.equals(roles.roleOf(sheet.id(), user))) {
-            result.set(new BulkSettleResponse(0, requested)); // a viewer changes nothing
+        if (sheet.archived() || Role.VIEWER.equals(roles.roleOf(sheet.id(), user))) {
+            result.set(new BulkSettleResponse(0, requested)); // a viewer, or an archived sheet, changes nothing
             return;
         }
         Rollup before = rollup(sheet, sheets, people, claims, rates, settings);

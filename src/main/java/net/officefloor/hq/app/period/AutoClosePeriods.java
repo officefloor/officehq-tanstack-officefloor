@@ -24,7 +24,7 @@ public class AutoClosePeriods {
             ClaimRepository claims, ClaimLogRepository log, RateRepository rates, SettingsRepository settings,
             HttpServletRequest request, Audit audit) {
         Settings sheetSettings = settings.find(sheet.id());
-        Sheet now = new Sheet(sheet.id(), today);
+        Sheet now = new Sheet(sheet.id(), today, sheet.archived());
         List<Period> due = periods.findAll(sheet.id()).stream()
                 .filter((p) -> !p.closed() && sheetSettings.pastGrace(p.to(), today))
                 .sorted(Comparator.comparing(Period::to)).toList();

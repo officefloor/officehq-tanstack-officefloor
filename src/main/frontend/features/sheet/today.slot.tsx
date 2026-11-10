@@ -9,7 +9,8 @@ import { sheetKey, useSheet } from './sheet';
 import type { Sheet } from './sheet';
 
 // The sheet's today: shown, and changeable. A change re-reads everything kept for the sheet, as
-// whatever depends on the date may now read differently.
+// whatever depends on the date may now read differently. Also whether the sheet is archived, and
+// the button a steward archives it with; once archived, every change on the sheet is refused.
 function SheetToday({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const sheet = useSheet(sheetId);
@@ -30,6 +31,17 @@ function SheetToday({ sheetId }: { sheetId: string }) {
     },
     onError: () => setError('That date could not be set as today.'),
   });
+
+  const archive = useMutation({
+    mutationFn: () => postJson<Sheet>(`/api/sheets/${encodeURIComponent(sheetId)}/archive`, {}, user),
+    onSuccess: (updated) => queryClient.setQueryData(sheetKey(sheetId), updated),
+    onError: () => setError('The sheet could not be archived.'),
+  });
+
+  const archiveSheet = () => {
+    setError('');
+    once((done) => archive.mutate(undefined, { onSettled: done }));
+  };
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -59,6 +71,10 @@ function SheetToday({ sheetId }: { sheetId: string }) {
       </label>{' '}
       <button type="submit" data-testid="sheet-today-save" disabled={save.isPending}>
         Set
+      </button>{' '}
+      Archived: <strong data-testid="sheet-archived">{sheet.data ? (sheet.data.archived ? 'yes' : 'no') : ''}</strong>{' '}
+      <button type="button" data-testid="sheet-archive" onClick={archiveSheet} disabled={archive.isPending}>
+        Archive sheet
       </button>
       {(error || sheet.isError) && (
         <p role="alert" data-testid="sheet-error">
