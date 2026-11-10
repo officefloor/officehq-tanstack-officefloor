@@ -200,7 +200,7 @@ public class ValidateSettings {
         Map<String, String> perms = request == null || request.permissions() == null ? Map.of() : request.permissions();
         for (String action : perms.keySet()) {
             if (!SettingsRepository.PERMISSION_ACTIONS.contains(action)) {
-                throw new BadRequestException("permissions are for open, settle, void, reassign, close and reopen");
+                throw new BadRequestException("permissions are for open, settle, void, reassign, close, reopen and today");
             }
         }
         for (String action : SettingsRepository.PERMISSION_ACTIONS) {
@@ -210,9 +210,11 @@ public class ValidateSettings {
             if (!value.isEmpty()) {
                 for (String part : value.split(",", -1)) {
                     String r = part.trim();
-                    if (!r.equals(SettingsRepository.CLERK) && !r.equals(SettingsRepository.STEWARD)) {
-                        throw new BadRequestException("permission for " + action
-                                + " must be a comma separated list of roles (clerk, steward)");
+                    boolean today = action.equals("today");
+                    if (!r.equals(SettingsRepository.CLERK) && !r.equals(SettingsRepository.STEWARD)
+                            && !(today && r.equals(SettingsRepository.RESTRICTED))) {
+                        throw new BadRequestException("permission for " + action + " must be a comma separated list of roles ("
+                                + (today ? "clerk, steward, restricted" : "clerk, steward") + ")");
                     }
                     if (!roles.contains(r)) roles.add(r);
                 }

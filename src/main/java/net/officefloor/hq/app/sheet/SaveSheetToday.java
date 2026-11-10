@@ -21,6 +21,9 @@ public class SaveSheetToday {
             throws BadRequestException {
         String by = CurrentUser.require(connection);
         String id = sheetId == null ? "" : sheetId.trim();
+        if (!settings.allows(id, "today", by)) {
+            throw new BadRequestException("a " + settings.role(id, by) + " cannot change the sheet's today");
+        }
         Rollup.Snapshot before = rollup.take(id);
         // A change of today under a delegation is marked for its steward as the delegation stood on the day left.
         String delegator = settings.delegator(id, by);

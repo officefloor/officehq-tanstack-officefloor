@@ -20,7 +20,7 @@ public class SettingsRepository {
      *  with the user's name) and that person; every other figure is still over everyone. */
     public static final String RESTRICTED = "restricted";
     /** The actions the permission matrix covers, in the order shown. */
-    public static final List<String> PERMISSION_ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
+    public static final List<String> PERMISSION_ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen", "today");
 
     private final JdbcTemplate jdbc;
     private final HistoryRepository history;
@@ -687,12 +687,14 @@ public class SettingsRepository {
     }
 
     /** Whether a user may take an action on the sheet: by the sheet's permission matrix entry for it, else the
-     *  standing rule (open, settle, void and close by clerk and steward; reassign and reopen by steward). */
+     *  standing rule (open, settle, void and close by clerk and steward; reassign and reopen by steward; today by
+     *  anyone but a viewer). */
     public boolean allows(String sheetId, String action, String user) {
         List<String> found = jdbc.query("SELECT roles FROM sheet_permission WHERE sheet_id = ? AND action = ?",
                 (rs, i) -> rs.getString("roles"), sheetId, action);
         List<String> roles = found.isEmpty()
-                ? (action.equals("reassign") || action.equals("reopen") ? List.of(STEWARD) : List.of(CLERK, STEWARD))
+                ? (action.equals("reassign") || action.equals("reopen") ? List.of(STEWARD)
+                        : action.equals("today") ? List.of(CLERK, STEWARD, RESTRICTED) : List.of(CLERK, STEWARD))
                 : List.of(found.get(0).split(","));
         return roles.contains(role(sheetId, user));
     }

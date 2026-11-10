@@ -41,7 +41,9 @@ import { useFigure } from '../locale/useLocale';
  *  floor, the terms, each grade's terms, the late percent, the cap, the proof threshold, the note threshold and the rounding mode) is saved from its from-date, blank
  *  meaning the sheet's today; each shows the value in force on the sheet's today. */
 /** The actions the permission matrix covers. */
-const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'];
+const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen', 'today'];
+/** How an action of the permission matrix reads in a sentence. */
+const permLabel = (a: string) => (a === 'today' ? "change the sheet's today" : a);
 
 /** The from-date field of a setting with a figure: blank is the sheet's today. */
 function FromInput({ settingKey, from, setFrom, onChange }: { settingKey: string; from: Record<string, string>;
@@ -439,7 +441,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
         <FromInput settingKey="rounding" from={from} setFrom={setFrom} onChange={() => save.reset()} />{' '}
         {PERM_ACTIONS.map((a) => (
           <label key={a}>
-            Who may {a}{' '}
+            Who may {permLabel(a)}{' '}
             <input
               data-testid={`setting-perm-${a}`}
               placeholder="clerk,steward"
@@ -683,7 +685,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
         , rounding <strong data-testid="setting-rounding-current">{fig(settingOn(settings.data, 'rounding', today) ?? '')}</strong>
         {PERM_ACTIONS.map((a) => (
           <span key={a}>
-            , may {a} <strong data-testid={`setting-perm-${a}-current`}>{fig(settings.data?.permissions?.[a] ?? '')}</strong>
+            , may {permLabel(a)} <strong data-testid={`setting-perm-${a}-current`}>{fig(settings.data?.permissions?.[a] ?? '')}</strong>
           </span>
         ))}
         , grace days <strong data-testid="setting-grace-days-current">{fig(settings.data?.graceDays ?? '')}</strong>
