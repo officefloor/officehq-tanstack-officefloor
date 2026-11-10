@@ -16,7 +16,9 @@ public class ValidateSettings {
     private static final java.util.Set<String> DATED = java.util.Set.of(Settings.CLERK_LIMIT, Settings.FLOOR,
             Settings.TERMS, Settings.LATE_PCT, Settings.CAP, Settings.gradeTermsKey("A"), Settings.gradeTermsKey("B"),
             Settings.gradeTermsKey("C"), Settings.PROOF_THRESHOLD, Settings.NOTE_THRESHOLD,
-            Settings.gradeGraceKey("A"), Settings.gradeGraceKey("B"), Settings.gradeGraceKey("C"));
+            Settings.gradeGraceKey("A"), Settings.gradeGraceKey("B"), Settings.gradeGraceKey("C"),
+            Settings.gradeProofThresholdKey("A"), Settings.gradeProofThresholdKey("B"),
+            Settings.gradeProofThresholdKey("C"));
 
     public void validate(@RequestBody SettingsRequest request, Out<SettingsInput> body)
             throws InvalidSettingException {
@@ -107,6 +109,24 @@ public class ValidateSettings {
                 }
             }
         }
+        Map<String, BigDecimal> gradeProofThreshold = new LinkedHashMap<>();
+        if (request != null && request.gradeProofThreshold() != null) {
+            for (String grade : request.gradeProofThreshold().keySet()) {
+                if (!Settings.GRADES.contains(grade)) throw new InvalidSettingException("A grade is one of A, B or C");
+            }
+            for (String grade : Settings.GRADES) {
+                String value = request.gradeProofThreshold().get(grade);
+                if (value == null) continue;
+                value = value.trim();
+                if (value.isEmpty()) {
+                    gradeProofThreshold.put(grade, null);
+                } else if (!FIGURE.matcher(value).matches()) {
+                    throw new InvalidSettingException("A proof threshold is 0.00 or more, with up to two decimals, or blank");
+                } else {
+                    gradeProofThreshold.put(grade, new BigDecimal(value).setScale(2));
+                }
+            }
+        }
         boolean capChanged = request != null && request.cap() != null;
         BigDecimal cap = null;
         if (capChanged && !request.cap().trim().isEmpty()) {
@@ -192,6 +212,6 @@ public class ValidateSettings {
         body.set(new SettingsInput(limitChanged, limit, floor, terms, latePct, policyChanged, policyDate,
                 numberingChanged, numberingFrom, gradeTerms, capChanged, cap, from,
                 thresholdChanged, threshold, perms, graceChanged, graceDays, noteThresholdChanged, noteThreshold,
-                entryChanged, entryDate, gradeGrace));
+                entryChanged, entryDate, gradeGrace, gradeProofThreshold));
     }
 }

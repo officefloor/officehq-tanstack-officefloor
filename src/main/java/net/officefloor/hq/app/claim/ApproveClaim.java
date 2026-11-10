@@ -40,7 +40,7 @@ public class ApproveClaim {
         // Read while the claim is still PENDING: its live figure and its late charge.
         java.math.BigDecimal due = ClaimFigure.withLate(claim, rates.findAll(sheet.id()), person.gradeOn(claim.getDate()),
                 sheetSettings, sheet.today());
-        if (sheetSettings.needsProof(due, claim.getDate(), claim.getProofs())) {
+        if (sheetSettings.needsProof(due, person.gradeOn(claim.getDate()), claim.getDate(), claim.getProofs())) {
             throw new InvalidClaimStatusException(ProofRequired.MESSAGE);
         }
         claim.approve(due);

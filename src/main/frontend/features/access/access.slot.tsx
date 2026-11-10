@@ -5,10 +5,10 @@ import { useOnce } from '../../query/useOnce';
 import { postJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/session';
-import { ACTIONS, CAP, DATED_KEYS, FLOOR, GRADES, LATE_PCT, LIMIT, NOTE_THRESHOLD, PERM_ROLES, POLICY_DATE, PROOF_THRESHOLD, STANDING_RULE, TERMS, ROLES, gradeGraceKey, rolesKey, settingsKey, useRoles, useSettings } from './access';
+import { ACTIONS, CAP, DATED_KEYS, FLOOR, GRADES, LATE_PCT, LIMIT, NOTE_THRESHOLD, PERM_ROLES, POLICY_DATE, PROOF_THRESHOLD, STANDING_RULE, TERMS, ROLES, gradeGraceKey, gradeProofThresholdKey, rolesKey, settingsKey, useRoles, useSettings } from './access';
 import type { Role, Settings, SettingsChange } from './access';
 
-type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms' | 'gradeGrace'>;
+type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms' | 'gradeGrace' | 'gradeProofThreshold'>;
 
 // The sheet's settings: its clerk limit, the highest due a clerk may settle (blank: no limit), and
 // its floor, the least a claim's live due may be, and its terms, the days after a claim's date that
@@ -21,12 +21,13 @@ type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms' | 'gradeGrace'>;
 // (blank: none), above which a claim's due, on its date, needs a note to be opened, and its permission
 // matrix: for each action the roles that may take it, comma separated (blank: the standing rule), and its
 // grace days (blank: off), past which an open period closes when today is changed, and each grade's
-// grace days (blank: none), dated, past a claim's due-by before it is overdue. Only the settings typed in (or stepped into)
+// grace days (blank: none), dated, past a claim's due-by before it is overdue, and each grade's proof threshold
+// (blank: none, the sheet's), dated, in place of the sheet's for a claim of the grade. Only the settings typed in (or stepped into)
 // since the last save are sent, so saving one leaves the other as it is.
 function SettingsForm({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const settings = useSettings(sheetId);
-  const [fields, setFields] = useState<Omit<Settings, 'gradeTerms' | 'perms' | 'gradeGrace'>>({
+  const [fields, setFields] = useState<Omit<Settings, 'gradeTerms' | 'perms' | 'gradeGrace' | 'gradeProofThreshold'>>({
     cap: '',
     proofThreshold: '',
     noteThreshold: '',
@@ -44,6 +45,8 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
   const [gradesTouched, setGradesTouched] = useState<Set<string>>(new Set());
   const [graceFields, setGraceFields] = useState<Record<string, string>>({});
   const [graceTouched, setGraceTouched] = useState<Set<string>>(new Set());
+  const [thresholdFields, setThresholdFields] = useState<Record<string, string>>({});
+  const [thresholdsTouched, setThresholdsTouched] = useState<Set<string>>(new Set());
   const [permFields, setPermFields] = useState<Record<string, string>>({});
   const [permsTouched, setPermsTouched] = useState<Set<string>>(new Set());
   // The from-date typed for each figure setting, by its store key (blank: the sheet's today).
@@ -59,6 +62,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
       setTouched(new Set());
       setGradesTouched(new Set());
       setGraceTouched(new Set());
+      setThresholdsTouched(new Set());
       setPermsTouched(new Set());
       queryClient.setQueryData(settingsKey(sheetId), saved);
     },
@@ -183,6 +187,19 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
       }
       body.gradeGrace = gradeGrace;
     }
+    if (thresholdsTouched.size > 0) {
+      const gradeProofThreshold: Record<string, string> = {};
+      for (const grade of GRADES) {
+        if (!thresholdsTouched.has(grade)) continue;
+        const threshold = (thresholdFields[grade] ?? '').trim();
+        if (threshold !== '' && !PROOF_THRESHOLD.test(threshold)) {
+          setError(`A proof threshold for grade ${grade} is 0.00 or more, with up to two decimals, or blank.`);
+          return;
+        }
+        gradeProofThreshold[grade] = threshold;
+      }
+      body.gradeProofThreshold = gradeProofThreshold;
+    }
     if (permsTouched.size > 0) {
       const perms: Record<string, string> = {};
       for (const action of ACTIONS) {
@@ -201,6 +218,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
       ...Object.entries(DATED_KEYS).filter(([key]) => touched.has(key as Key)).map(([, store]) => store),
       ...GRADES.filter((grade) => gradesTouched.has(grade)).map((grade) => `terms-${grade}`),
       ...GRADES.filter((grade) => graceTouched.has(grade)).map(gradeGraceKey),
+      ...GRADES.filter((grade) => thresholdsTouched.has(grade)).map(gradeProofThresholdKey),
     ];
     for (const key of datedKeys) {
       const date = (fromFields[key] ?? '').trim();
@@ -252,6 +270,13 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
   const changeGrace = (grade: string, value: string) => {
     setGraceFields((f) => ({ ...f, [grade]: value }));
     touchGrace(grade);
+    setError('');
+  };
+
+  const touchThreshold = (grade: string) => setThresholdsTouched((t) => (t.has(grade) ? t : new Set(t).add(grade)));
+  const changeThreshold = (grade: string, value: string) => {
+    setThresholdFields((f) => ({ ...f, [grade]: value }));
+    touchThreshold(grade);
     setError('');
   };
 
@@ -444,6 +469,28 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         <span>
           now: <strong data-testid="setting-proof-threshold-current">{settings.data?.proofThreshold ?? ''}</strong>
         </span>{' '}
+        {GRADES.map((grade) => (
+          <span key={grade}>
+            <label>
+              Proof threshold for grade {grade}{' '}
+              <input
+                data-testid={`setting-${gradeProofThresholdKey(grade)}`}
+                inputMode="decimal"
+                placeholder="sheet's"
+                value={thresholdFields[grade] ?? ''}
+                onFocus={() => touchThreshold(grade)}
+                onChange={(e) => changeThreshold(grade, e.target.value)}
+              />
+            </label>{' '}
+            {fromInput(gradeProofThresholdKey(grade))}{' '}
+            <span>
+              now:{' '}
+              <strong data-testid={`setting-${gradeProofThresholdKey(grade)}-current`}>
+                {settings.data?.gradeProofThreshold?.[grade] ?? ''}
+              </strong>
+            </span>{' '}
+          </span>
+        ))}
         <label>
           Note threshold{' '}
           <input

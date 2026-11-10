@@ -14,10 +14,13 @@ package net.officefloor.hq.app.setting;
  * list of roles, clerk or steward (blank: the standing rule), and the grace days, a whole number of
  * days (blank: off), and the note threshold, with up to two decimals (blank: none), and the entry date as yyyy-MM-dd
  * (blank: off), and the grace days of each grade being changed, a whole number of days (blank:
- * none), dated by its key (grace-A, grace-B, grace-C).
+ * none), dated by its key (grace-A, grace-B, grace-C), and the proof threshold of each grade being
+ * changed, with up to two decimals (blank: none, the sheet's), dated by its key (proof-threshold-A,
+ * proof-threshold-B, proof-threshold-C).
  */
 public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom,
         java.util.Map<String, String> gradeTerms, String cap, java.util.Map<String, String> from,
         String proofThreshold, java.util.Map<String, String> perms, String graceDays, String noteThreshold,
-        String entryDate, java.util.Map<String, String> gradeGrace) {
+        String entryDate, java.util.Map<String, String> gradeGrace,
+        java.util.Map<String, String> gradeProofThreshold) {
 }

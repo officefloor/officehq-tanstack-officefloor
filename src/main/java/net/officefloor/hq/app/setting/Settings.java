@@ -15,7 +15,8 @@ import java.util.NavigableMap;
  * overdue, and its terms per grade (a grade with none uses the sheet's terms), and its cap (none:
  * no cap), the most a person's due-total may be, and its proof threshold (none: none), above which a
  * claim's due, on the claim's date, needs a proof before it is settled or approved, and its note
- * threshold (none: none), above which a claim's due, on the claim's date, needs a note before it is opened. The value in force on a date is the one with the
+ * threshold (none: none), above which a claim's due, on the claim's date, needs a note before it is opened, and
+ * its proof threshold per grade (none: the sheet's proof threshold). The value in force on a date is the one with the
  * latest from-date on or before it; before every from-date the starting value (floor 1.00, late
  * percent 0.00, terms 14; none for the others). A claim takes its floor, late percent and terms on
  * its date; the clerk limit and the cap are those in force on the sheet's today ({@code today}).
@@ -76,6 +77,16 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
     /** The key of a grade's grace days. */
     public static String gradeGraceKey(String grade) {
         return "grace-" + grade;
+    }
+
+    /** The key of a grade's own proof threshold. */
+    public static String gradeProofThresholdKey(String grade) {
+        return "proof-threshold-" + grade;
+    }
+
+    /** A grade's own proof threshold in force on a date, or null when it has none. */
+    public BigDecimal gradeProofThresholdOn(String grade, LocalDate date) {
+        return figureOn(gradeProofThresholdKey(grade), date);
     }
 
     /** A grade's grace days in force on a date, or null when it has none. */
@@ -164,12 +175,21 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
     }
 
     /**
-     * Whether a claim dated {@code date} with a due (null: n/a) and a proofs count needs a proof
-     * before it is settled or approved: its due is above the proof threshold in force on its date
-     * and it has no proofs. A due of n/a, or no threshold, needs none.
+     * The proof threshold of a claim of a grade dated {@code date}: the grade's own in force on that
+     * date when it has one, else the sheet's (null: none).
      */
-    public boolean needsProof(BigDecimal due, LocalDate date, int proofs) {
-        BigDecimal threshold = proofThresholdOn(date);
+    public BigDecimal proofThresholdFor(String grade, LocalDate date) {
+        BigDecimal own = grade == null ? null : gradeProofThresholdOn(grade, date);
+        return own != null ? own : proofThresholdOn(date);
+    }
+
+    /**
+     * Whether a claim of a grade dated {@code date} with a due (null: n/a) and a proofs count needs
+     * a proof before it is settled or approved: its due is above its proof threshold and it has no
+     * proofs. A due of n/a, or no threshold, needs none.
+     */
+    public boolean needsProof(BigDecimal due, String grade, LocalDate date, int proofs) {
+        BigDecimal threshold = proofThresholdFor(grade, date);
         return proofs == 0 && threshold != null && due != null && due.compareTo(threshold) > 0;
     }
 

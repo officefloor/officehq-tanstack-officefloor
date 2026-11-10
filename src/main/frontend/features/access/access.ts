@@ -35,9 +35,12 @@ export type Settings = {
   entryDate: string;
   /** Each grade's grace days ('' for none): a claim of the grade is overdue only past its due-by plus them. */
   gradeGrace?: Record<string, string>;
+  /** Each grade's own proof threshold ('' for none: a claim of the grade takes the sheet's). */
+  gradeProofThreshold?: Record<string, string>;
   /**
    * Every value recorded for each figure setting, by key (clerk-limit, floor, terms, late-pct,
-   * terms-A, terms-B, terms-C, cap, proof-threshold, note-threshold, grace-A, grace-B, grace-C), in from-date order ('' for none). The values above are those
+   * terms-A, terms-B, terms-C, cap, proof-threshold, note-threshold, grace-A, grace-B, grace-C, proof-threshold-A, proof-threshold-B,
+   * proof-threshold-C), in from-date order ('' for none). The values above are those
    * in force on the sheet's today.
    */
   dated?: Record<string, { from: string; value: string }[]>;
@@ -59,6 +62,9 @@ export const GRADES = ['A', 'B', 'C'] as const;
 
 /** The key of a grade's grace days, dated like the floor. */
 export const gradeGraceKey = (grade: string) => `grace-${grade}`;
+
+/** The key of a grade's own proof threshold, dated like the floor. */
+export const gradeProofThresholdKey = (grade: string) => `proof-threshold-${grade}`;
 
 /** The actions of the permission matrix, in the order they are shown. */
 export const ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'] as const;

@@ -56,7 +56,7 @@ public class SettleClaim {
         if (user.equals(claim.getOpenedBy())) throw new SelfSettleException(user);
         if (claim.isOwnedBy(user)) throw new SelfSettleException(user, "last edited");
         BigDecimal due = ClaimFigure.floored(claim, figure, late, settings);
-        if (settings.needsProof(due, claim.getDate(), claim.getProofs())) throw new InvalidClaimStatusException(ProofRequired.MESSAGE);
+        if (settings.needsProof(due, grade, claim.getDate(), claim.getProofs())) throw new InvalidClaimStatusException(ProofRequired.MESSAGE);
         if (!settings.withinClerkLimit(due, sheet.today()) && Role.CLERK.equals(role)) {
             claim.moveTo(ClaimStatus.PENDING);
             return;
