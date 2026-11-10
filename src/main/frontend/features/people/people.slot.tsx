@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, postJson, putJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { PersonHead, PersonRow } from '../../slots/defs/personRow';
+import { useUser } from '../session/session';
 import { GRADES, peopleKey, usePeople } from './people';
 import type { Grade, Person } from './people';
 
@@ -18,6 +19,7 @@ function People({ sheetId }: { sheetId: string }) {
   const [fields, setFields] = useState<Fields>(EMPTY);
   const [editing, setEditing] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [user] = useUser();
 
   const reset = () => {
     setFields(EMPTY);
@@ -29,8 +31,8 @@ function People({ sheetId }: { sheetId: string }) {
     mutationFn: ({ id, body }: { id: string | null; body: Fields }) => {
       const base = `/api/sheets/${encodeURIComponent(sheetId)}/people`;
       return id === null
-        ? postJson<Person>(base, body)
-        : putJson<Person>(`${base}/${encodeURIComponent(id)}`, body);
+        ? postJson<Person>(base, body, user)
+        : putJson<Person>(`${base}/${encodeURIComponent(id)}`, body, user);
     },
     onSuccess: () => {
       reset();

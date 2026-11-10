@@ -19,18 +19,25 @@ export function getJson<T>(path: string): Promise<T> {
   return send<T>(path);
 }
 
-export function postJson<T>(path: string, body: unknown): Promise<T> {
+// A change is made by the signed-in user: name them, and the server records who made it.
+function jsonHeaders(user?: string): HeadersInit {
+  return user === undefined
+    ? { 'Content-Type': 'application/json' }
+    : { 'Content-Type': 'application/json', 'X-User': encodeURIComponent(user) };
+}
+
+export function postJson<T>(path: string, body: unknown, user?: string): Promise<T> {
   return send<T>(path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: jsonHeaders(user),
     body: JSON.stringify(body),
   });
 }
 
-export function putJson<T>(path: string, body: unknown): Promise<T> {
+export function putJson<T>(path: string, body: unknown, user?: string): Promise<T> {
   return send<T>(path, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: jsonHeaders(user),
     body: JSON.stringify(body),
   });
 }

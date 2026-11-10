@@ -1,7 +1,9 @@
 package net.officefloor.hq.app;
 
+import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -39,6 +41,15 @@ public class Audit {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    /**
+     * The signed-in user who made a change, as the screen sends it in the {@code X-User} header
+     * (URI-encoded, so any name fits a header).
+     */
+    public static String user(HttpServletRequest request) {
+        String header = request.getHeader("X-User");
+        return header == null ? "" : URLDecoder.decode(header, StandardCharsets.UTF_8);
     }
 
     /** Remove the audit file. */

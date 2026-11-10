@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson } from '../../api/http';
 import { PersonHead, PersonRow } from '../../slots/defs/personRow';
 import type { Person } from '../people/people';
+import { useUser } from '../session/session';
 import { AMOUNT, claimsKey, sumAmounts, useClaims } from './claims';
 import type { Claim } from './claims';
 
@@ -28,6 +29,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   const [fields, setFields] = useState<Fields>(EMPTY);
   const [editing, setEditing] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [user] = useUser();
 
   const reset = () => {
     setFields(EMPTY);
@@ -39,8 +41,8 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
     mutationFn: ({ id, body }: { id: string | null; body: Fields }) => {
       const sheet = `/api/sheets/${encodeURIComponent(sheetId)}`;
       return id === null
-        ? postJson<Claim>(`${sheet}/people/${encodeURIComponent(person.id)}/claims`, body)
-        : putJson<Claim>(`${sheet}/claims/${encodeURIComponent(id)}`, body);
+        ? postJson<Claim>(`${sheet}/people/${encodeURIComponent(person.id)}/claims`, body, user)
+        : putJson<Claim>(`${sheet}/claims/${encodeURIComponent(id)}`, body, user);
     },
     onSuccess: () => {
       reset();
