@@ -9,6 +9,7 @@ export const GRADES: Grade[] = ['A', 'B', 'C'];
 // is how many statements have been taken for them; `statedTotal` and `statementDate` are the last
 // one's due-total and date ('' before the first). `retired` is set once they have a retirement
 // date, `retiredFrom` ('' when not retired), whatever that date is. `held` is whether they are on hold: their OPEN claims then count in no total.
+// `patronIds` are the ids of the people they name as their patrons.
 export type Person = {
   id: string;
   name: string;
@@ -20,6 +21,7 @@ export type Person = {
   retired: boolean;
   retiredFrom: string;
   held: boolean;
+  patronIds: string[];
 };
 
 export const peopleKey = (sheetId: string) => ['sheet', sheetId, 'people'] as const;

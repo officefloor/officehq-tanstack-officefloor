@@ -1,6 +1,8 @@
 package net.officefloor.hq.app.person;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 
 /** A person on a sheet, as the store holds it. {@code id} is null until first saved. */
 public class Person {
@@ -14,6 +16,7 @@ public class Person {
     private LocalDate statementDate;
     private LocalDate retiredFrom;
     private boolean held;
+    private final List<Long> patronIds = new ArrayList<>();
 
     public Person(Long id, String sheetId, String name, String grade) {
         this(id, sheetId, name, grade, 0);
@@ -55,6 +58,8 @@ public class Person {
     /** Whether they are on hold: their OPEN claims count in no total until they are released. */
     public boolean isHeld() { return held; }
     public void setHeld(boolean held) { this.held = held; }
+    /** The ids of the people they name as patrons, in the order named. */
+    public List<Long> getPatronIds() { return patronIds; }
     /** Whether a claim on this date is refused: they are retired from an earlier date. */
     public boolean retiredBefore(LocalDate date) { return retiredFrom != null && date.isAfter(retiredFrom); }
 }

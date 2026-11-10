@@ -33,13 +33,15 @@ export const counts = (c: Claim, held: boolean) => c.status === 'SETTLED' || (c.
 
 export const claimsKey = (sheetId: string) => ['sheet', sheetId, 'claims'] as const;
 
+export const claimsQuery = (sheetId: string) => ({
+  queryKey: claimsKey(sheetId),
+  queryFn: async () =>
+    (await getJson<{ claims: Claim[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/claims`)).claims,
+});
+
 /** The sheet's claims, newest first. */
 export function useClaims(sheetId: string) {
-  return useQuery({
-    queryKey: claimsKey(sheetId),
-    queryFn: async () =>
-      (await getJson<{ claims: Claim[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/claims`)).claims,
-  });
+  return useQuery(claimsQuery(sheetId));
 }
 
 /** An amount as a claim takes it: 0.00 or more, with up to two decimals. */

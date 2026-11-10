@@ -4,7 +4,9 @@ import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.Statement;
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -34,8 +36,16 @@ public class PersonRepository {
 
     /** The sheet's people, in the order they were added. */
     public List<Person> findAll(String sheetId) {
-        return jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? ORDER BY id",
+        List<Person> people = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? ORDER BY id",
                 ROW, sheetId);
+        Map<Long, Person> byId = new HashMap<>();
+        people.forEach((p) -> byId.put(p.getId(), p));
+        jdbc.query("SELECT person_id, patron_id FROM person_patron WHERE sheet_id = ? ORDER BY person_id, patron_id",
+                (rs) -> {
+                    Person person = byId.get(rs.getLong("person_id"));
+                    if (person != null) person.getPatronIds().add(rs.getLong("patron_id"));
+                }, sheetId);
+        return people;
     }
 
     /** The person with this id on the sheet, or null when there is none. */
@@ -43,7 +53,19 @@ public class PersonRepository {
         List<Person> found = jdbc.query(
                 "SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND id = ?",
                 ROW, sheetId, id);
-        return found.isEmpty() ? null : found.get(0);
+        if (found.isEmpty()) return null;
+        Person person = found.get(0);
+        person.getPatronIds().addAll(jdbc.queryForList(
+                "SELECT patron_id FROM person_patron WHERE sheet_id = ? AND person_id = ? ORDER BY patron_id",
+                Long.class, sheetId, id));
+        return person;
+    }
+
+    /** Record {@code patron} as one of the person's patrons. */
+    public void addPatron(Person person, Person patron) {
+        jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id) VALUES (?, ?, ?)",
+                person.getSheetId(), person.getId(), patron.getId());
+        person.getPatronIds().add(patron.getId());
     }
 
     /** The person on the sheet with this name, ignoring case and surrounding spaces, or null when there is none. */
