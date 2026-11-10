@@ -381,7 +381,38 @@ function TagTotals({ sheetId }: { sheetId: string }) {
   );
 }
 
+// For every month (yyyy-mm) any claim on the sheet is dated in, its due-total: the due of the
+// claims dated in it that count, added up, skipping n/a.
+function MonthTotals({ sheetId }: { sheetId: string }) {
+  const people = usePeople(sheetId).data ?? [];
+  const claims = useClaims(sheetId).data ?? [];
+  const rates = useRates(sheetId).data ?? [];
+  const today = useSheetToday(sheetId);
+  const floor = useFloor(sheetId);
+  const late = useLate(sheetId);
+  const months = [...new Set(claims.map((c) => c.date.slice(0, 7)))].sort();
+  const dues = people.flatMap((p) =>
+    claims
+      .filter((c) => c.personId === p.id && counts(c, liveHolds(p, today), today))
+      .map((c) => ({ month: c.date.slice(0, 7), due: claimDue(c, rateOn(rates, gradeOn(p.grades, c.date), c.date), floor, late, gradeOn(p.grades, c.date)) })),
+  );
+  if (months.length === 0) return null;
+  return (
+    <section data-testid="month-totals">
+      <h3>Due by month</h3>
+      <ul>
+        {months.map((m) => (
+          <li key={m}>
+            {m}: <strong data-testid={`month-${m}-due-total`}>{sumDue(dues.filter((d) => d.month === m).map((d) => d.due))}</strong>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export const contributions = [
+  SheetBody.fill({ order: 20.7, Component: MonthTotals }),
   SheetBody.fill({ order: 20.6, Component: TagTotals }),
   SheetBody.fill({ order: -10, Component: Rates }),
   SheetBody.fill({ order: 20, Component: DueTotal }),
