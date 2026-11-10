@@ -28,6 +28,7 @@ public class Claim {
     private boolean lateEntry;
     private LocalDate remindedOn;
     private String ref;
+    private String tags;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue,
@@ -137,6 +138,13 @@ public class Claim {
     /** Its external reference, unique on the sheet regardless of case; null when it has none. */
     public String getRef() { return ref; }
     public void setRef(String ref) { this.ref = ref; }
+    /** Its tags: lower-cased, without repeats, sorted and comma separated; null when it has none. */
+    public String getTags() { return tags; }
+    public void setTags(String tags) { this.tags = tags; }
+    /** Its tags, sorted; empty when it has none. */
+    public java.util.List<String> tagList() {
+        return tags == null ? java.util.List.of() : java.util.List.of(tags.split(","));
+    }
     public String getNote() { return note; }
     public void setNote(String note) { this.note = note; }
     public ClaimStatus getStatus() { return status; }
@@ -219,6 +227,7 @@ public class Claim {
         then.lateEntry = lateEntry;
         then.remindedOn = remindedOn;
         then.ref = ref;
+        then.tags = tags;
         return then;
     }
     /** Whether it is open: OPEN, or PENDING a steward's approval. */

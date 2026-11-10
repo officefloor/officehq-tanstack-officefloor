@@ -12,5 +12,6 @@ public class ApplyClaim {
         claim.setNote(input.note());
         claim.setCorrects(input.corrects());
         claim.setRef(input.ref());
+        claim.setTags(input.tags());
     }
 }

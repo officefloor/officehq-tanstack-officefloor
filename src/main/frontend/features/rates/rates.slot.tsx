@@ -5,13 +5,13 @@ import { useOnce } from '../../query/useOnce';
 import { postJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { PersonHead, PersonRow } from '../../slots/defs/personRow';
-import { useClaims } from '../claims/claims';
-import { GRADES, liveHolds, usePeople } from '../people/people';
+import { counts, useClaims, useTagsUsed } from '../claims/claims';
+import { GRADES, gradeOn, liveHolds, usePeople } from '../people/people';
 import type { Grade, Person } from '../people/people';
 import { useUser } from '../session/session';
 import { useSheetToday } from '../sheet/sheet';
 import { useCap, useFloor, useLate } from '../access/access';
-import { NA, PCT, personDueTotal, personExcess, personSplitTotals, rateOn, ratesKey, sumDue, trimmedSumDue, useRates } from './rates';
+import { NA, PCT, claimDue, personDueTotal, personExcess, personSplitTotals, rateOn, ratesKey, sumDue, trimmedSumDue, useRates } from './rates';
 import type { Rate } from './rates';
 
 type Fields = { grade: Grade; pct: string; from: string; to: string };
@@ -262,7 +262,38 @@ function SplitTotals({ sheetId }: { sheetId: string }) {
   );
 }
 
+// For every tag ever used on the sheet, its due-total: the due of the claims that count which carry
+// it, added up, skipping n/a (a claim with two tags counts in both).
+function TagTotals({ sheetId }: { sheetId: string }) {
+  const people = usePeople(sheetId).data ?? [];
+  const claims = useClaims(sheetId).data ?? [];
+  const tags = useTagsUsed(sheetId).data ?? [];
+  const rates = useRates(sheetId).data ?? [];
+  const today = useSheetToday(sheetId);
+  const floor = useFloor(sheetId);
+  const late = useLate(sheetId);
+  const dues = people.flatMap((p) =>
+    claims
+      .filter((c) => c.personId === p.id && c.tags.length > 0 && counts(c, liveHolds(p, today), today))
+      .map((c) => ({ tags: c.tags, due: claimDue(c, rateOn(rates, gradeOn(p.grades, c.date), c.date), floor, late, gradeOn(p.grades, c.date)) })),
+  );
+  if (tags.length === 0) return null;
+  return (
+    <section data-testid="tag-totals">
+      <h3>Due by tag</h3>
+      <ul>
+        {tags.map((t) => (
+          <li key={t}>
+            {t}: <strong data-testid={`tag-${t}-due-total`}>{sumDue(dues.filter((d) => d.tags.includes(t)).map((d) => d.due))}</strong>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 export const contributions = [
+  SheetBody.fill({ order: 20.6, Component: TagTotals }),
   SheetBody.fill({ order: -10, Component: Rates }),
   SheetBody.fill({ order: 20, Component: DueTotal }),
   PersonHead.fill({ order: 20, Component: DueHead }),

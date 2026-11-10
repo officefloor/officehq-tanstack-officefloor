@@ -17,7 +17,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, late_entry, reminded_on, ext_ref,"
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, late_entry, reminded_on, ext_ref, tags,"
             + " (SELECT c.claim_date FROM claim c WHERE c.sheet_id = claim.sheet_id AND c.person_id = claim.person_id"
             + " AND c.claim_number = claim.corrects) AS corrected_date,"
             + " CASE WHEN locked_on = (SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id) THEN locked_by END AS locked_by_now";
@@ -40,6 +40,7 @@ public class ClaimRepository {
         java.sql.Date reminded = rs.getDate("reminded_on");
         claim.setRemindedOn(reminded == null ? null : reminded.toLocalDate());
         claim.setRef(rs.getString("ext_ref"));
+        claim.setTags(rs.getString("tags"));
         claim.setLockedBy(rs.getString("locked_by_now"));
         java.sql.Date corrected = rs.getDate("corrected_date");
         claim.setCorrectedDate(corrected == null ? null : corrected.toLocalDate());
@@ -213,11 +214,11 @@ public class ClaimRepository {
                         claim.getPersonId(), nextListed(claim.getSheetId()), claim.getId(), claim.getSheetId());
             }
             keepBinding(claim);
-            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?, stated = ?, stated_due = ?, corrects = ?, deferred_until = ?, proofs = ?, ext_ref = ? WHERE id = ? AND sheet_id = ?",
+            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?, stated = ?, stated_due = ?, corrects = ?, deferred_until = ?, proofs = ?, ext_ref = ?, tags = ? WHERE id = ? AND sheet_id = ?",
                     claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(),
                     claim.getStatus().name(), claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(),
                     claim.isStated(), claim.getStatedDue(), claim.getCorrects(),
-                    claim.getDeferredUntil() == null ? null : Date.valueOf(claim.getDeferredUntil()), claim.getProofs(), claim.getRef(), claim.getId(),
+                    claim.getDeferredUntil() == null ? null : Date.valueOf(claim.getDeferredUntil()), claim.getProofs(), claim.getRef(), claim.getTags(), claim.getId(),
                     claim.getSheetId());
             keepHistory(claim);
             return;
@@ -226,7 +227,7 @@ public class ClaimRepository {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, corrects, listed, due_by, split_from, claim_number, opened_by, late_entry, ext_ref) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, corrects, listed, due_by, split_from, claim_number, opened_by, late_entry, ext_ref, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, claim.getSheetId());
             ps.setLong(2, claim.getPersonId());
@@ -242,14 +243,28 @@ public class ClaimRepository {
             ps.setString(12, claim.getOpenedBy());
             ps.setBoolean(13, claim.isLateEntry());
             ps.setString(14, claim.getRef());
+            ps.setString(15, claim.getTags());
             return ps;
         }, keys);
         claim.setId(keys.getKey().longValue());
         keepHistory(claim);
     }
 
+    /**
+     * Every tag ever used on the sheet, sorted: those its claims have been saved with, up to the end of
+     * {@code day} (null: up to now).
+     */
+    public List<String> tagsUsed(String sheetId, LocalDate day) {
+        java.util.TreeSet<String> tags = new java.util.TreeSet<>();
+        jdbc.query("SELECT DISTINCT tags FROM claim_history WHERE sheet_id = ? AND tags IS NOT NULL"
+                + (day == null ? "" : " AND set_on <= ?"), (rs) -> {
+                    tags.addAll(List.of(rs.getString("tags").split(",")));
+                }, day == null ? new Object[] { sheetId } : new Object[] { sheetId, Date.valueOf(day) });
+        return List.copyOf(tags);
+    }
+
     private static final String HISTORY_COLUMNS = "person_id, amount, claim_date, note, status, claim_number, settled_due,"
-            + " opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, late_entry, listed";
+            + " opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, late_entry, listed, tags";
 
     /** Keeps the claim as the store now holds it in its history, with the sheet's today now. */
     private void keepHistory(Claim claim) {
@@ -279,6 +294,7 @@ public class ClaimRepository {
                     claim.setProofs(rs.getInt("proofs"));
                     claim.setSplitFrom(rs.getString("split_from"));
                     claim.setLateEntry(rs.getBoolean("late_entry"));
+                    claim.setTags(rs.getString("tags"));
                     latest.put(claim.getId(), claim);
                     listed.put(claim.getId(), rs.getLong("listed"));
                 }, sheetId, Date.valueOf(day));

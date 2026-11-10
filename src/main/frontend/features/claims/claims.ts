@@ -54,6 +54,8 @@ export type Claim = {
   remindedOn: string;
   /** Its external reference, unique on the sheet regardless of case; '' when it has none. */
   ref: string;
+  /** Its tags: trimmed, lower-cased, without repeats, sorted; empty when it has none. */
+  tags: string[];
 };
 
 /** Whether a claim is a correction: it has no floor and no late charge. */
@@ -113,6 +115,17 @@ export const claimsQuery = (sheetId: string) => ({
   queryFn: async () =>
     (await getJson<{ claims: Claim[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/claims`)).claims,
 });
+
+export const tagsKey = (sheetId: string) => [...claimsKey(sheetId), 'tags'] as const;
+
+/** Every tag ever used on the sheet, sorted (re-read whenever its claims are). */
+export function useTagsUsed(sheetId: string) {
+  return useQuery({
+    queryKey: tagsKey(sheetId),
+    queryFn: async () =>
+      (await getJson<{ tags: string[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/claims`)).tags,
+  });
+}
 
 /** The sheet's claims, newest first. */
 export function useClaims(sheetId: string) {

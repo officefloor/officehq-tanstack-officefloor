@@ -8,9 +8,10 @@ import java.util.regex.Pattern;
 /**
  * A validated claim request. {@code date} is null when left blank: the sheet's entry date while it is set, else its today.
  * {@code corrects} is the number of the claim a correction (a negative amount) corrects; null for
- * any other claim. {@code ref} is its external reference, trimmed; null when left blank.
+ * any other claim. {@code ref} is its external reference, trimmed; null when left blank. {@code tags} are its
+ * tags, each trimmed and lower-cased, repeats dropped, sorted and comma separated; null when none are given.
  */
-public record ClaimInput(BigDecimal amount, LocalDate date, String note, String corrects, String ref) {
+public record ClaimInput(BigDecimal amount, LocalDate date, String note, String corrects, String ref, String tags) {
     private static final Pattern AMOUNT = Pattern.compile("-?\\d{1,15}(\\.\\d{1,2})?");
     private static final Pattern NUMBER = Pattern.compile("\\d{1,9}|.{1,190}-\\d{1,9}");
 
@@ -48,6 +49,19 @@ public record ClaimInput(BigDecimal amount, LocalDate date, String note, String 
         }
         String ref = request.ref() == null ? "" : request.ref().trim();
         if (ref.length() > 200) throw new InvalidClaimException("A reference is at most 200 characters");
-        return new ClaimInput(value, date, note, corrects, ref.isEmpty() ? null : ref);
+        String tags = tags(request.tags());
+        if (tags != null && tags.length() > 2000) throw new InvalidClaimException("Tags are at most 2000 characters");
+        return new ClaimInput(value, date, note, corrects, ref.isEmpty() ? null : ref, tags);
+    }
+
+    /** Comma separated tags, each trimmed and lower-cased, repeats dropped, sorted and comma separated; null when none. */
+    static String tags(String raw) {
+        if (raw == null) return null;
+        java.util.TreeSet<String> tags = new java.util.TreeSet<>();
+        for (String tag : raw.split(",")) {
+            String t = tag.trim().toLowerCase(java.util.Locale.ROOT);
+            if (!t.isEmpty()) tags.add(t);
+        }
+        return tags.isEmpty() ? null : String.join(",", tags);
     }
 }

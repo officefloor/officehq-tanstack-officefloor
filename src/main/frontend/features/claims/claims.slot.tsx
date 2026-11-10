@@ -19,8 +19,8 @@ import { dueBy, isOverdue } from '../overdue/overdue';
 // A clerk's settle above the clerk limit leaves the claim PENDING; a steward approves it or rejects
 // it with a reason (typed in the row). A steward re-settles a SETTLED claim at its figure today.
 type Action = 'open' | 'settle' | 'void' | 'approve' | 'reject' | 'resettle';
-type Fields = { amount: string; date: string; note: string; corrects: string; ref: string };
-const EMPTY: Fields = { amount: '', date: '', note: '', corrects: '', ref: '' };
+type Fields = { amount: string; date: string; note: string; corrects: string; ref: string; tags: string };
+const EMPTY: Fields = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
 
 const ACTIONS: { action: Action; label: string }[] = [
   { action: 'open', label: 'Open' },
@@ -218,7 +218,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
     mutationFn: ({ c, amount }: { c: Claim; amount: string }) =>
       putJson<Claim>(
         `/api/sheets/${encodeURIComponent(sheetId)}/claims/${encodeURIComponent(c.id)}`,
-        { amount, date: c.date, note: c.note, corrects: c.corrects, ref: c.ref },
+        { amount, date: c.date, note: c.note, corrects: c.corrects, ref: c.ref, tags: c.tags.join(',') },
         user,
       ),
     onSuccess: (_r, { c }) => {
@@ -350,7 +350,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
     onSuccess: (_r, c) => {
       if (editingNow.current !== c.id) return;
       setGranted(c.id);
-      setFields({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects, ref: c.ref });
+      setFields({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects, ref: c.ref, tags: c.tags.join(', ') });
       setError('');
     },
     onError: (_e, c) =>
@@ -386,7 +386,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
     if (mine !== undefined && editing === null) {
       setEditing(mine.id);
       setGranted(mine.id);
-      setFields({ amount: mine.amount, date: mine.date, note: mine.note, corrects: mine.corrects, ref: mine.ref });
+      setFields({ amount: mine.amount, date: mine.date, note: mine.note, corrects: mine.corrects, ref: mine.ref, tags: mine.tags.join(', ') });
     }
   }, [all.isFetchedAfterMount, claims, user, editing]);
 
@@ -432,6 +432,12 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
             value={fields.ref}
             onChange={(e) => change({ ref: e.target.value })}
           />{' '}
+          <input
+            data-testid="claim-form-tags"
+            placeholder="Tags, comma separated"
+            value={fields.tags}
+            onChange={(e) => change({ tags: e.target.value })}
+          />{' '}
           <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
             {editing === null ? 'Add claim' : 'Save claim'}
           </button>
@@ -464,6 +470,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
               <span data-testid="claim-status">{c.status}</span>{' '}
               <span data-testid="claim-corrects">{c.corrects}</span>{' '}
               <span data-testid="claim-ref">{c.ref}</span>{' '}
+              <span data-testid="claim-tags">{c.tags.join(', ')}</span>{' '}
               <span data-testid="claim-opened-by">{c.openedBy}</span>{' '}
               <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-period">{periodOf(periods, c.dueBy)?.name ?? ''}</span>{' '}
