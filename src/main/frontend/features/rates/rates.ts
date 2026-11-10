@@ -7,13 +7,17 @@ import type { Claim } from '../claims/claims';
 
 /**
  * A grade's rate: a percent with two decimals, from a date (yyyy-MM-dd; '' when it applies from the
- * beginning of time) through a date (yyyy-MM-dd; '' when it has no end).
+ * beginning of time) through a date (yyyy-MM-dd; '' when it has no end), and its level: 0 when set
+ * on the sheet itself, 1 on its parent sheet, and so on up to MAX_LEVEL.
  */
-export type Rate = { grade: Grade; pct: string; from: string; to: string };
+export type Rate = { grade: Grade; pct: string; from: string; to: string; level: number };
+
+/** How many parent sheets up a rate is looked for. */
+export const MAX_LEVEL = 3;
 
 export const ratesKey = (sheetId: string) => ['sheet', sheetId, 'rates'] as const;
 
-/** The sheet's rates, by grade then from-date (none first). */
+/** The sheet's rates, by grade then from-date (none first), then its parent sheets', each at its level. */
 export function useRates(sheetId: string) {
   return useQuery({
     queryKey: ratesKey(sheetId),
@@ -23,14 +27,26 @@ export function useRates(sheetId: string) {
 }
 
 /**
- * A grade's rate in force on a date (yyyy-MM-dd): the one whose from-date is the latest on or
- * before it, unless its to-date is before the date. Null when the date is before every rate the
- * grade has (or it has none), or after the to-date of the rate that would apply.
+ * A grade's rate in force on a date (yyyy-MM-dd): the sheet's own, else its parent sheet's, and so
+ * on up the levels. Null when no level has one in force.
  */
 export function rateOn(rates: Rate[], grade: Grade, date: string): string | null {
+  for (let level = 0; level <= MAX_LEVEL; level++) {
+    const pct = rateAt(rates, grade, date, level);
+    if (pct !== null) return pct;
+  }
+  return null;
+}
+
+/**
+ * A grade's rate in force on a date at one level: the one whose from-date is the latest on or
+ * before it, unless its to-date is before the date. Null when the date is before every rate the
+ * grade has there (or it has none), or after the to-date of the rate that would apply.
+ */
+function rateAt(rates: Rate[], grade: Grade, date: string, level: number): string | null {
   let best: Rate | null = null;
   for (const r of rates) {
-    if (r.grade !== grade || r.from > date) continue;
+    if ((r.level ?? 0) !== level || r.grade !== grade || r.from > date) continue;
     if (best === null || r.from > best.from) best = r;
   }
   if (best === null || (best.to !== '' && best.to < date)) return null;

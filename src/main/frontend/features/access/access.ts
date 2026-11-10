@@ -39,6 +39,8 @@ export type Settings = {
   gradeProofThreshold?: Record<string, string>;
   /** The pot, with two decimals ('' for none), not dated: shared out as cuts among a balanced pool's members. */
   pot: string;
+  /** The parent sheet's id ('' for none), not dated: a grade with no rate in force on a date takes the parent's, up to three levels up. */
+  parent: string;
   /**
    * Every value recorded for each figure setting, by key (clerk-limit, floor, terms, late-pct,
    * terms-A, terms-B, terms-C, cap, proof-threshold, note-threshold, grace-A, grace-B, grace-C, proof-threshold-A, proof-threshold-B,

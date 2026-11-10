@@ -16,11 +16,11 @@ package net.officefloor.hq.app.setting;
  * (blank: off), and the grace days of each grade being changed, a whole number of days (blank:
  * none), dated by its key (grace-A, grace-B, grace-C), and the proof threshold of each grade being
  * changed, with up to two decimals (blank: none, the sheet's), dated by its key (proof-threshold-A,
- * proof-threshold-B, proof-threshold-C), and the pot, with up to two decimals (blank: none), not dated.
+ * proof-threshold-B, proof-threshold-C), and the pot, with up to two decimals (blank: none), not dated, and the parent sheet's id (blank: none), not dated.
  */
 public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom,
         java.util.Map<String, String> gradeTerms, String cap, java.util.Map<String, String> from,
         String proofThreshold, java.util.Map<String, String> perms, String graceDays, String noteThreshold,
         String entryDate, java.util.Map<String, String> gradeGrace,
-        java.util.Map<String, String> gradeProofThreshold, String pot) {
+        java.util.Map<String, String> gradeProofThreshold, String pot, String parent) {
 }

@@ -9,11 +9,12 @@ import net.officefloor.plugin.variable.Val;
  * Saves the settings being changed, leaving the others as they are: a figure setting's value is
  * recorded from its from-date (the sheet's today when none is given), keeping the values recorded
  * from other dates and replacing one recorded from the same date. An action's entry in the
- * permission matrix is not dated: it replaces the one before.
+ * permission matrix is not dated: it replaces the one before, nor is the parent sheet.
  */
 public class SaveSettings {
     public void save(@Val SettingsInput input, @Val Sheet sheet, SettingsRepository repository,
-            Out<Settings> settingsOut) {
+            net.officefloor.hq.app.sheet.SheetRepository sheets, Out<Settings> settingsOut) {
+        if (input.parentChanged()) sheets.saveParent(sheet.id(), input.parent());
         Settings now = repository.find(sheet.id());
         if (input.policyDateChanged() || input.periodNumberingFromChanged() || input.graceDaysChanged()
                 || input.entryDateChanged() || input.potChanged()) {

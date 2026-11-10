@@ -5,15 +5,18 @@ import { useOnce } from '../../query/useOnce';
 import { postJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/session';
+import { useSettings } from '../access/access';
 import { sheetKey, useSheet } from './sheet';
 import type { Sheet } from './sheet';
 
 // The sheet's today: shown, and changeable. A change re-reads everything kept for the sheet, as
 // whatever depends on the date may now read differently. Also whether the sheet is archived, and
-// the button a steward archives it with; once archived, every change on the sheet is refused.
+// the button a steward archives it with; once archived, every change on the sheet is refused. Also
+// the sheet's parent sheet (nothing when none).
 function SheetToday({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const sheet = useSheet(sheetId);
+  const settings = useSettings(sheetId);
   const [input, setInput] = useState('');
   const [error, setError] = useState('');
   const [user] = useUser();
@@ -75,7 +78,8 @@ function SheetToday({ sheetId }: { sheetId: string }) {
       Archived: <strong data-testid="sheet-archived">{sheet.data ? (sheet.data.archived ? 'yes' : 'no') : ''}</strong>{' '}
       <button type="button" data-testid="sheet-archive" onClick={archiveSheet} disabled={archive.isPending}>
         Archive sheet
-      </button>
+      </button>{' '}
+      Parent: <strong data-testid="sheet-parent">{settings.data?.parent ?? ''}</strong>
       {(error || sheet.isError) && (
         <p role="alert" data-testid="sheet-error">
           {error || 'The sheet could not be read.'}

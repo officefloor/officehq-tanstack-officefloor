@@ -24,7 +24,8 @@ type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms' | 'gradeGrace' | 'grad
 // grace days (blank: off), past which an open period closes when today is changed, and each grade's
 // grace days (blank: none), dated, past a claim's due-by before it is overdue, and each grade's proof threshold
 // (blank: none, the sheet's), dated, in place of the sheet's for a claim of the grade, and its pot (blank:
-// none), not dated, shared out as cuts among a balanced pool's members. Only the settings typed in (or stepped into)
+// none), not dated, shared out as cuts among a balanced pool's members, and its parent sheet (blank: none), not
+// dated, whose rates a grade takes on a date this sheet has none in force. Only the settings typed in (or stepped into)
 // since the last save are sent, so saving one leaves the other as it is.
 function SettingsForm({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
@@ -42,6 +43,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
     graceDays: '',
     entryDate: '',
     pot: '',
+    parent: '',
   });
   const [touched, setTouched] = useState<Set<Key>>(new Set());
   const [gradeFields, setGradeFields] = useState<Record<string, string>>({});
@@ -61,7 +63,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
   const save = useMutation({
     mutationFn: (body: SettingsChange) =>
       postJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, body, user),
-    onSuccess: (saved) => {
+    onSuccess: (saved, body) => {
       setTouched(new Set());
       setGradesTouched(new Set());
       setGraceTouched(new Set());
@@ -69,6 +71,8 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
       setPermsTouched(new Set());
       queryClient.setQueryData(settingsKey(sheetId), saved);
       queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
+      // A new parent changes the rates in force, and every figure taken from them.
+      if (body.parent !== undefined) void queryClient.invalidateQueries({ queryKey: ['sheet', sheetId] });
     },
     onError: () => setError('Those settings could not be saved.'),
   });
@@ -149,6 +153,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
       }
       body.pot = pot;
     }
+    if (touched.has('parent')) body.parent = fields.parent.trim();
     if (touched.has('cap')) {
       const cap = fields.cap.trim();
       if (cap !== '' && !CAP.test(cap)) {
@@ -464,6 +469,19 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         </label>{' '}
         <span>
           now: <strong data-testid="setting-pot-current">{settings.data?.pot ?? ''}</strong>
+        </span>{' '}
+        <label>
+          Parent sheet{' '}
+          <input
+            data-testid="setting-parent"
+            placeholder="none"
+            value={fields.parent}
+            onFocus={() => touch('parent')}
+            onChange={(e) => change('parent', e.target.value)}
+          />
+        </label>{' '}
+        <span>
+          now: <strong data-testid="setting-parent-current">{settings.data?.parent ?? ''}</strong>
         </span>{' '}
         <label>
           Cap{' '}

@@ -23,8 +23,36 @@ public class RateRepository {
         this.jdbc = jdbc;
     }
 
-    /** The sheet's rates, by grade then from-date (none first). */
+    /**
+     * The sheet's rates, by grade then from-date (none first), then those of its parent sheet and on
+     * up to {@link Rate#MAX_LEVEL} levels, each at its level.
+     */
     public List<Rate> findAll(String sheetId) {
+        List<Rate> all = new ArrayList<>(findOwn(sheetId));
+        List<String> ancestors = ancestors(sheetId);
+        for (int i = 0; i < ancestors.size(); i++) {
+            int level = i + 1;
+            findOwn(ancestors.get(i)).forEach((r) -> all.add(r.up(level)));
+        }
+        return all;
+    }
+
+    /** The sheet's parent, its parent's parent and so on, up to {@link Rate#MAX_LEVEL} of them. */
+    private List<String> ancestors(String sheetId) {
+        List<String> ancestors = new ArrayList<>();
+        String at = sheetId;
+        while (ancestors.size() < Rate.MAX_LEVEL) {
+            List<String> parent = jdbc.query("SELECT parent_id FROM sheet WHERE id = ?",
+                    (rs, n) -> rs.getString("parent_id"), at);
+            if (parent.isEmpty() || parent.get(0) == null) break;
+            at = parent.get(0);
+            ancestors.add(at);
+        }
+        return ancestors;
+    }
+
+    /** The rates set on the sheet itself, by grade then from-date (none first). */
+    private List<Rate> findOwn(String sheetId) {
         return jdbc.query("SELECT sheet_id, grade, pct, from_date, to_date FROM rate WHERE sheet_id = ?"
                 + " ORDER BY grade, from_date NULLS FIRST", ROW, sheetId);
     }
@@ -42,9 +70,20 @@ public class RateRepository {
 
     /**
      * The sheet's rates as they stood at the end of {@code day}: for each grade and from-date, the
-     * last rate set for them while the sheet's today was on or before it.
+     * last rate set for them while the sheet's today was on or before it; then its parent sheets'
+     * (as they are named now) as they stood at the end of that day, each at its level.
      */
     public List<Rate> findAsOf(String sheetId, LocalDate day) {
+        List<Rate> all = new ArrayList<>(findOwnAsOf(sheetId, day));
+        List<String> ancestors = ancestors(sheetId);
+        for (int i = 0; i < ancestors.size(); i++) {
+            int level = i + 1;
+            findOwnAsOf(ancestors.get(i), day).forEach((r) -> all.add(r.up(level)));
+        }
+        return all;
+    }
+
+    private List<Rate> findOwnAsOf(String sheetId, LocalDate day) {
         Map<String, Rate> latest = new LinkedHashMap<>();
         jdbc.query("SELECT sheet_id, grade, pct, from_date, to_date FROM rate_history WHERE sheet_id = ?"
                 + " AND set_on <= ? ORDER BY id", (rs) -> {

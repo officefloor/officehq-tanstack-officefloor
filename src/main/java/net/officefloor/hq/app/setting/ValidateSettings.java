@@ -205,6 +205,8 @@ public class ValidateSettings {
             }
             pot = new BigDecimal(value).setScale(2);
         }
+        boolean parentChanged = request != null && request.parent() != null;
+        String parent = parentChanged && !request.parent().trim().isEmpty() ? request.parent().trim() : null;
         Map<String, LocalDate> from = new LinkedHashMap<>();
         if (request != null && request.from() != null) {
             for (Map.Entry<String, String> entry : request.from().entrySet()) {
@@ -221,6 +223,6 @@ public class ValidateSettings {
         body.set(new SettingsInput(limitChanged, limit, floor, terms, latePct, policyChanged, policyDate,
                 numberingChanged, numberingFrom, gradeTerms, capChanged, cap, from,
                 thresholdChanged, threshold, perms, graceChanged, graceDays, noteThresholdChanged, noteThreshold,
-                entryChanged, entryDate, gradeGrace, gradeProofThreshold, potChanged, pot));
+                entryChanged, entryDate, gradeGrace, gradeProofThreshold, potChanged, pot, parentChanged, parent));
     }
 }

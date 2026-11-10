@@ -155,7 +155,7 @@ function Rates({ sheetId }: { sheetId: string }) {
           </tr>
         </thead>
         <tbody>
-          {all.map((r) => (
+          {all.filter((r) => !r.level).map((r) => (
             <tr key={`${r.grade}-${r.from}`} data-testid={`rate-row-${r.grade}-${r.from || 'start'}`}>
               <td>{r.grade}</td>
               <td data-testid="rate-from">{r.from || 'start'}</td>

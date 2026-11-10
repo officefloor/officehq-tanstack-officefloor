@@ -57,6 +57,18 @@ public class SheetRepository {
         return new Sheet(sheet.id(), day, !archived.isEmpty() && archived.get(0));
     }
 
+    /** The sheet's parent sheet's id, or null when it has none (or was never loaded). */
+    public String parent(String id) {
+        List<String> found = jdbc.query("SELECT parent_id FROM sheet WHERE id = ?",
+                (rs, n) -> rs.getString("parent_id"), id);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** Names the sheet's parent sheet (null: none). */
+    public void saveParent(String id, String parent) {
+        jdbc.update("UPDATE sheet SET parent_id = ? WHERE id = ?", parent, id);
+    }
+
     /** Whether the sheet has been archived; false for a sheet never loaded. */
     public boolean isArchived(String id) {
         Sheet sheet = find(id);
