@@ -12,7 +12,7 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * Records, after the change's own lines, the figures it moved: a ROLLUP line per person whose
- * claimed or due-total changed, then a TOTALS line when the sheet's totals changed. The sheet's
+ * claimed, due-total or overdue-total changed, then a TOTALS line when the sheet's totals changed. The sheet's
  * today is read again, as the change may have moved it.
  */
 public class AuditRollup {
