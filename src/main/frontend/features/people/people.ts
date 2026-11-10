@@ -23,6 +23,8 @@ export function gradeOn(grades: GradeFrom[], date: string): Grade {
 // the sheet's today; `grades` every grade they have been given, by from-date, the first from ''.
 // `terms` are their own terms in days, ahead of their grade's and the sheet's ('' for none).
 // `contact` is their contact, trimmed and lower-cased ('' for none); no two people on a sheet share one.
+// `aliases` are their aliases, trimmed, in the order given; like names (ignoring case), none equals
+// any name or alias on the sheet.
 export type Person = {
   id: string;
   name: string;
@@ -39,6 +41,7 @@ export type Person = {
   grades: GradeFrom[];
   terms: string;
   contact: string;
+  aliases: string[];
 };
 
 /**

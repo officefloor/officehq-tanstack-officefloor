@@ -22,6 +22,7 @@ public class Person {
     private LocalDate addedOn;
     private final List<Hold> holds = new ArrayList<>();
     private final List<Long> patronIds = new ArrayList<>();
+    private final List<String> aliases = new ArrayList<>();
     private final TreeMap<LocalDate, String> datedGrades = new TreeMap<>();
 
     public Person(Long id, String sheetId, String name, String grade) {
@@ -97,6 +98,8 @@ public class Person {
     public boolean heldOn(LocalDate date, LocalDate today) { return heldOn(date) || retiredOn(today); }
     /** The ids of the people they name as patrons, in the order named. */
     public List<Long> getPatronIds() { return patronIds; }
+    /** Their aliases, trimmed, in the order given: like names, none equal (ignoring case) any name or alias on the sheet. */
+    public List<String> getAliases() { return aliases; }
     /** Whether a claim on this date is refused: they are retired from an earlier date. */
     public boolean retiredBefore(LocalDate date) { return retiredFrom != null && date.isAfter(retiredFrom); }
 }

@@ -58,6 +58,11 @@ public class PersonRepository {
                     Person person = byId.get(rs.getLong("person_id"));
                     if (person != null) person.getHolds().add(hold(rs));
                 }, sheetId);
+        jdbc.query("SELECT person_id, alias FROM person_alias WHERE sheet_id = ? ORDER BY id",
+                (rs) -> {
+                    Person person = byId.get(rs.getLong("person_id"));
+                    if (person != null) person.getAliases().add(rs.getString("alias"));
+                }, sheetId);
         return people;
     }
 
@@ -73,7 +78,21 @@ public class PersonRepository {
         person.getPatronIds().addAll(jdbc.queryForList(
                 "SELECT patron_id FROM person_patron WHERE sheet_id = ? AND person_id = ? ORDER BY patron_id",
                 Long.class, sheetId, id));
+        loadAliases(person);
         return person;
+    }
+
+    /** Record {@code alias} as one more of the person's aliases. */
+    public void addAlias(Person person, String alias) {
+        jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias) VALUES (?, ?, ?)",
+                person.getSheetId(), person.getId(), alias);
+        person.getAliases().add(alias);
+    }
+
+    private void loadAliases(Person person) {
+        person.getAliases().addAll(jdbc.queryForList(
+                "SELECT alias FROM person_alias WHERE sheet_id = ? AND person_id = ? ORDER BY id",
+                String.class, person.getSheetId(), person.getId()));
     }
 
     /** Record {@code patron} as one of the person's patrons. */
@@ -84,13 +103,19 @@ public class PersonRepository {
         person.getPatronIds().add(patron.getId());
     }
 
-    /** The person on the sheet with this name, ignoring case and surrounding spaces, or null when there is none. */
+    /**
+     * The person on the sheet with this name or alias, ignoring case and surrounding spaces, or null
+     * when there is none.
+     */
     public Person findByName(String sheetId, String name) {
         List<Person> found = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ?"
-                + " AND LOWER(TRIM(name)) = LOWER(TRIM(?)) ORDER BY id", ROW, sheetId, name);
+                + " AND (LOWER(TRIM(name)) = LOWER(TRIM(?)) OR id IN (SELECT person_id FROM person_alias"
+                + " WHERE sheet_id = ? AND LOWER(TRIM(alias)) = LOWER(TRIM(?)))) ORDER BY id",
+                ROW, sheetId, name, sheetId, name);
         if (found.isEmpty()) return null;
         loadGrades(found.get(0));
         loadHolds(found.get(0));
+        loadAliases(found.get(0));
         return found.get(0);
     }
 
@@ -121,13 +146,19 @@ public class PersonRepository {
                 person.getSheetId(), person.getId(), Date.valueOf(from), grade));
     }
 
-    /** Whether a person other than {@code exceptId} has this name on the sheet, ignoring case. */
+    /**
+     * Whether a person other than {@code exceptId} has this name on the sheet, or anyone has it as an
+     * alias, ignoring case.
+     */
     public boolean nameTaken(String sheetId, String name, Long exceptId) {
         Integer count = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND LOWER(TRIM(name)) = LOWER(TRIM(?))"
                         + " AND id <> ?",
                 Integer.class, sheetId, name, exceptId == null ? -1L : exceptId);
-        return count != null && count > 0;
+        Integer aliases = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM person_alias WHERE sheet_id = ? AND LOWER(TRIM(alias)) = LOWER(TRIM(?))",
+                Integer.class, sheetId, name);
+        return (count != null && count > 0) || (aliases != null && aliases > 0);
     }
 
     /** Whether a person other than {@code exceptId} has this contact on the sheet. */
@@ -278,6 +309,7 @@ public class PersonRepository {
                 person.getSheetId(), person.getId(), on);
         then.setTerms(terms.isEmpty() ? null : terms.get(0));
         then.setContact(person.getContact());
+        then.getAliases().addAll(person.getAliases());
         then.setAddedOn(person.getAddedOn());
         then.setStatements(0, null, null);
         jdbc.query("SELECT statement_count, stated_total, statement_date FROM person_statement_history"
