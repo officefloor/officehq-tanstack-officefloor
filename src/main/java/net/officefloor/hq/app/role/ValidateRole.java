@@ -8,8 +8,8 @@ public class ValidateRole {
         String user = request == null || request.user() == null ? "" : request.user().trim();
         if (user.isEmpty()) throw new InvalidRoleException("A user name is required");
         String role = request.role() == null ? "" : request.role().trim();
-        if (!Role.CLERK.equals(role) && !Role.STEWARD.equals(role)) {
-            throw new InvalidRoleException("A role is clerk or steward");
+        if (!Role.CLERK.equals(role) && !Role.STEWARD.equals(role) && !Role.VIEWER.equals(role)) {
+            throw new InvalidRoleException("A role is clerk, steward or viewer");
         }
         body.set(new RoleInput(user, role));
     }

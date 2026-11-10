@@ -8,6 +8,7 @@ import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.role.RoleRepository;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.setting.SettingsRepository;
@@ -22,7 +23,7 @@ import net.officefloor.plugin.variable.Val;
  * sent to PENDING counts as settled; a claim that cannot be settled (its status does not allow it,
  * dated inside a closed period, opened by this user, not on the sheet) is refused and left as it is.
  * Each claim settled is logged and audited as a single settle is: its status line, then the
- * figures it moved.
+ * figures it moved. A viewer settles none: every selected claim is refused.
  */
 public class SettleSelectedClaims {
     public void settle(@Val Sheet sheet, @Val BulkSettleRequest request, ClaimRepository claims,
@@ -40,6 +41,10 @@ public class SettleSelectedClaims {
         }
         int requested = new HashSet<>(request.claimIds()).size();
         int settled = 0;
+        if (Role.VIEWER.equals(roles.roleOf(sheet.id(), user))) {
+            result.set(new BulkSettleResponse(0, requested)); // a viewer changes nothing
+            return;
+        }
         Rollup before = rollup(sheet, sheets, people, claims, rates, settings);
         for (Person person : people.findAll(sheet.id())) {
             for (Claim claim : claims.findByPerson(sheet.id(), person.getId())) {

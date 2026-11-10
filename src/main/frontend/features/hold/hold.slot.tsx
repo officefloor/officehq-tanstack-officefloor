@@ -6,6 +6,7 @@ import { PersonHead, PersonRow } from '../../slots/defs/personRow';
 import { peopleKey } from '../people/people';
 import type { Person } from '../people/people';
 import { useUser } from '../session/session';
+import { useRowError } from '../people/rowError';
 
 function HoldHead() {
   return (
@@ -25,7 +26,7 @@ function PersonHold({ sheetId, person }: { sheetId: string; person: Person }) {
   const [user] = useUser();
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useRowError(person.id, 'hold');
   const once = useOnce();
   const hold = useMutation({
     mutationFn: (dates: { from: string; to: string }) =>

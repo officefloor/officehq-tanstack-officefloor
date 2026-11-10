@@ -6,6 +6,7 @@ import { PersonHead, PersonRow } from '../../slots/defs/personRow';
 import { peopleKey } from '../people/people';
 import type { Person } from '../people/people';
 import { useUser } from '../session/session';
+import { useRowError } from '../people/rowError';
 
 function RetireHead() {
   return (
@@ -23,7 +24,7 @@ function PersonRetire({ sheetId, person }: { sheetId: string; person: Person }) 
   const queryClient = useQueryClient();
   const [user] = useUser();
   const [from, setFrom] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useRowError(person.id, 'retire');
   const once = useOnce();
   const retire = useMutation({
     mutationFn: (date: string) =>

@@ -58,6 +58,7 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
 
     /** Whether a role may take an action. */
     public boolean allows(String action, String role) {
+        if (net.officefloor.hq.app.role.Role.VIEWER.equals(role)) return false; // a viewer changes nothing
         return rolesFor(action).contains(role);
     }
 

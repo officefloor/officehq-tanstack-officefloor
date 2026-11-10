@@ -5,7 +5,7 @@ import { useOnce } from '../../query/useOnce';
 import { postJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/session';
-import { ACTIONS, CAP, DATED_KEYS, FLOOR, GRADES, LATE_PCT, LIMIT, POLICY_DATE, PROOF_THRESHOLD, STANDING_RULE, TERMS, ROLES, rolesKey, settingsKey, useRoles, useSettings } from './access';
+import { ACTIONS, CAP, DATED_KEYS, FLOOR, GRADES, LATE_PCT, LIMIT, PERM_ROLES, POLICY_DATE, PROOF_THRESHOLD, STANDING_RULE, TERMS, ROLES, rolesKey, settingsKey, useRoles, useSettings } from './access';
 import type { Role, Settings, SettingsChange } from './access';
 
 type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms'>;
@@ -142,7 +142,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
       for (const action of ACTIONS) {
         if (!permsTouched.has(action)) continue;
         const roles = (permFields[action] ?? '').trim();
-        if (roles !== '' && !roles.split(',').every((r) => (ROLES as readonly string[]).includes(r.trim()))) {
+        if (roles !== '' && !roles.split(',').every((r) => (PERM_ROLES as readonly string[]).includes(r.trim()))) {
           setError(`Who may ${action} is clerk or steward, separated by commas, or blank.`);
           return;
         }
@@ -374,7 +374,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
   );
 }
 
-// The sheet's roles: a form that makes a user a clerk or a steward, and every role assigned.
+// The sheet's roles: a form that makes a user a clerk, a steward or a viewer, and every role assigned.
 function Roles({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const roles = useRoles(sheetId);
@@ -400,7 +400,7 @@ function Roles({ sheetId }: { sheetId: string }) {
       return;
     }
     if (!(ROLES as readonly string[]).includes(role)) {
-      setError('A role is clerk or steward.');
+      setError('A role is clerk, steward or viewer.');
       return;
     }
     once((done) => save.mutate({ user: name, role }, { onSettled: done }));

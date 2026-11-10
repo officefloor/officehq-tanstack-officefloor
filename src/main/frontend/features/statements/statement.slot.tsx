@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOnce } from '../../query/useOnce';
 import { postJson } from '../../api/http';
@@ -7,6 +6,7 @@ import { peopleKey } from '../people/people';
 import type { Person } from '../people/people';
 import { claimsKey } from '../claims/claims';
 import { useUser } from '../session/session';
+import { useRowError } from '../people/rowError';
 
 function StatementHead() {
   return (
@@ -24,7 +24,7 @@ function StatementHead() {
 function PersonStatement({ sheetId, person }: { sheetId: string; person: Person }) {
   const queryClient = useQueryClient();
   const [user] = useUser();
-  const [error, setError] = useState('');
+  const [error, setError] = useRowError(person.id, 'statement');
   const once = useOnce();
   const take = useMutation({
     mutationFn: () =>
