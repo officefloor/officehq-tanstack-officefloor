@@ -14,6 +14,6 @@ public class TakeRollup {
             SettingsRepository settings,
             Out<Rollup> rollupOut) {
         rollupOut.set(Rollup.of(sheet.id(), sheet.today(), people, claims, rates,
-                settings.find(sheet.id()).floor()));
+                settings.find(sheet.id())));
     }
 }

@@ -8,7 +8,7 @@ import { counts, useClaims } from '../claims/claims';
 import { usePeople } from '../people/people';
 import { useUser } from '../session/session';
 import { claimDue, rateOn, sumDue, useRates } from '../rates/rates';
-import { useFloor } from '../access/access';
+import { useFloor, useLate } from '../access/access';
 import { periodsKey, usePeriods } from './periods';
 import type { Period } from './periods';
 
@@ -24,6 +24,7 @@ function Periods({ sheetId }: { sheetId: string }) {
   const people = usePeople(sheetId).data ?? [];
   const claims = useClaims(sheetId).data ?? [];
   const floor = useFloor(sheetId);
+  const late = useLate(sheetId);
   const rates = useRates(sheetId).data ?? [];
   const [fields, setFields] = useState<Fields>(EMPTY);
   const [error, setError] = useState('');
@@ -84,7 +85,7 @@ function Periods({ sheetId }: { sheetId: string }) {
     const dues = people.flatMap((person) =>
       claims
         .filter((c) => c.personId === person.id && counts(c, person.held) && p.from <= c.date && c.date <= p.to)
-        .map((c) => claimDue(c, rateOn(rates, person.grade, c.date), floor)),
+        .map((c) => claimDue(c, rateOn(rates, person.grade, c.date), floor, late)),
     );
     return sumDue(dues);
   };

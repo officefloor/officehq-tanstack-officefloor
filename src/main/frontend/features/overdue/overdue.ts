@@ -2,7 +2,7 @@ import type { Grade } from '../people/people';
 import { counts } from '../claims/claims';
 import type { Claim } from '../claims/claims';
 import { claimDue, rateOn, sumDue } from '../rates/rates';
-import type { Rate } from '../rates/rates';
+import type { Late, Rate } from '../rates/rates';
 
 /** A date (yyyy-MM-dd) and a number of days after it, as yyyy-MM-dd. Worked in UTC so no zone shifts it. */
 export function addDays(date: string, days: number): string {
@@ -19,7 +19,7 @@ export const isOverdue = (claim: Claim, terms: number, today: string): boolean =
 
 /**
  * A person's overdue claims that count (none while they are `held`, as an OPEN claim then counts in
- * no total): how many, and their due figures added up, skipping n/a.
+ * no total): how many, and their due figures (with their late charge) added up, skipping n/a.
  */
 export function personOverdue(
   rates: Rate[],
@@ -29,10 +29,11 @@ export function personOverdue(
   claims: Claim[],
   held: boolean,
   floor: string,
+  late: Late,
 ): { count: number; total: string } {
   const overdue = claims.filter((c) => counts(c, held) && isOverdue(c, terms, today));
   return {
     count: overdue.length,
-    total: sumDue(overdue.map((c) => claimDue(c, rateOn(rates, grade, c.date), floor))),
+    total: sumDue(overdue.map((c) => claimDue(c, rateOn(rates, grade, c.date), floor, late))),
   };
 }

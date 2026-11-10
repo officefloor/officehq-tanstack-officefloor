@@ -10,7 +10,7 @@ import { AMOUNT, claimsKey, sumAmounts, useClaims } from './claims';
 import type { Claim } from './claims';
 import { claimDue, rateOn, useRates } from '../rates/rates';
 import { periodOf, usePeriods } from '../periods/periods';
-import { useFloor, useTerms } from '../access/access';
+import { useFloor, useLate, useTerms } from '../access/access';
 import { useSheetToday } from '../sheet/sheet';
 import { dueBy, isOverdue } from '../overdue/overdue';
 
@@ -51,6 +51,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   const floor = useFloor(sheetId);
   const terms = useTerms(sheetId);
   const today = useSheetToday(sheetId);
+  const late = useLate(sheetId);
 
   const reset = () => {
     setRefused(null);
@@ -172,7 +173,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
               <span data-testid="claim-amount">{c.amount}</span>{' '}
               <span data-testid="claim-date">{c.date}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}
-              <span data-testid="claim-due">{claimDue(c, rateOn(rates, person.grade, c.date), floor)}</span>{' '}
+              <span data-testid="claim-due">{claimDue(c, rateOn(rates, person.grade, c.date), floor, late)}</span>{' '}
               <span data-testid="claim-status">{c.status}</span>{' '}
               <span data-testid="claim-opened-by">{c.openedBy}</span>{' '}
               <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}

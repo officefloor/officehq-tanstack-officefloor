@@ -62,13 +62,45 @@ function showCents(cents: bigint): string {
  */
 export function due(amount: string, pct: string | null, floor: string): string {
   if (pct === null) return NA;
-  // cents × basis points is the due in millionths of a unit: 10000 of them to the cent.
-  const x = hundredths(amount) * hundredths(pct);
-  const cents = x / 10000n;
-  const rest = x % 10000n;
-  const rounded = rest > 5000n || (rest === 5000n && cents % 2n === 1n) ? cents + 1n : cents;
+  const rounded = percentOf(amount, pct, 1n);
   const least = hundredths(floor);
   return showCents(rounded < least ? least : rounded);
+}
+
+/** `times` × a percent of a two-decimal figure, in cents, rounded half to even. */
+function percentOf(figure: string, pct: string, times: bigint): bigint {
+  // cents × basis points is the due in millionths of a unit: 10000 of them to the cent.
+  const x = hundredths(figure) * hundredths(pct) * times;
+  const cents = x / 10000n;
+  const rest = x % 10000n;
+  return rest > 5000n || (rest === 5000n && cents % 2n === 1n) ? cents + 1n : cents;
+}
+
+/**
+ * What the late charge needs: the sheet's late percent (two decimals), its terms (days) and its
+ * today (yyyy-MM-dd; '' until read).
+ */
+export type Late = { pct: string; terms: number; today: string };
+
+/** Whole days from one date (yyyy-MM-dd) to another, worked in UTC so no zone shifts it. */
+function daysBetween(from: string, to: string): number {
+  const utc = (date: string) => {
+    const [y, m, d] = date.split('-').map(Number);
+    return Date.UTC(y, m - 1, d);
+  };
+  return Math.round((utc(to) - utc(from)) / 86_400_000);
+}
+
+/**
+ * A claim's late charge on its `figure`: for an OPEN claim past its due-by (its date plus the
+ * terms) on the sheet's today, the late percent of the figure for every full 30 days it is overdue,
+ * rounded half to even; else nothing. A statement never binds it: it follows the sheet's today.
+ */
+function lateCharge(claim: Claim, figure: string, late: Late): bigint {
+  if (claim.status !== 'OPEN' || figure === NA || late.today === '') return 0n;
+  const overdue = daysBetween(claim.date, late.today) - late.terms;
+  const periods = overdue > 0 ? Math.floor(overdue / 30) : 0;
+  return periods === 0 ? 0n : percentOf(figure, late.pct, BigInt(periods));
 }
 
 /** Due values added up, skipping n/a. */
@@ -77,12 +109,15 @@ export function sumDue(values: string[]): string {
 }
 
 /**
- * A claim's due: the one fixed when it was settled, else the figure its person's last statement
- * bound it to, else its amount at the rate in force on its date, at least the sheet's `floor`.
+ * A claim's due: the one fixed when it was settled (its late charge frozen in), else the figure its
+ * person's last statement bound it to, else its amount at the rate in force on its date, at least
+ * the sheet's `floor`; an overdue claim's late charge added on top.
  */
-export function claimDue(claim: Claim, pct: string | null, floor: string): string {
+export function claimDue(claim: Claim, pct: string | null, floor: string, late: Late): string {
   if (claim.due !== '') return claim.due;
-  return claim.stated ? claim.statedDue : due(claim.amount, pct, floor);
+  const figure = claim.stated ? claim.statedDue : due(claim.amount, pct, floor);
+  const charge = lateCharge(claim, figure, late);
+  return charge === 0n ? figure : showCents(hundredths(figure) + charge);
 }
 
 /**
@@ -97,9 +132,10 @@ export function personDueTotal(
   claims: Claim[],
   held: boolean,
   floor: string,
+  late: Late,
 ): string {
   const counted = claims.filter((c) => counts(c, held));
   if (rateOn(rates, grade, today) === null && !counted.some((c) => c.due !== '' || (c.stated && c.statedDue !== NA))) return NA;
-  return sumDue(counted.map((c) => claimDue(c, rateOn(rates, grade, c.date), floor)));
+  return sumDue(counted.map((c) => claimDue(c, rateOn(rates, grade, c.date), floor, late)));
 }
 

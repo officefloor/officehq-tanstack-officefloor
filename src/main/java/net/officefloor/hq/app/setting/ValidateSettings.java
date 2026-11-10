@@ -36,6 +36,14 @@ public class ValidateSettings {
             }
             terms = Integer.valueOf(value);
         }
-        body.set(new SettingsInput(limitChanged, limit, floor, terms));
+        BigDecimal latePct = null;
+        if (request != null && request.latePct() != null) {
+            String value = request.latePct().trim();
+            if (!FIGURE.matcher(value).matches()) {
+                throw new InvalidSettingException("A late percent is 0.00 or more, with up to two decimals");
+            }
+            latePct = new BigDecimal(value).setScale(2);
+        }
+        body.set(new SettingsInput(limitChanged, limit, floor, terms, latePct));
     }
 }

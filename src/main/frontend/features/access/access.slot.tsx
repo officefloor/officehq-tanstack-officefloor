@@ -5,19 +5,19 @@ import { useOnce } from '../../query/useOnce';
 import { postJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/session';
-import { FLOOR, LIMIT, TERMS, ROLES, rolesKey, settingsKey, useRoles, useSettings } from './access';
+import { FLOOR, LATE_PCT, LIMIT, TERMS, ROLES, rolesKey, settingsKey, useRoles, useSettings } from './access';
 import type { Role, Settings, SettingsChange } from './access';
 
 type Key = keyof Settings;
 
 // The sheet's settings: its clerk limit, the highest due a clerk may settle (blank: no limit), and
 // its floor, the least a claim's live due may be, and its terms, the days after a claim's date that
-// it is due by. Only the settings typed in (or stepped into)
+// it is due by, and its late percent, what an overdue claim's due gains per full 30 days overdue. Only the settings typed in (or stepped into)
 // since the last save are sent, so saving one leaves the other as it is.
 function SettingsForm({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const settings = useSettings(sheetId);
-  const [fields, setFields] = useState<Settings>({ clerkLimit: '', floor: '', terms: '' });
+  const [fields, setFields] = useState<Settings>({ clerkLimit: '', floor: '', terms: '', latePct: '' });
   const [touched, setTouched] = useState<Set<Key>>(new Set());
   const [error, setError] = useState('');
   const [user] = useUser();
@@ -60,6 +60,14 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         return;
       }
       body.terms = terms;
+    }
+    if (touched.has('latePct')) {
+      const latePct = fields.latePct.trim();
+      if (!LATE_PCT.test(latePct)) {
+        setError('A late percent is 0.00 or more, with up to two decimals.');
+        return;
+      }
+      body.latePct = latePct;
     }
     if (Object.keys(body).length === 0) {
       setError('Type a setting to save.');
@@ -117,6 +125,19 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         </label>{' '}
         <span>
           now: <strong data-testid="setting-terms-current">{settings.data?.terms ?? ''}</strong>
+        </span>{' '}
+        <label>
+          Late percent{' '}
+          <input
+            data-testid="setting-late-pct"
+            inputMode="decimal"
+            value={fields.latePct}
+            onFocus={() => touch('latePct')}
+            onChange={(e) => change('latePct', e.target.value)}
+          />
+        </label>{' '}
+        <span>
+          now: <strong data-testid="setting-late-pct-current">{settings.data?.latePct ?? ''}</strong>
         </span>{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings

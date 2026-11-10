@@ -19,7 +19,7 @@ public class AuditRollup {
     public void audit(@Val Sheet sheet, @Val Rollup before, SheetRepository sheets, PersonRepository people,
             ClaimRepository claims, RateRepository rates, SettingsRepository settings, HttpServletRequest request, Audit audit) {
         Rollup after = Rollup.of(sheet.id(), sheets.today(sheet.id()), people, claims, rates,
-                settings.find(sheet.id()).floor());
+                settings.find(sheet.id()));
         after.changesSince(before, sheet.id(), Audit.user(request)).forEach(audit::record);
     }
 }

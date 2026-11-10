@@ -1,12 +1,15 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
+import type { Late } from '../rates/rates';
+import { useSheetToday } from '../sheet/sheet';
 
 /**
  * A sheet's settings: its clerk limit, with two decimals ('' for no limit), and its floor, the
  * least a claim's live due may be, with two decimals, and its terms, the whole number of days after a
- * claim's date that it is due by.
+ * claim's date that it is due by, and its late percent, what an overdue claim's due gains per full 30
+ * days overdue, with two decimals.
  */
-export type Settings = { clerkLimit: string; floor: string; terms: string };
+export type Settings = { clerkLimit: string; floor: string; terms: string; latePct: string };
 
 /** A save of the settings: only those being changed are sent. */
 export type SettingsChange = Partial<Settings>;
@@ -40,6 +43,12 @@ export function useTerms(sheetId: string): number {
   return terms === undefined ? DEFAULT_TERMS : Number(terms);
 }
 
+/** What the sheet's late charge needs: its late percent ('0.00' until read), terms and today. */
+export function useLate(sheetId: string): Late {
+  const pct = useSettings(sheetId).data?.latePct ?? '0.00';
+  return { pct, terms: useTerms(sheetId), today: useSheetToday(sheetId) };
+}
+
 /** The roles assigned on the sheet, by user name. */
 export function useRoles(sheetId: string) {
   return useQuery({
@@ -54,6 +63,9 @@ export const LIMIT = /^\d+(\.\d{1,2})?$/;
 
 /** A floor as the screen takes it: 0.00 or more with up to two decimals. */
 export const FLOOR = /^\d+(\.\d{1,2})?$/;
+
+/** A late percent as the screen takes it: 0.00 or more with up to two decimals. */
+export const LATE_PCT = /^\d+(\.\d{1,2})?$/;
 
 /** Terms as the screen takes them: a whole number of days, 0 or more. */
 export const TERMS = /^\d{1,5}$/;

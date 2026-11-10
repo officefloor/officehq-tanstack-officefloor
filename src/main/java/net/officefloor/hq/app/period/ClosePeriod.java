@@ -9,6 +9,7 @@ import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.hq.app.setting.SettingsRepository;
 import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Out;
@@ -16,21 +17,21 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * Closes the period, fixing its due-total at this moment: the figures of the claims that count (OPEN
- * and SETTLED, but not OPEN of a person on hold) dated inside it, added up, skipping n/a. A period already closed is refused.
+ * and SETTLED, but not OPEN of a person on hold) dated inside it (an overdue one with its late charge), added up, skipping n/a. A period already closed is refused.
  */
 public class ClosePeriod {
     public void close(@Val Sheet sheet, @Val Period period, PeriodRepository periods, PersonRepository people,
             ClaimRepository claims, RateRepository rates, SettingsRepository settings, Out<Period> closedOut) throws InvalidPeriodException {
         if (period.closed()) throw new InvalidPeriodException("Period " + period.name() + " is already closed");
         List<Rate> all = rates.findAll(sheet.id());
-        BigDecimal floor = settings.find(sheet.id()).floor();
+        Settings sheetSettings = settings.find(sheet.id());
         List<Claim> sheetClaims = claims.findAll(sheet.id());
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         for (Person person : people.findAll(sheet.id())) {
             for (Claim claim : sheetClaims) {
                 if (claim.getPersonId() != person.getId() || !period.contains(claim.getDate())) continue;
                 if (!claim.counts(person.isHeld())) continue;
-                BigDecimal figure = ClaimFigure.of(claim, all, person.getGrade(), floor);
+                BigDecimal figure = ClaimFigure.withLate(claim, all, person.getGrade(), sheetSettings, sheet.today());
                 if (figure != null) total = total.add(figure);
             }
         }

@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOnce } from '../../query/useOnce';
 import { postJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
+import { useUser } from '../session/session';
 import { sheetKey, useSheet } from './sheet';
 import type { Sheet } from './sheet';
 
@@ -14,11 +15,12 @@ function SheetToday({ sheetId }: { sheetId: string }) {
   const sheet = useSheet(sheetId);
   const [input, setInput] = useState('');
   const [error, setError] = useState('');
+  const [user] = useUser();
 
   const once = useOnce();
   const save = useMutation({
     mutationFn: (today: string) =>
-      postJson<Sheet>(`/api/sheets/${encodeURIComponent(sheetId)}/today`, { today }),
+      postJson<Sheet>(`/api/sheets/${encodeURIComponent(sheetId)}/today`, { today }, user),
     onSuccess: (updated) => {
       queryClient.setQueryData(sheetKey(sheetId), updated);
       void queryClient.invalidateQueries({
