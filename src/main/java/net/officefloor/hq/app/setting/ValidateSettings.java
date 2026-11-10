@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 public class ValidateSettings {
     private static final Pattern FIGURE = Pattern.compile("\\d{1,15}(\\.\\d{1,2})?");
+    private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
 
     public void validate(@RequestBody SettingsRequest request, Out<SettingsInput> body)
             throws InvalidSettingException {
@@ -27,6 +28,14 @@ public class ValidateSettings {
             }
             floor = new BigDecimal(value).setScale(2);
         }
-        body.set(new SettingsInput(limitChanged, limit, floor));
+        Integer terms = null;
+        if (request != null && request.terms() != null) {
+            String value = request.terms().trim();
+            if (!DAYS.matcher(value).matches()) {
+                throw new InvalidSettingException("Terms are a whole number of days, 0 or more");
+            }
+            terms = Integer.valueOf(value);
+        }
+        body.set(new SettingsInput(limitChanged, limit, floor, terms));
     }
 }

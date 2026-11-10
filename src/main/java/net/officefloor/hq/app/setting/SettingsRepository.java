@@ -15,13 +15,14 @@ public class SettingsRepository {
     }
 
     public Settings find(String sheetId) {
-        List<Settings> found = jdbc.query("SELECT clerk_limit, due_floor FROM sheet WHERE id = ?",
-                (rs, n) -> new Settings(sheetId, rs.getBigDecimal("clerk_limit"), rs.getBigDecimal("due_floor")), sheetId);
-        return found.isEmpty() ? new Settings(sheetId, null, Settings.DEFAULT_FLOOR) : found.get(0);
+        List<Settings> found = jdbc.query("SELECT clerk_limit, due_floor, terms FROM sheet WHERE id = ?",
+                (rs, n) -> new Settings(sheetId, rs.getBigDecimal("clerk_limit"), rs.getBigDecimal("due_floor"),
+                        rs.getInt("terms")), sheetId);
+        return found.isEmpty() ? new Settings(sheetId, null, Settings.DEFAULT_FLOOR, Settings.DEFAULT_TERMS) : found.get(0);
     }
 
     public void save(Settings settings) {
-        jdbc.update("UPDATE sheet SET clerk_limit = ?, due_floor = ? WHERE id = ?", settings.clerkLimit(),
-                settings.floor(), settings.sheetId());
+        jdbc.update("UPDATE sheet SET clerk_limit = ?, due_floor = ?, terms = ? WHERE id = ?",
+                settings.clerkLimit(), settings.floor(), settings.terms(), settings.sheetId());
     }
 }

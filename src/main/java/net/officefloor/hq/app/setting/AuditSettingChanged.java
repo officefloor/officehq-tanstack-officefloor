@@ -6,7 +6,8 @@ import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Val;
 
 /**
- * Records each setting saved (blank for no clerk limit): the clerk limit, then the floor. Runs after
+ * Records each setting saved (blank for no clerk limit): the clerk limit, then the floor, then
+ * the terms. Runs after
  * every rule has passed, so a refused change writes nothing.
  */
 public class AuditSettingChanged {
@@ -16,5 +17,6 @@ public class AuditSettingChanged {
         SettingsResponse shown = SettingsResponse.from(settings);
         if (input.clerkLimitChanged()) audit.record(head + " key=clerk-limit value=" + shown.clerkLimit());
         if (input.floor() != null) audit.record(head + " key=floor value=" + shown.floor());
+        if (input.terms() != null) audit.record(head + " key=terms value=" + shown.terms());
     }
 }

@@ -5,18 +5,19 @@ import { useOnce } from '../../query/useOnce';
 import { postJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/session';
-import { FLOOR, LIMIT, ROLES, rolesKey, settingsKey, useRoles, useSettings } from './access';
+import { FLOOR, LIMIT, TERMS, ROLES, rolesKey, settingsKey, useRoles, useSettings } from './access';
 import type { Role, Settings, SettingsChange } from './access';
 
 type Key = keyof Settings;
 
 // The sheet's settings: its clerk limit, the highest due a clerk may settle (blank: no limit), and
-// its floor, the least a claim's live due may be. Only the settings typed in (or stepped into)
+// its floor, the least a claim's live due may be, and its terms, the days after a claim's date that
+// it is due by. Only the settings typed in (or stepped into)
 // since the last save are sent, so saving one leaves the other as it is.
 function SettingsForm({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const settings = useSettings(sheetId);
-  const [fields, setFields] = useState<Settings>({ clerkLimit: '', floor: '' });
+  const [fields, setFields] = useState<Settings>({ clerkLimit: '', floor: '', terms: '' });
   const [touched, setTouched] = useState<Set<Key>>(new Set());
   const [error, setError] = useState('');
   const [user] = useUser();
@@ -51,6 +52,14 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         return;
       }
       body.floor = floor;
+    }
+    if (touched.has('terms')) {
+      const terms = fields.terms.trim();
+      if (!TERMS.test(terms)) {
+        setError('Terms are a whole number of days, 0 or more.');
+        return;
+      }
+      body.terms = terms;
     }
     if (Object.keys(body).length === 0) {
       setError('Type a setting to save.');
@@ -95,6 +104,19 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         </label>{' '}
         <span>
           now: <strong data-testid="setting-floor-current">{settings.data?.floor ?? ''}</strong>
+        </span>{' '}
+        <label>
+          Terms (days){' '}
+          <input
+            data-testid="setting-terms"
+            inputMode="numeric"
+            value={fields.terms}
+            onFocus={() => touch('terms')}
+            onChange={(e) => change('terms', e.target.value)}
+          />
+        </label>{' '}
+        <span>
+          now: <strong data-testid="setting-terms-current">{settings.data?.terms ?? ''}</strong>
         </span>{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings

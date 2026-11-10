@@ -10,7 +10,9 @@ import { AMOUNT, claimsKey, sumAmounts, useClaims } from './claims';
 import type { Claim } from './claims';
 import { claimDue, rateOn, useRates } from '../rates/rates';
 import { periodOf, usePeriods } from '../periods/periods';
-import { useFloor } from '../access/access';
+import { useFloor, useTerms } from '../access/access';
+import { useSheetToday } from '../sheet/sheet';
+import { dueBy, isOverdue } from '../overdue/overdue';
 
 type Action = 'open' | 'settle' | 'void';
 const ACTIONS: { action: Action; label: string }[] = [
@@ -47,6 +49,8 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   const rates = useRates(sheetId).data ?? [];
   const periods = usePeriods(sheetId).data ?? [];
   const floor = useFloor(sheetId);
+  const terms = useTerms(sheetId);
+  const today = useSheetToday(sheetId);
 
   const reset = () => {
     setRefused(null);
@@ -173,6 +177,8 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
               <span data-testid="claim-opened-by">{c.openedBy}</span>{' '}
               <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-period">{periodOf(periods, c.date)?.name ?? ''}</span>{' '}
+              <span data-testid="claim-due-by">{dueBy(c, terms)}</span>{' '}
+              <span data-testid="claim-overdue">{isOverdue(c, terms, today) ? 'yes' : 'no'}</span>{' '}
               {ACTIONS.map(({ action, label }) => (
                 <button
                   key={action}

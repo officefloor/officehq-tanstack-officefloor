@@ -3,9 +3,10 @@ import { getJson } from '../../api/http';
 
 /**
  * A sheet's settings: its clerk limit, with two decimals ('' for no limit), and its floor, the
- * least a claim's live due may be, with two decimals.
+ * least a claim's live due may be, with two decimals, and its terms, the whole number of days after a
+ * claim's date that it is due by.
  */
-export type Settings = { clerkLimit: string; floor: string };
+export type Settings = { clerkLimit: string; floor: string; terms: string };
 
 /** A save of the settings: only those being changed are sent. */
 export type SettingsChange = Partial<Settings>;
@@ -30,6 +31,15 @@ export function useFloor(sheetId: string): string {
   return useSettings(sheetId).data?.floor ?? '0.00';
 }
 
+/** A sheet's terms until they are set. */
+export const DEFAULT_TERMS = 14;
+
+/** The sheet's terms in days (the default until the settings are read). */
+export function useTerms(sheetId: string): number {
+  const terms = useSettings(sheetId).data?.terms;
+  return terms === undefined ? DEFAULT_TERMS : Number(terms);
+}
+
 /** The roles assigned on the sheet, by user name. */
 export function useRoles(sheetId: string) {
   return useQuery({
@@ -44,3 +54,6 @@ export const LIMIT = /^\d+(\.\d{1,2})?$/;
 
 /** A floor as the screen takes it: 0.00 or more with up to two decimals. */
 export const FLOOR = /^\d+(\.\d{1,2})?$/;
+
+/** Terms as the screen takes them: a whole number of days, 0 or more. */
+export const TERMS = /^\d{1,5}$/;

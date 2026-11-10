@@ -11,7 +11,8 @@ public class SaveSettings {
         Settings now = repository.find(sheet.id());
         Settings settings = new Settings(sheet.id(),
                 input.clerkLimitChanged() ? input.clerkLimit() : now.clerkLimit(),
-                input.floor() != null ? input.floor() : now.floor());
+                input.floor() != null ? input.floor() : now.floor(),
+                input.terms() != null ? input.terms() : now.terms());
         repository.save(settings);
         settingsOut.set(settings);
     }
