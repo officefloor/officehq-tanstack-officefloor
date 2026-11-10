@@ -1,0 +1,686 @@
+diff --git a/src/main/frontend/features/access/access.slot.tsx b/src/main/frontend/features/access/access.slot.tsx
+index c51f30ada..2976ab707 100644
+--- a/src/main/frontend/features/access/access.slot.tsx
++++ b/src/main/frontend/features/access/access.slot.tsx
+@@ -5,7 +5,7 @@ import { useOnce } from '../../query/useOnce';
+ import { postJson } from '../../api/http';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { useUser } from '../session/session';
+-import { ACTIONS, CAP, DATED_KEYS, FLOOR, GRADES, LATE_PCT, LIMIT, POLICY_DATE, PROOF_THRESHOLD, STANDING_RULE, TERMS, ROLES, rolesKey, settingsKey, useRoles, useSettings } from './access';
++import { ACTIONS, CAP, DATED_KEYS, FLOOR, GRADES, LATE_PCT, LIMIT, PERM_ROLES, POLICY_DATE, PROOF_THRESHOLD, STANDING_RULE, TERMS, ROLES, rolesKey, settingsKey, useRoles, useSettings } from './access';
+ import type { Role, Settings, SettingsChange } from './access';
+ 
+ type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms'>;
+@@ -142,7 +142,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
+       for (const action of ACTIONS) {
+         if (!permsTouched.has(action)) continue;
+         const roles = (permFields[action] ?? '').trim();
+-        if (roles !== '' && !roles.split(',').every((r) => (ROLES as readonly string[]).includes(r.trim()))) {
++        if (roles !== '' && !roles.split(',').every((r) => (PERM_ROLES as readonly string[]).includes(r.trim()))) {
+           setError(`Who may ${action} is clerk or steward, separated by commas, or blank.`);
+           return;
+         }
+@@ -374,7 +374,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
+   );
+ }
+ 
+-// The sheet's roles: a form that makes a user a clerk or a steward, and every role assigned.
++// The sheet's roles: a form that makes a user a clerk, a steward or a viewer, and every role assigned.
+ function Roles({ sheetId }: { sheetId: string }) {
+   const queryClient = useQueryClient();
+   const roles = useRoles(sheetId);
+@@ -400,7 +400,7 @@ function Roles({ sheetId }: { sheetId: string }) {
+       return;
+     }
+     if (!(ROLES as readonly string[]).includes(role)) {
+-      setError('A role is clerk or steward.');
++      setError('A role is clerk, steward or viewer.');
+       return;
+     }
+     once((done) => save.mutate({ user: name, role }, { onSettled: done }));
+diff --git a/src/main/frontend/features/access/access.ts b/src/main/frontend/features/access/access.ts
+index a20488f6e..dfec336d1 100644
+--- a/src/main/frontend/features/access/access.ts
++++ b/src/main/frontend/features/access/access.ts
+@@ -64,10 +64,13 @@ export const STANDING_RULE: Record<string, string> = {
+ /** A save of the settings: only those being changed are sent. */
+ export type SettingsChange = Partial<Omit<Settings, 'dated'>> & { from?: Record<string, string> };
+ 
+-/** A user's role on a sheet. A name with no role assigned is a clerk. */
++/** A user's role on a sheet. A name with no role assigned is a clerk; a viewer sees everything and changes nothing. */
+ export type Role = { user: string; role: string };
+ 
+-export const ROLES = ['clerk', 'steward'] as const;
++export const ROLES = ['clerk', 'steward', 'viewer'] as const;
++
++/** The roles the permission matrix may name: a viewer may take no action. */
++export const PERM_ROLES = ['clerk', 'steward'] as const;
+ 
+ export const settingsKey = (sheetId: string) => ['sheet', sheetId, 'settings'] as const;
+ export const rolesKey = (sheetId: string) => ['sheet', sheetId, 'roles'] as const;
+diff --git a/src/main/frontend/features/hold/hold.slot.tsx b/src/main/frontend/features/hold/hold.slot.tsx
+index 118f70ad9..14eac2054 100644
+--- a/src/main/frontend/features/hold/hold.slot.tsx
++++ b/src/main/frontend/features/hold/hold.slot.tsx
+@@ -6,6 +6,7 @@ import { PersonHead, PersonRow } from '../../slots/defs/personRow';
+ import { peopleKey } from '../people/people';
+ import type { Person } from '../people/people';
+ import { useUser } from '../session/session';
++import { useRowError } from '../people/rowError';
+ 
+ function HoldHead() {
+   return (
+@@ -25,7 +26,7 @@ function PersonHold({ sheetId, person }: { sheetId: string; person: Person }) {
+   const [user] = useUser();
+   const [from, setFrom] = useState('');
+   const [to, setTo] = useState('');
+-  const [error, setError] = useState('');
++  const [error, setError] = useRowError(person.id, 'hold');
+   const once = useOnce();
+   const hold = useMutation({
+     mutationFn: (dates: { from: string; to: string }) =>
+diff --git a/src/main/frontend/features/people/rowError.ts b/src/main/frontend/features/people/rowError.ts
+new file mode 100644
+index 000000000..8898b4bab
+--- /dev/null
++++ b/src/main/frontend/features/people/rowError.ts
+@@ -0,0 +1,27 @@
++import { useSyncExternalStore } from 'react';
++
++// A person's row shows at most one action error (person-error) at a time. Several slots in the row
++// (statement, hold, retire) each take an action; the next action taken on the row, or a change to
++// its fields, removes whatever error the row showed, whichever slot raised it.
++type RowError = { owner: string; message: string };
++
++const errors = new Map<string, RowError>();
++const listeners = new Set<() => void>();
++
++function subscribe(listener: () => void) {
++  listeners.add(listener);
++  return () => listeners.delete(listener);
++}
++
++function set(personId: string, owner: string, message: string) {
++  if (message === '') errors.delete(personId);
++  else errors.set(personId, { owner, message });
++  listeners.forEach((l) => l());
++}
++
++/** The row's error as this slot shows it ('' when it is none or another slot's), and its setter. */
++export function useRowError(personId: string, owner: string): [string, (message: string) => void] {
++  const current = useSyncExternalStore(subscribe, () => errors.get(personId));
++  const error = current !== undefined && current.owner === owner ? current.message : '';
++  return [error, (message: string) => set(personId, owner, message)];
++}
+diff --git a/src/main/frontend/features/retire/retire.slot.tsx b/src/main/frontend/features/retire/retire.slot.tsx
+index e83069d69..a6d1979e4 100644
+--- a/src/main/frontend/features/retire/retire.slot.tsx
++++ b/src/main/frontend/features/retire/retire.slot.tsx
+@@ -6,6 +6,7 @@ import { PersonHead, PersonRow } from '../../slots/defs/personRow';
+ import { peopleKey } from '../people/people';
+ import type { Person } from '../people/people';
+ import { useUser } from '../session/session';
++import { useRowError } from '../people/rowError';
+ 
+ function RetireHead() {
+   return (
+@@ -23,7 +24,7 @@ function PersonRetire({ sheetId, person }: { sheetId: string; person: Person })
+   const queryClient = useQueryClient();
+   const [user] = useUser();
+   const [from, setFrom] = useState('');
+-  const [error, setError] = useState('');
++  const [error, setError] = useRowError(person.id, 'retire');
+   const once = useOnce();
+   const retire = useMutation({
+     mutationFn: (date: string) =>
+diff --git a/src/main/frontend/features/statements/statement.slot.tsx b/src/main/frontend/features/statements/statement.slot.tsx
+index 1c153b45f..0448d5d1d 100644
+--- a/src/main/frontend/features/statements/statement.slot.tsx
++++ b/src/main/frontend/features/statements/statement.slot.tsx
+@@ -1,4 +1,3 @@
+-import { useState } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { useOnce } from '../../query/useOnce';
+ import { postJson } from '../../api/http';
+@@ -7,6 +6,7 @@ import { peopleKey } from '../people/people';
+ import type { Person } from '../people/people';
+ import { claimsKey } from '../claims/claims';
+ import { useUser } from '../session/session';
++import { useRowError } from '../people/rowError';
+ 
+ function StatementHead() {
+   return (
+@@ -24,7 +24,7 @@ function StatementHead() {
+ function PersonStatement({ sheetId, person }: { sheetId: string; person: Person }) {
+   const queryClient = useQueryClient();
+   const [user] = useUser();
+-  const [error, setError] = useState('');
++  const [error, setError] = useRowError(person.id, 'statement');
+   const once = useOnce();
+   const take = useMutation({
+     mutationFn: () =>
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SettleSelectedClaims.java b/src/main/java/net/officefloor/hq/app/claim/SettleSelectedClaims.java
+index 948cf3339..b0ec2af83 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SettleSelectedClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SettleSelectedClaims.java
+@@ -8,6 +8,7 @@ import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.role.Role;
+ import net.officefloor.hq.app.role.RoleRepository;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.setting.SettingsRepository;
+@@ -22,7 +23,7 @@ import net.officefloor.plugin.variable.Val;
+  * sent to PENDING counts as settled; a claim that cannot be settled (its status does not allow it,
+  * dated inside a closed period, opened by this user, not on the sheet) is refused and left as it is.
+  * Each claim settled is logged and audited as a single settle is: its status line, then the
+- * figures it moved.
++ * figures it moved. A viewer settles none: every selected claim is refused.
+  */
+ public class SettleSelectedClaims {
+     public void settle(@Val Sheet sheet, @Val BulkSettleRequest request, ClaimRepository claims,
+@@ -40,6 +41,10 @@ public class SettleSelectedClaims {
+         }
+         int requested = new HashSet<>(request.claimIds()).size();
+         int settled = 0;
++        if (Role.VIEWER.equals(roles.roleOf(sheet.id(), user))) {
++            result.set(new BulkSettleResponse(0, requested)); // a viewer changes nothing
++            return;
++        }
+         Rollup before = rollup(sheet, sheets, people, claims, rates, settings);
+         for (Person person : people.findAll(sheet.id())) {
+             for (Claim claim : claims.findByPerson(sheet.id(), person.getId())) {
+diff --git a/src/main/java/net/officefloor/hq/app/role/CheckCanChange.java b/src/main/java/net/officefloor/hq/app/role/CheckCanChange.java
+new file mode 100644
+index 000000000..1680c2568
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/role/CheckCanChange.java
+@@ -0,0 +1,20 @@
++package net.officefloor.hq.app.role;
++
++import jakarta.servlet.http.HttpServletRequest;
++import net.officefloor.hq.app.Audit;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/**
++ * Refuses any change by a viewer, before anything is read or written. A viewer sees every screen and
++ * figure and can change nothing. Runs first on every change endpoint except the bulk ones, which go
++ * through with every selected item refused.
++ */
++public class CheckCanChange {
++    public void check(@PathVariable("sheetId") String sheetId, RoleRepository roles, HttpServletRequest request)
++            throws ViewerException {
++        String user = Audit.user(request);
++        if (Role.VIEWER.equals(roles.roleOf(sheetId == null ? "" : sheetId.trim(), user))) {
++            throw new ViewerException("A viewer may not change the sheet");
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/role/HandleViewer.java b/src/main/java/net/officefloor/hq/app/role/HandleViewer.java
+new file mode 100644
+index 000000000..3f0aabc9e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/role/HandleViewer.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.role;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleViewer {
++    public void handle(@Parameter ViewerException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.FORBIDDEN));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/role/InvalidRoleException.java b/src/main/java/net/officefloor/hq/app/role/InvalidRoleException.java
+index 6375687e9..0809270af 100644
+--- a/src/main/java/net/officefloor/hq/app/role/InvalidRoleException.java
++++ b/src/main/java/net/officefloor/hq/app/role/InvalidRoleException.java
+@@ -1,6 +1,6 @@
+ package net.officefloor.hq.app.role;
+ 
+-/** A role with no user name, or a role other than clerk or steward. */
++/** A role with no user name, or a role other than clerk, steward or viewer. */
+ public class InvalidRoleException extends Exception {
+     public InvalidRoleException(String message) {
+         super(message);
+diff --git a/src/main/java/net/officefloor/hq/app/role/Role.java b/src/main/java/net/officefloor/hq/app/role/Role.java
+index 42ab4266d..0d67d7db1 100644
+--- a/src/main/java/net/officefloor/hq/app/role/Role.java
++++ b/src/main/java/net/officefloor/hq/app/role/Role.java
+@@ -1,7 +1,9 @@
+ package net.officefloor.hq.app.role;
+ 
+-/** A user's role on a sheet: clerk (the default for any name) or steward. */
++/** A user's role on a sheet: clerk (the default for any name), steward or
++ * viewer (sees everything, changes nothing). */
+ public record Role(String sheetId, String user, String role) {
+     public static final String CLERK = "clerk";
+     public static final String STEWARD = "steward";
++    public static final String VIEWER = "viewer";
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/role/RoleInput.java b/src/main/java/net/officefloor/hq/app/role/RoleInput.java
+index f37b2bd5d..a78ceba43 100644
+--- a/src/main/java/net/officefloor/hq/app/role/RoleInput.java
++++ b/src/main/java/net/officefloor/hq/app/role/RoleInput.java
+@@ -1,5 +1,5 @@
+ package net.officefloor.hq.app.role;
+ 
+-/** A validated role request: a trimmed user name and a role (clerk or steward). */
++/** A validated role request: a trimmed user name and a role (clerk, steward or viewer). */
+ public record RoleInput(String user, String role) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/role/RoleRequest.java b/src/main/java/net/officefloor/hq/app/role/RoleRequest.java
+index 3c1821c9e..7c2ab91ba 100644
+--- a/src/main/java/net/officefloor/hq/app/role/RoleRequest.java
++++ b/src/main/java/net/officefloor/hq/app/role/RoleRequest.java
+@@ -1,5 +1,5 @@
+ package net.officefloor.hq.app.role;
+ 
+-/** A role as the screen sends it: a user name and a role (clerk or steward). */
++/** A role as the screen sends it: a user name and a role (clerk, steward or viewer). */
+ public record RoleRequest(String user, String role) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/role/ValidateRole.java b/src/main/java/net/officefloor/hq/app/role/ValidateRole.java
+index cc1981a2c..72f75982f 100644
+--- a/src/main/java/net/officefloor/hq/app/role/ValidateRole.java
++++ b/src/main/java/net/officefloor/hq/app/role/ValidateRole.java
+@@ -8,8 +8,8 @@ public class ValidateRole {
+         String user = request == null || request.user() == null ? "" : request.user().trim();
+         if (user.isEmpty()) throw new InvalidRoleException("A user name is required");
+         String role = request.role() == null ? "" : request.role().trim();
+-        if (!Role.CLERK.equals(role) && !Role.STEWARD.equals(role)) {
+-            throw new InvalidRoleException("A role is clerk or steward");
++        if (!Role.CLERK.equals(role) && !Role.STEWARD.equals(role) && !Role.VIEWER.equals(role)) {
++            throw new InvalidRoleException("A role is clerk, steward or viewer");
+         }
+         body.set(new RoleInput(user, role));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/role/ViewerException.java b/src/main/java/net/officefloor/hq/app/role/ViewerException.java
+new file mode 100644
+index 000000000..d85092173
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/role/ViewerException.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.role;
++
++/** A change attempted by a viewer, who may change nothing. */
++public class ViewerException extends Exception {
++    public ViewerException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Settings.java b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+index 125541759..5a2552c5e 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+@@ -58,6 +58,7 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
+ 
+     /** Whether a role may take an action. */
+     public boolean allows(String action, String role) {
++        if (net.officefloor.hq.app.role.Role.VIEWER.equals(role)) return false; // a viewer changes nothing
+         return rolesFor(action).contains(role);
+     }
+ 
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.role.ViewerException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.role.ViewerException.yml
+new file mode 100644
+index 000000000..c021cfaf8
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.role.ViewerException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.role.HandleViewer
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/paste.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/paste.POST.yml
+index c74af3fda..fe5a0329c 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/paste.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/paste.POST.yml
+@@ -1,6 +1,10 @@
+ # Paste claims: a DRAFT claim per line of name,amount,date,note for the named person, in order. One
+ # change: every line is checked by the claim form's rules before anything is written, so a refused
+ # line refuses the whole paste. A bad line is a 400.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.paste.ValidatePaste
+   next: loadSheet
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+index b25d1312b..cc77283e8 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+@@ -1,4 +1,8 @@
+ # Edit a claim's amount, date and note. Validate first so a bad amount or date is a 400, not a 404.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaim
+   next: loadSheet
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/approve.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/approve.POST.yml
+index d4dc15622..2cf0d1137 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/approve.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/approve.POST.yml
+@@ -1,4 +1,8 @@
+ # Approve a PENDING claim (a steward, not its opener). A change its status does not allow is a 409 and writes nothing.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: loadSheet
+ loadSheet:
+   class: net.officefloor.hq.app.sheet.LoadSheet
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/defer.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/defer.POST.yml
+index 60336a08a..5894fefe3 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/defer.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/defer.POST.yml
+@@ -1,5 +1,9 @@
+ # Defer an OPEN claim until a date after the sheet's today. A claim that is not OPEN is a 409, a
+ # missing date or one not after today a 400, and either writes nothing.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateDefer
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/open.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/open.POST.yml
+index 8737d4e2d..9691dc313 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/open.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/open.POST.yml
+@@ -1,4 +1,8 @@
+ # Open a claim. A change its status does not allow is a 409 and writes nothing.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: loadSheet
+ loadSheet:
+   class: net.officefloor.hq.app.sheet.LoadSheet
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/proof.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/proof.POST.yml
+index ad0de0d45..2a8cfb636 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/proof.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/proof.POST.yml
+@@ -1,4 +1,8 @@
+ # Add a proof to a claim. A SETTLED or VOID claim is a 409 and writes nothing.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: loadSheet
+ loadSheet:
+   class: net.officefloor.hq.app.sheet.LoadSheet
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reassign.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reassign.POST.yml
+index 3c838b36b..583231b1c 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reassign.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reassign.POST.yml
+@@ -1,5 +1,9 @@
+ # Move a DRAFT, OPEN or PENDING claim to another person on the sheet (a steward). A settled or
+ # voided claim, a clerk, or a person not on the sheet is refused and writes nothing.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateReassign
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reject.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reject.POST.yml
+index 5eb0ee419..7cc6ad324 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reject.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reject.POST.yml
+@@ -1,5 +1,9 @@
+ # Reject a PENDING claim with a reason (a steward). A change its status does not allow is a 409,
+ # a missing reason a 400, and either writes nothing.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateReject
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.POST.yml
+index d27d5e30c..055c56a33 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.POST.yml
+@@ -1,4 +1,8 @@
+ # Re-settle a SETTLED claim (a steward) at its figure today. Any other status is a 409 and writes nothing.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: loadSheet
+ loadSheet:
+   class: net.officefloor.hq.app.sheet.LoadSheet
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle.POST.yml
+index ab06f67cf..5d6c2056f 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle.POST.yml
+@@ -1,4 +1,8 @@
+ # Settle a claim. A change its status does not allow is a 409 and writes nothing.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: loadSheet
+ loadSheet:
+   class: net.officefloor.hq.app.sheet.LoadSheet
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/void.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/void.POST.yml
+index 55d21edb7..246147b8b 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/void.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/void.POST.yml
+@@ -1,4 +1,8 @@
+ # Void a claim. A change its status does not allow is a 409 and writes nothing.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: loadSheet
+ loadSheet:
+   class: net.officefloor.hq.app.sheet.LoadSheet
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+index 1ec66b498..6c0ba03ab 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+@@ -1,4 +1,8 @@
+ # Add a person to a sheet. Validate first so a blank name or a bad grade is a 400, and a name already in use is a 409.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePerson
+   next: load
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+index 7dcade78e..7eb8dc345 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+@@ -1,6 +1,10 @@
+ # Edit a person on a sheet. Validate first so a blank name or a bad grade is a 400, not a 404.
+ # A name another person on the sheet already has is a 409. An edit made from a version of the person
+ # someone else has since saved over is a 412.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePerson
+   next: loadSheet
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+index 0aec6b65b..fa6903e9a 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+@@ -1,4 +1,8 @@
+ # Add a claim to a person. Validate first so a bad amount or date is a 400, not a 404.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaim
+   next: loadSheet
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.POST.yml
+index 1d62224c4..8bc2794ad 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.POST.yml
+@@ -1,5 +1,9 @@
+ # Put a hold on a person, from a date (blank: the sheet's today) to an optional to-date. Validate
+ # first so a bad date is a 400, not a 404. An unknown person is a 404.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.person.ValidateHold
+   next: loadSheet
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml
+index 037e0ad7a..c966ff063 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml
+@@ -1,5 +1,9 @@
+ # Name another person on the sheet as the person's patron. Validate first so a bad body is a 400,
+ # not a 404. Naming a patron moves no figures.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePatron
+   next: loadSheet
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml
+index 744bfb4f5..28956acb8 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml
+@@ -1,5 +1,9 @@
+ # Retire a person from a date (blank: the sheet's today). Validate first so a bad date is a 400,
+ # not a 404. Retiring moves no figures: their claims keep counting.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.person.ValidateRetire
+   next: loadSheet
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml
+index b6a1fe330..4168ffd02 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml
+@@ -1,4 +1,8 @@
+ # Take a person's statement: binds their counting claims to their figures now. An unknown person is a 404.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: loadSheet
+ loadSheet:
+   class: net.officefloor.hq.app.sheet.LoadSheet
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.POST.yml
+index 758c5c715..1de36c7b4 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.POST.yml
+@@ -1,4 +1,8 @@
+ # Add a period. Validate first so a bad name or date is a 400, not a 404.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.period.ValidatePeriod
+   next: load
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/close.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/close.POST.yml
+index 9bece83fb..66f292336 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/close.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/close.POST.yml
+@@ -1,4 +1,8 @@
+ # Close a period, fixing its due-total. A period already closed is a 400 and writes nothing.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: loadSheet
+ loadSheet:
+   class: net.officefloor.hq.app.sheet.LoadSheet
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/reopen.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/reopen.POST.yml
+index 3d7658efd..4b48e2501 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/reopen.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/reopen.POST.yml
+@@ -1,5 +1,9 @@
+ # Reopen a closed period, making its due-total live again. Only a steward may; anyone else, or a
+ # period not closed, is a 400 and writes nothing.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: loadSheet
+ loadSheet:
+   class: net.officefloor.hq.app.sheet.LoadSheet
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick.POST.yml
+index b4ff9df1a..acbf36b23 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick.POST.yml
+@@ -1,6 +1,10 @@
+ # Quick-add: a DRAFT claim for the named person, dated the sheet's today with no note, adding the
+ # person (grade A) when the name is not on the sheet. One change: every rule is checked before
+ # anything is written, so a refusal leaves no new person behind. A bad name or amount is a 400.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.quick.ValidateQuickAdd
+   next: loadSheet
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.POST.yml
+index 78dbfdc1e..02a0cbd90 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.POST.yml
+@@ -1,4 +1,8 @@
+ # Set a grade's rate. Validate first so a bad grade or percent is a 400, not a 404.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.rate.ValidateRate
+   next: load
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.POST.yml
+index 06e42fc02..2e73e0397 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.POST.yml
+@@ -1,4 +1,8 @@
+ # Assign a user's role. Validate first so a bad role is a 400, not a 404.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.role.ValidateRole
+   next: load
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.POST.yml
+index 3352a83e8..1463c490f 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.POST.yml
+@@ -1,4 +1,8 @@
+ # Save a sheet's settings. Validate first so a bad value is a 400, not a 404.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.setting.ValidateSettings
+   next: load
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
+index 54d6d146a..3a074bcbf 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
+@@ -1,4 +1,8 @@
+ # Change the sheet's today. Validate first so a bad date is a 400, not masked by a 404.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.sheet.ValidateToday
+   next: load
