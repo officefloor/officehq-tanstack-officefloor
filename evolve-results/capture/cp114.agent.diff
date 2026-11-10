@@ -1,0 +1,289 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index c1eabfd4b..e81f7f607 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -20,7 +20,8 @@ import { useTemplates } from '../templates/templates';
+ 
+ // A clerk's settle above the clerk limit leaves the claim PENDING; a steward approves it or rejects
+ // it with a reason (typed in the row). A steward re-settles a SETTLED claim at its figure today.
+-type Action = 'open' | 'settle' | 'void' | 'approve' | 'reject' | 'resettle';
++// A DRAFT is deleted, and restored to a DRAFT on the sheet's today it was deleted.
++type Action = 'open' | 'settle' | 'void' | 'approve' | 'reject' | 'resettle' | 'delete' | 'restore';
+ type Fields = { amount: string; date: string; note: string; corrects: string; ref: string; tags: string };
+ const EMPTY: Fields = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
+ 
+@@ -31,6 +32,8 @@ const ACTIONS: { action: Action; label: string }[] = [
+   { action: 'approve', label: 'Approve' },
+   { action: 'reject', label: 'Reject' },
+   { action: 'resettle', label: 'Re-settle' },
++  { action: 'delete', label: 'Delete' },
++  { action: 'restore', label: 'Restore' },
+ ];
+ 
+ 
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 3bf81752d..18cf3cd3c 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -7,8 +7,9 @@ import type { Hold } from '../people/people';
+  * A claim's status: DRAFT when made, then OPEN, then SETTLED; a clerk's settle above the clerk
+  * limit makes it PENDING until a steward approves it (SETTLED) or rejects it (OPEN again). A DRAFT,
+  * OPEN or PENDING claim may be VOID; a SETTLED one too, by a steward within 7 days of its settlement.
++ * A DRAFT may be DELETED (it counts nowhere), and restored to a DRAFT on the sheet's today it was deleted.
+  */
+-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
++export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED';
+ 
+ /**
+  * A claim: its amount with two decimals, its date (yyyy-MM-dd), its note, its status and its
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimRestored.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimRestored.java
+new file mode 100644
+index 000000000..fd069674b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimRestored.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.claim;
++
++import jakarta.servlet.http.HttpServletRequest;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++
++/** Records the deleted claim made a DRAFT again. Runs after every rule has passed, so a refused restore writes nothing. */
++public class AuditClaimRestored {
++    public void audit(@Val Sheet sheet, @Val Claim claim, PersonRepository people, HttpServletRequest request,
++            Audit audit) {
++        audit.record(ClaimAudit.line("CLAIM_RESTORED", sheet, Audit.user(request),
++                people.find(sheet.id(), claim.getPersonId()), claim));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 0a0ad9074..ab31e1630 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -55,13 +55,16 @@ public class Claim {
+     public long getPersonId() { return personId; }
+     /**
+      * Move it to another person: it keeps its date (its new number is given by {@link RenumberClaim}), but loses any figure a statement
+-     * bound it to (it is live again until its new person's next statement). A SETTLED or VOID claim
++     * bound it to (it is live again until its new person's next statement). A SETTLED, VOID or DELETED claim
+      * cannot move.
+      */
+     public void reassign(long toPersonId) throws InvalidClaimStatusException {
+         if (status == ClaimStatus.SETTLED || status == ClaimStatus.VOID) {
+             throw new InvalidClaimStatusException("A " + status + " claim cannot be moved to another person");
+         }
++        if (status == ClaimStatus.DELETED) {
++            throw new InvalidClaimStatusException("A DELETED claim cannot be moved to another person");
++        }
+         personId = toPersonId;
+         bind(false, null);
+         relisted = true;
+@@ -117,7 +120,7 @@ public class Claim {
+     public void setProofs(int proofs) { this.proofs = proofs; }
+     /** Add a proof: not to a SETTLED or VOID claim. */
+     public void addProof() throws InvalidClaimStatusException {
+-        if (status == ClaimStatus.SETTLED || status == ClaimStatus.VOID) {
++        if (status == ClaimStatus.SETTLED || status == ClaimStatus.VOID || status == ClaimStatus.DELETED) {
+             throw new InvalidClaimStatusException("A " + status + " claim cannot have a proof added");
+         }
+         proofs++;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimLogRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimLogRepository.java
+index 2e41c47ee..70c8c975e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimLogRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimLogRepository.java
+@@ -92,4 +92,11 @@ public class ClaimLogRepository {
+                 + " AND status = 'SETTLED' ORDER BY id", Date.class, claim.getSheetId(), claim.getId());
+         return found.isEmpty() ? null : found.get(0).toLocalDate();
+     }
++
++    /** The date the claim was last deleted: its last DELETED log line's date; null when it was never deleted. */
++    public LocalDate deletedOn(Claim claim) {
++        List<Date> found = jdbc.queryForList("SELECT on_date FROM claim_log WHERE sheet_id = ? AND claim_id = ?"
++                + " AND status = 'DELETED' ORDER BY id DESC", Date.class, claim.getSheetId(), claim.getId());
++        return found.isEmpty() ? null : found.get(0).toLocalDate();
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 0148f7488..9c3b197c3 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -279,11 +279,11 @@ public class ClaimRepository {
+     }
+ 
+     /**
+-     * The sheet's today when the claim was opened: its first log line past DRAFT; null when it has none.
++     * The sheet's today when the claim was opened: its first log line past DRAFT (and not a DELETED one); null when it has none.
+      */
+     public LocalDate openedOn(Claim claim) {
+         List<Date> found = jdbc.queryForList("SELECT on_date FROM claim_log WHERE sheet_id = ? AND claim_id = ?"
+-                + " AND status <> 'DRAFT' ORDER BY id", Date.class, claim.getSheetId(), claim.getId());
++                + " AND status NOT IN ('DRAFT', 'DELETED') ORDER BY id", Date.class, claim.getSheetId(), claim.getId());
+         return found.isEmpty() ? null : found.get(0).toLocalDate();
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
+index d66398bf7..f4bb2d261 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
+@@ -4,10 +4,12 @@ package net.officefloor.hq.app.claim;
+  * A claim's status. It starts as DRAFT, is opened (OPEN) and then settled (SETTLED). A clerk's
+  * settle above the clerk limit makes it PENDING instead, until a steward approves it (SETTLED) or
+  * rejects it (back to OPEN). A DRAFT, OPEN or PENDING claim can be voided (VOID); a SETTLED one
+- * too, by a steward within days of its settlement ({@link VoidClaim}). VOID is final. Only OPEN, PENDING and SETTLED claims count toward any total.
++ * too, by a steward within days of its settlement ({@link VoidClaim}). VOID is final. A DRAFT claim can be deleted
++ * (DELETED), and made a DRAFT again by a restore on the sheet's today it was deleted ({@link RestoreClaim}). Only OPEN, PENDING and SETTLED claims count toward any total.
+  */
+ public enum ClaimStatus {
+-    DRAFT(null), OPEN("CLAIM_OPENED"), PENDING("CLAIM_PENDING"), SETTLED("CLAIM_SETTLED"), VOID("CLAIM_VOIDED");
++    DRAFT(null), OPEN("CLAIM_OPENED"), PENDING("CLAIM_PENDING"), SETTLED("CLAIM_SETTLED"), VOID("CLAIM_VOIDED"),
++    DELETED("CLAIM_DELETED");
+ 
+     private final String auditEvent;
+ 
+@@ -27,7 +29,8 @@ public enum ClaimStatus {
+             case PENDING -> this == OPEN;
+             case SETTLED -> this == OPEN;
+             case VOID -> this == DRAFT || this == OPEN || this == PENDING || this == SETTLED;
+-            case DRAFT -> false;
++            case DELETED -> this == DRAFT;
++            case DRAFT -> this == DELETED;
+         };
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/DeleteClaim.java b/src/main/java/net/officefloor/hq/app/claim/DeleteClaim.java
+new file mode 100644
+index 000000000..e778d7028
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/DeleteClaim.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.variable.Val;
++
++/** Deletes the claim: only a DRAFT may be deleted. A DELETED claim counts nowhere and cannot be edited, opened or voided. */
++public class DeleteClaim {
++    public void apply(@Val Claim claim) throws InvalidClaimStatusException {
++        claim.moveTo(ClaimStatus.DELETED);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RestoreClaim.java b/src/main/java/net/officefloor/hq/app/claim/RestoreClaim.java
+new file mode 100644
+index 000000000..d76460ce0
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/RestoreClaim.java
+@@ -0,0 +1,21 @@
++package net.officefloor.hq.app.claim;
++
++import java.time.LocalDate;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++
++/**
++ * Restores a DELETED claim to a DRAFT: only on the sheet's today it was deleted (its last DELETED
++ * log line's date); on a later day the restore is refused.
++ */
++public class RestoreClaim {
++    public void apply(@Val Sheet sheet, @Val Claim claim, ClaimLogRepository log) throws InvalidClaimStatusException {
++        if (claim.getStatus() != ClaimStatus.DELETED) throw new InvalidClaimStatusException(claim.getStatus(), ClaimStatus.DRAFT);
++        LocalDate deleted = log.deletedOn(claim);
++        if (deleted == null || !deleted.equals(sheet.today())) {
++            throw new InvalidClaimStatusException("A claim may be restored only on the day it was deleted"
++                    + (deleted == null ? "" : ": " + deleted));
++        }
++        claim.moveTo(ClaimStatus.DRAFT);
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/delete.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/delete.POST.yml
+new file mode 100644
+index 000000000..22f8b0277
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/delete.POST.yml
+@@ -0,0 +1,40 @@
++# Delete a DRAFT claim: any other status is a 409 and writes nothing.
++# A DRAFT moves no figure, so it writes no rollup line.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: loadSheet
++loadSheet:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ transaction ]
++  next: load
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ transaction ]
++  next: closed
++# A claim due by a date inside a closed period is a 409 and writes nothing.
++closed:
++  class: net.officefloor.hq.app.period.CheckClaimPeriod
++  govern: [ transaction ]
++  next: apply
++apply:
++  class: net.officefloor.hq.app.claim.DeleteClaim
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.claim.SaveClaim
++  govern: [ transaction ]
++  next: log
++# The status it was saved at, with who, when and its due then.
++log:
++  class: net.officefloor.hq.app.claim.LogClaimStatus
++  govern: [ transaction ]
++  next: audit
++# Last before the response: every rule has passed and the change is saved.
++audit:
++  class: net.officefloor.hq.app.claim.AuditClaimStatus
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaim
++  govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/restore.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/restore.POST.yml
+new file mode 100644
+index 000000000..47436df22
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/restore.POST.yml
+@@ -0,0 +1,40 @@
++# Restore a DELETED claim to a DRAFT, on the sheet's today it was deleted: otherwise a 409 that writes nothing.
++# A DRAFT moves no figure, so it writes no rollup line.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: loadSheet
++loadSheet:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ transaction ]
++  next: load
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ transaction ]
++  next: closed
++# A claim due by a date inside a closed period is a 409 and writes nothing.
++closed:
++  class: net.officefloor.hq.app.period.CheckClaimPeriod
++  govern: [ transaction ]
++  next: apply
++apply:
++  class: net.officefloor.hq.app.claim.RestoreClaim
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.claim.SaveClaim
++  govern: [ transaction ]
++  next: log
++# The status it was saved at, with who, when and its due then.
++log:
++  class: net.officefloor.hq.app.claim.LogClaimStatus
++  govern: [ transaction ]
++  next: audit
++# Last before the response: every rule has passed and the change is saved.
++audit:
++  class: net.officefloor.hq.app.claim.AuditClaimRestored
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaim
++  govern: [ transaction ]
