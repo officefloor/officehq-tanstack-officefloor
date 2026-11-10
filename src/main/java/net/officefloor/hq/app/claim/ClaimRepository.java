@@ -17,7 +17,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, late_entry, reminded_on,"
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, late_entry, reminded_on, ext_ref,"
             + " (SELECT c.claim_date FROM claim c WHERE c.sheet_id = claim.sheet_id AND c.person_id = claim.person_id"
             + " AND c.claim_number = claim.corrects) AS corrected_date,"
             + " CASE WHEN locked_on = (SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id) THEN locked_by END AS locked_by_now";
@@ -39,6 +39,7 @@ public class ClaimRepository {
         claim.setLateEntry(rs.getBoolean("late_entry"));
         java.sql.Date reminded = rs.getDate("reminded_on");
         claim.setRemindedOn(reminded == null ? null : reminded.toLocalDate());
+        claim.setRef(rs.getString("ext_ref"));
         claim.setLockedBy(rs.getString("locked_by_now"));
         java.sql.Date corrected = rs.getDate("corrected_date");
         claim.setCorrectedDate(corrected == null ? null : corrected.toLocalDate());
@@ -197,6 +198,13 @@ public class ClaimRepository {
                 on, claim.getId(), claim.getSheetId(), on) == 1;
     }
 
+    /** Whether another claim on the sheet than {@code exceptId} (null: any) has this reference, regardless of case. */
+    public boolean refTaken(String sheetId, String ref, Long exceptId) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND UPPER(ext_ref) = UPPER(?)"
+                + " AND id <> ?", Integer.class, sheetId, ref, exceptId == null ? -1L : exceptId);
+        return n != null && n > 0;
+    }
+
     /** Insert a new claim (assigning its id) or update an existing one. */
     public void save(Claim claim) {
         if (claim.getId() != null) {
@@ -205,11 +213,11 @@ public class ClaimRepository {
                         claim.getPersonId(), nextListed(claim.getSheetId()), claim.getId(), claim.getSheetId());
             }
             keepBinding(claim);
-            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?, stated = ?, stated_due = ?, corrects = ?, deferred_until = ?, proofs = ? WHERE id = ? AND sheet_id = ?",
+            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?, stated = ?, stated_due = ?, corrects = ?, deferred_until = ?, proofs = ?, ext_ref = ? WHERE id = ? AND sheet_id = ?",
                     claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(),
                     claim.getStatus().name(), claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(),
                     claim.isStated(), claim.getStatedDue(), claim.getCorrects(),
-                    claim.getDeferredUntil() == null ? null : Date.valueOf(claim.getDeferredUntil()), claim.getProofs(), claim.getId(),
+                    claim.getDeferredUntil() == null ? null : Date.valueOf(claim.getDeferredUntil()), claim.getProofs(), claim.getRef(), claim.getId(),
                     claim.getSheetId());
             keepHistory(claim);
             return;
@@ -218,7 +226,7 @@ public class ClaimRepository {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, corrects, listed, due_by, split_from, claim_number, opened_by, late_entry) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, corrects, listed, due_by, split_from, claim_number, opened_by, late_entry, ext_ref) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, claim.getSheetId());
             ps.setLong(2, claim.getPersonId());
@@ -233,6 +241,7 @@ public class ClaimRepository {
             ps.setString(11, claim.getNumber());
             ps.setString(12, claim.getOpenedBy());
             ps.setBoolean(13, claim.isLateEntry());
+            ps.setString(14, claim.getRef());
             return ps;
         }, keys);
         claim.setId(keys.getKey().longValue());

@@ -52,6 +52,8 @@ export type Claim = {
   lateEntry: boolean;
   /** The last sheet's today (yyyy-MM-dd) a reminder was written for it; '' when it was never reminded. */
   remindedOn: string;
+  /** Its external reference, unique on the sheet regardless of case; '' when it has none. */
+  ref: string;
 };
 
 /** Whether a claim is a correction: it has no floor and no late charge. */

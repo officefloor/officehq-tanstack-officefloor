@@ -24,6 +24,7 @@ public class BuildClaim {
         Claim claim = new Claim(null, sheet.id(), person.getId(), input.amount(), date, input.note(),
                 ClaimStatus.DRAFT, null, null, null);
         claim.setCorrects(input.corrects());
+        claim.setRef(input.ref());
         claim.setDueBy(holidays.dueBy(sheet.id(), date, terms.termsFor(person, date)));
         claim.setLateEntry(periods.softClosedOn(sheet.id(), claim.getDueBy()) != null);
         claimOut.set(claim);

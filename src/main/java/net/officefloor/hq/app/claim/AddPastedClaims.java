@@ -3,7 +3,10 @@ package net.officefloor.hq.app.claim;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.holiday.HolidayRepository;
 import net.officefloor.hq.app.period.CheckClaimPeriod;
@@ -26,7 +29,7 @@ import net.officefloor.hq.app.paste.PasteResponse;
 /**
  * Adds a DRAFT claim per pasted line, in order, for the person on the sheet with that name (matched
  * as names are compared). Every line is checked first, as the claim form checks a claim (its person
- * on the sheet, its due-by outside a closed period and not after its person's retirement), so a
+ * on the sheet, its reference unused on the sheet and in the paste, its due-by outside a closed period and not after its person's retirement), so a
  * refused paste writes nothing; then each claim is saved, logged and audited as one added by the form.
  */
 public class AddPastedClaims {
@@ -37,12 +40,18 @@ public class AddPastedClaims {
         Settings terms = settings.find(sheet.id());
         List<Person> persons = new ArrayList<>();
         List<Claim> built = new ArrayList<>();
+        Set<String> refs = new HashSet<>();
         for (PasteLine line : paste.lines()) {
             Person person = people.findByName(sheet.id(), line.name());
             if (person == null) throw new InvalidClaimException("No one named " + line.name() + " is on the sheet");
             LocalDate date = line.claim().date() == null ? terms.entryDay(sheet.today()) : line.claim().date();
             Claim claim = new Claim(null, sheet.id(), person.getId(), line.claim().amount(), date, line.claim().note(),
                     ClaimStatus.DRAFT, null, null, null);
+            claim.setRef(line.claim().ref());
+            if (claim.getRef() != null && !refs.add(claim.getRef().toUpperCase(Locale.ROOT))) {
+                throw new InvalidClaimException("The reference " + claim.getRef() + " is pasted more than once");
+            }
+            new CheckClaimRef().check(claim, claims);
             claim.setDueBy(holidays.dueBy(sheet.id(), date, terms.termsFor(person, date)));
             new CheckClaimPeriod().check(sheet, claim, periods);
             claim.setLateEntry(periods.softClosedOn(sheet.id(), claim.getDueBy()) != null);

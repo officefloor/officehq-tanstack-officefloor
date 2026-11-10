@@ -11,7 +11,8 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /**
- * Splits the paste into lines (blank lines skipped) and checks each by the claim form's rules; the
+ * Splits the paste into lines (blank lines skipped) and checks each by the claim form's rules (a
+ * note ending {@code " #<reference>"} gives the claim's reference); the
  * first line that fails refuses the whole paste. A paste with no lines is refused too.
  */
 public class ValidatePaste {
@@ -31,9 +32,16 @@ public class ValidatePaste {
                 throw new InvalidClaimException("Line " + number + ": " + e.getMessage());
             }
             String date = fields.length > 2 ? fields[2] : "";
-            String note = fields.length > 3 ? fields[3] : "";
+            String note = fields.length > 3 ? fields[3].trim() : "";
+            // A note ending " #<reference>" gives the claim's reference: that part is not the note's.
+            String ref = "";
+            int hash = note.lastIndexOf(" #");
+            if (hash >= 0) {
+                ref = note.substring(hash + 2);
+                note = note.substring(0, hash);
+            }
             try {
-                ClaimInput claim = ClaimInput.from(new ClaimRequest(fields[1], date, note, ""));
+                ClaimInput claim = ClaimInput.from(new ClaimRequest(fields[1], date, note, "", ref));
                 lines.add(new PasteLine(name, claim));
             } catch (InvalidClaimException e) {
                 throw new InvalidClaimException("Line " + number + ": " + e.getMessage());

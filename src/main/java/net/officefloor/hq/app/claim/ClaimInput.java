@@ -8,9 +8,9 @@ import java.util.regex.Pattern;
 /**
  * A validated claim request. {@code date} is null when left blank: the sheet's entry date while it is set, else its today.
  * {@code corrects} is the number of the claim a correction (a negative amount) corrects; null for
- * any other claim.
+ * any other claim. {@code ref} is its external reference, trimmed; null when left blank.
  */
-public record ClaimInput(BigDecimal amount, LocalDate date, String note, String corrects) {
+public record ClaimInput(BigDecimal amount, LocalDate date, String note, String corrects, String ref) {
     private static final Pattern AMOUNT = Pattern.compile("-?\\d{1,15}(\\.\\d{1,2})?");
     private static final Pattern NUMBER = Pattern.compile("\\d{1,9}|.{1,190}-\\d{1,9}");
 
@@ -46,6 +46,8 @@ public record ClaimInput(BigDecimal amount, LocalDate date, String note, String 
         } else if (!rawCorrects.isEmpty()) {
             throw new InvalidClaimException("Only a negative amount corrects a claim");
         }
-        return new ClaimInput(value, date, note, corrects);
+        String ref = request.ref() == null ? "" : request.ref().trim();
+        if (ref.length() > 200) throw new InvalidClaimException("A reference is at most 200 characters");
+        return new ClaimInput(value, date, note, corrects, ref.isEmpty() ? null : ref);
     }
 }

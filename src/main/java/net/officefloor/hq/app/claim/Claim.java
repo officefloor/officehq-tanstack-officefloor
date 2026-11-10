@@ -27,6 +27,7 @@ public class Claim {
     private String lockedBy;
     private boolean lateEntry;
     private LocalDate remindedOn;
+    private String ref;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue,
@@ -133,6 +134,9 @@ public class Claim {
     /** The user whose editor holds it locked on the sheet's today, as read; null when no one's does. */
     public String getLockedBy() { return lockedBy; }
     public void setLockedBy(String lockedBy) { this.lockedBy = lockedBy; }
+    /** Its external reference, unique on the sheet regardless of case; null when it has none. */
+    public String getRef() { return ref; }
+    public void setRef(String ref) { this.ref = ref; }
     public String getNote() { return note; }
     public void setNote(String note) { this.note = note; }
     public ClaimStatus getStatus() { return status; }
@@ -214,6 +218,7 @@ public class Claim {
         then.splitFrom = splitFrom;
         then.lateEntry = lateEntry;
         then.remindedOn = remindedOn;
+        then.ref = ref;
         return then;
     }
     /** Whether it is open: OPEN, or PENDING a steward's approval. */
