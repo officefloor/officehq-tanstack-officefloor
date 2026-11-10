@@ -1,0 +1,224 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 19ad1a954..e3ef949b0 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -17,14 +17,15 @@ import { useSheetToday } from '../sheet/sheet';
+ import { dueBy, isOverdue } from '../overdue/overdue';
+ 
+ // A clerk's settle above the clerk limit leaves the claim PENDING; a steward approves it or rejects
+-// it with a reason (typed in the row).
+-type Action = 'open' | 'settle' | 'void' | 'approve' | 'reject';
++// it with a reason (typed in the row). A steward re-settles a SETTLED claim at its figure today.
++type Action = 'open' | 'settle' | 'void' | 'approve' | 'reject' | 'resettle';
+ const ACTIONS: { action: Action; label: string }[] = [
+   { action: 'open', label: 'Open' },
+   { action: 'settle', label: 'Settle' },
+   { action: 'void', label: 'Void' },
+   { action: 'approve', label: 'Approve' },
+   { action: 'reject', label: 'Reject' },
++  { action: 'resettle', label: 'Re-settle' },
+ ];
+ 
+ type Fields = { amount: string; date: string; note: string; corrects: string };
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimResettled.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimResettled.java
+new file mode 100644
+index 000000000..14ec89d38
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimResettled.java
+@@ -0,0 +1,22 @@
++package net.officefloor.hq.app.claim;
++
++import jakarta.servlet.http.HttpServletRequest;
++import java.math.BigDecimal;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++
++/** Records the re-settle, naming the claim; the line ends with its old and new due (n/a for none). */
++public class AuditClaimResettled {
++    public void audit(@Val Sheet sheet, @Val Claim claim, @Val Resettlement resettlement, PersonRepository people,
++            HttpServletRequest request, Audit audit) {
++        audit.record(ClaimAudit.line("CLAIM_RESETTLED", sheet, Audit.user(request),
++                people.find(sheet.id(), claim.getPersonId()), claim)
++                + " old=" + shown(resettlement.old()) + " new=" + shown(resettlement.now()));
++    }
++
++    private static String shown(BigDecimal due) {
++        return due == null ? "n/a" : due.toPlainString();
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimFigure.java b/src/main/java/net/officefloor/hq/app/claim/ClaimFigure.java
+index 73b91a823..f2b0035d8 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimFigure.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimFigure.java
+@@ -57,8 +57,14 @@ public final class ClaimFigure {
+      * it follows the sheet's today until the claim is settled.
+      */
+     public static BigDecimal late(Claim claim, BigDecimal figure, Settings settings, LocalDate today) {
++        if (!claim.isOpen()) return BigDecimal.ZERO.setScale(2);
++        return lateAsOpen(claim, figure, settings, today);
++    }
++
++    /** The late charge on a figure as {@link #late} reads it for an open claim, whatever the claim's status. */
++    public static BigDecimal lateAsOpen(Claim claim, BigDecimal figure, Settings settings, LocalDate today) {
+         BigDecimal none = BigDecimal.ZERO.setScale(2);
+-        if (!claim.isOpen() || figure == null || claim.isCorrection()) return none;
++        if (figure == null || claim.isCorrection()) return none;
+         long overdue = ChronoUnit.DAYS.between(claim.getDueBy(), today);
+         long periods = overdue > 0 ? overdue / 30 : 0;
+         if (periods == 0) return none;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/HandleResettle.java b/src/main/java/net/officefloor/hq/app/claim/HandleResettle.java
+new file mode 100644
+index 000000000..ff83eaab8
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/HandleResettle.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleResettle {
++    public void handle(@Parameter ResettleException ex,
++            ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.CONFLICT));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ResettleClaim.java b/src/main/java/net/officefloor/hq/app/claim/ResettleClaim.java
+new file mode 100644
+index 000000000..41f77ebec
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ResettleClaim.java
+@@ -0,0 +1,43 @@
++package net.officefloor.hq.app.claim;
++
++import jakarta.servlet.http.HttpServletRequest;
++import java.math.BigDecimal;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.role.Role;
++import net.officefloor.hq.app.role.RoleRepository;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.setting.SettingsRepository;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++/**
++ * Re-settles a SETTLED claim: its due is fixed again at the figure it would have today as an OPEN
++ * claim bound by no statement: its live figure (today's rates, grades and floor) with the late
++ * charge it would have gained by the sheet's today. Only a steward may re-settle a claim.
++ */
++public class ResettleClaim {
++    public void apply(@Val Sheet sheet, @Val Claim claim, PersonRepository people, RateRepository rates,
++            RoleRepository roles, SettingsRepository settingsStore, HttpServletRequest request,
++            Out<Resettlement> resettlement) throws InvalidClaimStatusException, ResettleException {
++        if (claim.getStatus() != ClaimStatus.SETTLED) {
++            throw new InvalidClaimStatusException("Only a SETTLED claim can be re-settled: this one is " + claim.getStatus());
++        }
++        String user = Audit.user(request);
++        if (!Role.STEWARD.equals(roles.roleOf(sheet.id(), user))) {
++            throw new ResettleException("Only a steward may re-settle a claim: " + user + " is a clerk");
++        }
++        Person person = people.find(sheet.id(), claim.getPersonId());
++        Settings settings = settingsStore.find(sheet.id());
++        BigDecimal figure = ClaimFigure.live(claim, rates.findAll(sheet.id()), person.gradeOn(claim.getDate()),
++                settings, sheet.today());
++        BigDecimal due = figure == null ? null
++                : figure.add(ClaimFigure.lateAsOpen(claim, figure, settings, sheet.today()));
++        BigDecimal old = claim.getSettledDue();
++        claim.setSettledDue(due);
++        resettlement.set(new Resettlement(old, due));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ResettleException.java b/src/main/java/net/officefloor/hq/app/claim/ResettleException.java
+new file mode 100644
+index 000000000..aec525025
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ResettleException.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.claim;
++
++/** Only a steward may re-settle a claim. */
++public class ResettleException extends Exception {
++    public ResettleException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Resettlement.java b/src/main/java/net/officefloor/hq/app/claim/Resettlement.java
+new file mode 100644
+index 000000000..1f21626f8
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/Resettlement.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++
++/** A claim's re-settle: the due it was settled at before and the due it is settled at now (null for n/a). */
++public record Resettlement(BigDecimal old, BigDecimal now) {
++}
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.claim.ResettleException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.claim.ResettleException.yml
+new file mode 100644
+index 000000000..fd06fa2b9
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.claim.ResettleException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.claim.HandleResettle
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.POST.yml
+new file mode 100644
+index 000000000..d27d5e30c
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/resettle.POST.yml
+@@ -0,0 +1,45 @@
++# Re-settle a SETTLED claim (a steward) at its figure today. Any other status is a 409 and writes nothing.
++loadSheet:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ transaction ]
++  next: before
++# The sheet's figures before the change, so the rollup lines tell which moved.
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
++  next: load
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ transaction ]
++  next: closed
++# A claim dated inside a closed period is a 409 and writes nothing.
++closed:
++  class: net.officefloor.hq.app.period.CheckClaimPeriod
++  govern: [ transaction ]
++  next: apply
++apply:
++  class: net.officefloor.hq.app.claim.ResettleClaim
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.claim.SaveClaim
++  govern: [ transaction ]
++  next: log
++# The status it was saved at, with who, when and its due then.
++log:
++  class: net.officefloor.hq.app.claim.LogClaimStatus
++  govern: [ transaction ]
++  next: audit
++# Last before the response: every rule has passed and the change is saved.
++audit:
++  class: net.officefloor.hq.app.claim.AuditClaimResettled
++  govern: [ transaction ]
++  next: rollup
++# After the change's own lines: the figures it moved.
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaim
++  govern: [ transaction ]
