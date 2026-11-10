@@ -20,6 +20,7 @@ public class Claim {
     private String corrects;
     private LocalDate correctedDate;
     private boolean relisted;
+    private LocalDate dueBy;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue,
@@ -59,6 +60,9 @@ public class Claim {
     public void setAmount(BigDecimal amount) { this.amount = amount; }
     public LocalDate getDate() { return date; }
     public void setDate(LocalDate date) { this.date = date; }
+    /** Its due-by, fixed when it was made: its date plus its grade's terms then. Kept when its date changes. */
+    public LocalDate getDueBy() { return dueBy; }
+    public void setDueBy(LocalDate dueBy) { this.dueBy = dueBy; }
     public String getNote() { return note; }
     public void setNote(String note) { this.note = note; }
     public ClaimStatus getStatus() { return status; }

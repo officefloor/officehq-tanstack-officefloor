@@ -19,7 +19,12 @@ export type Settings = {
   latePct: string;
   policyDate: string;
   periodNumberingFrom: string;
+  /** Each grade's own terms in days ('' for the sheet's terms). */
+  gradeTerms: Record<string, string>;
 };
+
+/** The grades that may have their own terms. */
+export const GRADES = ['A', 'B', 'C'] as const;
 
 /** A save of the settings: only those being changed are sent. */
 export type SettingsChange = Partial<Settings>;
@@ -44,23 +49,14 @@ export function useFloor(sheetId: string): string {
   return useSettings(sheetId).data?.floor ?? '0.00';
 }
 
-/** A sheet's terms until they are set. */
-export const DEFAULT_TERMS = 14;
-
-/** The sheet's terms in days (the default until the settings are read). */
-export function useTerms(sheetId: string): number {
-  const terms = useSettings(sheetId).data?.terms;
-  return terms === undefined ? DEFAULT_TERMS : Number(terms);
-}
-
 /**
- * What the sheet's late charge and rounding need: its late percent ('0.00' until read), terms,
+ * What the sheet's late charge and rounding need: its late percent ('0.00' until read),
  * today and policy date ('' until read).
  */
 export function useLate(sheetId: string): Late {
   const settings = useSettings(sheetId).data;
   const pct = settings?.latePct ?? '0.00';
-  return { pct, terms: useTerms(sheetId), today: useSheetToday(sheetId), policyDate: settings?.policyDate ?? '' };
+  return { pct, today: useSheetToday(sheetId), policyDate: settings?.policyDate ?? '' };
 }
 
 /** The roles assigned on the sheet, by user name. */

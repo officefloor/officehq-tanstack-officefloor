@@ -13,7 +13,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects,"
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_by,"
             + " (SELECT c.claim_date FROM claim c WHERE c.sheet_id = claim.sheet_id AND c.person_id = claim.person_id"
             + " AND c.claim_number = claim.corrects) AS corrected_date";
 
@@ -26,6 +26,7 @@ public class ClaimRepository {
             rs.getString("opened_by"));
         claim.bind(rs.getBoolean("stated"), rs.getBigDecimal("stated_due"));
         claim.setCorrects(rs.getString("corrects"));
+        claim.setDueBy(rs.getDate("due_by").toLocalDate());
         java.sql.Date corrected = rs.getDate("corrected_date");
         claim.setCorrectedDate(corrected == null ? null : corrected.toLocalDate());
         return claim;
@@ -116,7 +117,7 @@ public class ClaimRepository {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, corrects, listed) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, corrects, listed, due_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, claim.getSheetId());
             ps.setLong(2, claim.getPersonId());
@@ -126,6 +127,7 @@ public class ClaimRepository {
             ps.setString(6, claim.getStatus().name());
             ps.setString(7, claim.getCorrects());
             ps.setLong(8, listed);
+            ps.setDate(9, Date.valueOf(claim.getDueBy()));
             return ps;
         }, keys);
         claim.setId(keys.getKey().longValue());

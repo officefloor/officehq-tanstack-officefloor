@@ -1,5 +1,7 @@
 package net.officefloor.hq.app.setting;
 
+import java.util.HashMap;
+import java.util.Map;
 import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
@@ -15,8 +17,18 @@ public class SaveSettings {
                 input.terms() != null ? input.terms() : now.terms(),
                 input.latePct() != null ? input.latePct() : now.latePct(),
                 input.policyDateChanged() ? input.policyDate() : now.policyDate(),
-                input.periodNumberingFromChanged() ? input.periodNumberingFrom() : now.periodNumberingFrom());
+                input.periodNumberingFromChanged() ? input.periodNumberingFrom() : now.periodNumberingFrom(),
+                gradeTerms(now, input));
         repository.save(settings);
         settingsOut.set(settings);
+    }
+
+    private static Map<String, Integer> gradeTerms(Settings now, SettingsInput input) {
+        Map<String, Integer> terms = new HashMap<>(now.gradeTerms());
+        input.gradeTerms().forEach((grade, days) -> {
+            if (days == null) terms.remove(grade);
+            else terms.put(grade, days);
+        });
+        return terms;
     }
 }

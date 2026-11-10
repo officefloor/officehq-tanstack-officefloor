@@ -5,21 +5,22 @@ import { useOnce } from '../../query/useOnce';
 import { postJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/session';
-import { FLOOR, LATE_PCT, LIMIT, POLICY_DATE, TERMS, ROLES, rolesKey, settingsKey, useRoles, useSettings } from './access';
+import { FLOOR, GRADES, LATE_PCT, LIMIT, POLICY_DATE, TERMS, ROLES, rolesKey, settingsKey, useRoles, useSettings } from './access';
 import type { Role, Settings, SettingsChange } from './access';
 
-type Key = keyof Settings;
+type Key = Exclude<keyof Settings, 'gradeTerms'>;
 
 // The sheet's settings: its clerk limit, the highest due a clerk may settle (blank: no limit), and
 // its floor, the least a claim's live due may be, and its terms, the days after a claim's date that
 // it is due by, and its late percent, what an overdue claim's due gains per full 30 days overdue, and
 // its policy date (blank: the sheet's today), before which a claim rounds half up, and its period
-// numbering from (blank: off), from which a claim opened is numbered within its period. Only the settings typed in (or stepped into)
+// numbering from (blank: off), from which a claim opened is numbered within its period, and each
+// grade's own terms (blank: the sheet's terms), fixing the due-by of a claim made for it. Only the settings typed in (or stepped into)
 // since the last save are sent, so saving one leaves the other as it is.
 function SettingsForm({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const settings = useSettings(sheetId);
-  const [fields, setFields] = useState<Settings>({
+  const [fields, setFields] = useState<Omit<Settings, 'gradeTerms'>>({
     clerkLimit: '',
     floor: '',
     terms: '',
@@ -28,6 +29,8 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
     periodNumberingFrom: '',
   });
   const [touched, setTouched] = useState<Set<Key>>(new Set());
+  const [gradeFields, setGradeFields] = useState<Record<string, string>>({});
+  const [gradesTouched, setGradesTouched] = useState<Set<string>>(new Set());
   const [error, setError] = useState('');
   const [user] = useUser();
 
@@ -37,6 +40,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
       postJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, body, user),
     onSuccess: (saved) => {
       setTouched(new Set());
+      setGradesTouched(new Set());
       queryClient.setQueryData(settingsKey(sheetId), saved);
     },
     onError: () => setError('Those settings could not be saved.'),
@@ -94,6 +98,19 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
       }
       body.periodNumberingFrom = from;
     }
+    if (gradesTouched.size > 0) {
+      const gradeTerms: Record<string, string> = {};
+      for (const grade of GRADES) {
+        if (!gradesTouched.has(grade)) continue;
+        const terms = (gradeFields[grade] ?? '').trim();
+        if (terms !== '' && !TERMS.test(terms)) {
+          setError(`Terms for grade ${grade} are a whole number of days, 0 or more, or blank.`);
+          return;
+        }
+        gradeTerms[grade] = terms;
+      }
+      body.gradeTerms = gradeTerms;
+    }
     if (Object.keys(body).length === 0) {
       setError('Type a setting to save.');
       return;
@@ -105,6 +122,12 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
   const change = (key: Key, value: string) => {
     setFields((f) => ({ ...f, [key]: value }));
     touch(key);
+    setError('');
+  };
+  const touchGrade = (grade: string) => setGradesTouched((t) => (t.has(grade) ? t : new Set(t).add(grade)));
+  const changeGrade = (grade: string, value: string) => {
+    setGradeFields((f) => ({ ...f, [grade]: value }));
+    touchGrade(grade);
     setError('');
   };
 
@@ -151,6 +174,24 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         <span>
           now: <strong data-testid="setting-terms-current">{settings.data?.terms ?? ''}</strong>
         </span>{' '}
+        {GRADES.map((grade) => (
+          <span key={grade}>
+            <label>
+              Terms for grade {grade}{' '}
+              <input
+                data-testid={`setting-terms-${grade}`}
+                inputMode="numeric"
+                placeholder="sheet's"
+                value={gradeFields[grade] ?? ''}
+                onFocus={() => touchGrade(grade)}
+                onChange={(e) => changeGrade(grade, e.target.value)}
+              />
+            </label>{' '}
+            <span>
+              now: <strong data-testid={`setting-terms-${grade}-current`}>{settings.data?.gradeTerms?.[grade] ?? ''}</strong>
+            </span>{' '}
+          </span>
+        ))}
         <label>
           Late percent{' '}
           <input

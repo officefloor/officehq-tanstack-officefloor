@@ -5,7 +5,7 @@ import type { Person } from '../people/people';
 import { useClaims } from '../claims/claims';
 import { sumDue, useRates } from '../rates/rates';
 import { useSheetToday } from '../sheet/sheet';
-import { useFloor, useLate, useTerms } from '../access/access';
+import { useFloor, useLate } from '../access/access';
 import { personOverdue } from './overdue';
 
 function OverdueHead() {
@@ -22,10 +22,9 @@ function PersonOverdue({ sheetId, person }: { sheetId: string; person: Person })
   const claims = (useClaims(sheetId).data ?? []).filter((c) => c.personId === person.id);
   const rates = useRates(sheetId).data ?? [];
   const today = useSheetToday(sheetId);
-  const terms = useTerms(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
-  const { count, total } = personOverdue(rates, person.grades, today, terms, claims, person.held, floor, late);
+  const { count, total } = personOverdue(rates, person.grades, today, claims, person.held, floor, late);
   return (
     <>
       <td data-testid="person-overdue-count">{count}</td>
@@ -40,11 +39,10 @@ function OverdueTotal({ sheetId }: { sheetId: string }) {
   const claims = useClaims(sheetId).data ?? [];
   const rates = useRates(sheetId).data ?? [];
   const today = useSheetToday(sheetId);
-  const terms = useTerms(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const each = people.map((p) =>
-    personOverdue(rates, p.grades, today, terms, claims.filter((c) => c.personId === p.id), p.held, floor, late),
+    personOverdue(rates, p.grades, today, claims.filter((c) => c.personId === p.id), p.held, floor, late),
   );
   return (
     <p>

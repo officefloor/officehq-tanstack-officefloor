@@ -31,6 +31,8 @@ export type Claim = {
   statedDue: string;
   corrects: string;
   roundDate: string;
+  /** Its due-by (yyyy-MM-dd), fixed when it was made: its date plus its grade's terms then. */
+  dueBy: string;
 };
 
 /** Whether a claim is a correction: it has no floor and no late charge. */

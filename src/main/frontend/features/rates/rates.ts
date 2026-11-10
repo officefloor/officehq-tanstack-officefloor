@@ -89,10 +89,10 @@ function percentOf(figure: string, pct: string, times: bigint, halfUp: boolean):
 
 /**
  * What the late charge and a claim's rounding need: the sheet's late percent (two decimals), its
- * terms (days), its today (yyyy-MM-dd; '' until read) and its policy date (yyyy-MM-dd; '' for its
+ * today (yyyy-MM-dd; '' until read) and its policy date (yyyy-MM-dd; '' for its
  * today).
  */
-export type Late = { pct: string; terms: number; today: string; policyDate: string };
+export type Late = { pct: string; today: string; policyDate: string };
 
 /**
  * Whether a claim's live figures round half up: it rounds by a date (its own, or for a correction
@@ -114,13 +114,13 @@ function daysBetween(from: string, to: string): number {
 }
 
 /**
- * A claim's late charge on its `figure`: for an OPEN or PENDING claim past its due-by (its date plus the
- * terms) on the sheet's today, the late percent of the figure for every full 30 days it is overdue,
+ * A claim's late charge on its `figure`: for an OPEN or PENDING claim past its due-by (fixed when it was
+ * made) on the sheet's today, the late percent of the figure for every full 30 days it is overdue,
  * rounded as the claim rounds; else nothing. A statement never binds it: it follows the sheet's today.
  */
 function lateCharge(claim: Claim, figure: string, late: Late): bigint {
   if (!isOpen(claim) || figure === NA || late.today === '' || isCorrection(claim)) return 0n;
-  const overdue = daysBetween(claim.date, late.today) - late.terms;
+  const overdue = daysBetween(claim.dueBy, late.today);
   const periods = overdue > 0 ? Math.floor(overdue / 30) : 0;
   return periods === 0 ? 0n : percentOf(figure, late.pct, BigInt(periods), roundsHalfUp(claim, late));
 }

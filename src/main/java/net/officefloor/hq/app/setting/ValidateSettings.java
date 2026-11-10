@@ -3,6 +3,8 @@ package net.officefloor.hq.app.setting;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.regex.Pattern;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -64,7 +66,25 @@ public class ValidateSettings {
                 throw new InvalidSettingException("A period numbering from is a date, yyyy-MM-dd, or blank");
             }
         }
+        Map<String, Integer> gradeTerms = new LinkedHashMap<>();
+        if (request != null && request.gradeTerms() != null) {
+            for (String grade : request.gradeTerms().keySet()) {
+                if (!Settings.GRADES.contains(grade)) throw new InvalidSettingException("A grade is one of A, B or C");
+            }
+            for (String grade : Settings.GRADES) {
+                String value = request.gradeTerms().get(grade);
+                if (value == null) continue;
+                value = value.trim();
+                if (value.isEmpty()) {
+                    gradeTerms.put(grade, null);
+                } else if (!DAYS.matcher(value).matches()) {
+                    throw new InvalidSettingException("Terms are a whole number of days, 0 or more, or blank");
+                } else {
+                    gradeTerms.put(grade, Integer.valueOf(value));
+                }
+            }
+        }
         body.set(new SettingsInput(limitChanged, limit, floor, terms, latePct, policyChanged, policyDate,
-                numberingChanged, numberingFrom));
+                numberingChanged, numberingFrom, gradeTerms));
     }
 }

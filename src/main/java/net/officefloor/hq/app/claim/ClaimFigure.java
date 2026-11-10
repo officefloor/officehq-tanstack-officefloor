@@ -51,15 +51,15 @@ public final class ClaimFigure {
     }
 
     /**
-     * The late charge on a figure: for an OPEN or PENDING claim past its due-by (its date plus the sheet's
-     * terms) on {@code today}, the sheet's late percent of the figure for every full 30 days it is
+     * The late charge on a figure: for an OPEN or PENDING claim past its due-by (fixed when it was made)
+     * on {@code today}, the sheet's late percent of the figure for every full 30 days it is
      * overdue, rounded to two decimals as the claim rounds; else 0.00. Never bound by a statement:
      * it follows the sheet's today until the claim is settled.
      */
     public static BigDecimal late(Claim claim, BigDecimal figure, Settings settings, LocalDate today) {
         BigDecimal none = BigDecimal.ZERO.setScale(2);
         if (!claim.isOpen() || figure == null || claim.isCorrection()) return none;
-        long overdue = ChronoUnit.DAYS.between(claim.getDate().plusDays(settings.terms()), today);
+        long overdue = ChronoUnit.DAYS.between(claim.getDueBy(), today);
         long periods = overdue > 0 ? overdue / 30 : 0;
         if (periods == 0) return none;
         return figure.multiply(settings.latePct()).multiply(BigDecimal.valueOf(periods))
