@@ -269,8 +269,8 @@ public class ClaimRepository {
     /** Re-date an OPEN or PENDING claim (its due-by and statement binding stay as they are); false when the
      *  sheet has no such claim in those statuses. */
     public boolean redate(String sheetId, long claimId, LocalDate date) {
-        return kept(sheetId, claimId, jdbc.update("UPDATE claim SET claim_date = ? WHERE id = ? AND sheet_id = ? AND status IN ('OPEN', 'PENDING')",
-                Date.valueOf(date), claimId, sheetId) > 0);
+        return kept(sheetId, claimId, jdbc.update("UPDATE claim SET due_from = COALESCE(due_from, claim_date), claim_date = ? WHERE id = ? AND sheet_id = ?"
+                + " AND status IN ('OPEN', 'PENDING')", Date.valueOf(date), claimId, sheetId) > 0);
     }
 
     /** Set a DRAFT, OPEN or PENDING claim's due-by directly; it stays as set from now on. */
@@ -546,9 +546,9 @@ public class ClaimRepository {
             jdbc.update(c -> {
                 PreparedStatement ps = c.prepareStatement("INSERT INTO claim (sheet_id, person_id, amount, claim_date, note,"
                         + " status, settled_due, opened_by, corrects, due_by, deferred_until, proofs, split_from, late_entry,"
-                        + " reminded, tags, void_reason, edited_by, stated, stated_due, stated_na, waived, proofs_photo, held) SELECT ?, ?, amount, claim_date, note,"
+                        + " reminded, tags, void_reason, edited_by, stated, stated_due, stated_na, waived, proofs_photo, held, due_from) SELECT ?, ?, amount, claim_date, note,"
                         + " status, settled_due, opened_by, corrects, due_by, deferred_until, proofs, split_from, late_entry,"
-                        + " reminded, tags, void_reason, edited_by, stated, stated_due, stated_na, waived, proofs_photo, held FROM claim WHERE id = ? AND sheet_id = ?", new String[] { "id" });
+                        + " reminded, tags, void_reason, edited_by, stated, stated_due, stated_na, waived, proofs_photo, held, due_from FROM claim WHERE id = ? AND sheet_id = ?", new String[] { "id" });
                 ps.setString(1, toSheet);
                 ps.setLong(2, toPersonId);
                 ps.setLong(3, claimId);
@@ -710,19 +710,21 @@ public class ClaimRepository {
 
     /** Re-fix, after a holiday is added to the sheet, the due-by of each claim not SETTLED or VOID whose due-by is on
      *  or after it: the terms-th business day after its date over the sheet's holidays now, for the terms it was fixed
-     *  with (the business days from its date to its due-by over the holidays before, {@code before}). A claim whose
+     *  with (the business days from the date it was fixed from — its date, unless an edit or re-date moved that — to its
+     *  due-by over the holidays before, {@code before}). A claim whose
      *  due-by moves is kept in the history. */
     public void refixDueBy(String sheetId, java.util.Set<String> before, LocalDate holiday) {
         java.util.Set<String> now = new java.util.HashSet<>(before);
         now.add(holiday.toString());
-        List<Object[]> open = jdbc.query("SELECT id, claim_date, due_by FROM claim WHERE sheet_id = ?"
-                + " AND status NOT IN ('SETTLED', 'VOID') AND due_by >= ? AND NOT due_by_set ORDER BY id",
+        List<Object[]> open = jdbc.query("SELECT id, claim_date, COALESCE(due_from, claim_date) AS due_from, due_by FROM claim"
+                + " WHERE sheet_id = ? AND status NOT IN ('SETTLED', 'VOID') AND due_by >= ? AND NOT due_by_set ORDER BY id",
                 (rs, i) -> new Object[] { rs.getLong("id"), rs.getDate("claim_date").toLocalDate(),
-                        rs.getDate("due_by").toLocalDate() }, sheetId, Date.valueOf(holiday));
+                        rs.getDate("due_from").toLocalDate(), rs.getDate("due_by").toLocalDate() }, sheetId, Date.valueOf(holiday));
         for (Object[] c : open) {
             LocalDate date = (LocalDate) c[1];
-            LocalDate old = (LocalDate) c[2];
-            LocalDate fixed = SettingsRepository.businessDaysAfter(now, date, businessDaysBetween(before, date, old));
+            LocalDate old = (LocalDate) c[3];
+            // the terms it was fixed with count from the date it was fixed from, which an edit or re-date may have moved off
+            LocalDate fixed = SettingsRepository.businessDaysAfter(now, date, businessDaysBetween(before, (LocalDate) c[2], old));
             if (fixed.equals(old)) continue;
             jdbc.update("UPDATE claim SET due_by = ? WHERE id = ? AND sheet_id = ?", Date.valueOf(fixed), c[0], sheetId);
             history.claim(sheetId, (Long) c[0]);
@@ -823,8 +825,8 @@ public class ClaimRepository {
      *  its tags (null: none); false when the sheet has no such draft claim. */
     public boolean update(String sheetId, long claimId, BigDecimal amount, LocalDate date, LocalDate dueBy, String note, String corrects, String ref,
             String tags) {
-        boolean changed = kept(sheetId, claimId, jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, due_by = ?, note = ?, corrects = ?, ref = ?,"
-                + " tags = ? WHERE id = ? AND sheet_id = ? AND status = 'DRAFT'",
+        boolean changed = kept(sheetId, claimId, jdbc.update("UPDATE claim SET due_from = COALESCE(due_from, claim_date), amount = ?, claim_date = ?, due_by = ?, note = ?,"
+                + " corrects = ?, ref = ?, tags = ? WHERE id = ? AND sheet_id = ? AND status = 'DRAFT'",
                 amount, Date.valueOf(date), Date.valueOf(dueBy), note, corrects, ref, tags, claimId, sheetId) > 0);
         if (changed) used(sheetId, tags);
         return changed;
