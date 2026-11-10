@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import type { Grade } from '../people/people';
+import type { Claim } from '../claims/claims';
 
 /** A grade's rate: a percent with two decimals. */
 export type Rate = { grade: Grade; pct: string };
@@ -52,3 +53,9 @@ export function due(amount: string, pct: string | null): string {
 export function sumDue(values: string[]): string {
   return showCents(values.filter((v) => v !== NA).reduce((n, v) => n + hundredths(v), 0n));
 }
+
+/** A claim's due: the one fixed when it was settled, else its amount at the rate now. */
+export function claimDue(claim: Claim, pct: string | null): string {
+  return claim.due !== '' ? claim.due : due(claim.amount, pct);
+}
+

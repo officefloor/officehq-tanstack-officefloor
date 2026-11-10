@@ -6,11 +6,19 @@ import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Val;
 import jakarta.servlet.http.HttpServletRequest;
 
-/** Records the claim's new status. Runs after every rule has passed, so a refused change writes nothing. */
+/**
+ * Records the claim's new status; a settled claim's line ends with the due it was settled at (n/a
+ * when its grade had no rate).
+ * Runs after every rule has passed, so a refused change writes nothing.
+ */
 public class AuditClaimStatus {
     public void audit(@Val Sheet sheet, @Val Claim claim, PersonRepository people,
             HttpServletRequest request, Audit audit) {
-        audit.record(ClaimAudit.line(claim.getStatus().auditEvent(), sheet, Audit.user(request),
-                people.find(sheet.id(), claim.getPersonId()), claim));
+        String line = ClaimAudit.line(claim.getStatus().auditEvent(), sheet, Audit.user(request),
+                people.find(sheet.id(), claim.getPersonId()), claim);
+        if (claim.getStatus() == ClaimStatus.SETTLED) {
+            line += " due=" + (claim.getSettledDue() == null ? "n/a" : claim.getSettledDue().toPlainString());
+        }
+        audit.record(line);
     }
 }

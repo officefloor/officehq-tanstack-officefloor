@@ -13,13 +13,13 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number";
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due";
 
     private static final RowMapper<Claim> ROW = (rs, n) -> new Claim(rs.getLong("id"),
             rs.getString("sheet_id"), rs.getLong("person_id"), rs.getBigDecimal("amount"),
             rs.getDate("claim_date").toLocalDate(), rs.getString("note"),
             ClaimStatus.valueOf(rs.getString("status")),
-            (Integer) rs.getObject("claim_number", Integer.class));
+            (Integer) rs.getObject("claim_number", Integer.class), rs.getBigDecimal("settled_due"));
 
     private final JdbcTemplate jdbc;
 
@@ -63,9 +63,9 @@ public class ClaimRepository {
     /** Insert a new claim (assigning its id) or update an existing one. */
     public void save(Claim claim) {
         if (claim.getId() != null) {
-            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ? WHERE id = ? AND sheet_id = ?",
+            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ? WHERE id = ? AND sheet_id = ?",
                     claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(),
-                    claim.getStatus().name(), claim.getNumber(), claim.getId(),
+                    claim.getStatus().name(), claim.getNumber(), claim.getSettledDue(), claim.getId(),
                     claim.getSheetId());
             return;
         }

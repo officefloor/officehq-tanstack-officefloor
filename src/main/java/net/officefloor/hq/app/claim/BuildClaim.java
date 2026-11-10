@@ -9,6 +9,6 @@ public class BuildClaim {
     public void build(@Val ClaimInput input, @Val Sheet sheet, @Val Person person, Out<Claim> claimOut) {
         claimOut.set(new Claim(null, sheet.id(), person.getId(), input.amount(),
                 input.date() == null ? sheet.today() : input.date(), input.note(),
-                ClaimStatus.DRAFT, null));
+                ClaimStatus.DRAFT, null, null));
     }
 }
