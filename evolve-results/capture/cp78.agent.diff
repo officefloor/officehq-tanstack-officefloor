@@ -1,0 +1,100 @@
+diff --git a/src/main/frontend/features/aging/aging.slot.tsx b/src/main/frontend/features/aging/aging.slot.tsx
+new file mode 100644
+index 000000000..9a05ce39c
+--- /dev/null
++++ b/src/main/frontend/features/aging/aging.slot.tsx
+@@ -0,0 +1,40 @@
++import { PersonHead, PersonRow } from '../../slots/defs/personRow';
++import { liveHolds } from '../people/people';
++import type { Person } from '../people/people';
++import { useClaims } from '../claims/claims';
++import { useRates } from '../rates/rates';
++import { useSheetToday } from '../sheet/sheet';
++import { useFloor, useLate } from '../access/access';
++import { personAged } from './aging';
++
++function AgedHead() {
++  return (
++    <>
++      <th>Due 0–30 days</th>
++      <th>Due 31–60 days</th>
++      <th>Due 61+ days</th>
++    </>
++  );
++}
++
++// A person's open claims that count: their due split by the claim's age on the sheet's today.
++function PersonAged({ sheetId, person }: { sheetId: string; person: Person }) {
++  const claims = (useClaims(sheetId).data ?? []).filter((c) => c.personId === person.id);
++  const rates = useRates(sheetId).data ?? [];
++  const today = useSheetToday(sheetId);
++  const floor = useFloor(sheetId);
++  const late = useLate(sheetId);
++  const aged = personAged(rates, person.grades, today, claims, liveHolds(person, today), floor, late);
++  return (
++    <>
++      <td data-testid="person-aged-0-30">{aged.upTo30}</td>
++      <td data-testid="person-aged-31-60">{aged.upTo60}</td>
++      <td data-testid="person-aged-61">{aged.over60}</td>
++    </>
++  );
++}
++
++export const contributions = [
++  PersonHead.fill({ order: 24, Component: AgedHead }),
++  PersonRow.fill({ order: 24, Component: PersonAged }),
++];
+diff --git a/src/main/frontend/features/aging/aging.ts b/src/main/frontend/features/aging/aging.ts
+new file mode 100644
+index 000000000..189133186
+--- /dev/null
++++ b/src/main/frontend/features/aging/aging.ts
+@@ -0,0 +1,35 @@
++import { gradeOn } from '../people/people';
++import type { GradeFrom, Hold } from '../people/people';
++import { counts, isOpen } from '../claims/claims';
++import type { Claim } from '../claims/claims';
++import { claimDue, daysBetween, rateOn, sumDue } from '../rates/rates';
++import type { Dated, Late, Rate } from '../rates/rates';
++
++/** A person's due split by claim age: aged 0 to 30 days, 31 to 60, and 61 or more. */
++export type Aged = { upTo30: string; upTo60: string; over60: string };
++
++/**
++ * A person's open (OPEN or PENDING) claims that count (not an unbound one dated within one of their
++ * `holds`, nor one deferred on `today`), their due figures (with their late charge) added up, skipping
++ * n/a, split by the claim's age on the sheet's `today`: the days from its date. A claim dated after
++ * today is aged 0 to 30.
++ */
++export function personAged(
++  rates: Rate[],
++  grades: GradeFrom[],
++  today: string,
++  claims: Claim[],
++  holds: Hold[],
++  floor: Dated,
++  late: Late,
++): Aged {
++  const open = claims.filter((c) => isOpen(c) && counts(c, holds, today));
++  const age = (c: Claim) => (today === '' ? 0 : daysBetween(c.date, today));
++  const sum = (bucket: Claim[]) =>
++    sumDue(bucket.map((c) => claimDue(c, rateOn(rates, gradeOn(grades, c.date), c.date), floor, late)));
++  return {
++    upTo30: sum(open.filter((c) => age(c) <= 30)),
++    upTo60: sum(open.filter((c) => age(c) > 30 && age(c) <= 60)),
++    over60: sum(open.filter((c) => age(c) > 60)),
++  };
++}
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 82002522a..3274c5880 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -124,7 +124,7 @@ export function roundsHalfUp(claim: Claim, late: Late): boolean {
+ }
+ 
+ /** Whole days from one date (yyyy-MM-dd) to another, worked in UTC so no zone shifts it. */
+-function daysBetween(from: string, to: string): number {
++export function daysBetween(from: string, to: string): number {
+   const utc = (date: string) => {
+     const [y, m, d] = date.split('-').map(Number);
+     return Date.UTC(y, m - 1, d);
