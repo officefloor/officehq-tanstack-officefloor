@@ -8,6 +8,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -70,6 +72,33 @@ public class Audit {
     public static String user(HttpServletRequest request) {
         String header = request.getHeader("X-User");
         return header == null ? "" : URLDecoder.decode(header, StandardCharsets.UTF_8);
+    }
+
+    /** A person field of a record: {@code name=} or {@code person=}, its value up to the next field. */
+    private static final Pattern PERSON = Pattern.compile("(?<= )(?:name|person)=(.*?)(?= [a-z][a-z-]*=|$)");
+
+    /**
+     * The sheet's records as the file holds them, in file order. A non-blank {@code name} keeps only
+     * the records carrying {@code name=} or {@code person=} that name, case and surrounding spaces ignored.
+     */
+    public synchronized List<String> linesFor(String sheetId, String name) {
+        List<String> all;
+        try {
+            all = Files.exists(file) ? Files.readAllLines(file, StandardCharsets.UTF_8) : List.of();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        String wanted = name.trim().toLowerCase(Locale.ROOT);
+        return all.stream().filter(line -> {
+            Matcher head = HEAD.matcher(line);
+            if (!head.find() || !head.group(2).equals(sheetId)) return false;
+            if (wanted.isEmpty()) return true;
+            Matcher field = PERSON.matcher(line);
+            while (field.find()) {
+                if (field.group(1).trim().toLowerCase(Locale.ROOT).equals(wanted)) return true;
+            }
+            return false;
+        }).toList();
     }
 
     /** Remove the audit file. */
