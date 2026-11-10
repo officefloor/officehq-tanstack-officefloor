@@ -46,6 +46,8 @@ export type Claim = {
   proofs: number;
   /** The number of the claim it was split off; '' when it was not split off one. */
   splitFrom: string;
+  /** The user whose open editor locks it on the sheet's today; '' when no one's does. */
+  lockedBy: string;
 };
 
 /** Whether a claim is a correction: it has no floor and no late charge. */

@@ -24,6 +24,7 @@ public class Claim {
     private LocalDate deferredUntil;
     private int proofs;
     private String splitFrom;
+    private String lockedBy;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue,
@@ -115,6 +116,9 @@ public class Claim {
         amount = amount.subtract(part);
         bind(false, null);
     }
+    /** The user whose editor holds it locked on the sheet's today, as read; null when no one's does. */
+    public String getLockedBy() { return lockedBy; }
+    public void setLockedBy(String lockedBy) { this.lockedBy = lockedBy; }
     public String getNote() { return note; }
     public void setNote(String note) { this.note = note; }
     public ClaimStatus getStatus() { return status; }

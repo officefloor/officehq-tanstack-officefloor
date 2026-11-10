@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOnce } from '../../query/useOnce';
@@ -19,6 +19,9 @@ import { dueBy, isOverdue } from '../overdue/overdue';
 // A clerk's settle above the clerk limit leaves the claim PENDING; a steward approves it or rejects
 // it with a reason (typed in the row). A steward re-settles a SETTLED claim at its figure today.
 type Action = 'open' | 'settle' | 'void' | 'approve' | 'reject' | 'resettle';
+type Fields = { amount: string; date: string; note: string; corrects: string };
+const EMPTY: Fields = { amount: '', date: '', note: '', corrects: '' };
+
 const ACTIONS: { action: Action; label: string }[] = [
   { action: 'open', label: 'Open' },
   { action: 'settle', label: 'Settle' },
@@ -28,8 +31,6 @@ const ACTIONS: { action: Action; label: string }[] = [
   { action: 'resettle', label: 'Re-settle' },
 ];
 
-type Fields = { amount: string; date: string; note: string; corrects: string };
-const EMPTY: Fields = { amount: '', date: '', note: '', corrects: '' };
 
 function ClaimsHead() {
   return (
@@ -48,6 +49,11 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   const claims = (all.data ?? []).filter((c) => c.personId === person.id);
   const [fields, setFields] = useState<Fields>(EMPTY);
   const [editing, setEditing] = useState<string | null>(null);
+  // The claim the editor is on now, for a lock answered after the user moved on.
+  const editingNow = useRef<string | null>(null);
+  editingNow.current = editing;
+  // The claim whose lock this user's editor was given: until then its edit button stays.
+  const [granted, setGranted] = useState<string | null>(null);
   const [error, setError] = useState('');
   // The claim whose last status change or edit was refused, and why: its error shows until its
   // next action.
@@ -75,6 +81,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
     setRefused(null);
     setFields(EMPTY);
     setEditing(null);
+    setGranted(null);
     setError('');
   };
 
@@ -276,11 +283,62 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
     setRefused((r) => (r !== null && r.id === editing ? null : r));
   };
 
+  // The edit button locks the claim for this user until its editor is saved or cancelled (or the
+  // sheet's today changes). A claim that cannot be edited (not a draft, in a closed period), one
+  // another user is editing, or any edit of a viewer's, is refused on the claim and takes no lock.
+  const lock = useMutation({
+    mutationFn: (c: Claim) =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/claims/${encodeURIComponent(c.id)}/lock`,
+        {},
+        user,
+      ),
+    onSuccess: (_r, c) => {
+      if (editingNow.current !== c.id) return;
+      setGranted(c.id);
+      setFields({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects });
+      setError('');
+    },
+    onError: (_e, c) =>
+      setRefused({ id: c.id, message: 'That claim cannot be edited now: it is not an editable draft, or someone else is editing it.' }),
+  });
+
+  const unlock = useMutation({
+    mutationFn: (id: string) =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/claims/${encodeURIComponent(id)}/unlock`,
+        {},
+        user,
+      ),
+  });
+
+  // The form is the claim's editor from the press on, its values filled once the lock is taken; a
+  // refused editor stays empty, and saving it is refused too (the lock is the server's to give).
   const open = (c: Claim) => {
     setRefused(null);
     setEditing(c.id);
-    setFields({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects });
+    setGranted(null);
+    setFields(EMPTY);
     setError('');
+    lock.mutate(c);
+  };
+
+  // An editor this user still holds open (its lock) is open again when the sheet is loaded again.
+  const restored = useRef(false);
+  useEffect(() => {
+    if (restored.current || !all.isFetchedAfterMount) return;
+    restored.current = true;
+    const mine = claims.find((c) => c.lockedBy !== '' && c.lockedBy === user);
+    if (mine !== undefined && editing === null) {
+      setEditing(mine.id);
+      setGranted(mine.id);
+      setFields({ amount: mine.amount, date: mine.date, note: mine.note, corrects: mine.corrects });
+    }
+  }, [all.isFetchedAfterMount, claims, user, editing]);
+
+  const cancel = () => {
+    if (editing !== null) unlock.mutate(editing);
+    reset();
   };
 
   return (
@@ -434,11 +492,12 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
               <button type="button" data-testid="claim-reassign" onClick={() => moveClaim(c.id)}>
                 Move
               </button>{' '}
-              {editing === c.id ? (
-                <button type="button" data-testid="claim-cancel" onClick={reset}>
+              {editing === c.id && (
+                <button type="button" data-testid="claim-cancel" onClick={cancel}>
                   Cancel
                 </button>
-              ) : (
+              )}
+              {granted !== c.id && (
                 <button type="button" data-testid="claim-edit" onClick={() => open(c)}>
                   Edit
                 </button>
