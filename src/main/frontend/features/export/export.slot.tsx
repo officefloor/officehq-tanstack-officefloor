@@ -1,0 +1,49 @@
+import { SheetBody } from '../../slots/defs/sheetBody';
+import { useClaims } from '../claims/claims';
+import { usePeople } from '../people/people';
+import { personDueTotal, useRates } from '../rates/rates';
+import { useFloor, useLate } from '../access/access';
+import { useSheetToday } from '../sheet/sheet';
+
+// A CSV value: wrapped in double quotes (any quote inside doubled) when it holds a comma, a quote
+// or a line break.
+const csvValue = (v: string) => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+
+// Downloads the people as a CSV file: a header line, then one line per person in list order,
+// retired people included, with the grade in force today, the retired-from date ('' when not
+// retired) and the due-total as the list shows it. Lines end with a line feed.
+function ExportPeople({ sheetId }: { sheetId: string }) {
+  const people = usePeople(sheetId).data ?? [];
+  const claims = useClaims(sheetId).data ?? [];
+  const rates = useRates(sheetId).data ?? [];
+  const today = useSheetToday(sheetId);
+  const floor = useFloor(sheetId);
+  const late = useLate(sheetId);
+
+  const download = () => {
+    const lines = [['name', 'grade', 'retired-from', 'due-total']];
+    for (const p of people) {
+      const own = claims.filter((c) => c.personId === p.id);
+      lines.push([p.name, p.grade, p.retiredFrom, personDueTotal(rates, p.grades, today, own, p.held, floor, late)]);
+    }
+    const csv = lines.map((l) => l.map(csvValue).join(',') + '\n').join('');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `people-${sheetId}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  return (
+    <p>
+      <button type="button" data-testid="export-people" onClick={download}>
+        Export people (CSV)
+      </button>
+    </p>
+  );
+}
+
+export const contribution = SheetBody.fill({ order: 2, Component: ExportPeople });
