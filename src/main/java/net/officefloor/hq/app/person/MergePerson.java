@@ -6,6 +6,7 @@ import net.officefloor.hq.app.CurrentUser;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.settings.SettingsRepository;
+import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.server.http.ServerHttpConnection;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -16,12 +17,13 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  name and aliases become the other's aliases, their patrons, the people naming them and their pool memberships
  *  pass to the other, and they leave the sheet (their statements joined to the other's — the other's count becomes their own plus
  *  the merged person's, the other's last statement staying theirs, or becoming the merged person's when they had
- *  none; holds, watchers and contact dropped). Refused for anyone
+ *  none; holds, watchers and contact dropped). The merge is kept as the last into the other, so the steward can undo it
+ *  that sheet-today (see {@link MergeUndoPerson}). Refused for anyone
  *  but a steward, for the same person, and when either of them is retired. */
 public class MergePerson {
     public void merge(@PathVariable("sheetId") String sheetId, @PathVariable("personId") String personId,
             @RequestBody MergeRequest request, ServerHttpConnection connection, PersonRepository people,
-            ClaimRepository claims, SettingsRepository settings, Audit audit, Rollup rollup, Out<Person> person)
+            ClaimRepository claims, SettingsRepository settings, SheetRepository sheets, MergeRepository merges, Audit audit, Rollup rollup, Out<Person> person)
             throws BadRequestException {
         String by = CurrentUser.require(connection);
         String id = sheetId == null ? "" : sheetId.trim();
@@ -52,6 +54,7 @@ public class MergePerson {
             throw new BadRequestException(into.name() + " is retired");
         }
         Rollup.Snapshot before = rollup.take(id);
+        merges.keep(id, pid, into.id(), by, sheets.today(id));
         claims.moveAll(id, pid, into.id());
         people.merge(id, pid, into.id());
         audit.record("PERSON_MERGED sheet=" + id + " by=" + by + " from=" + from.name() + " into=" + into.name());

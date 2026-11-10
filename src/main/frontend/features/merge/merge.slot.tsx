@@ -58,7 +58,41 @@ function PersonMerge({ sheetId, personId }: { sheetId: string; personId: number 
   );
 }
 
+/** The steward who made the last merge into a person undoes it on the same sheet-today: the merged person is back
+ *  at the end of the list with the claims that came from them and their own aliases, so every figure on the sheet is
+ *  re-read. Any later day, anyone else, or a person with no merge to undo is refused with the row's error. */
+function PersonMergeUndo({ sheetId, personId }: { sheetId: string; personId: number }) {
+  const queryClient = useQueryClient();
+  const undo = useMutation({
+    mutationFn: () => postJson<Person>(`/api/sheets/${encodeURIComponent(sheetId)}/people/${personId}/merge-undo`, {}),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['sheet', sheetId] });
+    },
+  });
+  const announce = usePersonRowAction(sheetId, personId, undo.reset);
+
+  return (
+    <td>
+      <button
+        type="button"
+        data-testid="person-merge-undo"
+        disabled={undo.isPending}
+        onClick={() => {
+          announce();
+          undo.reset();
+          undo.mutate();
+        }}
+      >
+        Undo merge
+      </button>
+      {undo.isError && <span data-testid="person-error">{undo.error.message}</span>}
+    </td>
+  );
+}
+
 export const contributions = [
   PersonColumnHead.fill({ order: 55, Component: () => <th>Merge</th> }),
   PersonCells.fill({ order: 55, Component: PersonMerge }),
+  PersonColumnHead.fill({ order: 55.2, Component: () => <th>Undo merge</th> }),
+  PersonCells.fill({ order: 55.2, Component: PersonMergeUndo }),
 ];
