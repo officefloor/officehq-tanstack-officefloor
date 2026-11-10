@@ -1,0 +1,259 @@
+diff --git a/src/main/frontend/features/access/access.ts b/src/main/frontend/features/access/access.ts
+index 1c7fd3ede..31c9e8f06 100644
+--- a/src/main/frontend/features/access/access.ts
++++ b/src/main/frontend/features/access/access.ts
+@@ -109,7 +109,11 @@ export function useSettings(sheetId: string) {
+  * its date ('0.00', no floor, until the settings are read).
+  */
+ export function useFloor(sheetId: string): Dated {
+-  const settings = useSettings(sheetId).data;
++  return floorOf(useSettings(sheetId).data);
++}
++
++/** The floor of settings as read (undefined until they are): as `useFloor`. */
++export function floorOf(settings: Settings | undefined): Dated {
+   if (!settings) return { start: '0.00', values: [] };
+   return { start: '1.00', values: settings.dated?.floor ?? [] };
+ }
+@@ -119,12 +123,16 @@ export function useFloor(sheetId: string): Dated {
+  * today and policy date ('' until read).
+  */
+ export function useLate(sheetId: string): Late {
+-  const settings = useSettings(sheetId).data;
++  return lateOf(useSettings(sheetId).data, useSheetToday(sheetId));
++}
++
++/** The late charge of settings as read (undefined until they are) on the sheet's today: as `useLate`. */
++export function lateOf(settings: Settings | undefined, today: string): Late {
+   const pct: Dated = { start: '0.00', values: settings?.dated?.['late-pct'] ?? [] };
+   const grace = Object.fromEntries(
+     GRADES.map((g) => [g, { start: '', values: settings?.dated?.[gradeGraceKey(g)] ?? [] }]),
+   );
+-  return { pct, today: useSheetToday(sheetId), policyDate: settings?.policyDate ?? '', grace };
++  return { pct, today, policyDate: settings?.policyDate ?? '', grace };
+ }
+ 
+ /** The sheet's cap on a person's due-total ('' for none, until the settings are read). */
+diff --git a/src/main/frontend/features/consolidated/consolidated.slot.tsx b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+new file mode 100644
+index 000000000..4d9f732cd
+--- /dev/null
++++ b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+@@ -0,0 +1,34 @@
++import { SheetBody } from '../../slots/defs/sheetBody';
++import { useClaims } from '../claims/claims';
++import { usePeople } from '../people/people';
++import { sumDue, useRates } from '../rates/rates';
++import { useSheetToday } from '../sheet/sheet';
++import { useCap, useFloor, useLate } from '../access/access';
++import { sheetFigures, useDescendantFigures } from './consolidated';
++
++// The consolidated figures, over the sheet and all its descendants: everyone on them, and each
++// sheet's due-total and overdue-total as that sheet shows them, added up. The sheet's own figures
++// are the header's; with no children these are just those.
++function Consolidated({ sheetId }: { sheetId: string }) {
++  const people = usePeople(sheetId).data ?? [];
++  const claims = useClaims(sheetId).data ?? [];
++  const rates = useRates(sheetId).data ?? [];
++  const today = useSheetToday(sheetId);
++  const floor = useFloor(sheetId);
++  const late = useLate(sheetId);
++  const cap = useCap(sheetId);
++  const descendants = useDescendantFigures(sheetId).data ?? [];
++
++  const all = [sheetFigures(people, claims, rates, today, floor, late, cap), ...descendants];
++  const count = all.reduce((n, f) => n + f.people, 0);
++
++  return (
++    <section data-testid="consolidated">
++      Consolidated — People: <strong data-testid="consolidated-people-count">{count}</strong>{' '}
++      Due: <strong data-testid="consolidated-due-total">{sumDue(all.map((f) => f.dueTotal))}</strong>{' '}
++      Overdue: <strong data-testid="consolidated-overdue-total">{sumDue(all.map((f) => f.overdueTotal))}</strong>
++    </section>
++  );
++}
++
++export const contribution = SheetBody.fill({ order: -99.5, Component: Consolidated });
+diff --git a/src/main/frontend/features/consolidated/consolidated.ts b/src/main/frontend/features/consolidated/consolidated.ts
+new file mode 100644
+index 000000000..5549242a7
+--- /dev/null
++++ b/src/main/frontend/features/consolidated/consolidated.ts
+@@ -0,0 +1,65 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { claimsQuery } from '../claims/claims';
++import type { Claim } from '../claims/claims';
++import { liveHolds, peopleQuery } from '../people/people';
++import type { Person } from '../people/people';
++import { personDueTotal, trimmedSumDue } from '../rates/rates';
++import type { Dated, Late, Rate } from '../rates/rates';
++import { personOverdue } from '../overdue/overdue';
++import { floorOf, lateOf } from '../access/access';
++import type { Settings } from '../access/access';
++import type { Sheet } from '../sheet/sheet';
++
++/** A sheet's own figures, as its header shows them: its people, its due-total and its overdue-total. */
++export type Figures = { people: number; dueTotal: string; overdueTotal: string };
++
++/** A sheet's figures from what it holds — the one working the header and the consolidated figures share. */
++export function sheetFigures(
++  people: Person[],
++  claims: Claim[],
++  rates: Rate[],
++  today: string,
++  floor: Dated,
++  late: Late,
++  cap: string,
++): Figures {
++  const claimsOf = (id: string) => claims.filter((c) => c.personId === id);
++  return {
++    people: people.length,
++    dueTotal: trimmedSumDue(
++      people.map((p) => personDueTotal(rates, p.grades, today, claimsOf(p.id), liveHolds(p, today), floor, late, cap)),
++    ),
++    overdueTotal: trimmedSumDue(
++      people.map((p) => personOverdue(rates, p.grades, today, claimsOf(p.id), liveHolds(p, today), floor, late).total),
++    ),
++  };
++}
++
++const enc = encodeURIComponent;
++
++/** A sheet's figures, every part of it read fresh from the store. */
++async function readFigures(sheetId: string): Promise<Figures> {
++  const [sheet, people, claims, rates, settings] = await Promise.all([
++    getJson<Sheet>(`/api/sheets/${enc(sheetId)}`),
++    peopleQuery(sheetId).queryFn(),
++    claimsQuery(sheetId).queryFn(),
++    getJson<{ rates: Rate[] }>(`/api/sheets/${enc(sheetId)}/rates`).then((r) => r.rates),
++    getJson<Settings>(`/api/sheets/${enc(sheetId)}/settings`),
++  ]);
++  return sheetFigures(people, claims, rates, sheet.today, floorOf(settings), lateOf(settings, sheet.today), settings.cap ?? '');
++}
++
++/**
++ * The figures of each of the sheet's descendants: the sheets naming it as their parent, theirs, and
++ * so on. Kept under the sheet's own key, so loading the sheet again re-reads them all.
++ */
++export function useDescendantFigures(sheetId: string) {
++  return useQuery({
++    queryKey: ['sheet', sheetId, 'descendants'] as const,
++    queryFn: async () => {
++      const { descendants } = await getJson<{ descendants: string[] }>(`/api/sheets/${enc(sheetId)}/descendants`);
++      return Promise.all(descendants.map(readFigures));
++    },
++  });
++}
+diff --git a/src/main/frontend/features/header/header.slot.tsx b/src/main/frontend/features/header/header.slot.tsx
+index acbb43930..7c3cedade 100644
+--- a/src/main/frontend/features/header/header.slot.tsx
++++ b/src/main/frontend/features/header/header.slot.tsx
+@@ -1,9 +1,9 @@
+ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { useClaims } from '../claims/claims';
+ import type { ClaimStatus } from '../claims/claims';
+-import { liveHolds, usePeople } from '../people/people';
+-import { personDueTotal, trimmedSumDue, useRates } from '../rates/rates';
+-import { personOverdue } from '../overdue/overdue';
++import { usePeople } from '../people/people';
++import { useRates } from '../rates/rates';
++import { sheetFigures } from '../consolidated/consolidated';
+ import { useSheetToday } from '../sheet/sheet';
+ import { useCap, useFloor, useLate } from '../access/access';
+ 
+@@ -22,13 +22,7 @@ function Header({ sheetId }: { sheetId: string }) {
+   const late = useLate(sheetId);
+   const cap = useCap(sheetId);
+ 
+-  const claimsOf = (id: string) => claims.filter((c) => c.personId === id);
+-  const dueTotal = trimmedSumDue(
+-    people.map((p) => personDueTotal(rates, p.grades, today, claimsOf(p.id), liveHolds(p, today), floor, late, cap)),
+-  );
+-  const overdueTotal = trimmedSumDue(
+-    people.map((p) => personOverdue(rates, p.grades, today, claimsOf(p.id), liveHolds(p, today), floor, late).total),
+-  );
++  const { dueTotal, overdueTotal } = sheetFigures(people, claims, rates, today, floor, late, cap);
+ 
+   return (
+     <header data-testid="header">
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/DescendantsResponse.java b/src/main/java/net/officefloor/hq/app/sheet/DescendantsResponse.java
+new file mode 100644
+index 000000000..ec3c3c1f5
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/DescendantsResponse.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.sheet;
++
++import java.util.List;
++
++/** A sheet's descendants: its children, theirs, and so on, each once, nearest first. */
++public record DescendantsResponse(List<String> descendants) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RespondWithDescendants.java b/src/main/java/net/officefloor/hq/app/sheet/RespondWithDescendants.java
+new file mode 100644
+index 000000000..c904578bc
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/RespondWithDescendants.java
+@@ -0,0 +1,31 @@
++package net.officefloor.hq.app.sheet;
++
++import java.util.ArrayDeque;
++import java.util.ArrayList;
++import java.util.Deque;
++import java.util.HashSet;
++import java.util.List;
++import java.util.Set;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++/**
++ * The sheet's descendants: the sheets naming it as their parent, the sheets naming those, and so
++ * on. Each is listed once, and never the sheet itself.
++ */
++public class RespondWithDescendants {
++    public void respond(@Val Sheet sheet, SheetRepository repository, ObjectResponse<DescendantsResponse> response) {
++        List<String> descendants = new ArrayList<>();
++        Set<String> seen = new HashSet<>(Set.of(sheet.id()));
++        Deque<String> pending = new ArrayDeque<>(List.of(sheet.id()));
++        while (!pending.isEmpty()) {
++            for (String child : repository.children(pending.removeFirst())) {
++                if (seen.add(child)) {
++                    descendants.add(child);
++                    pending.addLast(child);
++                }
++            }
++        }
++        response.send(new DescendantsResponse(descendants));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+index 9d8b5e4f1..8da56b83e 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+@@ -64,6 +64,11 @@ public class SheetRepository {
+         return found.isEmpty() ? null : found.get(0);
+     }
+ 
++    /** The ids of the sheets naming this one as their parent, in id order. */
++    public List<String> children(String id) {
++        return jdbc.query("SELECT id FROM sheet WHERE parent_id = ? ORDER BY id", (rs, n) -> rs.getString("id"), id);
++    }
++
+     /** Names the sheet's parent sheet (null: none). */
+     public void saveParent(String id, String parent) {
+         jdbc.update("UPDATE sheet SET parent_id = ? WHERE id = ?", parent, id);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/descendants.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/descendants.GET.yml
+new file mode 100644
+index 000000000..b38a7ff6a
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/descendants.GET.yml
+@@ -0,0 +1,8 @@
++# A sheet's descendants: the sheets naming it as their parent, theirs, and so on.
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ readonly-transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.sheet.RespondWithDescendants
++  govern: [ readonly-transaction ]
