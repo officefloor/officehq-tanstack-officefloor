@@ -1,4 +1,4 @@
-/** A query re-read now: its fresh data (as of the screen's as-of date, when one is set), else what it held. */
+/** A query re-read now: its fresh data (as of the screen's as-of date, and at its preview date, when set), else what it held. */
 export async function fresh<T>(q: { data: T | undefined; refetch: () => Promise<{ data: T | undefined }> }): Promise<T | undefined> {
   return (await q.refetch()).data ?? q.data;
 }
