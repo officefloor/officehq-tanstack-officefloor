@@ -29,9 +29,11 @@ export type Settings = {
   perms: Record<string, string>;
   /** Grace days, a whole number ('' for off): when today is changed, every open period whose to-date plus them is before it closes. */
   graceDays: string;
+  /** The due above which a claim, on its date, needs a note to be opened ('' for none). */
+  noteThreshold: string;
   /**
    * Every value recorded for each figure setting, by key (clerk-limit, floor, terms, late-pct,
-   * terms-A, terms-B, terms-C, cap, proof-threshold), in from-date order ('' for none). The values above are those
+   * terms-A, terms-B, terms-C, cap, proof-threshold, note-threshold), in from-date order ('' for none). The values above are those
    * in force on the sheet's today.
    */
   dated?: Record<string, { from: string; value: string }[]>;
@@ -45,6 +47,7 @@ export const DATED_KEYS = {
   latePct: 'late-pct',
   cap: 'cap',
   proofThreshold: 'proof-threshold',
+  noteThreshold: 'note-threshold',
 } as const;
 
 /** The grades that may have their own terms. */
@@ -126,6 +129,9 @@ export const CAP = /^\d+(\.\d{1,2})?$/;
 
 /** A proof threshold as the screen takes it: blank, or 0.00 or more with up to two decimals. */
 export const PROOF_THRESHOLD = /^\d+(\.\d{1,2})?$/;
+
+/** A note threshold as the screen takes it: blank, or 0.00 or more with up to two decimals. */
+export const NOTE_THRESHOLD = /^\d+(\.\d{1,2})?$/;
 
 /** A floor as the screen takes it: 0.00 or more with up to two decimals. */
 export const FLOOR = /^\d+(\.\d{1,2})?$/;

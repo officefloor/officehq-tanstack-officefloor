@@ -26,6 +26,7 @@ public class SaveSettings {
         values.putAll(input.gradeTermsValues());
         if (input.capValue() != null) values.put(Settings.CAP, input.capValue());
         if (input.proofThresholdValue() != null) values.put(Settings.PROOF_THRESHOLD, input.proofThresholdValue());
+        if (input.noteThresholdValue() != null) values.put(Settings.NOTE_THRESHOLD, input.noteThresholdValue());
         values.forEach((key, value) -> {
             LocalDate from = input.from().getOrDefault(key, sheet.today());
             repository.record(sheet.id(), key, from, value);

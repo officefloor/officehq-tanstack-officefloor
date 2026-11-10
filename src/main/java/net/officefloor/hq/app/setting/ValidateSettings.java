@@ -15,7 +15,7 @@ public class ValidateSettings {
     private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
     private static final java.util.Set<String> DATED = java.util.Set.of(Settings.CLERK_LIMIT, Settings.FLOOR,
             Settings.TERMS, Settings.LATE_PCT, Settings.CAP, Settings.gradeTermsKey("A"), Settings.gradeTermsKey("B"),
-            Settings.gradeTermsKey("C"), Settings.PROOF_THRESHOLD);
+            Settings.gradeTermsKey("C"), Settings.PROOF_THRESHOLD, Settings.NOTE_THRESHOLD);
 
     public void validate(@RequestBody SettingsRequest request, Out<SettingsInput> body)
             throws InvalidSettingException {
@@ -106,6 +106,15 @@ public class ValidateSettings {
             }
             threshold = new BigDecimal(value).setScale(2);
         }
+        boolean noteThresholdChanged = request != null && request.noteThreshold() != null;
+        BigDecimal noteThreshold = null;
+        if (noteThresholdChanged && !request.noteThreshold().trim().isEmpty()) {
+            String value = request.noteThreshold().trim();
+            if (!FIGURE.matcher(value).matches()) {
+                throw new InvalidSettingException("A note threshold is 0.00 or more, with up to two decimals, or blank");
+            }
+            noteThreshold = new BigDecimal(value).setScale(2);
+        }
         Map<String, String> perms = new LinkedHashMap<>();
         if (request != null && request.perms() != null) {
             for (String action : request.perms().keySet()) {
@@ -154,6 +163,6 @@ public class ValidateSettings {
         }
         body.set(new SettingsInput(limitChanged, limit, floor, terms, latePct, policyChanged, policyDate,
                 numberingChanged, numberingFrom, gradeTerms, capChanged, cap, from,
-                thresholdChanged, threshold, perms, graceChanged, graceDays));
+                thresholdChanged, threshold, perms, graceChanged, graceDays, noteThresholdChanged, noteThreshold));
     }
 }

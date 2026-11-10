@@ -13,14 +13,15 @@ import java.time.LocalDate;
  * sheet's today), and whether the proof threshold is changed and to what (null: none), and the
  * actions whose entry in the permission matrix is changed, in matrix order, each to the roles that
  * may take it as a comma separated list ('' for the standing rule), and whether the grace days are
- * changed and to what (null: off).
+ * changed and to what (null: off), and whether the note threshold is changed and to what (null: none).
  */
 public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, BigDecimal floor, Integer terms, BigDecimal latePct,
         boolean policyDateChanged, LocalDate policyDate,
         boolean periodNumberingFromChanged, LocalDate periodNumberingFrom,
         java.util.Map<String, Integer> gradeTerms, boolean capChanged, BigDecimal cap,
         java.util.Map<String, LocalDate> from, boolean proofThresholdChanged, BigDecimal proofThreshold,
-        java.util.Map<String, String> perms, boolean graceDaysChanged, Integer graceDays) {
+        java.util.Map<String, String> perms, boolean graceDaysChanged, Integer graceDays,
+        boolean noteThresholdChanged, BigDecimal noteThreshold) {
 
     /**
      * The figure settings being changed, by key in the order they are audited, each with the value
@@ -50,5 +51,10 @@ public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, Bi
     /** The proof threshold as it is recorded ('' for none), or null when it is not changed. */
     public String proofThresholdValue() {
         return !proofThresholdChanged ? null : proofThreshold == null ? "" : proofThreshold.toPlainString();
+    }
+
+    /** The note threshold as it is recorded ('' for none), or null when it is not changed. */
+    public String noteThresholdValue() {
+        return !noteThresholdChanged ? null : noteThreshold == null ? "" : noteThreshold.toPlainString();
     }
 }

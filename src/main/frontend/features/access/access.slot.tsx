@@ -5,7 +5,7 @@ import { useOnce } from '../../query/useOnce';
 import { postJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/session';
-import { ACTIONS, CAP, DATED_KEYS, FLOOR, GRADES, LATE_PCT, LIMIT, PERM_ROLES, POLICY_DATE, PROOF_THRESHOLD, STANDING_RULE, TERMS, ROLES, rolesKey, settingsKey, useRoles, useSettings } from './access';
+import { ACTIONS, CAP, DATED_KEYS, FLOOR, GRADES, LATE_PCT, LIMIT, NOTE_THRESHOLD, PERM_ROLES, POLICY_DATE, PROOF_THRESHOLD, STANDING_RULE, TERMS, ROLES, rolesKey, settingsKey, useRoles, useSettings } from './access';
 import type { Role, Settings, SettingsChange } from './access';
 
 type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms'>;
@@ -17,7 +17,8 @@ type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms'>;
 // numbering from (blank: off), from which a claim opened is numbered within its period, and each
 // grade's own terms (blank: the sheet's terms), fixing the due-by of a claim made for it, and its cap
 // (blank: none), the most a person's due-total may be, and its proof threshold (blank: none), above
-// which a claim's due, on its date, needs a proof to be settled or approved, and its permission
+// which a claim's due, on its date, needs a proof to be settled or approved, and its note threshold
+// (blank: none), above which a claim's due, on its date, needs a note to be opened, and its permission
 // matrix: for each action the roles that may take it, comma separated (blank: the standing rule), and its
 // grace days (blank: off), past which an open period closes when today is changed. Only the settings typed in (or stepped into)
 // since the last save are sent, so saving one leaves the other as it is.
@@ -27,6 +28,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
   const [fields, setFields] = useState<Omit<Settings, 'gradeTerms' | 'perms'>>({
     cap: '',
     proofThreshold: '',
+    noteThreshold: '',
     clerkLimit: '',
     floor: '',
     terms: '',
@@ -133,6 +135,14 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         return;
       }
       body.proofThreshold = threshold;
+    }
+    if (touched.has('noteThreshold')) {
+      const threshold = fields.noteThreshold.trim();
+      if (threshold !== '' && !NOTE_THRESHOLD.test(threshold)) {
+        setError('A note threshold is 0.00 or more, with up to two decimals, or blank.');
+        return;
+      }
+      body.noteThreshold = threshold;
     }
     if (gradesTouched.size > 0) {
       const gradeTerms: Record<string, string> = {};
@@ -367,6 +377,21 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         {fromInput('proof-threshold')}{' '}
         <span>
           now: <strong data-testid="setting-proof-threshold-current">{settings.data?.proofThreshold ?? ''}</strong>
+        </span>{' '}
+        <label>
+          Note threshold{' '}
+          <input
+            data-testid="setting-note-threshold"
+            inputMode="decimal"
+            placeholder="none"
+            value={fields.noteThreshold}
+            onFocus={() => touch('noteThreshold')}
+            onChange={(e) => change('noteThreshold', e.target.value)}
+          />
+        </label>{' '}
+        {fromInput('note-threshold')}{' '}
+        <span>
+          now: <strong data-testid="setting-note-threshold-current">{settings.data?.noteThreshold ?? ''}</strong>
         </span>{' '}
         {ACTIONS.map((action) => (
           <span key={action}>

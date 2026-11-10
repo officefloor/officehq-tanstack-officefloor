@@ -14,7 +14,8 @@ import java.util.NavigableMap;
  * date that it is due by, and its late percent, what an overdue claim's due gains per full 30 days
  * overdue, and its terms per grade (a grade with none uses the sheet's terms), and its cap (none:
  * no cap), the most a person's due-total may be, and its proof threshold (none: none), above which a
- * claim's due, on the claim's date, needs a proof before it is settled or approved. The value in force on a date is the one with the
+ * claim's due, on the claim's date, needs a proof before it is settled or approved, and its note
+ * threshold (none: none), above which a claim's due, on the claim's date, needs a note before it is opened. The value in force on a date is the one with the
  * latest from-date on or before it; before every from-date the starting value (floor 1.00, late
  * percent 0.00, terms 14; none for the others). A claim takes its floor, late percent and terms on
  * its date; the clerk limit and the cap are those in force on the sheet's today ({@code today}).
@@ -37,6 +38,7 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
     public static final String LATE_PCT = "late-pct";
     public static final String CAP = "cap";
     public static final String PROOF_THRESHOLD = "proof-threshold";
+    public static final String NOTE_THRESHOLD = "note-threshold";
 
     /** The actions of the permission matrix, in the order they are shown and audited. */
     public static final List<String> ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
@@ -145,6 +147,21 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
     public boolean needsProof(BigDecimal due, LocalDate date, int proofs) {
         BigDecimal threshold = proofThresholdOn(date);
         return proofs == 0 && threshold != null && due != null && due.compareTo(threshold) > 0;
+    }
+
+    /** The note threshold in force on a date (null: none). */
+    public BigDecimal noteThresholdOn(LocalDate date) {
+        return figureOn(NOTE_THRESHOLD, date);
+    }
+
+    /**
+     * Whether a claim dated {@code date} with a due (null: n/a) and a note needs a note before it is
+     * opened: its due is above the note threshold in force on its date and its note is empty. A due
+     * of n/a, or no threshold, needs none.
+     */
+    public boolean needsNote(BigDecimal due, LocalDate date, String note) {
+        BigDecimal threshold = noteThresholdOn(date);
+        return (note == null || note.isBlank()) && threshold != null && due != null && due.compareTo(threshold) > 0;
     }
 
     /** The cap in force on a date (null: none). */

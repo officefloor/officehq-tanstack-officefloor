@@ -20,7 +20,7 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Opens the selected claims in list order (people in the order they were added, each person's
  * claims newest first), numbering each as it is opened. A claim that cannot be opened (not a
- * draft, dated inside a closed period, not on the sheet) is refused and left as it is; every one is
+ * draft, dated inside a closed period, not on the sheet, above the note threshold with an empty note) is refused and left as it is; every one is
  * refused when the permission matrix does not allow the user's role to open, or the sheet is
  * archived. Each claim opened is logged and audited as a single open is: its CLAIM_OPENED line,
  * then the figures it moved.
@@ -50,6 +50,7 @@ public class OpenSelectedClaims {
             List<Claim> theirs = claims.findByPerson(sheet.id(), person.getId());
             for (Claim claim : theirs) {
                 if (!selected.contains(claim.getId())) continue;
+                if (OpenClaim.needsNote(sheet, claim, people, rates, settings)) continue;
                 if (!opens(sheet, claim, periods, claims)) continue;
                 claim.setOpenedBy(user);
                 claim.setNumber(ClaimNumbers.next(sheet, claim, settings.find(sheet.id()), periods, claims));
