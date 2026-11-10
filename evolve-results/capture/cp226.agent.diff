@@ -1,0 +1,374 @@
+diff --git a/src/main/frontend/api/http.ts b/src/main/frontend/api/http.ts
+index a3fe00c0a..915c695cc 100644
+--- a/src/main/frontend/api/http.ts
++++ b/src/main/frontend/api/http.ts
+@@ -4,9 +4,12 @@
+ //
+ // Every request carries the signed-in name in X-User (the server records it as `by=<user>`), and,
+ // while this screen shows the sheet as of a date, that date in X-As-Of: reads answer as the sheet stood
+-// then, and every change is refused.
++// then, and every change is refused; and, while this screen previews the sheet at a date, that date in
++// X-Preview on every read: reads answer as the sheet is now, with that date standing in for its today.
++// Changes are never sent with it, so they use the sheet's real today.
+ let signedInUser = '';
+ let asOfDate = '';
++let previewDate = '';
+ 
+ /** A non-2xx answer: the server's message, and its status (409 when someone else saved first). */
+ export class HttpError extends Error {
+@@ -30,10 +33,21 @@ export function currentAsOfDate(): string {
+   return asOfDate;
+ }
+ 
+-async function send<T>(path: string, init?: RequestInit, asOf = asOfDate): Promise<T> {
++/** Called by the preview control (features/preview) whenever the screen's preview date changes ('' when none). */
++export function setPreviewDate(date: string): void {
++  previewDate = date;
++}
++
++/** The preview date reads are sent with ('' when none). */
++export function currentPreviewDate(): string {
++  return previewDate;
++}
++
++async function send<T>(path: string, init?: RequestInit, asOf = asOfDate, preview = ''): Promise<T> {
+   const headers = new Headers(init?.headers);
+   if (signedInUser) headers.set('X-User', signedInUser);
+   if (asOf) headers.set('X-As-Of', asOf);
++  if (preview) headers.set('X-Preview', preview);
+   const res = await fetch(path, { ...init, headers });
+   if (!res.ok) {
+     let message = `${init?.method ?? 'GET'} ${path} -> ${res.status}`;
+@@ -49,6 +63,11 @@ async function send<T>(path: string, init?: RequestInit, asOf = asOfDate): Promi
+ }
+ 
+ export function getJson<T>(path: string): Promise<T> {
++  return send<T>(path, undefined, asOfDate, previewDate);
++}
++
++/** A read that answers at the sheet's real today, whatever date this screen previews it at. */
++export function getJsonUnpreviewed<T>(path: string): Promise<T> {
+   return send<T>(path);
+ }
+ 
+diff --git a/src/main/frontend/features/preview/preview.slot.tsx b/src/main/frontend/features/preview/preview.slot.tsx
+new file mode 100644
+index 000000000..3edc456df
+--- /dev/null
++++ b/src/main/frontend/features/preview/preview.slot.tsx
+@@ -0,0 +1,41 @@
++import { useState } from 'react';
++import { SheetBody } from '../../slots/defs/sheetBody';
++import { usePreview } from './usePreview';
++
++/** Preview the sheet at a date: every figure on this screen is then worked out as if the sheet's today were that
++ *  date, over the sheet's records as they are now, until it is cleared. Every change still uses the sheet's real
++ *  today, and nothing a change of today does happens. */
++function PreviewControl() {
++  const [preview, setPreview] = usePreview();
++  const [date, setDate] = useState('');
++  return (
++    <form
++      data-testid="preview-form"
++      onSubmit={(e) => {
++        e.preventDefault();
++        const want = date.trim();
++        if (/^\d{4}-\d{2}-\d{2}$/.test(want)) setPreview(want);
++      }}
++    >
++      Preview: <strong data-testid="sheet-preview">{preview}</strong>{' '}
++      <label>
++        Preview at{' '}
++        <input
++          type="text"
++          placeholder="yyyy-mm-dd"
++          data-testid="preview-date"
++          value={date}
++          onChange={(e) => setDate(e.target.value)}
++        />
++      </label>{' '}
++      <button type="submit" data-testid="preview-set">
++        Set
++      </button>{' '}
++      <button type="button" data-testid="preview-clear" onClick={() => setPreview(undefined)}>
++        Clear
++      </button>
++    </form>
++  );
++}
++
++export const contribution = SheetBody.fill({ order: 1, Component: () => <PreviewControl /> });
+diff --git a/src/main/frontend/features/preview/usePreview.ts b/src/main/frontend/features/preview/usePreview.ts
+new file mode 100644
+index 000000000..531d53bf5
+--- /dev/null
++++ b/src/main/frontend/features/preview/usePreview.ts
+@@ -0,0 +1,23 @@
++import { useEffect, useRef } from 'react';
++import { useQueryClient } from '@tanstack/react-query';
++import { currentPreviewDate, setPreviewDate } from '../../api/http';
++import { asString, useSearchParam } from '../../url/useSearchParam';
++
++/** The date this screen previews the sheet at (URL key `preview`; '' when it shows the sheet at its real today).
++ *  It belongs to this user's screen only, and is left as it is by loading a sheet. Every read is sent with it,
++ *  so a change of it re-reads every query. */
++export function usePreview(): [string, (date: string | undefined) => void] {
++  const [preview, setPreview] = useSearchParam('preview', asString);
++  const queryClient = useQueryClient();
++  const changed = useRef(false);
++  if (currentPreviewDate() !== preview) {
++    setPreviewDate(preview);
++    changed.current = true;
++  }
++  useEffect(() => {
++    if (!changed.current) return;
++    changed.current = false;
++    void queryClient.resetQueries();
++  }, [preview, queryClient]);
++  return [preview, setPreview];
++}
+diff --git a/src/main/frontend/features/today/today.slot.tsx b/src/main/frontend/features/today/today.slot.tsx
+index 08e9111ac..18ef83366 100644
+--- a/src/main/frontend/features/today/today.slot.tsx
++++ b/src/main/frontend/features/today/today.slot.tsx
+@@ -1,23 +1,29 @@
+ import { useState } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+-import { postJson } from '../../api/http';
++import { currentPreviewDate, postJson } from '../../api/http';
+ import { useSingleFlight } from '../../query/useSingleFlight';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+-import { useSheetToday, type SheetToday } from './useSheetToday';
++import { useRealSheetToday, type SheetToday } from './useSheetToday';
+ 
+ /** The sheet's today, shown and changeable, and whether it is archived, with the steward's archive
+  *  button and the steward's clone to another (never used) sheet id. Changing today re-reads the whole sheet,
+- *  since every date decision in it depends on today. All share the one sheet error: the last of them refused. */
++ *  since every date decision in it depends on today. It shows the real today while the screen previews another. All share the one sheet error: the last of them refused. */
+ function TodayControl({ sheetId }: { sheetId: string }) {
+-  const today = useSheetToday(sheetId);
++  const today = useRealSheetToday(sheetId);
+   const [date, setDate] = useState('');
+   const queryClient = useQueryClient();
+   const submitOnce = useSingleFlight();
++  // A change answers with the real today: the today the screen's figures use takes it only when not previewing.
++  const keep = (sheet: SheetToday) => {
++    queryClient.setQueryData(['sheet', sheetId, 'today', 'real'], sheet);
++    if (currentPreviewDate()) void queryClient.invalidateQueries({ queryKey: ['sheet', sheetId, 'today'], exact: true });
++    else queryClient.setQueryData(['sheet', sheetId, 'today'], sheet);
++  };
+   const save = useMutation({
+     mutationFn: (raw: string) =>
+       postJson<SheetToday>(`/api/sheets/${encodeURIComponent(sheetId)}/today`, { date: raw.trim() }),
+     onSuccess: (sheet) => {
+-      queryClient.setQueryData(['sheet', sheetId, 'today'], sheet);
++      keep(sheet);
+       void queryClient.invalidateQueries({
+         queryKey: ['sheet', sheetId],
+         predicate: (q) => q.queryKey[2] !== 'today',
+@@ -26,7 +32,7 @@ function TodayControl({ sheetId }: { sheetId: string }) {
+   });
+   const archive = useMutation({
+     mutationFn: () => postJson<SheetToday>(`/api/sheets/${encodeURIComponent(sheetId)}/archive`, {}),
+-    onSuccess: (sheet) => queryClient.setQueryData(['sheet', sheetId, 'today'], sheet),
++    onSuccess: (sheet) => keep(sheet),
+   });
+   const [cloneTo, setCloneTo] = useState('');
+   const clone = useMutation({
+diff --git a/src/main/frontend/features/today/useSheetToday.ts b/src/main/frontend/features/today/useSheetToday.ts
+index 27423806c..aaa62aa4b 100644
+--- a/src/main/frontend/features/today/useSheetToday.ts
++++ b/src/main/frontend/features/today/useSheetToday.ts
+@@ -1,10 +1,11 @@
+ import { useQuery } from '@tanstack/react-query';
++import { getJsonUnpreviewed } from '../../api/http';
+ import { useReader } from '../../api/readNow';
+ 
+ export type SheetToday = { id: string; today: string; archived: boolean };
+ 
+ /** The sheet's today (yyyy-mm-dd), and whether it is archived. Every date decision and default date in a sheet uses this,
+- *  never the browser's clock. */
++ *  never the browser's clock. While this screen previews the sheet at a date, that date is its today here. */
+ export function useSheetToday(sheetId: string) {
+   const read = useReader();
+   return useQuery({
+@@ -12,3 +13,11 @@ export function useSheetToday(sheetId: string) {
+     queryFn: () => read.get<SheetToday>(`/api/sheets/${encodeURIComponent(sheetId)}/today`),
+   });
+ }
++
++/** The sheet's real today, and whether it is archived, whatever date this screen previews it at. */
++export function useRealSheetToday(sheetId: string) {
++  return useQuery({
++    queryKey: ['sheet', sheetId, 'today', 'real'],
++    queryFn: () => getJsonUnpreviewed<SheetToday>(`/api/sheets/${encodeURIComponent(sheetId)}/today`),
++  });
++}
+diff --git a/src/main/java/net/officefloor/hq/app/history/AsOfView.java b/src/main/java/net/officefloor/hq/app/history/AsOfView.java
+index 0cc31c14d..20cf3b9da 100644
+--- a/src/main/java/net/officefloor/hq/app/history/AsOfView.java
++++ b/src/main/java/net/officefloor/hq/app/history/AsOfView.java
+@@ -26,11 +26,17 @@ import org.springframework.transaction.support.TransactionTemplate;
+  *  The sheets it falls back to (its parent as it stood then, that one's parent and so on, and
+  *  the sheets it was cloned from) are not shown as of the
+  *  date: their rows are read as they are now, so a rate it inherits applies as it does live.
+- *  While the date is set, every change is refused. */
++ *  While the date is set, every change is refused.
++ *
++ *  A screen may instead preview the sheet at a date (the X-Preview header, yyyy-mm-dd): its rows as they are now,
++ *  copied into the asof schema the same way, with the date standing in for its today, so every figure that
++ *  depends on today is worked out as of that date. Only reads look at it: every change still uses the sheet's
++ *  real today, and nothing a change of today does happens. */
+ @Component
+ public class AsOfView {
+ 
+     public static final String HEADER = "X-As-Of";
++    public static final String PREVIEW_HEADER = "X-Preview";
+ 
+     private final JdbcTemplate jdbc;
+     private final RowCaptureInstaller installer;
+@@ -44,9 +50,18 @@ public class AsOfView {
+ 
+     /** The as-of date the request's screen shows; null when it shows the sheet as it is now. */
+     public static LocalDate of(ServerHttpConnection connection) throws BadRequestException {
++        return date(connection, HEADER, "as-of");
++    }
++
++    /** The date the request's screen previews the sheet at; null when it shows the sheet at its real today. */
++    public static LocalDate previewOf(ServerHttpConnection connection) throws BadRequestException {
++        return date(connection, PREVIEW_HEADER, "preview");
++    }
++
++    private static LocalDate date(ServerHttpConnection connection, String name, String what) throws BadRequestException {
+         String raw = "";
+         for (HttpHeader header : connection.getRequest().getHeaders()) {
+-            if (HEADER.equalsIgnoreCase(header.getName())) {
++            if (name.equalsIgnoreCase(header.getName())) {
+                 raw = header.getValue() == null ? "" : header.getValue().trim();
+                 break;
+             }
+@@ -55,7 +70,7 @@ public class AsOfView {
+         try {
+             return LocalDate.parse(raw);
+         } catch (DateTimeParseException e) {
+-            throw new BadRequestException("as-of date must be yyyy-mm-dd");
++            throw new BadRequestException(what + " date must be yyyy-mm-dd");
+         }
+     }
+ 
+@@ -66,17 +81,30 @@ public class AsOfView {
+         }
+     }
+ 
+-    /** The read, as the request's screen shows the sheet: as of its date when one is set, else as it is now. */
++    /** The read, as the request's screen shows the sheet: as of its date when one is set, else previewed at its
++     *  preview date when one is set, else as it is now. */
+     public <T> T read(ServerHttpConnection connection, String sheetId, Supplier<T> read) throws BadRequestException {
+         LocalDate day = of(connection);
+-        if (day == null) return read.get();
+-        return readAt(sheetId, day, read);
++        if (day != null) return readAt(sheetId, day, read);
++        LocalDate preview = previewOf(connection);
++        if (preview != null) return readPreview(sheetId, preview, read);
++        return read.get();
+     }
+ 
+     /** The read run against the sheet as it stood at the end of a day, the day standing in for its today. */
+     public <T> T readAt(String sheetId, LocalDate day, Supplier<T> read) {
++        return readIn(sheetId, day, true, read);
++    }
++
++    /** The read run against the sheet as it is now, a day standing in for its today. */
++    public <T> T readPreview(String sheetId, LocalDate day, Supplier<T> read) {
++        return readIn(sheetId, day, false, read);
++    }
++
++    private <T> T readIn(String sheetId, LocalDate day, boolean asOf, Supplier<T> read) {
+         return transaction.execute(status -> {
+-            Map<String, List<Object[]>> rows = replay(sheetId, day);
++            Map<String, List<Object[]>> rows = asOf ? replay(sheetId, day) : new LinkedHashMap<>();
++            if (!asOf) copy(sheetId);
+             for (Map.Entry<String, List<Object[]>> e : rows.entrySet()) {
+                 RowCaptureInstaller.Table table = installer.tables().get(e.getKey());
+                 String marks = String.join(", ", table.columns().stream().map(c -> "?").toList());
+@@ -84,7 +112,7 @@ public class AsOfView {
+                     jdbc.update("INSERT INTO ASOF.\"" + table.name() + "\" VALUES (" + marks + ")", row);
+                 }
+             }
+-            if (rows.getOrDefault("SHEET", List.of()).isEmpty()) {
++            if (asOf && rows.getOrDefault("SHEET", List.of()).isEmpty()) {
+                 jdbc.update("INSERT INTO ASOF.SHEET SELECT * FROM PUBLIC.SHEET WHERE id = ?", sheetId);
+             }
+             jdbc.update("UPDATE ASOF.SHEET SET today = ? WHERE id = ?", Date.valueOf(day), sheetId);
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 85abcf755..f3462484f 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -127,7 +127,7 @@ public class Rollup {
+     }
+ 
+     /** The holders' parts of a claim's due (see {@link ClaimShare#part}) added up; 0.00 when it has no shares. */
+-    static BigDecimal parts(BigDecimal due, List<ClaimShare> shares) {
++    public static BigDecimal parts(BigDecimal due, List<ClaimShare> shares) {
+         BigDecimal total = BigDecimal.ZERO.setScale(2);
+         if (shares == null) return total;
+         for (ClaimShare s : shares) total = total.add(ClaimShare.part(due, s.share()));
+diff --git a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+index a96ff21d4..ffcafff37 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+@@ -3,12 +3,14 @@ package net.officefloor.hq.app.statement;
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
+ import java.util.List;
++import java.util.Map;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.BadRequestException;
+ import net.officefloor.hq.app.CurrentUser;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.claim.Claim;
+ import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.claim.ClaimShare;
+ import net.officefloor.hq.app.history.HistoryRepository;
+ import net.officefloor.hq.app.history.SheetAsOf;
+ import net.officefloor.hq.app.person.Hold;
+@@ -70,6 +72,9 @@ public class TakeStatement {
+         BigDecimal total = BigDecimal.ZERO.setScale(2);
+         boolean fixed = false;
+         int count = 0;
++        // Taken now, a shared claim counts its due less its holders' parts, and their part of each counting claim
++        // shared with them counts too (as in their due-total, see Rollup).
++        Map<String, List<ClaimShare>> shares = then == null ? claims.shares(id) : Map.of();
+         for (Claim live : claims.ofPerson(id, pid)) {
+             // As of a date, the claim as it stood then: absent when it was added later, or was another's then.
+             Claim c = then == null ? live : then.claims().get(live.id());
+@@ -83,7 +88,7 @@ public class TakeStatement {
+             BigDecimal now = then == null ? claims.dueNow(id, c) : then.dueNow(c);
+             BigDecimal figure = now;
+             if (now != null) {
+-                total = total.add(now);
++                total = total.add(now).subtract(Rollup.parts(now, shares.get(String.valueOf(c.id()))));
+                 fixed = true;
+             }
+             // With no figure (no rate applies, or it is bound to n/a already) it is bound to n/a: it stays
+@@ -91,6 +96,20 @@ public class TakeStatement {
+             boolean na = figure == null;
+             claims.bind(id, c.id(), true, figure, na);
+         }
++        if (then == null) {
++            String on = today == null ? null : today.toString();
++            for (Claim c : claims.list(id)) {
++                List<ClaimShare> held = shares.get(String.valueOf(c.id()));
++                if (held == null || c.personId() == pid) continue;
++                ClaimShare mine = held.stream().filter(s -> s.personId() == pid).findFirst().orElse(null);
++                Person owner = mine == null ? null : people.find(id, c.personId());
++                if (owner == null || !c.counts(owner.liveHolds(on))) continue;
++                BigDecimal now = claims.dueNow(id, c);
++                if (now == null) continue;
++                total = total.add(ClaimShare.part(now, mine.share()));
++                fixed = true;
++            }
++        }
+         boolean rated = then == null ? claims.rated(id, pid, today) : then.rated(pid);
+         BigDecimal cap = then == null ? settings.cap(id) : then.cap();
+         BigDecimal cut = then == null && cap != null ? pools.cutTotals(id).get(pid) : null;
