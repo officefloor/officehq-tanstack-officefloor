@@ -8,15 +8,18 @@ import { usePeriodDueTotals, usePersonPeriodCarried, usePersonPeriodDueTotals } 
 import { useSettings } from '../settings/useSettings';
 import { fiscalYearOf, periodsKey, usePeriods, type Period } from './usePeriods';
 import { useFigure } from '../locale/useLocale';
+import { useClaims } from '../claims/useClaims';
 
 /** The sheet's periods: a form that adds one (a name unique on the sheet, a from- and to-date,
  *  inclusive, overlapping no other period, and an optional cap on each person's open claims in it), and each period with its due-total: the figures of the
  *  claims that count whose due-by falls in it (a settled claim's frozen due, else the figure its last
  *  statement bound it to, else its live due, with its late charge while overdue), skipping those with none — fixed once it is closed —
+ *  how many claims belong to it (whose due-by falls in it, VOID and DELETED ones left out),
  *  and whether it is closed (soft for a soft-closed one) and locked, with buttons that close, soft-close, lock and unlock it. */
 function Periods({ sheetId }: { sheetId: string }) {
   const periods = usePeriods(sheetId);
   const dueTotals = usePeriodDueTotals(sheetId);
+  const claims = useClaims(sheetId);
   const fiscalStartMonth = useSettings(sheetId).data?.fiscalStartMonth;
   const queryClient = useQueryClient();
   const [name, setName] = useState('');
@@ -84,6 +87,7 @@ function Periods({ sheetId }: { sheetId: string }) {
             <th>Fiscal year</th>
             <th>Cap</th>
             <th>Locked</th>
+            <th>Claims</th>
             <th />
           </tr>
         </thead>
@@ -94,6 +98,15 @@ function Periods({ sheetId }: { sheetId: string }) {
               sheetId={sheetId}
               period={p}
               dueTotal={dueTotals.get(p.name) ?? ''}
+              claimsCount={
+                claims.data === undefined
+                  ? ''
+                  : String(
+                      claims.data.filter(
+                        (c) => p.from <= c.dueBy && c.dueBy <= p.to && c.status !== 'VOID' && c.status !== 'DELETED',
+                      ).length,
+                    )
+              }
               fiscalYear={fiscalStartMonth === undefined ? '' : fiscalYearOf(p.from, fiscalStartMonth)}
             />
           ))}
@@ -204,7 +217,19 @@ function GeneratePeriods({ sheetId }: { sheetId: string }) {
 /** One period's row; closing it fixes its due-total, soft-closing it fixes its figures while its claims can still be
  *  changed, reopening it (a steward only) makes it live again; locking it (a steward only) keeps it from being reopened until unlocked.
  *  A refused close, reopen, lock or unlock shows its error, cleared when the next action on the row is taken. */
-function PeriodRow({ sheetId, period: p, dueTotal, fiscalYear }: { sheetId: string; period: Period; dueTotal: string; fiscalYear: string }) {
+function PeriodRow({
+  sheetId,
+  period: p,
+  dueTotal,
+  claimsCount,
+  fiscalYear,
+}: {
+  sheetId: string;
+  period: Period;
+  dueTotal: string;
+  claimsCount: string;
+  fiscalYear: string;
+}) {
   const fig = useFigure();
   const queryClient = useQueryClient();
   const closeOnce = useSingleFlight();
@@ -279,6 +304,7 @@ function PeriodRow({ sheetId, period: p, dueTotal, fiscalYear }: { sheetId: stri
       <td data-testid="period-fy">{fiscalYear}</td>
       <td data-testid="period-cap">{fig(p.cap ?? '')}</td>
       <td data-testid="period-locked">{p.locked ? 'yes' : 'no'}</td>
+      <td data-testid="period-claims-count">{claimsCount}</td>
       <td>
         <button
           type="button"
