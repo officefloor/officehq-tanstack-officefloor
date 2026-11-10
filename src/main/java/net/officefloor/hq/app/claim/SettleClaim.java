@@ -26,6 +26,13 @@ public class SettleClaim {
     public void apply(@Val Sheet sheet, @Val Claim claim, PersonRepository people, RateRepository rates,
             RoleRepository roles, SettingsRepository settingsStore, HttpServletRequest request)
             throws InvalidClaimStatusException, SelfSettleException {
+        settle(sheet, claim, Audit.user(request), people, rates, roles, settingsStore);
+    }
+
+    /** Settles the claim as the given user would, by the rules above; throws when it may not. */
+    static void settle(Sheet sheet, Claim claim, String user, PersonRepository people, RateRepository rates,
+            RoleRepository roles, SettingsRepository settingsStore)
+            throws InvalidClaimStatusException, SelfSettleException {
         Person person = people.find(sheet.id(), claim.getPersonId());
         Settings settings = settingsStore.find(sheet.id());
         BigDecimal figure = claim.isStated() ? claim.getStatedDue()
@@ -36,7 +43,6 @@ public class SettleClaim {
         if (!claim.getStatus().canMoveTo(ClaimStatus.SETTLED)) {
             throw new InvalidClaimStatusException(claim.getStatus(), ClaimStatus.SETTLED);
         }
-        String user = Audit.user(request);
         if (user.equals(claim.getOpenedBy())) throw new SelfSettleException(user);
         BigDecimal due = figure == null ? null : figure.add(late);
         if (!settings.withinClerkLimit(due) && Role.CLERK.equals(roles.roleOf(sheet.id(), user))) {

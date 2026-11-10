@@ -14,11 +14,16 @@ import jakarta.servlet.http.HttpServletRequest;
 public class AuditClaimStatus {
     public void audit(@Val Sheet sheet, @Val Claim claim, PersonRepository people,
             HttpServletRequest request, Audit audit) {
-        String line = ClaimAudit.line(claim.getStatus().auditEvent(), sheet, Audit.user(request),
+        audit.record(line(sheet, claim, Audit.user(request), people));
+    }
+
+    /** The claim's status line as the given user changed it. */
+    static String line(Sheet sheet, Claim claim, String user, PersonRepository people) {
+        String line = ClaimAudit.line(claim.getStatus().auditEvent(), sheet, user,
                 people.find(sheet.id(), claim.getPersonId()), claim);
         if (claim.getStatus() == ClaimStatus.SETTLED) {
             line += " due=" + (claim.getSettledDue() == null ? "n/a" : claim.getSettledDue().toPlainString());
         }
-        audit.record(line);
+        return line;
     }
 }

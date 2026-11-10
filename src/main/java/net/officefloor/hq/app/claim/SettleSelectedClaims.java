@@ -1,0 +1,69 @@
+package net.officefloor.hq.app.claim;
+
+import jakarta.servlet.http.HttpServletRequest;
+import java.util.HashSet;
+import java.util.Set;
+import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.period.PeriodRepository;
+import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.person.PersonRepository;
+import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.role.RoleRepository;
+import net.officefloor.hq.app.rollup.Rollup;
+import net.officefloor.hq.app.setting.SettingsRepository;
+import net.officefloor.hq.app.sheet.Sheet;
+import net.officefloor.hq.app.sheet.SheetRepository;
+import net.officefloor.plugin.variable.Out;
+import net.officefloor.plugin.variable.Val;
+
+/**
+ * Settles the selected claims in list order (people in the order they were added, each person's
+ * claims newest first) by exactly the rules of settling one claim, as the signed-in user. A claim
+ * sent to PENDING counts as settled; a claim that cannot be settled (its status does not allow it,
+ * dated inside a closed period, opened by this user, not on the sheet) is refused and left as it is.
+ * Each claim settled is logged and audited as a single settle is: its status line, then the
+ * figures it moved.
+ */
+public class SettleSelectedClaims {
+    public void settle(@Val Sheet sheet, @Val BulkSettleRequest request, ClaimRepository claims,
+            PersonRepository people, PeriodRepository periods, SheetRepository sheets, RateRepository rates,
+            RoleRepository roles, SettingsRepository settings, ClaimLogRepository log, HttpServletRequest http,
+            Audit audit, Out<BulkSettleResponse> result) {
+        String user = Audit.user(http);
+        Set<Long> selected = new HashSet<>();
+        for (String id : request.claimIds()) {
+            try {
+                selected.add(Long.parseLong(id.trim()));
+            } catch (NumberFormatException | NullPointerException e) {
+                // not an id: no claim on the sheet, so refused below
+            }
+        }
+        int requested = new HashSet<>(request.claimIds()).size();
+        int settled = 0;
+        Rollup before = rollup(sheet, sheets, people, claims, rates, settings);
+        for (Person person : people.findAll(sheet.id())) {
+            for (Claim claim : claims.findByPerson(sheet.id(), person.getId())) {
+                if (!selected.contains(claim.getId())) continue;
+                if (periods.closedOn(sheet.id(), claim.getDate()) != null) continue;
+                try {
+                    SettleClaim.settle(sheet, claim, user, people, rates, roles, settings);
+                } catch (InvalidClaimStatusException | SelfSettleException e) {
+                    continue;
+                }
+                claims.save(claim);
+                log.record(claim, user, sheet.today(), LogClaimStatus.due(sheet, claim, people, rates, settings));
+                settled++;
+                audit.record(AuditClaimStatus.line(sheet, claim, user, people));
+                Rollup after = rollup(sheet, sheets, people, claims, rates, settings);
+                after.changesSince(before, sheet.id(), user).forEach(audit::record);
+                before = after;
+            }
+        }
+        result.set(new BulkSettleResponse(settled, requested - settled));
+    }
+
+    private static Rollup rollup(Sheet sheet, SheetRepository sheets, PersonRepository people, ClaimRepository claims,
+            RateRepository rates, SettingsRepository settings) {
+        return Rollup.of(sheet.id(), sheets.today(sheet.id()), people, claims, rates, settings.find(sheet.id()));
+    }
+}
