@@ -9,11 +9,11 @@ import { clearSelectedClaims, useSelectedClaims } from './selection';
 
 type Result = { settled: number; refused: number };
 
-// Settles the ticked claims together, as the signed-in user. The server settles each that can be
-// settled in list order (people in list order, each person's claims newest first) by the rules of
-// settling one — a claim sent to PENDING counts as settled — and leaves the rest as they are; the
-// bar shows how many were settled and how many refused. The counts are cleared while it runs.
-// A bulk settle settling at least one claim is a batch, numbered on the sheet; the bar shows the
+// Settles the ticked claims together, as the signed-in user. All or nothing: if any cannot be
+// settled by the rules of settling one, none is and every one counts as refused; otherwise the
+// server settles them all in list order (people in list order, each person's claims newest first)
+// — a claim sent to PENDING counts as settled. The bar shows how many were settled and how many refused. The counts are cleared while it runs.
+// A bulk settle that goes through is a batch, numbered on the sheet; the bar shows the
 // last batch's number ('' when there has been none).
 function BulkSettle({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
