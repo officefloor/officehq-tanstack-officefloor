@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.role;
 
 import java.util.List;
+import net.officefloor.hq.app.delegation.DelegationRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -13,9 +14,11 @@ public class RoleRepository {
             rs.getString("user_name"), rs.getString("role"));
 
     private final JdbcTemplate jdbc;
+    private final DelegationRepository delegations;
 
-    public RoleRepository(JdbcTemplate jdbc) {
+    public RoleRepository(JdbcTemplate jdbc, DelegationRepository delegations) {
         this.jdbc = jdbc;
+        this.delegations = delegations;
     }
 
     /** The sheet's roles, by user name. */
@@ -24,8 +27,17 @@ public class RoleRepository {
                 + " ORDER BY user_name", ROW, sheetId);
     }
 
-    /** The user's role on the sheet: clerk when none was assigned. */
+    /**
+     * The role the user acts in on the sheet, in every rule: steward while the steward role is delegated to
+     * them for the sheet's today, otherwise the role assigned.
+     */
     public String roleOf(String sheetId, String user) {
+        if (delegations.delegatorOf(sheetId, user) != null) return Role.STEWARD;
+        return assignedRoleOf(sheetId, user);
+    }
+
+    /** The user's own assigned role on the sheet, leaving out any delegation: clerk when none was assigned. */
+    public String assignedRoleOf(String sheetId, String user) {
         List<String> found = jdbc.queryForList(
                 "SELECT role FROM sheet_role WHERE sheet_id = ? AND user_name = ?", String.class, sheetId, user);
         return found.isEmpty() ? Role.CLERK : found.get(0);

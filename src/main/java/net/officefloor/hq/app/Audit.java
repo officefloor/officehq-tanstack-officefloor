@@ -8,6 +8,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import net.officefloor.hq.app.delegation.DelegationRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -23,14 +27,30 @@ import org.springframework.stereotype.Service;
 @Service
 public class Audit {
 
-    private final Path file;
+    /** The lines that only report figures a change moved: they are never marked as made for a delegator. */
+    private static final Set<String> FIGURES = Set.of("ROLLUP", "TOTALS", "ALERT");
 
-    public Audit(@Value("${app.audit.file:.run/audit.log}") String path) {
+    /** A record's head: its event name, then {@code sheet=<id> by=<user>}, the user up to the next field. */
+    private static final Pattern HEAD = Pattern.compile("^(\\S+) sheet=(\\S+) by=(.*?)(?= [a-z][a-z-]*=|$)");
+
+    private final Path file;
+    private final DelegationRepository delegations;
+
+    public Audit(@Value("${app.audit.file:.run/audit.log}") String path, DelegationRepository delegations) {
         this.file = Path.of(path);
+        this.delegations = delegations;
     }
 
-    /** Append one audit record. Tests assert the exact line(s) in the file. */
+    /**
+     * Append one audit record. Tests assert the exact line(s) in the file. A change made by a user acting
+     * as a steward by a delegation, for the sheet's today, ends with {@code for=<the steward who delegated>}.
+     */
     public synchronized void record(String entry) {
+        Matcher head = HEAD.matcher(entry);
+        if (head.find() && !FIGURES.contains(head.group(1))) {
+            String delegator = delegations.delegatorOf(head.group(2), head.group(3));
+            if (delegator != null) entry = entry + " for=" + delegator;
+        }
         try {
             Path parent = file.toAbsolutePath().getParent();
             if (parent != null) {
