@@ -4,9 +4,12 @@
 //
 // Every request carries the signed-in name in X-User (the server records it as `by=<user>`), and,
 // while this screen shows the sheet as of a date, that date in X-As-Of: reads answer as the sheet stood
-// then, and every change is refused.
+// then, and every change is refused; and, while this screen previews the sheet at a date, that date in
+// X-Preview on every read: reads answer as the sheet is now, with that date standing in for its today.
+// Changes are never sent with it, so they use the sheet's real today.
 let signedInUser = '';
 let asOfDate = '';
+let previewDate = '';
 
 /** A non-2xx answer: the server's message, and its status (409 when someone else saved first). */
 export class HttpError extends Error {
@@ -30,10 +33,21 @@ export function currentAsOfDate(): string {
   return asOfDate;
 }
 
-async function send<T>(path: string, init?: RequestInit, asOf = asOfDate): Promise<T> {
+/** Called by the preview control (features/preview) whenever the screen's preview date changes ('' when none). */
+export function setPreviewDate(date: string): void {
+  previewDate = date;
+}
+
+/** The preview date reads are sent with ('' when none). */
+export function currentPreviewDate(): string {
+  return previewDate;
+}
+
+async function send<T>(path: string, init?: RequestInit, asOf = asOfDate, preview = ''): Promise<T> {
   const headers = new Headers(init?.headers);
   if (signedInUser) headers.set('X-User', signedInUser);
   if (asOf) headers.set('X-As-Of', asOf);
+  if (preview) headers.set('X-Preview', preview);
   const res = await fetch(path, { ...init, headers });
   if (!res.ok) {
     let message = `${init?.method ?? 'GET'} ${path} -> ${res.status}`;
@@ -49,6 +63,11 @@ async function send<T>(path: string, init?: RequestInit, asOf = asOfDate): Promi
 }
 
 export function getJson<T>(path: string): Promise<T> {
+  return send<T>(path, undefined, asOfDate, previewDate);
+}
+
+/** A read that answers at the sheet's real today, whatever date this screen previews it at. */
+export function getJsonUnpreviewed<T>(path: string): Promise<T> {
   return send<T>(path);
 }
 

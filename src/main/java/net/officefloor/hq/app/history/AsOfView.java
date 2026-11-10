@@ -26,11 +26,17 @@ import org.springframework.transaction.support.TransactionTemplate;
  *  The sheets it falls back to (its parent as it stood then, that one's parent and so on, and
  *  the sheets it was cloned from) are not shown as of the
  *  date: their rows are read as they are now, so a rate it inherits applies as it does live.
- *  While the date is set, every change is refused. */
+ *  While the date is set, every change is refused.
+ *
+ *  A screen may instead preview the sheet at a date (the X-Preview header, yyyy-mm-dd): its rows as they are now,
+ *  copied into the asof schema the same way, with the date standing in for its today, so every figure that
+ *  depends on today is worked out as of that date. Only reads look at it: every change still uses the sheet's
+ *  real today, and nothing a change of today does happens. */
 @Component
 public class AsOfView {
 
     public static final String HEADER = "X-As-Of";
+    public static final String PREVIEW_HEADER = "X-Preview";
 
     private final JdbcTemplate jdbc;
     private final RowCaptureInstaller installer;
@@ -44,9 +50,18 @@ public class AsOfView {
 
     /** The as-of date the request's screen shows; null when it shows the sheet as it is now. */
     public static LocalDate of(ServerHttpConnection connection) throws BadRequestException {
+        return date(connection, HEADER, "as-of");
+    }
+
+    /** The date the request's screen previews the sheet at; null when it shows the sheet at its real today. */
+    public static LocalDate previewOf(ServerHttpConnection connection) throws BadRequestException {
+        return date(connection, PREVIEW_HEADER, "preview");
+    }
+
+    private static LocalDate date(ServerHttpConnection connection, String name, String what) throws BadRequestException {
         String raw = "";
         for (HttpHeader header : connection.getRequest().getHeaders()) {
-            if (HEADER.equalsIgnoreCase(header.getName())) {
+            if (name.equalsIgnoreCase(header.getName())) {
                 raw = header.getValue() == null ? "" : header.getValue().trim();
                 break;
             }
@@ -55,7 +70,7 @@ public class AsOfView {
         try {
             return LocalDate.parse(raw);
         } catch (DateTimeParseException e) {
-            throw new BadRequestException("as-of date must be yyyy-mm-dd");
+            throw new BadRequestException(what + " date must be yyyy-mm-dd");
         }
     }
 
@@ -66,17 +81,30 @@ public class AsOfView {
         }
     }
 
-    /** The read, as the request's screen shows the sheet: as of its date when one is set, else as it is now. */
+    /** The read, as the request's screen shows the sheet: as of its date when one is set, else previewed at its
+     *  preview date when one is set, else as it is now. */
     public <T> T read(ServerHttpConnection connection, String sheetId, Supplier<T> read) throws BadRequestException {
         LocalDate day = of(connection);
-        if (day == null) return read.get();
-        return readAt(sheetId, day, read);
+        if (day != null) return readAt(sheetId, day, read);
+        LocalDate preview = previewOf(connection);
+        if (preview != null) return readPreview(sheetId, preview, read);
+        return read.get();
     }
 
     /** The read run against the sheet as it stood at the end of a day, the day standing in for its today. */
     public <T> T readAt(String sheetId, LocalDate day, Supplier<T> read) {
+        return readIn(sheetId, day, true, read);
+    }
+
+    /** The read run against the sheet as it is now, a day standing in for its today. */
+    public <T> T readPreview(String sheetId, LocalDate day, Supplier<T> read) {
+        return readIn(sheetId, day, false, read);
+    }
+
+    private <T> T readIn(String sheetId, LocalDate day, boolean asOf, Supplier<T> read) {
         return transaction.execute(status -> {
-            Map<String, List<Object[]>> rows = replay(sheetId, day);
+            Map<String, List<Object[]>> rows = asOf ? replay(sheetId, day) : new LinkedHashMap<>();
+            if (!asOf) copy(sheetId);
             for (Map.Entry<String, List<Object[]>> e : rows.entrySet()) {
                 RowCaptureInstaller.Table table = installer.tables().get(e.getKey());
                 String marks = String.join(", ", table.columns().stream().map(c -> "?").toList());
@@ -84,7 +112,7 @@ public class AsOfView {
                     jdbc.update("INSERT INTO ASOF.\"" + table.name() + "\" VALUES (" + marks + ")", row);
                 }
             }
-            if (rows.getOrDefault("SHEET", List.of()).isEmpty()) {
+            if (asOf && rows.getOrDefault("SHEET", List.of()).isEmpty()) {
                 jdbc.update("INSERT INTO ASOF.SHEET SELECT * FROM PUBLIC.SHEET WHERE id = ?", sheetId);
             }
             jdbc.update("UPDATE ASOF.SHEET SET today = ? WHERE id = ?", Date.valueOf(day), sheetId);

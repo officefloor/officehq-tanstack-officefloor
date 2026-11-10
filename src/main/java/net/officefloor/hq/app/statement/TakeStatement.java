@@ -3,12 +3,14 @@ package net.officefloor.hq.app.statement;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.BadRequestException;
 import net.officefloor.hq.app.CurrentUser;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.claim.ClaimShare;
 import net.officefloor.hq.app.history.HistoryRepository;
 import net.officefloor.hq.app.history.SheetAsOf;
 import net.officefloor.hq.app.person.Hold;
@@ -70,6 +72,9 @@ public class TakeStatement {
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         boolean fixed = false;
         int count = 0;
+        // Taken now, a shared claim counts its due less its holders' parts, and their part of each counting claim
+        // shared with them counts too (as in their due-total, see Rollup).
+        Map<String, List<ClaimShare>> shares = then == null ? claims.shares(id) : Map.of();
         for (Claim live : claims.ofPerson(id, pid)) {
             // As of a date, the claim as it stood then: absent when it was added later, or was another's then.
             Claim c = then == null ? live : then.claims().get(live.id());
@@ -83,13 +88,27 @@ public class TakeStatement {
             BigDecimal now = then == null ? claims.dueNow(id, c) : then.dueNow(c);
             BigDecimal figure = now;
             if (now != null) {
-                total = total.add(now);
+                total = total.add(now).subtract(Rollup.parts(now, shares.get(String.valueOf(c.id()))));
                 fixed = true;
             }
             // With no figure (no rate applies, or it is bound to n/a already) it is bound to n/a: it stays
             // n/a even once a rate is in force on its date (a later rate, or a new grade for its person then).
             boolean na = figure == null;
             claims.bind(id, c.id(), true, figure, na);
+        }
+        if (then == null) {
+            String on = today == null ? null : today.toString();
+            for (Claim c : claims.list(id)) {
+                List<ClaimShare> held = shares.get(String.valueOf(c.id()));
+                if (held == null || c.personId() == pid) continue;
+                ClaimShare mine = held.stream().filter(s -> s.personId() == pid).findFirst().orElse(null);
+                Person owner = mine == null ? null : people.find(id, c.personId());
+                if (owner == null || !c.counts(owner.liveHolds(on))) continue;
+                BigDecimal now = claims.dueNow(id, c);
+                if (now == null) continue;
+                total = total.add(ClaimShare.part(now, mine.share()));
+                fixed = true;
+            }
         }
         boolean rated = then == null ? claims.rated(id, pid, today) : then.rated(pid);
         BigDecimal cap = then == null ? settings.cap(id) : then.cap();

@@ -1,23 +1,29 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { postJson } from '../../api/http';
+import { currentPreviewDate, postJson } from '../../api/http';
 import { useSingleFlight } from '../../query/useSingleFlight';
 import { SheetBody } from '../../slots/defs/sheetBody';
-import { useSheetToday, type SheetToday } from './useSheetToday';
+import { useRealSheetToday, type SheetToday } from './useSheetToday';
 
 /** The sheet's today, shown and changeable, and whether it is archived, with the steward's archive
  *  button and the steward's clone to another (never used) sheet id. Changing today re-reads the whole sheet,
- *  since every date decision in it depends on today. All share the one sheet error: the last of them refused. */
+ *  since every date decision in it depends on today. It shows the real today while the screen previews another. All share the one sheet error: the last of them refused. */
 function TodayControl({ sheetId }: { sheetId: string }) {
-  const today = useSheetToday(sheetId);
+  const today = useRealSheetToday(sheetId);
   const [date, setDate] = useState('');
   const queryClient = useQueryClient();
   const submitOnce = useSingleFlight();
+  // A change answers with the real today: the today the screen's figures use takes it only when not previewing.
+  const keep = (sheet: SheetToday) => {
+    queryClient.setQueryData(['sheet', sheetId, 'today', 'real'], sheet);
+    if (currentPreviewDate()) void queryClient.invalidateQueries({ queryKey: ['sheet', sheetId, 'today'], exact: true });
+    else queryClient.setQueryData(['sheet', sheetId, 'today'], sheet);
+  };
   const save = useMutation({
     mutationFn: (raw: string) =>
       postJson<SheetToday>(`/api/sheets/${encodeURIComponent(sheetId)}/today`, { date: raw.trim() }),
     onSuccess: (sheet) => {
-      queryClient.setQueryData(['sheet', sheetId, 'today'], sheet);
+      keep(sheet);
       void queryClient.invalidateQueries({
         queryKey: ['sheet', sheetId],
         predicate: (q) => q.queryKey[2] !== 'today',
@@ -26,7 +32,7 @@ function TodayControl({ sheetId }: { sheetId: string }) {
   });
   const archive = useMutation({
     mutationFn: () => postJson<SheetToday>(`/api/sheets/${encodeURIComponent(sheetId)}/archive`, {}),
-    onSuccess: (sheet) => queryClient.setQueryData(['sheet', sheetId, 'today'], sheet),
+    onSuccess: (sheet) => keep(sheet),
   });
   const [cloneTo, setCloneTo] = useState('');
   const clone = useMutation({

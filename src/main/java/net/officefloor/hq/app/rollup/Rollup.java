@@ -127,7 +127,7 @@ public class Rollup {
     }
 
     /** The holders' parts of a claim's due (see {@link ClaimShare#part}) added up; 0.00 when it has no shares. */
-    static BigDecimal parts(BigDecimal due, List<ClaimShare> shares) {
+    public static BigDecimal parts(BigDecimal due, List<ClaimShare> shares) {
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         if (shares == null) return total;
         for (ClaimShare s : shares) total = total.add(ClaimShare.part(due, s.share()));
