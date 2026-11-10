@@ -73,6 +73,29 @@ export const isDeferred = (c: Claim, today: string) =>
 export const counts = (c: Claim, holds: Hold[], today: string) =>
   !isDeferred(c, today) && (c.status === 'SETTLED' || (isOpen(c) && (isBound(c) || !heldOn(holds, c.date))));
 
+/**
+ * A claim's status at the end of `day` (yyyy-MM-dd), as its log records it: the status of its last
+ * line dated on or before it; null when it had none then (it was added after).
+ */
+export function statusOn(c: Claim, day: string): ClaimStatus | null {
+  let status: ClaimStatus | null = null;
+  for (const line of c.log) {
+    const m = /^(\w+) by .* on (\d{4}-\d{2}-\d{2}) due=\S*$/.exec(line);
+    if (m && m[2] <= day) status = m[1] as ClaimStatus;
+  }
+  return status;
+}
+
+/**
+ * Whether a claim counted at the end of `day`: as `counts`, with the status its log records then
+ * (never when it was added after), its statement binding and deferral as they are on `today`.
+ */
+export const countedOn = (c: Claim, day: string, holds: Hold[], today: string) => {
+  const status = statusOn(c, day);
+  if (status === null || isDeferred(c, today)) return false;
+  return status === 'SETTLED' || ((status === 'OPEN' || status === 'PENDING') && (isBound(c) || !heldOn(holds, c.date)));
+};
+
 export const claimsKey = (sheetId: string) => ['sheet', sheetId, 'claims'] as const;
 
 export const claimsQuery = (sheetId: string) => ({

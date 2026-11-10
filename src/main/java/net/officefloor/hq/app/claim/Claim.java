@@ -150,6 +150,16 @@ public class Claim {
         if (isDeferredOn(today)) return false;
         return status == ClaimStatus.SETTLED || (isOpen() && (isBound() || !heldOnDate));
     }
+    /**
+     * Whether it counts toward a period's total as it was at the period's end, when its status then
+     * was {@code statusThen} (null: it did not exist yet): as {@link #counts} with that status, its
+     * statement binding and deferral as they are now.
+     */
+    public boolean countsAsOf(ClaimStatus statusThen, boolean heldOnDate, LocalDate today) {
+        if (statusThen == null || isDeferredOn(today)) return false;
+        boolean openThen = statusThen == ClaimStatus.OPEN || statusThen == ClaimStatus.PENDING;
+        return statusThen == ClaimStatus.SETTLED || (openThen && (isBound() || !heldOnDate));
+    }
     /** Whether it is open: OPEN, or PENDING a steward's approval. */
     public boolean isOpen() {
         return status == ClaimStatus.OPEN || status == ClaimStatus.PENDING;

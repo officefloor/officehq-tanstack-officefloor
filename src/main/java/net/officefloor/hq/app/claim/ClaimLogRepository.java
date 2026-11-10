@@ -38,4 +38,17 @@ public class ClaimLogRepository {
                 }, sheetId);
         return logs;
     }
+
+    /**
+     * Each claim's status at the end of {@code day}, by claim id: its last log line dated on or
+     * before it. A claim with no such line (added after) is absent.
+     */
+    public Map<Long, ClaimStatus> statusesOn(String sheetId, LocalDate day) {
+        Map<Long, ClaimStatus> statuses = new HashMap<>();
+        jdbc.query("SELECT claim_id, status FROM claim_log WHERE sheet_id = ? AND on_date <= ? ORDER BY id",
+                (rs) -> {
+                    statuses.put(rs.getLong("claim_id"), ClaimStatus.valueOf(rs.getString("status")));
+                }, sheetId, Date.valueOf(day));
+        return statuses;
+    }
 }

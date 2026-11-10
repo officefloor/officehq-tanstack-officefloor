@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { counts } from '../claims/claims';
+import { countedOn } from '../claims/claims';
 import type { Claim } from '../claims/claims';
 import { gradeOn } from '../people/people';
 import type { Person } from '../people/people';
@@ -39,7 +39,8 @@ export function periodOf(periods: Period[], date: string): Period | null {
 
 /**
  * A person's due-total for a period: the one fixed when it was closed (0.00 for a person added
- * after), else the due of their claims that count whose date falls in it, added up.
+ * after), else the due as shown now of their claims dated in it that counted at the end of its last
+ * day, by the status their log records then, added up.
  */
 export function personPeriodDueTotal(
   period: Period,
@@ -52,7 +53,7 @@ export function personPeriodDueTotal(
   if (period.closed) return period.personTotals[person.id] ?? '0.00';
   return sumDue(
     claims
-      .filter((c) => c.personId === person.id && counts(c, person.holds, late.today) && period.from <= c.date && c.date <= period.to)
+      .filter((c) => c.personId === person.id && countedOn(c, period.to, person.holds, late.today) && period.from <= c.date && c.date <= period.to)
       .map((c) => claimDue(c, rateOn(rates, gradeOn(person.grades, c.date), c.date), floor, late)),
   );
 }

@@ -16,7 +16,7 @@ type Fields = { name: string; from: string; to: string };
 const EMPTY: Fields = { name: '', from: '', to: '' };
 
 // The sheet's periods: a form that adds one (a from-date left blank is the sheet's today), and each
-// period with its due-total: the due of the claims that count whose date falls in it, fixed when the
+// period with its due-total: the due of the claims dated in it that counted at its end (by their status log), fixed when the
 // period is closed. A closed period's claims cannot be changed. A steward may reopen a closed period.
 function Periods({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
