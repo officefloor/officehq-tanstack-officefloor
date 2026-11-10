@@ -1,5 +1,7 @@
 package net.officefloor.hq.app.sheet;
 
-/** A sheet, as the store holds it. */
-public record Sheet(String id) {
+import java.time.LocalDate;
+
+/** A sheet, as the store holds it. {@code today} is the sheet's date, used instead of the clock. */
+public record Sheet(String id, LocalDate today) {
 }
