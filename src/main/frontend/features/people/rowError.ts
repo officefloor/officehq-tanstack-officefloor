@@ -25,3 +25,8 @@ export function useRowError(personId: string, owner: string): [string, (message:
   const error = current !== undefined && current.owner === owner ? current.message : '';
   return [error, (message: string) => set(personId, owner, message)];
 }
+
+/** Remove the row's error, whichever slot raised it: another action was taken on the row. */
+export function clearRowError(personId: string) {
+  if (errors.has(personId)) set(personId, '', '');
+}
