@@ -1,0 +1,677 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 907e147ee..c1eabfd4b 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -16,6 +16,7 @@ import { useFloor, useLate } from '../access/access';
+ import { useSheetToday } from '../sheet/sheet';
+ import { dueBy, isOverdue } from '../overdue/overdue';
+ import { useVoidReasons } from '../voidreasons/voidReasons';
++import { useTemplates } from '../templates/templates';
+ 
+ // A clerk's settle above the clerk limit leaves the claim PENDING; a steward approves it or rejects
+ // it with a reason (typed in the row). A steward re-settles a SETTLED claim at its figure today.
+@@ -75,6 +76,9 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person })
+   // The amount typed to split off each claim, by claim id.
+   const [splitAmount, setSplitAmount] = useState<Record<string, string>>({});
+   const [commentText, setCommentText] = useState<Record<string, string>>({});
++  // The template picked to add a draft claim from.
++  const [template, setTemplate] = useState('');
++  const templates = useTemplates(sheetId).data ?? [];
+   const others = (usePeople(sheetId).data ?? []).filter((p) => p.id !== person.id);
+   const [user] = useUser();
+   const rates = useRates(sheetId).data ?? [];
+@@ -296,6 +300,29 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person })
+     onError: (_e, { id }) => setRefused({ id, message: 'That claim cannot be commented.' }),
+   });
+ 
++  // A draft claim from a template: its amount and note as the template has them now, undated, by
++  // every rule of the claim form; a refusal shows on the claim form.
++  const fromTemplate = useMutation({
++    mutationFn: (name: string) =>
++      postJson<Claim>(
++        `/api/sheets/${encodeURIComponent(sheetId)}/people/${encodeURIComponent(person.id)}/template-claims`,
++        { template: name },
++        user,
++      ),
++    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
++    onError: () => setError('A claim could not be added from that template.'),
++  });
++
++  const addFromTemplate = () => {
++    setError('');
++    setRefused(null);
++    if (template === '') {
++      setError('Choose a template.');
++      return;
++    }
++    once((done) => fromTemplate.mutate(template, { onSettled: done }));
++  };
++
+   const addComment = (id: string) => {
+     setRefused(null);
+     const text = (commentText[id] ?? '').trim();
+@@ -480,6 +507,29 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person })
+           <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
+             {editing === null ? 'Add claim' : 'Save claim'}
+           </button>
++          <select
++            data-testid="claim-template-select"
++            value={template}
++            onChange={(e) => {
++              setTemplate(e.target.value);
++              setError('');
++            }}
++          >
++            <option value="">Template…</option>
++            {templates.map((t) => (
++              <option key={t.name} value={t.name}>
++                {t.name}
++              </option>
++            ))}
++          </select>{' '}
++          <button
++            type="button"
++            data-testid="claim-template-add"
++            disabled={fromTemplate.isPending}
++            onClick={addFromTemplate}
++          >
++            Add from template
++          </button>
+           {error && (
+             <p role="alert" data-testid="claim-form-error">
+               {error}
+diff --git a/src/main/frontend/features/templates/templates.slot.tsx b/src/main/frontend/features/templates/templates.slot.tsx
+new file mode 100644
+index 000000000..c8d61b8f8
+--- /dev/null
++++ b/src/main/frontend/features/templates/templates.slot.tsx
+@@ -0,0 +1,108 @@
++import { useState } from 'react';
++import type { FormEvent } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { useOnce } from '../../query/useOnce';
++import { postJson } from '../../api/http';
++import { SheetBody } from '../../slots/defs/sheetBody';
++import { useUser } from '../session/session';
++import { AMOUNT } from '../claims/claims';
++import { templatesKey, useTemplates } from './templates';
++import type { Template } from './templates';
++
++type Fields = { name: string; amount: string; note: string };
++const EMPTY: Fields = { name: '', amount: '', note: '' };
++
++// The sheet's claim templates: a form that saves one (a name, an amount and a note; saving a name
++// again replaces it), each listed below. A blank name, or an amount the claim form would refuse, is
++// refused. Each person's row adds a draft claim from one.
++function Templates({ sheetId }: { sheetId: string }) {
++  const queryClient = useQueryClient();
++  const templates = useTemplates(sheetId);
++  const [fields, setFields] = useState<Fields>(EMPTY);
++  const [error, setError] = useState('');
++  const [user] = useUser();
++
++  const once = useOnce();
++  const save = useMutation({
++    mutationFn: (body: Fields) =>
++      postJson<Template>(`/api/sheets/${encodeURIComponent(sheetId)}/templates`, body, user),
++    onSuccess: () => {
++      setFields(EMPTY);
++      return queryClient.invalidateQueries({ queryKey: templatesKey(sheetId) });
++    },
++    onError: () => setError('That template could not be saved.'),
++  });
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    setError('');
++    const name = fields.name.trim();
++    const amount = fields.amount.trim();
++    if (name === '') {
++      setError('A template name is required.');
++      return;
++    }
++    if (amount === '') {
++      setError('An amount is required.');
++      return;
++    }
++    if (!AMOUNT.test(amount)) {
++      setError('An amount is a number with up to two decimals.');
++      return;
++    }
++    once((done) => save.mutate({ name, amount, note: fields.note }, { onSettled: done }));
++  };
++
++  const change = (next: Partial<Fields>) => {
++    setFields((f) => ({ ...f, ...next }));
++    setError('');
++  };
++
++  return (
++    <section data-testid="templates">
++      <h2>Claim templates</h2>
++      <form onSubmit={submit}>
++        <input
++          data-testid="template-form-name"
++          placeholder="Name"
++          value={fields.name}
++          onChange={(e) => change({ name: e.target.value })}
++        />{' '}
++        <input
++          data-testid="template-form-amount"
++          placeholder="Amount"
++          inputMode="decimal"
++          value={fields.amount}
++          onChange={(e) => change({ amount: e.target.value })}
++        />{' '}
++        <input
++          data-testid="template-form-note"
++          placeholder="Note"
++          value={fields.note}
++          onChange={(e) => change({ note: e.target.value })}
++        />{' '}
++        <button type="submit" data-testid="template-form-submit" disabled={save.isPending}>
++          Save template
++        </button>
++        {error && (
++          <p role="alert" data-testid="template-form-error">
++            {error}
++          </p>
++        )}
++      </form>
++      <table>
++        <tbody>
++          {(templates.data ?? []).map((t) => (
++            <tr key={t.name} data-testid={`template-row-${t.name}`}>
++              <td data-testid="template-name">{t.name}</td>
++              <td data-testid="template-amount">{t.amount}</td>
++              <td data-testid="template-note">{t.note}</td>
++            </tr>
++          ))}
++        </tbody>
++      </table>
++    </section>
++  );
++}
++
++export const contribution = SheetBody.fill({ order: -5.4, Component: Templates });
+diff --git a/src/main/frontend/features/templates/templates.ts b/src/main/frontend/features/templates/templates.ts
+new file mode 100644
+index 000000000..b266e5872
+--- /dev/null
++++ b/src/main/frontend/features/templates/templates.ts
+@@ -0,0 +1,16 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++
++/** A claim template on the sheet: a claim made from it copies its amount (two decimals) and note. */
++export type Template = { name: string; amount: string; note: string };
++
++export const templatesKey = (sheetId: string) => ['sheet', sheetId, 'templates'] as const;
++
++/** The claim templates on the sheet, by name. */
++export function useTemplates(sheetId: string) {
++  return useQuery({
++    queryKey: templatesKey(sheetId),
++    queryFn: async () =>
++      (await getJson<{ templates: Template[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/templates`)).templates,
++  });
++}
+diff --git a/src/main/java/net/officefloor/hq/app/template/AuditTemplateSaved.java b/src/main/java/net/officefloor/hq/app/template/AuditTemplateSaved.java
+new file mode 100644
+index 000000000..e6e1ffdc8
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/template/AuditTemplateSaved.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app.template;
++
++import jakarta.servlet.http.HttpServletRequest;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++
++/** Records the template saved. Runs after every rule has passed, so a refused change writes nothing. */
++public class AuditTemplateSaved {
++    public void audit(@Val ClaimTemplate template, HttpServletRequest request, Audit audit) {
++        audit.record("TEMPLATE_SAVED sheet=" + template.sheetId() + " by=" + Audit.user(request)
++                + " name=" + template.name() + " amount=" + template.amount().toPlainString()
++                + " note=" + template.note());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/template/ClaimFromTemplate.java b/src/main/java/net/officefloor/hq/app/template/ClaimFromTemplate.java
+new file mode 100644
+index 000000000..59c48d917
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/template/ClaimFromTemplate.java
+@@ -0,0 +1,22 @@
++package net.officefloor.hq.app.template;
++
++import net.officefloor.hq.app.claim.ClaimInput;
++import net.officefloor.hq.app.claim.ClaimRequest;
++import net.officefloor.hq.app.claim.InvalidClaimException;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++/**
++ * The claim the template makes now: its amount and note as the template has them at this moment,
++ * undated (so dated like a claim with no date), checked by the claim form's rules. A template not on
++ * the sheet is refused.
++ */
++public class ClaimFromTemplate {
++    public void build(@Val TemplateClaimRequest request, @Val Sheet sheet, TemplateRepository repository,
++            Out<ClaimInput> claimOut) throws InvalidClaimException {
++        ClaimTemplate template = repository.find(sheet.id(), request.template());
++        if (template == null) throw new InvalidClaimException("No template " + request.template() + " on the sheet");
++        claimOut.set(ClaimInput.from(new ClaimRequest(template.amount().toPlainString(), "", template.note(), "", "", "")));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/template/ClaimTemplate.java b/src/main/java/net/officefloor/hq/app/template/ClaimTemplate.java
+new file mode 100644
+index 000000000..be8529192
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/template/ClaimTemplate.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.template;
++
++import java.math.BigDecimal;
++
++/** A claim template on a sheet: its name (trimmed), an amount with two decimals and a note. */
++public record ClaimTemplate(String sheetId, String name, BigDecimal amount, String note) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/template/HandleInvalidTemplate.java b/src/main/java/net/officefloor/hq/app/template/HandleInvalidTemplate.java
+new file mode 100644
+index 000000000..0793ebb5e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/template/HandleInvalidTemplate.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.template;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleInvalidTemplate {
++    public void handle(@Parameter InvalidTemplateException ex,
++            ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.BAD_REQUEST));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/template/InvalidTemplateException.java b/src/main/java/net/officefloor/hq/app/template/InvalidTemplateException.java
+new file mode 100644
+index 000000000..900ce4189
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/template/InvalidTemplateException.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.template;
++
++/** A claim template with a blank name, or an amount (or note) the claim form would refuse. */
++public class InvalidTemplateException extends Exception {
++    public InvalidTemplateException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/template/RespondWithTemplate.java b/src/main/java/net/officefloor/hq/app/template/RespondWithTemplate.java
+new file mode 100644
+index 000000000..c2433bbb1
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/template/RespondWithTemplate.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.template;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithTemplate {
++    public void respond(@Val ClaimTemplate template, ObjectResponse<TemplateResponse> response) {
++        response.send(TemplateResponse.from(template));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/template/RespondWithTemplates.java b/src/main/java/net/officefloor/hq/app/template/RespondWithTemplates.java
+new file mode 100644
+index 000000000..dae91b9fc
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/template/RespondWithTemplates.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.template;
++
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithTemplates {
++    public void respond(@Val Sheet sheet, TemplateRepository repository, ObjectResponse<TemplatesResponse> response) {
++        response.send(new TemplatesResponse(
++                repository.findAll(sheet.id()).stream().map(TemplateResponse::from).toList()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/template/SaveTemplate.java b/src/main/java/net/officefloor/hq/app/template/SaveTemplate.java
+new file mode 100644
+index 000000000..cae74f802
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/template/SaveTemplate.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.template;
++
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++/** Saves the template, replacing the sheet's template of the same name. */
++public class SaveTemplate {
++    public void save(@Val TemplateInput input, @Val Sheet sheet, TemplateRepository repository,
++            Out<ClaimTemplate> templateOut) {
++        ClaimTemplate template = new ClaimTemplate(sheet.id(), input.name(), input.amount(), input.note());
++        repository.save(template);
++        templateOut.set(template);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/template/TemplateClaimRequest.java b/src/main/java/net/officefloor/hq/app/template/TemplateClaimRequest.java
+new file mode 100644
+index 000000000..40ed4c396
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/template/TemplateClaimRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.template;
++
++/** A claim from a template, as the screen sends it: the template's name. */
++public record TemplateClaimRequest(String template) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/template/TemplateInput.java b/src/main/java/net/officefloor/hq/app/template/TemplateInput.java
+new file mode 100644
+index 000000000..4ccb3d20f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/template/TemplateInput.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.template;
++
++import java.math.BigDecimal;
++
++/** A claim template request, validated: its name trimmed, its amount and note as the claim form takes them. */
++public record TemplateInput(String name, BigDecimal amount, String note) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/template/TemplateRepository.java b/src/main/java/net/officefloor/hq/app/template/TemplateRepository.java
+new file mode 100644
+index 000000000..cfa7c230e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/template/TemplateRepository.java
+@@ -0,0 +1,44 @@
++package net.officefloor.hq.app.template;
++
++import java.util.List;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.jdbc.core.RowMapper;
++import org.springframework.stereotype.Repository;
++
++/** The claim templates store, kept per sheet, one per name. */
++@Repository
++public class TemplateRepository {
++
++    private static final RowMapper<ClaimTemplate> ROW = (rs, n) -> new ClaimTemplate(rs.getString("sheet_id"),
++            rs.getString("name"), rs.getBigDecimal("amount").setScale(2), rs.getString("note"));
++
++    private final JdbcTemplate jdbc;
++
++    public TemplateRepository(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /** The sheet's templates, by name. */
++    public List<ClaimTemplate> findAll(String sheetId) {
++        return jdbc.query("SELECT sheet_id, name, amount, note FROM claim_template WHERE sheet_id = ? ORDER BY name",
++                ROW, sheetId);
++    }
++
++    /** The sheet's template of that name, or null. */
++    public ClaimTemplate find(String sheetId, String name) {
++        List<ClaimTemplate> found = jdbc.query(
++                "SELECT sheet_id, name, amount, note FROM claim_template WHERE sheet_id = ? AND name = ?",
++                ROW, sheetId, name);
++        return found.isEmpty() ? null : found.get(0);
++    }
++
++    /** Saves the template, replacing one of the same name on its sheet. */
++    public void save(ClaimTemplate t) {
++        int n = jdbc.update("UPDATE claim_template SET amount = ?, note = ? WHERE sheet_id = ? AND name = ?",
++                t.amount(), t.note(), t.sheetId(), t.name());
++        if (n == 0) {
++            jdbc.update("INSERT INTO claim_template (sheet_id, name, amount, note) VALUES (?, ?, ?, ?)",
++                    t.sheetId(), t.name(), t.amount(), t.note());
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/template/TemplateRequest.java b/src/main/java/net/officefloor/hq/app/template/TemplateRequest.java
+new file mode 100644
+index 000000000..35a1dd168
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/template/TemplateRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.template;
++
++/** A claim template as the screen sends it: its name, amount and note. */
++public record TemplateRequest(String name, String amount, String note) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/template/TemplateResponse.java b/src/main/java/net/officefloor/hq/app/template/TemplateResponse.java
+new file mode 100644
+index 000000000..a14cd95e6
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/template/TemplateResponse.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.template;
++
++/** A claim template, as the screen reads it: its amount with two decimals. */
++public record TemplateResponse(String name, String amount, String note) {
++    public static TemplateResponse from(ClaimTemplate t) {
++        return new TemplateResponse(t.name(), t.amount().toPlainString(), t.note());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/template/TemplatesResponse.java b/src/main/java/net/officefloor/hq/app/template/TemplatesResponse.java
+new file mode 100644
+index 000000000..425470b8b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/template/TemplatesResponse.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.template;
++
++import java.util.List;
++
++/** The claim templates on a sheet, by name. */
++public record TemplatesResponse(List<TemplateResponse> templates) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/template/ValidateTemplate.java b/src/main/java/net/officefloor/hq/app/template/ValidateTemplate.java
+new file mode 100644
+index 000000000..98fa6e61d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/template/ValidateTemplate.java
+@@ -0,0 +1,24 @@
++package net.officefloor.hq.app.template;
++
++import net.officefloor.hq.app.claim.ClaimInput;
++import net.officefloor.hq.app.claim.ClaimRequest;
++import net.officefloor.hq.app.claim.InvalidClaimException;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** A template needs a name (kept trimmed), and an amount and note the claim form would take for an undated claim. */
++public class ValidateTemplate {
++    public void validate(@RequestBody TemplateRequest request, Out<TemplateInput> body)
++            throws InvalidTemplateException {
++        String name = request == null || request.name() == null ? "" : request.name().trim();
++        if (name.isEmpty()) throw new InvalidTemplateException("A template name is required");
++        if (name.length() > 200) throw new InvalidTemplateException("A template name is at most 200 characters");
++        ClaimInput claim;
++        try {
++            claim = ClaimInput.from(new ClaimRequest(request.amount(), "", request.note(), "", "", ""));
++        } catch (InvalidClaimException e) {
++            throw new InvalidTemplateException(e.getMessage());
++        }
++        body.set(new TemplateInput(name, claim.amount(), claim.note()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/template/ValidateTemplateClaim.java b/src/main/java/net/officefloor/hq/app/template/ValidateTemplateClaim.java
+new file mode 100644
+index 000000000..ba7f3e683
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/template/ValidateTemplateClaim.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.template;
++
++import net.officefloor.hq.app.claim.InvalidClaimException;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** A claim from a template names the template. */
++public class ValidateTemplateClaim {
++    public void validate(@RequestBody TemplateClaimRequest request, Out<TemplateClaimRequest> body)
++            throws InvalidClaimException {
++        String name = request == null || request.template() == null ? "" : request.template().trim();
++        if (name.isEmpty()) throw new InvalidClaimException("Choose a template");
++        body.set(new TemplateClaimRequest(name));
++    }
++}
+diff --git a/src/main/resources/db/migration/V64__claim_template.sql b/src/main/resources/db/migration/V64__claim_template.sql
+new file mode 100644
+index 000000000..094d02714
+--- /dev/null
++++ b/src/main/resources/db/migration/V64__claim_template.sql
+@@ -0,0 +1,10 @@
++-- A sheet's claim templates: a trimmed name (at most once per sheet; saving it again replaces it),
++-- an amount the claim form would take and a note. A claim made from one copies its amount and note.
++CREATE TABLE claim_template (
++    id BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id VARCHAR(200) NOT NULL REFERENCES sheet(id),
++    name VARCHAR(200) NOT NULL,
++    amount DECIMAL(19, 2) NOT NULL,
++    note VARCHAR(1000) NOT NULL,
++    UNIQUE (sheet_id, name)
++);
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.template.InvalidTemplateException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.template.InvalidTemplateException.yml
+new file mode 100644
+index 000000000..0dab40530
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.template.InvalidTemplateException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.template.HandleInvalidTemplate
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/template-claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/template-claims.POST.yml
+new file mode 100644
+index 000000000..52d03b3ab
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/template-claims.POST.yml
+@@ -0,0 +1,72 @@
++# Add a DRAFT claim to a person from a template: its amount and note as the template has them now,
++# undated (so dated like a claim with no date), then every rule of the claim form.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: validate
++validate:
++  class: net.officefloor.hq.app.template.ValidateTemplateClaim
++  next: loadSheet
++loadSheet:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ transaction ]
++  next: before
++# The sheet's figures before the change, so the rollup lines tell which moved.
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
++  next: loadPerson
++loadPerson:
++  class: net.officefloor.hq.app.person.LoadPerson
++  govern: [ transaction ]
++  next: template
++template:
++  class: net.officefloor.hq.app.template.ClaimFromTemplate
++  govern: [ transaction ]
++  next: build
++build:
++  class: net.officefloor.hq.app.claim.BuildClaim
++  govern: [ transaction ]
++  next: ref
++# A reference another claim on the sheet has (regardless of case) is a 400 and writes nothing.
++ref:
++  class: net.officefloor.hq.app.claim.CheckClaimRef
++  govern: [ transaction ]
++  next: correction
++# A correction (a negative amount) must name a settled claim of the same person: else a 400.
++correction:
++  class: net.officefloor.hq.app.claim.CheckCorrection
++  govern: [ transaction ]
++  next: closed
++# A claim due by a date inside a closed period is a 409 and writes nothing.
++closed:
++  class: net.officefloor.hq.app.period.CheckClaimPeriod
++  govern: [ transaction ]
++  next: retired
++# A claim dated after its person's retirement date is a 409 and writes nothing.
++retired:
++  class: net.officefloor.hq.app.person.CheckClaimRetired
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.claim.SaveClaim
++  govern: [ transaction ]
++  next: log
++# The status it was saved at, with who, when and its due then.
++log:
++  class: net.officefloor.hq.app.claim.LogClaimStatus
++  govern: [ transaction ]
++  next: audit
++# Last before the response: every rule has passed and the change is saved.
++audit:
++  class: net.officefloor.hq.app.claim.AuditClaimAdded
++  govern: [ transaction ]
++  next: rollup
++# After the change's own lines: the figures it moved.
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaim
++  govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/templates.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/templates.GET.yml
+new file mode 100644
+index 000000000..65fbbef63
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/templates.GET.yml
+@@ -0,0 +1,8 @@
++# The claim templates on a sheet, by name.
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ readonly-transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.template.RespondWithTemplates
++  govern: [ readonly-transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/templates.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/templates.POST.yml
+new file mode 100644
+index 000000000..daac810f9
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/templates.POST.yml
+@@ -0,0 +1,25 @@
++# Save a claim template. A blank name, or an amount (or note) the claim form would refuse, is refused
++# (a 400) and writes nothing; saving a name again replaces that template.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: validate
++validate:
++  class: net.officefloor.hq.app.template.ValidateTemplate
++  next: load
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.template.SaveTemplate
++  govern: [ transaction ]
++  next: audit
++# Last before the response: every rule has passed and the change is saved.
++audit:
++  class: net.officefloor.hq.app.template.AuditTemplateSaved
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.template.RespondWithTemplate
++  govern: [ transaction ]
