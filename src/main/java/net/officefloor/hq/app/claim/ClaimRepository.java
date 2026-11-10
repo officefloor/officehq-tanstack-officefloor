@@ -17,7 +17,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, edited_by, stated, stated_due, corrects, due_by, terms, deferred_until, proofs, split_from, late_entry, reminded_on, ext_ref, tags, void_reason,"
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, edited_by, stated, stated_due, corrects, due_by, terms, deferred_until, proofs, split_from, late_entry, reminded_on, ext_ref, tags, void_reason, settle_batch,"
             + " (SELECT c.claim_date FROM claim c WHERE c.sheet_id = claim.sheet_id AND c.person_id = claim.person_id"
             + " AND c.claim_number = claim.corrects) AS corrected_date,"
             + " CASE WHEN locked_on = (SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id) THEN locked_by END AS locked_by_now";
@@ -44,6 +44,7 @@ public class ClaimRepository {
         claim.setRef(rs.getString("ext_ref"));
         claim.setTags(rs.getString("tags"));
         claim.setVoidReason(rs.getString("void_reason"));
+        claim.setSettleBatch((Integer) rs.getObject("settle_batch", Integer.class));
         claim.setLockedBy(rs.getString("locked_by_now"));
         java.sql.Date corrected = rs.getDate("corrected_date");
         claim.setCorrectedDate(corrected == null ? null : corrected.toLocalDate());
@@ -148,6 +149,29 @@ public class ClaimRepository {
                 Integer.class, sheetId, sequence);
     }
 
+    /**
+     * The sheet's next bulk settle batch number, counting from 1; taken in one statement so two
+     * bulk settles at the same moment never share a number, and never given out again.
+     */
+    public int nextBatch(String sheetId) {
+        return jdbc.queryForObject("SELECT last_settle_batch FROM FINAL TABLE"
+                + " (UPDATE sheet SET last_settle_batch = last_settle_batch + 1 WHERE id = ?)",
+                Integer.class, sheetId);
+    }
+
+    /**
+     * The number of the sheet's last bulk settle batch, as it stood at the end of {@code day}
+     * (null: now); null when there has been none.
+     */
+    public Integer lastBatch(String sheetId, LocalDate day) {
+        if (day == null) {
+            Integer last = jdbc.queryForObject("SELECT last_settle_batch FROM sheet WHERE id = ?", Integer.class, sheetId);
+            return last == null || last == 0 ? null : last;
+        }
+        return jdbc.queryForObject("SELECT MAX(settle_batch) FROM claim_history WHERE sheet_id = ? AND set_on <= ?",
+                Integer.class, sheetId, Date.valueOf(day));
+    }
+
     /** The sheet's next place in its claims list, taken in one statement; never given out again. */
     private long nextListed(String sheetId) {
         return jdbc.queryForObject("SELECT last_claim_listed FROM FINAL TABLE"
@@ -217,11 +241,11 @@ public class ClaimRepository {
                         claim.getPersonId(), nextListed(claim.getSheetId()), claim.getId(), claim.getSheetId());
             }
             keepBinding(claim);
-            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?, edited_by = ?, stated = ?, stated_due = ?, corrects = ?, deferred_until = ?, proofs = ?, ext_ref = ?, tags = ?, void_reason = ? WHERE id = ? AND sheet_id = ?",
+            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?, edited_by = ?, stated = ?, stated_due = ?, corrects = ?, deferred_until = ?, proofs = ?, ext_ref = ?, tags = ?, void_reason = ?, settle_batch = ? WHERE id = ? AND sheet_id = ?",
                     claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(),
                     claim.getStatus().name(), claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getEditedBy(),
                     claim.isStated(), claim.getStatedDue(), claim.getCorrects(),
-                    claim.getDeferredUntil() == null ? null : Date.valueOf(claim.getDeferredUntil()), claim.getProofs(), claim.getRef(), claim.getTags(), claim.getVoidReason(), claim.getId(),
+                    claim.getDeferredUntil() == null ? null : Date.valueOf(claim.getDeferredUntil()), claim.getProofs(), claim.getRef(), claim.getTags(), claim.getVoidReason(), claim.getSettleBatch(), claim.getId(),
                     claim.getSheetId());
             keepHistory(claim);
             return;
@@ -275,7 +299,7 @@ public class ClaimRepository {
     }
 
     private static final String HISTORY_COLUMNS = "person_id, amount, claim_date, note, status, claim_number, settled_due,"
-            + " opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, late_entry, listed, tags, void_reason";
+            + " opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, late_entry, listed, tags, void_reason, settle_batch";
 
     /** Keeps the claim as the store now holds it in its history, with the sheet's today now. */
     private void keepHistory(Claim claim) {
@@ -307,6 +331,7 @@ public class ClaimRepository {
                     claim.setLateEntry(rs.getBoolean("late_entry"));
                     claim.setTags(rs.getString("tags"));
                     claim.setVoidReason(rs.getString("void_reason"));
+                    claim.setSettleBatch((Integer) rs.getObject("settle_batch", Integer.class));
                     latest.put(claim.getId(), claim);
                     listed.put(claim.getId(), rs.getLong("listed"));
                 }, sheetId, Date.valueOf(day));

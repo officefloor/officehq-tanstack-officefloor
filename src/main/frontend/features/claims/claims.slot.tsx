@@ -521,6 +521,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
               <span data-testid="claim-split-from">{c.splitFrom}</span>{' '}
               <span data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-reminded">{c.remindedOn}</span>{' '}
+              <span data-testid="claim-batch">{c.batch}</span>{' '}
               <button type="button" data-testid="claim-remind" onClick={() => remindClaim(c.id)}>
                 Remind
               </button>{' '}

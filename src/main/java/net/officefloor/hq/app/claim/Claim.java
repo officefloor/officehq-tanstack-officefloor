@@ -32,6 +32,7 @@ public class Claim {
     private String ref;
     private String tags;
     private String voidReason;
+    private Integer settleBatch;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue,
@@ -155,6 +156,9 @@ public class Claim {
     /** The reason it was voided with, from the sheet's list; null when it was voided without one or is not VOID. */
     public String getVoidReason() { return voidReason; }
     public void setVoidReason(String voidReason) { this.voidReason = voidReason; }
+    /** The number of the bulk settle batch that settled it; null when no bulk settle did. */
+    public Integer getSettleBatch() { return settleBatch; }
+    public void setSettleBatch(Integer settleBatch) { this.settleBatch = settleBatch; }
     /** Its tags, sorted; empty when it has none. */
     public java.util.List<String> tagList() {
         return tags == null ? java.util.List.of() : java.util.List.of(tags.split(","));
@@ -251,6 +255,7 @@ public class Claim {
         then.ref = ref;
         then.tags = tags;
         then.voidReason = voidReason;
+        then.settleBatch = settleBatch;
         then.editedBy = editedBy;
         return then;
     }
@@ -273,6 +278,7 @@ public class Claim {
     public void reject() throws InvalidClaimStatusException {
         if (status != ClaimStatus.PENDING) throw new InvalidClaimStatusException(status, ClaimStatus.OPEN);
         status = ClaimStatus.OPEN;
+        settleBatch = null;
     }
 
     /** Move to the next status, when the current one allows it. */

@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import net.officefloor.hq.app.AsOf;
 import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Val;
@@ -21,6 +22,7 @@ public class RespondWithClaims {
         response.send(new ClaimsResponse(claims.stream()
                 .map((claim) -> ClaimResponse.from(claim, logs.getOrDefault(claim.getId(), List.of()),
                         notes.getOrDefault(claim.getId(), List.of()))).toList(),
-                repository.tagsUsed(sheet.id(), asOf)));
+                repository.tagsUsed(sheet.id(), asOf),
+                Objects.toString(repository.lastBatch(sheet.id(), asOf), "")));
     }
 }

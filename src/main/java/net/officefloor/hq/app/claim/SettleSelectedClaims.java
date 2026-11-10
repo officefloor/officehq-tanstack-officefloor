@@ -44,6 +44,7 @@ public class SettleSelectedClaims {
         }
         int requested = new HashSet<>(request.claimIds()).size();
         int settled = 0;
+        Integer batch = null; // taken when the first claim is settled: a bulk settle settling none is no batch
         if (sheet.archived() || Role.VIEWER.equals(roles.roleOf(sheet.id(), user))) {
             result.set(new BulkSettleResponse(0, requested)); // a viewer, or an archived sheet, changes nothing
             return;
@@ -58,6 +59,8 @@ public class SettleSelectedClaims {
                 } catch (InvalidClaimStatusException | SelfSettleException e) {
                     continue;
                 }
+                if (batch == null) batch = claims.nextBatch(sheet.id());
+                claim.setSettleBatch(batch);
                 claims.save(claim);
                 log.record(claim, user, sheet.today(), LogClaimStatus.due(sheet, claim, people, rates, settings));
                 settled++;

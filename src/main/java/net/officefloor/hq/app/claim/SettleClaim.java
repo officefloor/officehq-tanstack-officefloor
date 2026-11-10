@@ -30,6 +30,7 @@ public class SettleClaim {
             RoleRepository roles, SettingsRepository settingsStore, HttpServletRequest request)
             throws InvalidClaimStatusException, SelfSettleException {
         settle(sheet, claim, Audit.user(request), people, rates, roles, settingsStore);
+        claim.setSettleBatch(null); // settled one at a time: in no batch
     }
 
     /** Settles the claim as the given user would, by the rules above; throws when it may not. */

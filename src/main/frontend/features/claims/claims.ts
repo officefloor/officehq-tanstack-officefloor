@@ -60,6 +60,8 @@ export type Claim = {
   voidReason: string;
   /** Its comments, oldest first, as `<user> on <date>: <text>` (the sheet's today when written). */
   comments: string[];
+  /** The number of the bulk settle batch that settled it; '' when none did (settled one at a time, or not settled). */
+  batch: string;
 };
 
 /** Whether a claim is a correction: it has no floor and no late charge. */
@@ -128,6 +130,17 @@ export function useTagsUsed(sheetId: string) {
     queryKey: tagsKey(sheetId),
     queryFn: async () =>
       (await getJson<{ tags: string[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/claims`)).tags,
+  });
+}
+
+export const lastBatchKey = (sheetId: string) => [...claimsKey(sheetId), 'last-batch'] as const;
+
+/** The number of the sheet's last bulk settle batch; '' when there has been none (re-read whenever its claims are). */
+export function useLastBatch(sheetId: string) {
+  return useQuery({
+    queryKey: lastBatchKey(sheetId),
+    queryFn: async () =>
+      (await getJson<{ lastBatch: string }>(`/api/sheets/${encodeURIComponent(sheetId)}/claims`)).lastBatch,
   });
 }
 

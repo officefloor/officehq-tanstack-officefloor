@@ -4,7 +4,7 @@ import { useOnce } from '../../query/useOnce';
 import { postJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/session';
-import { claimsKey } from './claims';
+import { claimsKey, useLastBatch } from './claims';
 import { clearSelectedClaims, useSelectedClaims } from './selection';
 
 type Result = { settled: number; refused: number };
@@ -13,12 +13,15 @@ type Result = { settled: number; refused: number };
 // settled in list order (people in list order, each person's claims newest first) by the rules of
 // settling one — a claim sent to PENDING counts as settled — and leaves the rest as they are; the
 // bar shows how many were settled and how many refused. The counts are cleared while it runs.
+// A bulk settle settling at least one claim is a batch, numbered on the sheet; the bar shows the
+// last batch's number ('' when there has been none).
 function BulkSettle({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const selected = useSelectedClaims(sheetId);
   const [user] = useUser();
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState('');
+  const lastBatch = useLastBatch(sheetId).data ?? '';
 
   const once = useOnce();
   const settle = useMutation({
@@ -43,7 +46,8 @@ function BulkSettle({ sheetId }: { sheetId: string }) {
     <section data-testid="bulk-settle-claims">
       <button type="button" data-testid="bulk-settle" onClick={press} disabled={settle.isPending}>
         Settle selected ({selected.size})
-      </button>
+      </button>{' '}
+      Last batch <span data-testid="bulk-settle-batch">{lastBatch}</span>
       {result !== null && (
         <>
           {' '}Settled <span data-testid="bulk-settled">{result.settled}</span>, refused{' '}
