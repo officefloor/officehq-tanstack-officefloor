@@ -1,0 +1,388 @@
+diff --git a/src/main/frontend/features/merge/merge.slot.tsx b/src/main/frontend/features/merge/merge.slot.tsx
+new file mode 100644
+index 000000000..10103710f
+--- /dev/null
++++ b/src/main/frontend/features/merge/merge.slot.tsx
+@@ -0,0 +1,77 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { useOnce } from '../../query/useOnce';
++import { postJson } from '../../api/http';
++import { PersonHead, PersonRow } from '../../slots/defs/personRow';
++import { peopleKey, usePeople } from '../people/people';
++import type { Person } from '../people/people';
++import { claimsKey } from '../claims/claims';
++import { useUser } from '../session/session';
++import { useRowError } from '../people/rowError';
++
++function MergeHead() {
++  return <th>Merge</th>;
++}
++
++// A picker of another person on the sheet and a button that merges this person into them (a
++// steward): their claims, aliases, patrons and pool memberships go to the other, and they leave the list.
++function PersonMerge({ sheetId, person }: { sheetId: string; person: Person }) {
++  const queryClient = useQueryClient();
++  const [user] = useUser();
++  const people = usePeople(sheetId).data ?? [];
++  const [into, setInto] = useState('');
++  const [error, setError] = useRowError(person.id, 'merge');
++  const once = useOnce();
++  const merge = useMutation({
++    mutationFn: (intoId: string) =>
++      postJson<Person>(
++        `/api/sheets/${encodeURIComponent(sheetId)}/people/${encodeURIComponent(person.id)}/merge`,
++        { intoId },
++        user,
++      ),
++    // The moved claims are read before the merged person's row goes.
++    onSuccess: async () => {
++      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
++      await queryClient.invalidateQueries({ queryKey: ['sheet', sheetId] });
++    },
++    onError: () => setError('That person could not be merged.'),
++  });
++
++  const submit = () => {
++    setError('');
++    once((done) => merge.mutate(into, { onSettled: done }));
++  };
++
++  return (
++    <td>
++      <select
++        data-testid="person-merge-into"
++        value={into}
++        onChange={(e) => {
++          setInto(e.target.value);
++          setError('');
++        }}
++      >
++        <option value="">—</option>
++        {people.map((p) => (
++          <option key={p.id} value={p.id}>
++            {p.name}
++          </option>
++        ))}
++      </select>{' '}
++      <button type="button" data-testid="person-merge" onClick={submit} disabled={merge.isPending}>
++        Merge
++      </button>
++      {error && (
++        <p role="alert" data-testid="person-error">
++          {error}
++        </p>
++      )}
++    </td>
++  );
++}
++
++export const contributions = [
++  PersonHead.fill({ order: 65, Component: MergeHead }),
++  PersonRow.fill({ order: 65, Component: PersonMerge }),
++];
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index bedd4194c..0a0ad9074 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -66,6 +66,15 @@ public class Claim {
+         bind(false, null);
+         relisted = true;
+     }
++    /**
++     * Move it, whatever its status, with the rest of its person's claims to the person they were merged
++     * into: it keeps its number and date, loses any figure a statement bound it to, and is listed again.
++     */
++    public void mergeTo(long toPersonId) {
++        personId = toPersonId;
++        bind(false, null);
++        relisted = true;
++    }
+     /** Whether it was moved since read, so it is listed again as its new person's newest. */
+     public boolean isRelisted() { return relisted; }
+     public BigDecimal getAmount() { return amount; }
+diff --git a/src/main/java/net/officefloor/hq/app/person/AuditPersonMerged.java b/src/main/java/net/officefloor/hq/app/person/AuditPersonMerged.java
+new file mode 100644
+index 000000000..6abe507b7
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/AuditPersonMerged.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++import jakarta.servlet.http.HttpServletRequest;
++
++/** Records the merge. Runs after it is saved. */
++public class AuditPersonMerged {
++    public void audit(@Val Sheet sheet, @Val Merge merge,
++            HttpServletRequest request, Audit audit) {
++        audit.record("PERSON_MERGED sheet=" + sheet.id() + " by=" + Audit.user(request)
++                + " from=" + merge.from().getName() + " into=" + merge.into().getName());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/Merge.java b/src/main/java/net/officefloor/hq/app/person/Merge.java
+new file mode 100644
+index 000000000..af36e69fb
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/Merge.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** A person just merged into another: the person merged, and the person merged into. */
++public record Merge(Person from, Person into) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/MergeInput.java b/src/main/java/net/officefloor/hq/app/person/MergeInput.java
+new file mode 100644
+index 000000000..c3b251468
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/MergeInput.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** A validated merge: the id of the person to merge into. */
++public record MergeInput(long intoId) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/MergePerson.java b/src/main/java/net/officefloor/hq/app/person/MergePerson.java
+new file mode 100644
+index 000000000..d833e1940
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/MergePerson.java
+@@ -0,0 +1,48 @@
++package net.officefloor.hq.app.person;
++
++import java.util.ArrayList;
++import java.util.Collections;
++import java.util.List;
++import jakarta.servlet.http.HttpServletRequest;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.pool.PoolRepository;
++import net.officefloor.hq.app.role.Role;
++import net.officefloor.hq.app.role.RoleRepository;
++import net.officefloor.hq.app.role.StewardOnlyException;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++/**
++ * Merges the person into another on the sheet (a steward): not themselves, and neither retired. Their
++ * claims move to the other (numbers and dates kept, listed after the other's in the order they were
++ * added, each losing any figure a statement bound it to); their name and aliases become the other's
++ * aliases; their patrons and pool memberships go to the other, and anyone naming them as patron names
++ * the other instead. Their statements, holds, watchers and contact are dropped, and they leave the list.
++ */
++public class MergePerson {
++    public void merge(@Val MergeInput input, @Val Sheet sheet, @Val Person person, PersonRepository people,
++            ClaimRepository claims, PoolRepository pools, RoleRepository roles, HttpServletRequest request,
++            Out<Merge> mergeOut) throws StewardOnlyException, InvalidPersonException {
++        if (!Role.STEWARD.equals(roles.roleOf(sheet.id(), Audit.user(request)))) {
++            throw new StewardOnlyException("Only a steward may merge people");
++        }
++        Person into = people.find(sheet.id(), input.intoId());
++        if (into == null) throw new InvalidPersonException("No such person to merge into");
++        if (into.getId().equals(person.getId())) throw new InvalidPersonException("A person cannot be merged into themselves");
++        if (person.isRetired() || into.isRetired()) {
++            throw new InvalidPersonException("A retired person cannot be merged");
++        }
++        List<Claim> moving = new ArrayList<>(claims.findByPerson(sheet.id(), person.getId()));
++        Collections.reverse(moving);
++        for (Claim claim : moving) {
++            claim.mergeTo(into.getId());
++            claims.save(claim);
++        }
++        pools.mergeMembers(person.getId(), into.getId());
++        people.merge(person, into);
++        mergeOut.set(new Merge(person, into));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/MergeRequest.java b/src/main/java/net/officefloor/hq/app/person/MergeRequest.java
+new file mode 100644
+index 000000000..10a284608
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/MergeRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** A merge as the screen sends it: the id of the person to merge into. */
++public record MergeRequest(String intoId) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 5044001c1..529d0b46d 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -39,7 +39,7 @@ public class PersonRepository {
+ 
+     /** The sheet's people, in the order they were added. */
+     public List<Person> findAll(String sheetId) {
+-        List<Person> people = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? ORDER BY id",
++        List<Person> people = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND merged_into IS NULL ORDER BY id",
+                 ROW, sheetId);
+         Map<Long, Person> byId = new HashMap<>();
+         people.forEach((p) -> byId.put(p.getId(), p));
+@@ -69,7 +69,7 @@ public class PersonRepository {
+     /** The person with this id on the sheet, or null when there is none. */
+     public Person find(String sheetId, long id) {
+         List<Person> found = jdbc.query(
+-                "SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND id = ?",
++                "SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND id = ? AND merged_into IS NULL",
+                 ROW, sheetId, id);
+         if (found.isEmpty()) return null;
+         Person person = found.get(0);
+@@ -95,6 +95,36 @@ public class PersonRepository {
+                 String.class, person.getSheetId(), person.getId()));
+     }
+ 
++    /**
++     * Merge {@code from} into {@code into}: {@code from}'s name and aliases become {@code into}'s aliases;
++     * their patrons are added to {@code into}'s (not {@code into} themselves, no repeats); anyone naming
++     * {@code from} as patron names {@code into} instead (no repeats). {@code from}'s holds, watchers and
++     * contact are dropped, and they are marked merged, leaving the list.
++     */
++    public void merge(Person from, Person into) {
++        String sheetId = from.getSheetId();
++        jdbc.update("DELETE FROM person_alias WHERE sheet_id = ? AND person_id = ?", sheetId, from.getId());
++        addAlias(into, from.getName());
++        for (String alias : from.getAliases()) addAlias(into, alias);
++        // Their own patrons go to the other, not the other themselves, nor one the other already names.
++        jdbc.update("DELETE FROM person_patron WHERE sheet_id = ? AND person_id = ? AND (patron_id = ?"
++                + " OR patron_id IN (SELECT p.patron_id FROM person_patron p WHERE p.person_id = ?))",
++                sheetId, from.getId(), into.getId(), into.getId());
++        jdbc.update("UPDATE person_patron SET person_id = ? WHERE sheet_id = ? AND person_id = ?",
++                into.getId(), sheetId, from.getId());
++        // Those naming them name the other instead: not the other themselves, nor anyone already naming the other.
++        jdbc.update("DELETE FROM person_patron WHERE sheet_id = ? AND patron_id = ? AND (person_id = ?"
++                + " OR person_id IN (SELECT p.person_id FROM person_patron p WHERE p.patron_id = ?))",
++                sheetId, from.getId(), into.getId(), into.getId());
++        jdbc.update("UPDATE person_patron SET patron_id = ? WHERE sheet_id = ? AND patron_id = ?",
++                into.getId(), sheetId, from.getId());
++        jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, from.getId());
++        jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, from.getId());
++        jdbc.update("UPDATE person SET contact = NULL, merged_into = ?, version = version + 1 WHERE id = ? AND sheet_id = ?",
++                into.getId(), from.getId(), sheetId);
++        jdbc.update("UPDATE person SET version = version + 1 WHERE id = ? AND sheet_id = ?", into.getId(), sheetId);
++    }
++
+     /** Record {@code patron} as one of the person's patrons. */
+     public void addPatron(Person person, Person patron) {
+         jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id, added_on)"
+@@ -108,7 +138,7 @@ public class PersonRepository {
+      * when there is none.
+      */
+     public Person findByName(String sheetId, String name) {
+-        List<Person> found = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ?"
++        List<Person> found = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND merged_into IS NULL"
+                 + " AND (LOWER(TRIM(name)) = LOWER(TRIM(?)) OR id IN (SELECT person_id FROM person_alias"
+                 + " WHERE sheet_id = ? AND LOWER(TRIM(alias)) = LOWER(TRIM(?)))) ORDER BY id",
+                 ROW, sheetId, name, sheetId, name);
+@@ -153,7 +183,7 @@ public class PersonRepository {
+     public boolean nameTaken(String sheetId, String name, Long exceptId) {
+         Integer count = jdbc.queryForObject(
+                 "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND LOWER(TRIM(name)) = LOWER(TRIM(?))"
+-                        + " AND id <> ?",
++                        + " AND id <> ? AND merged_into IS NULL",
+                 Integer.class, sheetId, name, exceptId == null ? -1L : exceptId);
+         Integer aliases = jdbc.queryForObject(
+                 "SELECT COUNT(*) FROM person_alias WHERE sheet_id = ? AND LOWER(TRIM(alias)) = LOWER(TRIM(?))",
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateMerge.java b/src/main/java/net/officefloor/hq/app/person/ValidateMerge.java
+new file mode 100644
+index 000000000..805212824
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateMerge.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ValidateMerge {
++    public void validate(@RequestBody MergeRequest request, Out<MergeInput> body)
++            throws InvalidPersonException {
++        String raw = request == null || request.intoId() == null ? "" : request.intoId().trim();
++        try {
++            body.set(new MergeInput(Long.parseLong(raw)));
++        } catch (NumberFormatException e) {
++            throw new InvalidPersonException("Choose a person to merge into");
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+index 59e5dd5d2..d4d8cc983 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+@@ -51,4 +51,18 @@ public class PoolRepository {
+     public void addMember(Pool pool, long personId, BigDecimal share) {
+         jdbc.update("INSERT INTO pool_member (pool_id, person_id, share) VALUES (?, ?, ?)", pool.id(), personId, share);
+     }
++
++    /**
++     * Move a merged person's memberships to the person they were merged into: their share is added to
++     * the other's in a pool the other is already in.
++     */
++    public void mergeMembers(long fromId, long intoId) {
++        jdbc.update("UPDATE pool_member m SET share = share + (SELECT f.share FROM pool_member f"
++                + " WHERE f.pool_id = m.pool_id AND f.person_id = ?) WHERE m.person_id = ?"
++                + " AND EXISTS (SELECT 1 FROM pool_member f WHERE f.pool_id = m.pool_id AND f.person_id = ?)",
++                fromId, intoId, fromId);
++        jdbc.update("DELETE FROM pool_member WHERE person_id = ? AND pool_id IN"
++                + " (SELECT pool_id FROM pool_member WHERE person_id = ?)", fromId, intoId);
++        jdbc.update("UPDATE pool_member SET person_id = ? WHERE person_id = ?", intoId, fromId);
++    }
+ }
+diff --git a/src/main/resources/db/migration/V67__person_merged.sql b/src/main/resources/db/migration/V67__person_merged.sql
+new file mode 100644
+index 000000000..eef963631
+--- /dev/null
++++ b/src/main/resources/db/migration/V67__person_merged.sql
+@@ -0,0 +1,3 @@
++-- A person merged into another: the id of the person they were merged into. A merged person is
++-- kept for the sheet's history but leaves the list, and no change can be made to them. Null: not merged.
++ALTER TABLE person ADD COLUMN merged_into BIGINT;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/merge.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/merge.POST.yml
+new file mode 100644
+index 000000000..8867c335b
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/merge.POST.yml
+@@ -0,0 +1,40 @@
++# Merge a person into another on the sheet (a steward). Validate first so a bad body is a 400, not
++# a 404. Anyone else, the same person, or either of them retired, is refused and writes nothing.
++# The merged person's claims move to the other, and the merged person leaves the list.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: validate
++validate:
++  class: net.officefloor.hq.app.person.ValidateMerge
++  next: loadSheet
++loadSheet:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ transaction ]
++  next: before
++# The sheet's figures before the change, so the rollup lines tell which moved.
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
++  next: load
++load:
++  class: net.officefloor.hq.app.person.LoadPerson
++  govern: [ transaction ]
++  next: merge
++merge:
++  class: net.officefloor.hq.app.person.MergePerson
++  govern: [ transaction ]
++  next: audit
++# Last before the response: the merge is saved.
++audit:
++  class: net.officefloor.hq.app.person.AuditPersonMerged
++  govern: [ transaction ]
++  next: rollup
++# After the change's own lines: the figures it moved.
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPerson
++  govern: [ transaction ]
