@@ -69,6 +69,26 @@ public class SheetRepository {
         return jdbc.query("SELECT id FROM sheet WHERE parent_id = ? ORDER BY id", (rs, n) -> rs.getString("id"), id);
     }
 
+    /**
+     * The sheets of the sheet's tree, not the sheet itself: its ancestors (its parent, theirs and so
+     * on) and its descendants (the sheets naming it as their parent, those naming them and so on),
+     * among the sheets that exist, each once.
+     */
+    public java.util.Set<String> tree(String id) {
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>(List.of(id));
+        for (String at = parent(id); at != null && seen.add(at); at = parent(at)) {
+            // walked up to the root, stopping at a sheet already seen
+        }
+        java.util.Deque<String> pending = new java.util.ArrayDeque<>(List.of(id));
+        while (!pending.isEmpty()) {
+            for (String child : children(pending.removeFirst())) {
+                if (seen.add(child)) pending.addLast(child);
+            }
+        }
+        seen.remove(id);
+        return seen;
+    }
+
     /** Names the sheet's parent sheet (null: none). */
     public void saveParent(String id, String parent) {
         jdbc.update("UPDATE sheet SET parent_id = ? WHERE id = ?", parent, id);

@@ -12,13 +12,14 @@ import java.util.List;
  * ("" when not), whether they have any hold, their holds (in the order added), the ids of the people they name as patrons (in the order named) with their
  * shares (see {@link #shares}), and every
  * grade they have been given with the date it is from (the first "", from the beginning of time),
- * by from-date, their own terms in days ("" for none), their contact ("" for none), and their aliases
- * (in the order given).
+ * by from-date, their own terms in days ("" for none), their contact ("" for none), their aliases
+ * (in the order given), and whether they clash: their name or an alias is a name or alias on another
+ * sheet of the sheet's tree.
  */
 public record PersonResponse(String id, String name, String grade, long version, int statementCount,
         String statedTotal, String statementDate, boolean retired, String retiredFrom,
         boolean held, List<HoldFrom> holds, java.util.List<String> patronIds, List<String> patronShares, List<GradeFrom> grades, String terms,
-        String contact, List<String> aliases) {
+        String contact, List<String> aliases, boolean clashing) {
 
     /** A hold from a date to a date (yyyy-MM-dd; to "" when open-ended), both inclusive. */
     public record HoldFrom(String from, String to) {}
@@ -41,7 +42,7 @@ public record PersonResponse(String id, String name, String grade, long version,
     }
 
     /** The person as the screen reads it on the sheet's today: their grade is the one in force on it. */
-    public static PersonResponse from(Person person, LocalDate today) {
+    public static PersonResponse from(Person person, LocalDate today, boolean clashing) {
         List<GradeFrom> grades = new ArrayList<>();
         grades.add(new GradeFrom("", person.getGrade()));
         person.getDatedGrades().forEach((from, grade) -> grades.add(new GradeFrom(from.toString(), grade)));
@@ -54,6 +55,6 @@ public record PersonResponse(String id, String name, String grade, long version,
                 person.getHolds().stream().map((h) -> new HoldFrom(h.from().toString(), h.to() == null ? "" : h.to().toString())).toList(),
                 person.getPatronIds().stream().map(String::valueOf).toList(), shares(person.getPatronIds().size()), grades,
                 person.getTerms() == null ? "" : person.getTerms().toString(),
-                person.getContact() == null ? "" : person.getContact(), List.copyOf(person.getAliases()));
+                person.getContact() == null ? "" : person.getContact(), List.copyOf(person.getAliases()), clashing);
     }
 }

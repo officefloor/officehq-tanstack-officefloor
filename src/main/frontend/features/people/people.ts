@@ -25,7 +25,9 @@ export function gradeOn(grades: GradeFrom[], date: string): Grade {
 // `terms` are their own terms in days, ahead of their grade's and the sheet's ('' for none).
 // `contact` is their contact, trimmed and lower-cased ('' for none); no two people on a sheet share one.
 // `aliases` are their aliases, trimmed, in the order given; like names (ignoring case), none equals
-// any name or alias on the sheet.
+// any name or alias on the sheet, nor on another sheet of its tree (its ancestors and descendants).
+// `clashing` is whether, all the same, their name or an alias is one on another sheet of the tree
+// (they clashed before the rule): every edit of them is refused until it renames them out of it.
 export type Person = {
   id: string;
   name: string;
@@ -44,6 +46,7 @@ export type Person = {
   terms: string;
   contact: string;
   aliases: string[];
+  clashing: boolean;
 };
 
 /**

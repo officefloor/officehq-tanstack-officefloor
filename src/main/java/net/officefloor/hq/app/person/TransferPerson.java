@@ -29,7 +29,7 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * Transfers the person to another sheet (a steward), not retired, and only when their name, aliases
- * and contact are free there. They arrive with their grades (and from-dates), terms, contact and
+ * and contact are free there (their name and aliases on the other sheets of its tree too). They arrive with their grades (and from-dates), terms, contact and
  * aliases, and their claims with their status, dates, notes, tags, frozen figures, logs and comments,
  * listed in the order they were. Each claim that had a number takes the other sheet's next, in the
  * order the claims were opened (by the sheet's today then, then the order added); a correction or
@@ -52,11 +52,12 @@ public class TransferPerson {
             throw new ViewerException("A viewer may not change the sheet transferred to");
         }
         if (to.archived()) throw new SheetArchivedException(to.id());
-        if (people.nameTaken(to.id(), person.getName(), null)) {
+        java.util.Set<String> toTree = sheets.tree(to.id());
+        if (people.nameTaken(to.id(), person.getName(), null) || people.nameTakenIn(toTree, person.getName(), person.getId())) {
             throw new InvalidPersonException("That name is already on the sheet transferred to");
         }
         for (String alias : person.getAliases()) {
-            if (people.nameTaken(to.id(), alias, null)) {
+            if (people.nameTaken(to.id(), alias, null) || people.nameTakenIn(toTree, alias, person.getId())) {
                 throw new InvalidPersonException("An alias is already on the sheet transferred to");
             }
         }

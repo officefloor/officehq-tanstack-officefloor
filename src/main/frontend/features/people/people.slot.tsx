@@ -188,6 +188,7 @@ function People({ sheetId }: { sheetId: string }) {
             <th>Grade</th>
             <th>Terms</th>
             <th>Contact</th>
+            <th>Clashing</th>
             <th />
             <PersonHead.Slot sheetId={sheetId} />
           </tr>
@@ -199,6 +200,7 @@ function People({ sheetId }: { sheetId: string }) {
               <td data-testid="person-grade">{p.grade}</td>
               <td data-testid="person-terms">{p.terms}</td>
               <td data-testid="person-contact">{p.contact}</td>
+              <td data-testid="person-clashing">{p.clashing ? 'yes' : 'no'}</td>
               <td>
                 <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => open(p)}>
                   Edit

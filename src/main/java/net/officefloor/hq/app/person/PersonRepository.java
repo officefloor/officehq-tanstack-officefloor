@@ -232,6 +232,47 @@ public class PersonRepository {
         return (count != null && count > 0) || (aliases != null && aliases > 0);
     }
 
+    /**
+     * Whether a person on any of the sheets, other than {@code exceptId}, has this as their name or
+     * one of their aliases, ignoring case and surrounding spaces.
+     */
+    public boolean nameTakenIn(java.util.Collection<String> sheetIds, String name, Long exceptId) {
+        for (String sheetId : sheetIds) {
+            Integer count = jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND LOWER(TRIM(name)) = LOWER(TRIM(?))"
+                            + " AND id <> ? AND merged_into IS NULL",
+                    Integer.class, sheetId, name, exceptId == null ? -1L : exceptId);
+            Integer aliases = jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM person_alias WHERE sheet_id = ? AND LOWER(TRIM(alias)) = LOWER(TRIM(?))"
+                            + " AND person_id <> ?",
+                    Integer.class, sheetId, name, exceptId == null ? -1L : exceptId);
+            if ((count != null && count > 0) || (aliases != null && aliases > 0)) return true;
+        }
+        return false;
+    }
+
+    /** Every name and alias of the people on the sheets, trimmed and lower-cased. */
+    public java.util.Set<String> namesIn(java.util.Collection<String> sheetIds) {
+        java.util.Set<String> names = new java.util.HashSet<>();
+        for (String sheetId : sheetIds) {
+            jdbc.queryForList("SELECT name FROM person WHERE sheet_id = ? AND merged_into IS NULL", String.class, sheetId)
+                    .forEach((n) -> names.add(asName(n)));
+            jdbc.queryForList("SELECT alias FROM person_alias WHERE sheet_id = ?", String.class, sheetId)
+                    .forEach((a) -> names.add(asName(a)));
+        }
+        return names;
+    }
+
+    /** Whether the person's name or any of their aliases is in {@code names} (trimmed and lower-cased). */
+    public static boolean clashes(Person person, java.util.Set<String> names) {
+        if (names.contains(asName(person.getName()))) return true;
+        return person.getAliases().stream().anyMatch((a) -> names.contains(asName(a)));
+    }
+
+    private static String asName(String name) {
+        return name.trim().toLowerCase(java.util.Locale.ROOT);
+    }
+
     /** Whether a person other than {@code exceptId} has this contact on the sheet. */
     public boolean contactTaken(String sheetId, String contact, Long exceptId) {
         Integer count = jdbc.queryForObject(
