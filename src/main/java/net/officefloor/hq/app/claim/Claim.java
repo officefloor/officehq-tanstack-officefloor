@@ -22,6 +22,7 @@ public class Claim {
     private LocalDate correctedDate;
     private boolean relisted;
     private LocalDate dueBy;
+    private int terms;
     private LocalDate deferredUntil;
     private int proofs;
     private String splitFrom;
@@ -70,9 +71,17 @@ public class Claim {
     public void setAmount(BigDecimal amount) { this.amount = amount; }
     public LocalDate getDate() { return date; }
     public void setDate(LocalDate date) { this.date = date; }
-    /** Its due-by, fixed when it was made: the terms-th business day after its date (skipping weekends and the sheet's holidays then), its terms its person's own, else its grade's then. Kept when its date changes. */
+    /** Its due-by, fixed when it was made: the terms-th business day after its date (skipping weekends and the sheet's holidays then), its terms its person's own, else its grade's then. Kept when its date changes; fixed again with the same terms when a holiday on or before it is added while it is not SETTLED or VOID. */
     public LocalDate getDueBy() { return dueBy; }
     public void setDueBy(LocalDate dueBy) { this.dueBy = dueBy; }
+    /** The terms (business days) its due-by was fixed with. */
+    public int getTerms() { return terms; }
+    public void setTerms(int terms) { this.terms = terms; }
+    /** Fix its due-by: the {@code terms}-th business day after its date, skipping weekends and {@code holidays}. */
+    public void fixDueBy(int terms, java.util.Set<LocalDate> holidays) {
+        this.terms = terms;
+        this.dueBy = net.officefloor.hq.app.holiday.HolidayRepository.businessDaysAfter(date, terms, holidays);
+    }
     /** The date it is deferred until; null when it was never deferred. */
     public LocalDate getDeferredUntil() { return deferredUntil; }
     public void setDeferredUntil(LocalDate deferredUntil) { this.deferredUntil = deferredUntil; }
@@ -233,6 +242,7 @@ public class Claim {
         then.corrects = corrects;
         then.correctedDate = correctedDate;
         then.dueBy = dueBy;
+        then.terms = terms;
         then.deferredUntil = deferredUntil;
         then.proofs = proofs;
         then.splitFrom = splitFrom;

@@ -42,9 +42,14 @@ public class HolidayRepository {
      * the sheet now. With terms 0 (or less) it is the date itself.
      */
     public LocalDate dueBy(String sheetId, LocalDate date, int terms) {
+        return businessDaysAfter(date, terms, dates(sheetId));
+    }
+
+    /** The dates of the sheet's holidays. */
+    public Set<LocalDate> dates(String sheetId) {
         Set<LocalDate> holidays = new HashSet<>();
         for (Holiday h : findAll(sheetId)) holidays.add(h.date());
-        return businessDaysAfter(date, terms, holidays);
+        return holidays;
     }
 
     /** The {@code days}-th day after {@code date} that is neither a Saturday, a Sunday nor one of {@code holidays}. */

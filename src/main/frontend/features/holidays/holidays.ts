@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 
-/** A holiday on the sheet: a date (yyyy-MM-dd). A claim's due-by fixed at its creation skips it when counting its terms' business days. */
+/** A holiday on the sheet: a date (yyyy-MM-dd). A claim's due-by skips it when counting its terms' business days. */
 export type Holiday = { date: string };
 
 export const holidaysKey = (sheetId: string) => ['sheet', sheetId, 'holidays'] as const;

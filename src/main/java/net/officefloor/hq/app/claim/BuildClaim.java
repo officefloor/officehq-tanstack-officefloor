@@ -26,7 +26,7 @@ public class BuildClaim {
         claim.setCorrects(input.corrects());
         claim.setRef(input.ref());
         claim.setTags(input.tags());
-        claim.setDueBy(holidays.dueBy(sheet.id(), date, terms.termsFor(person, date)));
+        claim.fixDueBy(terms.termsFor(person, date), holidays.dates(sheet.id()));
         claim.setLateEntry(periods.softClosedOn(sheet.id(), claim.getDueBy()) != null);
         claimOut.set(claim);
     }

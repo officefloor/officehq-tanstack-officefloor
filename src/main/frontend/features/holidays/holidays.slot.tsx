@@ -5,12 +5,13 @@ import { useOnce } from '../../query/useOnce';
 import { postJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/session';
-import { DATE, holidaysKey, useHolidays } from './holidays';
+import { DATE, useHolidays } from './holidays';
 import type { Holiday } from './holidays';
 
 // The sheet's holidays: a date entry and an add button, each holiday listed below. A date already on the
 // list is refused. A claim's due-by, fixed when it is created, counts its terms in business days, skipping
-// Saturdays, Sundays and the holidays on the list then; a holiday added later leaves existing due-by dates as they are.
+// Saturdays, Sundays and the holidays on the list then; a holiday added later fixes again the due-by of every claim
+// not SETTLED or VOID due on or after it, so the whole sheet is read again.
 function Holidays({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const holidays = useHolidays(sheetId);
@@ -22,7 +23,7 @@ function Holidays({ sheetId }: { sheetId: string }) {
   const add = useMutation({
     mutationFn: (body: { date: string }) =>
       postJson<Holiday>(`/api/sheets/${encodeURIComponent(sheetId)}/holidays`, body, user),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: holidaysKey(sheetId) }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sheet', sheetId] }),
     onError: () => setError('That holiday could not be added.'),
   });
 

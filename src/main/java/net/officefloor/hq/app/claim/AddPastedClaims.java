@@ -52,7 +52,7 @@ public class AddPastedClaims {
                 throw new InvalidClaimException("The reference " + claim.getRef() + " is pasted more than once");
             }
             new CheckClaimRef().check(claim, claims);
-            claim.setDueBy(holidays.dueBy(sheet.id(), date, terms.termsFor(person, date)));
+            claim.fixDueBy(terms.termsFor(person, date), holidays.dates(sheet.id()));
             new CheckClaimPeriod().check(sheet, claim, periods);
             claim.setLateEntry(periods.softClosedOn(sheet.id(), claim.getDueBy()) != null);
             new CheckClaimRetired().check(sheet, claim, people);
