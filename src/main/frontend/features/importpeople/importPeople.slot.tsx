@@ -7,12 +7,13 @@ import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/session';
 import { peopleKey } from '../people/people';
 
-type Result = { added: number };
+type Result = { added: number; updated: number };
 
 // The import box: lines of name,grade,terms,contact (the terms and contact may be absent or blank)
-// each add a person, in order, as the person form would. The server checks every line by the form's
+// each add a person, in order, as the person form would; a line naming a person on the sheet (by name or
+// alias) updates them instead, as the edit form would (terms and contact only when the line gives them). The server checks every line by the form's
 // rules first (a name or contact repeated within the import is refused too): one bad line refuses the
-// whole import and adds nothing. The box shows how many were added; the count is cleared while it runs.
+// whole import and adds nothing. The box shows how many were added and updated; the counts is cleared while it runs.
 function ImportPeople({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const [text, setText] = useState('');
@@ -63,7 +64,8 @@ function ImportPeople({ sheetId }: { sheetId: string }) {
         </button>
         {result !== null && (
           <>
-            {' '}Added <span data-testid="import-added">{result.added}</span>
+            {' '}Added <span data-testid="import-added">{result.added}</span>, updated{' '}
+            <span data-testid="import-updated">{result.updated}</span>
           </>
         )}
         {error && (
