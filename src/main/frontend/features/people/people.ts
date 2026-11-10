@@ -49,6 +49,14 @@ export type Hold = { from: string; to: string };
 export const heldOn = (holds: Hold[], date: string) =>
   holds.some((h) => h.from <= date && (h.to === '' || date <= h.to));
 
+/**
+ * The holds a person's claims count against on the sheet's `today`: their own, and from the day
+ * their retirement date is reached (`today` on or after it) one covering every date — their OPEN
+ * and PENDING claims, unless a statement binds them, then count in no total.
+ */
+export const liveHolds = (p: Pick<Person, 'holds' | 'retiredFrom'>, today: string): Hold[] =>
+  p.retiredFrom !== '' && today !== '' && p.retiredFrom <= today ? [...p.holds, { from: '', to: '' }] : p.holds;
+
 export const peopleKey = (sheetId: string) => ['sheet', sheetId, 'people'] as const;
 
 export const peopleQuery = (sheetId: string) => ({

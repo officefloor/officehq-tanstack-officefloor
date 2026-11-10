@@ -60,7 +60,7 @@ public class ClosePeriod {
             BigDecimal personTotal = BigDecimal.ZERO.setScale(2);
             for (Claim claim : sheetClaims) {
                 if (claim.getPersonId() != person.getId() || !period.contains(claim.getDate())) continue;
-                if (!claim.countsAsOf(statusesThen.get(claim.getId()), person.heldOn(claim.getDate()), sheet.today())) continue;
+                if (!claim.countsAsOf(statusesThen.get(claim.getId()), person.heldOn(claim.getDate(), sheet.today()), sheet.today())) continue;
                 BigDecimal figure = ClaimFigure.withLate(claim, all, person.gradeOn(claim.getDate()), sheetSettings, sheet.today());
                 if (figure != null) personTotal = personTotal.add(figure);
             }

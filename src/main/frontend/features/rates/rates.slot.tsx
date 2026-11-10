@@ -6,7 +6,7 @@ import { postJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { PersonHead, PersonRow } from '../../slots/defs/personRow';
 import { useClaims } from '../claims/claims';
-import { GRADES, usePeople } from '../people/people';
+import { GRADES, liveHolds, usePeople } from '../people/people';
 import type { Grade, Person } from '../people/people';
 import { useUser } from '../session/session';
 import { useSheetToday } from '../sheet/sheet';
@@ -180,7 +180,7 @@ function PersonDueTotal({ sheetId, person }: { sheetId: string; person: Person }
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const cap = useCap(sheetId);
-  return <td data-testid="person-due-total">{personDueTotal(rates, person.grades, today, claims, person.holds, floor, late, cap)}</td>;
+  return <td data-testid="person-due-total">{personDueTotal(rates, person.grades, today, claims, liveHolds(person, today), floor, late, cap)}</td>;
 }
 
 function ExcessHead() {
@@ -195,7 +195,7 @@ function PersonExcess({ sheetId, person }: { sheetId: string; person: Person }) 
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const cap = useCap(sheetId);
-  return <td data-testid="person-excess">{personExcess(rates, person.grades, today, claims, person.holds, floor, late, cap)}</td>;
+  return <td data-testid="person-excess">{personExcess(rates, person.grades, today, claims, liveHolds(person, today), floor, late, cap)}</td>;
 }
 
 // The sheet's due-total: everyone's due-total added up, skipping those with no rate, trimmed of the highest and lowest.
@@ -208,7 +208,7 @@ function DueTotal({ sheetId }: { sheetId: string }) {
   const late = useLate(sheetId);
   const cap = useCap(sheetId);
   const totals = people.map((p) =>
-    personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), p.holds, floor, late, cap),
+    personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap),
   );
   return (
     <p>

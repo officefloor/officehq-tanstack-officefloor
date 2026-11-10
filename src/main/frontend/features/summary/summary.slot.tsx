@@ -1,7 +1,7 @@
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useClaims } from '../claims/claims';
 import type { ClaimStatus } from '../claims/claims';
-import { GRADES, usePeople } from '../people/people';
+import { GRADES, liveHolds, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { personDueTotal, sumDue, useRates } from '../rates/rates';
 import { useCap, useFloor, useLate } from '../access/access';
@@ -27,7 +27,7 @@ function Summary({ sheetId }: { sheetId: string }) {
 
   const active = people.filter((p) => !p.retired);
   const claimsOf = (p: Person) => claims.filter((c) => c.personId === p.id);
-  const dueOf = (p: Person) => personDueTotal(rates, p.grades, today, claimsOf(p), p.holds, floor, late, cap);
+  const dueOf = (p: Person) => personDueTotal(rates, p.grades, today, claimsOf(p), liveHolds(p, today), floor, late, cap);
 
   return (
     <section data-testid="summary">
@@ -50,7 +50,7 @@ function Summary({ sheetId }: { sheetId: string }) {
                 <td data-testid={`summary-grade-${g}-count`}>{onGrade.length}</td>
                 <td data-testid={`summary-grade-${g}-due-total`}>{sumDue(onGrade.map(dueOf))}</td>
                 <td data-testid={`summary-grade-${g}-active`}>
-                  {onGrade.filter((p) => isActive(claimsOf(p), p.holds, today)).length}
+                  {onGrade.filter((p) => isActive(claimsOf(p), liveHolds(p, today), today)).length}
                 </td>
               </tr>
             );

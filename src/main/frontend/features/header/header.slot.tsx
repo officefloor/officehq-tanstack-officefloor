@@ -1,7 +1,7 @@
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useClaims } from '../claims/claims';
 import type { ClaimStatus } from '../claims/claims';
-import { usePeople } from '../people/people';
+import { liveHolds, usePeople } from '../people/people';
 import { personDueTotal, trimmedSumDue, useRates } from '../rates/rates';
 import { personOverdue } from '../overdue/overdue';
 import { useSheetToday } from '../sheet/sheet';
@@ -24,10 +24,10 @@ function Header({ sheetId }: { sheetId: string }) {
 
   const claimsOf = (id: string) => claims.filter((c) => c.personId === id);
   const dueTotal = trimmedSumDue(
-    people.map((p) => personDueTotal(rates, p.grades, today, claimsOf(p.id), p.holds, floor, late, cap)),
+    people.map((p) => personDueTotal(rates, p.grades, today, claimsOf(p.id), liveHolds(p, today), floor, late, cap)),
   );
   const overdueTotal = trimmedSumDue(
-    people.map((p) => personOverdue(rates, p.grades, today, claimsOf(p.id), p.holds, floor, late).total),
+    people.map((p) => personOverdue(rates, p.grades, today, claimsOf(p.id), liveHolds(p, today), floor, late).total),
   );
 
   return (

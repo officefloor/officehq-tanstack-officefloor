@@ -1,6 +1,6 @@
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useClaims } from '../claims/claims';
-import { usePeople } from '../people/people';
+import { liveHolds, usePeople } from '../people/people';
 import { personDueTotal, useRates } from '../rates/rates';
 import { useCap, useFloor, useLate } from '../access/access';
 import { useSheetToday } from '../sheet/sheet';
@@ -25,7 +25,7 @@ function ExportPeople({ sheetId }: { sheetId: string }) {
     const lines = [['name', 'grade', 'retired-from', 'due-total']];
     for (const p of people) {
       const own = claims.filter((c) => c.personId === p.id);
-      lines.push([p.name, p.grade, p.retiredFrom, personDueTotal(rates, p.grades, today, own, p.holds, floor, late, cap)]);
+      lines.push([p.name, p.grade, p.retiredFrom, personDueTotal(rates, p.grades, today, own, liveHolds(p, today), floor, late, cap)]);
     }
     const csv = lines.map((l) => l.map(csvValue).join(',') + '\n').join('');
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));

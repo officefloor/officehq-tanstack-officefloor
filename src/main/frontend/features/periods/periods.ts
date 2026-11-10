@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { countedOn } from '../claims/claims';
 import type { Claim } from '../claims/claims';
-import { gradeOn } from '../people/people';
+import { gradeOn, liveHolds } from '../people/people';
 import type { Person } from '../people/people';
 import { claimDue, rateOn, sumDue } from '../rates/rates';
 import type { Dated, Late, Rate } from '../rates/rates';
@@ -55,7 +55,7 @@ export function personPeriodDueTotal(
   if (period.closed) return period.personTotals[person.id] ?? '0.00';
   return sumDue(
     claims
-      .filter((c) => c.personId === person.id && countedOn(c, period.to, person.holds, late.today) && period.from <= c.date && c.date <= period.to)
+      .filter((c) => c.personId === person.id && countedOn(c, period.to, liveHolds(person, late.today), late.today) && period.from <= c.date && c.date <= period.to)
       .map((c) => claimDue(c, rateOn(rates, gradeOn(person.grades, c.date), c.date), floor, late)),
   );
 }

@@ -171,7 +171,8 @@ public class Claim {
     /**
      * Whether it counts toward its person's claimed and due-total, the sheet's totals and a
      * period's total: OPEN, PENDING and SETTLED do, except an OPEN or PENDING one dated within one
-     * of its person's holds ({@code heldOnDate}), unless a statement binds it; and never one
+     * of its person's holds, or once their retirement date is reached ({@code heldOnDate}), unless
+     * a statement binds it; and never one
      * deferred on {@code today}.
      */
     public boolean counts(boolean heldOnDate, LocalDate today) {

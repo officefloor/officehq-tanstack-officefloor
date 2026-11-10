@@ -78,6 +78,13 @@ public class Person {
     public boolean isHeld() { return !holds.isEmpty(); }
     /** Whether the date is within one of their holds: an OPEN claim on it, not bound by a statement, counts in no total. */
     public boolean heldOn(LocalDate date) { return holds.stream().anyMatch((h) -> h.covers(date)); }
+    /** Whether their retirement date is reached on {@code today}: retired from it or an earlier date. */
+    public boolean retiredOn(LocalDate today) { return retiredFrom != null && today != null && !today.isBefore(retiredFrom); }
+    /**
+     * Whether an OPEN or PENDING claim of theirs on the date, not bound by a statement, counts in no
+     * total on {@code today}: the date is within one of their holds, or their retirement date is reached.
+     */
+    public boolean heldOn(LocalDate date, LocalDate today) { return heldOn(date) || retiredOn(today); }
     /** The ids of the people they name as patrons, in the order named. */
     public List<Long> getPatronIds() { return patronIds; }
     /** Whether a claim on this date is refused: they are retired from an earlier date. */
