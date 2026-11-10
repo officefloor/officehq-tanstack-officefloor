@@ -6,12 +6,15 @@ import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Val;
 
 /**
- * Records each saved setting (blank for no clerk limit). Runs after every rule has passed, so a
- * refused change writes nothing.
+ * Records each setting saved (blank for no clerk limit): the clerk limit, then the floor. Runs after
+ * every rule has passed, so a refused change writes nothing.
  */
 public class AuditSettingChanged {
-    public void audit(@Val Sheet sheet, @Val Settings settings, HttpServletRequest request, Audit audit) {
-        audit.record("SETTING_CHANGED sheet=" + sheet.id() + " by=" + Audit.user(request)
-                + " key=clerk-limit value=" + SettingsResponse.from(settings).clerkLimit());
+    public void audit(@Val Sheet sheet, @Val SettingsInput input, @Val Settings settings,
+            HttpServletRequest request, Audit audit) {
+        String head = "SETTING_CHANGED sheet=" + sheet.id() + " by=" + Audit.user(request);
+        SettingsResponse shown = SettingsResponse.from(settings);
+        if (input.clerkLimitChanged()) audit.record(head + " key=clerk-limit value=" + shown.clerkLimit());
+        if (input.floor() != null) audit.record(head + " key=floor value=" + shown.floor());
     }
 }

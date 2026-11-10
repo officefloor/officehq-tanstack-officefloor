@@ -10,6 +10,7 @@ import { GRADES, usePeople } from '../people/people';
 import type { Grade, Person } from '../people/people';
 import { useUser } from '../session/session';
 import { useSheetToday } from '../sheet/sheet';
+import { useFloor } from '../access/access';
 import { NA, PCT, personDueTotal, rateOn, ratesKey, sumDue, useRates } from './rates';
 import type { Rate } from './rates';
 
@@ -158,7 +159,8 @@ function PersonDueTotal({ sheetId, person }: { sheetId: string; person: Person }
   const claims = (useClaims(sheetId).data ?? []).filter((c) => c.personId === person.id);
   const rates = useRates(sheetId).data ?? [];
   const today = useSheetToday(sheetId);
-  return <td data-testid="person-due-total">{personDueTotal(rates, person.grade, today, claims, person.held)}</td>;
+  const floor = useFloor(sheetId);
+  return <td data-testid="person-due-total">{personDueTotal(rates, person.grade, today, claims, person.held, floor)}</td>;
 }
 
 // The sheet's due-total: everyone's due-total added up, skipping those with no rate.
@@ -167,8 +169,9 @@ function DueTotal({ sheetId }: { sheetId: string }) {
   const claims = useClaims(sheetId).data ?? [];
   const rates = useRates(sheetId).data ?? [];
   const today = useSheetToday(sheetId);
+  const floor = useFloor(sheetId);
   const totals = people.map((p) =>
-    personDueTotal(rates, p.grade, today, claims.filter((c) => c.personId === p.id), p.held),
+    personDueTotal(rates, p.grade, today, claims.filter((c) => c.personId === p.id), p.held, floor),
   );
   return (
     <p>

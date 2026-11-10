@@ -5,34 +5,65 @@ import { useOnce } from '../../query/useOnce';
 import { postJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/session';
-import { LIMIT, ROLES, rolesKey, settingsKey, useRoles, useSettings } from './access';
-import type { Role, Settings } from './access';
+import { FLOOR, LIMIT, ROLES, rolesKey, settingsKey, useRoles, useSettings } from './access';
+import type { Role, Settings, SettingsChange } from './access';
 
-// The sheet's settings: its clerk limit, the highest due a clerk may settle (blank: no limit).
+type Key = keyof Settings;
+
+// The sheet's settings: its clerk limit, the highest due a clerk may settle (blank: no limit), and
+// its floor, the least a claim's live due may be. Only the settings typed in (or stepped into)
+// since the last save are sent, so saving one leaves the other as it is.
 function SettingsForm({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const settings = useSettings(sheetId);
-  const [limit, setLimit] = useState('');
+  const [fields, setFields] = useState<Settings>({ clerkLimit: '', floor: '' });
+  const [touched, setTouched] = useState<Set<Key>>(new Set());
   const [error, setError] = useState('');
   const [user] = useUser();
 
   const once = useOnce();
   const save = useMutation({
-    mutationFn: (body: Settings) =>
+    mutationFn: (body: SettingsChange) =>
       postJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, body, user),
-    onSuccess: (saved) => queryClient.setQueryData(settingsKey(sheetId), saved),
+    onSuccess: (saved) => {
+      setTouched(new Set());
+      queryClient.setQueryData(settingsKey(sheetId), saved);
+    },
     onError: () => setError('Those settings could not be saved.'),
   });
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
     setError('');
-    const clerkLimit = limit.trim();
-    if (clerkLimit !== '' && !LIMIT.test(clerkLimit)) {
-      setError('A clerk limit is 0.00 or more, with up to two decimals.');
+    const body: SettingsChange = {};
+    if (touched.has('clerkLimit')) {
+      const clerkLimit = fields.clerkLimit.trim();
+      if (clerkLimit !== '' && !LIMIT.test(clerkLimit)) {
+        setError('A clerk limit is 0.00 or more, with up to two decimals.');
+        return;
+      }
+      body.clerkLimit = clerkLimit;
+    }
+    if (touched.has('floor')) {
+      const floor = fields.floor.trim();
+      if (!FLOOR.test(floor)) {
+        setError('A floor is 0.00 or more, with up to two decimals.');
+        return;
+      }
+      body.floor = floor;
+    }
+    if (Object.keys(body).length === 0) {
+      setError('Type a setting to save.');
       return;
     }
-    once((done) => save.mutate({ clerkLimit }, { onSettled: done }));
+    once((done) => save.mutate(body, { onSettled: done }));
+  };
+
+  const touch = (key: Key) => setTouched((t) => (t.has(key) ? t : new Set(t).add(key)));
+  const change = (key: Key, value: string) => {
+    setFields((f) => ({ ...f, [key]: value }));
+    touch(key);
+    setError('');
   };
 
   return (
@@ -44,15 +75,26 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
           <input
             data-testid="setting-clerk-limit"
             inputMode="decimal"
-            value={limit}
-            onChange={(e) => {
-              setLimit(e.target.value);
-              setError('');
-            }}
+            value={fields.clerkLimit}
+            onFocus={() => touch('clerkLimit')}
+            onChange={(e) => change('clerkLimit', e.target.value)}
           />
         </label>{' '}
         <span>
           now: <strong data-testid="setting-clerk-limit-current">{settings.data?.clerkLimit ?? ''}</strong>
+        </span>{' '}
+        <label>
+          Floor{' '}
+          <input
+            data-testid="setting-floor"
+            inputMode="decimal"
+            value={fields.floor}
+            onFocus={() => touch('floor')}
+            onChange={(e) => change('floor', e.target.value)}
+          />
+        </label>{' '}
+        <span>
+          now: <strong data-testid="setting-floor-current">{settings.data?.floor ?? ''}</strong>
         </span>{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings

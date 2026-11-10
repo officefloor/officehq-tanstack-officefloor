@@ -5,6 +5,7 @@ import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.setting.SettingsRepository;
 import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Val;
@@ -16,8 +17,9 @@ import net.officefloor.plugin.variable.Val;
  */
 public class AuditRollup {
     public void audit(@Val Sheet sheet, @Val Rollup before, SheetRepository sheets, PersonRepository people,
-            ClaimRepository claims, RateRepository rates, HttpServletRequest request, Audit audit) {
-        Rollup after = Rollup.of(sheet.id(), sheets.today(sheet.id()), people, claims, rates);
+            ClaimRepository claims, RateRepository rates, SettingsRepository settings, HttpServletRequest request, Audit audit) {
+        Rollup after = Rollup.of(sheet.id(), sheets.today(sheet.id()), people, claims, rates,
+                settings.find(sheet.id()).floor());
         after.changesSince(before, sheet.id(), Audit.user(request)).forEach(audit::record);
     }
 }

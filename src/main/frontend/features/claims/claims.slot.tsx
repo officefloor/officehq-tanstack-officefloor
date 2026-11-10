@@ -10,6 +10,7 @@ import { AMOUNT, claimsKey, sumAmounts, useClaims } from './claims';
 import type { Claim } from './claims';
 import { claimDue, rateOn, useRates } from '../rates/rates';
 import { periodOf, usePeriods } from '../periods/periods';
+import { useFloor } from '../access/access';
 
 type Action = 'open' | 'settle' | 'void';
 const ACTIONS: { action: Action; label: string }[] = [
@@ -45,6 +46,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   const [user] = useUser();
   const rates = useRates(sheetId).data ?? [];
   const periods = usePeriods(sheetId).data ?? [];
+  const floor = useFloor(sheetId);
 
   const reset = () => {
     setRefused(null);
@@ -166,7 +168,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
               <span data-testid="claim-amount">{c.amount}</span>{' '}
               <span data-testid="claim-date">{c.date}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}
-              <span data-testid="claim-due">{claimDue(c, rateOn(rates, person.grade, c.date))}</span>{' '}
+              <span data-testid="claim-due">{claimDue(c, rateOn(rates, person.grade, c.date), floor)}</span>{' '}
               <span data-testid="claim-status">{c.status}</span>{' '}
               <span data-testid="claim-opened-by">{c.openedBy}</span>{' '}
               <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}

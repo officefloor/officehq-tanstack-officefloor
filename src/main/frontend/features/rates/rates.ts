@@ -55,17 +55,20 @@ function showCents(cents: bigint): string {
 }
 
 /**
- * An amount times a rate, divided by 100, rounded half to even to two decimals; n/a with no rate.
+ * An amount times a rate, divided by 100, rounded half to even to two decimals, raised to the
+ * sheet's `floor` when below it; n/a with no rate (no floor applies to n/a).
  * Worked in whole numbers so no floating-point error creeps in (amounts and rates are never
  * negative).
  */
-export function due(amount: string, pct: string | null): string {
+export function due(amount: string, pct: string | null, floor: string): string {
   if (pct === null) return NA;
   // cents × basis points is the due in millionths of a unit: 10000 of them to the cent.
   const x = hundredths(amount) * hundredths(pct);
   const cents = x / 10000n;
   const rest = x % 10000n;
-  return showCents(rest > 5000n || (rest === 5000n && cents % 2n === 1n) ? cents + 1n : cents);
+  const rounded = rest > 5000n || (rest === 5000n && cents % 2n === 1n) ? cents + 1n : cents;
+  const least = hundredths(floor);
+  return showCents(rounded < least ? least : rounded);
 }
 
 /** Due values added up, skipping n/a. */
@@ -75,11 +78,11 @@ export function sumDue(values: string[]): string {
 
 /**
  * A claim's due: the one fixed when it was settled, else the figure its person's last statement
- * bound it to, else its amount at the rate in force on its date.
+ * bound it to, else its amount at the rate in force on its date, at least the sheet's `floor`.
  */
-export function claimDue(claim: Claim, pct: string | null): string {
+export function claimDue(claim: Claim, pct: string | null, floor: string): string {
   if (claim.due !== '') return claim.due;
-  return claim.stated ? claim.statedDue : due(claim.amount, pct);
+  return claim.stated ? claim.statedDue : due(claim.amount, pct, floor);
 }
 
 /**
@@ -87,9 +90,16 @@ export function claimDue(claim: Claim, pct: string | null): string {
  * date), added up, skipping n/a. With no rate for their grade today it is n/a, unless a settled
  * claim that counts keeps a fixed figure (settled, or bound by a statement).
  */
-export function personDueTotal(rates: Rate[], grade: Grade, today: string, claims: Claim[], held: boolean): string {
+export function personDueTotal(
+  rates: Rate[],
+  grade: Grade,
+  today: string,
+  claims: Claim[],
+  held: boolean,
+  floor: string,
+): string {
   const counted = claims.filter((c) => counts(c, held));
-  if (rateOn(rates, grade, today) === null && !counted.some((c) => c.due !== '' || c.stated)) return NA;
-  return sumDue(counted.map((c) => claimDue(c, rateOn(rates, grade, c.date))));
+  if (rateOn(rates, grade, today) === null && !counted.some((c) => c.due !== '' || (c.stated && c.statedDue !== NA))) return NA;
+  return sumDue(counted.map((c) => claimDue(c, rateOn(rates, grade, c.date), floor)));
 }
 

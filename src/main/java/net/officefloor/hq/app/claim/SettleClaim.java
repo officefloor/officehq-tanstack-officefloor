@@ -14,7 +14,7 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * Settles the claim and fixes its due: its amount times its person's grade's rate in force on the
- * claim's date, divided by 100 and rounded half to even to two decimals. With no such rate the due is
+ * claim's date, divided by 100 and rounded half to even to two decimals, at least the sheet's floor. With no such rate the due is
  * not fixed. A claim a statement bound is settled at its bound figure. The user who opened the claim may not settle it.
  * A clerk (any user not made a steward) may settle it only when its due is at or below the sheet's
  * clerk limit; a due of n/a is within any limit.
@@ -27,9 +27,10 @@ public class SettleClaim {
         String user = Audit.user(request);
         if (user.equals(claim.getOpenedBy())) throw new SelfSettleException(user);
         Person person = people.find(sheet.id(), claim.getPersonId());
-        claim.setSettledDue(claim.isStated() ? claim.getStatedDue()
-                : ClaimFigure.live(claim.getAmount(), rates.findAll(sheet.id()), person.getGrade(), claim.getDate()));
         Settings settings = settingsStore.find(sheet.id());
+        claim.setSettledDue(claim.isStated() ? claim.getStatedDue()
+                : ClaimFigure.live(claim.getAmount(), rates.findAll(sheet.id()), person.getGrade(), claim.getDate(),
+                        settings.floor()));
         if (!settings.withinClerkLimit(claim.getSettledDue()) && Role.CLERK.equals(roles.roleOf(sheet.id(), user))) {
             throw new ClerkLimitException(user, claim.getSettledDue(), settings.clerkLimit());
         }

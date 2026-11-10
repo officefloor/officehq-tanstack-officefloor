@@ -29,12 +29,12 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
 
     /**
      * The sheet's figures now. A person's claimed is the amounts of their claims that count (OPEN
-     * and SETTLED, but not OPEN while they are on hold) added up; their due-total the figures of those claims added up, skipping n/a, and
+     * and SETTLED, but not OPEN while they are on hold) added up; their due-total the figures of those claims added up, skipping n/a (a live figure is at least the sheet's {@code floor}), and
      * n/a when their grade has no rate today and no claim that counts keeps a fixed figure. The
      * sheet's totals add these up, skipping n/a.
      */
     public static Rollup of(String sheetId, LocalDate today, PersonRepository people, ClaimRepository claims,
-            RateRepository rates) {
+            RateRepository rates, BigDecimal floor) {
         List<Rate> all = rates.findAll(sheetId);
         List<Claim> sheetClaims = claims.findAll(sheetId);
         Map<Long, Figures> figures = new LinkedHashMap<>();
@@ -48,8 +48,8 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
                 if (claim.getPersonId() != person.getId()) continue;
                 if (!claim.counts(person.isHeld())) continue;
                 claimed = claimed.add(claim.getAmount());
-                if (claim.getSettledDue() != null || claim.isStated()) fixed = true;
-                BigDecimal figure = ClaimFigure.of(claim, all, person.getGrade());
+                if (claim.getSettledDue() != null || claim.getStatedDue() != null) fixed = true;
+                BigDecimal figure = ClaimFigure.of(claim, all, person.getGrade(), floor);
                 if (figure != null) due = due.add(figure);
             }
             boolean none = Rate.inForce(all, person.getGrade(), today).isEmpty() && !fixed;
