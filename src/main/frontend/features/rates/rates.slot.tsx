@@ -15,7 +15,8 @@ import { Col } from '../columns/useColumns';
 /** The sheet's rates for each grade: a form that sets one from an optional from-date (a new version of the
  *  grade's rate from that date, the one in force; blank is from the beginning of time) through an optional to-date
  *  (blank is no end), the rates set, and the rate in
- *  force on the sheet's today for every grade ('n/a' when none is). */
+ *  force on the sheet's today for every grade ('n/a' when none is). A steward withdraws a rate set from its row (its newest
+ *  version; the one before it applies again). */
 function Rates({ sheetId }: { sheetId: string }) {
   const grades = useGrades(sheetId);
   const fig = useFigure();
@@ -38,6 +39,19 @@ function Rates({ sheetId }: { sheetId: string }) {
       await queryClient.invalidateQueries({ queryKey: ratesKey(sheetId) });
     },
   });
+  // A steward withdraws a rate's newest version (the one before it applies again); a refusal shows in the
+  // form's error.
+  const withdraw = useMutation({
+    mutationFn: (r: { grade: string; from: string }) =>
+      postJson<Rate>(`/api/sheets/${encodeURIComponent(sheetId)}/rate-withdraw`, r),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ratesKey(sheetId) });
+    },
+  });
+  const resetAll = () => {
+    save.reset();
+    withdraw.reset();
+  };
 
   return (
     <section data-testid="rates">
@@ -46,7 +60,7 @@ function Rates({ sheetId }: { sheetId: string }) {
         onSubmit={(e) => {
           e.preventDefault();
           submitOnce(() => {
-            save.reset();
+            resetAll();
             return save.mutateAsync({ grade, pct, from, to });
           });
         }}
@@ -58,7 +72,7 @@ function Rates({ sheetId }: { sheetId: string }) {
             value={grade}
             onChange={(e) => {
               setGrade(e.target.value);
-              save.reset();
+              resetAll();
             }}
           >
             {grades.map((g) => (
@@ -76,7 +90,7 @@ function Rates({ sheetId }: { sheetId: string }) {
             value={pct}
             onChange={(e) => {
               setPct(e.target.value);
-              save.reset();
+              resetAll();
             }}
           />
         </label>{' '}
@@ -89,7 +103,7 @@ function Rates({ sheetId }: { sheetId: string }) {
             value={from}
             onChange={(e) => {
               setFrom(e.target.value);
-              save.reset();
+              resetAll();
             }}
           />
         </label>{' '}
@@ -102,14 +116,16 @@ function Rates({ sheetId }: { sheetId: string }) {
             value={to}
             onChange={(e) => {
               setTo(e.target.value);
-              save.reset();
+              resetAll();
             }}
           />
         </label>{' '}
         <button type="submit" data-testid="rate-form-submit" disabled={save.isPending}>
           Set rate
         </button>
-        {save.isError && <p data-testid="rate-form-error">{save.error.message}</p>}
+        {(save.isError || withdraw.isError) && (
+          <p data-testid="rate-form-error">{save.error?.message ?? withdraw.error?.message}</p>
+        )}
       </form>
       <table data-testid="rates-list">
         <thead>
@@ -119,6 +135,7 @@ function Rates({ sheetId }: { sheetId: string }) {
             <th>From</th>
             <th>To</th>
             <th>Versions</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -129,6 +146,21 @@ function Rates({ sheetId }: { sheetId: string }) {
               <td data-testid="rate-from">{r.from ?? ''}</td>
               <td data-testid="rate-to">{r.to ?? ''}</td>
               <td data-testid="rate-version">{r.version ?? 1}</td>
+              <td>
+                <button
+                  type="button"
+                  data-testid="rate-withdraw"
+                  disabled={withdraw.isPending}
+                  onClick={() =>
+                    submitOnce(() => {
+                      resetAll();
+                      return withdraw.mutateAsync({ grade: r.grade, from: r.from ?? '' });
+                    })
+                  }
+                >
+                  Withdraw
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>

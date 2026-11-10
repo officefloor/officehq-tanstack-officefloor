@@ -51,6 +51,13 @@ public class HistoryRepository {
                 + ", ?, ?, ?, ?, ?)", sheetId, sheetId, grade, pct, date(from), date(to), after);
     }
 
+    /** Keep a rate withdrawn for a grade from a from-date (null: from the beginning of time): it takes back the last
+     *  rate set from that date ({@code pct} the withdrawn one's). */
+    public void rateWithdrawn(String sheetId, String grade, BigDecimal pct, LocalDate from) {
+        jdbc.update("INSERT INTO rate_history (sheet_id, on_date, grade, pct, from_date, withdrawn) VALUES (?, " + TODAY
+                + ", ?, ?, ?, TRUE)", sheetId, sheetId, grade, pct, date(from));
+    }
+
     /** Keep a grade given to a person from a from-date (null: from the beginning of time). */
     public void grade(String sheetId, long personId, String grade, LocalDate from) {
         jdbc.update("INSERT INTO grade_history (sheet_id, on_date, person_id, grade, from_date) VALUES (?, " + TODAY
@@ -112,12 +119,20 @@ public class HistoryRepository {
                 (RowCallbackHandler) rs -> grades.computeIfAbsent(rs.getLong("person_id"), k -> new TreeMap<>())
                         .put(from(rs.getDate("from_date")), rs.getString("grade")), sheetId, on);
         Map<String, TreeMap<LocalDate, List<SheetAsOf.Rate>>> rates = new HashMap<>();
-        jdbc.query("SELECT grade, pct, from_date, to_date, after_seq FROM rate_history WHERE sheet_id = ? AND on_date <= ? ORDER BY id",
-                (RowCallbackHandler) rs -> rates.computeIfAbsent(rs.getString("grade"), k -> new TreeMap<>())
-                        .computeIfAbsent(from(rs.getDate("from_date")), k -> new ArrayList<>())
-                        .add(new SheetAsOf.Rate(rs.getBigDecimal("pct"), local(rs.getDate("to_date")),
-                                rs.getObject("after_seq", Long.class))),
-                sheetId, on);
+        jdbc.query("SELECT grade, pct, from_date, to_date, after_seq, withdrawn FROM rate_history WHERE sheet_id = ? AND on_date <= ?"
+                + " ORDER BY id", (RowCallbackHandler) rs -> {
+                    TreeMap<LocalDate, List<SheetAsOf.Rate>> dated = rates.computeIfAbsent(rs.getString("grade"), k -> new TreeMap<>());
+                    LocalDate from = from(rs.getDate("from_date"));
+                    if (rs.getBoolean("withdrawn")) {
+                        // A withdrawal takes back the last rate set from that date.
+                        List<SheetAsOf.Rate> sets = dated.get(from);
+                        if (sets != null && !sets.isEmpty()) sets.remove(sets.size() - 1);
+                        if (sets != null && sets.isEmpty()) dated.remove(from);
+                        return;
+                    }
+                    dated.computeIfAbsent(from, k -> new ArrayList<>()).add(new SheetAsOf.Rate(rs.getBigDecimal("pct"),
+                            local(rs.getDate("to_date")), rs.getObject("after_seq", Long.class)));
+                }, sheetId, on);
         Map<Long, Long> added = new HashMap<>();
         jdbc.query("SELECT id, added_seq FROM claim WHERE sheet_id = ?",
                 (RowCallbackHandler) rs -> added.put(rs.getLong("id"), rs.getLong("added_seq")), sheetId);

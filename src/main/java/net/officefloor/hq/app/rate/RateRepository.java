@@ -68,6 +68,38 @@ public class RateRepository {
         return new Rate(grade, pct(pct), from(from), from(to), version, after, false);
     }
 
+    /** Withdraw a grade's rate from a from-date (null: from the beginning of time): its newest version (in rate) is
+     *  removed and the version before it (the newest in rate_version), when there is one, is put back in force; with
+     *  none the grade has no rate from that date. Kept in the rate history. The rate now in force from that date, or
+     *  the withdrawn one with version 0 when none is left; null (nothing changed) when the grade had none. */
+    public Rate withdraw(String sheetId, String grade, LocalDate from) {
+        Date on = from == null ? null : Date.valueOf(from);
+        List<Rate> current = jdbc.query("SELECT grade, pct, from_date, to_date, version, after_seq FROM rate"
+                + " WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?", (rs, i) -> row(rs, false),
+                sheetId, grade, on);
+        if (current.isEmpty()) {
+            return null;
+        }
+        Rate withdrawn = current.get(0);
+        jdbc.update("DELETE FROM rate WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?",
+                sheetId, grade, on);
+        Integer last = jdbc.queryForObject("SELECT MAX(version) FROM rate_version"
+                + " WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?", Integer.class, sheetId, grade, on);
+        history.rateWithdrawn(sheetId, grade, new BigDecimal(withdrawn.pct()), from);
+        if (last == null) {
+            return new Rate(withdrawn.grade(), withdrawn.pct(), withdrawn.from(), withdrawn.to(), 0, withdrawn.after(), false);
+        }
+        jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date, version, after_seq)"
+                + " SELECT sheet_id, grade, pct, from_date, to_date, version, after_seq FROM rate_version"
+                + " WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ? AND version = ?",
+                sheetId, grade, on, last);
+        jdbc.update("DELETE FROM rate_version WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?"
+                + " AND version = ?", sheetId, grade, on, last);
+        return jdbc.query("SELECT grade, pct, from_date, to_date, version, after_seq FROM rate"
+                + " WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?", (rs, i) -> row(rs, false),
+                sheetId, grade, on).get(0);
+    }
+
     /** A from-date as shown (yyyy-mm-dd), or null when there is none. */
     static String from(LocalDate from) {
         return from == null ? null : from.toString();
