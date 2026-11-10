@@ -35,6 +35,15 @@ public class PersonRepository {
         return found.isEmpty() ? null : found.get(0);
     }
 
+    /** Whether a person other than {@code exceptId} has this name on the sheet, ignoring case. */
+    public boolean nameTaken(String sheetId, String name, Long exceptId) {
+        Integer count = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND LOWER(TRIM(name)) = LOWER(TRIM(?))"
+                        + " AND id <> ?",
+                Integer.class, sheetId, name, exceptId == null ? -1L : exceptId);
+        return count != null && count > 0;
+    }
+
     /** Insert a new person (assigning its id) or update an existing one. */
     public void save(Person person) {
         if (person.getId() != null) {

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { postJson, putJson } from '../../api/http';
+import { HttpError, postJson, putJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { GRADES, peopleKey, usePeople } from './people';
 import type { Grade, Person } from './people';
@@ -35,7 +35,12 @@ function People({ sheetId }: { sheetId: string }) {
       reset();
       void queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
     },
-    onError: () => setError('That person could not be saved.'),
+    onError: (e) =>
+      setError(
+        e instanceof HttpError && e.status === 409
+          ? 'That name is already in use.'
+          : 'That person could not be saved.',
+      ),
   });
 
   const submit = (e: FormEvent) => {
