@@ -66,6 +66,8 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   const [deferUntil, setDeferUntil] = useState<Record<string, string>>({});
   // The new date typed to re-date each claim to, by claim id.
   const [newDate, setNewDate] = useState<Record<string, string>>({});
+  // The amount typed in each draft's own row, to save as its new amount, by claim id.
+  const [inlineAmount, setInlineAmount] = useState<Record<string, string>>({});
   // The amount typed to split off each claim, by claim id.
   const [splitAmount, setSplitAmount] = useState<Record<string, string>>({});
   const others = (usePeople(sheetId).data ?? []).filter((p) => p.id !== person.id);
@@ -208,6 +210,40 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
       return;
     }
     split.mutate({ id, amount });
+  };
+
+  // A draft's amount changed in its row: the claim editor's save with only the amount changed, so
+  // the same rules (editable draft, not locked by another, no closed period, no viewer) hold.
+  const inline = useMutation({
+    mutationFn: ({ c, amount }: { c: Claim; amount: string }) =>
+      putJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/claims/${encodeURIComponent(c.id)}`,
+        { amount, date: c.date, note: c.note, corrects: c.corrects },
+        user,
+      ),
+    onSuccess: (_r, { c }) => {
+      setInlineAmount((a) => ({ ...a, [c.id]: '' }));
+      // A saved edit releases this user's lock: an editor this user had open on it is closed.
+      if (editingNow.current === c.id) reset();
+      void queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+    onError: (_e, { c }) =>
+      setRefused({ id: c.id, message: 'That claim cannot be edited now: it is not an editable draft, or someone else is editing it.' }),
+  });
+
+  const saveInline = (c: Claim) => {
+    setRefused(null);
+    const amount = (inlineAmount[c.id] ?? '').trim();
+    if (!CLAIM_AMOUNT.test(amount)) {
+      setRefused({ id: c.id, message: 'An amount is a number with up to two decimals.' });
+      return;
+    }
+    if (amount.startsWith('-') && !CLAIM_NUMBER.test(c.corrects.trim())) {
+      setRefused({ id: c.id, message: 'A negative amount is a correction of a settled claim.' });
+      return;
+    }
+    inline.mutate({ c, amount });
   };
 
   // A proof is added to a claim that is not SETTLED or VOID.
@@ -514,6 +550,19 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
               </select>{' '}
               <button type="button" data-testid="claim-reassign" onClick={() => moveClaim(c.id)}>
                 Move
+              </button>{' '}
+              <input
+                data-testid="claim-inline-amount"
+                placeholder="Amount"
+                inputMode="decimal"
+                value={inlineAmount[c.id] ?? ''}
+                onChange={(e) => {
+                  setInlineAmount((a) => ({ ...a, [c.id]: e.target.value }));
+                  setRefused((r) => (r !== null && r.id === c.id ? null : r));
+                }}
+              />{' '}
+              <button type="button" data-testid="claim-inline-save" onClick={() => saveInline(c)}>
+                Save amount
               </button>{' '}
               {editing === c.id && (
                 <button type="button" data-testid="claim-cancel" onClick={cancel}>
