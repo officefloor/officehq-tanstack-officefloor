@@ -9,8 +9,8 @@ import { DATE, holidaysKey, useHolidays } from './holidays';
 import type { Holiday } from './holidays';
 
 // The sheet's holidays: a date entry and an add button, each holiday listed below. A date already on the
-// list is refused. A claim's due-by, fixed when it is created, is moved past the holidays on the list then
-// to the next day that is not one; a holiday added later leaves existing due-by dates as they are.
+// list is refused. A claim's due-by, fixed when it is created, counts its terms in business days, skipping
+// Saturdays, Sundays and the holidays on the list then; a holiday added later leaves existing due-by dates as they are.
 function Holidays({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const holidays = useHolidays(sheetId);

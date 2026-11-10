@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.holiday;
 
 import java.sql.Date;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.HashSet;
 import java.util.List;
@@ -35,11 +36,25 @@ public class HolidayRepository {
                 Date.valueOf(holiday.date()));
     }
 
-    /** The date, or when it falls on a holiday on the sheet now, the next day that is not a holiday. */
-    public LocalDate pastHolidays(String sheetId, LocalDate date) {
+    /**
+     * The due-by of a claim dated {@code date} with {@code terms}: the terms-th business day after its
+     * date, counting forward from the day after it and skipping every Saturday, Sunday and holiday on
+     * the sheet now. With terms 0 (or less) it is the date itself.
+     */
+    public LocalDate dueBy(String sheetId, LocalDate date, int terms) {
         Set<LocalDate> holidays = new HashSet<>();
         for (Holiday h : findAll(sheetId)) holidays.add(h.date());
-        while (holidays.contains(date)) date = date.plusDays(1);
-        return date;
+        return businessDaysAfter(date, terms, holidays);
+    }
+
+    /** The {@code days}-th day after {@code date} that is neither a Saturday, a Sunday nor one of {@code holidays}. */
+    public static LocalDate businessDaysAfter(LocalDate date, int days, Set<LocalDate> holidays) {
+        LocalDate day = date;
+        for (int left = days; left > 0; ) {
+            day = day.plusDays(1);
+            DayOfWeek dow = day.getDayOfWeek();
+            if (dow != DayOfWeek.SATURDAY && dow != DayOfWeek.SUNDAY && !holidays.contains(day)) left--;
+        }
+        return day;
     }
 }

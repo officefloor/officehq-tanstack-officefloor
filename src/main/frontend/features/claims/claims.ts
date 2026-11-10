@@ -33,7 +33,7 @@ export type Claim = {
   statedDue: string;
   corrects: string;
   roundDate: string;
-  /** Its due-by (yyyy-MM-dd), fixed when it was made: its date plus its person's own terms, else its grade's terms then. */
+  /** Its due-by (yyyy-MM-dd), fixed when it was made: the terms-th business day after its date (skipping weekends and the sheet's holidays then), its terms its person's own, else its grade's then. */
   dueBy: string;
   /**
    * Its status log, oldest first: one line per status it has had, as

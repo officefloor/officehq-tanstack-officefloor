@@ -43,7 +43,7 @@ public class AddPastedClaims {
             LocalDate date = line.claim().date() == null ? terms.entryDay(sheet.today()) : line.claim().date();
             Claim claim = new Claim(null, sheet.id(), person.getId(), line.claim().amount(), date, line.claim().note(),
                     ClaimStatus.DRAFT, null, null, null);
-            claim.setDueBy(holidays.pastHolidays(sheet.id(), date.plusDays(terms.termsFor(person, date))));
+            claim.setDueBy(holidays.dueBy(sheet.id(), date, terms.termsFor(person, date)));
             new CheckClaimPeriod().check(sheet, claim, periods);
             claim.setLateEntry(periods.softClosedOn(sheet.id(), claim.getDueBy()) != null);
             new CheckClaimRetired().check(sheet, claim, people);

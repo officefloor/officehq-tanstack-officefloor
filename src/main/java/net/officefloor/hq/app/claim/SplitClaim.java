@@ -16,7 +16,7 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Splits an amount off an OPEN claim: the claim keeps the rest, unbound from any statement, and a new
  * OPEN claim with the amount split off, its date and note, opened by the signed-in user and its
- * due-by fixed now from the terms in force on its date (moved past any holiday on the sheet now), is made (a late entry when that due-by is
+ * due-by fixed now from the terms in force on its date (counted in business days, skipping weekends and the holidays on the sheet now), is made (a late entry when that due-by is
  * inside a soft-closed period). Only a role the permission matrix
  * allows to open a claim may split one (the new claim is theirs to open).
  */
@@ -35,7 +35,7 @@ public class SplitClaim {
         Claim made = new Claim(null, sheet.id(), claim.getPersonId(), split.amount(), claim.getDate(),
                 claim.getNote(), ClaimStatus.OPEN, null, null, user);
         made.setSplitFrom(claim.getNumber());
-        made.setDueBy(holidays.pastHolidays(sheet.id(), claim.getDate().plusDays(settings.termsFor(person, claim.getDate()))));
+        made.setDueBy(holidays.dueBy(sheet.id(), claim.getDate(), settings.termsFor(person, claim.getDate())));
         made.setLateEntry(periods.softClosedOn(sheet.id(), made.getDueBy()) != null);
         splitOut.set(new Split(made));
     }

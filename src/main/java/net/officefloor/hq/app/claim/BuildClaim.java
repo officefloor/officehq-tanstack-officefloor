@@ -11,8 +11,8 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /**
- * A new DRAFT claim, dated (when left undated) the sheet's entry date while it is set, else its today, its due-by fixed now: its date plus its person's own terms, else the terms of their grade on that date, else the sheet's,
- * moved past any holiday on the sheet now to the next day that is not one.
+ * A new DRAFT claim, dated (when left undated) the sheet's entry date while it is set, else its today, its due-by fixed now: the terms-th business day after its date
+ * (skipping Saturdays, Sundays and the holidays on the sheet now), its terms its person's own, else those of their grade on that date, else the sheet's.
  * Due by a date inside a soft-closed period (its period is the one containing its due-by), it is a late entry.
  */
 public class BuildClaim {
@@ -24,7 +24,7 @@ public class BuildClaim {
         Claim claim = new Claim(null, sheet.id(), person.getId(), input.amount(), date, input.note(),
                 ClaimStatus.DRAFT, null, null, null);
         claim.setCorrects(input.corrects());
-        claim.setDueBy(holidays.pastHolidays(sheet.id(), date.plusDays(terms.termsFor(person, date))));
+        claim.setDueBy(holidays.dueBy(sheet.id(), date, terms.termsFor(person, date)));
         claim.setLateEntry(periods.softClosedOn(sheet.id(), claim.getDueBy()) != null);
         claimOut.set(claim);
     }

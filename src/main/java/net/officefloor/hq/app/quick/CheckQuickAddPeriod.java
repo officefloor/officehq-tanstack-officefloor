@@ -13,7 +13,7 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * Refuses a quick-add while the due-by the claim would be fixed with (its date, the sheet's entry date
- * while it is set, else its today, plus its person's terms, moved past any holiday) is inside a closed period, before anything is written.
+ * while it is set, else its today, its person's terms in business days on, skipping weekends and holidays) is inside a closed period, before anything is written.
  */
 public class CheckQuickAddPeriod {
     public void check(@Val Sheet sheet, @Val Person person, PeriodRepository periods, SettingsRepository settings,
@@ -22,7 +22,7 @@ public class CheckQuickAddPeriod {
         Settings terms = settings.find(sheet.id());
         LocalDate date = terms.entryDay(sheet.today());
         Period closed = periods.closedOn(sheet.id(),
-                holidays.pastHolidays(sheet.id(), date.plusDays(terms.termsFor(person, date))));
+                holidays.dueBy(sheet.id(), date, terms.termsFor(person, date)));
         if (closed != null) throw new ClosedPeriodException(closed.name());
     }
 }
