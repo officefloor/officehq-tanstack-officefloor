@@ -126,12 +126,33 @@ public class PersonRepository {
         return count != null && count > 0;
     }
 
-    /** Record the person's statements (their count, last due-total and date), leaving the rest as stored. */
+    /**
+     * Record the person's statements (their count, last due-total and date), leaving the rest as stored.
+     * The last statement is kept as the one numbered by the count; any numbered after it are dropped.
+     */
     public void saveStatements(Person person) {
+        Date date = person.getStatementDate() == null ? null : Date.valueOf(person.getStatementDate());
         jdbc.update("UPDATE person SET statement_count = ?, stated_total = ?, statement_date = ? WHERE id = ? AND sheet_id = ?",
-                person.getStatementCount(), person.getStatedTotal(),
-                person.getStatementDate() == null ? null : Date.valueOf(person.getStatementDate()),
+                person.getStatementCount(), person.getStatedTotal(), date,
                 person.getId(), person.getSheetId());
+        jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ? AND seq >= ?",
+                person.getSheetId(), person.getId(), person.getStatementCount());
+        if (person.getStatementCount() > 0) {
+            jdbc.update("INSERT INTO person_statement (sheet_id, person_id, seq, stated_total, statement_date) VALUES (?, ?, ?, ?, ?)",
+                    person.getSheetId(), person.getId(), person.getStatementCount(), person.getStatedTotal(), date);
+        }
+    }
+
+    /**
+     * The person's statement numbered {@code seq} (from 1): its due-total and date, or null when it
+     * was not kept (taken before statements were kept), or there is none.
+     */
+    public StatedFigure findStatement(Person person, int seq) {
+        List<StatedFigure> found = jdbc.query(
+                "SELECT stated_total, statement_date FROM person_statement WHERE sheet_id = ? AND person_id = ? AND seq = ?",
+                (rs, n) -> new StatedFigure(rs.getString("stated_total"), rs.getObject("statement_date", LocalDate.class)),
+                person.getSheetId(), person.getId(), seq);
+        return found.isEmpty() ? null : found.get(0);
     }
 
     /** Record the date the person is retired from, leaving the rest as stored. */

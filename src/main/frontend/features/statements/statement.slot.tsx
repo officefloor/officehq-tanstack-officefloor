@@ -20,7 +20,8 @@ function StatementHead() {
 }
 
 // A person's statements: how many have been taken, the last one's due-total and date, and a button
-// that takes the next. Taking one binds each of their claims that counts to its figure now.
+// that takes the next. Taking one binds each of their claims that counts to its figure now. A steward
+// can cancel the last one: the claims it bound become live again, and the one before it is shown.
 function PersonStatement({ sheetId, person }: { sheetId: string; person: Person }) {
   const queryClient = useQueryClient();
   const [user] = useUser();
@@ -40,10 +41,29 @@ function PersonStatement({ sheetId, person }: { sheetId: string; person: Person 
       ]),
     onError: () => setError('That statement could not be taken.'),
   });
+  const cancel = useMutation({
+    mutationFn: () =>
+      postJson<Person>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/people/${encodeURIComponent(person.id)}/unstate`,
+        {},
+        user,
+      ),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+      ]),
+    onError: () => setError('That statement could not be cancelled.'),
+  });
 
   const state = () => {
     setError('');
     once((done) => take.mutate(undefined, { onSettled: done }));
+  };
+
+  const unstate = () => {
+    setError('');
+    once((done) => cancel.mutate(undefined, { onSettled: done }));
   };
 
   return (
@@ -54,6 +74,9 @@ function PersonStatement({ sheetId, person }: { sheetId: string; person: Person 
       <td>
         <button type="button" data-testid="person-statement" onClick={state} disabled={take.isPending}>
           Statement
+        </button>
+        <button type="button" data-testid="person-unstate" onClick={unstate} disabled={cancel.isPending}>
+          Cancel statement
         </button>
         {error && (
           <p role="alert" data-testid="person-error">
