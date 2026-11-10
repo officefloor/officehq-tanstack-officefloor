@@ -4,7 +4,10 @@ import { getJson } from '../../api/http';
 /** A claim's status: DRAFT when made, then OPEN, then SETTLED; a DRAFT or OPEN claim may be VOID. */
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 
-/** A claim: its amount with two decimals, its date (yyyy-MM-dd), its note and its status. */
+/**
+ * A claim: its amount with two decimals, its date (yyyy-MM-dd), its note, its status and its
+ * number on the sheet (given when it is opened; '' for a draft or a voided claim).
+ */
 export type Claim = {
   id: string;
   personId: string;
@@ -12,6 +15,7 @@ export type Claim = {
   date: string;
   note: string;
   status: ClaimStatus;
+  number: string;
 };
 
 /** Whether a claim counts toward claimed, due-total and every total: only OPEN and SETTLED do. */
