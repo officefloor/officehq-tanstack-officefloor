@@ -25,7 +25,7 @@ import net.officefloor.hq.app.paste.PasteResponse;
 /**
  * Adds a DRAFT claim per pasted line, in order, for the person on the sheet with that name (matched
  * as names are compared). Every line is checked first, as the claim form checks a claim (its person
- * on the sheet, its date outside a closed period and not after its person's retirement), so a
+ * on the sheet, its due-by outside a closed period and not after its person's retirement), so a
  * refused paste writes nothing; then each claim is saved, logged and audited as one added by the form.
  */
 public class AddPastedClaims {
@@ -44,7 +44,7 @@ public class AddPastedClaims {
                     ClaimStatus.DRAFT, null, null, null);
             claim.setDueBy(date.plusDays(terms.termsFor(person, date)));
             new CheckClaimPeriod().check(sheet, claim, periods);
-            claim.setLateEntry(periods.softClosedOn(sheet.id(), date) != null);
+            claim.setLateEntry(periods.softClosedOn(sheet.id(), claim.getDueBy()) != null);
             new CheckClaimRetired().check(sheet, claim, people);
             persons.add(person);
             built.add(claim);

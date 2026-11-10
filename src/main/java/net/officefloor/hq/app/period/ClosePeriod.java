@@ -25,7 +25,7 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Closes the period, fixing its due-total at this moment: the figures of the claims that counted at
  * the end of its last day, by the status their log records then (OPEN, PENDING and SETTLED, but not an
- * unbound open one dated within a hold of its person, nor one deferred now), dated inside it (an overdue one with its late charge), added up, skipping n/a. Each person's own figure for the period is fixed
+ * unbound open one dated within a hold of its person, nor one deferred now), due by a date inside it (an overdue one with its late charge), added up, skipping n/a. Each person's own figure for the period is fixed
  * too, and the period's due-total is the sum of them. A soft-closed period closes too, its figures
  * fixed afresh. A period already closed is refused, and so is a role the permission matrix does not allow to close.
  */
@@ -59,7 +59,7 @@ public class ClosePeriod {
         for (Person person : people.findAll(sheet.id())) {
             BigDecimal personTotal = BigDecimal.ZERO.setScale(2);
             for (Claim claim : sheetClaims) {
-                if (claim.getPersonId() != person.getId() || !period.contains(claim.getDate())) continue;
+                if (claim.getPersonId() != person.getId() || !period.contains(claim.getDueBy())) continue;
                 if (!claim.countsAsOf(statusesThen.get(claim.getId()), person.heldOn(claim.getDate(), sheet.today()), sheet.today())) continue;
                 BigDecimal figure = ClaimFigure.withLate(claim, all, person.gradeOn(claim.getDate()), sheetSettings, sheet.today());
                 if (figure != null) personTotal = personTotal.add(figure);

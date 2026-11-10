@@ -170,7 +170,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
     onError: (_e, { id }) =>
       setRefused({
         id,
-        message: 'That claim cannot be re-dated: a steward re-dates an open claim, outside a closed period and not after retirement.',
+        message: 'That claim cannot be re-dated: a steward re-dates an open claim, not due in a closed period and not after retirement.',
       }),
   });
 
@@ -284,7 +284,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   };
 
   // The edit button locks the claim for this user until its editor is saved or cancelled (or the
-  // sheet's today changes). A claim that cannot be edited (not a draft, in a closed period), one
+  // sheet's today changes). A claim that cannot be edited (not a draft, due by a date in a closed period), one
   // another user is editing, or any edit of a viewer's, is refused on the claim and takes no lock.
   const lock = useMutation({
     mutationFn: (c: Claim) =>
@@ -405,7 +405,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
               <span data-testid="claim-corrects">{c.corrects}</span>{' '}
               <span data-testid="claim-opened-by">{c.openedBy}</span>{' '}
               <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
-              <span data-testid="claim-period">{periodOf(periods, c.date)?.name ?? ''}</span>{' '}
+              <span data-testid="claim-period">{periodOf(periods, c.dueBy)?.name ?? ''}</span>{' '}
               <span data-testid="claim-due-by">{dueBy(c)}</span>{' '}
               <span data-testid="claim-overdue">{isOverdue(c, today) ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-deferred">{isDeferred(c, today) ? 'yes' : 'no'}</span>{' '}

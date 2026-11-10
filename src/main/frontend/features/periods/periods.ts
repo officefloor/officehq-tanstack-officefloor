@@ -41,7 +41,8 @@ export function periodOf(periods: Period[], date: string): Period | null {
 
 /**
  * A person's due-total for a period: the one fixed when it was closed (0.00 for a person added
- * after), else the due as shown now of their claims dated in it that counted at the end of its last
+ * after), else the due as shown now of their claims due by a date in it (a claim's period is the one
+ * containing its due-by) that counted at the end of its last
  * day, by the status their log records then, added up.
  */
 export function personPeriodDueTotal(
@@ -55,7 +56,7 @@ export function personPeriodDueTotal(
   if (period.closed) return period.personTotals[person.id] ?? '0.00';
   return sumDue(
     claims
-      .filter((c) => c.personId === person.id && countedOn(c, period.to, liveHolds(person, late.today), late.today) && period.from <= c.date && c.date <= period.to)
+      .filter((c) => c.personId === person.id && countedOn(c, period.to, liveHolds(person, late.today), late.today) && period.from <= c.dueBy && c.dueBy <= period.to)
       .map((c) => claimDue(c, rateOn(rates, gradeOn(person.grades, c.date), c.date), floor, late)),
   );
 }

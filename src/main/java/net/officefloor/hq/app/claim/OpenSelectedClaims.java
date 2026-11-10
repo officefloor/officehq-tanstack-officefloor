@@ -68,7 +68,7 @@ public class OpenSelectedClaims {
 
     /** Moves the claim to OPEN when its status and period allow it and no one opened it first. */
     private static boolean opens(Sheet sheet, Claim claim, PeriodRepository periods, ClaimRepository claims) {
-        if (periods.closedOn(sheet.id(), claim.getDate()) != null) return false;
+        if (periods.closedOn(sheet.id(), claim.getDueBy()) != null) return false;
         try {
             claim.moveTo(ClaimStatus.OPEN);
         } catch (InvalidClaimStatusException e) {

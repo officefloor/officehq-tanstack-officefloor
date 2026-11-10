@@ -11,7 +11,7 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * A new DRAFT claim, dated (when left undated) the sheet's entry date while it is set, else its today, its due-by fixed now: its date plus its person's own terms, else the terms of their grade on that date, else the sheet's.
- * Dated inside a soft-closed period, it is a late entry.
+ * Due by a date inside a soft-closed period (its period is the one containing its due-by), it is a late entry.
  */
 public class BuildClaim {
     public void build(@Val ClaimInput input, @Val Sheet sheet, @Val Person person, SettingsRepository settings,
@@ -23,7 +23,7 @@ public class BuildClaim {
                 ClaimStatus.DRAFT, null, null, null);
         claim.setCorrects(input.corrects());
         claim.setDueBy(date.plusDays(terms.termsFor(person, date)));
-        claim.setLateEntry(periods.softClosedOn(sheet.id(), date) != null);
+        claim.setLateEntry(periods.softClosedOn(sheet.id(), claim.getDueBy()) != null);
         claimOut.set(claim);
     }
 }

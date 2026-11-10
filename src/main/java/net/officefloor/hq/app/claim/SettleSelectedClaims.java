@@ -52,7 +52,7 @@ public class SettleSelectedClaims {
         for (Person person : people.findAll(sheet.id())) {
             for (Claim claim : claims.findByPerson(sheet.id(), person.getId())) {
                 if (!selected.contains(claim.getId())) continue;
-                if (periods.closedOn(sheet.id(), claim.getDate()) != null) continue;
+                if (periods.closedOn(sheet.id(), claim.getDueBy()) != null) continue;
                 try {
                     SettleClaim.settle(sheet, claim, user, people, rates, roles, settings);
                 } catch (InvalidClaimStatusException | SelfSettleException e) {
