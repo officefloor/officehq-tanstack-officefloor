@@ -4,12 +4,12 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { PersonHead, PersonRow } from '../../slots/defs/personRow';
-import { sumAmounts, useClaims } from '../claims/claims';
+import { useClaims } from '../claims/claims';
 import { GRADES, usePeople } from '../people/people';
 import type { Grade, Person } from '../people/people';
 import { useUser } from '../session/session';
 import { useSheetToday } from '../sheet/sheet';
-import { NA, PCT, due, rateOn, ratesKey, sumDue, useGradeRate, useRates } from './rates';
+import { NA, PCT, personDueTotal, rateOn, ratesKey, sumDue, useRates } from './rates';
 import type { Rate } from './rates';
 
 type Fields = { grade: Grade; pct: string; from: string };
@@ -149,11 +149,12 @@ function DueHead() {
   return <th>Due</th>;
 }
 
-// A person's due-total: what they have claimed in all, times their grade's rate in force today.
+// A person's due-total: the due figures of their claims that count, added up.
 function PersonDueTotal({ sheetId, person }: { sheetId: string; person: Person }) {
   const claims = (useClaims(sheetId).data ?? []).filter((c) => c.personId === person.id);
-  const pct = useGradeRate(sheetId, person.grade, useSheetToday(sheetId));
-  return <td data-testid="person-due-total">{due(sumAmounts(claims), pct)}</td>;
+  const rates = useRates(sheetId).data ?? [];
+  const today = useSheetToday(sheetId);
+  return <td data-testid="person-due-total">{personDueTotal(rates, person.grade, today, claims)}</td>;
 }
 
 // The sheet's due-total: everyone's due-total added up, skipping those with no rate.
@@ -163,10 +164,7 @@ function DueTotal({ sheetId }: { sheetId: string }) {
   const rates = useRates(sheetId).data ?? [];
   const today = useSheetToday(sheetId);
   const totals = people.map((p) =>
-    due(
-      sumAmounts(claims.filter((c) => c.personId === p.id)),
-      rateOn(rates, p.grade, today),
-    ),
+    personDueTotal(rates, p.grade, today, claims.filter((c) => c.personId === p.id)),
   );
   return (
     <p>

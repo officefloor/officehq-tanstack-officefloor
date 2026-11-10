@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import type { Grade } from '../people/people';
+import { counts } from '../claims/claims';
 import type { Claim } from '../claims/claims';
 
 /**
@@ -54,15 +55,17 @@ function showCents(cents: bigint): string {
 }
 
 /**
- * An amount times a rate, divided by 100, rounded half up to two decimals; n/a with no rate.
+ * An amount times a rate, divided by 100, rounded half to even to two decimals; n/a with no rate.
  * Worked in whole numbers so no floating-point error creeps in (amounts and rates are never
- * negative, so half up is half away from zero).
+ * negative).
  */
 export function due(amount: string, pct: string | null): string {
   if (pct === null) return NA;
   // cents × basis points is the due in millionths of a unit: 10000 of them to the cent.
   const x = hundredths(amount) * hundredths(pct);
-  return showCents((x + 5000n) / 10000n);
+  const cents = x / 10000n;
+  const rest = x % 10000n;
+  return showCents(rest > 5000n || (rest === 5000n && cents % 2n === 1n) ? cents + 1n : cents);
 }
 
 /** Due values added up, skipping n/a. */
@@ -73,5 +76,16 @@ export function sumDue(values: string[]): string {
 /** A claim's due: the one fixed when it was settled, else its amount at the rate in force on its date. */
 export function claimDue(claim: Claim, pct: string | null): string {
   return claim.due !== '' ? claim.due : due(claim.amount, pct);
+}
+
+/**
+ * A person's due-total: the figures of their claims that count (each at the rate in force on its
+ * date), added up, skipping n/a. With no rate for their grade today it is n/a, unless a settled
+ * claim that counts keeps a fixed figure.
+ */
+export function personDueTotal(rates: Rate[], grade: Grade, today: string, claims: Claim[]): string {
+  const counted = claims.filter(counts);
+  if (rateOn(rates, grade, today) === null && !counted.some((c) => c.due !== '')) return NA;
+  return sumDue(counted.map((c) => claimDue(c, rateOn(rates, grade, c.date))));
 }
 

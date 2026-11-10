@@ -11,7 +11,7 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * Settles the claim and fixes its due: its amount times its person's grade's rate in force on the
- * claim's date, divided by 100 and rounded half up to two decimals. With no such rate the due is
+ * claim's date, divided by 100 and rounded half to even to two decimals. With no such rate the due is
  * not fixed.
  */
 public class SettleClaim {
@@ -21,7 +21,7 @@ public class SettleClaim {
         Person person = people.find(sheet.id(), claim.getPersonId());
         claim.setSettledDue(Rate.inForce(rates.findAll(sheet.id()), person.getGrade(), claim.getDate())
                 .map((pct) -> claim.getAmount().multiply(pct).divide(BigDecimal.valueOf(100), 2,
-                        RoundingMode.HALF_UP))
+                        RoundingMode.HALF_EVEN))
                 .orElse(null));
     }
 }
