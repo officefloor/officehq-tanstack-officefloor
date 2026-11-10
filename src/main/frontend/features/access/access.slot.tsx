@@ -12,7 +12,7 @@ type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms'>;
 
 // The sheet's settings: its clerk limit, the highest due a clerk may settle (blank: no limit), and
 // its floor, the least a claim's live due may be, and its terms, the days after a claim's date that
-// it is due by, and its late percent, what an overdue claim's due gains per full 30 days overdue, and
+// it is due by, and its late percent, what an overdue claim's due gains at each full 30 days overdue (the one in force that day), and
 // its policy date (blank: the sheet's today), before which a claim rounds half up, and its period
 // numbering from (blank: off), from which a claim opened is numbered within its period, and each
 // grade's own terms (blank: the sheet's terms), fixing the due-by of a claim made for it, and its cap

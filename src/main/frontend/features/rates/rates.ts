@@ -132,16 +132,29 @@ function daysBetween(from: string, to: string): number {
   return Math.round((utc(to) - utc(from)) / 86_400_000);
 }
 
+/** A date (yyyy-MM-dd) some whole days on, worked in UTC so no zone shifts it. */
+function addDays(date: string, days: number): string {
+  const [y, m, d] = date.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
 /**
  * A claim's late charge on its `figure`: for an OPEN or PENDING claim past its due-by (fixed when it was
- * made) on the sheet's today, the late percent of the figure for every full 30 days it is overdue,
- * rounded as the claim rounds; else nothing (as for a claim deferred on the sheet's today). A statement never binds it: it follows the sheet's today.
+ * made) on the sheet's today, for every full 30 days it is overdue the late percent in force on that
+ * boundary date (its due-by plus 30, 60, 90 ... days) of the figure, each rounded as the claim rounds,
+ * added up; else nothing (as for a claim deferred on the sheet's today). A statement never binds it: it follows the sheet's today.
  */
 function lateCharge(claim: Claim, figure: string, late: Late): bigint {
   if (!isOpen(claim) || isDeferred(claim, late.today) || figure === NA || late.today === '' || isCorrection(claim)) return 0n;
   const overdue = daysBetween(claim.dueBy, late.today);
   const periods = overdue > 0 ? Math.floor(overdue / 30) : 0;
-  return periods === 0 ? 0n : percentOf(figure, valueOn(late.pct, claim.date), BigInt(periods), roundsHalfUp(claim, late));
+  const halfUp = roundsHalfUp(claim, late);
+  let charge = 0n;
+  for (let k = 1; k <= periods; k++) {
+    const pct = valueOn(late.pct, addDays(claim.dueBy, 30 * k));
+    if (hundredths(pct) !== 0n) charge += percentOf(figure, pct, 1n, halfUp);
+  }
+  return charge;
 }
 
 /** Due values added up, skipping n/a. */
