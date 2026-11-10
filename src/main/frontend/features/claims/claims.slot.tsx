@@ -167,6 +167,14 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
       clearForm();
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
     },
+    // A refused save of an editor shows its error and puts the form back to adding, releasing the claim's lock, so
+    // the next submit adds a claim rather than retrying the refused edit.
+    onError: (_, f) => {
+      if (f.id === null) return;
+      markLock(f.id, null);
+      lock.mutate({ id: f.id, action: 'unlock' });
+      clearForm();
+    },
   });
 
   // A DRAFT claim from a template: its amount and note as they are now, the date left blank, by every rule
