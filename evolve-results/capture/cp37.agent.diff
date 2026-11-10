@@ -1,0 +1,379 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index ccf3abcf6..8d058e61f 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { useOnce } from '../../query/useOnce';
+ import { postJson, putJson } from '../../api/http';
+ import { PersonHead, PersonRow } from '../../slots/defs/personRow';
+-import { gradeOn } from '../people/people';
++import { gradeOn, peopleKey, usePeople } from '../people/people';
+ import type { Person } from '../people/people';
+ import { useUser } from '../session/session';
+ import { CLAIM_AMOUNT, CLAIM_NUMBER, claimsKey, sumAmounts, useClaims } from './claims';
+@@ -53,6 +53,9 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person })
+   const [refused, setRefused] = useState<{ id: string; message: string } | null>(null);
+   // The reason typed for rejecting each claim, by claim id.
+   const [reasons, setReasons] = useState<Record<string, string>>({});
++  // The person picked to move each claim to (a steward's move), by claim id.
++  const [moveTo, setMoveTo] = useState<Record<string, string>>({});
++  const others = (usePeople(sheetId).data ?? []).filter((p) => p.id !== person.id);
+   const [user] = useUser();
+   const rates = useRates(sheetId).data ?? [];
+   const periods = usePeriods(sheetId).data ?? [];
+@@ -106,6 +109,32 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person })
+     onError: (_e, { id }) => setRefused({ id, message: 'That status change is not allowed.' }),
+   });
+ 
++  // A steward moves a DRAFT, OPEN or PENDING claim to another person; it is listed as theirs, newest.
++  const reassign = useMutation({
++    mutationFn: ({ id, personId }: { id: string; personId: string }) =>
++      postJson<Claim>(
++        `/api/sheets/${encodeURIComponent(sheetId)}/claims/${encodeURIComponent(id)}/reassign`,
++        { personId },
++        user,
++      ),
++    onSuccess: (_c, { id }) => {
++      setMoveTo((m) => ({ ...m, [id]: '' }));
++      void queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
++      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
++    },
++    onError: (_e, { id }) => setRefused({ id, message: 'That claim cannot be moved.' }),
++  });
++
++  const moveClaim = (id: string) => {
++    setRefused(null);
++    const personId = moveTo[id] ?? '';
++    if (personId === '') {
++      setRefused({ id, message: 'Pick the person to move the claim to.' });
++      return;
++    }
++    reassign.mutate({ id, personId });
++  };
++
+   const act = (id: string, action: Action) => {
+     setRefused(null);
+     if (action === 'reject' && (reasons[id] ?? '').trim() === '') {
+@@ -235,6 +264,25 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person })
+                   {label}
+                 </button>
+               ))}{' '}
++              <select
++                data-testid="claim-reassign-to"
++                aria-label="Move to"
++                value={moveTo[c.id] ?? ''}
++                onChange={(e) => {
++                  setMoveTo((m) => ({ ...m, [c.id]: e.target.value }));
++                  setRefused((r) => (r !== null && r.id === c.id ? null : r));
++                }}
++              >
++                <option value="">Move to…</option>
++                {others.map((p) => (
++                  <option key={p.id} value={p.id}>
++                    {p.name}
++                  </option>
++                ))}
++              </select>{' '}
++              <button type="button" data-testid="claim-reassign" onClick={() => moveClaim(c.id)}>
++                Move
++              </button>{' '}
+               {editing === c.id ? (
+                 <button type="button" data-testid="claim-cancel" onClick={reset}>
+                   Cancel
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimReassigned.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimReassigned.java
+new file mode 100644
+index 000000000..b8fdca7d9
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimReassigned.java
+@@ -0,0 +1,17 @@
++package net.officefloor.hq.app.claim;
++
++import jakarta.servlet.http.HttpServletRequest;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++
++/** Records the move, naming the claim with its new person; the line ends with who it moved from and to. */
++public class AuditClaimReassigned {
++    public void audit(@Val Sheet sheet, @Val Claim claim, @Val Reassignment reassignment, PersonRepository people,
++            HttpServletRequest request, Audit audit) {
++        audit.record(ClaimAudit.line("CLAIM_REASSIGNED", sheet, Audit.user(request),
++                people.find(sheet.id(), claim.getPersonId()), claim)
++                + " from=" + reassignment.from() + " to=" + reassignment.to());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 0b5f64fba..63f5b7576 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -7,7 +7,7 @@ import java.time.LocalDate;
+ public class Claim {
+     private Long id;
+     private final String sheetId;
+-    private final long personId;
++    private long personId;
+     private BigDecimal amount;
+     private LocalDate date;
+     private String note;
+@@ -19,6 +19,7 @@ public class Claim {
+     private BigDecimal statedDue;
+     private String corrects;
+     private LocalDate correctedDate;
++    private boolean relisted;
+ 
+     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
+             ClaimStatus status, String number, BigDecimal settledDue,
+@@ -39,6 +40,21 @@ public class Claim {
+     public void setId(Long id) { this.id = id; }
+     public String getSheetId() { return sheetId; }
+     public long getPersonId() { return personId; }
++    /**
++     * Move it to another person: it keeps its number and date, but loses any figure a statement
++     * bound it to (it is live again until its new person's next statement). A SETTLED or VOID claim
++     * cannot move.
++     */
++    public void reassign(long toPersonId) throws InvalidClaimStatusException {
++        if (status == ClaimStatus.SETTLED || status == ClaimStatus.VOID) {
++            throw new InvalidClaimStatusException("A " + status + " claim cannot be moved to another person");
++        }
++        personId = toPersonId;
++        bind(false, null);
++        relisted = true;
++    }
++    /** Whether it was moved since read, so it is listed again as its new person's newest. */
++    public boolean isRelisted() { return relisted; }
+     public BigDecimal getAmount() { return amount; }
+     public void setAmount(BigDecimal amount) { this.amount = amount; }
+     public LocalDate getDate() { return date; }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index c09fdca1a..d566a7211 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -37,15 +37,15 @@ public class ClaimRepository {
+         this.jdbc = jdbc;
+     }
+ 
+-    /** The sheet's claims, newest first. */
++    /** The sheet's claims, newest first (a moved claim listed as made when it was moved). */
+     public List<Claim> findAll(String sheetId) {
+-        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? ORDER BY id DESC",
++        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? ORDER BY listed DESC, id DESC",
+                 ROW, sheetId);
+     }
+ 
+     /** The person's claims on the sheet, newest first. */
+     public List<Claim> findByPerson(String sheetId, long personId) {
+-        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY id DESC",
++        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY listed DESC, id DESC",
+                 ROW, sheetId, personId);
+     }
+ 
+@@ -91,9 +91,20 @@ public class ClaimRepository {
+                 Integer.class, sheetId, sequence);
+     }
+ 
++    /** The sheet's next place in its claims list, taken in one statement; never given out again. */
++    private long nextListed(String sheetId) {
++        return jdbc.queryForObject("SELECT last_claim_listed FROM FINAL TABLE"
++                + " (UPDATE sheet SET last_claim_listed = last_claim_listed + 1 WHERE id = ?)",
++                Long.class, sheetId);
++    }
++
+     /** Insert a new claim (assigning its id) or update an existing one. */
+     public void save(Claim claim) {
+         if (claim.getId() != null) {
++            if (claim.isRelisted()) {
++                jdbc.update("UPDATE claim SET person_id = ?, listed = ? WHERE id = ? AND sheet_id = ?",
++                        claim.getPersonId(), nextListed(claim.getSheetId()), claim.getId(), claim.getSheetId());
++            }
+             jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?, stated = ?, stated_due = ?, corrects = ? WHERE id = ? AND sheet_id = ?",
+                     claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(),
+                     claim.getStatus().name(), claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(),
+@@ -101,10 +112,11 @@ public class ClaimRepository {
+                     claim.getSheetId());
+             return;
+         }
++        long listed = nextListed(claim.getSheetId());
+         GeneratedKeyHolder keys = new GeneratedKeyHolder();
+         jdbc.update(con -> {
+             PreparedStatement ps = con.prepareStatement(
+-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, corrects) VALUES (?, ?, ?, ?, ?, ?, ?)",
++                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, corrects, listed) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                     Statement.RETURN_GENERATED_KEYS);
+             ps.setString(1, claim.getSheetId());
+             ps.setLong(2, claim.getPersonId());
+@@ -113,6 +125,7 @@ public class ClaimRepository {
+             ps.setString(5, claim.getNote());
+             ps.setString(6, claim.getStatus().name());
+             ps.setString(7, claim.getCorrects());
++            ps.setLong(8, listed);
+             return ps;
+         }, keys);
+         claim.setId(keys.getKey().longValue());
+diff --git a/src/main/java/net/officefloor/hq/app/claim/InvalidClaimStatusException.java b/src/main/java/net/officefloor/hq/app/claim/InvalidClaimStatusException.java
+index 9020a9834..2bb7e55a6 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/InvalidClaimStatusException.java
++++ b/src/main/java/net/officefloor/hq/app/claim/InvalidClaimStatusException.java
+@@ -10,4 +10,9 @@ public class InvalidClaimStatusException extends Exception {
+     public InvalidClaimStatusException(ClaimStatus status) {
+         super("A " + status + " claim cannot be edited");
+     }
++
++    /** Any other change its status does not allow. */
++    public InvalidClaimStatusException(String message) {
++        super(message);
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ReassignClaim.java b/src/main/java/net/officefloor/hq/app/claim/ReassignClaim.java
+new file mode 100644
+index 000000000..da00b342f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ReassignClaim.java
+@@ -0,0 +1,41 @@
++package net.officefloor.hq.app.claim;
++
++import jakarta.servlet.http.HttpServletRequest;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonNotFoundException;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.role.Role;
++import net.officefloor.hq.app.role.RoleRepository;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++/**
++ * Moves a DRAFT, OPEN or PENDING claim to another person on the sheet. Only a steward may move it.
++ * It keeps its number and date, loses any figure a statement bound it to, and is listed as its new
++ * person's newest claim.
++ */
++public class ReassignClaim {
++    public void apply(@Val Sheet sheet, @Val Claim claim, @Val ReassignRequest reassign, PersonRepository people,
++            RoleRepository roles, HttpServletRequest request, Out<Reassignment> reassignmentOut)
++            throws InvalidClaimStatusException, ApprovalException, PersonNotFoundException, InvalidClaimException {
++        String user = Audit.user(request);
++        if (!Role.STEWARD.equals(roles.roleOf(sheet.id(), user))) {
++            throw new ApprovalException("Only a steward may move a claim: " + user + " is a clerk");
++        }
++        Person to = null;
++        try {
++            to = people.find(sheet.id(), Long.parseLong(reassign.personId()));
++        } catch (NumberFormatException e) {
++            // not an id: not found
++        }
++        if (to == null) throw new PersonNotFoundException(reassign.personId());
++        if (to.getId() == claim.getPersonId()) {
++            throw new InvalidClaimException("The claim is already " + to.getName() + "'s");
++        }
++        Person from = people.find(sheet.id(), claim.getPersonId());
++        claim.reassign(to.getId());
++        reassignmentOut.set(new Reassignment(from.getName(), to.getName()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ReassignRequest.java b/src/main/java/net/officefloor/hq/app/claim/ReassignRequest.java
+new file mode 100644
+index 000000000..7977dd857
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ReassignRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.claim;
++
++/** A move of a claim as the screen sends it: the id of the person it moves to. */
++public record ReassignRequest(String personId) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Reassignment.java b/src/main/java/net/officefloor/hq/app/claim/Reassignment.java
+new file mode 100644
+index 000000000..5aca695cb
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/Reassignment.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.claim;
++
++/** A claim's move: the names of the person it moved from and the person it moved to. */
++public record Reassignment(String from, String to) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateReassign.java b/src/main/java/net/officefloor/hq/app/claim/ValidateReassign.java
+new file mode 100644
+index 000000000..fbbb51ab4
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateReassign.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** A move names the person it moves the claim to; it is kept trimmed. */
++public class ValidateReassign {
++    public void validate(@RequestBody ReassignRequest request, Out<ReassignRequest> body) throws InvalidClaimException {
++        String personId = request == null || request.personId() == null ? "" : request.personId().trim();
++        if (personId.isEmpty()) throw new InvalidClaimException("A move needs the person it moves the claim to");
++        body.set(new ReassignRequest(personId));
++    }
++}
+diff --git a/src/main/resources/db/migration/V27__claim_listed.sql b/src/main/resources/db/migration/V27__claim_listed.sql
+new file mode 100644
+index 000000000..1081755de
+--- /dev/null
++++ b/src/main/resources/db/migration/V27__claim_listed.sql
+@@ -0,0 +1,7 @@
++-- Where a claim is listed: claims are listed newest first by this, not by id, so a claim moved to
++-- another person is listed as that person's newest. A claim takes the sheet's next place when it is
++-- made and again when it is moved; the sheet keeps the last place given.
++ALTER TABLE sheet ADD COLUMN last_claim_listed BIGINT NOT NULL DEFAULT 0;
++ALTER TABLE claim ADD COLUMN listed BIGINT NOT NULL DEFAULT 0;
++UPDATE claim SET listed = id;
++UPDATE sheet SET last_claim_listed = COALESCE((SELECT MAX(c.id) FROM claim c WHERE c.sheet_id = sheet.id), 0);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reassign.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reassign.POST.yml
+new file mode 100644
+index 000000000..3c838b36b
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reassign.POST.yml
+@@ -0,0 +1,45 @@
++# Move a DRAFT, OPEN or PENDING claim to another person on the sheet (a steward). A settled or
++# voided claim, a clerk, or a person not on the sheet is refused and writes nothing.
++validate:
++  class: net.officefloor.hq.app.claim.ValidateReassign
++  govern: [ transaction ]
++  next: loadSheet
++loadSheet:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ transaction ]
++  next: before
++# The sheet's figures before the change, so the rollup lines tell which moved.
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
++  next: load
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ transaction ]
++  next: closed
++# A claim dated inside a closed period is a 409 and writes nothing.
++closed:
++  class: net.officefloor.hq.app.period.CheckClaimPeriod
++  govern: [ transaction ]
++  next: apply
++apply:
++  class: net.officefloor.hq.app.claim.ReassignClaim
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.claim.SaveClaim
++  govern: [ transaction ]
++  next: audit
++# Last before the response: every rule has passed and the change is saved.
++audit:
++  class: net.officefloor.hq.app.claim.AuditClaimReassigned
++  govern: [ transaction ]
++  next: rollup
++# After the change's own lines: the figures it moved.
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaim
++  govern: [ transaction ]
