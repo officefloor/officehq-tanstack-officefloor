@@ -1,0 +1,141 @@
+diff --git a/src/main/frontend/features/claims/bulksettle.slot.tsx b/src/main/frontend/features/claims/bulksettle.slot.tsx
+index 458a3573f..3335d82df 100644
+--- a/src/main/frontend/features/claims/bulksettle.slot.tsx
++++ b/src/main/frontend/features/claims/bulksettle.slot.tsx
+@@ -9,11 +9,11 @@ import { clearSelectedClaims, useSelectedClaims } from './selection';
+ 
+ type Result = { settled: number; refused: number };
+ 
+-// Settles the ticked claims together, as the signed-in user. The server settles each that can be
+-// settled in list order (people in list order, each person's claims newest first) by the rules of
+-// settling one — a claim sent to PENDING counts as settled — and leaves the rest as they are; the
+-// bar shows how many were settled and how many refused. The counts are cleared while it runs.
+-// A bulk settle settling at least one claim is a batch, numbered on the sheet; the bar shows the
++// Settles the ticked claims together, as the signed-in user. All or nothing: if any cannot be
++// settled by the rules of settling one, none is and every one counts as refused; otherwise the
++// server settles them all in list order (people in list order, each person's claims newest first)
++// — a claim sent to PENDING counts as settled. The bar shows how many were settled and how many refused. The counts are cleared while it runs.
++// A bulk settle that goes through is a batch, numbered on the sheet; the bar shows the
+ // last batch's number ('' when there has been none).
+ function BulkSettle({ sheetId }: { sheetId: string }) {
+   const queryClient = useQueryClient();
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SettleSelectedClaims.java b/src/main/java/net/officefloor/hq/app/claim/SettleSelectedClaims.java
+index 266fdda72..470bfd423 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SettleSelectedClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SettleSelectedClaims.java
+@@ -1,7 +1,11 @@
+ package net.officefloor.hq.app.claim;
+ 
+ import jakarta.servlet.http.HttpServletRequest;
++import java.math.BigDecimal;
++import java.math.RoundingMode;
++import java.util.ArrayList;
+ import java.util.HashSet;
++import java.util.List;
+ import java.util.Set;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.period.PeriodRepository;
+@@ -22,8 +26,11 @@ import net.officefloor.plugin.variable.Val;
+ /**
+  * Settles the selected claims in list order (people in the order they were added, each person's
+  * claims newest first) by exactly the rules of settling one claim, as the signed-in user. A claim
+- * sent to PENDING counts as settled; a claim that cannot be settled (its status does not allow it,
+- * dated inside a closed period, opened or last edited by this user, not on the sheet) is refused and left as it is.
++ * sent to PENDING counts as settled. It is all or nothing: if any selected claim cannot be settled (its
++ * status does not allow it, dated inside a closed period, opened or last edited by this user, not on
++ * the sheet), none is settled, every one counts as refused and nothing is written. Otherwise the
++ * claims form a batch, numbered on the sheet, and after their own lines a BATCH_SETTLED line gives
++ * the batch, its count and the frozen figures of those SETTLED added up.
+  * Each claim settled is logged and audited as a single settle is: its status line, then the
+  * watchers it notifies (once settled), then the figures it moved. A viewer, or anyone on an archived
+  * sheet, settles none: every selected claim is refused.
+@@ -44,33 +51,51 @@ public class SettleSelectedClaims {
+         }
+         int requested = new HashSet<>(request.claimIds()).size();
+         int settled = 0;
+-        Integer batch = null; // taken when the first claim is settled: a bulk settle settling none is no batch
+         if (sheet.archived() || Role.VIEWER.equals(roles.roleOf(sheet.id(), user))) {
+             result.set(new BulkSettleResponse(0, requested)); // a viewer, or an archived sheet, changes nothing
+             return;
+         }
+-        Rollup before = rollup(sheet, sheets, people, claims, rates, settings);
++        // All or nothing: every selected claim is settled in memory first; any refusal refuses them all.
++        List<Claim> toSettle = new ArrayList<>();
+         for (Person person : people.findAll(sheet.id())) {
+             for (Claim claim : claims.findByPerson(sheet.id(), person.getId())) {
+                 if (!selected.contains(claim.getId())) continue;
+-                if (periods.closedOn(sheet.id(), claim.getDueBy()) != null) continue;
++                if (periods.closedOn(sheet.id(), claim.getDueBy()) != null) {
++                    result.set(new BulkSettleResponse(0, requested));
++                    return;
++                }
+                 try {
+                     SettleClaim.settle(sheet, claim, user, people, rates, roles, settings);
+                 } catch (InvalidClaimStatusException | SelfSettleException e) {
+-                    continue;
++                    result.set(new BulkSettleResponse(0, requested));
++                    return;
+                 }
+-                if (batch == null) batch = claims.nextBatch(sheet.id());
+-                claim.setSettleBatch(batch);
+-                claims.save(claim);
+-                log.record(claim, user, sheet.today(), LogClaimStatus.due(sheet, claim, people, rates, settings));
+-                settled++;
+-                audit.record(AuditClaimStatus.line(sheet, claim, user, people));
+-                WatchNotices.lines(sheet, claim, user, people, watches).forEach(audit::record);
+-                Rollup after = rollup(sheet, sheets, people, claims, rates, settings);
+-                after.changesSince(before, sheet.id(), user).forEach(audit::record);
+-                before = after;
++                toSettle.add(claim);
++            }
++        }
++        if (toSettle.isEmpty() || toSettle.size() != requested) {
++            result.set(new BulkSettleResponse(0, requested)); // a selected id not on the sheet is refused
++            return;
++        }
++        int batch = claims.nextBatch(sheet.id());
++        BigDecimal total = BigDecimal.ZERO.setScale(2);
++        Rollup before = rollup(sheet, sheets, people, claims, rates, settings);
++        for (Claim claim : toSettle) {
++            claim.setSettleBatch(batch);
++            claims.save(claim);
++            log.record(claim, user, sheet.today(), LogClaimStatus.due(sheet, claim, people, rates, settings));
++            settled++;
++            if (claim.getStatus() == ClaimStatus.SETTLED && claim.getSettledDue() != null) {
++                total = total.add(claim.getSettledDue());
+             }
++            audit.record(AuditClaimStatus.line(sheet, claim, user, people));
++            WatchNotices.lines(sheet, claim, user, people, watches).forEach(audit::record);
++            Rollup after = rollup(sheet, sheets, people, claims, rates, settings);
++            after.changesSince(before, sheet.id(), user).forEach(audit::record);
++            before = after;
+         }
++        audit.record("BATCH_SETTLED sheet=" + sheet.id() + " by=" + user + " batch=" + batch + " count=" + settled
++                + " total=" + total.setScale(2, RoundingMode.HALF_UP).toPlainString());
+         result.set(new BulkSettleResponse(settled, requested - settled));
+     }
+ 
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/bulk-settle.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/bulk-settle.POST.yml
+index 577678687..872101cdf 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/bulk-settle.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/bulk-settle.POST.yml
+@@ -1,6 +1,6 @@
+-# Settle the selected claims together, in list order, by the rules of settling one. Each that
+-# cannot be settled is refused and left as it is; the response tells how many were settled (a claim
+-# sent to PENDING counts) and how many refused.
++# Settle the selected claims together, in list order, by the rules of settling one. All or nothing:
++# if any cannot be settled, none is and every one is refused; the response tells how many were
++# settled (a claim sent to PENDING counts) and how many refused.
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateBulkSettle
+   next: loadSheet
+@@ -8,7 +8,8 @@ loadSheet:
+   class: net.officefloor.hq.app.sheet.LoadSheet
+   govern: [ transaction ]
+   next: settle
+-# Each claim settled is audited as it is settled: its own line, then the figures it moved.
++# Each claim settled is audited as it is settled: its own line, then the figures it moved; then
++# the batch's BATCH_SETTLED line.
+ settle:
+   class: net.officefloor.hq.app.claim.SettleSelectedClaims
+   govern: [ transaction ]
