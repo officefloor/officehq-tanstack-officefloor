@@ -5,7 +5,7 @@ import net.officefloor.hq.app.sheet.Sheet;
 
 /**
  * A claim's audit record: its person, its amount as the screen shows it, its date, and its number
- * when it has one (a voided claim's line carries the number it had).
+ * when it has one (a voided claim keeps the number it had).
  */
 final class ClaimAudit {
     private ClaimAudit() {}
@@ -14,6 +14,6 @@ final class ClaimAudit {
         ClaimResponse shown = ClaimResponse.from(claim);
         return event + " sheet=" + sheet.id() + " by=" + user + " person=" + person.getName()
                 + " amount=" + shown.amount() + " date=" + shown.date()
-                + (claim.getAuditNumber() == null ? "" : " number=" + claim.getAuditNumber());
+                + (claim.getNumber() == null ? "" : " number=" + claim.getNumber());
     }
 }

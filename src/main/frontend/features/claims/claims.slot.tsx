@@ -39,13 +39,15 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   const [fields, setFields] = useState<Fields>(EMPTY);
   const [editing, setEditing] = useState<string | null>(null);
   const [error, setError] = useState('');
-  // The claim whose last status change was refused: its error shows until its next action.
-  const [refused, setRefused] = useState<string | null>(null);
+  // The claim whose last status change or edit was refused, and why: its error shows until its
+  // next action.
+  const [refused, setRefused] = useState<{ id: string; message: string } | null>(null);
   const [user] = useUser();
   const rates = useRates(sheetId).data ?? [];
   const periods = usePeriods(sheetId).data ?? [];
 
   const reset = () => {
+    setRefused(null);
     setFields(EMPTY);
     setEditing(null);
     setError('');
@@ -63,7 +65,15 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
       reset();
       void queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
     },
-    onError: () => setError('That claim could not be saved.'),
+    onError: (_e, { id }) => {
+      // Only a draft can be edited: an edit of an open (or later) claim is refused on the claim.
+      const claim = id === null ? undefined : claims.find((c) => c.id === id);
+      if (claim !== undefined && claim.status !== 'DRAFT') {
+        setRefused({ id: claim.id, message: 'Only a draft claim can be edited.' });
+      } else {
+        setError('That claim could not be saved.');
+      }
+    },
   });
 
   const move = useMutation({
@@ -74,7 +84,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
         user,
       ),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
-    onError: (_e, { id }) => setRefused(id),
+    onError: (_e, { id }) => setRefused({ id, message: 'That status change is not allowed.' }),
   });
 
   const act = (id: string, action: Action) => {
@@ -85,6 +95,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   const submit = (e: FormEvent) => {
     e.preventDefault();
     setError('');
+    setRefused(null);
     const amount = fields.amount.trim();
     if (amount === '') {
       setError('An amount is required.');
@@ -100,6 +111,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   const change = (next: Partial<Fields>) => {
     setFields((f) => ({ ...f, ...next }));
     setError('');
+    setRefused((r) => (r !== null && r.id === editing ? null : r));
   };
 
   const open = (c: Claim) => {
@@ -178,9 +190,9 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
                   Edit
                 </button>
               )}
-              {refused === c.id && (
+              {refused?.id === c.id && (
                 <p role="alert" data-testid="claim-error">
-                  That status change is not allowed.
+                  {refused.message}
                 </p>
               )}
             </li>

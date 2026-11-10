@@ -13,7 +13,6 @@ public class Claim {
     private String note;
     private ClaimStatus status;
     private Integer number;
-    private Integer voidedNumber;
     private BigDecimal settledDue;
     private String openedBy;
     private boolean stated;
@@ -45,7 +44,8 @@ public class Claim {
     public String getNote() { return note; }
     public void setNote(String note) { this.note = note; }
     public ClaimStatus getStatus() { return status; }
-    /** The claim's number on its sheet, given when it is opened; null for a draft or a voided claim. */
+    /** The claim's number on its sheet, given when it is opened; null for a draft. A voided claim
+     *  keeps the number it had; a number is never reused. */
     public Integer getNumber() { return number; }
     public void setNumber(Integer number) { this.number = number; }
     /** The due fixed when it was settled; null while its due is live. */
@@ -63,16 +63,14 @@ public class Claim {
         this.stated = stated;
         this.statedDue = stated ? statedDue : null;
     }
-    /** The number its audit lines carry: its number, or the one it had before it was voided. */
-    public Integer getAuditNumber() { return number != null ? number : voidedNumber; }
+    /** Only a draft may be edited; to change an open claim, void it and add a new one. */
+    public void checkEditable() throws InvalidClaimStatusException {
+        if (status != ClaimStatus.DRAFT) throw new InvalidClaimStatusException(status);
+    }
 
     /** Move to the next status, when the current one allows it. */
     public void moveTo(ClaimStatus next) throws InvalidClaimStatusException {
         if (!status.canMoveTo(next)) throw new InvalidClaimStatusException(status, next);
         status = next;
-        if (next == ClaimStatus.VOID) {
-            voidedNumber = number;
-            number = null;
-        }
     }
 }
