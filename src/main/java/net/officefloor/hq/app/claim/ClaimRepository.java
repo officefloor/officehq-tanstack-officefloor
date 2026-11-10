@@ -309,6 +309,29 @@ public class ClaimRepository {
         return due;
     }
 
+    /** A holder's part of a claim (see {@link ClaimShare}): a settled claim's part as frozen, its frozen due times the
+     *  share divided by 100 (see {@link ClaimShare#part}); else the claim's amount times the share divided by 100, times
+     *  the rate of the holder's own grade in force on the claim's date divided by 100, rounded by the claim's rounding
+     *  (see {@link #rounding}); null when the holder's grade has no rate then (a part of 0.00). */
+    public BigDecimal part(String sheetId, Claim claim, ClaimShare share) {
+        if (claim.due() != null) return ClaimShare.part(new BigDecimal(claim.due()), share.share());
+        BigDecimal pct = rateInForce(sheetId, share.personId(), LocalDate.parse(claim.date()), added(sheetId, claim.id()));
+        if (pct == null) return null;
+        return new BigDecimal(claim.amount()).multiply(new BigDecimal(share.share())).multiply(pct).movePointLeft(4)
+                .setScale(2, rounding(sheetId, claim));
+    }
+
+    /** The holders' parts of a claim (see {@link #part}) added up; 0.00 when it has no shares. */
+    public BigDecimal parts(String sheetId, Claim claim, List<ClaimShare> shares) {
+        BigDecimal total = BigDecimal.ZERO.setScale(2);
+        if (shares == null) return total;
+        for (ClaimShare s : shares) {
+            BigDecimal part = part(sheetId, claim, s);
+            if (part != null) total = total.add(part);
+        }
+        return total;
+    }
+
     /** How a claim's live figures round: by the sheet's rounding mode in force on the claim's date (half-up or
      *  half-even) when there is one; else half up when the claim is dated before the sheet's policy date
      *  (blank meaning the sheet's today), else half to even. A correction rounds by the date of the

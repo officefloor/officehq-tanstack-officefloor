@@ -62,7 +62,7 @@ public class Rollup {
     /** The sheet's figures now. A person's claimed is the sum of their counting claims' amounts, leaving out corrections
      *  (claims that correct another). A person's due-total is the sum of their counting claims' dues now (late charges included),
      *  skipping those with none, less the parts of them its holders hold, plus their parts of the counting claims shared
-     *  with them (see {@link ClaimShare#part}); 'n/a' when no rate for the grade they have on the sheet's today is in force
+     *  with them (see {@link ClaimRepository#part}: a holder whose grade has no rate holds 0.00); 'n/a' when no rate for the grade they have on the sheet's today is in force
      *  then and no counting claim keeps a fixed figure or has a due (at the grade it was claimed under). A due-total is at most the sheet's cap less the person's cut total, not below 0.00 (an 'n/a' is not capped). The sheet's due-total skips 'n/a'.
      *  The sheet's due-total and overdue-total leave out the single highest and lowest person's figure when three or more
      *  people have one. */
@@ -94,7 +94,7 @@ public class Rollup {
                     if (!c.counts(p.liveHolds(on))) continue;
                     fixed |= c.fixed();
                     BigDecimal now = claims.dueNow(sheetId, c);
-                    if (now != null) due = due.add(now).subtract(parts(now, shares.get(String.valueOf(c.id()))));
+                    if (now != null) due = due.add(now).subtract(claims.parts(sheetId, c, shares.get(String.valueOf(c.id()))));
                     if (now != null && claims.overdue(sheetId, c, today)) overdue = overdue.add(now);
                     if (now != null && "SETTLED".equals(c.status()) && c.corrects() == null) settled = settled.add(now);
                     if (claims.overdue(sheetId, c, today)) overdueCount++;
@@ -109,7 +109,9 @@ public class Rollup {
                     if (!c.counts(owner.liveHolds(today == null ? null : today.toString()))) continue;
                     BigDecimal now = claims.dueNow(sheetId, c);
                     if (now == null) continue;
-                    due = due.add(ClaimShare.part(now, mine.share()));
+                    BigDecimal part = claims.part(sheetId, c, mine);
+                    if (part == null) continue;
+                    due = due.add(part);
                     fixed = true;
                 }
                 boolean shown = fixed || claims.rated(sheetId, p.id(), today);
@@ -124,14 +126,6 @@ public class Rollup {
         }
         return new Snapshot(figures, claimedTotal.toPlainString(), trimmed(dues).toPlainString(),
                 trimmed(overdues).toPlainString());
-    }
-
-    /** The holders' parts of a claim's due (see {@link ClaimShare#part}) added up; 0.00 when it has no shares. */
-    public static BigDecimal parts(BigDecimal due, List<ClaimShare> shares) {
-        BigDecimal total = BigDecimal.ZERO.setScale(2);
-        if (shares == null) return total;
-        for (ClaimShare s : shares) total = total.add(ClaimShare.part(due, s.share()));
-        return total;
     }
 
     /** People's figures added up, leaving out the single highest and the single lowest when there are three or more. */

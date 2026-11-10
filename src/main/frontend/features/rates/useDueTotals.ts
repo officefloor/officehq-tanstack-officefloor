@@ -1,6 +1,6 @@
-import { type Claim, counts, fixedDue, sharePart, useClaims } from '../claims/useClaims';
+import { type Claim, type ClaimShare, counts, fixedDue, sharePart, useClaims } from '../claims/useClaims';
 import { useCutTotals } from '../cuts/useCutTotals';
-import { claimDueNow } from '../overdue/useOverdue';
+import { claimDueNow, roundsHalfUp } from '../overdue/useOverdue';
 import { gradeOn, holdsById, type Person, usePeople } from '../people/usePeople';
 import { type Settings, settingOn, useSettings } from '../settings/useSettings';
 import { useSheetToday } from '../today/useSheetToday';
@@ -11,7 +11,8 @@ import { hundredths, money, type Rate, rateFor, sumDues, useRates } from './useR
  *  bound it to, else its live due, with its late charge while overdue),
  *  skipping those with none; 'n/a' when no rate for the grade they have on the sheet's today is in force
  *  then and no counting claim of theirs keeps a fixed figure or has a due (at the grade it was claimed under).
- *  A shared claim counts its due less its holders' parts for its own person, and each holder's part (see sharePart) for that holder.
+ *  A shared claim counts its due less its holders' parts for its own person, and each holder's part (see sharePart: at the
+ *  rate of their own grade on the claim's date, frozen once settled; 0.00 when they have no rate) for that holder.
  *  A due-total is at most the sheet's cap in force on its today less their cut total, not below 0.00 ('n/a' is not capped). */
 export function useDueTotals(sheetId: string): Map<number, string> {
   const totals = new Map<number, string>();
@@ -83,18 +84,27 @@ function dueFigures(
     if (owner === undefined || !counts(c, holds, today)) continue;
     dueOf.set(c.id, claimDueNow(c, claims, rateFor(rates, gradeOn(owner, c.date), c.date, c.added), settings, today, gradeOn(owner, c.date)));
   }
+  // A holder's part of a claim, at the rate of their own grade in force on its date ('n/a' when none: 0.00).
+  const partOf = (c: Claim, s: ClaimShare): string => {
+    const holder = byId.get(s.personId);
+    const grade = holder === undefined ? undefined : gradeOn(holder, c.date);
+    return sharePart(c, s.share, rateFor(rates, grade, c.date, c.added), roundsHalfUp(c, claims, settings, today));
+  };
   for (const p of people ?? []) {
     const own = (claims ?? []).filter((c) => c.personId === p.id && dueOf.has(c.id));
     // A shared claim's own person counts its due less its holders' parts; each holder counts their part.
     const ownDues = own.map((c) => {
       const d = dueOf.get(c.id)!;
       if (d === 'n/a' || c.shares.length === 0) return d;
-      return money(hundredths(d) - c.shares.reduce((sum, s) => sum + hundredths(sharePart(d, s.share)), 0n));
+      return money(hundredths(d) - c.shares.reduce((sum, s) => {
+        const part = partOf(c, s);
+        return sum + (part === 'n/a' ? 0n : hundredths(part));
+      }, 0n));
     });
     const held = (claims ?? []).filter((c) => c.personId !== p.id && dueOf.has(c.id) && dueOf.get(c.id) !== 'n/a'
       && c.shares.some((s) => s.personId === p.id));
     const counting = [...own, ...held];
-    const dues = [...ownDues, ...held.map((c) => sharePart(dueOf.get(c.id)!, c.shares.find((s) => s.personId === p.id)!.share))];
+    const dues = [...ownDues, ...held.map((c) => partOf(c, c.shares.find((s) => s.personId === p.id)!))];
     const rated = rateFor(rates, p.grade, today) !== undefined;
     const shown = rated || own.some((c) => fixedDue(c) !== null && fixedDue(c) !== 'n/a') || dues.some((d) => d !== 'n/a');
     const sum = sumDues(dues);

@@ -88,7 +88,7 @@ public class TakeStatement {
             BigDecimal now = then == null ? claims.dueNow(id, c) : then.dueNow(c);
             BigDecimal figure = now;
             if (now != null) {
-                total = total.add(now).subtract(Rollup.parts(now, shares.get(String.valueOf(c.id()))));
+                total = total.add(now).subtract(claims.parts(id, c, shares.get(String.valueOf(c.id()))));
                 fixed = true;
             }
             // With no figure (no rate applies, or it is bound to n/a already) it is bound to n/a: it stays
@@ -106,7 +106,9 @@ public class TakeStatement {
                 if (owner == null || !c.counts(owner.liveHolds(on))) continue;
                 BigDecimal now = claims.dueNow(id, c);
                 if (now == null) continue;
-                total = total.add(ClaimShare.part(now, mine.share()));
+                BigDecimal part = claims.part(id, c, mine);
+                if (part == null) continue;
+                total = total.add(part);
                 fixed = true;
             }
         }

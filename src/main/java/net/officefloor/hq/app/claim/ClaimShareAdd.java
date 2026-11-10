@@ -7,8 +7,8 @@ import net.officefloor.hq.app.BadRequestException;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.settings.SettingsRepository;
 
-/** Share a claim with another person of its sheet: they hold a percent (two decimals, more than 0.00) of its due, and
- *  their due-total counts their part (see {@link ClaimShare#part}) while its own person's counts the rest. The claim's
+/** Share a claim with another person of its sheet: they hold a percent (two decimals, more than 0.00) of it, and
+ *  their due-total counts their part (see {@link ClaimRepository#part}) while its own person's counts the rest. The claim's
  *  own person, a person already holding a share of it, or shares totalling more than 100.00 are refused, as is a
  *  SETTLED, VOID or DELETED claim. Every check is made before anything is written, so a refusal writes nothing to the
  *  store or the audit. */

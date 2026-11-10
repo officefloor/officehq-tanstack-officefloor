@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { useReader } from '../../api/readNow';
 import { heldOn, type Hold } from '../people/usePeople';
-import { due } from '../rates/useRates';
+import { due, heldPart } from '../rates/useRates';
 
 /** A claim's status: DRAFT -> OPEN -> SETTLED; a clerk's settle above the clerk limit goes to PENDING
  *  instead, which a steward approves (SETTLED) or rejects (OPEN again); a DRAFT, OPEN or PENDING claim
@@ -30,7 +30,7 @@ export type ClaimStatus = 'DRAFT' | 'REVIEW' | 'OPEN' | 'PENDING' | 'SETTLED' | 
  *  lines, oldest first, as "<label> <qty> x <unit>" (a claim with lines has their total as its amount), and its added
  *  number: claims added later have higher ones; a forward-only rate applies only to claims added after it (see `rateFor`), and whether it is review-late (REVIEW, and its
  *  review day — the sheet's today when it went to REVIEW — plus the sheet's review SLA is before the sheet's today), and its shares,
- *  oldest first: another person holding a percent (two decimals) of its due (see `sharePart`), and the user a steward
+ *  oldest first: another person holding a percent (two decimals) of it (see `sharePart`), and the user a steward
  *  assigned it to review (null when never assigned; kept once it leaves REVIEW). */
 export type Claim = {
   id: number;
@@ -70,13 +70,16 @@ export type Claim = {
   pendingLate: boolean;
 };
 
-/** A share of a claim: the person holding it and the percent of the claim's due they hold (two decimals). */
+/** A share of a claim: the person holding it and the percent of the claim they hold (two decimals; see `sharePart`). */
 export type ClaimShare = { personId: number; share: string };
 
-/** A holder's part of a claim's due: the due times their share divided by 100, rounded half to even, with two
- *  decimals ('n/a' when the due is). */
-export function sharePart(dueNow: string, share: string): string {
-  return dueNow === 'n/a' ? 'n/a' : due(dueNow, share, false);
+/** A holder's part of a claim: a settled claim's part as frozen, its frozen due times their share divided by 100,
+ *  rounded half to even, with two decimals; else the claim's amount times their share divided by 100, times the rate
+ *  (`pct`) of the holder's own grade in force on the claim's date divided by 100, rounded like the claim (`halfUp`);
+ *  'n/a' when their grade has no rate then (a part of 0.00). */
+export function sharePart(c: Claim, share: string, pct: string | undefined, halfUp: boolean): string {
+  if (c.due !== null) return due(c.due, share, false);
+  return heldPart(c.amount, share, pct, halfUp);
 }
 
 /** A claim's holders as the screen shows them: "<name> <share>", comma and space separated ('' when none). */

@@ -85,6 +85,19 @@ export function due(amount: string, pct: string | undefined, halfUp: boolean): s
   return money(percentOf(amount, pct, 1n, halfUp));
 }
 
+/** A holder's part of a claim: its amount (two decimals) times a share (a two-decimal percent) divided by 100, times
+ *  a rate (a two-decimal percent) divided by 100, rounded half up (when `halfUp`, away from zero) or half to even to
+ *  two decimals; 'n/a' when there is no rate. Worked in whole numbers, so exact. */
+export function heldPart(amount: string, share: string, pct: string | undefined, halfUp: boolean): string {
+  if (pct === undefined) return 'n/a';
+  const signed = hundredths(amount) * hundredths(share) * hundredths(pct); // in 1/1_000_000 of a unit, before the two divisions by 100
+  const product = signed < 0n ? -signed : signed;
+  const rest = product % 100000000n;
+  let cents = product / 100000000n;
+  if (rest > 50000000n || (rest === 50000000n && (halfUp || cents % 2n === 1n))) cents += 1n;
+  return money(signed < 0n ? -cents : cents);
+}
+
 /** A figure (two decimals) raised to at least a floor (two decimals; none when undefined); 'n/a' stays 'n/a'. */
 export function atLeast(figure: string, floor: string | undefined): string {
   if (figure === 'n/a' || floor === undefined || hundredths(figure) >= hundredths(floor)) return figure;
