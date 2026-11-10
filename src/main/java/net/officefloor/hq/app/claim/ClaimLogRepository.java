@@ -92,4 +92,11 @@ public class ClaimLogRepository {
                 + " AND status = 'SETTLED' ORDER BY id", Date.class, claim.getSheetId(), claim.getId());
         return found.isEmpty() ? null : found.get(0).toLocalDate();
     }
+
+    /** The date the claim was last deleted: its last DELETED log line's date; null when it was never deleted. */
+    public LocalDate deletedOn(Claim claim) {
+        List<Date> found = jdbc.queryForList("SELECT on_date FROM claim_log WHERE sheet_id = ? AND claim_id = ?"
+                + " AND status = 'DELETED' ORDER BY id DESC", Date.class, claim.getSheetId(), claim.getId());
+        return found.isEmpty() ? null : found.get(0).toLocalDate();
+    }
 }

@@ -55,12 +55,15 @@ public class Claim {
     public long getPersonId() { return personId; }
     /**
      * Move it to another person: it keeps its date (its new number is given by {@link RenumberClaim}), but loses any figure a statement
-     * bound it to (it is live again until its new person's next statement). A SETTLED or VOID claim
+     * bound it to (it is live again until its new person's next statement). A SETTLED, VOID or DELETED claim
      * cannot move.
      */
     public void reassign(long toPersonId) throws InvalidClaimStatusException {
         if (status == ClaimStatus.SETTLED || status == ClaimStatus.VOID) {
             throw new InvalidClaimStatusException("A " + status + " claim cannot be moved to another person");
+        }
+        if (status == ClaimStatus.DELETED) {
+            throw new InvalidClaimStatusException("A DELETED claim cannot be moved to another person");
         }
         personId = toPersonId;
         bind(false, null);
@@ -117,7 +120,7 @@ public class Claim {
     public void setProofs(int proofs) { this.proofs = proofs; }
     /** Add a proof: not to a SETTLED or VOID claim. */
     public void addProof() throws InvalidClaimStatusException {
-        if (status == ClaimStatus.SETTLED || status == ClaimStatus.VOID) {
+        if (status == ClaimStatus.SETTLED || status == ClaimStatus.VOID || status == ClaimStatus.DELETED) {
             throw new InvalidClaimStatusException("A " + status + " claim cannot have a proof added");
         }
         proofs++;

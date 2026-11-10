@@ -4,10 +4,12 @@ package net.officefloor.hq.app.claim;
  * A claim's status. It starts as DRAFT, is opened (OPEN) and then settled (SETTLED). A clerk's
  * settle above the clerk limit makes it PENDING instead, until a steward approves it (SETTLED) or
  * rejects it (back to OPEN). A DRAFT, OPEN or PENDING claim can be voided (VOID); a SETTLED one
- * too, by a steward within days of its settlement ({@link VoidClaim}). VOID is final. Only OPEN, PENDING and SETTLED claims count toward any total.
+ * too, by a steward within days of its settlement ({@link VoidClaim}). VOID is final. A DRAFT claim can be deleted
+ * (DELETED), and made a DRAFT again by a restore on the sheet's today it was deleted ({@link RestoreClaim}). Only OPEN, PENDING and SETTLED claims count toward any total.
  */
 public enum ClaimStatus {
-    DRAFT(null), OPEN("CLAIM_OPENED"), PENDING("CLAIM_PENDING"), SETTLED("CLAIM_SETTLED"), VOID("CLAIM_VOIDED");
+    DRAFT(null), OPEN("CLAIM_OPENED"), PENDING("CLAIM_PENDING"), SETTLED("CLAIM_SETTLED"), VOID("CLAIM_VOIDED"),
+    DELETED("CLAIM_DELETED");
 
     private final String auditEvent;
 
@@ -27,7 +29,8 @@ public enum ClaimStatus {
             case PENDING -> this == OPEN;
             case SETTLED -> this == OPEN;
             case VOID -> this == DRAFT || this == OPEN || this == PENDING || this == SETTLED;
-            case DRAFT -> false;
+            case DELETED -> this == DRAFT;
+            case DRAFT -> this == DELETED;
         };
     }
 }

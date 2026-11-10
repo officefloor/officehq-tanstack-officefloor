@@ -279,11 +279,11 @@ public class ClaimRepository {
     }
 
     /**
-     * The sheet's today when the claim was opened: its first log line past DRAFT; null when it has none.
+     * The sheet's today when the claim was opened: its first log line past DRAFT (and not a DELETED one); null when it has none.
      */
     public LocalDate openedOn(Claim claim) {
         List<Date> found = jdbc.queryForList("SELECT on_date FROM claim_log WHERE sheet_id = ? AND claim_id = ?"
-                + " AND status <> 'DRAFT' ORDER BY id", Date.class, claim.getSheetId(), claim.getId());
+                + " AND status NOT IN ('DRAFT', 'DELETED') ORDER BY id", Date.class, claim.getSheetId(), claim.getId());
         return found.isEmpty() ? null : found.get(0).toLocalDate();
     }
 

@@ -7,8 +7,9 @@ import type { Hold } from '../people/people';
  * A claim's status: DRAFT when made, then OPEN, then SETTLED; a clerk's settle above the clerk
  * limit makes it PENDING until a steward approves it (SETTLED) or rejects it (OPEN again). A DRAFT,
  * OPEN or PENDING claim may be VOID; a SETTLED one too, by a steward within 7 days of its settlement.
+ * A DRAFT may be DELETED (it counts nowhere), and restored to a DRAFT on the sheet's today it was deleted.
  */
-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED';
 
 /**
  * A claim: its amount with two decimals, its date (yyyy-MM-dd), its note, its status and its
