@@ -132,6 +132,10 @@ public class ValidateSettings {
         if (sla != null && !sla.isEmpty() && (!TERMS.matcher(sla).matches() || Integer.parseInt(sla) > 3650)) {
             throw new BadRequestException("review SLA must be a whole number of days from 0 to 3650");
         }
+        String pendingSla = request == null || request.pendingSla() == null ? null : request.pendingSla().trim();
+        if (pendingSla != null && !pendingSla.isEmpty() && (!TERMS.matcher(pendingSla).matches() || Integer.parseInt(pendingSla) > 3650)) {
+            throw new BadRequestException("pending SLA must be a whole number of days from 0 to 3650");
+        }
         String maxOpen = request == null || request.maxOpen() == null ? null : request.maxOpen().trim();
         if (maxOpen != null && !maxOpen.isEmpty() && (!TERMS.matcher(maxOpen).matches() || Integer.parseInt(maxOpen) > 100000)) {
             throw new BadRequestException("max open claims must be a whole number from 0 to 100000");
@@ -268,7 +272,8 @@ public class ValidateSettings {
                 scoreMid != null, scoreMid == null || scoreMid.isEmpty() ? null : Integer.parseInt(scoreMid),
                 scoreHigh != null, scoreHigh == null || scoreHigh.isEmpty() ? null : Integer.parseInt(scoreHigh),
                 scoreLog != null, scoreLog != null && !scoreLog.isEmpty(),
-                maxOpen != null, maxOpen == null || maxOpen.isEmpty() ? null : Integer.parseInt(maxOpen)));
+                maxOpen != null, maxOpen == null || maxOpen.isEmpty() ? null : Integer.parseInt(maxOpen),
+                pendingSla != null, pendingSla == null || pendingSla.isEmpty() ? null : Integer.parseInt(pendingSla)));
     }
 
     /** The grades a per-grade setting names, A, B and C first, then the others in the order given; a name that is not a

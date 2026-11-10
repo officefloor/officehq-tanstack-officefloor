@@ -30,6 +30,8 @@ import java.util.List;
  *  whose previous reminder was at least that many days before the sheet's today escalates it, once per claim ever.
  *  {@code reviewSla} is the sheet's review SLA in days (null when blank: none; not dated): a REVIEW claim whose review
  *  day plus that many days is before the sheet's today is review-late.
+ *  {@code pendingSla} is the sheet's pending SLA in days (null when blank: none; not dated): a PENDING claim whose
+ *  pending day plus that many days is before the sheet's today is pending-late.
  *  {@code proofKinds} is the sheet's proof kinds (a comma separated list of receipt and photo; null when blank: none;
  *  not dated): a claim above the proof threshold needs a proof of each to be settled or approved.
  *  {@code defaultGrade} is the sheet's default grade (one of its grades; null when blank: A; not dated): the grade the
@@ -50,5 +52,5 @@ public record Settings(String clerkLimit, String floor, int terms, String latePc
         String pot, String parent, int fiscalStartMonth, String alertThreshold,
         Integer escalateAfter, Integer reviewSla, String proofKinds, String defaultGrade,
         Integer scoreMid, Integer scoreHigh, boolean scoreLog, Integer maxOpen,
-        List<String> retiredGrades, List<String> grades) {
+        List<String> retiredGrades, List<String> grades, Integer pendingSla) {
 }

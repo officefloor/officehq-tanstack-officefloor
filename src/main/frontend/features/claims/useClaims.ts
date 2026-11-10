@@ -67,6 +67,7 @@ export type Claim = {
   reviewLate: boolean;
   shares: ClaimShare[];
   reviewAssigned: string | null;
+  pendingLate: boolean;
 };
 
 /** A share of a claim: the person holding it and the percent of the claim's due they hold (two decimals). */
@@ -158,7 +159,7 @@ export function useClaims(sheetId: string) {
     queryKey: read.key(claimsKey(sheetId)),
     queryFn: async () => {
       const res = await read.get<{
-        claims: Omit<Claim, 'log' | 'comments' | 'lines' | 'lockedBy' | 'batch' | 'added' | 'reviewLate' | 'shares' | 'reviewAssigned'>[];
+        claims: Omit<Claim, 'log' | 'comments' | 'lines' | 'lockedBy' | 'batch' | 'added' | 'reviewLate' | 'shares' | 'reviewAssigned' | 'pendingLate'>[];
         logs: Record<string, string[]>;
         locks: Record<string, string>;
         comments: Record<string, string[]>;
@@ -168,6 +169,7 @@ export function useClaims(sheetId: string) {
         reviewLate: Record<string, boolean>;
         shares: Record<string, ClaimShare[]>;
         reviewAssigned: Record<string, string>;
+        pendingLate: Record<string, boolean>;
       }>(`/api/sheets/${encodeURIComponent(sheetId)}/claims`);
       return res.claims.map((c): Claim => ({
         ...c,
@@ -180,6 +182,7 @@ export function useClaims(sheetId: string) {
         reviewLate: res.reviewLate?.[String(c.id)] ?? false,
         shares: res.shares?.[String(c.id)] ?? [],
         reviewAssigned: res.reviewAssigned?.[String(c.id)] ?? null,
+        pendingLate: res.pendingLate?.[String(c.id)] ?? false,
       }));
     },
   });

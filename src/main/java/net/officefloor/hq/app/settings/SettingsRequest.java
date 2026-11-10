@@ -13,6 +13,7 @@ package net.officefloor.hq.app.settings;
  *  {@code reviewThreshold} is the review threshold, blank meaning none (dated, from-date key review-threshold).
  *  {@code escalateAfter} is the escalation gap in days, blank meaning off (not dated).
  *  {@code reviewSla} is the review SLA in days, blank meaning none (not dated).
+ *  {@code pendingSla} is the pending SLA in days, blank meaning none (not dated).
  *  {@code proofKinds} is the proof kinds, a comma separated list of receipt and photo, blank meaning none (not dated).
  *  {@code defaultGrade} is the default grade, one of the sheet's grades, blank meaning A (not dated).
  *  {@code scoreMid} and {@code scoreHigh} are the score thresholds, whole numbers, blank meaning none (not dated).
@@ -27,5 +28,5 @@ public record SettingsRequest(String clerkLimit, String floor, String terms, Str
         java.util.Map<String, String> gradeProofThreshold, String pot, String parent,
         String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold, String escalateAfter, String reviewSla,
         String proofKinds, String defaultGrade, java.util.Map<String, String> gradeClerkLimit,
-        String scoreMid, String scoreHigh, String scoreLog, String maxOpen) {
+        String scoreMid, String scoreHigh, String scoreLog, String maxOpen, String pendingSla) {
 }

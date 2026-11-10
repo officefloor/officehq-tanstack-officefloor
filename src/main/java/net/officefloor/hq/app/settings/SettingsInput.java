@@ -26,5 +26,6 @@ public record SettingsInput(boolean setsClerkLimit, BigDecimal clerkLimit, boole
         boolean setsProofKinds, String proofKinds, boolean setsDefaultGrade, String defaultGrade,
         java.util.Map<String, BigDecimal> gradeClerkLimit,
         boolean setsScoreMid, Integer scoreMid, boolean setsScoreHigh, Integer scoreHigh,
-        boolean setsScoreLog, boolean scoreLog, boolean setsMaxOpen, Integer maxOpen) {
+        boolean setsScoreLog, boolean scoreLog, boolean setsMaxOpen, Integer maxOpen,
+        boolean setsPendingSla, Integer pendingSla) {
 }

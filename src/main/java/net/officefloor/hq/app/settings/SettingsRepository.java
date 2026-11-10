@@ -62,7 +62,7 @@ public class SettingsRepository {
                 voidReasons(sheetId), pot == null ? null : money(pot), parent(sheetId), fiscalStartMonth(sheetId),
                 alert == null ? null : money(alert), escalateAfter(sheetId), reviewSla(sheetId), proofKinds(sheetId),
                 storedDefaultGrade(sheetId), scoreMid(sheetId), scoreHigh(sheetId), scoreLog(sheetId), maxOpen(sheetId),
-                retiredGrades(sheetId), grades(sheetId));
+                retiredGrades(sheetId), grades(sheetId), pendingSla(sheetId));
     }
 
     /** The sheet's today; the real date when there is no such sheet. */
@@ -444,6 +444,17 @@ public class SettingsRepository {
 
     public void setReviewSla(String sheetId, Integer days) {
         jdbc.update("UPDATE sheet SET review_sla = ? WHERE id = ?", days, sheetId);
+    }
+
+    /** The sheet's pending SLA in days; null when none. */
+    public Integer pendingSla(String sheetId) {
+        List<Integer> found = jdbc.query("SELECT pending_sla FROM sheet WHERE id = ?",
+                (rs, i) -> (Integer) rs.getObject("pending_sla", Integer.class), sheetId);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    public void setPendingSla(String sheetId, Integer days) {
+        jdbc.update("UPDATE sheet SET pending_sla = ? WHERE id = ?", days, sheetId);
     }
 
     /** The sheet's maximum of open claims per person; null when blank (none). */

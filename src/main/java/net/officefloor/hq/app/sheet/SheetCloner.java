@@ -37,8 +37,8 @@ public class SheetCloner {
      *  the sheet's today when each was opened, then by the order they were added to the clone); a number one of them
      *  corrects or was split from follows it. The clone's history starts with all of this on its today. */
     public void cloneTo(String from, String to, String by) {
-        jdbc.update("INSERT INTO sheet (id, created_by, today, policy_date, period_numbering_from, grace_days, entry_date, pot, fiscal_start_month, escalate_after, review_sla, proof_kinds, default_grade, score_mid, score_high, score_log, max_open)"
-                + " SELECT ?, ?, today, policy_date, period_numbering_from, grace_days, entry_date, pot, fiscal_start_month, escalate_after, review_sla, proof_kinds, default_grade, score_mid, score_high, score_log, max_open FROM sheet WHERE id = ?",
+        jdbc.update("INSERT INTO sheet (id, created_by, today, policy_date, period_numbering_from, grace_days, entry_date, pot, fiscal_start_month, escalate_after, review_sla, pending_sla, proof_kinds, default_grade, score_mid, score_high, score_log, max_open)"
+                + " SELECT ?, ?, today, policy_date, period_numbering_from, grace_days, entry_date, pot, fiscal_start_month, escalate_after, review_sla, pending_sla, proof_kinds, default_grade, score_mid, score_high, score_log, max_open FROM sheet WHERE id = ?",
                 to, by, from);
         jdbc.update("UPDATE sheet SET cloned_from = ? WHERE id = ?", from, to);
         jdbc.update("INSERT INTO setting_value (sheet_id, setting_key, from_date, setting) SELECT ?, setting_key, from_date,"
@@ -147,9 +147,9 @@ public class SheetCloner {
         jdbc.update(c -> {
             PreparedStatement ps = c.prepareStatement("INSERT INTO claim (sheet_id, person_id, amount, claim_date, note,"
                     + " status, settled_due, opened_by, corrects, due_by, deferred_until, proofs, split_from, late_entry,"
-                    + " reminded, escalated, ref, tags, void_reason, edited_by, added_seq, review_day, waived, proofs_photo, held, review_assigned) SELECT ?, ?, amount, claim_date, note, status, settled_due,"
+                    + " reminded, escalated, ref, tags, void_reason, edited_by, added_seq, review_day, waived, proofs_photo, held, review_assigned, pending_day) SELECT ?, ?, amount, claim_date, note, status, settled_due,"
                     + " opened_by, corrects, due_by, deferred_until, proofs, split_from, late_entry, reminded, escalated, ref, tags,"
-                    + " void_reason, edited_by, added_seq, review_day, waived, proofs_photo, held, review_assigned FROM claim WHERE id = ? AND sheet_id = ?", new String[] { "id" });
+                    + " void_reason, edited_by, added_seq, review_day, waived, proofs_photo, held, review_assigned, pending_day FROM claim WHERE id = ? AND sheet_id = ?", new String[] { "id" });
             ps.setString(1, to);
             ps.setLong(2, personId);
             ps.setLong(3, id);

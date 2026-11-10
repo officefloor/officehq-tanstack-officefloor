@@ -139,6 +139,27 @@ public class ClaimRepository {
         return late;
     }
 
+    /** Record the sheet's today as the claim's pending day (it has just gone to PENDING). */
+    public void pendingDay(String sheetId, long claimId) {
+        kept(sheetId, claimId, jdbc.update("UPDATE claim SET pending_day = ? WHERE id = ? AND sheet_id = ?",
+                java.sql.Date.valueOf(settings.today(sheetId)), claimId, sheetId) > 0);
+    }
+
+    /** Whether each PENDING claim of the sheet is pending-late (its pending day plus the sheet's pending SLA is before
+     *  the sheet's today; none is while the SLA is blank), by claim id. */
+    public Map<String, Boolean> pendingLate(String sheetId) {
+        Map<String, Boolean> late = new LinkedHashMap<>();
+        Integer sla = settings.pendingSla(sheetId);
+        if (sla == null) return late;
+        LocalDate today = settings.today(sheetId);
+        jdbc.query("SELECT id, pending_day FROM claim WHERE sheet_id = ? AND status = 'PENDING' AND pending_day IS NOT NULL",
+                rs -> {
+                    late.put(String.valueOf(rs.getLong("id")),
+                            rs.getDate("pending_day").toLocalDate().plusDays(sla).isBefore(today));
+                }, sheetId);
+        return late;
+    }
+
     /** The user each claim was assigned to review, by claim id (claims never assigned are left out). */
     public Map<String, String> reviewAssigned(String sheetId) {
         Map<String, String> assigned = new LinkedHashMap<>();

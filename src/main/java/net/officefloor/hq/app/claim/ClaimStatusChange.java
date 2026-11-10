@@ -255,6 +255,9 @@ public final class ClaimStatusChange {
         if (to.equals("REVIEW")) {
             repository.reviewDay(id, cid);
         }
+        if (to.equals("PENDING")) {
+            repository.pendingDay(id, cid);
+        }
         // Settling (or approving) gives the next number in its sequence, by the due-by that places it now; a claim
         // numbered before (opened when claims were numbered on opening) keeps its own; a voided claim keeps the number
         // it had (never reused); an OPEN, PENDING or REVIEW claim has none.
