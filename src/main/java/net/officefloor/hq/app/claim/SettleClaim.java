@@ -10,17 +10,16 @@ import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Val;
 
 /**
- * Settles the claim and fixes its due: its amount times its person's grade's rate now, divided by
- * 100 and rounded half up to two decimals. With no rate for the grade the due is not fixed.
+ * Settles the claim and fixes its due: its amount times its person's grade's rate in force on the
+ * claim's date, divided by 100 and rounded half up to two decimals. With no such rate the due is
+ * not fixed.
  */
 public class SettleClaim {
     public void apply(@Val Sheet sheet, @Val Claim claim, PersonRepository people, RateRepository rates)
             throws InvalidClaimStatusException {
         claim.moveTo(ClaimStatus.SETTLED);
         Person person = people.find(sheet.id(), claim.getPersonId());
-        claim.setSettledDue(rates.findAll(sheet.id()).stream()
-                .filter((r) -> r.grade().equals(person.getGrade())).findFirst()
-                .map(Rate::pct)
+        claim.setSettledDue(Rate.inForce(rates.findAll(sheet.id()), person.getGrade(), claim.getDate())
                 .map((pct) -> claim.getAmount().multiply(pct).divide(BigDecimal.valueOf(100), 2,
                         RoundingMode.HALF_UP))
                 .orElse(null));

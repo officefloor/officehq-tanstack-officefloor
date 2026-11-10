@@ -9,6 +9,7 @@ import jakarta.servlet.http.HttpServletRequest;
 public class AuditRateSet {
     public void audit(@Val Sheet sheet, @Val Rate rate, HttpServletRequest request, Audit audit) {
         audit.record("RATE_SET sheet=" + sheet.id() + " by=" + Audit.user(request)
-                + " grade=" + rate.grade() + " rate=" + rate.pct().toPlainString());
+                + " grade=" + rate.grade() + " rate=" + rate.pct().toPlainString()
+                + (rate.from() == null ? "" : " from=" + rate.from()));
     }
 }

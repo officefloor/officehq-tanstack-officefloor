@@ -3,12 +3,15 @@ import { getJson } from '../../api/http';
 import type { Grade } from '../people/people';
 import type { Claim } from '../claims/claims';
 
-/** A grade's rate: a percent with two decimals. */
-export type Rate = { grade: Grade; pct: string };
+/**
+ * A grade's rate: a percent with two decimals, from a date (yyyy-MM-dd; '' when it applies from the
+ * beginning of time).
+ */
+export type Rate = { grade: Grade; pct: string; from: string };
 
 export const ratesKey = (sheetId: string) => ['sheet', sheetId, 'rates'] as const;
 
-/** The sheet's rates, by grade. */
+/** The sheet's rates, by grade then from-date (none first). */
 export function useRates(sheetId: string) {
   return useQuery({
     queryKey: ratesKey(sheetId),
@@ -17,9 +20,22 @@ export function useRates(sheetId: string) {
   });
 }
 
-/** The sheet's rate for a grade, or null when it has none (or the rates are not read yet). */
-export function useGradeRate(sheetId: string, grade: Grade): string | null {
-  return (useRates(sheetId).data ?? []).find((r) => r.grade === grade)?.pct ?? null;
+/**
+ * A grade's rate in force on a date (yyyy-MM-dd): the one whose from-date is the latest on or
+ * before it. Null when the date is before every rate the grade has (or it has none).
+ */
+export function rateOn(rates: Rate[], grade: Grade, date: string): string | null {
+  let best: Rate | null = null;
+  for (const r of rates) {
+    if (r.grade !== grade || r.from > date) continue;
+    if (best === null || r.from > best.from) best = r;
+  }
+  return best?.pct ?? null;
+}
+
+/** The sheet's rate for a grade on a date, or null when none is in force (or the rates are not read yet). */
+export function useGradeRate(sheetId: string, grade: Grade, date: string): string | null {
+  return rateOn(useRates(sheetId).data ?? [], grade, date);
 }
 
 /** A percent as a rate takes it: 0.00 or more, with up to two decimals. */
@@ -54,7 +70,7 @@ export function sumDue(values: string[]): string {
   return showCents(values.filter((v) => v !== NA).reduce((n, v) => n + hundredths(v), 0n));
 }
 
-/** A claim's due: the one fixed when it was settled, else its amount at the rate now. */
+/** A claim's due: the one fixed when it was settled, else its amount at the rate in force on its date. */
 export function claimDue(claim: Claim, pct: string | null): string {
   return claim.due !== '' ? claim.due : due(claim.amount, pct);
 }

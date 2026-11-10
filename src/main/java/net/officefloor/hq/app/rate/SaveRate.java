@@ -7,7 +7,7 @@ import net.officefloor.plugin.variable.Val;
 public class SaveRate {
     public void save(@Val RateInput input, @Val Sheet sheet, RateRepository repository,
             Out<Rate> rateOut) {
-        Rate rate = new Rate(sheet.id(), input.grade(), input.pct());
+        Rate rate = new Rate(sheet.id(), input.grade(), input.pct(), input.from());
         repository.save(rate);
         rateOut.set(rate);
     }

@@ -8,16 +8,19 @@ import { sumAmounts, useClaims } from '../claims/claims';
 import { GRADES, usePeople } from '../people/people';
 import type { Grade, Person } from '../people/people';
 import { useUser } from '../session/session';
-import { PCT, due, ratesKey, sumDue, useGradeRate, useRates } from './rates';
+import { useSheetToday } from '../sheet/sheet';
+import { NA, PCT, due, rateOn, ratesKey, sumDue, useGradeRate, useRates } from './rates';
 import type { Rate } from './rates';
 
-type Fields = { grade: Grade; pct: string };
-const EMPTY: Fields = { grade: 'A', pct: '' };
+type Fields = { grade: Grade; pct: string; from: string };
+const EMPTY: Fields = { grade: 'A', pct: '', from: '' };
 
-// The sheet's rates: a form that sets a grade's rate, and each grade's current rate.
+// The sheet's rates: a form that sets a grade's rate from a date (or from the beginning of time),
+// every rate set, and each grade's rate in force on the sheet's today.
 function Rates({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const rates = useRates(sheetId);
+  const today = useSheetToday(sheetId);
   const [fields, setFields] = useState<Fields>(EMPTY);
   const [error, setError] = useState('');
   const [user] = useUser();
@@ -26,7 +29,7 @@ function Rates({ sheetId }: { sheetId: string }) {
     mutationFn: (body: Fields) =>
       postJson<Rate>(`/api/sheets/${encodeURIComponent(sheetId)}/rates`, body, user),
     onSuccess: () => {
-      setFields((f) => ({ ...f, pct: '' }));
+      setFields((f) => ({ ...f, pct: '', from: '' }));
       void queryClient.invalidateQueries({ queryKey: ratesKey(sheetId) });
     },
     onError: () => setError('That rate could not be set.'),
@@ -44,7 +47,7 @@ function Rates({ sheetId }: { sheetId: string }) {
       setError('A rate is a percent of 0.00 or more, with up to two decimals.');
       return;
     }
-    save.mutate({ grade: fields.grade, pct });
+    save.mutate({ grade: fields.grade, pct, from: fields.from.trim() });
   };
 
   const change = (next: Partial<Fields>) => {
@@ -52,7 +55,7 @@ function Rates({ sheetId }: { sheetId: string }) {
     setError('');
   };
 
-  const current = (g: Grade) => (rates.data ?? []).find((r) => r.grade === g);
+  const all = rates.data ?? [];
 
   return (
     <section data-testid="rates">
@@ -81,6 +84,15 @@ function Rates({ sheetId }: { sheetId: string }) {
             onChange={(e) => change({ pct: e.target.value })}
           />
         </label>{' '}
+        <label>
+          From{' '}
+          <input
+            type="date"
+            data-testid="rate-form-from"
+            value={fields.from}
+            onChange={(e) => change({ from: e.target.value })}
+          />
+        </label>{' '}
         <button type="submit" data-testid="rate-form-submit" disabled={save.isPending}>
           Set rate
         </button>
@@ -95,25 +107,38 @@ function Rates({ sheetId }: { sheetId: string }) {
           The rates could not be read.
         </p>
       )}
+      <table data-testid="rate-today">
+        <thead>
+          <tr>
+            <th>Grade</th>
+            <th>Rate % today</th>
+          </tr>
+        </thead>
+        <tbody>
+          {GRADES.map((g) => (
+            <tr key={g}>
+              <td>{g}</td>
+              <td data-testid={`rate-current-${g}`}>{rateOn(all, g, today) ?? NA}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
       <table data-testid="rate-list">
         <thead>
           <tr>
             <th>Grade</th>
+            <th>From</th>
             <th>Rate %</th>
           </tr>
         </thead>
         <tbody>
-          {GRADES.map((g) => {
-            const r = current(g);
-            return (
-              <tr key={g} data-testid={r ? `rate-row-${g}-start` : undefined}>
-                <td>{g}</td>
-                <td data-testid={`rate-current-${g}`}>
-                  {r ? <span data-testid="rate-pct">{r.pct}</span> : 'n/a'}
-                </td>
-              </tr>
-            );
-          })}
+          {all.map((r) => (
+            <tr key={`${r.grade}-${r.from}`} data-testid={`rate-row-${r.grade}-${r.from || 'start'}`}>
+              <td>{r.grade}</td>
+              <td data-testid="rate-from">{r.from || 'start'}</td>
+              <td data-testid="rate-pct">{r.pct}</td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </section>
@@ -124,10 +149,10 @@ function DueHead() {
   return <th>Due</th>;
 }
 
-// A person's due-total: what they have claimed in all, times their grade's rate.
+// A person's due-total: what they have claimed in all, times their grade's rate in force today.
 function PersonDueTotal({ sheetId, person }: { sheetId: string; person: Person }) {
   const claims = (useClaims(sheetId).data ?? []).filter((c) => c.personId === person.id);
-  const pct = useGradeRate(sheetId, person.grade);
+  const pct = useGradeRate(sheetId, person.grade, useSheetToday(sheetId));
   return <td data-testid="person-due-total">{due(sumAmounts(claims), pct)}</td>;
 }
 
@@ -136,10 +161,11 @@ function DueTotal({ sheetId }: { sheetId: string }) {
   const people = usePeople(sheetId).data ?? [];
   const claims = useClaims(sheetId).data ?? [];
   const rates = useRates(sheetId).data ?? [];
+  const today = useSheetToday(sheetId);
   const totals = people.map((p) =>
     due(
       sumAmounts(claims.filter((c) => c.personId === p.id)),
-      rates.find((r) => r.grade === p.grade)?.pct ?? null,
+      rateOn(rates, p.grade, today),
     ),
   );
   return (

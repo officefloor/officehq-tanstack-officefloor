@@ -1,6 +1,8 @@
 package net.officefloor.hq.app.rate;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.Set;
 import java.util.regex.Pattern;
 import net.officefloor.plugin.variable.Out;
@@ -19,6 +21,15 @@ public class ValidateRate {
         if (!PCT.matcher(pct).matches()) {
             throw new InvalidRateException("A rate is a percent of 0.00 or more, with up to two decimals");
         }
-        body.set(new RateInput(grade, new BigDecimal(pct).setScale(2)));
+        String rawFrom = request.from() == null ? "" : request.from().trim();
+        LocalDate from = null;
+        if (!rawFrom.isEmpty()) {
+            try {
+                from = LocalDate.parse(rawFrom);
+            } catch (DateTimeParseException e) {
+                throw new InvalidRateException("A from-date is a date, yyyy-MM-dd");
+            }
+        }
+        body.set(new RateInput(grade, new BigDecimal(pct).setScale(2), from));
     }
 }
