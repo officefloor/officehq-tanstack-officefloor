@@ -9,7 +9,7 @@ import { periodOf, usePeriods } from '../periods/usePeriods';
 import { rateFor, useRates } from '../rates/useRates';
 import { claimDueNow, isOverdue } from '../overdue/useOverdue';
 import { useSignedInUser } from '../session/useSession';
-import { roleOf, useSettings } from '../settings/useSettings';
+import { policyVersionOn, roleOf, useSettings } from '../settings/useSettings';
 import { useSheetToday } from '../today/useSheetToday';
 import { useTemplates } from '../templates/useTemplates';
 import { claimed, claimsKey, shownDeferred, shownShares, shownTags, useClaims, useLastBatch, type Claim } from './useClaims';
@@ -501,6 +501,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                 <td data-testid="claim-pending-late">{c.pendingLate ? 'yes' : 'no'}</td>
                 <td data-testid="claim-waived">{c.waived ? 'yes' : 'no'}</td>
                 <td data-testid="claim-held">{c.held ? 'yes' : 'no'}</td>
+                <td data-testid="claim-policy">{settings === undefined ? '' : policyVersionOn(settings, c.date)}</td>
                 <td data-testid="claim-shares">{shownShares(c, names)}</td>
                 <td data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</td>
                 <td data-testid="claim-status">{c.status}</td>

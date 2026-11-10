@@ -651,6 +651,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>{' '}
+        Policy version <strong data-testid="policy-version">{settings.data === undefined ? '' : (settings.data.policyVersions ?? []).length}</strong>.{' '}
         Current: clerk limit <strong data-testid="setting-clerk-limit-current">{fig(settingOn(settings.data, 'clerk-limit', today) ?? '')}</strong>,
         {grades.map((g) => (
           <span key={g}>

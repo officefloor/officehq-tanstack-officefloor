@@ -47,14 +47,16 @@ export type Role = { user: string; role: string };
  *  refused while its person already has that many OPEN or PENDING claims. `retiredGrades` is the sheet's retired grades
  *  (not dated): one cannot be chosen for a person any more (people already on it keep it), and a default grade that is
  *  retired gives A instead. `grades` is the sheet's grades (not dated): A, B and C, then those added to it in the
- *  order added. */
+ *  order added. `policyVersions` is the from-date of each of the sheet's policy versions (yyyy-mm-dd; null: none, in
+ *  force always), version 1 first: every change to the rounding mode, floor, cap, terms, late percent or clerk limit
+ *  is the next one; the sheet's current policy version is their number (see `policyVersionOn`). */
 export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; roles: Role[]; policyDate: string | null; periodNumberingFrom: string | null;
   gradeTerms: Record<string, number>; cap: string | null; dated: Record<string, DatedValue[]>;
   permissions: Record<string, string>; graceDays: number | null; delegations: Delegation[];
   entryDate: string | null; holidays: string[]; voidReasons: string[]; pot: string | null;
   parent: string | null; fiscalStartMonth: number; alertThreshold: string | null; escalateAfter: number | null; reviewSla: number | null; proofKinds: string | null; defaultGrade: string | null;
   scoreMid: number | null; scoreHigh: number | null; scoreLog: boolean; maxOpen: number | null;
-  retiredGrades: string[]; grades: string[]; pendingSla: number | null };
+  retiredGrades: string[]; grades: string[]; pendingSla: number | null; policyVersions: (string | null)[] };
 
 /** A steward's (`by`) delegation of the steward role to a user, from a date to a date (yyyy-mm-dd, inclusive):
  *  while the sheet's today is inside it the user acts as a steward. */
@@ -65,6 +67,12 @@ export type Delegation = { user: string; by: string; from: string; to: string };
 export function roleOf(settings: Settings | undefined, user: string | undefined, today: string | undefined): string | undefined {
   if (today !== undefined && settings?.delegations?.some((d) => d.user === user && d.from <= today && today <= d.to)) return 'steward';
   return settings?.roles.find((r) => r.user === user)?.role;
+}
+
+/** The policy version in force on a date: the number of the sheet's policy versions whose from-date is on or before
+ *  it (one with no from-date counts always). */
+export function policyVersionOn(settings: Settings, date: string): number {
+  return (settings.policyVersions ?? []).filter((from) => from === null || from <= date).length;
 }
 
 /** A value a dated setting has from a date (yyyy-mm-dd); null when blank. */

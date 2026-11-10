@@ -27,7 +27,7 @@ public class SheetCloner {
         this.history = history;
     }
 
-    /** Make sheet {@code to} (made by {@code by}) a copy of sheet {@code from}: its today, settings, roles, rates,
+    /** Make sheet {@code to} (made by {@code by}) a copy of sheet {@code from}: its today, settings (and policy versions), roles, rates,
      *  holidays, retired grades, void reasons, tags and templates; its people in list order with their grades, terms, contacts,
      *  aliases, holds, retirements and patrons; its pools and their members; its periods, all open; and its claims,
      *  each person's in the order they are listed, with their status, settled figures, dates, notes, tags, status logs
@@ -47,6 +47,8 @@ public class SheetCloner {
                 rs -> {
                     history.setting(to, rs.getString("setting_key"), rs.getDate("from_date").toLocalDate(), rs.getString("setting"));
                 }, to);
+        jdbc.update("INSERT INTO policy_version (sheet_id, version, setting_key, from_date) SELECT ?, version, setting_key,"
+                + " from_date FROM policy_version WHERE sheet_id = ?", to, from);
         Date policy = jdbc.queryForObject("SELECT policy_date FROM sheet WHERE id = ?", Date.class, to);
         if (policy != null) history.policy(to, policy.toLocalDate());
         jdbc.update("INSERT INTO sheet_role (sheet_id, user_name, role) SELECT ?, user_name, role FROM sheet_role"

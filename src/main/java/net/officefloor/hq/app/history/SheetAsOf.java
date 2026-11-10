@@ -124,7 +124,12 @@ public record SheetAsOf(LocalDate day, Map<Long, Claim> claims, Map<Long, TreeMa
 
     /** The cap in force on the day; null when there was none. */
     public BigDecimal cap() {
-        List<String> found = setting("cap", day);
+        return cap(day);
+    }
+
+    /** The cap in force on a date, as recorded by the day; null when there was none. */
+    public BigDecimal cap(LocalDate on) {
+        List<String> found = setting("cap", on);
         return found.isEmpty() || found.get(0) == null ? null : new BigDecimal(found.get(0));
     }
 

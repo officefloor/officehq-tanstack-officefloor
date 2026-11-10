@@ -13,7 +13,8 @@ import { hundredths, money, type Rate, rateFor, sumDues, useRates } from './useR
  *  then and no counting claim of theirs keeps a fixed figure or has a due (at the grade it was claimed under).
  *  A shared claim counts its due less its holders' parts for its own person, and each holder's part (see sharePart: at the
  *  rate of their own grade on the claim's date, frozen once settled; 0.00 when they have no rate) for that holder.
- *  A due-total is at most the sheet's cap in force on its today less their cut total, not below 0.00 ('n/a' is not capped). */
+ *  A due-total is at most the sheet's cap less their cut total (the cap in force on the date of their latest claim that
+ *  counts; on the sheet's today when they have none), not below 0.00 ('n/a' is not capped). */
 export function useDueTotals(sheetId: string): Map<number, string> {
   const totals = new Map<number, string>();
   for (const [id, f] of useDueFigures(sheetId)) totals.set(id, f.total);
@@ -74,7 +75,6 @@ function dueFigures(
   cuts?: Map<number, string>,
 ): Map<number, { total: string; excess: string; settled: string; open: string; scored: string }> {
   const holds = holdsById(people, today);
-  const cap = settingOn(settings, 'cap', today);
   const totals = new Map<number, { total: string; excess: string; settled: string; open: string; scored: string }>();
   // Each counting claim's due now, by claim id, at its own person's grade.
   const byId = new Map((people ?? []).map((p) => [p.id, p]));
@@ -108,6 +108,9 @@ function dueFigures(
     const rated = rateFor(rates, p.grade, today) !== undefined;
     const shown = rated || own.some((c) => fixedDue(c) !== null && fixedDue(c) !== 'n/a') || dues.some((d) => d !== 'n/a');
     const sum = sumDues(dues);
+    // The cap in force on the date of their latest counting claim (on the sheet's today when they have none).
+    const latest = own.reduce<string | undefined>((at, c) => (at === undefined || c.date > at ? c.date : at), undefined);
+    const cap = settingOn(settings, 'cap', latest ?? today);
     // The cap covers the due-total and the cut total together: the due-total is held to the cap less the cut.
     const cut = hundredths(cuts?.get(p.id) ?? '0.00');
     const room = cap === null ? 0n : hundredths(cap) - cut > 0n ? hundredths(cap) - cut : 0n;

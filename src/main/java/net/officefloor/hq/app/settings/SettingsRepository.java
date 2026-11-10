@@ -62,7 +62,7 @@ public class SettingsRepository {
                 voidReasons(sheetId), pot == null ? null : money(pot), parent(sheetId), fiscalStartMonth(sheetId),
                 alert == null ? null : money(alert), escalateAfter(sheetId), reviewSla(sheetId), proofKinds(sheetId),
                 storedDefaultGrade(sheetId), scoreMid(sheetId), scoreHigh(sheetId), scoreLog(sheetId), maxOpen(sheetId),
-                retiredGrades(sheetId), grades(sheetId), pendingSla(sheetId));
+                retiredGrades(sheetId), grades(sheetId), pendingSla(sheetId), policyVersions(sheetId));
     }
 
     /** The sheet's today; the real date when there is no such sheet. */
@@ -82,11 +82,30 @@ public class SettingsRepository {
         return found;
     }
 
-    /** Record a dated setting's value from a date (null for blank), replacing one recorded from that date. */
+    /** Record a dated setting's value from a date (null for blank), replacing one recorded from that date. A change
+     *  to a policy setting is also the sheet's next policy version. */
     public void record(String sheetId, String key, LocalDate from, String value) {
         jdbc.update("MERGE INTO setting_value (sheet_id, setting_key, from_date, setting) KEY (sheet_id, setting_key, from_date)"
                 + " VALUES (?, ?, ?, ?)", sheetId, key, Date.valueOf(from), value);
         history.setting(sheetId, key, from, value);
+        if (POLICY_KEYS.contains(key)) {
+            jdbc.update("INSERT INTO policy_version (sheet_id, version, setting_key, from_date) VALUES (?,"
+                    + " (SELECT COALESCE(MAX(version), 0) + 1 FROM policy_version WHERE sheet_id = ?), ?, ?)",
+                    sheetId, sheetId, key, Date.valueOf(from));
+        }
+    }
+
+    /** The policy settings: versioned together, every change to one of them a new policy version. */
+    public static final java.util.Set<String> POLICY_KEYS = java.util.Set.of("rounding", "floor", "cap", "terms",
+            "late-pct", "clerk-limit");
+
+    /** The from-date of each of the sheet's policy versions (yyyy-MM-dd; null when it has none: in force always),
+     *  version 1 first. The sheet's current version is their number. */
+    public List<String> policyVersions(String sheetId) {
+        return jdbc.query("SELECT from_date FROM policy_version WHERE sheet_id = ? ORDER BY version", (rs, i) -> {
+            Date from = rs.getDate("from_date");
+            return from == null ? null : from.toLocalDate().toString();
+        }, sheetId);
     }
 
     /** Every value recorded for each dated setting, by key, each oldest from-date first. */
@@ -102,7 +121,12 @@ public class SettingsRepository {
 
     /** The sheet's clerk limit in force on its today; null when it has none. */
     public BigDecimal clerkLimit(String sheetId) {
-        List<String> found = on(sheetId, "clerk-limit", today(sheetId));
+        return clerkLimit(sheetId, today(sheetId));
+    }
+
+    /** The sheet's clerk limit in force on a date; null when it has none then. */
+    public BigDecimal clerkLimit(String sheetId, LocalDate date) {
+        List<String> found = on(sheetId, "clerk-limit", date);
         return found.isEmpty() || found.get(0) == null ? null : new BigDecimal(found.get(0));
     }
 
@@ -110,9 +134,9 @@ public class SettingsRepository {
         record(sheetId, "clerk-limit", from, limit == null ? null : money(limit));
     }
 
-    /** A grade's own clerk limit in force on the sheet's today; null when it has none then (the sheet's is used). */
-    public BigDecimal gradeClerkLimit(String sheetId, String grade) {
-        List<String> found = on(sheetId, "clerk-limit-" + grade, today(sheetId));
+    /** A grade's own clerk limit in force on a date; null when it has none then (the sheet's is used). */
+    public BigDecimal gradeClerkLimit(String sheetId, String grade, LocalDate date) {
+        List<String> found = on(sheetId, "clerk-limit-" + grade, date);
         return found.isEmpty() || found.get(0) == null ? null : new BigDecimal(found.get(0));
     }
 
@@ -121,16 +145,21 @@ public class SettingsRepository {
         record(sheetId, "clerk-limit-" + grade, from, limit == null ? null : money(limit));
     }
 
-    /** The clerk limit in force for a claim whose person has a grade (null when none): the grade's own in force on
-     *  the sheet's today when one is set, else the sheet's; null when neither is. */
-    public BigDecimal clerkLimit(String sheetId, String grade) {
-        BigDecimal own = grade == null ? null : gradeClerkLimit(sheetId, grade);
-        return own != null ? own : clerkLimit(sheetId);
+    /** The clerk limit in force for a claim of a date whose person has a grade (null when none): the grade's own in
+     *  force on the claim's date when one is set, else the sheet's in force then; null when neither is. */
+    public BigDecimal clerkLimit(String sheetId, String grade, LocalDate date) {
+        BigDecimal own = grade == null ? null : gradeClerkLimit(sheetId, grade, date);
+        return own != null ? own : clerkLimit(sheetId, date);
     }
 
     /** The sheet's cap in force on its today: the most a person's due-total can be; null when it has none. */
     public BigDecimal cap(String sheetId) {
-        List<String> found = on(sheetId, "cap", today(sheetId));
+        return cap(sheetId, today(sheetId));
+    }
+
+    /** The sheet's cap in force on a date; null when it has none then. */
+    public BigDecimal cap(String sheetId, LocalDate date) {
+        List<String> found = on(sheetId, "cap", date);
         return found.isEmpty() || found.get(0) == null ? null : new BigDecimal(found.get(0));
     }
 

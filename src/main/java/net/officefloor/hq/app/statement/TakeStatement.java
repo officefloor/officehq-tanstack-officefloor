@@ -31,7 +31,8 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  claim that does not count is unbound (live again). The due-total is as shown: the sum of the counting claims' dues now (late charges
  *  included), skipping those with none; 'n/a' when no rate for the grade they have on the sheet's today
  *  is in force then and no counting claim has a fixed figure or a due (at the grade it was claimed under); at
- *  most the sheet's cap less their cut total, not below 0.00 (taken as of a date, at most that day's cap).
+ *  most the sheet's cap less their cut total, not below 0.00: the cap in force on the date of their latest counting
+ *  claim (on the sheet's today when they have none; taken as of a date, as recorded by then, on that day when none).
  *
  *  <p>Taken as of a date (on or before the sheet's today; a later one is refused, as is one before the person
  *  was added), it binds the claims of theirs that counted at the end of that date to their figures as they
@@ -72,6 +73,7 @@ public class TakeStatement {
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         boolean fixed = false;
         int count = 0;
+        LocalDate latest = null;
         // Taken now, a shared claim counts its due less its holders' parts, and their part of each counting claim
         // shared with them counts too (as in their due-total, see Rollup).
         Map<String, List<ClaimShare>> shares = then == null ? claims.shares(id) : Map.of();
@@ -83,6 +85,8 @@ public class TakeStatement {
                 continue;
             }
             count++;
+            LocalDate dated = LocalDate.parse(c.date());
+            if (latest == null || dated.isAfter(latest)) latest = dated;
             fixed |= c.fixed();
             // The claim is bound to its due as shown, late charge and floor included.
             BigDecimal now = then == null ? claims.dueNow(id, c) : then.dueNow(c);
@@ -113,7 +117,8 @@ public class TakeStatement {
             }
         }
         boolean rated = then == null ? claims.rated(id, pid, today) : then.rated(pid);
-        BigDecimal cap = then == null ? settings.cap(id) : then.cap();
+        BigDecimal cap = then == null ? (latest == null ? settings.cap(id) : settings.cap(id, latest))
+                : (latest == null ? then.cap() : then.cap(latest));
         BigDecimal cut = then == null && cap != null ? pools.cutTotals(id).get(pid) : null;
         String dueTotal = fixed || rated ? SettingsRepository.capped(total, cap, cut).setScale(2).toPlainString() : "n/a";
         people.stated(id, pid, dueTotal, asof == null ? today : asof);
