@@ -1,0 +1,160 @@
+diff --git a/src/main/frontend/features/header/header.slot.tsx b/src/main/frontend/features/header/header.slot.tsx
+index 7a7dac442..6da7d42d4 100644
+--- a/src/main/frontend/features/header/header.slot.tsx
++++ b/src/main/frontend/features/header/header.slot.tsx
+@@ -2,7 +2,7 @@ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { useClaims } from '../claims/claims';
+ import type { ClaimStatus } from '../claims/claims';
+ import { usePeople } from '../people/people';
+-import { personDueTotal, sumDue, useRates } from '../rates/rates';
++import { personDueTotal, trimmedSumDue, useRates } from '../rates/rates';
+ import { personOverdue } from '../overdue/overdue';
+ import { useSheetToday } from '../sheet/sheet';
+ import { useCap, useFloor, useLate } from '../access/access';
+@@ -23,10 +23,10 @@ function Header({ sheetId }: { sheetId: string }) {
+   const cap = useCap(sheetId);
+ 
+   const claimsOf = (id: string) => claims.filter((c) => c.personId === id);
+-  const dueTotal = sumDue(
++  const dueTotal = trimmedSumDue(
+     people.map((p) => personDueTotal(rates, p.grades, today, claimsOf(p.id), p.holds, floor, late, cap)),
+   );
+-  const overdueTotal = sumDue(
++  const overdueTotal = trimmedSumDue(
+     people.map((p) => personOverdue(rates, p.grades, today, claimsOf(p.id), p.holds, floor, late).total),
+   );
+ 
+diff --git a/src/main/frontend/features/overdue/overdue.slot.tsx b/src/main/frontend/features/overdue/overdue.slot.tsx
+index 9e93691a5..5499405ad 100644
+--- a/src/main/frontend/features/overdue/overdue.slot.tsx
++++ b/src/main/frontend/features/overdue/overdue.slot.tsx
+@@ -3,7 +3,7 @@ import { PersonHead, PersonRow } from '../../slots/defs/personRow';
+ import { usePeople } from '../people/people';
+ import type { Person } from '../people/people';
+ import { useClaims } from '../claims/claims';
+-import { sumDue, useRates } from '../rates/rates';
++import { trimmedSumDue, useRates } from '../rates/rates';
+ import { useSheetToday } from '../sheet/sheet';
+ import { useFloor, useLate } from '../access/access';
+ import { personOverdue } from './overdue';
+@@ -33,7 +33,8 @@ function PersonOverdue({ sheetId, person }: { sheetId: string; person: Person })
+   );
+ }
+ 
+-// The sheet's overdue claims that count: everyone's overdue count and overdue-total added up.
++// The sheet's overdue claims that count: everyone's overdue count and overdue-total added up
++// (the overdue-total trimmed of the highest and lowest person's).
+ function OverdueTotal({ sheetId }: { sheetId: string }) {
+   const people = usePeople(sheetId).data ?? [];
+   const claims = useClaims(sheetId).data ?? [];
+@@ -47,7 +48,7 @@ function OverdueTotal({ sheetId }: { sheetId: string }) {
+   return (
+     <p>
+       Overdue: <strong data-testid="rollup-overdue-count">{each.reduce((n, o) => n + o.count, 0)}</strong>, due{' '}
+-      <strong data-testid="rollup-overdue-total">{sumDue(each.map((o) => o.total))}</strong>
++      <strong data-testid="rollup-overdue-total">{trimmedSumDue(each.map((o) => o.total))}</strong>
+     </p>
+   );
+ }
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index 735b284cb..e9969cadc 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -11,7 +11,7 @@ import type { Grade, Person } from '../people/people';
+ import { useUser } from '../session/session';
+ import { useSheetToday } from '../sheet/sheet';
+ import { useCap, useFloor, useLate } from '../access/access';
+-import { NA, PCT, personDueTotal, personExcess, rateOn, ratesKey, sumDue, useRates } from './rates';
++import { NA, PCT, personDueTotal, personExcess, rateOn, ratesKey, sumDue, trimmedSumDue, useRates } from './rates';
+ import type { Rate } from './rates';
+ 
+ type Fields = { grade: Grade; pct: string; from: string; to: string };
+@@ -198,7 +198,7 @@ function PersonExcess({ sheetId, person }: { sheetId: string; person: Person })
+   return <td data-testid="person-excess">{personExcess(rates, person.grades, today, claims, person.holds, floor, late, cap)}</td>;
+ }
+ 
+-// The sheet's due-total: everyone's due-total added up, skipping those with no rate.
++// The sheet's due-total: everyone's due-total added up, skipping those with no rate, trimmed of the highest and lowest.
+ function DueTotal({ sheetId }: { sheetId: string }) {
+   const people = usePeople(sheetId).data ?? [];
+   const claims = useClaims(sheetId).data ?? [];
+@@ -212,7 +212,7 @@ function DueTotal({ sheetId }: { sheetId: string }) {
+   );
+   return (
+     <p>
+-      Due in all: <strong data-testid="rollup-due-total">{sumDue(totals)}</strong>
++      Due in all: <strong data-testid="rollup-due-total">{trimmedSumDue(totals)}</strong>
+     </p>
+   );
+ }
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index bcb2301a9..c2fb03431 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -162,6 +162,16 @@ export function sumDue(values: string[]): string {
+   return showCents(values.filter((v) => v !== NA).reduce((n, v) => n + hundredths(v), 0n));
+ }
+ 
++/**
++ * People's figures added up as a sheet's total, skipping n/a: with three or more figures, the single
++ * highest and the single lowest are left out.
++ */
++export function trimmedSumDue(values: string[]): string {
++  const figures = values.filter((v) => v !== NA).map(hundredths).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
++  const kept = figures.length >= 3 ? figures.slice(1, -1) : figures;
++  return showCents(kept.reduce((n, v) => n + v, 0n));
++}
++
+ /**
+  * A claim's due: the one fixed when it was settled (its late charge frozen in), else the figure its
+  * person's last statement bound it to (never while it is PENDING), else its amount at the rate in force on its date, at least
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index fadae6d5f..d5834fbdd 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -37,7 +37,8 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
+      * figure or has one under the grade in force on its date when that is another grade, or
+      * has one dated on or before today (under a rate that has since ended), held to the sheet's cap. Each claim
+      * takes the rate of the grade in force on its date. The
+-     * sheet's totals add these up, skipping n/a.
++     * sheet's totals add these up, skipping n/a; with three or more figures, the due-total and
++     * overdue-total leave out the single highest and the single lowest.
+      */
+     public static Rollup of(String sheetId, LocalDate today, PersonRepository people, ClaimRepository claims,
+             RateRepository rates, Settings settings) {
+@@ -45,8 +46,8 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
+         List<Claim> sheetClaims = claims.findAll(sheetId);
+         Map<Long, Figures> figures = new LinkedHashMap<>();
+         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
+-        BigDecimal dueTotal = BigDecimal.ZERO.setScale(2);
+-        BigDecimal overdueTotal = BigDecimal.ZERO.setScale(2);
++        List<BigDecimal> dues = new ArrayList<>();
++        List<BigDecimal> overdues = new ArrayList<>();
+         for (Person person : people.findAll(sheetId)) {
+             BigDecimal claimed = BigDecimal.ZERO.setScale(2);
+             BigDecimal due = BigDecimal.ZERO.setScale(2);
+@@ -68,13 +69,21 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
+             }
+             boolean none = Rate.inForce(all, person.gradeOn(today), today).isEmpty() && !fixed;
+             claimedTotal = claimedTotal.add(claimed);
+-            overdueTotal = overdueTotal.add(overdue);
++            overdues.add(overdue);
+             due = settings.capped(due, today);
+-            if (!none) dueTotal = dueTotal.add(due);
++            if (!none) dues.add(due);
+             figures.put(person.getId(), new Figures(person.getName(), show(claimed), none ? "n/a" : show(due),
+                     show(overdue)));
+         }
+-        return new Rollup(figures, show(claimedTotal), show(dueTotal), show(overdueTotal));
++        return new Rollup(figures, show(claimedTotal), show(trimmed(dues)), show(trimmed(overdues)));
++    }
++
++    /** People's figures added up: with three or more, the single highest and single lowest left out. */
++    private static BigDecimal trimmed(List<BigDecimal> values) {
++        List<BigDecimal> sorted = new ArrayList<>(values);
++        sorted.sort(BigDecimal::compareTo);
++        if (sorted.size() >= 3) sorted = sorted.subList(1, sorted.size() - 1);
++        return sorted.stream().reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
+     }
+ 
+     /** Whether a claim is overdue on {@code today}: open (OPEN or PENDING) and past its due-by. */
