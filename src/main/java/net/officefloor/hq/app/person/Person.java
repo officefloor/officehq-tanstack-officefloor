@@ -13,6 +13,7 @@ public class Person {
     private String name;
     private String grade;
     private Integer terms;
+    private String contact;
     private long version;
     private int statementCount;
     private String statedTotal;
@@ -46,6 +47,9 @@ public class Person {
     /** Their own terms in days, ahead of their grade's and the sheet's; null when they have none. */
     public Integer getTerms() { return terms; }
     public void setTerms(Integer terms) { this.terms = terms; }
+    /** Their contact, trimmed and lower-cased; null when they have none. */
+    public String getContact() { return contact; }
+    public void setContact(String contact) { this.contact = contact; }
     /** The grades recorded from a date, by from-date: each in force from it until the next. */
     public Map<LocalDate, String> getDatedGrades() { return datedGrades; }
     /** Record the grade from this date, replacing any recorded from the same date. */

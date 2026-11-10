@@ -11,6 +11,7 @@ public class AuditPersonAdded {
             HttpServletRequest request, Audit audit) {
         audit.record("PERSON_ADDED sheet=" + sheet.id() + " by=" + Audit.user(request)
                 + " name=" + person.getName() + " grade=" + person.getGrade()
-                + (person.getTerms() == null ? "" : " terms=" + person.getTerms()));
+                + (person.getTerms() == null ? "" : " terms=" + person.getTerms())
+                + (person.getContact() == null ? "" : " contact=" + person.getContact()));
     }
 }

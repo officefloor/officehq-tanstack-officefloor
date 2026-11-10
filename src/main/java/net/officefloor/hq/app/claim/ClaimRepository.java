@@ -299,7 +299,7 @@ public class ClaimRepository {
     }
 
     private static final String HISTORY_COLUMNS = "person_id, amount, claim_date, note, status, claim_number, settled_due,"
-            + " opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, late_entry, listed, tags, void_reason, settle_batch";
+            + " opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, late_entry, listed, tags, void_reason, settle_batch, ext_ref";
 
     /** Keeps the claim as the store now holds it in its history, with the sheet's today now. */
     private void keepHistory(Claim claim) {
@@ -330,6 +330,7 @@ public class ClaimRepository {
                     claim.setSplitFrom(rs.getString("split_from"));
                     claim.setLateEntry(rs.getBoolean("late_entry"));
                     claim.setTags(rs.getString("tags"));
+                    claim.setRef(rs.getString("ext_ref"));
                     claim.setVoidReason(rs.getString("void_reason"));
                     claim.setSettleBatch((Integer) rs.getObject("settle_batch", Integer.class));
                     latest.put(claim.getId(), claim);

@@ -8,6 +8,7 @@ public class BuildPerson {
     public void build(@Val PersonRequest request, @Val Sheet sheet, Out<Person> personOut) {
         Person person = new Person(null, sheet.id(), request.name(), request.grade());
         person.setTerms(request.termsDays());
+        person.setContact(request.contactValue());
         personOut.set(person);
     }
 }

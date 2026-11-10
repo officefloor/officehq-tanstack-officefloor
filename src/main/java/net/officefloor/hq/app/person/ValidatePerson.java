@@ -27,6 +27,8 @@ public class ValidatePerson {
             throw new InvalidPersonException("Terms are a whole number of days, 0 or more, or blank");
         }
         if (!terms.isEmpty()) terms = String.valueOf(Integer.parseInt(terms));
-        body.set(new PersonRequest(name, grade, request.version(), gradeFrom, terms));
+        String contact = request.contact() == null ? "" : request.contact().trim().toLowerCase(java.util.Locale.ROOT);
+        if (contact.length() > 200) throw new InvalidPersonException("A contact is at most 200 characters");
+        body.set(new PersonRequest(name, grade, request.version(), gradeFrom, terms, contact));
     }
 }
