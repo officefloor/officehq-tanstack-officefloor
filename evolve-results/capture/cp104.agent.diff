@@ -1,0 +1,83 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index fda7b96be..bedd4194c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -54,7 +54,7 @@ public class Claim {
+     public String getSheetId() { return sheetId; }
+     public long getPersonId() { return personId; }
+     /**
+-     * Move it to another person: it keeps its number and date, but loses any figure a statement
++     * Move it to another person: it keeps its date (its new number is given by {@link RenumberClaim}), but loses any figure a statement
+      * bound it to (it is live again until its new person's next statement). A SETTLED or VOID claim
+      * cannot move.
+      */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ReassignClaim.java b/src/main/java/net/officefloor/hq/app/claim/ReassignClaim.java
+index 1eb2ad211..e2dd244a1 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ReassignClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ReassignClaim.java
+@@ -14,7 +14,7 @@ import net.officefloor.plugin.variable.Val;
+ /**
+  * Moves a DRAFT, OPEN or PENDING claim to another person on the sheet. Only a role the permission matrix
+  * allows (by the standing rule, a steward) may move it.
+- * It keeps its number and date, loses any figure a statement bound it to, and is listed as its new
++ * It keeps its date, takes a new number (see {@link RenumberClaim}), loses any figure a statement bound it to, and is listed as its new
+  * person's newest claim.
+  */
+ public class ReassignClaim {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ReassignSelectedClaims.java b/src/main/java/net/officefloor/hq/app/claim/ReassignSelectedClaims.java
+index f0f61fc8d..0ef8b51eb 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ReassignSelectedClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ReassignSelectedClaims.java
+@@ -69,6 +69,7 @@ public class ReassignSelectedClaims {
+             } catch (InvalidClaimStatusException e) {
+                 continue;
+             }
++            RenumberClaim.give(sheet, claim, claims, settings, periods);
+             claims.save(claim);
+             reassigned++;
+             audit.record(ClaimAudit.line("CLAIM_REASSIGNED", sheet, user, to, claim)
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RenumberClaim.java b/src/main/java/net/officefloor/hq/app/claim/RenumberClaim.java
+new file mode 100644
+index 000000000..ade480fbe
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/RenumberClaim.java
+@@ -0,0 +1,23 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.setting.SettingsRepository;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++
++/**
++ * Gives a claim moved to another person the next number in the sequence it would be numbered in
++ * (the sheet's, or its period's); its old number is never used again. A draft has none and gets none.
++ */
++public class RenumberClaim {
++    public void renumber(@Val Sheet sheet, @Val Claim claim, ClaimRepository repository, SettingsRepository settings,
++            PeriodRepository periods) {
++        give(sheet, claim, repository, settings, periods);
++    }
++
++    static void give(Sheet sheet, Claim claim, ClaimRepository repository, SettingsRepository settings,
++            PeriodRepository periods) {
++        if (claim.getNumber() == null) return;
++        claim.setNumber(ClaimNumbers.next(sheet, claim, settings.find(sheet.id()), periods, repository));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reassign.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reassign.POST.yml
+index 053347849..435544c57 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reassign.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reassign.POST.yml
+@@ -34,6 +34,11 @@ apply:
+ retired:
+   class: net.officefloor.hq.app.person.CheckClaimRetired
+   govern: [ transaction ]
++  next: renumber
++# Every rule has passed: a numbered claim takes the next number in its sequence.
++renumber:
++  class: net.officefloor.hq.app.claim.RenumberClaim
++  govern: [ transaction ]
+   next: save
+ save:
+   class: net.officefloor.hq.app.claim.SaveClaim
