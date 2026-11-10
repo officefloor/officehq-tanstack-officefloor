@@ -57,8 +57,14 @@ public final class ClaimFigure {
      * it follows the sheet's today until the claim is settled.
      */
     public static BigDecimal late(Claim claim, BigDecimal figure, Settings settings, LocalDate today) {
+        if (!claim.isOpen()) return BigDecimal.ZERO.setScale(2);
+        return lateAsOpen(claim, figure, settings, today);
+    }
+
+    /** The late charge on a figure as {@link #late} reads it for an open claim, whatever the claim's status. */
+    public static BigDecimal lateAsOpen(Claim claim, BigDecimal figure, Settings settings, LocalDate today) {
         BigDecimal none = BigDecimal.ZERO.setScale(2);
-        if (!claim.isOpen() || figure == null || claim.isCorrection()) return none;
+        if (figure == null || claim.isCorrection()) return none;
         long overdue = ChronoUnit.DAYS.between(claim.getDueBy(), today);
         long periods = overdue > 0 ? overdue / 30 : 0;
         if (periods == 0) return none;

@@ -17,14 +17,15 @@ import { useSheetToday } from '../sheet/sheet';
 import { dueBy, isOverdue } from '../overdue/overdue';
 
 // A clerk's settle above the clerk limit leaves the claim PENDING; a steward approves it or rejects
-// it with a reason (typed in the row).
-type Action = 'open' | 'settle' | 'void' | 'approve' | 'reject';
+// it with a reason (typed in the row). A steward re-settles a SETTLED claim at its figure today.
+type Action = 'open' | 'settle' | 'void' | 'approve' | 'reject' | 'resettle';
 const ACTIONS: { action: Action; label: string }[] = [
   { action: 'open', label: 'Open' },
   { action: 'settle', label: 'Settle' },
   { action: 'void', label: 'Void' },
   { action: 'approve', label: 'Approve' },
   { action: 'reject', label: 'Reject' },
+  { action: 'resettle', label: 'Re-settle' },
 ];
 
 type Fields = { amount: string; date: string; note: string; corrects: string };
