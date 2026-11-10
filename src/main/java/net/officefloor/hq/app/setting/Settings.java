@@ -13,7 +13,8 @@ import java.util.NavigableMap;
  * limit), its floor, the least a claim's live due may be, and its terms, the days after a claim's
  * date that it is due by, and its late percent, what an overdue claim's due gains per full 30 days
  * overdue, and its terms per grade (a grade with none uses the sheet's terms), and its cap (none:
- * no cap), the most a person's due-total may be. The value in force on a date is the one with the
+ * no cap), the most a person's due-total may be, and its proof threshold (none: none), above which a
+ * claim's due, on the claim's date, needs a proof before it is settled or approved. The value in force on a date is the one with the
  * latest from-date on or before it; before every from-date the starting value (floor 1.00, late
  * percent 0.00, terms 14; none for the others). A claim takes its floor, late percent and terms on
  * its date; the clerk limit and the cap are those in force on the sheet's today ({@code today}).
@@ -31,6 +32,7 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
     public static final String TERMS = "terms";
     public static final String LATE_PCT = "late-pct";
     public static final String CAP = "cap";
+    public static final String PROOF_THRESHOLD = "proof-threshold";
 
     /** The key of a grade's own terms. */
     public static String gradeTermsKey(String grade) {
@@ -92,6 +94,21 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
     /** The clerk limit in force on a date (null: no limit). */
     public BigDecimal clerkLimitOn(LocalDate date) {
         return figureOn(CLERK_LIMIT, date);
+    }
+
+    /** The proof threshold in force on a date (null: none). */
+    public BigDecimal proofThresholdOn(LocalDate date) {
+        return figureOn(PROOF_THRESHOLD, date);
+    }
+
+    /**
+     * Whether a claim dated {@code date} with a due (null: n/a) and a proofs count needs a proof
+     * before it is settled or approved: its due is above the proof threshold in force on its date
+     * and it has no proofs. A due of n/a, or no threshold, needs none.
+     */
+    public boolean needsProof(BigDecimal due, LocalDate date, int proofs) {
+        BigDecimal threshold = proofThresholdOn(date);
+        return proofs == 0 && threshold != null && due != null && due.compareTo(threshold) > 0;
     }
 
     /** The cap in force on a date (null: none). */

@@ -23,9 +23,11 @@ export type Settings = {
   gradeTerms: Record<string, string>;
   /** The most a person's due-total may be, with two decimals ('' for none). */
   cap: string;
+  /** The due above which a claim, on its date, needs a proof to be settled or approved ('' for none). */
+  proofThreshold: string;
   /**
    * Every value recorded for each figure setting, by key (clerk-limit, floor, terms, late-pct,
-   * terms-A, terms-B, terms-C, cap), in from-date order ('' for none). The values above are those
+   * terms-A, terms-B, terms-C, cap, proof-threshold), in from-date order ('' for none). The values above are those
    * in force on the sheet's today.
    */
   dated?: Record<string, { from: string; value: string }[]>;
@@ -38,6 +40,7 @@ export const DATED_KEYS = {
   terms: 'terms',
   latePct: 'late-pct',
   cap: 'cap',
+  proofThreshold: 'proof-threshold',
 } as const;
 
 /** The grades that may have their own terms. */
@@ -100,6 +103,9 @@ export const LIMIT = /^\d+(\.\d{1,2})?$/;
 
 /** A cap as the screen takes it: blank, or 0.00 or more with up to two decimals. */
 export const CAP = /^\d+(\.\d{1,2})?$/;
+
+/** A proof threshold as the screen takes it: blank, or 0.00 or more with up to two decimals. */
+export const PROOF_THRESHOLD = /^\d+(\.\d{1,2})?$/;
 
 /** A floor as the screen takes it: 0.00 or more with up to two decimals. */
 export const FLOOR = /^\d+(\.\d{1,2})?$/;

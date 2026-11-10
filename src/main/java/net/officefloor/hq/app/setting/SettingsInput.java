@@ -10,13 +10,13 @@ import java.time.LocalDate;
  * period numbering from is changed and to what (null: off), and the grades whose terms are changed,
  * in A, B, C order, and to what (null: the sheet's terms), and whether the cap is changed and to
  * what (null: none), and the from-date given for each figure setting, by its key (none given: the
- * sheet's today).
+ * sheet's today), and whether the proof threshold is changed and to what (null: none).
  */
 public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, BigDecimal floor, Integer terms, BigDecimal latePct,
         boolean policyDateChanged, LocalDate policyDate,
         boolean periodNumberingFromChanged, LocalDate periodNumberingFrom,
         java.util.Map<String, Integer> gradeTerms, boolean capChanged, BigDecimal cap,
-        java.util.Map<String, LocalDate> from) {
+        java.util.Map<String, LocalDate> from, boolean proofThresholdChanged, BigDecimal proofThreshold) {
 
     /**
      * The figure settings being changed, by key in the order they are audited, each with the value
@@ -41,5 +41,10 @@ public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, Bi
     /** The cap as it is recorded ('' for none), or null when it is not changed. */
     public String capValue() {
         return !capChanged ? null : cap == null ? "" : cap.toPlainString();
+    }
+
+    /** The proof threshold as it is recorded ('' for none), or null when it is not changed. */
+    public String proofThresholdValue() {
+        return !proofThresholdChanged ? null : proofThreshold == null ? "" : proofThreshold.toPlainString();
     }
 }

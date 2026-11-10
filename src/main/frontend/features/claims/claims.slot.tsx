@@ -143,6 +143,23 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
       setRefused({ id, message: 'Only an OPEN claim can be deferred, to a date after today.' }),
   });
 
+  // A proof is added to a claim that is not SETTLED or VOID.
+  const proof = useMutation({
+    mutationFn: (id: string) =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/claims/${encodeURIComponent(id)}/proof`,
+        {},
+        user,
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+    onError: (_e, id) => setRefused({ id, message: 'A proof cannot be added to that claim.' }),
+  });
+
+  const addProof = (id: string) => {
+    setRefused(null);
+    proof.mutate(id);
+  };
+
   const deferClaim = (id: string) => {
     setRefused(null);
     const until = (deferUntil[id] ?? '').trim();
@@ -274,7 +291,11 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
               <span data-testid="claim-due-by">{dueBy(c)}</span>{' '}
               <span data-testid="claim-overdue">{isOverdue(c, today) ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-deferred">{isDeferred(c, today) ? 'yes' : 'no'}</span>{' '}
-              <span data-testid="claim-deferred-until">{isDeferred(c, today) ? c.deferredUntil : ''}</span>{' '}
+              <span data-testid="claim-deferred-until">{c.deferredUntil}</span>{' '}
+              <span data-testid="claim-proofs">{c.proofs}</span>{' '}
+              <button type="button" data-testid="claim-proof" onClick={() => addProof(c.id)}>
+                Add proof
+              </button>{' '}
               <input
                 data-testid="claim-reject-reason"
                 placeholder="Reject reason"

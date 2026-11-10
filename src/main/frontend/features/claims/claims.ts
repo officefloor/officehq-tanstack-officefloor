@@ -42,6 +42,8 @@ export type Claim = {
   log: string[];
   /** The date (yyyy-MM-dd) it is deferred until; '' when it was never deferred. */
   deferredUntil: string;
+  /** How many proofs it has had added. */
+  proofs: number;
 };
 
 /** Whether a claim is a correction: it has no floor and no late charge. */

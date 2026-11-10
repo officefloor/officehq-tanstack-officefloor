@@ -22,6 +22,7 @@ public class SaveSettings {
         java.util.Map<String, String> values = new java.util.LinkedHashMap<>(input.datedValues());
         values.putAll(input.gradeTermsValues());
         if (input.capValue() != null) values.put(Settings.CAP, input.capValue());
+        if (input.proofThresholdValue() != null) values.put(Settings.PROOF_THRESHOLD, input.proofThresholdValue());
         values.forEach((key, value) -> {
             LocalDate from = input.from().getOrDefault(key, sheet.today());
             repository.record(sheet.id(), key, from, value);

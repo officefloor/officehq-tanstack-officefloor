@@ -20,7 +20,8 @@ import net.officefloor.plugin.variable.Val;
  * by the sheet's today is frozen in on top. The user who opened the claim may not settle it.
  * When a clerk (any user not made a steward) settles a claim whose due is above the sheet's clerk
  * limit, it goes to PENDING instead, its due left live until a steward approves or rejects it; a
- * due of n/a is within any limit.
+ * due of n/a is within any limit. Before the clerk limit is considered, a claim whose due is above
+ * the proof threshold in force on its date is refused while it has no proofs.
  */
 public class SettleClaim {
     public void apply(@Val Sheet sheet, @Val Claim claim, PersonRepository people, RateRepository rates,
@@ -48,6 +49,7 @@ public class SettleClaim {
         }
         if (user.equals(claim.getOpenedBy())) throw new SelfSettleException(user);
         BigDecimal due = figure == null ? null : figure.add(late);
+        if (settings.needsProof(due, claim.getDate(), claim.getProofs())) throw new InvalidClaimStatusException(ProofRequired.MESSAGE);
         if (!settings.withinClerkLimit(due, sheet.today()) && Role.CLERK.equals(roles.roleOf(sheet.id(), user))) {
             claim.moveTo(ClaimStatus.PENDING);
             return;

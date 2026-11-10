@@ -5,7 +5,7 @@ import { useOnce } from '../../query/useOnce';
 import { postJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/session';
-import { CAP, DATED_KEYS, FLOOR, GRADES, LATE_PCT, LIMIT, POLICY_DATE, TERMS, ROLES, rolesKey, settingsKey, useRoles, useSettings } from './access';
+import { CAP, DATED_KEYS, FLOOR, GRADES, LATE_PCT, LIMIT, POLICY_DATE, PROOF_THRESHOLD, TERMS, ROLES, rolesKey, settingsKey, useRoles, useSettings } from './access';
 import type { Role, Settings, SettingsChange } from './access';
 
 type Key = Exclude<keyof Settings, 'gradeTerms'>;
@@ -16,13 +16,15 @@ type Key = Exclude<keyof Settings, 'gradeTerms'>;
 // its policy date (blank: the sheet's today), before which a claim rounds half up, and its period
 // numbering from (blank: off), from which a claim opened is numbered within its period, and each
 // grade's own terms (blank: the sheet's terms), fixing the due-by of a claim made for it, and its cap
-// (blank: none), the most a person's due-total may be. Only the settings typed in (or stepped into)
+// (blank: none), the most a person's due-total may be, and its proof threshold (blank: none), above
+// which a claim's due, on its date, needs a proof to be settled or approved. Only the settings typed in (or stepped into)
 // since the last save are sent, so saving one leaves the other as it is.
 function SettingsForm({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const settings = useSettings(sheetId);
   const [fields, setFields] = useState<Omit<Settings, 'gradeTerms'>>({
     cap: '',
+    proofThreshold: '',
     clerkLimit: '',
     floor: '',
     terms: '',
@@ -109,6 +111,14 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         return;
       }
       body.cap = cap;
+    }
+    if (touched.has('proofThreshold')) {
+      const threshold = fields.proofThreshold.trim();
+      if (threshold !== '' && !PROOF_THRESHOLD.test(threshold)) {
+        setError('A proof threshold is 0.00 or more, with up to two decimals, or blank.');
+        return;
+      }
+      body.proofThreshold = threshold;
     }
     if (gradesTouched.size > 0) {
       const gradeTerms: Record<string, string> = {};
@@ -294,6 +304,21 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         {fromInput('cap')}{' '}
         <span>
           now: <strong data-testid="setting-cap-current">{settings.data?.cap ?? ''}</strong>
+        </span>{' '}
+        <label>
+          Proof threshold{' '}
+          <input
+            data-testid="setting-proof-threshold"
+            inputMode="decimal"
+            placeholder="none"
+            value={fields.proofThreshold}
+            onFocus={() => touch('proofThreshold')}
+            onChange={(e) => change('proofThreshold', e.target.value)}
+          />
+        </label>{' '}
+        {fromInput('proof-threshold')}{' '}
+        <span>
+          now: <strong data-testid="setting-proof-threshold-current">{settings.data?.proofThreshold ?? ''}</strong>
         </span>{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings

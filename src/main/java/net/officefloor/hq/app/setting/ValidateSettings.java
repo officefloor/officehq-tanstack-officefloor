@@ -14,7 +14,7 @@ public class ValidateSettings {
     private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
     private static final java.util.Set<String> DATED = java.util.Set.of(Settings.CLERK_LIMIT, Settings.FLOOR,
             Settings.TERMS, Settings.LATE_PCT, Settings.CAP, Settings.gradeTermsKey("A"), Settings.gradeTermsKey("B"),
-            Settings.gradeTermsKey("C"));
+            Settings.gradeTermsKey("C"), Settings.PROOF_THRESHOLD);
 
     public void validate(@RequestBody SettingsRequest request, Out<SettingsInput> body)
             throws InvalidSettingException {
@@ -96,6 +96,15 @@ public class ValidateSettings {
             }
             cap = new BigDecimal(value).setScale(2);
         }
+        boolean thresholdChanged = request != null && request.proofThreshold() != null;
+        BigDecimal threshold = null;
+        if (thresholdChanged && !request.proofThreshold().trim().isEmpty()) {
+            String value = request.proofThreshold().trim();
+            if (!FIGURE.matcher(value).matches()) {
+                throw new InvalidSettingException("A proof threshold is 0.00 or more, with up to two decimals, or blank");
+            }
+            threshold = new BigDecimal(value).setScale(2);
+        }
         Map<String, LocalDate> from = new LinkedHashMap<>();
         if (request != null && request.from() != null) {
             for (Map.Entry<String, String> entry : request.from().entrySet()) {
@@ -110,6 +119,7 @@ public class ValidateSettings {
             }
         }
         body.set(new SettingsInput(limitChanged, limit, floor, terms, latePct, policyChanged, policyDate,
-                numberingChanged, numberingFrom, gradeTerms, capChanged, cap, from));
+                numberingChanged, numberingFrom, gradeTerms, capChanged, cap, from,
+                thresholdChanged, threshold));
     }
 }

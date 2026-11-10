@@ -12,10 +12,12 @@ import java.util.Map;
  * days and the late percent with two decimals, and the policy date as yyyy-MM-dd ('' for the sheet's
  * today), and the period numbering from as yyyy-MM-dd ('' for off), and each grade's own terms in
  * days ('' for the sheet's terms), and the cap with two decimals ('' for none); and every value
- * recorded for each figure setting, by key, in from-date order.
+ * recorded for each figure setting, by key, in from-date order; and the proof threshold with two
+ * decimals ('' for none).
  */
 public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
-        String periodNumberingFrom, Map<String, String> gradeTerms, String cap, Map<String, List<Dated>> dated) {
+        String periodNumberingFrom, Map<String, String> gradeTerms, String cap, Map<String, List<Dated>> dated,
+        String proofThreshold) {
 
     /** A value ('' for none) recorded from a date (yyyy-MM-dd). */
     public record Dated(String from, String value) {
@@ -30,7 +32,8 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
                 settings.periodNumberingFrom() == null ? "" : settings.periodNumberingFrom().toString(),
                 gradeTerms(settings),
                 show(settings.capOn(today)),
-                dated(settings));
+                dated(settings),
+                show(settings.proofThresholdOn(today)));
     }
 
     private static String show(java.math.BigDecimal figure) {

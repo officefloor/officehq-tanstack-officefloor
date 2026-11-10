@@ -22,6 +22,7 @@ public class Claim {
     private boolean relisted;
     private LocalDate dueBy;
     private LocalDate deferredUntil;
+    private int proofs;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue,
@@ -83,6 +84,16 @@ public class Claim {
         }
         if (!until.isAfter(today)) throw new InvalidClaimException("A claim is deferred to a date after today");
         deferredUntil = until;
+    }
+    /** How many proofs it has had added. */
+    public int getProofs() { return proofs; }
+    public void setProofs(int proofs) { this.proofs = proofs; }
+    /** Add a proof: not to a SETTLED or VOID claim. */
+    public void addProof() throws InvalidClaimStatusException {
+        if (status == ClaimStatus.SETTLED || status == ClaimStatus.VOID) {
+            throw new InvalidClaimStatusException("A " + status + " claim cannot have a proof added");
+        }
+        proofs++;
     }
     public String getNote() { return note; }
     public void setNote(String note) { this.note = note; }
