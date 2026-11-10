@@ -222,6 +222,24 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
     onError: (_e, id) => setRefused({ id, message: 'A proof cannot be added to that claim.' }),
   });
 
+  // An OPEN or PENDING claim is reminded, once per sheet's today.
+  const remind = useMutation({
+    mutationFn: (id: string) =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/claims/${encodeURIComponent(id)}/remind`,
+        {},
+        user,
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+    onError: (_e, id) =>
+      setRefused({ id, message: 'Only an OPEN or PENDING claim can be reminded, once a day.' }),
+  });
+
+  const remindClaim = (id: string) => {
+    setRefused(null);
+    remind.mutate(id);
+  };
+
   const addProof = (id: string) => {
     setRefused(null);
     proof.mutate(id);
@@ -413,6 +431,10 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
               <span data-testid="claim-proofs">{c.proofs}</span>{' '}
               <span data-testid="claim-split-from">{c.splitFrom}</span>{' '}
               <span data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</span>{' '}
+              <span data-testid="claim-reminded">{c.remindedOn}</span>{' '}
+              <button type="button" data-testid="claim-remind" onClick={() => remindClaim(c.id)}>
+                Remind
+              </button>{' '}
               <button type="button" data-testid="claim-proof" onClick={() => addProof(c.id)}>
                 Add proof
               </button>{' '}

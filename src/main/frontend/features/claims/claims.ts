@@ -50,6 +50,8 @@ export type Claim = {
   lockedBy: string;
   /** Whether it was added while its period was soft-closed. */
   lateEntry: boolean;
+  /** The last sheet's today (yyyy-MM-dd) a reminder was written for it; '' when it was never reminded. */
+  remindedOn: string;
 };
 
 /** Whether a claim is a correction: it has no floor and no late charge. */

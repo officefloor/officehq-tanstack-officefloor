@@ -26,6 +26,7 @@ public class Claim {
     private String splitFrom;
     private String lockedBy;
     private boolean lateEntry;
+    private LocalDate remindedOn;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue,
@@ -97,6 +98,15 @@ public class Claim {
             throw new InvalidClaimStatusException("A " + status + " claim cannot have a proof added");
         }
         proofs++;
+    }
+    /** The last sheet's today a reminder was written for it; null when it was never reminded. */
+    public LocalDate getRemindedOn() { return remindedOn; }
+    public void setRemindedOn(LocalDate remindedOn) { this.remindedOn = remindedOn; }
+    /** Remind it on {@code today}: only an OPEN or PENDING claim, and once per sheet's today. */
+    public void remind(LocalDate today) throws InvalidClaimStatusException {
+        if (!isOpen()) throw new InvalidClaimStatusException("A " + status + " claim cannot be reminded");
+        if (today.equals(remindedOn)) throw new InvalidClaimStatusException("The claim was already reminded today");
+        remindedOn = today;
     }
     /** Whether it was added while its period was soft-closed. */
     public boolean isLateEntry() { return lateEntry; }
@@ -203,6 +213,7 @@ public class Claim {
         then.proofs = proofs;
         then.splitFrom = splitFrom;
         then.lateEntry = lateEntry;
+        then.remindedOn = remindedOn;
         return then;
     }
     /** Whether it is open: OPEN, or PENDING a steward's approval. */

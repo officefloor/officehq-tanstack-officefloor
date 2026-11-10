@@ -17,7 +17,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, late_entry,"
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, late_entry, reminded_on,"
             + " (SELECT c.claim_date FROM claim c WHERE c.sheet_id = claim.sheet_id AND c.person_id = claim.person_id"
             + " AND c.claim_number = claim.corrects) AS corrected_date,"
             + " CASE WHEN locked_on = (SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id) THEN locked_by END AS locked_by_now";
@@ -37,6 +37,8 @@ public class ClaimRepository {
         claim.setProofs(rs.getInt("proofs"));
         claim.setSplitFrom(rs.getString("split_from"));
         claim.setLateEntry(rs.getBoolean("late_entry"));
+        java.sql.Date reminded = rs.getDate("reminded_on");
+        claim.setRemindedOn(reminded == null ? null : reminded.toLocalDate());
         claim.setLockedBy(rs.getString("locked_by_now"));
         java.sql.Date corrected = rs.getDate("corrected_date");
         claim.setCorrectedDate(corrected == null ? null : corrected.toLocalDate());
@@ -182,6 +184,17 @@ public class ClaimRepository {
                     bindings.put(rs.getLong("claim_id"), new Binding(rs.getBoolean("stated"), rs.getBigDecimal("stated_due")));
                 }, sheetId, Date.valueOf(day));
         return bindings;
+    }
+
+    /**
+     * Record the claim's reminder on its reminded date: only while it is still OPEN or PENDING and
+     * not already reminded that day, so of two reminders at once only one is written.
+     */
+    public boolean remind(Claim claim) {
+        Date on = Date.valueOf(claim.getRemindedOn());
+        return jdbc.update("UPDATE claim SET reminded_on = ? WHERE id = ? AND sheet_id = ?"
+                + " AND status IN ('OPEN', 'PENDING') AND (reminded_on IS NULL OR reminded_on <> ?)",
+                on, claim.getId(), claim.getSheetId(), on) == 1;
     }
 
     /** Insert a new claim (assigning its id) or update an existing one. */
