@@ -1,0 +1,105 @@
+diff --git a/src/main/frontend/features/settings/settings.slot.tsx b/src/main/frontend/features/settings/settings.slot.tsx
+index ca954a5e5..7b92921ff 100644
+--- a/src/main/frontend/features/settings/settings.slot.tsx
++++ b/src/main/frontend/features/settings/settings.slot.tsx
+@@ -41,7 +41,9 @@ import { useFigure } from '../locale/useLocale';
+  *  floor, the terms, each grade's terms, the late percent, the cap, the proof threshold, the note threshold and the rounding mode) is saved from its from-date, blank
+  *  meaning the sheet's today; each shows the value in force on the sheet's today. */
+ /** The actions the permission matrix covers. */
+-const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'];
++const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen', 'today'];
++/** How an action of the permission matrix reads in a sentence. */
++const permLabel = (a: string) => (a === 'today' ? "change the sheet's today" : a);
+ 
+ /** The from-date field of a setting with a figure: blank is the sheet's today. */
+ function FromInput({ settingKey, from, setFrom, onChange }: { settingKey: string; from: Record<string, string>;
+@@ -439,7 +441,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
+         <FromInput settingKey="rounding" from={from} setFrom={setFrom} onChange={() => save.reset()} />{' '}
+         {PERM_ACTIONS.map((a) => (
+           <label key={a}>
+-            Who may {a}{' '}
++            Who may {permLabel(a)}{' '}
+             <input
+               data-testid={`setting-perm-${a}`}
+               placeholder="clerk,steward"
+@@ -683,7 +685,7 @@ function SettingsPanel({ sheetId }: { sheetId: string }) {
+         , rounding <strong data-testid="setting-rounding-current">{fig(settingOn(settings.data, 'rounding', today) ?? '')}</strong>
+         {PERM_ACTIONS.map((a) => (
+           <span key={a}>
+-            , may {a} <strong data-testid={`setting-perm-${a}-current`}>{fig(settings.data?.permissions?.[a] ?? '')}</strong>
++            , may {permLabel(a)} <strong data-testid={`setting-perm-${a}-current`}>{fig(settings.data?.permissions?.[a] ?? '')}</strong>
+           </span>
+         ))}
+         , grace days <strong data-testid="setting-grace-days-current">{fig(settings.data?.graceDays ?? '')}</strong>
+diff --git a/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java b/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
+index 65e6dd6bc..8c32bc7ea 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
++++ b/src/main/java/net/officefloor/hq/app/settings/SettingsRepository.java
+@@ -20,7 +20,7 @@ public class SettingsRepository {
+      *  with the user's name) and that person; every other figure is still over everyone. */
+     public static final String RESTRICTED = "restricted";
+     /** The actions the permission matrix covers, in the order shown. */
+-    public static final List<String> PERMISSION_ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
++    public static final List<String> PERMISSION_ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen", "today");
+ 
+     private final JdbcTemplate jdbc;
+     private final HistoryRepository history;
+@@ -687,12 +687,14 @@ public class SettingsRepository {
+     }
+ 
+     /** Whether a user may take an action on the sheet: by the sheet's permission matrix entry for it, else the
+-     *  standing rule (open, settle, void and close by clerk and steward; reassign and reopen by steward). */
++     *  standing rule (open, settle, void and close by clerk and steward; reassign and reopen by steward; today by
++     *  anyone but a viewer). */
+     public boolean allows(String sheetId, String action, String user) {
+         List<String> found = jdbc.query("SELECT roles FROM sheet_permission WHERE sheet_id = ? AND action = ?",
+                 (rs, i) -> rs.getString("roles"), sheetId, action);
+         List<String> roles = found.isEmpty()
+-                ? (action.equals("reassign") || action.equals("reopen") ? List.of(STEWARD) : List.of(CLERK, STEWARD))
++                ? (action.equals("reassign") || action.equals("reopen") ? List.of(STEWARD)
++                        : action.equals("today") ? List.of(CLERK, STEWARD, RESTRICTED) : List.of(CLERK, STEWARD))
+                 : List.of(found.get(0).split(","));
+         return roles.contains(role(sheetId, user));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java b/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java
+index 986440db0..0cd84afd4 100644
+--- a/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java
++++ b/src/main/java/net/officefloor/hq/app/settings/ValidateSettings.java
+@@ -200,7 +200,7 @@ public class ValidateSettings {
+         Map<String, String> perms = request == null || request.permissions() == null ? Map.of() : request.permissions();
+         for (String action : perms.keySet()) {
+             if (!SettingsRepository.PERMISSION_ACTIONS.contains(action)) {
+-                throw new BadRequestException("permissions are for open, settle, void, reassign, close and reopen");
++                throw new BadRequestException("permissions are for open, settle, void, reassign, close, reopen and today");
+             }
+         }
+         for (String action : SettingsRepository.PERMISSION_ACTIONS) {
+@@ -210,9 +210,11 @@ public class ValidateSettings {
+             if (!value.isEmpty()) {
+                 for (String part : value.split(",", -1)) {
+                     String r = part.trim();
+-                    if (!r.equals(SettingsRepository.CLERK) && !r.equals(SettingsRepository.STEWARD)) {
+-                        throw new BadRequestException("permission for " + action
+-                                + " must be a comma separated list of roles (clerk, steward)");
++                    boolean today = action.equals("today");
++                    if (!r.equals(SettingsRepository.CLERK) && !r.equals(SettingsRepository.STEWARD)
++                            && !(today && r.equals(SettingsRepository.RESTRICTED))) {
++                        throw new BadRequestException("permission for " + action + " must be a comma separated list of roles ("
++                                + (today ? "clerk, steward, restricted" : "clerk, steward") + ")");
+                     }
+                     if (!roles.contains(r)) roles.add(r);
+                 }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SaveSheetToday.java b/src/main/java/net/officefloor/hq/app/sheet/SaveSheetToday.java
+index 84b76e59d..c03d31ac3 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SaveSheetToday.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SaveSheetToday.java
+@@ -21,6 +21,9 @@ public class SaveSheetToday {
+             throws BadRequestException {
+         String by = CurrentUser.require(connection);
+         String id = sheetId == null ? "" : sheetId.trim();
++        if (!settings.allows(id, "today", by)) {
++            throw new BadRequestException("a " + settings.role(id, by) + " cannot change the sheet's today");
++        }
+         Rollup.Snapshot before = rollup.take(id);
+         // A change of today under a delegation is marked for its steward as the delegation stood on the day left.
+         String delegator = settings.delegator(id, by);
