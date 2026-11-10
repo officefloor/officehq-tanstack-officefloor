@@ -58,6 +58,8 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   const [moveTo, setMoveTo] = useState<Record<string, string>>({});
   // The date typed to defer each claim until, by claim id.
   const [deferUntil, setDeferUntil] = useState<Record<string, string>>({});
+  // The new date typed to re-date each claim to, by claim id.
+  const [newDate, setNewDate] = useState<Record<string, string>>({});
   // The amount typed to split off each claim, by claim id.
   const [splitAmount, setSplitAmount] = useState<Record<string, string>>({});
   const others = (usePeople(sheetId).data ?? []).filter((p) => p.id !== person.id);
@@ -144,6 +146,36 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
     onError: (_e, { id }) =>
       setRefused({ id, message: 'Only an OPEN claim can be deferred, to a date after today.' }),
   });
+
+  // A steward re-dates an OPEN or PENDING claim; its due-by and any stated figure are kept.
+  const redate = useMutation({
+    mutationFn: ({ id, date }: { id: string; date: string }) =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/claims/${encodeURIComponent(id)}/redate`,
+        { date },
+        user,
+      ),
+    onSuccess: (_c, { id }) => {
+      setNewDate((d) => ({ ...d, [id]: '' }));
+      void queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+    onError: (_e, { id }) =>
+      setRefused({
+        id,
+        message: 'That claim cannot be re-dated: a steward re-dates an open claim, outside a closed period and not after retirement.',
+      }),
+  });
+
+  const redateClaim = (id: string) => {
+    setRefused(null);
+    const date = (newDate[id] ?? '').trim();
+    if (date === '') {
+      setRefused({ id, message: 'Choose the new date for the claim.' });
+      return;
+    }
+    redate.mutate({ id, date });
+  };
 
   // An amount is split off an OPEN claim into a new OPEN claim, listed newest.
   const split = useMutation({
@@ -356,6 +388,19 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
               />{' '}
               <button type="button" data-testid="claim-defer" onClick={() => deferClaim(c.id)}>
                 Defer
+              </button>{' '}
+              <input
+                type="date"
+                data-testid="claim-date-new"
+                aria-label="New date"
+                value={newDate[c.id] ?? ''}
+                onChange={(e) => {
+                  setNewDate((d) => ({ ...d, [c.id]: e.target.value }));
+                  setRefused((r) => (r !== null && r.id === c.id ? null : r));
+                }}
+              />{' '}
+              <button type="button" data-testid="claim-redate" onClick={() => redateClaim(c.id)}>
+                Re-date
               </button>{' '}
               <input
                 data-testid="claim-split-amount"
