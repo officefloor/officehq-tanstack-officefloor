@@ -55,4 +55,13 @@ public class PeriodRepository {
         return jdbc.update("UPDATE period SET closed = TRUE, closed_total = ? WHERE sheet_id = ? AND name = ? AND NOT closed",
                 period.closedTotal(), period.sheetId(), period.name()) == 1;
     }
+
+    /**
+     * Reopen the period, clearing its fixed due-total: false when it is not closed, as when another
+     * request reopened it first.
+     */
+    public boolean markReopened(Period period) {
+        return jdbc.update("UPDATE period SET closed = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ? AND closed",
+                period.sheetId(), period.name()) == 1;
+    }
 }
