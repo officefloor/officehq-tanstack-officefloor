@@ -53,7 +53,8 @@ public class SettingsRepository {
 
     /**
      * The sheet's settings as they stood at the end of {@code day}: each dated value and the policy
-     * date as last recorded while the sheet's today was on or before it. The others are as they are now.
+     * date as last recorded while the sheet's today was on or before it, and that date standing in for
+     * the sheet's today. The others are as they are now.
      */
     public Settings findAsOf(String sheetId, LocalDate day) {
         Settings now = find(sheetId);
@@ -72,7 +73,7 @@ public class SettingsRepository {
                         dated.computeIfAbsent(key, (k) -> new TreeMap<>()).put(rs.getDate("from_date").toLocalDate(), value);
                     }
                 }, sheetId);
-        return new Settings(sheetId, now.today(), dated, policyKept[0] ? policy[0] : now.policyDate(),
+        return new Settings(sheetId, day, dated, policyKept[0] ? policy[0] : now.policyDate(),
                 now.periodNumberingFrom(), now.perms(), now.graceDays());
     }
 

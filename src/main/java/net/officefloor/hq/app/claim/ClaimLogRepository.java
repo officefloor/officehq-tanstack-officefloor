@@ -39,6 +39,18 @@ public class ClaimLogRepository {
         return logs;
     }
 
+    /** The sheet's logs by claim id as they stood at the end of {@code day}: the lines dated on or before it. */
+    public Map<Long, List<String>> findAllOn(String sheetId, LocalDate day) {
+        Map<Long, List<String>> logs = new HashMap<>();
+        jdbc.query("SELECT claim_id, status, by_user, on_date, due FROM claim_log WHERE sheet_id = ? AND on_date <= ? ORDER BY id",
+                (rs) -> {
+                    logs.computeIfAbsent(rs.getLong("claim_id"), (k) -> new ArrayList<>())
+                            .add(rs.getString("status") + " by " + rs.getString("by_user") + " on "
+                                    + rs.getDate("on_date").toLocalDate() + " due=" + rs.getString("due"));
+                }, sheetId, Date.valueOf(day));
+        return logs;
+    }
+
     /**
      * Each claim's status at the end of {@code day}, by claim id: its last log line dated on or
      * before it. A claim with no such line (added after) is absent.

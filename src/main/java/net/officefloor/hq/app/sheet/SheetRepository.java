@@ -44,7 +44,17 @@ public class SheetRepository {
 
     /** Archive the sheet: true when this call archived it, false when it already was. */
     public boolean archive(String id) {
-        return jdbc.update("UPDATE sheet SET archived = TRUE WHERE id = ? AND archived = FALSE", id) > 0;
+        return jdbc.update("UPDATE sheet SET archived = TRUE, archived_on = today WHERE id = ? AND archived = FALSE", id) > 0;
+    }
+
+    /**
+     * The sheet as it stood at the end of {@code day}: that date stands in for its today, and it is
+     * archived only when it was archived while its today was on or before it.
+     */
+    public Sheet asOf(Sheet sheet, LocalDate day) {
+        List<Boolean> archived = jdbc.query("SELECT archived AND (archived_on IS NULL OR archived_on <= ?) AS archived_then"
+                + " FROM sheet WHERE id = ?", (rs, n) -> rs.getBoolean("archived_then"), Date.valueOf(day), sheet.id());
+        return new Sheet(sheet.id(), day, !archived.isEmpty() && archived.get(0));
     }
 
     /** Whether the sheet has been archived; false for a sheet never loaded. */

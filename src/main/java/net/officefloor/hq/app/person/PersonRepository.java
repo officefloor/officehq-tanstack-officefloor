@@ -76,8 +76,9 @@ public class PersonRepository {
 
     /** Record {@code patron} as one of the person's patrons. */
     public void addPatron(Person person, Person patron) {
-        jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id) VALUES (?, ?, ?)",
-                person.getSheetId(), person.getId(), patron.getId());
+        jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id, added_on)"
+                + " VALUES (?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
+                person.getSheetId(), person.getId(), patron.getId(), person.getSheetId());
         person.getPatronIds().add(patron.getId());
     }
 
@@ -142,6 +143,10 @@ public class PersonRepository {
             jdbc.update("INSERT INTO person_statement (sheet_id, person_id, seq, stated_total, statement_date) VALUES (?, ?, ?, ?, ?)",
                     person.getSheetId(), person.getId(), person.getStatementCount(), person.getStatedTotal(), date);
         }
+        jdbc.update("INSERT INTO person_statement_history (sheet_id, person_id, statement_count, stated_total, statement_date, set_on)"
+                + " VALUES (?, ?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
+                person.getSheetId(), person.getId(), person.getStatementCount(), person.getStatedTotal(), date,
+                person.getSheetId());
     }
 
     /**
@@ -232,8 +237,8 @@ public class PersonRepository {
     }
 
     /**
-     * The person as they stood at the end of {@code day}: their grades, holds and retirement as
-     * given while the sheet's today was on or before it; the rest as they are now.
+     * The person as they stood at the end of {@code day}: their grades, holds, retirement, statements
+     * and patrons as given while the sheet's today was on or before it; the rest as they are now.
      */
     public Person asOf(Person person, LocalDate day) {
         Date on = Date.valueOf(day);
@@ -248,7 +253,12 @@ public class PersonRepository {
         Person then = new Person(person.getId(), person.getSheetId(), person.getName(), first[0], person.getVersion());
         then.setTerms(person.getTerms());
         then.setAddedOn(person.getAddedOn());
-        then.setStatements(person.getStatementCount(), person.getStatedTotal(), person.getStatementDate());
+        then.setStatements(0, null, null);
+        jdbc.query("SELECT statement_count, stated_total, statement_date FROM person_statement_history"
+                + " WHERE sheet_id = ? AND person_id = ? AND set_on <= ? ORDER BY id DESC LIMIT 1", (rs) -> {
+                    then.setStatements(rs.getInt("statement_count"), rs.getString("stated_total"),
+                            rs.getObject("statement_date", LocalDate.class));
+                }, person.getSheetId(), person.getId(), on);
         dated.forEach((from, grade) -> then.setGradeFrom(grade, from));
         jdbc.query("SELECT from_date, to_date FROM person_hold WHERE sheet_id = ? AND person_id = ?"
                 + " AND (made_on IS NULL OR made_on <= ?) ORDER BY id", (rs) -> {
@@ -258,7 +268,9 @@ public class PersonRepository {
                 + " AND set_on <= ? ORDER BY id DESC LIMIT 1", (rs, n) -> rs.getObject("from_date", LocalDate.class),
                 person.getSheetId(), person.getId(), on);
         then.setRetiredFrom(retired.isEmpty() ? null : retired.get(0));
-        then.getPatronIds().addAll(person.getPatronIds());
+        then.getPatronIds().addAll(jdbc.queryForList("SELECT patron_id FROM person_patron WHERE sheet_id = ?"
+                + " AND person_id = ? AND (added_on IS NULL OR added_on <= ?) ORDER BY patron_id", Long.class,
+                person.getSheetId(), person.getId(), on));
         return then;
     }
 }

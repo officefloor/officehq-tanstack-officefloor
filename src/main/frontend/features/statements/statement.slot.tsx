@@ -38,8 +38,9 @@ function PersonStatement({ sheetId, person }: { sheetId: string; person: Person 
         { asOf: date },
         user,
       ),
+    // The date is used for this one statement only, whether it is taken or refused.
+    onSettled: () => setAsOf(''),
     onSuccess: () => {
-      setAsOf('');
       return Promise.all([
         queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
         queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),

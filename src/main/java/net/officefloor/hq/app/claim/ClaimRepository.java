@@ -74,8 +74,10 @@ public class ClaimRepository {
      * request changed it first.
      */
     public boolean markOpened(Claim claim) {
-        return jdbc.update("UPDATE claim SET status = 'OPEN' WHERE id = ? AND sheet_id = ? AND status = 'DRAFT'",
+        boolean opened = jdbc.update("UPDATE claim SET status = 'OPEN' WHERE id = ? AND sheet_id = ? AND status = 'DRAFT'",
                 claim.getId(), claim.getSheetId()) == 1;
+        if (opened) keepHistory(claim);
+        return opened;
     }
 
     /**
@@ -196,6 +198,7 @@ public class ClaimRepository {
                     claim.isStated(), claim.getStatedDue(), claim.getCorrects(),
                     claim.getDeferredUntil() == null ? null : Date.valueOf(claim.getDeferredUntil()), claim.getProofs(), claim.getId(),
                     claim.getSheetId());
+            keepHistory(claim);
             return;
         }
         long listed = nextListed(claim.getSheetId());
@@ -220,5 +223,52 @@ public class ClaimRepository {
             return ps;
         }, keys);
         claim.setId(keys.getKey().longValue());
+        keepHistory(claim);
+    }
+
+    private static final String HISTORY_COLUMNS = "person_id, amount, claim_date, note, status, claim_number, settled_due,"
+            + " opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, late_entry, listed";
+
+    /** Keeps the claim as the store now holds it in its history, with the sheet's today now. */
+    private void keepHistory(Claim claim) {
+        jdbc.update("INSERT INTO claim_history (sheet_id, claim_id, " + HISTORY_COLUMNS + ", set_on)"
+                + " SELECT sheet_id, id, " + HISTORY_COLUMNS + ", (SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id)"
+                + " FROM claim WHERE id = ? AND sheet_id = ?", claim.getId(), claim.getSheetId());
+    }
+
+    /**
+     * The sheet's claims as they stood at the end of {@code day}, newest first: each as last kept
+     * while the sheet's today was on or before it (a claim added after is absent), locked by no one.
+     */
+    public List<Claim> findAllAsOf(String sheetId, LocalDate day) {
+        Map<Long, Claim> latest = new HashMap<>();
+        Map<Long, Long> listed = new HashMap<>();
+        jdbc.query("SELECT claim_id, sheet_id, " + HISTORY_COLUMNS + " FROM claim_history WHERE sheet_id = ?"
+                + " AND set_on <= ? ORDER BY id", (rs) -> {
+                    Claim claim = new Claim(rs.getLong("claim_id"), rs.getString("sheet_id"), rs.getLong("person_id"),
+                            rs.getBigDecimal("amount"), rs.getDate("claim_date").toLocalDate(), rs.getString("note"),
+                            ClaimStatus.valueOf(rs.getString("status")), rs.getString("claim_number"),
+                            rs.getBigDecimal("settled_due"), rs.getString("opened_by"));
+                    claim.bind(rs.getBoolean("stated"), rs.getBigDecimal("stated_due"));
+                    claim.setCorrects(rs.getString("corrects"));
+                    claim.setDueBy(rs.getDate("due_by").toLocalDate());
+                    Date deferred = rs.getDate("deferred_until");
+                    claim.setDeferredUntil(deferred == null ? null : deferred.toLocalDate());
+                    claim.setProofs(rs.getInt("proofs"));
+                    claim.setSplitFrom(rs.getString("split_from"));
+                    claim.setLateEntry(rs.getBoolean("late_entry"));
+                    latest.put(claim.getId(), claim);
+                    listed.put(claim.getId(), rs.getLong("listed"));
+                }, sheetId, Date.valueOf(day));
+        for (Claim claim : latest.values()) {
+            if (claim.getCorrects() == null) continue;
+            latest.values().stream()
+                    .filter((c) -> c.getPersonId() == claim.getPersonId() && claim.getCorrects().equals(c.getNumber()))
+                    .findFirst().ifPresent((c) -> claim.setCorrectedDate(c.getDate()));
+        }
+        return latest.values().stream()
+                .sorted(java.util.Comparator.comparing((Claim c) -> listed.get(c.getId())).thenComparing(Claim::getId)
+                        .reversed())
+                .toList();
     }
 }

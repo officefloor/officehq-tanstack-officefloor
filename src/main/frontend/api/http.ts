@@ -7,6 +7,22 @@ export class HttpError extends Error {
   }
 }
 
+// The as-of date the screen reads the sheet at ('' for now): the `asof` search param. While it is set
+// every read names it, so the server answers with the sheet as it stood then, and every change is
+// refused here, never sent — the form that made it shows its usual error. Loading a sheet is no
+// change: it only re-reads one.
+export const ASOF_PARAM = 'asof';
+
+function asOf(): string {
+  return new URLSearchParams(window.location.search).get(ASOF_PARAM) ?? '';
+}
+
+function refuseWhileAsOf(method: string, path: string): void {
+  if (asOf() !== '' && !path.endsWith('/load')) {
+    throw new HttpError(`${method} ${path} -> refused while viewing as of ${asOf()}`, 409);
+  }
+}
+
 async function send<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init);
   if (!res.ok) {
@@ -17,7 +33,11 @@ async function send<T>(path: string, init?: RequestInit): Promise<T> {
 
 // A read that depends on who is signed in names them too.
 export function getJson<T>(path: string, user?: string): Promise<T> {
-  return user === undefined ? send<T>(path) : send<T>(path, { headers: { 'X-User': encodeURIComponent(user) } });
+  const headers: Record<string, string> = {};
+  if (user !== undefined) headers['X-User'] = encodeURIComponent(user);
+  const date = asOf();
+  if (date !== '') headers['X-As-Of'] = date;
+  return send<T>(path, { headers });
 }
 
 // A change is made by the signed-in user: name them, and the server records who made it.
@@ -27,7 +47,8 @@ function jsonHeaders(user?: string): HeadersInit {
     : { 'Content-Type': 'application/json', 'X-User': encodeURIComponent(user) };
 }
 
-export function postJson<T>(path: string, body: unknown, user?: string): Promise<T> {
+export async function postJson<T>(path: string, body: unknown, user?: string): Promise<T> {
+  refuseWhileAsOf('POST', path);
   return send<T>(path, {
     method: 'POST',
     headers: jsonHeaders(user),
@@ -35,7 +56,8 @@ export function postJson<T>(path: string, body: unknown, user?: string): Promise
   });
 }
 
-export function putJson<T>(path: string, body: unknown, user?: string): Promise<T> {
+export async function putJson<T>(path: string, body: unknown, user?: string): Promise<T> {
+  refuseWhileAsOf('PUT', path);
   return send<T>(path, {
     method: 'PUT',
     headers: jsonHeaders(user),

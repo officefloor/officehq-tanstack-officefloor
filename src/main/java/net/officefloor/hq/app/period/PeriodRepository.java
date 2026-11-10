@@ -58,8 +58,35 @@ public class PeriodRepository {
     }
 
     public void insert(Period period) {
-        jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date) VALUES (?, ?, ?, ?)",
-                period.sheetId(), period.name(), period.from(), period.to());
+        jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, added_on) VALUES (?, ?, ?, ?,"
+                + " (SELECT today FROM sheet WHERE id = ?))",
+                period.sheetId(), period.name(), period.from(), period.to(), period.sheetId());
+    }
+
+    /** Keeps the period's closed state, as now stored, in its history with the sheet's today now. */
+    private void keepHistory(Period period) {
+        jdbc.update("INSERT INTO period_history (sheet_id, name, closed, soft, closed_total, set_on)"
+                + " SELECT sheet_id, name, closed, soft, closed_total, (SELECT s.today FROM sheet s WHERE s.id = period.sheet_id)"
+                + " FROM period WHERE sheet_id = ? AND name = ?", period.sheetId(), period.name());
+    }
+
+    /**
+     * The sheet's periods as they stood at the end of {@code day}, by from-date: those added by then,
+     * each closed (or soft-closed, or open) as last changed while the sheet's today was on or before it.
+     */
+    public List<Period> findAllAsOf(String sheetId, LocalDate day) {
+        Map<String, Period> then = new HashMap<>();
+        jdbc.query("SELECT sheet_id, name, closed, soft, closed_total FROM period_history WHERE sheet_id = ?"
+                + " AND set_on <= ? ORDER BY id", rs -> {
+                    then.put(rs.getString("name"), new Period(rs.getString("sheet_id"), rs.getString("name"), null, null,
+                            rs.getBoolean("closed"), rs.getBigDecimal("closed_total"), rs.getBoolean("soft")));
+                }, sheetId, java.sql.Date.valueOf(day));
+        return jdbc.query("SELECT " + COLUMNS + " FROM period WHERE sheet_id = ? AND (added_on IS NULL OR added_on <= ?)"
+                + " ORDER BY from_date", ROW, sheetId, java.sql.Date.valueOf(day)).stream().map((p) -> {
+                    Period state = then.get(p.name());
+                    return state == null ? new Period(p.sheetId(), p.name(), p.from(), p.to())
+                            : new Period(p.sheetId(), p.name(), p.from(), p.to(), state.closed(), state.closedTotal(), state.soft());
+                }).toList();
     }
 
     /**
@@ -68,9 +95,11 @@ public class PeriodRepository {
      * it first.
      */
     public boolean markClosed(Period period, boolean fromSoft) {
-        return jdbc.update("UPDATE period SET closed = TRUE, soft = ?, closed_total = ? WHERE sheet_id = ? AND name = ?"
+        boolean closed = jdbc.update("UPDATE period SET closed = TRUE, soft = ?, closed_total = ? WHERE sheet_id = ? AND name = ?"
                 + " AND closed = ? AND soft = ?",
                 period.soft(), period.closedTotal(), period.sheetId(), period.name(), fromSoft, fromSoft) == 1;
+        if (closed) keepHistory(period);
+        return closed;
     }
 
     /**
@@ -78,8 +107,10 @@ public class PeriodRepository {
      * request reopened it first.
      */
     public boolean markReopened(Period period) {
-        return jdbc.update("UPDATE period SET closed = FALSE, soft = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ? AND closed",
+        boolean reopened = jdbc.update("UPDATE period SET closed = FALSE, soft = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ? AND closed",
                 period.sheetId(), period.name()) == 1;
+        if (reopened) keepHistory(period);
+        return reopened;
     }
 
     /** Fix each person's due-total for the closed period. */
