@@ -23,6 +23,7 @@ public class Claim {
     private LocalDate dueBy;
     private LocalDate deferredUntil;
     private int proofs;
+    private String splitFrom;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue,
@@ -94,6 +95,25 @@ public class Claim {
             throw new InvalidClaimStatusException("A " + status + " claim cannot have a proof added");
         }
         proofs++;
+    }
+    /** The number of the claim it was split off; null when it was not split off one. */
+    public String getSplitFrom() { return splitFrom; }
+    public void setSplitFrom(String splitFrom) { this.splitFrom = splitFrom; }
+    /**
+     * Split {@code part} (more than 0.00, less than its amount) off an OPEN claim that is not
+     * deferred on {@code today}: it keeps the rest and loses any figure a statement bound it to.
+     * The new claim is made by the caller.
+     */
+    public void split(BigDecimal part, LocalDate today) throws InvalidClaimStatusException, InvalidClaimException {
+        if (status != ClaimStatus.OPEN) {
+            throw new InvalidClaimStatusException("A " + status + " claim cannot be split");
+        }
+        if (isDeferredOn(today)) throw new InvalidClaimStatusException("A deferred claim cannot be split");
+        if (part.signum() <= 0 || part.compareTo(amount) >= 0) {
+            throw new InvalidClaimException("A split is more than 0.00 and less than the claim's amount");
+        }
+        amount = amount.subtract(part);
+        bind(false, null);
     }
     public String getNote() { return note; }
     public void setNote(String note) { this.note = note; }

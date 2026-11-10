@@ -7,7 +7,7 @@ import { PersonHead, PersonRow } from '../../slots/defs/personRow';
 import { gradeOn, peopleKey, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { useUser } from '../session/session';
-import { CLAIM_AMOUNT, CLAIM_NUMBER, claimsKey, isDeferred, sumAmounts, useClaims } from './claims';
+import { AMOUNT, CLAIM_AMOUNT, CLAIM_NUMBER, claimsKey, isDeferred, sumAmounts, useClaims } from './claims';
 import type { Claim } from './claims';
 import { selectClaim, useSelectedClaims } from './selection';
 import { claimDue, rateOn, useRates } from '../rates/rates';
@@ -58,6 +58,8 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   const [moveTo, setMoveTo] = useState<Record<string, string>>({});
   // The date typed to defer each claim until, by claim id.
   const [deferUntil, setDeferUntil] = useState<Record<string, string>>({});
+  // The amount typed to split off each claim, by claim id.
+  const [splitAmount, setSplitAmount] = useState<Record<string, string>>({});
   const others = (usePeople(sheetId).data ?? []).filter((p) => p.id !== person.id);
   const [user] = useUser();
   const rates = useRates(sheetId).data ?? [];
@@ -142,6 +144,32 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
     onError: (_e, { id }) =>
       setRefused({ id, message: 'Only an OPEN claim can be deferred, to a date after today.' }),
   });
+
+  // An amount is split off an OPEN claim into a new OPEN claim, listed newest.
+  const split = useMutation({
+    mutationFn: ({ id, amount }: { id: string; amount: string }) =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/claims/${encodeURIComponent(id)}/split`,
+        { amount },
+        user,
+      ),
+    onSuccess: (_c, { id }) => {
+      setSplitAmount((a) => ({ ...a, [id]: '' }));
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+    onError: (_e, { id }) =>
+      setRefused({ id, message: 'Only an OPEN claim can be split, by an amount less than its own.' }),
+  });
+
+  const splitClaim = (id: string) => {
+    setRefused(null);
+    const amount = (splitAmount[id] ?? '').trim();
+    if (!AMOUNT.test(amount)) {
+      setRefused({ id, message: 'A split needs an amount with up to two decimals.' });
+      return;
+    }
+    split.mutate({ id, amount });
+  };
 
   // A proof is added to a claim that is not SETTLED or VOID.
   const proof = useMutation({
@@ -293,6 +321,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
               <span data-testid="claim-deferred">{isDeferred(c, today) ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-deferred-until">{c.deferredUntil}</span>{' '}
               <span data-testid="claim-proofs">{c.proofs}</span>{' '}
+              <span data-testid="claim-split-from">{c.splitFrom}</span>{' '}
               <button type="button" data-testid="claim-proof" onClick={() => addProof(c.id)}>
                 Add proof
               </button>{' '}
@@ -327,6 +356,19 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
               />{' '}
               <button type="button" data-testid="claim-defer" onClick={() => deferClaim(c.id)}>
                 Defer
+              </button>{' '}
+              <input
+                data-testid="claim-split-amount"
+                placeholder="Split amount"
+                inputMode="decimal"
+                value={splitAmount[c.id] ?? ''}
+                onChange={(e) => {
+                  setSplitAmount((a) => ({ ...a, [c.id]: e.target.value }));
+                  setRefused((r) => (r !== null && r.id === c.id ? null : r));
+                }}
+              />{' '}
+              <button type="button" data-testid="claim-split" onClick={() => splitClaim(c.id)}>
+                Split
               </button>{' '}
               <select
                 data-testid="claim-reassign-to"

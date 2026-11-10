@@ -44,6 +44,8 @@ export type Claim = {
   deferredUntil: string;
   /** How many proofs it has had added. */
   proofs: number;
+  /** The number of the claim it was split off; '' when it was not split off one. */
+  splitFrom: string;
 };
 
 /** Whether a claim is a correction: it has no floor and no late charge. */

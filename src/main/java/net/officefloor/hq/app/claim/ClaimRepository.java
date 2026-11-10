@@ -13,7 +13,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs,"
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from,"
             + " (SELECT c.claim_date FROM claim c WHERE c.sheet_id = claim.sheet_id AND c.person_id = claim.person_id"
             + " AND c.claim_number = claim.corrects) AS corrected_date";
 
@@ -30,6 +30,7 @@ public class ClaimRepository {
         java.sql.Date deferred = rs.getDate("deferred_until");
         claim.setDeferredUntil(deferred == null ? null : deferred.toLocalDate());
         claim.setProofs(rs.getInt("proofs"));
+        claim.setSplitFrom(rs.getString("split_from"));
         java.sql.Date corrected = rs.getDate("corrected_date");
         claim.setCorrectedDate(corrected == null ? null : corrected.toLocalDate());
         return claim;
@@ -121,7 +122,7 @@ public class ClaimRepository {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, corrects, listed, due_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, corrects, listed, due_by, split_from, claim_number, opened_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, claim.getSheetId());
             ps.setLong(2, claim.getPersonId());
@@ -132,6 +133,9 @@ public class ClaimRepository {
             ps.setString(7, claim.getCorrects());
             ps.setLong(8, listed);
             ps.setDate(9, Date.valueOf(claim.getDueBy()));
+            ps.setString(10, claim.getSplitFrom());
+            ps.setString(11, claim.getNumber());
+            ps.setString(12, claim.getOpenedBy());
             return ps;
         }, keys);
         claim.setId(keys.getKey().longValue());
