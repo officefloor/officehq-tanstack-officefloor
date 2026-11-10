@@ -12,6 +12,7 @@ public class AuditStatement {
             HttpServletRequest request, Audit audit) {
         audit.record("STATEMENT sheet=" + sheet.id() + " by=" + Audit.user(request)
                 + " name=" + person.getName() + " due-total=" + statement.dueTotal()
-                + " claims=" + statement.claims());
+                + " claims=" + statement.claims()
+                + (statement.asOf() == null ? "" : " asof=" + statement.asOf()));
     }
 }

@@ -18,6 +18,7 @@ public class Person {
     private String statedTotal;
     private LocalDate statementDate;
     private LocalDate retiredFrom;
+    private LocalDate addedOn;
     private final List<Hold> holds = new ArrayList<>();
     private final List<Long> patronIds = new ArrayList<>();
     private final TreeMap<LocalDate, String> datedGrades = new TreeMap<>();
@@ -68,6 +69,11 @@ public class Person {
         this.statedTotal = statedTotal;
         this.statementDate = statementDate;
     }
+    /** The sheet's today when they were added; null when it was not kept (from the beginning of time). */
+    public LocalDate getAddedOn() { return addedOn; }
+    public void setAddedOn(LocalDate addedOn) { this.addedOn = addedOn; }
+    /** Whether they had been added by the end of {@code day}. */
+    public boolean addedBy(LocalDate day) { return addedOn == null || !addedOn.isAfter(day); }
     /** The date they are retired from; null when not retired. Set at all, they count as retired. */
     public LocalDate getRetiredFrom() { return retiredFrom; }
     public void setRetiredFrom(LocalDate retiredFrom) { this.retiredFrom = retiredFrom; }

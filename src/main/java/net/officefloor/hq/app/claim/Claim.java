@@ -189,6 +189,22 @@ public class Claim {
         boolean openThen = statusThen == ClaimStatus.OPEN || statusThen == ClaimStatus.PENDING;
         return statusThen == ClaimStatus.SETTLED || (openThen && (isBound() || !heldOnDate));
     }
+    /**
+     * A copy of it as it stood at the end of a day: with the status, settled due and statement
+     * binding it had then, the rest as it is now.
+     */
+    public Claim asThen(ClaimStatus statusThen, BigDecimal settledDueThen, boolean statedThen, BigDecimal statedDueThen) {
+        Claim then = new Claim(id, sheetId, personId, amount, date, note, statusThen, number, settledDueThen, openedBy);
+        then.bind(statedThen, statedDueThen);
+        then.corrects = corrects;
+        then.correctedDate = correctedDate;
+        then.dueBy = dueBy;
+        then.deferredUntil = deferredUntil;
+        then.proofs = proofs;
+        then.splitFrom = splitFrom;
+        then.lateEntry = lateEntry;
+        return then;
+    }
     /** Whether it is open: OPEN, or PENDING a steward's approval. */
     public boolean isOpen() {
         return status == ClaimStatus.OPEN || status == ClaimStatus.PENDING;

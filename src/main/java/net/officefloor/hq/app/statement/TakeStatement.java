@@ -1,10 +1,14 @@
 package net.officefloor.hq.app.statement;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimFigure;
+import net.officefloor.hq.app.claim.ClaimLogRepository;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.Rate;
@@ -23,40 +27,66 @@ import net.officefloor.plugin.variable.Val;
  * (a live one before the floor), never its late charge nor the floor;
  * every other claim of theirs is left unbound (live). The person's statement count goes up by one,
  * and the due-total and the sheet's today are kept as the last statement's.
+ * <p>
+ * Taken as of a date (on or before the sheet's today, and not before the person was added), it is
+ * taken as the sheet stood at the end of that date: every change made while the sheet's today was
+ * on or before it counts (the rates, settings, the person's grades, holds and retirement, each
+ * claim's status, settled due and statement binding), every later change does not, and the date
+ * stands in for the sheet's today in every figure. That date is kept as the statement's date.
  */
 public class TakeStatement {
-    public void take(@Val Sheet sheet, @Val Person person, ClaimRepository claims, RateRepository rates,
-            SettingsRepository settings, PersonRepository people, Out<Statement> statementOut) {
-        List<Rate> all = rates.findAll(sheet.id());
-        Settings sheetSettings = settings.find(sheet.id());
+    public void take(@Val Sheet sheet, @Val Person person, @Val StatementInput input, ClaimRepository claims,
+            ClaimLogRepository logs, RateRepository rates, SettingsRepository settings, PersonRepository people,
+            Out<Statement> statementOut) throws InvalidStatementException {
+        LocalDate asOf = input.asOf();
+        if (asOf != null && asOf.isAfter(sheet.today())) {
+            throw new InvalidStatementException("A statement is taken as of a date on or before today");
+        }
+        if (asOf != null && !person.addedBy(asOf)) {
+            throw new InvalidStatementException(person.getName() + " was not yet added on " + asOf);
+        }
+        LocalDate today = asOf != null ? asOf : sheet.today();
+        List<Rate> all = asOf != null ? rates.findAsOf(sheet.id(), asOf) : rates.findAll(sheet.id());
+        Settings sheetSettings = asOf != null ? settings.findAsOf(sheet.id(), asOf) : settings.find(sheet.id());
+        Person then = asOf != null ? people.asOf(person, asOf) : person;
+        Map<Long, ClaimLogRepository.Line> lines = asOf != null ? logs.linesOn(sheet.id(), asOf) : null;
+        Map<Long, ClaimRepository.Binding> bindings = asOf != null ? claims.bindingsOn(sheet.id(), asOf) : null;
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         boolean fixed = false;
         int counted = 0;
-        for (Claim claim : claims.findByPerson(sheet.id(), person.getId())) {
-            boolean counts = claim.counts(person.heldOn(claim.getDate(), sheet.today()), sheet.today());
+        for (Claim live : claims.findByPerson(sheet.id(), person.getId())) {
+            Claim claim = live;
+            if (asOf != null) {
+                ClaimLogRepository.Line line = lines.get(live.getId());
+                ClaimRepository.Binding binding = bindings.get(live.getId());
+                claim = line == null ? null : live.asThen(line.status(),
+                        line.status() == ClaimStatus.SETTLED ? line.due() : null,
+                        binding != null && binding.stated(), binding == null ? null : binding.statedDue());
+            }
+            boolean counts = claim != null && claim.counts(then.heldOn(claim.getDate(), today), today);
             if (counts) {
                 counted++;
                 if (claim.getSettledDue() != null || claim.boundDue() != null) fixed = true;
-                String grade = person.gradeOn(claim.getDate());
+                String grade = then.gradeOn(claim.getDate());
                 BigDecimal figure = claim.getSettledDue() != null ? claim.getSettledDue()
-                        : ClaimFigure.of(claim, all, grade, sheetSettings, sheet.today());
+                        : ClaimFigure.of(claim, all, grade, sheetSettings, today);
                 // A figure found under a grade other than today's is kept, whatever today's rate.
-                if (figure != null && !grade.equals(person.gradeOn(sheet.today()))) fixed = true;
+                if (figure != null && !grade.equals(then.gradeOn(today))) fixed = true;
                 // So is one dated on or before today, found under a rate that has since ended.
-                if (figure != null && !claim.getDate().isAfter(sheet.today())) fixed = true;
+                if (figure != null && !claim.getDate().isAfter(today)) fixed = true;
                 // The due-total carries the late charge and the floor; the claim is bound to the rate figure under them.
-                BigDecimal due = ClaimFigure.withLate(claim, all, grade, sheetSettings, sheet.today());
+                BigDecimal due = ClaimFigure.withLate(claim, all, grade, sheetSettings, today);
                 if (due != null) total = total.add(due);
-                claim.bind(true, figure);
+                live.bind(true, figure);
             } else {
-                claim.bind(false, null);
+                live.bind(false, null);
             }
-            claims.save(claim);
+            claims.save(live);
         }
-        String dueTotal = Rate.inForce(all, person.gradeOn(sheet.today()), sheet.today()).isEmpty() && !fixed
-                ? "n/a" : sheetSettings.capped(total, sheet.today()).toPlainString();
-        person.setStatements(person.getStatementCount() + 1, dueTotal, sheet.today());
+        String dueTotal = Rate.inForce(all, then.gradeOn(today), today).isEmpty() && !fixed
+                ? "n/a" : sheetSettings.capped(total, today).toPlainString();
+        person.setStatements(person.getStatementCount() + 1, dueTotal, today);
         people.saveStatements(person);
-        statementOut.set(new Statement(dueTotal, counted));
+        statementOut.set(new Statement(dueTotal, counted, asOf));
     }
 }

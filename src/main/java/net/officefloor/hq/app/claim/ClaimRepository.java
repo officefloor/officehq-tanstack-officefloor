@@ -3,8 +3,11 @@ package net.officefloor.hq.app.claim;
 import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.Statement;
+import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -143,6 +146,42 @@ public class ClaimRepository {
                 Long.class, sheetId);
     }
 
+    /** A claim's statement binding: bound (to a figure, null: n/a) or not. */
+    public record Binding(boolean stated, BigDecimal statedDue) {
+    }
+
+    /**
+     * Keeps the claim's binding in its history, with the sheet's today now, when it differs from
+     * the one stored.
+     */
+    private void keepBinding(Claim claim) {
+        List<Binding> stored = jdbc.query("SELECT stated, stated_due FROM claim WHERE id = ? AND sheet_id = ?",
+                (rs, n) -> new Binding(rs.getBoolean("stated"), rs.getBigDecimal("stated_due")),
+                claim.getId(), claim.getSheetId());
+        if (!stored.isEmpty() && stored.get(0).stated() == claim.isStated()
+                && same(stored.get(0).statedDue(), claim.getStatedDue())) return;
+        jdbc.update("INSERT INTO claim_binding (sheet_id, claim_id, stated, stated_due, set_on)"
+                + " VALUES (?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
+                claim.getSheetId(), claim.getId(), claim.isStated(), claim.getStatedDue(), claim.getSheetId());
+    }
+
+    private static boolean same(BigDecimal a, BigDecimal b) {
+        return a == null ? b == null : b != null && a.compareTo(b) == 0;
+    }
+
+    /**
+     * Each claim's binding at the end of {@code day}, by claim id: the last one given while the
+     * sheet's today was on or before it. A claim with none then was unbound.
+     */
+    public Map<Long, Binding> bindingsOn(String sheetId, LocalDate day) {
+        Map<Long, Binding> bindings = new HashMap<>();
+        jdbc.query("SELECT claim_id, stated, stated_due FROM claim_binding WHERE sheet_id = ? AND set_on <= ? ORDER BY id",
+                (rs) -> {
+                    bindings.put(rs.getLong("claim_id"), new Binding(rs.getBoolean("stated"), rs.getBigDecimal("stated_due")));
+                }, sheetId, Date.valueOf(day));
+        return bindings;
+    }
+
     /** Insert a new claim (assigning its id) or update an existing one. */
     public void save(Claim claim) {
         if (claim.getId() != null) {
@@ -150,6 +189,7 @@ public class ClaimRepository {
                 jdbc.update("UPDATE claim SET person_id = ?, listed = ? WHERE id = ? AND sheet_id = ?",
                         claim.getPersonId(), nextListed(claim.getSheetId()), claim.getId(), claim.getSheetId());
             }
+            keepBinding(claim);
             jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?, stated = ?, stated_due = ?, corrects = ?, deferred_until = ?, proofs = ? WHERE id = ? AND sheet_id = ?",
                     claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(),
                     claim.getStatus().name(), claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(),

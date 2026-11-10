@@ -52,6 +52,25 @@ public class ClaimLogRepository {
         return statuses;
     }
 
+    /** A claim's status at the end of a day, with its due as logged then (null: n/a). */
+    public record Line(ClaimStatus status, BigDecimal due) {
+    }
+
+    /**
+     * Each claim's last log line dated on or before {@code day}, by claim id. A claim with no such
+     * line (added after) is absent.
+     */
+    public Map<Long, Line> linesOn(String sheetId, LocalDate day) {
+        Map<Long, Line> lines = new HashMap<>();
+        jdbc.query("SELECT claim_id, status, due FROM claim_log WHERE sheet_id = ? AND on_date <= ? ORDER BY id",
+                (rs) -> {
+                    String due = rs.getString("due");
+                    lines.put(rs.getLong("claim_id"), new Line(ClaimStatus.valueOf(rs.getString("status")),
+                            "n/a".equals(due) ? null : new BigDecimal(due)));
+                }, sheetId, Date.valueOf(day));
+        return lines;
+    }
+
     /**
      * The date the claim was settled: its first SETTLED log line's date (a re-settle does not move
      * it); null when it was never settled.

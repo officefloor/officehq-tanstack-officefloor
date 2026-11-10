@@ -41,7 +41,42 @@ public class SettingsRepository {
     public void record(String sheetId, String key, LocalDate from, String value) {
         jdbc.update("MERGE INTO setting_value (sheet_id, setting_key, from_date, setting_value) KEY (sheet_id, setting_key, from_date) VALUES (?, ?, ?, ?)",
                 sheetId, key, java.sql.Date.valueOf(from), value);
+        history(sheetId, key, from, value);
     }
+
+    /** Keeps a setting's value in its history, with the sheet's today now. */
+    private void history(String sheetId, String key, LocalDate from, String value) {
+        jdbc.update("INSERT INTO setting_history (sheet_id, setting_key, from_date, setting_value, set_on)"
+                + " VALUES (?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
+                sheetId, key, from == null ? null : java.sql.Date.valueOf(from), value, sheetId);
+    }
+
+    /**
+     * The sheet's settings as they stood at the end of {@code day}: each dated value and the policy
+     * date as last recorded while the sheet's today was on or before it. The others are as they are now.
+     */
+    public Settings findAsOf(String sheetId, LocalDate day) {
+        Settings now = find(sheetId);
+        Map<String, NavigableMap<LocalDate, String>> dated = new HashMap<>();
+        LocalDate[] policy = { null };
+        boolean[] policyKept = { false };
+        jdbc.query("SELECT setting_key, from_date, setting_value, set_on FROM setting_history WHERE sheet_id = ? ORDER BY id",
+                (RowCallbackHandler) (rs) -> {
+                    String key = rs.getString("setting_key");
+                    String value = rs.getString("setting_value");
+                    boolean counts = !rs.getDate("set_on").toLocalDate().isAfter(day);
+                    if (POLICY_DATE.equals(key)) {
+                        policyKept[0] = true;
+                        if (counts) policy[0] = value.isBlank() ? null : LocalDate.parse(value);
+                    } else if (counts) {
+                        dated.computeIfAbsent(key, (k) -> new TreeMap<>()).put(rs.getDate("from_date").toLocalDate(), value);
+                    }
+                }, sheetId);
+        return new Settings(sheetId, now.today(), dated, policyKept[0] ? policy[0] : now.policyDate(),
+                now.periodNumberingFrom(), now.perms(), now.graceDays());
+    }
+
+    private static final String POLICY_DATE = "policy-date";
 
     /** Records the roles ('' for the standing rule) that may take an action. */
     public void recordPerm(String sheetId, String action, String roles) {
@@ -55,5 +90,7 @@ public class SettingsRepository {
                 settings.policyDate() == null ? null : java.sql.Date.valueOf(settings.policyDate()),
                 settings.periodNumberingFrom() == null ? null : java.sql.Date.valueOf(settings.periodNumberingFrom()),
                 settings.graceDays(), settings.sheetId());
+        history(settings.sheetId(), POLICY_DATE, null,
+                settings.policyDate() == null ? "" : settings.policyDate().toString());
     }
 }

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOnce } from '../../query/useOnce';
 import { postJson } from '../../api/http';
@@ -20,25 +21,30 @@ function StatementHead() {
 }
 
 // A person's statements: how many have been taken, the last one's due-total and date, and a button
-// that takes the next. Taking one binds each of their claims that counts to its figure now. A steward
+// that takes the next. Taking one binds each of their claims that counts to its figure now; with a
+// date beside it (on or before the sheet's today; blank: now) the statement is taken as the sheet
+// stood at the end of that date, and that date is shown as its date. A steward
 // can cancel the last one: the claims it bound become live again, and the one before it is shown.
 function PersonStatement({ sheetId, person }: { sheetId: string; person: Person }) {
   const queryClient = useQueryClient();
   const [user] = useUser();
+  const [asOf, setAsOf] = useState('');
   const [error, setError] = useRowError(person.id, 'statement');
   const once = useOnce();
   const take = useMutation({
-    mutationFn: () =>
+    mutationFn: (date: string) =>
       postJson<Person>(
         `/api/sheets/${encodeURIComponent(sheetId)}/people/${encodeURIComponent(person.id)}/statement`,
-        {},
+        { asOf: date },
         user,
       ),
-    onSuccess: () =>
-      Promise.all([
+    onSuccess: () => {
+      setAsOf('');
+      return Promise.all([
         queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
         queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
-      ]),
+      ]);
+    },
     onError: () => setError('That statement could not be taken.'),
   });
   const cancel = useMutation({
@@ -58,7 +64,7 @@ function PersonStatement({ sheetId, person }: { sheetId: string; person: Person 
 
   const state = () => {
     setError('');
-    once((done) => take.mutate(undefined, { onSettled: done }));
+    once((done) => take.mutate(asOf.trim(), { onSettled: done }));
   };
 
   const unstate = () => {
@@ -72,6 +78,15 @@ function PersonStatement({ sheetId, person }: { sheetId: string; person: Person 
       <td data-testid="person-stated-total">{person.statedTotal}</td>
       <td data-testid="person-statement-date">{person.statementDate}</td>
       <td>
+        <input
+          type="date"
+          data-testid="person-statement-asof"
+          value={asOf}
+          onChange={(e) => {
+            setAsOf(e.target.value);
+            setError('');
+          }}
+        />{' '}
         <button type="button" data-testid="person-statement" onClick={state} disabled={take.isPending}>
           Statement
         </button>
