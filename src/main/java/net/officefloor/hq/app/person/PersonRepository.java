@@ -137,6 +137,35 @@ public class PersonRepository {
         jdbc.update("UPDATE person SET version = version + 1 WHERE id = ? AND sheet_id = ?", into.getId(), sheetId);
     }
 
+    /**
+     * Move the person to another sheet, with their grades (and from-dates), terms, contact and aliases,
+     * as added there on that sheet's today: their statements start again at none and they are not
+     * retired. Patron links either way, pool memberships, watches and holds are dropped. Their claims
+     * are moved by the caller.
+     */
+    public void transfer(Person person, String toSheet) {
+        long id = person.getId();
+        jdbc.update("DELETE FROM person_patron WHERE person_id = ? OR patron_id = ?", id, id);
+        jdbc.update("DELETE FROM pool_member WHERE person_id = ?", id);
+        jdbc.update("DELETE FROM person_watch WHERE person_id = ?", id);
+        jdbc.update("DELETE FROM person_hold WHERE person_id = ?", id);
+        jdbc.update("DELETE FROM person_statement WHERE person_id = ?", id);
+        jdbc.update("DELETE FROM person_statement_history WHERE person_id = ?", id);
+        jdbc.update("DELETE FROM person_retirement WHERE person_id = ?", id);
+        jdbc.update("DELETE FROM person_grade_history WHERE person_id = ?", id);
+        jdbc.update("DELETE FROM person_terms_history WHERE person_id = ?", id);
+        jdbc.update("UPDATE person_grade SET sheet_id = ? WHERE person_id = ?", toSheet, id);
+        jdbc.update("UPDATE person_alias SET sheet_id = ?, added_on = (SELECT today FROM sheet WHERE id = ?)"
+                + " WHERE person_id = ?", toSheet, toSheet, id);
+        jdbc.update("UPDATE person SET sheet_id = ?, statement_count = 0, stated_total = NULL, statement_date = NULL,"
+                + " retired_from = NULL, added_on = (SELECT today FROM sheet WHERE id = ?), version = version + 1"
+                + " WHERE id = ?", toSheet, toSheet, id);
+        Person moved = find(toSheet, id);
+        gradeHistory(moved, null, moved.getGrade());
+        termsHistory(moved);
+        moved.getDatedGrades().forEach((from, grade) -> gradeHistory(moved, from, grade));
+    }
+
     /** Record {@code patron} as one of the person's patrons. */
     public void addPatron(Person person, Person patron) {
         jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id, added_on, named_seq)"

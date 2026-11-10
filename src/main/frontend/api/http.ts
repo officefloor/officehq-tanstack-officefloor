@@ -40,6 +40,11 @@ export function getJson<T>(path: string, user?: string): Promise<T> {
   return send<T>(path, { headers });
 }
 
+// A read of the sheet as it is now, whatever as-of date the screen shows.
+export function getJsonNow<T>(path: string): Promise<T> {
+  return send<T>(path);
+}
+
 // A change is made by the signed-in user: name them, and the server records who made it.
 function jsonHeaders(user?: string): HeadersInit {
   return user === undefined

@@ -10,10 +10,10 @@ import net.officefloor.hq.app.sheet.Sheet;
  * numbering from is set and its today is on or after it, the next within the claim's period (the one containing its due-by)
  * (<period name>-<n>), or X-<n> when the claim is in no period.
  */
-final class ClaimNumbers {
+public final class ClaimNumbers {
     private ClaimNumbers() {}
 
-    static String next(Sheet sheet, Claim claim, Settings settings, PeriodRepository periods, ClaimRepository claims) {
+    public static String next(Sheet sheet, Claim claim, Settings settings, PeriodRepository periods, ClaimRepository claims) {
         if (!settings.numbersByPeriod(sheet.today())) return String.valueOf(claims.nextNumber(sheet.id()));
         Period period = periods.findAll(sheet.id()).stream()
                 .filter((p) -> p.contains(claim.getDueBy())).findFirst().orElse(null);
