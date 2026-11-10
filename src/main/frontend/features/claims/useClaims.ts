@@ -97,16 +97,17 @@ export function fixedDue(c: Claim): string | null {
   return c.statedNa ? 'n/a' : c.statedDue;
 }
 
-/** Whether a claim is shown as deferred: the date it is deferred until is after the sheet's today, whatever
- *  its status now (a deferral is kept when the claim leaves OPEN). Only `isDeferred` acts on totals. */
+/** Whether a claim is shown as deferred: no statement binds it and the date it is deferred until is after the
+ *  sheet's today, whatever its status now (a deferral is kept when the claim leaves OPEN). Only `isDeferred` acts on totals. */
 export function shownDeferred(c: Claim, today: string | undefined): boolean {
-  return c.deferredUntil !== null && today !== undefined && today < c.deferredUntil;
+  return !isBound(c) && c.deferredUntil !== null && today !== undefined && today < c.deferredUntil;
 }
 
-/** Whether a claim is deferred now: it is OPEN and the date it is deferred until is after the sheet's
- *  today. Until today reaches that date it counts in no total, is not overdue and cannot be settled. */
+/** Whether a claim is deferred now: it is OPEN (or SETTLED while a statement bound it), no statement binds it now and
+ *  the date it is deferred until is after the sheet's today. Until today reaches that date it counts in no total, is not
+ *  overdue and cannot be settled; while a statement binds it the deferral waits until the binding ends. */
 export function isDeferred(c: Claim, today: string | undefined): boolean {
-  return c.status === 'OPEN' && c.deferredUntil !== null && today !== undefined && today < c.deferredUntil;
+  return (c.status === 'OPEN' || c.status === 'SETTLED') && !isBound(c) && c.deferredUntil !== null && today !== undefined && today < c.deferredUntil;
 }
 
 /** Whether a claim counts toward claimed and every live total, given the people's holds by person id
@@ -114,8 +115,8 @@ export function isDeferred(c: Claim, today: string | undefined): boolean {
  *  claims do, and an open claim dated within one of those holds does not, unless a statement binds it, nor does a deferred
  *  one. A hold of its own or of its person's no longer takes it out (a hold acts only on pool cuts). */
 export function counts(c: Claim, holds: ReadonlyMap<number, Hold[]>, today: string | undefined): boolean {
-  return c.status === 'SETTLED'
-    || (isOpen(c) && !isDeferred(c, today) && (isBound(c) || !heldOn(holds.get(c.personId), c.date)));
+  return !isDeferred(c, today)
+    && (c.status === 'SETTLED' || (isOpen(c) && (isBound(c) || !heldOn(holds.get(c.personId), c.date))));
 }
 
 /** Whether a claim counts toward claimed: as counts, except that a hold (its own or one of its person's) does not

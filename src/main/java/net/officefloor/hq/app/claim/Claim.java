@@ -12,8 +12,9 @@ import net.officefloor.hq.app.person.Hold;
  *  created, its date then plus its person's own terms, else the terms of their grade on that date, else the sheet's terms), and
  *  whether its last statement bound it to n/a (the rate that would apply to it had ended: its due then
  *  stays n/a, not live), and the date it is deferred until (null when never deferred) and whether it is
- *  deferred now (OPEN and that date after the sheet's today: it then counts in no total, is not overdue,
- *  cannot be settled and a statement leaves it unbound), and how many proofs it has been given, and, for a claim
+ *  deferred now (OPEN, or SETTLED while a statement bound it, not bound now, and that date after the sheet's today: it
+ *  then counts in no total, is not overdue, cannot be settled and a statement leaves it unbound; a statement that binds
+ *  it holds the deferral off — it counts, can be settled — until the binding ends), and how many proofs it has been given, and, for a claim
  *  split off another, the number of the claim it was split from (null otherwise), and whether it was a late entry
  *  (added while the period its due-by falls in was soft-closed), and the last day (the sheet's today then) a reminder
  *  was written for it (null when never reminded), and its external reference (null when none), and its tags (lower-case, sorted and
@@ -46,16 +47,16 @@ public record Claim(long id, long personId, String amount, String date, String n
 
     /** Whether the claim counts toward live totals (claimed, due-totals, a period's total) given the holds that
      *  take its person's claims out (only their retirement's: see Person#liveHolds): an open claim dated within one does
-     *  not, unless a statement binds it; SETTLED claims always do. A deferred claim does not. A hold of its own or of its
+     *  not, unless a statement binds it; SETTLED claims always do. A deferred claim (see deferred) does not. A hold of its own or of its
      *  person's no longer takes it out (a hold acts only on pool cuts). */
     public boolean counts(List<Hold> holds) {
-        return status.equals("SETTLED") || (open() && !deferred && (bound() || !Hold.anyCovers(holds, date)));
+        return !deferred && (status.equals("SETTLED") || (open() && (bound() || !Hold.anyCovers(holds, date))));
     }
 
     /** Whether the claim counts toward claimed: as {@link #counts(List)}, except that a hold (its own or one of its
      *  person's) does not take it out; given only the holds that do (see Person#claimedHolds). */
     public boolean countsClaimed(List<Hold> holds) {
-        return status.equals("SETTLED") || (open() && !deferred && (bound() || !Hold.anyCovers(holds, date)));
+        return !deferred && (status.equals("SETTLED") || (open() && (bound() || !Hold.anyCovers(holds, date))));
     }
 
     /** Whether the claim counts toward a period ending on a day, given the status it had at the end of that
@@ -64,7 +65,7 @@ public record Claim(long id, long personId, String amount, String date, String n
      *  leaves out only a claim still open now: one since settled or voided counts by the status it had then. */
     public boolean countsAs(String statusThen, List<Hold> holds, String today) {
         if (statusThen == null) return false;
-        boolean deferredNow = statusThen.equals("OPEN") && deferredUntil != null && today != null && today.compareTo(deferredUntil) < 0;
+        boolean deferredNow = (statusThen.equals("OPEN") || statusThen.equals("SETTLED")) && !stated && deferredUntil != null && today != null && today.compareTo(deferredUntil) < 0;
         Claim then = new Claim(id, personId, amount, date, note, statusThen, number, due, openedBy, stated, statedDue,
                 corrects, dueBy, statedNa, deferredUntil, deferredNow, proofs, splitFrom, lateEntry, reminded, ref, tags, voidReason, waived, photos, held && open());
         return then.counts(open() ? holds : List.of());

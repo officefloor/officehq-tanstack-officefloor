@@ -104,7 +104,7 @@ public class HistoryRepository {
                             rs.getBoolean("stated"), stated == null ? null : stated.setScale(2).toPlainString(),
                             rs.getString("corrects"), local(rs.getDate("due_by")).toString(), rs.getBoolean("stated_na"),
                             deferredUntil == null ? null : deferredUntil.toString(),
-                            status.equals("OPEN") && deferredUntil != null && deferredUntil.isAfter(day), 0, null, false, null, null, null, null,
+                            (status.equals("OPEN") || status.equals("SETTLED")) && !rs.getBoolean("stated") && deferredUntil != null && deferredUntil.isAfter(day), 0, null, false, null, null, null, null,
                             rs.getBoolean("waived"), 0, rs.getBoolean("held")));
                 }, sheetId, on);
         Map<Long, TreeMap<LocalDate, String>> grades = new HashMap<>();
