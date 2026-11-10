@@ -2,6 +2,9 @@ package net.officefloor.hq.app.pool;
 
 import java.math.BigDecimal;
 
-/** A pool member request, validated: a share more than 0.00 and at most 100.00, two decimals. */
-public record PoolMemberInput(String pool, long personId, BigDecimal share) {
+/**
+ * A pool member request, validated: a person's id, or another pool's name (memberPool, null for a
+ * person), and a share more than 0.00 and at most 100.00, two decimals.
+ */
+public record PoolMemberInput(String pool, Long personId, String memberPool, BigDecimal share) {
 }

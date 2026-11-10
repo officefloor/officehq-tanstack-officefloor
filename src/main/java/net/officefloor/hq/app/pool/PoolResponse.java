@@ -11,21 +11,33 @@ import java.util.List;
  * has a cut of the sheet's pot: the pot times their share divided by 100, rounded half to even to two
  * decimals (a retired member's 0.00), with the remainder, the pot minus the cuts added up, going to the
  * member with the largest share, the earliest added on a tie, so the cuts total exactly the pot. An
- * unbalanced pool, or no pot, has no cuts.
+ * unbalanced pool, or no pot, has no cuts. A pool that is a member of another has no pot of its own: its
+ * pot is its cut in the pool above (none when that pool has no cuts).
  */
 public record PoolResponse(String name, List<PoolMemberResponse> members, String totalShare, boolean balanced) {
     private static final BigDecimal HUNDRED = new BigDecimal("100.00");
 
     public static PoolResponse from(Pool pool, List<PoolMember> members, BigDecimal pot) {
-        BigDecimal total = BigDecimal.ZERO.setScale(2);
-        for (PoolMember m : members) if (!m.retired()) total = total.add(m.share());
+        BigDecimal total = total(members);
         boolean balanced = total.compareTo(HUNDRED) == 0;
-        List<BigDecimal> cuts = balanced && pot != null ? cuts(members, pot) : null;
+        List<BigDecimal> cuts = cutsOf(members, pot);
         List<PoolMemberResponse> shown = new ArrayList<>();
         for (int i = 0; i < members.size(); i++) {
             shown.add(PoolMemberResponse.from(members.get(i), cuts == null ? null : cuts.get(i)));
         }
         return new PoolResponse(pool.name(), shown, total.toPlainString(), balanced);
+    }
+
+    /** The members' shares added up, a retired member's counting as 0.00. */
+    static BigDecimal total(List<PoolMember> members) {
+        BigDecimal total = BigDecimal.ZERO.setScale(2);
+        for (PoolMember m : members) if (!m.retired()) total = total.add(m.share());
+        return total;
+    }
+
+    /** Each member's cut of the pot, in the members' order; null when the pool is unbalanced or there is no pot. */
+    static List<BigDecimal> cutsOf(List<PoolMember> members, BigDecimal pot) {
+        return pot != null && total(members).compareTo(HUNDRED) == 0 ? cuts(members, pot) : null;
     }
 
     private static List<BigDecimal> cuts(List<PoolMember> members, BigDecimal pot) {

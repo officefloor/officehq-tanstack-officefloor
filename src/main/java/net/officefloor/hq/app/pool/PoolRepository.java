@@ -33,13 +33,19 @@ public class PoolRepository {
         return find(sheetId, name);
     }
 
-    /** The members of every pool on the sheet, each pool's in the order they were added. */
+    /** The members of every pool on the sheet, each pool's in the order they were added: people and member pools. */
     public List<PoolMember> members(String sheetId) {
-        return jdbc.query("SELECT pl.name AS pool, m.person_id, p.name, m.share, p.retired_from FROM pool_member m"
-                + " JOIN pool pl ON pl.id = m.pool_id JOIN person p ON p.id = m.person_id"
+        return jdbc.query("SELECT pl.name AS pool, m.person_id, mp.name AS member_pool, COALESCE(p.name, mp.name) AS name,"
+                + " m.share, p.retired_from FROM pool_member m"
+                + " JOIN pool pl ON pl.id = m.pool_id LEFT JOIN person p ON p.id = m.person_id"
+                + " LEFT JOIN pool mp ON mp.id = m.member_pool_id"
                 + " WHERE pl.sheet_id = ? ORDER BY pl.name, m.id",
-                (rs, n) -> new PoolMember(sheetId, rs.getString("pool"), rs.getLong("person_id"), rs.getString("name"),
-                        rs.getBigDecimal("share"), rs.getDate("retired_from") != null), sheetId);
+                (rs, n) -> {
+                    long personId = rs.getLong("person_id");
+                    return new PoolMember(sheetId, rs.getString("pool"), rs.wasNull() ? null : personId,
+                            rs.getString("member_pool"), rs.getString("name"), rs.getBigDecimal("share"),
+                            rs.getDate("retired_from") != null);
+                }, sheetId);
     }
 
     public boolean isMember(Pool pool, long personId) {
@@ -50,6 +56,26 @@ public class PoolRepository {
 
     public void addMember(Pool pool, long personId, BigDecimal share) {
         jdbc.update("INSERT INTO pool_member (pool_id, person_id, share) VALUES (?, ?, ?)", pool.id(), personId, share);
+    }
+
+    /** The pool this pool is a member of, or null when it is a member of none. */
+    public Pool parentOf(Pool pool) {
+        List<Pool> found = jdbc.query("SELECT pl.id, pl.sheet_id, pl.name FROM pool_member m JOIN pool pl ON pl.id = m.pool_id"
+                + " WHERE m.member_pool_id = ?",
+                (rs, n) -> new Pool(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name")), pool.id());
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** The pools that are members of this pool. */
+    public List<Pool> memberPools(Pool pool) {
+        return jdbc.query("SELECT mp.id, mp.sheet_id, mp.name FROM pool_member m JOIN pool mp ON mp.id = m.member_pool_id"
+                + " WHERE m.pool_id = ?",
+                (rs, n) -> new Pool(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name")), pool.id());
+    }
+
+    public void addMemberPool(Pool pool, Pool member, BigDecimal share) {
+        jdbc.update("INSERT INTO pool_member (pool_id, member_pool_id, share) VALUES (?, ?, ?)", pool.id(), member.id(),
+                share);
     }
 
     /**
