@@ -7,6 +7,7 @@ import type { Person } from '../people/people';
 import { useUser } from '../session/session';
 import { AMOUNT, claimsKey, sumAmounts, useClaims } from './claims';
 import type { Claim } from './claims';
+import { due, useGradeRate } from '../rates/rates';
 
 type Fields = { amount: string; date: string; note: string };
 const EMPTY: Fields = { amount: '', date: '', note: '' };
@@ -30,6 +31,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   const [editing, setEditing] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [user] = useUser();
+  const pct = useGradeRate(sheetId, person.grade);
 
   const reset = () => {
     setFields(EMPTY);
@@ -121,6 +123,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
               <span data-testid="claim-amount">{c.amount}</span>{' '}
               <span data-testid="claim-date">{c.date}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}
+              <span data-testid="claim-due">{due(c.amount, pct)}</span>{' '}
               {editing === c.id ? (
                 <button type="button" data-testid="claim-cancel" onClick={reset}>
                   Cancel

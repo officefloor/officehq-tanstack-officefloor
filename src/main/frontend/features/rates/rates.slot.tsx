@@ -1,0 +1,157 @@
+import { useState } from 'react';
+import type { FormEvent } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { postJson } from '../../api/http';
+import { SheetBody } from '../../slots/defs/sheetBody';
+import { PersonHead, PersonRow } from '../../slots/defs/personRow';
+import { sumAmounts, useClaims } from '../claims/claims';
+import { GRADES, usePeople } from '../people/people';
+import type { Grade, Person } from '../people/people';
+import { useUser } from '../session/session';
+import { PCT, due, ratesKey, sumDue, useGradeRate, useRates } from './rates';
+import type { Rate } from './rates';
+
+type Fields = { grade: Grade; pct: string };
+const EMPTY: Fields = { grade: 'A', pct: '' };
+
+// The sheet's rates: a form that sets a grade's rate, and each grade's current rate.
+function Rates({ sheetId }: { sheetId: string }) {
+  const queryClient = useQueryClient();
+  const rates = useRates(sheetId);
+  const [fields, setFields] = useState<Fields>(EMPTY);
+  const [error, setError] = useState('');
+  const [user] = useUser();
+
+  const save = useMutation({
+    mutationFn: (body: Fields) =>
+      postJson<Rate>(`/api/sheets/${encodeURIComponent(sheetId)}/rates`, body, user),
+    onSuccess: () => {
+      setFields((f) => ({ ...f, pct: '' }));
+      void queryClient.invalidateQueries({ queryKey: ratesKey(sheetId) });
+    },
+    onError: () => setError('That rate could not be set.'),
+  });
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    setError('');
+    const pct = fields.pct.trim();
+    if (pct === '') {
+      setError('A rate is required.');
+      return;
+    }
+    if (!PCT.test(pct)) {
+      setError('A rate is a percent of 0.00 or more, with up to two decimals.');
+      return;
+    }
+    save.mutate({ grade: fields.grade, pct });
+  };
+
+  const change = (next: Partial<Fields>) => {
+    setFields((f) => ({ ...f, ...next }));
+    setError('');
+  };
+
+  const current = (g: Grade) => (rates.data ?? []).find((r) => r.grade === g);
+
+  return (
+    <section data-testid="rates">
+      <h2>Rates</h2>
+      <form onSubmit={submit} data-testid="rate-form">
+        <label>
+          Grade{' '}
+          <select
+            data-testid="rate-form-grade"
+            value={fields.grade}
+            onChange={(e) => change({ grade: e.target.value as Grade })}
+          >
+            {GRADES.map((g) => (
+              <option key={g} value={g}>
+                {g}
+              </option>
+            ))}
+          </select>
+        </label>{' '}
+        <label>
+          Rate %{' '}
+          <input
+            data-testid="rate-form-pct"
+            inputMode="decimal"
+            value={fields.pct}
+            onChange={(e) => change({ pct: e.target.value })}
+          />
+        </label>{' '}
+        <button type="submit" data-testid="rate-form-submit" disabled={save.isPending}>
+          Set rate
+        </button>
+        {error && (
+          <p role="alert" data-testid="rate-form-error">
+            {error}
+          </p>
+        )}
+      </form>
+      {rates.isError && (
+        <p role="alert" data-testid="rates-error">
+          The rates could not be read.
+        </p>
+      )}
+      <table data-testid="rate-list">
+        <thead>
+          <tr>
+            <th>Grade</th>
+            <th>Rate %</th>
+          </tr>
+        </thead>
+        <tbody>
+          {GRADES.map((g) => {
+            const r = current(g);
+            return (
+              <tr key={g} data-testid={r ? `rate-row-${g}-start` : undefined}>
+                <td>{g}</td>
+                <td data-testid={`rate-current-${g}`}>
+                  {r ? <span data-testid="rate-pct">{r.pct}</span> : 'n/a'}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function DueHead() {
+  return <th>Due</th>;
+}
+
+// A person's due-total: what they have claimed in all, times their grade's rate.
+function PersonDueTotal({ sheetId, person }: { sheetId: string; person: Person }) {
+  const claims = (useClaims(sheetId).data ?? []).filter((c) => c.personId === person.id);
+  const pct = useGradeRate(sheetId, person.grade);
+  return <td data-testid="person-due-total">{due(sumAmounts(claims), pct)}</td>;
+}
+
+// The sheet's due-total: everyone's due-total added up, skipping those with no rate.
+function DueTotal({ sheetId }: { sheetId: string }) {
+  const people = usePeople(sheetId).data ?? [];
+  const claims = useClaims(sheetId).data ?? [];
+  const rates = useRates(sheetId).data ?? [];
+  const totals = people.map((p) =>
+    due(
+      sumAmounts(claims.filter((c) => c.personId === p.id)),
+      rates.find((r) => r.grade === p.grade)?.pct ?? null,
+    ),
+  );
+  return (
+    <p>
+      Due in all: <strong data-testid="rollup-due-total">{sumDue(totals)}</strong>
+    </p>
+  );
+}
+
+export const contributions = [
+  SheetBody.fill({ order: -10, Component: Rates }),
+  SheetBody.fill({ order: 20, Component: DueTotal }),
+  PersonHead.fill({ order: 20, Component: DueHead }),
+  PersonRow.fill({ order: 20, Component: PersonDueTotal }),
+];
