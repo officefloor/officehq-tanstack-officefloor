@@ -14,6 +14,8 @@ import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.setting.SettingsRepository;
 import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.hq.app.sheet.SheetRepository;
+import net.officefloor.hq.app.watch.WatchNotices;
+import net.officefloor.hq.app.watch.WatchRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
@@ -23,12 +25,13 @@ import net.officefloor.plugin.variable.Val;
  * sent to PENDING counts as settled; a claim that cannot be settled (its status does not allow it,
  * dated inside a closed period, opened by this user, not on the sheet) is refused and left as it is.
  * Each claim settled is logged and audited as a single settle is: its status line, then the
- * figures it moved. A viewer settles none: every selected claim is refused.
+ * watchers it notifies (once settled), then the figures it moved. A viewer settles none: every
+ * selected claim is refused.
  */
 public class SettleSelectedClaims {
     public void settle(@Val Sheet sheet, @Val BulkSettleRequest request, ClaimRepository claims,
             PersonRepository people, PeriodRepository periods, SheetRepository sheets, RateRepository rates,
-            RoleRepository roles, SettingsRepository settings, ClaimLogRepository log, HttpServletRequest http,
+            RoleRepository roles, SettingsRepository settings, ClaimLogRepository log, WatchRepository watches, HttpServletRequest http,
             Audit audit, Out<BulkSettleResponse> result) {
         String user = Audit.user(http);
         Set<Long> selected = new HashSet<>();
@@ -59,6 +62,7 @@ public class SettleSelectedClaims {
                 log.record(claim, user, sheet.today(), LogClaimStatus.due(sheet, claim, people, rates, settings));
                 settled++;
                 audit.record(AuditClaimStatus.line(sheet, claim, user, people));
+                WatchNotices.lines(sheet, claim, user, people, watches).forEach(audit::record);
                 Rollup after = rollup(sheet, sheets, people, claims, rates, settings);
                 after.changesSince(before, sheet.id(), user).forEach(audit::record);
                 before = after;
