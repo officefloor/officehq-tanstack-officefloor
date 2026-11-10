@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
 /** Move a claim along its status: open, settle, approve, reject (with a reason) or void, each only from the
- *  statuses it allows; or defer an OPEN claim until a date (see {@link ClaimDeferral}); or raise its proofs count (see {@link ClaimProof}); or split an amount off an OPEN claim (see {@link ClaimSplit}); or part-settle one (see {@link ClaimSettlePart}); or re-date an OPEN or PENDING claim (see {@link ClaimRedate}); or lock or unlock a claim's editor (see {@link ClaimLock}); or remind an OPEN or PENDING claim (see {@link ClaimRemind}); or comment a claim (see {@link ClaimComment}); or delete a DRAFT claim or restore it the same day (see {@link ClaimDelete}); or add a line to a DRAFT claim (see {@link ClaimLine}); or waive an OPEN or PENDING claim's late charge (see {@link ClaimWaive}); or hold or release an OPEN or PENDING claim (see {@link ClaimHold}); or share a claim with another person (see {@link ClaimShareAdd}); or assign a REVIEW claim to a user to review (see {@link ClaimReviewAssign}). */
+ *  statuses it allows; or defer an OPEN claim until a date (see {@link ClaimDeferral}); or raise its proofs count (see {@link ClaimProof}); or split an amount off an OPEN claim (see {@link ClaimSplit}); or part-settle one (see {@link ClaimSettlePart}); or re-date an OPEN or PENDING claim (see {@link ClaimRedate}); or lock or unlock a claim's editor (see {@link ClaimLock}); or remind an OPEN or PENDING claim (see {@link ClaimRemind}); or comment a claim (see {@link ClaimComment}); or delete a DRAFT claim or restore it the same day (see {@link ClaimDelete}); or add a line to a DRAFT claim (see {@link ClaimLine}); or waive an OPEN or PENDING claim's late charge (see {@link ClaimWaive}); or hold or release an OPEN or PENDING claim (see {@link ClaimHold}); or share a claim with another person (see {@link ClaimShareAdd}); or assign a REVIEW claim to a user to review (see {@link ClaimReviewAssign}); or set a DRAFT, OPEN or PENDING claim's due-by (see {@link ClaimDueBySet}). */
 public class ChangeClaimStatus {
     public void change(@PathVariable("sheetId") String sheetId, @PathVariable("claimId") String claimId,
             @PathVariable("action") String action, @RequestBody ClaimActionRequest request, ServerHttpConnection connection, ClaimRepository repository,
@@ -93,6 +93,11 @@ public class ChangeClaimStatus {
         }
         if ("assign-review".equals(action == null ? "" : action.trim())) {
             claim.set(ClaimReviewAssign.apply(id, cid, request == null ? null : request.user(), by, repository, settings, audit));
+            return;
+        }
+        if ("due-by".equals(action == null ? "" : action.trim())) {
+            claim.set(ClaimDueBySet.apply(id, cid, request == null ? null : request.dueBy(), by, repository, periods,
+                    settings, audit, rollup));
             return;
         }
         if ("proof".equals(action == null ? "" : action.trim())) {

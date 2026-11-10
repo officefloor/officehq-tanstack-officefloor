@@ -272,6 +272,12 @@ public class ClaimRepository {
                 Date.valueOf(date), claimId, sheetId) > 0);
     }
 
+    /** Set a DRAFT, OPEN or PENDING claim's due-by directly; it stays as set from now on. */
+    public boolean setDueBy(String sheetId, long claimId, LocalDate dueBy) {
+        return kept(sheetId, claimId, jdbc.update("UPDATE claim SET due_by = ?, due_by_set = TRUE WHERE id = ? AND sheet_id = ?"
+                + " AND status IN ('DRAFT', 'OPEN', 'PENDING')", Date.valueOf(dueBy), claimId, sheetId) > 0);
+    }
+
     /** Record who last edited a claim. */
     public void editedBy(String sheetId, long claimId, String by) {
         jdbc.update("UPDATE claim SET edited_by = ? WHERE id = ? AND sheet_id = ?", by, claimId, sheetId);
@@ -686,7 +692,7 @@ public class ClaimRepository {
         java.util.Set<String> now = new java.util.HashSet<>(before);
         now.add(holiday.toString());
         List<Object[]> open = jdbc.query("SELECT id, claim_date, due_by FROM claim WHERE sheet_id = ?"
-                + " AND status NOT IN ('SETTLED', 'VOID') AND due_by >= ? ORDER BY id",
+                + " AND status NOT IN ('SETTLED', 'VOID') AND due_by >= ? AND NOT due_by_set ORDER BY id",
                 (rs, i) -> new Object[] { rs.getLong("id"), rs.getDate("claim_date").toLocalDate(),
                         rs.getDate("due_by").toLocalDate() }, sheetId, Date.valueOf(holiday));
         for (Object[] c : open) {

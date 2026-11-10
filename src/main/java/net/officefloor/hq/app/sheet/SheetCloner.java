@@ -147,9 +147,9 @@ public class SheetCloner {
         jdbc.update(c -> {
             PreparedStatement ps = c.prepareStatement("INSERT INTO claim (sheet_id, person_id, amount, claim_date, note,"
                     + " status, settled_due, opened_by, corrects, due_by, deferred_until, proofs, split_from, late_entry,"
-                    + " reminded, escalated, ref, tags, void_reason, edited_by, added_seq, review_day, waived, proofs_photo, held, review_assigned, pending_day) SELECT ?, ?, amount, claim_date, note, status, settled_due,"
+                    + " reminded, escalated, ref, tags, void_reason, edited_by, added_seq, review_day, waived, proofs_photo, held, review_assigned, pending_day, due_by_set) SELECT ?, ?, amount, claim_date, note, status, settled_due,"
                     + " opened_by, corrects, due_by, deferred_until, proofs, split_from, late_entry, reminded, escalated, ref, tags,"
-                    + " void_reason, edited_by, added_seq, review_day, waived, proofs_photo, held, review_assigned, pending_day FROM claim WHERE id = ? AND sheet_id = ?", new String[] { "id" });
+                    + " void_reason, edited_by, added_seq, review_day, waived, proofs_photo, held, review_assigned, pending_day, due_by_set FROM claim WHERE id = ? AND sheet_id = ?", new String[] { "id" });
             ps.setString(1, to);
             ps.setLong(2, personId);
             ps.setLong(3, id);

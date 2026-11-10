@@ -32,7 +32,7 @@ function PersonClaimed({ sheetId, personId }: { sheetId: string; personId: numbe
   );
 }
 
-type ClaimAction = 'open' | 'review' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | 'delete' | 'restore' | 'defer' | 'proof' | 'remind' | 'waive' | 'hold' | 'split' | 'settle-part' | 'redate' | 'comment' | 'line' | 'share' | 'assign-review';
+type ClaimAction = 'open' | 'review' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | 'delete' | 'restore' | 'defer' | 'proof' | 'remind' | 'waive' | 'hold' | 'split' | 'settle-part' | 'redate' | 'comment' | 'line' | 'share' | 'assign-review' | 'due-by';
 
 /** A claim's status changes; the server refuses one its status does not allow, a settle by the user
  *  who opened the claim, and an approve or reject by anyone but a steward or the person's approver (an approve also by the
@@ -41,7 +41,7 @@ type ClaimAction = 'open' | 'review' | 'settle' | 'approve' | 'reject' | 'void' 
  *  A settle or approve of a claim whose due is above the proof threshold in force on its date is refused while it has no proof.
  *  An open of a claim whose due is above the review threshold in force on its date makes it REVIEW; a claim gets its number only when settled or approved; a review
  *  by a steward makes it OPEN, by anyone else is refused. A steward assigns a REVIEW claim to the user typed on its row to review. */
-const ACTIONS: [Exclude<ClaimAction, 'defer' | 'proof' | 'remind' | 'waive' | 'hold' | 'split' | 'settle-part' | 'redate' | 'comment' | 'line' | 'share'>, string][] = [
+const ACTIONS: [Exclude<ClaimAction, 'defer' | 'proof' | 'remind' | 'waive' | 'hold' | 'split' | 'settle-part' | 'redate' | 'comment' | 'line' | 'share' | 'due-by'>, string][] = [
   ['open', 'Open'],
   ['review', 'Review'],
   ['settle', 'Settle'],
@@ -127,6 +127,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   const [inlineAmounts, setInlineAmounts] = useState<Record<number, string>>({});
   const [shareFields, setShareFields] = useState<Record<number, { with: string; share: string }>>({});
   const [reviewUsers, setReviewUsers] = useState<Record<number, string>>({});
+  const [dueBys, setDueBys] = useState<Record<number, string>>({});
 
   const clearForm = () => {
     setEditing(null);
@@ -197,11 +198,12 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
   // A status change (open, settle, approve, reject, void) of one claim, or deferring an OPEN one until the
   // date typed on its row, or adding a proof to it, or reminding an OPEN or PENDING one (once per sheet-today), or splitting the amount typed on its row off an OPEN one
   // (a new OPEN claim listed under the person), or part-settling one (the amount typed on its row split off and settled at once), or re-dating an OPEN or PENDING one to the date typed on its row, or commenting it with the text typed on its row,
-  // or adding the line (label, quantity, unit amount) typed on its row to a DRAFT one (its amount becomes its lines' total);
+  // or adding the line (label, quantity, unit amount) typed on its row to a DRAFT one (its amount becomes its lines' total),
+  // or setting a DRAFT, OPEN or PENDING one's due-by to the date typed on its row (a steward only);
   // a refusal shows on that claim's row.
   const action = useMutation({
-    mutationFn: (a: { id: number; action: ClaimAction; reason: string; until: string; amount: string; date: string; text: string; label: string; qty: string; unit: string; kind: string; on: string; with: string; share: string; user: string }) =>
-      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${a.id}/${a.action}`, { reason: a.reason, until: a.until, amount: a.amount, date: a.date, text: a.text, label: a.label, qty: a.qty, unit: a.unit, kind: a.kind, on: a.on, with: a.with, share: a.share, user: a.user }),
+    mutationFn: (a: { id: number; action: ClaimAction; reason: string; until: string; amount: string; date: string; text: string; label: string; qty: string; unit: string; kind: string; on: string; with: string; share: string; user: string; dueBy: string }) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/${a.id}/${a.action}`, { reason: a.reason, until: a.until, amount: a.amount, date: a.date, text: a.text, label: a.label, qty: a.qty, unit: a.unit, kind: a.kind, on: a.on, with: a.with, share: a.share, user: a.user, dueBy: a.dueBy }),
     onSuccess: (changed, a) => {
       if (a.action === 'reject') setReasons((r) => ({ ...r, [a.id]: '' }));
       if (a.action === 'void') setVoidReasons((r) => ({ ...r, [a.id]: '' }));
@@ -214,6 +216,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
       if (a.action === 'line') setLineFields((m) => ({ ...m, [a.id]: { label: '', qty: '', unit: '' } }));
       if (a.action === 'share') setShareFields((m) => ({ ...m, [a.id]: { with: '', share: '' } }));
       if (a.action === 'assign-review') setReviewUsers((m) => ({ ...m, [a.id]: '' }));
+      if (a.action === 'due-by') setDueBys((m) => ({ ...m, [a.id]: '' }));
       // An open editor of the claim takes the amount its lines now add up to.
       if (a.action === 'line' && editing === a.id) setAmount(changed.amount);
     },
@@ -294,6 +297,7 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
       with: a === 'share' ? shareFields[id]?.with ?? '' : '',
       share: a === 'share' ? (shareFields[id]?.share ?? '').trim() : '',
       user: a === 'assign-review' ? (reviewUsers[id] ?? '').trim() : '',
+      dueBy: a === 'due-by' ? (dueBys[id] ?? '').trim() : '',
     });
   };
 
@@ -755,6 +759,25 @@ function PersonClaims({ sheetId, personId }: { sheetId: string; personId: number
                     onClick={() => act(c.id, 'redate')}
                   >
                     Re-date
+                  </button>{' '}
+                  <input
+                    type="text"
+                    data-testid="claim-due-by-new"
+                    placeholder="due-by yyyy-mm-dd"
+                    value={dueBys[c.id] ?? ''}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setDueBys((m) => ({ ...m, [c.id]: v }));
+                      if (action.variables?.id === c.id) action.reset();
+                    }}
+                  />{' '}
+                  <button
+                    type="button"
+                    data-testid="claim-set-due-by"
+                    disabled={action.isPending}
+                    onClick={() => act(c.id, 'due-by')}
+                  >
+                    Set due-by
                   </button>{' '}
                   <select
                     data-testid="claim-share-select"
