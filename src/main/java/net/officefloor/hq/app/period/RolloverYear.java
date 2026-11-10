@@ -26,14 +26,15 @@ import org.springframework.web.bind.annotation.RequestBody;
  *  (the dues now of their claims that count whose due-by falls in a period of the old year — one starting within it —
  *  and that were OPEN or PENDING at that period's end) to their opening balance for the new year's first period
  *  (OPENING_SET, only for a figure above 0.00, and only when this rollover generated that period — a repeated
- *  rollover adds nothing again), and write ROLLOVER. A year that is not yyyy, or one with no periods,
+ *  rollover adds nothing again), and write ROLLOVER; then soft-close, as {@link SoftClosePeriod} would, every period
+ *  of the old year still open (neither closed nor soft-closed), by from-date. A year that is not yyyy, or one with no periods,
  *  is refused. The rollover is kept as the sheet's last one, so {@link UndoRollover} can take it back. */
 public class RolloverYear {
     private static final Pattern YEAR = Pattern.compile("\\d{4}");
 
     public void rollover(@PathVariable("sheetId") String sheetId, @RequestBody GenerateFyRequest request,
             ServerHttpConnection connection, PeriodRepository repository, SettingsRepository settings,
-            ClaimRepository claims, PersonRepository people, Audit audit, Out<GenerateResult> result)
+            ClaimRepository claims, PersonRepository people, PeriodCloser closer, Audit audit, Out<GenerateResult> result)
             throws BadRequestException {
         String by = CurrentUser.require(connection);
         String id = sheetId == null ? "" : sheetId.trim();
@@ -96,6 +97,9 @@ public class RolloverYear {
         }
         repository.keepRollover(id, by, today, "FY" + year, generated, openings);
         audit.record("ROLLOVER sheet=" + id + " by=" + by + " fy=FY" + year + " periods=" + made);
+        for (Period p : within(repository.list(id), start)) {
+            if (!p.closed() && !p.softClosed()) closer.close(id, by, p, false, true);
+        }
         result.set(new GenerateResult(made));
     }
 
