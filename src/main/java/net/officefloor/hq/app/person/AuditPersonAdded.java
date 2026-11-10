@@ -10,6 +10,7 @@ public class AuditPersonAdded {
     public void audit(@Val Sheet sheet, @Val Person person,
             HttpServletRequest request, Audit audit) {
         audit.record("PERSON_ADDED sheet=" + sheet.id() + " by=" + Audit.user(request)
-                + " name=" + person.getName() + " grade=" + person.getGrade());
+                + " name=" + person.getName() + " grade=" + person.getGrade()
+                + (person.getTerms() == null ? "" : " terms=" + person.getTerms()));
     }
 }

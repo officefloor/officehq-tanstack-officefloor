@@ -5,7 +5,7 @@ import type { Claim } from '../claims/claims';
 import { claimDue, rateOn, sumDue } from '../rates/rates';
 import type { Dated, Late, Rate } from '../rates/rates';
 
-/** A claim's due-by: fixed when it was made, from its grade's terms then. */
+/** A claim's due-by: fixed when it was made, from its person's own terms, else its grade's terms then. */
 export const dueBy = (claim: Claim): string => claim.dueBy;
 
 /**

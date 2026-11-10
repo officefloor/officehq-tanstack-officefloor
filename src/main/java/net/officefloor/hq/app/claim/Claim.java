@@ -63,7 +63,7 @@ public class Claim {
     public void setAmount(BigDecimal amount) { this.amount = amount; }
     public LocalDate getDate() { return date; }
     public void setDate(LocalDate date) { this.date = date; }
-    /** Its due-by, fixed when it was made: its date plus its grade's terms then. Kept when its date changes. */
+    /** Its due-by, fixed when it was made: its date plus its person's own terms, else its grade's terms then. Kept when its date changes. */
     public LocalDate getDueBy() { return dueBy; }
     public void setDueBy(LocalDate dueBy) { this.dueBy = dueBy; }
     /** The date it is deferred until; null when it was never deferred. */

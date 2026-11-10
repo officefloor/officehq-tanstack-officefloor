@@ -12,6 +12,7 @@ public class Person {
     private final String sheetId;
     private String name;
     private String grade;
+    private Integer terms;
     private long version;
     private int statementCount;
     private String statedTotal;
@@ -41,6 +42,9 @@ public class Person {
     /** The first grade they were given: in force from the beginning of time, until their first dated grade. */
     public String getGrade() { return grade; }
     public void setGrade(String grade) { this.grade = grade; }
+    /** Their own terms in days, ahead of their grade's and the sheet's; null when they have none. */
+    public Integer getTerms() { return terms; }
+    public void setTerms(Integer terms) { this.terms = terms; }
     /** The grades recorded from a date, by from-date: each in force from it until the next. */
     public Map<LocalDate, String> getDatedGrades() { return datedGrades; }
     /** Record the grade from this date, replacing any recorded from the same date. */

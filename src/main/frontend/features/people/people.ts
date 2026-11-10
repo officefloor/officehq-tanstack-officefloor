@@ -21,6 +21,7 @@ export function gradeOn(grades: GradeFrom[], date: string): Grade {
 // date, `retiredFrom` ('' when not retired), whatever that date is. `held` is whether they have any hold; `holds` their holds in the order added (see `Hold`).
 // `patronIds` are the ids of the people they name as their patrons. `grade` is the grade in force on
 // the sheet's today; `grades` every grade they have been given, by from-date, the first from ''.
+// `terms` are their own terms in days, ahead of their grade's and the sheet's ('' for none).
 export type Person = {
   id: string;
   name: string;
@@ -35,6 +36,7 @@ export type Person = {
   holds: Hold[];
   patronIds: string[];
   grades: GradeFrom[];
+  terms: string;
 };
 
 /**

@@ -115,6 +115,12 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
         return value == null || value.isEmpty() ? null : Integer.valueOf(value);
     }
 
+    /** The terms of a person's claim on a date: their own, else their grade's then, else the sheet's. */
+    public int termsFor(net.officefloor.hq.app.person.Person person, LocalDate date) {
+        Integer own = person.getTerms();
+        return own != null ? own : termsFor(person.gradeOn(date), date);
+    }
+
     /** The terms of a grade on a date: its own, else the sheet's. */
     public int termsFor(String grade, LocalDate date) {
         Integer own = gradeTermsOn(grade, date);

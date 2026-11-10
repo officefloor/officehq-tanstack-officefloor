@@ -11,9 +11,10 @@ import type { Grade, Person } from './people';
 
 // `gradeFrom` is the date the grade is from ('' for the sheet's today). A person's first grade
 // applies from the beginning of time; an edit records the grade from its date, keeping the others,
-// but records nothing when it leaves the grade as the row shows it with no from-date.
-type Fields = { name: string; grade: Grade; gradeFrom: string };
-const EMPTY: Fields = { name: '', grade: 'A', gradeFrom: '' };
+// but records nothing when it leaves the grade as the row shows it with no from-date. `terms` are
+// their own terms in days ('' for none).
+type Fields = { name: string; grade: Grade; gradeFrom: string; terms: string };
+const EMPTY: Fields = { name: '', grade: 'A', gradeFrom: '', terms: '' };
 
 // The people on the sheet: a form that adds a person, or edits the one whose editor is open, and
 // the list of everyone in the order they were added (retired people only when "show retired" is on). The editor remembers the version of the person
@@ -55,10 +56,16 @@ function People({ sheetId }: { sheetId: string }) {
           (p) => p.id === id,
         );
         if (current) {
-          setFields({ name: current.name, grade: current.grade, gradeFrom: '' });
+          setFields({ name: current.name, grade: current.grade, gradeFrom: '', terms: current.terms });
           setVersion(current.version);
         }
         return;
+      }
+      // Any other refused edit closes the editor, so the form is back to adding; the error stays.
+      if (id !== null) {
+        setFields(EMPTY);
+        setEditing(null);
+        setVersion(null);
       }
       setError(
         e instanceof HttpError && e.status === 409
@@ -85,7 +92,7 @@ function People({ sheetId }: { sheetId: string }) {
 
   const open = (p: Person) => {
     setEditing(p.id);
-    setFields({ name: p.name, grade: p.grade, gradeFrom: '' });
+    setFields({ name: p.name, grade: p.grade, gradeFrom: '', terms: p.terms });
     setVersion(p.version);
     setError('');
   };
@@ -125,6 +132,16 @@ function People({ sheetId }: { sheetId: string }) {
             onChange={(e) => change({ gradeFrom: e.target.value })}
           />
         </label>{' '}
+        <label>
+          Terms{' '}
+          <input
+            data-testid="person-form-terms"
+            inputMode="numeric"
+            size={4}
+            value={fields.terms}
+            onChange={(e) => change({ terms: e.target.value })}
+          />
+        </label>{' '}
         <button type="submit" data-testid="person-form-submit" disabled={save.isPending}>
           {editing === null ? 'Add' : 'Save'}
         </button>
@@ -161,6 +178,7 @@ function People({ sheetId }: { sheetId: string }) {
           <tr>
             <th>Name</th>
             <th>Grade</th>
+            <th>Terms</th>
             <th />
             <PersonHead.Slot sheetId={sheetId} />
           </tr>
@@ -170,6 +188,7 @@ function People({ sheetId }: { sheetId: string }) {
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>
+              <td data-testid="person-terms">{p.terms}</td>
               <td>
                 <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => open(p)}>
                   Edit

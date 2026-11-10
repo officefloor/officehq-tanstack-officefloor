@@ -16,11 +16,12 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PersonRepository {
 
-    private static final String COLUMNS = "id, sheet_id, name, grade, version, statement_count, stated_total, statement_date, retired_from";
+    private static final String COLUMNS = "id, sheet_id, name, grade, terms, version, statement_count, stated_total, statement_date, retired_from";
 
     private static final RowMapper<Person> ROW = (rs, n) -> {
         Person person = new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
                 rs.getString("grade"), rs.getLong("version"));
+        person.setTerms(rs.getObject("terms", Integer.class));
         person.setStatements(rs.getInt("statement_count"), rs.getString("stated_total"),
                 rs.getObject("statement_date", LocalDate.class));
         person.setRetiredFrom(rs.getObject("retired_from", LocalDate.class));
@@ -153,9 +154,9 @@ public class PersonRepository {
      */
     public boolean save(Person person) {
         if (person.getId() != null) {
-            int updated = jdbc.update("UPDATE person SET name = ?, grade = ?, version = version + 1"
+            int updated = jdbc.update("UPDATE person SET name = ?, grade = ?, terms = ?, version = version + 1"
                     + " WHERE id = ? AND sheet_id = ? AND version = ?",
-                    person.getName(), person.getGrade(), person.getId(), person.getSheetId(),
+                    person.getName(), person.getGrade(), person.getTerms(), person.getId(), person.getSheetId(),
                     person.getVersion());
             if (updated == 0) return false;
             person.setVersion(person.getVersion() + 1);
@@ -165,11 +166,12 @@ public class PersonRepository {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade) VALUES (?, ?, ?)",
+                    "INSERT INTO person (sheet_id, name, grade, terms) VALUES (?, ?, ?, ?)",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, person.getSheetId());
             ps.setString(2, person.getName());
             ps.setString(3, person.getGrade());
+            ps.setObject(4, person.getTerms(), java.sql.Types.INTEGER);
             return ps;
         }, keys);
         person.setId(keys.getKey().longValue());

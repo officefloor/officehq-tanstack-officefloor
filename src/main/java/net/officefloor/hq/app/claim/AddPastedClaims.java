@@ -42,7 +42,7 @@ public class AddPastedClaims {
             LocalDate date = line.claim().date() == null ? sheet.today() : line.claim().date();
             Claim claim = new Claim(null, sheet.id(), person.getId(), line.claim().amount(), date, line.claim().note(),
                     ClaimStatus.DRAFT, null, null, null);
-            claim.setDueBy(date.plusDays(terms.termsFor(person.gradeOn(date), date)));
+            claim.setDueBy(date.plusDays(terms.termsFor(person, date)));
             new CheckClaimPeriod().check(sheet, claim, periods);
             new CheckClaimRetired().check(sheet, claim, people);
             persons.add(person);

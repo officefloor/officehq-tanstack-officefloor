@@ -22,6 +22,11 @@ public class ValidatePerson {
                 throw new InvalidPersonException("A from-date is a date, yyyy-MM-dd");
             }
         }
-        body.set(new PersonRequest(name, grade, request.version(), gradeFrom));
+        String terms = request.terms() == null ? "" : request.terms().trim();
+        if (!terms.isEmpty() && !terms.matches("\\d{1,6}")) {
+            throw new InvalidPersonException("Terms are a whole number of days, 0 or more, or blank");
+        }
+        if (!terms.isEmpty()) terms = String.valueOf(Integer.parseInt(terms));
+        body.set(new PersonRequest(name, grade, request.version(), gradeFrom, terms));
     }
 }

@@ -32,7 +32,7 @@ public class SplitClaim {
         Claim made = new Claim(null, sheet.id(), claim.getPersonId(), split.amount(), claim.getDate(),
                 claim.getNote(), ClaimStatus.OPEN, null, null, user);
         made.setSplitFrom(claim.getNumber());
-        made.setDueBy(claim.getDate().plusDays(settings.termsFor(person.gradeOn(claim.getDate()), claim.getDate())));
+        made.setDueBy(claim.getDate().plusDays(settings.termsFor(person, claim.getDate())));
         splitOut.set(new Split(made));
     }
 }
