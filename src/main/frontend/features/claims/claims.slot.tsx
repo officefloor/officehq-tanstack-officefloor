@@ -291,6 +291,13 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
                   Edit
                 </button>
               )}
+              <ol data-testid="claim-log">
+                {c.log.map((line, i) => (
+                  <li key={i} data-testid="claim-log-line">
+                    {line}
+                  </li>
+                ))}
+              </ol>
               {refused?.id === c.id && (
                 <p role="alert" data-testid="claim-error">
                   {refused.message}

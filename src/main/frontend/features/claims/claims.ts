@@ -33,6 +33,11 @@ export type Claim = {
   roundDate: string;
   /** Its due-by (yyyy-MM-dd), fixed when it was made: its date plus its grade's terms then. */
   dueBy: string;
+  /**
+   * Its status log, oldest first: one line per status it has had, as
+   * `<STATUS> by <user> on <date> due=<due>` (the sheet's today and its due at that moment).
+   */
+  log: string[];
 };
 
 /** Whether a claim is a correction: it has no floor and no late charge. */

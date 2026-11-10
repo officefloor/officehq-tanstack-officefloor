@@ -20,12 +20,13 @@ import net.officefloor.plugin.variable.Val;
  * Opens the selected claims in list order (people in the order they were added, each person's
  * claims newest first), numbering each as it is opened. A claim that cannot be opened (not a
  * draft, dated inside a closed period, not on the sheet) is refused and left as it is. Each claim
- * opened is audited as a single open is: its CLAIM_OPENED line, then the figures it moved.
+ * opened is logged and audited as a single open is: its CLAIM_OPENED line, then the figures it moved.
  */
 public class OpenSelectedClaims {
     public void open(@Val Sheet sheet, @Val BulkOpenRequest request, ClaimRepository claims,
             PersonRepository people, PeriodRepository periods, SheetRepository sheets, RateRepository rates,
-            SettingsRepository settings, HttpServletRequest http, Audit audit, Out<BulkOpenResponse> result) {
+            SettingsRepository settings, ClaimLogRepository log, HttpServletRequest http, Audit audit,
+            Out<BulkOpenResponse> result) {
         String user = Audit.user(http);
         Set<Long> selected = new HashSet<>();
         for (String id : request.claimIds()) {
@@ -46,6 +47,7 @@ public class OpenSelectedClaims {
                 claim.setOpenedBy(user);
                 claim.setNumber(ClaimNumbers.next(sheet, claim, settings.find(sheet.id()), periods, claims));
                 claims.save(claim);
+                log.record(claim, user, sheet.today(), LogClaimStatus.due(sheet, claim, people, rates, settings));
                 opened++;
                 audit.record(ClaimAudit.line(claim.getStatus().auditEvent(), sheet, user, person, claim));
                 Rollup after = rollup(sheet, sheets, people, claims, rates, settings);
