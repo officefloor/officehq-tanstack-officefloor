@@ -29,7 +29,7 @@ public class AutoClosePeriods {
                 .filter((p) -> !p.closed() && sheetSettings.pastGrace(p.to(), today))
                 .sorted(Comparator.comparing(Period::to)).toList();
         for (Period period : due) {
-            Period closed = ClosePeriod.fix(now, period, periods, people, claims, log, rates, settings);
+            Period closed = ClosePeriod.fix(now, period, false, periods, people, claims, log, rates, settings);
             if (closed == null) continue; // another request closed it first
             audit.record("PERIOD_CLOSED sheet=" + sheet.id() + " by=" + Audit.user(request)
                     + " period=" + closed.name() + " total=" + closed.closedTotal().setScale(2).toPlainString()

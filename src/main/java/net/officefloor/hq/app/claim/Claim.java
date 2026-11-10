@@ -25,6 +25,7 @@ public class Claim {
     private int proofs;
     private String splitFrom;
     private String lockedBy;
+    private boolean lateEntry;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue,
@@ -97,6 +98,9 @@ public class Claim {
         }
         proofs++;
     }
+    /** Whether it was added while its period was soft-closed. */
+    public boolean isLateEntry() { return lateEntry; }
+    public void setLateEntry(boolean lateEntry) { this.lateEntry = lateEntry; }
     /** The number of the claim it was split off; null when it was not split off one. */
     public String getSplitFrom() { return splitFrom; }
     public void setSplitFrom(String splitFrom) { this.splitFrom = splitFrom; }

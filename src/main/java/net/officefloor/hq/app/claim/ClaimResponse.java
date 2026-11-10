@@ -13,12 +13,13 @@ import java.util.List;
  * {@code <STATUS> by <user> on <date> due=<due>}; and the date it is deferred until as yyyy-MM-dd
  * ("" when it was never deferred; it is deferred only while OPEN and the sheet's today is before it);
  * and how many proofs it has had added; and the number of the claim it was split off ("" when none);
- * and the user whose open editor locks it on the sheet's today ("" when no one's does).
+ * and the user whose open editor locks it on the sheet's today ("" when no one's does);
+ * and whether it was added while its period was soft-closed.
  */
 public record ClaimResponse(String id, String personId, String amount, String date, String note,
         String status, String number, String due, String openedBy, boolean stated,
         String statedDue, String corrects, String roundDate, String dueBy, List<String> log, String deferredUntil,
-        int proofs, String splitFrom, String lockedBy) {
+        int proofs, String splitFrom, String lockedBy, boolean lateEntry) {
     public static ClaimResponse from(Claim claim) {
         return from(claim, List.of());
     }
@@ -37,6 +38,7 @@ public record ClaimResponse(String id, String personId, String amount, String da
                 claim.getDeferredUntil() == null ? "" : claim.getDeferredUntil().toString(),
                 claim.getProofs(),
                 claim.getSplitFrom() == null ? "" : claim.getSplitFrom(),
-                claim.getLockedBy() == null ? "" : claim.getLockedBy());
+                claim.getLockedBy() == null ? "" : claim.getLockedBy(),
+                claim.isLateEntry());
     }
 }

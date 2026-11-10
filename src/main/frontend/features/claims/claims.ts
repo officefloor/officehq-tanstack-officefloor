@@ -48,6 +48,8 @@ export type Claim = {
   splitFrom: string;
   /** The user whose open editor locks it on the sheet's today; '' when no one's does. */
   lockedBy: string;
+  /** Whether it was added while its period was soft-closed. */
+  lateEntry: boolean;
 };
 
 /** Whether a claim is a correction: it has no floor and no late charge. */

@@ -14,11 +14,12 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PeriodRepository {
 
-    private static final String COLUMNS = "sheet_id, name, from_date, to_date, closed, closed_total";
+    private static final String COLUMNS = "sheet_id, name, from_date, to_date, closed, closed_total, soft";
 
     private static final RowMapper<Period> ROW = (rs, n) -> new Period(rs.getString("sheet_id"),
             rs.getString("name"), rs.getObject("from_date", LocalDate.class),
-            rs.getObject("to_date", LocalDate.class), rs.getBoolean("closed"), rs.getBigDecimal("closed_total"));
+            rs.getObject("to_date", LocalDate.class), rs.getBoolean("closed"), rs.getBigDecimal("closed_total"),
+            rs.getBoolean("soft"));
 
     private final JdbcTemplate jdbc;
 
@@ -39,9 +40,19 @@ public class PeriodRepository {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    /** The closed period on the sheet whose dates contain the date, or null when none does. */
+    /**
+     * The closed period on the sheet whose dates contain the date, or null when none does. A
+     * soft-closed period does not count: its claims can still change.
+     */
     public Period closedOn(String sheetId, LocalDate date) {
-        List<Period> found = jdbc.query("SELECT " + COLUMNS + " FROM period WHERE sheet_id = ? AND closed"
+        List<Period> found = jdbc.query("SELECT " + COLUMNS + " FROM period WHERE sheet_id = ? AND closed AND NOT soft"
+                + " AND from_date <= ? AND to_date >= ?", ROW, sheetId, date, date);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** The soft-closed period on the sheet whose dates contain the date, or null when none does. */
+    public Period softClosedOn(String sheetId, LocalDate date) {
+        List<Period> found = jdbc.query("SELECT " + COLUMNS + " FROM period WHERE sheet_id = ? AND closed AND soft"
                 + " AND from_date <= ? AND to_date >= ?", ROW, sheetId, date, date);
         return found.isEmpty() ? null : found.get(0);
     }
@@ -52,12 +63,14 @@ public class PeriodRepository {
     }
 
     /**
-     * Mark the period closed with its fixed due-total, when it is still open in the store; false
-     * when another request closed it first.
+     * Mark the period closed (or soft-closed) with its fixed due-total, when the store still holds it
+     * as it was read (open, or soft-closed when {@code fromSoft}); false when another request changed
+     * it first.
      */
-    public boolean markClosed(Period period) {
-        return jdbc.update("UPDATE period SET closed = TRUE, closed_total = ? WHERE sheet_id = ? AND name = ? AND NOT closed",
-                period.closedTotal(), period.sheetId(), period.name()) == 1;
+    public boolean markClosed(Period period, boolean fromSoft) {
+        return jdbc.update("UPDATE period SET closed = TRUE, soft = ?, closed_total = ? WHERE sheet_id = ? AND name = ?"
+                + " AND closed = ? AND soft = ?",
+                period.soft(), period.closedTotal(), period.sheetId(), period.name(), fromSoft, fromSoft) == 1;
     }
 
     /**
@@ -65,7 +78,7 @@ public class PeriodRepository {
      * request reopened it first.
      */
     public boolean markReopened(Period period) {
-        return jdbc.update("UPDATE period SET closed = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ? AND closed",
+        return jdbc.update("UPDATE period SET closed = FALSE, soft = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ? AND closed",
                 period.sheetId(), period.name()) == 1;
     }
 

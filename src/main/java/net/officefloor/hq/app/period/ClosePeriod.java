@@ -26,7 +26,8 @@ import net.officefloor.plugin.variable.Val;
  * Closes the period, fixing its due-total at this moment: the figures of the claims that counted at
  * the end of its last day, by the status their log records then (OPEN, PENDING and SETTLED, but not an
  * unbound open one dated within a hold of its person, nor one deferred now), dated inside it (an overdue one with its late charge), added up, skipping n/a. Each person's own figure for the period is fixed
- * too, and the period's due-total is the sum of them. A period already closed is refused, and so is a role the permission matrix does not allow to close.
+ * too, and the period's due-total is the sum of them. A soft-closed period closes too, its figures
+ * fixed afresh. A period already closed is refused, and so is a role the permission matrix does not allow to close.
  */
 public class ClosePeriod {
     public void close(@Val Sheet sheet, @Val Period period, PeriodRepository periods, PersonRepository people,
@@ -36,17 +37,18 @@ public class ClosePeriod {
         if (!settings.find(sheet.id()).allows("close", role)) {
             throw new InvalidPeriodException("A " + role + " may not close period " + period.name());
         }
-        if (period.closed()) throw new InvalidPeriodException("Period " + period.name() + " is already closed");
-        Period closed = fix(sheet, period, periods, people, claims, log, rates, settings);
+        if (period.hardClosed()) throw new InvalidPeriodException("Period " + period.name() + " is already closed");
+        Period closed = fix(sheet, period, false, periods, people, claims, log, rates, settings);
         if (closed == null) throw new InvalidPeriodException("Period " + period.name() + " is already closed");
         closedOut.set(closed);
     }
 
     /**
-     * Fixes the open period's due-total, and each person's, as at the sheet's today, and marks it
-     * closed in the store: the closed period, or null when another request closed it first.
+     * Fixes the open (or soft-closed) period's due-total, and each person's, as at the sheet's today,
+     * and marks it closed, or soft-closed when {@code soft}, in the store: the closed period, or null
+     * when another request changed it first.
      */
-    static Period fix(Sheet sheet, Period period, PeriodRepository periods, PersonRepository people,
+    static Period fix(Sheet sheet, Period period, boolean soft, PeriodRepository periods, PersonRepository people,
             ClaimRepository claims, ClaimLogRepository log, RateRepository rates, SettingsRepository settings) {
         List<Rate> all = rates.findAll(sheet.id());
         Settings sheetSettings = settings.find(sheet.id());
@@ -65,8 +67,9 @@ public class ClosePeriod {
             personTotals.put(person.getId(), personTotal);
             total = total.add(personTotal);
         }
-        Period closed = period.close(total);
-        if (!periods.markClosed(closed)) return null;
+        Period closed = soft ? period.softClose(total) : period.close(total);
+        if (!periods.markClosed(closed, period.soft())) return null;
+        periods.deletePersonTotals(closed);
         periods.savePersonTotals(closed, personTotals);
         return closed;
     }

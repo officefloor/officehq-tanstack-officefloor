@@ -44,6 +44,7 @@ public class AddPastedClaims {
                     ClaimStatus.DRAFT, null, null, null);
             claim.setDueBy(date.plusDays(terms.termsFor(person, date)));
             new CheckClaimPeriod().check(sheet, claim, periods);
+            claim.setLateEntry(periods.softClosedOn(sheet.id(), date) != null);
             new CheckClaimRetired().check(sheet, claim, people);
             persons.add(person);
             built.add(claim);

@@ -17,7 +17,9 @@ const EMPTY: Fields = { name: '', from: '', to: '' };
 
 // The sheet's periods: a form that adds one (a from-date left blank is the sheet's today), and each
 // period with its due-total: the due of the claims dated in it that counted at its end (by their status log), fixed when the
-// period is closed. A closed period's claims cannot be changed. A steward may reopen a closed period.
+// period is closed. A closed period's claims cannot be changed. A soft-closed period's figures are
+// fixed as a close fixes them, but its claims can still be changed; it can be closed (its figures
+// fixed afresh) or reopened. A steward may reopen a closed or soft-closed period.
 function Periods({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const periods = usePeriods(sheetId);
@@ -30,7 +32,7 @@ function Periods({ sheetId }: { sheetId: string }) {
   const [error, setError] = useState('');
   const [user] = useUser();
 
-  const [refused, setRefused] = useState<{ name: string; action: 'close' | 'reopen' } | null>(null);
+  const [refused, setRefused] = useState<{ name: string; action: 'close' | 'soft-close' | 'reopen' } | null>(null);
 
   const once = useOnce();
   const close = useMutation({
@@ -49,6 +51,24 @@ function Periods({ sheetId }: { sheetId: string }) {
   const closePeriod = (name: string) => {
     setRefused(null);
     once((done) => close.mutate(name, { onSettled: done }));
+  };
+
+  const softClose = useMutation({
+    mutationFn: (name: string) =>
+      postJson<Period>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/periods/${encodeURIComponent(name)}/soft-close`,
+        {},
+        user,
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
+    },
+    onError: (_e, name) => setRefused({ name, action: 'soft-close' }),
+  });
+
+  const softClosePeriod = (name: string) => {
+    setRefused(null);
+    once((done) => softClose.mutate(name, { onSettled: done }));
   };
 
   // Only a steward may reopen a closed period; its due-total is then live again.
@@ -226,7 +246,7 @@ function Periods({ sheetId }: { sheetId: string }) {
               <td data-testid="period-from">{p.from}</td>
               <td data-testid="period-to">{p.to}</td>
               <td data-testid="period-due-total">{periodDueTotal(p, people, claims, rates, floor, late)}</td>
-              <td data-testid="period-closed">{p.closed ? 'yes' : 'no'}</td>
+              <td data-testid="period-closed">{p.closed ? (p.soft ? 'soft' : 'yes') : 'no'}</td>
               <td>
                 <button
                   type="button"
@@ -238,6 +258,14 @@ function Periods({ sheetId }: { sheetId: string }) {
                 </button>{' '}
                 <button
                   type="button"
+                  data-testid="period-soft-close"
+                  disabled={softClose.isPending}
+                  onClick={() => softClosePeriod(p.name)}
+                >
+                  Soft close
+                </button>{' '}
+                <button
+                  type="button"
                   data-testid="period-reopen"
                   disabled={reopen.isPending}
                   onClick={() => reopenPeriod(p.name)}
@@ -246,7 +274,11 @@ function Periods({ sheetId }: { sheetId: string }) {
                 </button>
                 {refused?.name === p.name && (
                   <p role="alert" data-testid="period-error">
-                    {refused.action === 'close' ? 'That period could not be closed.' : 'That period could not be reopened.'}
+                    {refused.action === 'close'
+                      ? 'That period could not be closed.'
+                      : refused.action === 'soft-close'
+                        ? 'That period could not be soft-closed.'
+                        : 'That period could not be reopened.'}
                   </p>
                 )}
               </td>
