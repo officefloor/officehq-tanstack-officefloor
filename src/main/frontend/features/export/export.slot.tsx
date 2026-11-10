@@ -4,6 +4,7 @@ import { claimDueNow } from '../overdue/useOverdue';
 import { gradeOn, usePeople } from '../people/usePeople';
 import { periodOf, usePeriods } from '../periods/usePeriods';
 import { usePools } from '../pools/usePools';
+import { cutTotalsOf } from '../cuts/useCutTotals';
 import { dueTotalsOf } from '../rates/useDueTotals';
 import { rateFor, useRates } from '../rates/useRates';
 import { useSettings } from '../settings/useSettings';
@@ -20,11 +21,12 @@ function ExportPeople({ sheetId }: { sheetId: string }) {
   const rates = useRates(sheetId);
   const settings = useSettings(sheetId);
   const today = useSheetToday(sheetId);
+  const pools = usePools(sheetId);
 
   // Re-read everything first: the screen's as-of date may have changed since it was loaded.
   const download = async () => {
-    const [ps, cs, rs, ss, td] = await Promise.all([fresh(people), fresh(claims), fresh(rates), fresh(settings), fresh(today)]);
-    const dueTotals = dueTotalsOf(ps, cs, rs, ss, td?.today);
+    const [ps, cs, rs, ss, td, pl] = await Promise.all([fresh(people), fresh(claims), fresh(rates), fresh(settings), fresh(today), fresh(pools)]);
+    const dueTotals = dueTotalsOf(ps, cs, rs, ss, td?.today, cutTotalsOf(ps, pl));
     const lines = [['name', 'grade', 'retired-from', 'due-total']];
     for (const p of ps ?? []) {
       lines.push([p.name, p.grade, p.retiredFrom ?? '', dueTotals.get(p.id) ?? '']);

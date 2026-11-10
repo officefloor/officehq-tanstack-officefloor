@@ -14,6 +14,7 @@ import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.claim.ClaimShare;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
+import net.officefloor.hq.app.pool.PoolRepository;
 import net.officefloor.hq.app.settings.SettingsRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import org.springframework.stereotype.Service;
@@ -45,10 +46,12 @@ public class Rollup {
     private final ClaimRepository claims;
     private final SheetRepository sheets;
     private final SettingsRepository settings;
+    private final PoolRepository pools;
     private final Audit audit;
 
     public Rollup(PersonRepository people, ClaimRepository claims, SheetRepository sheets, SettingsRepository settings,
-            Audit audit) {
+            PoolRepository pools, Audit audit) {
+        this.pools = pools;
         this.settings = settings;
         this.people = people;
         this.claims = claims;
@@ -60,7 +63,7 @@ public class Rollup {
      *  (claims that correct another). A person's due-total is the sum of their counting claims' dues now (late charges included),
      *  skipping those with none, less the parts of them its holders hold, plus their parts of the counting claims shared
      *  with them (see {@link ClaimShare#part}); 'n/a' when no rate for the grade they have on the sheet's today is in force
-     *  then and no counting claim keeps a fixed figure or has a due (at the grade it was claimed under). A due-total is at most the sheet's cap (an 'n/a' is not capped). The sheet's due-total skips 'n/a'.
+     *  then and no counting claim keeps a fixed figure or has a due (at the grade it was claimed under). A due-total is at most the sheet's cap less the person's cut total, not below 0.00 (an 'n/a' is not capped). The sheet's due-total skips 'n/a'.
      *  The sheet's due-total and overdue-total leave out the single highest and lowest person's figure when three or more
      *  people have one. */
     public Snapshot take(String sheetId) {
@@ -73,6 +76,7 @@ public class Rollup {
             LocalDate today = sheets.today(sheetId);
             List<Claim> all = claims.list(sheetId);
             BigDecimal cap = settings.cap(sheetId);
+            Map<Long, BigDecimal> cuts = cap == null ? Map.of() : pools.cutTotals(sheetId);
             Map<String, List<ClaimShare>> shares = claims.shares(sheetId);
             Map<Long, Person> byId = new LinkedHashMap<>();
             for (Person p : everyone) byId.put(p.id(), p);
@@ -109,7 +113,7 @@ public class Rollup {
                     fixed = true;
                 }
                 boolean shown = fixed || claims.rated(sheetId, p.id(), today);
-                due = SettingsRepository.capped(due, cap);
+                due = SettingsRepository.capped(due, cap, cuts.get(p.id()));
                 figures.put(p.id(), new Figures(p.name(), claimed.toPlainString(),
                         shown ? due.toPlainString() : "n/a", overdue.toPlainString(),
                         settled.movePointLeft(2).setScale(0, RoundingMode.HALF_EVEN).longValueExact() - 5L * overdueCount));

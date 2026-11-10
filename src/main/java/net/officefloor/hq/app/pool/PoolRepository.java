@@ -275,6 +275,19 @@ public class PoolRepository {
         return pools;
     }
 
+    /** Each person's cut total, by person id: their cuts across every pool they are a member of, added up
+     *  (a person with no cut is left out). */
+    public Map<Long, BigDecimal> cutTotals(String sheetId) {
+        Map<Long, BigDecimal> totals = new HashMap<>();
+        for (Pool pool : list(sheetId)) {
+            for (PoolMember m : pool.members()) {
+                if (m.personId() == null || m.cut() == null) continue;
+                totals.merge(m.personId(), new BigDecimal(m.cut()), BigDecimal::add);
+            }
+        }
+        return totals;
+    }
+
     /** The named pool with its cuts, resolving the pool above it first for its pot. */
     private static Pool resolve(String name, Map<String, List<PoolMember>> members, Map<String, String> parents,
             BigDecimal sheetPot, Set<Long> held, Map<String, Pool> done) {

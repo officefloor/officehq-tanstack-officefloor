@@ -211,6 +211,14 @@ public class SettingsRepository {
         return cap != null && total.compareTo(cap) > 0 ? cap.setScale(2) : total;
     }
 
+    /** A due-total held to the cap less the person's cut total (not below 0.00): the cap covers the due-total and
+     *  the cut total together; no limit when there is no cap. */
+    public static BigDecimal capped(BigDecimal total, BigDecimal cap, BigDecimal cut) {
+        if (cap == null) return total;
+        BigDecimal room = cap.subtract(cut == null ? BigDecimal.ZERO : cut).max(BigDecimal.ZERO).setScale(2);
+        return capped(total, room);
+    }
+
     /** The sheet's floor in force on a date: the least a live due can be; 1.00 before any is recorded. */
     public BigDecimal floor(String sheetId, LocalDate date) {
         List<String> found = on(sheetId, "floor", date);

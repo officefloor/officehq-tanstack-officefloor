@@ -14,6 +14,7 @@ import net.officefloor.hq.app.history.SheetAsOf;
 import net.officefloor.hq.app.person.Hold;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
+import net.officefloor.hq.app.pool.PoolRepository;
 import net.officefloor.hq.app.settings.SettingsRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
@@ -28,7 +29,7 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  claim that does not count is unbound (live again). The due-total is as shown: the sum of the counting claims' dues now (late charges
  *  included), skipping those with none; 'n/a' when no rate for the grade they have on the sheet's today
  *  is in force then and no counting claim has a fixed figure or a due (at the grade it was claimed under); at
- *  most the sheet's cap.
+ *  most the sheet's cap less their cut total, not below 0.00 (taken as of a date, at most that day's cap).
  *
  *  <p>Taken as of a date (on or before the sheet's today; a later one is refused, as is one before the person
  *  was added), it binds the claims of theirs that counted at the end of that date to their figures as they
@@ -39,7 +40,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class TakeStatement {
     public void take(@PathVariable("sheetId") String sheetId, @PathVariable("personId") String personId,
             @Val StatementInput input, ServerHttpConnection connection, PersonRepository people, ClaimRepository claims,
-            SheetRepository sheets, SettingsRepository settings, HistoryRepository history, Audit audit, Rollup rollup,
+            SheetRepository sheets, SettingsRepository settings, HistoryRepository history, PoolRepository pools, Audit audit, Rollup rollup,
             Out<Person> person) throws BadRequestException {
         String by = CurrentUser.require(connection);
         String id = sheetId == null ? "" : sheetId.trim();
@@ -92,7 +93,8 @@ public class TakeStatement {
         }
         boolean rated = then == null ? claims.rated(id, pid, today) : then.rated(pid);
         BigDecimal cap = then == null ? settings.cap(id) : then.cap();
-        String dueTotal = fixed || rated ? SettingsRepository.capped(total, cap).setScale(2).toPlainString() : "n/a";
+        BigDecimal cut = then == null && cap != null ? pools.cutTotals(id).get(pid) : null;
+        String dueTotal = fixed || rated ? SettingsRepository.capped(total, cap, cut).setScale(2).toPlainString() : "n/a";
         people.stated(id, pid, dueTotal, asof == null ? today : asof);
         audit.record("STATEMENT sheet=" + id + " by=" + by + " name=" + found.name() + " due-total=" + dueTotal
                 + " claims=" + count + (asof == null ? "" : " asof=" + asof));

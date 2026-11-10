@@ -1,4 +1,5 @@
 import { type Claim, counts, fixedDue, sharePart, useClaims } from '../claims/useClaims';
+import { useCutTotals } from '../cuts/useCutTotals';
 import { claimDueNow } from '../overdue/useOverdue';
 import { gradeOn, holdsById, type Person, usePeople } from '../people/usePeople';
 import { type Settings, settingOn, useSettings } from '../settings/useSettings';
@@ -11,14 +12,14 @@ import { hundredths, money, type Rate, rateFor, sumDues, useRates } from './useR
  *  skipping those with none; 'n/a' when no rate for the grade they have on the sheet's today is in force
  *  then and no counting claim of theirs keeps a fixed figure or has a due (at the grade it was claimed under).
  *  A shared claim counts its due less its holders' parts for its own person, and each holder's part (see sharePart) for that holder.
- *  A due-total is at most the sheet's cap in force on its today ('n/a' is not capped). */
+ *  A due-total is at most the sheet's cap in force on its today less their cut total, not below 0.00 ('n/a' is not capped). */
 export function useDueTotals(sheetId: string): Map<number, string> {
   const totals = new Map<number, string>();
   for (const [id, f] of useDueFigures(sheetId)) totals.set(id, f.total);
   return totals;
 }
 
-/** Each person's excess, by person id: how far the sum of their figures is above the sheet's cap; 0.00 when
+/** Each person's excess, by person id: how far the sum of their figures plus their cut total is above the sheet's cap; 0.00 when
  *  it is not (or there is no cap, or their due-total is 'n/a'). */
 export function useExcess(sheetId: string): Map<number, string> {
   const excess = new Map<number, string>();
@@ -51,7 +52,8 @@ function useDueFigures(sheetId: string): Map<number, { total: string; excess: st
   const rates = useRates(sheetId);
   const today = useSheetToday(sheetId);
   const settings = useSettings(sheetId).data;
-  return dueFigures(people.data, claims.data, rates.data, settings, today.data?.today);
+  const cuts = useCutTotals(sheetId);
+  return dueFigures(people.data, claims.data, rates.data, settings, today.data?.today, cuts);
 }
 
 /** Each person's due-total, by person id, from these people, claims, rates and settings on this today (as
@@ -68,6 +70,7 @@ function dueFigures(
   rates: Rate[] | undefined,
   settings: Settings | undefined,
   today: string | undefined,
+  cuts?: Map<number, string>,
 ): Map<number, { total: string; excess: string; settled: string; open: string; scored: string }> {
   const holds = holdsById(people, today);
   const cap = settingOn(settings, 'cap', today);
@@ -95,10 +98,13 @@ function dueFigures(
     const rated = rateFor(rates, p.grade, today) !== undefined;
     const shown = rated || own.some((c) => fixedDue(c) !== null && fixedDue(c) !== 'n/a') || dues.some((d) => d !== 'n/a');
     const sum = sumDues(dues);
-    const over = shown && cap !== null && hundredths(sum) > hundredths(cap);
+    // The cap covers the due-total and the cut total together: the due-total is held to the cap less the cut.
+    const cut = hundredths(cuts?.get(p.id) ?? '0.00');
+    const room = cap === null ? 0n : hundredths(cap) - cut > 0n ? hundredths(cap) - cut : 0n;
+    const over = shown && cap !== null && hundredths(sum) > room;
     totals.set(p.id, {
-      total: !shown ? 'n/a' : over ? cap : sum,
-      excess: over ? money(hundredths(sum) - hundredths(cap)) : '0.00',
+      total: !shown ? 'n/a' : over ? money(room) : sum,
+      excess: over ? money(hundredths(sum) - room) : '0.00',
       settled: sumDues(dues.filter((_, i) => counting[i].status === 'SETTLED')),
       open: sumDues(dues.filter((_, i) => counting[i].status !== 'SETTLED')),
       scored: sumDues(own.filter((c) => c.status === 'SETTLED' && c.corrects === null).map((c) => dueOf.get(c.id)!)),
