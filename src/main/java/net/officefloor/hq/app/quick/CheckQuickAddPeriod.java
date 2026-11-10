@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.quick;
 
 import java.time.LocalDate;
+import net.officefloor.hq.app.holiday.HolidayRepository;
 import net.officefloor.hq.app.period.ClosedPeriodException;
 import net.officefloor.hq.app.period.Period;
 import net.officefloor.hq.app.period.PeriodRepository;
@@ -12,14 +13,16 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * Refuses a quick-add while the due-by the claim would be fixed with (its date, the sheet's entry date
- * while it is set, else its today, plus its person's terms) is inside a closed period, before anything is written.
+ * while it is set, else its today, plus its person's terms, moved past any holiday) is inside a closed period, before anything is written.
  */
 public class CheckQuickAddPeriod {
-    public void check(@Val Sheet sheet, @Val Person person, PeriodRepository periods, SettingsRepository settings)
+    public void check(@Val Sheet sheet, @Val Person person, PeriodRepository periods, SettingsRepository settings,
+            HolidayRepository holidays)
             throws ClosedPeriodException {
         Settings terms = settings.find(sheet.id());
         LocalDate date = terms.entryDay(sheet.today());
-        Period closed = periods.closedOn(sheet.id(), date.plusDays(terms.termsFor(person, date)));
+        Period closed = periods.closedOn(sheet.id(),
+                holidays.pastHolidays(sheet.id(), date.plusDays(terms.termsFor(person, date))));
         if (closed != null) throw new ClosedPeriodException(closed.name());
     }
 }

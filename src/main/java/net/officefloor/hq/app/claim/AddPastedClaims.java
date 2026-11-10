@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.holiday.HolidayRepository;
 import net.officefloor.hq.app.period.CheckClaimPeriod;
 import net.officefloor.hq.app.period.ClosedPeriodException;
 import net.officefloor.hq.app.period.PeriodRepository;
@@ -31,7 +32,7 @@ import net.officefloor.hq.app.paste.PasteResponse;
 public class AddPastedClaims {
     public void add(@Val Sheet sheet, @Val PasteLines paste, PersonRepository people, ClaimRepository claims,
             PeriodRepository periods, RateRepository rates, SettingsRepository settings, ClaimLogRepository log,
-            HttpServletRequest request, Audit audit, Out<PasteResponse> result)
+            HolidayRepository holidays, HttpServletRequest request, Audit audit, Out<PasteResponse> result)
             throws InvalidClaimException, ClosedPeriodException, RetiredPersonException {
         Settings terms = settings.find(sheet.id());
         List<Person> persons = new ArrayList<>();
@@ -42,7 +43,7 @@ public class AddPastedClaims {
             LocalDate date = line.claim().date() == null ? terms.entryDay(sheet.today()) : line.claim().date();
             Claim claim = new Claim(null, sheet.id(), person.getId(), line.claim().amount(), date, line.claim().note(),
                     ClaimStatus.DRAFT, null, null, null);
-            claim.setDueBy(date.plusDays(terms.termsFor(person, date)));
+            claim.setDueBy(holidays.pastHolidays(sheet.id(), date.plusDays(terms.termsFor(person, date))));
             new CheckClaimPeriod().check(sheet, claim, periods);
             claim.setLateEntry(periods.softClosedOn(sheet.id(), claim.getDueBy()) != null);
             new CheckClaimRetired().check(sheet, claim, people);
