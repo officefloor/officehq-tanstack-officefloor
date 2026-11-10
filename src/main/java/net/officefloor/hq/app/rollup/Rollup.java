@@ -37,7 +37,8 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
      * figure or has one under the grade in force on its date when that is another grade, or
      * has one dated on or before today (under a rate that has since ended), held to the sheet's cap. Each claim
      * takes the rate of the grade in force on its date. The
-     * sheet's totals add these up, skipping n/a.
+     * sheet's totals add these up, skipping n/a; with three or more figures, the due-total and
+     * overdue-total leave out the single highest and the single lowest.
      */
     public static Rollup of(String sheetId, LocalDate today, PersonRepository people, ClaimRepository claims,
             RateRepository rates, Settings settings) {
@@ -45,8 +46,8 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
         List<Claim> sheetClaims = claims.findAll(sheetId);
         Map<Long, Figures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
-        BigDecimal dueTotal = BigDecimal.ZERO.setScale(2);
-        BigDecimal overdueTotal = BigDecimal.ZERO.setScale(2);
+        List<BigDecimal> dues = new ArrayList<>();
+        List<BigDecimal> overdues = new ArrayList<>();
         for (Person person : people.findAll(sheetId)) {
             BigDecimal claimed = BigDecimal.ZERO.setScale(2);
             BigDecimal due = BigDecimal.ZERO.setScale(2);
@@ -68,13 +69,21 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
             }
             boolean none = Rate.inForce(all, person.gradeOn(today), today).isEmpty() && !fixed;
             claimedTotal = claimedTotal.add(claimed);
-            overdueTotal = overdueTotal.add(overdue);
+            overdues.add(overdue);
             due = settings.capped(due, today);
-            if (!none) dueTotal = dueTotal.add(due);
+            if (!none) dues.add(due);
             figures.put(person.getId(), new Figures(person.getName(), show(claimed), none ? "n/a" : show(due),
                     show(overdue)));
         }
-        return new Rollup(figures, show(claimedTotal), show(dueTotal), show(overdueTotal));
+        return new Rollup(figures, show(claimedTotal), show(trimmed(dues)), show(trimmed(overdues)));
+    }
+
+    /** People's figures added up: with three or more, the single highest and single lowest left out. */
+    private static BigDecimal trimmed(List<BigDecimal> values) {
+        List<BigDecimal> sorted = new ArrayList<>(values);
+        sorted.sort(BigDecimal::compareTo);
+        if (sorted.size() >= 3) sorted = sorted.subList(1, sorted.size() - 1);
+        return sorted.stream().reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
     }
 
     /** Whether a claim is overdue on {@code today}: open (OPEN or PENDING) and past its due-by. */

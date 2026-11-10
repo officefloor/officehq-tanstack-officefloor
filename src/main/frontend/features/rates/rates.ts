@@ -163,6 +163,16 @@ export function sumDue(values: string[]): string {
 }
 
 /**
+ * People's figures added up as a sheet's total, skipping n/a: with three or more figures, the single
+ * highest and the single lowest are left out.
+ */
+export function trimmedSumDue(values: string[]): string {
+  const figures = values.filter((v) => v !== NA).map(hundredths).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const kept = figures.length >= 3 ? figures.slice(1, -1) : figures;
+  return showCents(kept.reduce((n, v) => n + v, 0n));
+}
+
+/**
  * A claim's due: the one fixed when it was settled (its late charge frozen in), else the figure its
  * person's last statement bound it to (never while it is PENDING), else its amount at the rate in force on its date, at least
  * the sheet's `floor` in force on its date; an overdue claim's late charge added on top.

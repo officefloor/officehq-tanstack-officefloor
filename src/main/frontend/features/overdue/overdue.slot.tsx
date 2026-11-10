@@ -3,7 +3,7 @@ import { PersonHead, PersonRow } from '../../slots/defs/personRow';
 import { usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { useClaims } from '../claims/claims';
-import { sumDue, useRates } from '../rates/rates';
+import { trimmedSumDue, useRates } from '../rates/rates';
 import { useSheetToday } from '../sheet/sheet';
 import { useFloor, useLate } from '../access/access';
 import { personOverdue } from './overdue';
@@ -33,7 +33,8 @@ function PersonOverdue({ sheetId, person }: { sheetId: string; person: Person })
   );
 }
 
-// The sheet's overdue claims that count: everyone's overdue count and overdue-total added up.
+// The sheet's overdue claims that count: everyone's overdue count and overdue-total added up
+// (the overdue-total trimmed of the highest and lowest person's).
 function OverdueTotal({ sheetId }: { sheetId: string }) {
   const people = usePeople(sheetId).data ?? [];
   const claims = useClaims(sheetId).data ?? [];
@@ -47,7 +48,7 @@ function OverdueTotal({ sheetId }: { sheetId: string }) {
   return (
     <p>
       Overdue: <strong data-testid="rollup-overdue-count">{each.reduce((n, o) => n + o.count, 0)}</strong>, due{' '}
-      <strong data-testid="rollup-overdue-total">{sumDue(each.map((o) => o.total))}</strong>
+      <strong data-testid="rollup-overdue-total">{trimmedSumDue(each.map((o) => o.total))}</strong>
     </p>
   );
 }

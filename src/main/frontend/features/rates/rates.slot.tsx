@@ -11,7 +11,7 @@ import type { Grade, Person } from '../people/people';
 import { useUser } from '../session/session';
 import { useSheetToday } from '../sheet/sheet';
 import { useCap, useFloor, useLate } from '../access/access';
-import { NA, PCT, personDueTotal, personExcess, rateOn, ratesKey, sumDue, useRates } from './rates';
+import { NA, PCT, personDueTotal, personExcess, rateOn, ratesKey, sumDue, trimmedSumDue, useRates } from './rates';
 import type { Rate } from './rates';
 
 type Fields = { grade: Grade; pct: string; from: string; to: string };
@@ -198,7 +198,7 @@ function PersonExcess({ sheetId, person }: { sheetId: string; person: Person }) 
   return <td data-testid="person-excess">{personExcess(rates, person.grades, today, claims, person.holds, floor, late, cap)}</td>;
 }
 
-// The sheet's due-total: everyone's due-total added up, skipping those with no rate.
+// The sheet's due-total: everyone's due-total added up, skipping those with no rate, trimmed of the highest and lowest.
 function DueTotal({ sheetId }: { sheetId: string }) {
   const people = usePeople(sheetId).data ?? [];
   const claims = useClaims(sheetId).data ?? [];
@@ -212,7 +212,7 @@ function DueTotal({ sheetId }: { sheetId: string }) {
   );
   return (
     <p>
-      Due in all: <strong data-testid="rollup-due-total">{sumDue(totals)}</strong>
+      Due in all: <strong data-testid="rollup-due-total">{trimmedSumDue(totals)}</strong>
     </p>
   );
 }
