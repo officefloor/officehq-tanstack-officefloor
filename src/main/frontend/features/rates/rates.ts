@@ -154,8 +154,8 @@ export function addDays(date: string, days: number): string {
 /**
  * A claim's late charge on its `figure`: for an OPEN or PENDING claim past its due-by (fixed when it was
  * made) plus its grade's grace ({@link overdueFrom}) on the sheet's today, for every full 30 days it is
- * overdue the late percent in force on that boundary date (that day plus 30, 60, 90 ... days) of the figure, each rounded as the claim rounds,
- * added up; else nothing (as for a claim deferred on the sheet's today). A statement never binds it: it follows the sheet's today.
+ * overdue the late percent in force on that boundary date (that day plus 30, 60, 90 ... days) of the figure plus the
+ * charges of the boundaries before it (compounding), each rounded as the claim rounds, added up; else nothing (as for a claim deferred on the sheet's today). A statement never binds it: it follows the sheet's today.
  */
 function lateCharge(claim: Claim, figure: string, late: Late, grade: string): bigint {
   if (!isOpen(claim) || isDeferred(claim, late.today) || figure === NA || late.today === '' || isCorrection(claim)) return 0n;
@@ -166,7 +166,7 @@ function lateCharge(claim: Claim, figure: string, late: Late, grade: string): bi
   let charge = 0n;
   for (let k = 1; k <= periods; k++) {
     const pct = valueOn(late.pct, addDays(from, 30 * k));
-    if (hundredths(pct) !== 0n) charge += percentOf(figure, pct, 1n, halfUp);
+    if (hundredths(pct) !== 0n) charge += percentOf(showCents(hundredths(figure) + charge), pct, 1n, halfUp);
   }
   return charge;
 }

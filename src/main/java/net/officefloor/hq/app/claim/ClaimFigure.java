@@ -67,7 +67,8 @@ public final class ClaimFigure {
      * The late charge on a figure: for an OPEN or PENDING claim past its due-by (fixed when it was made)
      * plus the grace days of its grade ({@code grade}, the one in force on its date) on its date
      * ({@link Settings#overdueFrom}) on {@code today}, for every full 30 days it is overdue the
-     * sheet's late percent in force on that boundary date (that day plus 30, 60, 90 ... days) of the figure, each rounded to two
+     * sheet's late percent in force on that boundary date (that day plus 30, 60, 90 ... days) of the figure plus the
+     * charges of the boundaries before it (compounding), each rounded to two
      * decimals as the claim rounds, added up; else 0.00 (as for a claim deferred on today). Never bound by a statement:
      * it follows the sheet's today until the claim is settled.
      */
@@ -88,7 +89,7 @@ public final class ClaimFigure {
         BigDecimal charge = none;
         for (long k = 1; k <= periods; k++) {
             BigDecimal pct = settings.latePctOn(from.plusDays(30 * k));
-            if (pct.signum() != 0) charge = charge.add(times(figure, pct, mode));
+            if (pct.signum() != 0) charge = charge.add(times(figure.add(charge), pct, mode));
         }
         return charge;
     }
