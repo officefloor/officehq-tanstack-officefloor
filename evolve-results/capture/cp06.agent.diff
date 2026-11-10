@@ -1,0 +1,296 @@
+diff --git a/src/main/frontend/api/http.ts b/src/main/frontend/api/http.ts
+index b514c6e99..493187e3b 100644
+--- a/src/main/frontend/api/http.ts
++++ b/src/main/frontend/api/http.ts
+@@ -19,18 +19,25 @@ export function getJson<T>(path: string): Promise<T> {
+   return send<T>(path);
+ }
+ 
+-export function postJson<T>(path: string, body: unknown): Promise<T> {
++// A change is made by the signed-in user: name them, and the server records who made it.
++function jsonHeaders(user?: string): HeadersInit {
++  return user === undefined
++    ? { 'Content-Type': 'application/json' }
++    : { 'Content-Type': 'application/json', 'X-User': encodeURIComponent(user) };
++}
++
++export function postJson<T>(path: string, body: unknown, user?: string): Promise<T> {
+   return send<T>(path, {
+     method: 'POST',
+-    headers: { 'Content-Type': 'application/json' },
++    headers: jsonHeaders(user),
+     body: JSON.stringify(body),
+   });
+ }
+ 
+-export function putJson<T>(path: string, body: unknown): Promise<T> {
++export function putJson<T>(path: string, body: unknown, user?: string): Promise<T> {
+   return send<T>(path, {
+     method: 'PUT',
+-    headers: { 'Content-Type': 'application/json' },
++    headers: jsonHeaders(user),
+     body: JSON.stringify(body),
+   });
+ }
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 16bcd2d89..675339300 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson, putJson } from '../../api/http';
+ import { PersonHead, PersonRow } from '../../slots/defs/personRow';
+ import type { Person } from '../people/people';
++import { useUser } from '../session/session';
+ import { AMOUNT, claimsKey, sumAmounts, useClaims } from './claims';
+ import type { Claim } from './claims';
+ 
+@@ -28,6 +29,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person })
+   const [fields, setFields] = useState<Fields>(EMPTY);
+   const [editing, setEditing] = useState<string | null>(null);
+   const [error, setError] = useState('');
++  const [user] = useUser();
+ 
+   const reset = () => {
+     setFields(EMPTY);
+@@ -39,8 +41,8 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person })
+     mutationFn: ({ id, body }: { id: string | null; body: Fields }) => {
+       const sheet = `/api/sheets/${encodeURIComponent(sheetId)}`;
+       return id === null
+-        ? postJson<Claim>(`${sheet}/people/${encodeURIComponent(person.id)}/claims`, body)
+-        : putJson<Claim>(`${sheet}/claims/${encodeURIComponent(id)}`, body);
++        ? postJson<Claim>(`${sheet}/people/${encodeURIComponent(person.id)}/claims`, body, user)
++        : putJson<Claim>(`${sheet}/claims/${encodeURIComponent(id)}`, body, user);
+     },
+     onSuccess: () => {
+       reset();
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index 9893ee70a..3dbf52881 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { HttpError, postJson, putJson } from '../../api/http';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { PersonHead, PersonRow } from '../../slots/defs/personRow';
++import { useUser } from '../session/session';
+ import { GRADES, peopleKey, usePeople } from './people';
+ import type { Grade, Person } from './people';
+ 
+@@ -18,6 +19,7 @@ function People({ sheetId }: { sheetId: string }) {
+   const [fields, setFields] = useState<Fields>(EMPTY);
+   const [editing, setEditing] = useState<string | null>(null);
+   const [error, setError] = useState('');
++  const [user] = useUser();
+ 
+   const reset = () => {
+     setFields(EMPTY);
+@@ -29,8 +31,8 @@ function People({ sheetId }: { sheetId: string }) {
+     mutationFn: ({ id, body }: { id: string | null; body: Fields }) => {
+       const base = `/api/sheets/${encodeURIComponent(sheetId)}/people`;
+       return id === null
+-        ? postJson<Person>(base, body)
+-        : putJson<Person>(`${base}/${encodeURIComponent(id)}`, body);
++        ? postJson<Person>(base, body, user)
++        : putJson<Person>(`${base}/${encodeURIComponent(id)}`, body, user);
+     },
+     onSuccess: () => {
+       reset();
+diff --git a/src/main/java/net/officefloor/hq/app/Audit.java b/src/main/java/net/officefloor/hq/app/Audit.java
+index b6167ede3..980735f65 100644
+--- a/src/main/java/net/officefloor/hq/app/Audit.java
++++ b/src/main/java/net/officefloor/hq/app/Audit.java
+@@ -1,7 +1,9 @@
+ package net.officefloor.hq.app;
+ 
++import jakarta.servlet.http.HttpServletRequest;
+ import java.io.IOException;
+ import java.io.UncheckedIOException;
++import java.net.URLDecoder;
+ import java.nio.charset.StandardCharsets;
+ import java.nio.file.Files;
+ import java.nio.file.Path;
+@@ -41,6 +43,15 @@ public class Audit {
+         }
+     }
+ 
++    /**
++     * The signed-in user who made a change, as the screen sends it in the {@code X-User} header
++     * (URI-encoded, so any name fits a header).
++     */
++    public static String user(HttpServletRequest request) {
++        String header = request.getHeader("X-User");
++        return header == null ? "" : URLDecoder.decode(header, StandardCharsets.UTF_8);
++    }
++
+     /** Remove the audit file. */
+     public synchronized void clear() {
+         try {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimAdded.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimAdded.java
+new file mode 100644
+index 000000000..1eaa2f07d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimAdded.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++import jakarta.servlet.http.HttpServletRequest;
++
++/** Records the saved claim. Runs after every rule has passed, so a refused change writes nothing. */
++public class AuditClaimAdded {
++    public void audit(@Val Sheet sheet, @Val Person person, @Val Claim claim,
++            HttpServletRequest request, Audit audit) {
++        audit.record(ClaimAudit.line("CLAIM_ADDED", sheet, Audit.user(request), person, claim));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimEdited.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimEdited.java
+new file mode 100644
+index 000000000..9ff1a2c53
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimEdited.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++import jakarta.servlet.http.HttpServletRequest;
++
++/** Records the saved claim. Runs after every rule has passed, so a refused change writes nothing. */
++public class AuditClaimEdited {
++    public void audit(@Val Sheet sheet, @Val Claim claim, PersonRepository people,
++            HttpServletRequest request, Audit audit) {
++        audit.record(ClaimAudit.line("CLAIM_EDITED", sheet, Audit.user(request),
++                people.find(sheet.id(), claim.getPersonId()), claim));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimAudit.java b/src/main/java/net/officefloor/hq/app/claim/ClaimAudit.java
+new file mode 100644
+index 000000000..8c8cb32c5
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimAudit.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.sheet.Sheet;
++
++/** A claim's audit record: its person, its amount as the screen shows it, and its date. */
++final class ClaimAudit {
++    private ClaimAudit() {}
++
++    static String line(String event, Sheet sheet, String user, Person person, Claim claim) {
++        ClaimResponse shown = ClaimResponse.from(claim);
++        return event + " sheet=" + sheet.id() + " by=" + user + " person=" + person.getName()
++                + " amount=" + shown.amount() + " date=" + shown.date();
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/AuditPersonAdded.java b/src/main/java/net/officefloor/hq/app/person/AuditPersonAdded.java
+new file mode 100644
+index 000000000..62e212a60
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/AuditPersonAdded.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++import jakarta.servlet.http.HttpServletRequest;
++
++/** Records the saved person. Runs after every rule has passed, so a refused change writes nothing. */
++public class AuditPersonAdded {
++    public void audit(@Val Sheet sheet, @Val Person person,
++            HttpServletRequest request, Audit audit) {
++        audit.record("PERSON_ADDED sheet=" + sheet.id() + " by=" + Audit.user(request)
++                + " name=" + person.getName() + " grade=" + person.getGrade());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/AuditPersonEdited.java b/src/main/java/net/officefloor/hq/app/person/AuditPersonEdited.java
+new file mode 100644
+index 000000000..5363bbfaa
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/AuditPersonEdited.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++import jakarta.servlet.http.HttpServletRequest;
++
++/** Records the saved person. Runs after every rule has passed, so a refused change writes nothing. */
++public class AuditPersonEdited {
++    public void audit(@Val Sheet sheet, @Val Person person,
++            HttpServletRequest request, Audit audit) {
++        audit.record("PERSON_EDITED sheet=" + sheet.id() + " by=" + Audit.user(request)
++                + " name=" + person.getName() + " grade=" + person.getGrade());
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+index cfe8546b1..befd2231c 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+@@ -17,6 +17,11 @@ apply:
+ save:
+   class: net.officefloor.hq.app.claim.SaveClaim
+   govern: [ transaction ]
++  next: audit
++# Last before the response: every rule has passed and the change is saved.
++audit:
++  class: net.officefloor.hq.app.claim.AuditClaimEdited
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.claim.RespondWithClaim
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+index f468fcc29..23e72e4da 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+@@ -17,6 +17,11 @@ check:
+ save:
+   class: net.officefloor.hq.app.person.SavePerson
+   govern: [ transaction ]
++  next: audit
++# Last before the response: every rule has passed and the change is saved.
++audit:
++  class: net.officefloor.hq.app.person.AuditPersonAdded
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.person.RespondWithPerson
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+index 2ab9e25db..dab551b5c 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+@@ -22,6 +22,11 @@ check:
+ save:
+   class: net.officefloor.hq.app.person.SavePerson
+   govern: [ transaction ]
++  next: audit
++# Last before the response: every rule has passed and the change is saved.
++audit:
++  class: net.officefloor.hq.app.person.AuditPersonEdited
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.person.RespondWithPerson
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+index 5a80a2866..a08ab5869 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+@@ -17,6 +17,11 @@ build:
+ save:
+   class: net.officefloor.hq.app.claim.SaveClaim
+   govern: [ transaction ]
++  next: audit
++# Last before the response: every rule has passed and the change is saved.
++audit:
++  class: net.officefloor.hq.app.claim.AuditClaimAdded
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.claim.RespondWithClaim
