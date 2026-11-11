@@ -23,8 +23,17 @@ export type PoolMember = {
 };
 
 /** A pool on the sheet: its members in the order added, their total share, and balanced when it is exactly 100.00.
- *  `added` orders the pools as they were added (a larger one added later). */
-export type Pool = { name: string; members: PoolMember[]; totalShare: string; balanced: boolean; added: number };
+ *  `added` orders the pools as they were added (a larger one added later; a crew's after every pool). `crew` is
+ *  whether it is a crew's pool: its lead and members at equal shares (100.00 split as patrons' shares are, the
+ *  remainder on the lead), kept by the crew, so no member is added to it here and it is no other pool's member. */
+export type Pool = {
+  name: string;
+  members: PoolMember[];
+  totalShare: string;
+  balanced: boolean;
+  added: number;
+  crew: boolean;
+};
 
 // Under the people's key: a change to a person (a retirement, a new name) reads the pools again too.
 export const poolsKey = (sheetId: string) => [...peopleKey(sheetId), 'pools'] as const;

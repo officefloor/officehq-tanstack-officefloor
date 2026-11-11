@@ -17,13 +17,26 @@ import java.util.List;
  * unbalanced pool, or no pot, has no cuts. A member whose dates do not include the sheet's today is
  * left out entirely: not in the total, not in the balance, and no cut (not even 0.00). A pool that is a member of another has no pot of its own: its
  * pot is its cut in the pool above (none when that pool has no cuts). {@code added} orders the pools as they
- * were added (a larger one added later).
+ * were added (a larger one added later), a crew's after every pool. {@code crew} is whether it is a crew's
+ * pool: its lead and members at equal shares, kept by the crew (no member is added to it as to a pool).
  */
 public record PoolResponse(String name, List<PoolMemberResponse> members, String totalShare, boolean balanced,
-        long added) {
+        long added, boolean crew) {
+    /** Added to a crew's id for its {@code added}, so the crews' pools come after every pool. */
+    static final long CREW_ADDED = 1_000_000_000_000L;
+
     private static final BigDecimal HUNDRED = new BigDecimal("100.00");
 
     public static PoolResponse from(Pool pool, List<PoolMember> members, BigDecimal pot) {
+        return from(pool, members, pot, pool.id(), false);
+    }
+
+    /** A crew's pool: named as the crew, {@code crewId} the crew's id. */
+    public static PoolResponse ofCrew(Pool pool, long crewId, List<PoolMember> members, BigDecimal pot) {
+        return from(pool, members, pot, CREW_ADDED + crewId, true);
+    }
+
+    private static PoolResponse from(Pool pool, List<PoolMember> members, BigDecimal pot, long added, boolean crew) {
         BigDecimal total = total(members);
         boolean balanced = total.compareTo(HUNDRED) == 0;
         List<BigDecimal> cuts = cutsOf(members, pot);
@@ -31,7 +44,7 @@ public record PoolResponse(String name, List<PoolMemberResponse> members, String
         for (int i = 0; i < members.size(); i++) {
             shown.add(PoolMemberResponse.from(members.get(i), cuts == null ? null : cuts.get(i)));
         }
-        return new PoolResponse(pool.name(), shown, total.toPlainString(), balanced, pool.id());
+        return new PoolResponse(pool.name(), shown, total.toPlainString(), balanced, added, crew);
     }
 
     /** The active members' shares added up, a retired member's counting as given. */

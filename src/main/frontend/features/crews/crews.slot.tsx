@@ -8,11 +8,13 @@ import { useUser } from '../session/session';
 import { usePeople } from '../people/people';
 import { crewDueTotal, crewsKey, useCrews, useDueTotals } from './crews';
 import type { Crew } from './crews';
+import { poolsKey } from '../pools/pools';
 
 // The sheet's crews: a name entry, a lead chosen from the people and an add button, each crew listed below
 // with its lead, its members and its due-total (the lead's and the members' due-totals added up, n/a
 // skipped). A member is added from the crew's row. The server decides what is refused — a taken or blank
-// name, or a member that is the lead or already in the crew — and the form shows its error.
+// name (a pool's name included), or a member that is the lead or already in the crew — and the form shows
+// its error. Each crew is a pool too, listed among the pools.
 function Crews({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const crews = useCrews(sheetId);
@@ -27,7 +29,12 @@ function Crews({ sheetId }: { sheetId: string }) {
   const add = useMutation({
     mutationFn: (body: { name: string; leadId: string }) =>
       postJson<Crew>(`/api/sheets/${encodeURIComponent(sheetId)}/crews`, body, user),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: crewsKey(sheetId) }),
+    // A crew is a pool too: its pool is read again with it.
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: crewsKey(sheetId) }),
+        queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) }),
+      ]),
     onError: () => setError('That crew could not be added.'),
   });
 
@@ -97,7 +104,12 @@ function CrewRow({ sheetId, crew, dues }: { sheetId: string; crew: Crew; dues: M
   const add = useMutation({
     mutationFn: (body: { crew: string; personId: string }) =>
       postJson(`/api/sheets/${encodeURIComponent(sheetId)}/crew-members`, body, user),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: crewsKey(sheetId) }),
+    // A crew is a pool too: its pool is read again with it.
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: crewsKey(sheetId) }),
+        queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) }),
+      ]),
     onError: () => setError(`That member could not be added to ${crew.name}.`),
   });
 

@@ -1,9 +1,13 @@
 package net.officefloor.hq.app.pool;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.sql.Date;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -83,6 +87,59 @@ public class PoolRepository {
                             rs.getDate("retired_from") != null, rs.getBoolean("held"), fromDate, toDate,
                             PoolMember.covers(fromDate, toDate, today));
                 }, on, on, Date.valueOf(today), Date.valueOf(today), on, on, sheetId, on, on, on, on, on, on, on, on);
+    }
+
+    /**
+     * The members of every crew on the sheet as a pool's (see {@link #crewShares}): each crew's lead first, then its
+     * members in the order added, as they stood at the end of {@code asOf} (null: now); a person held when one of
+     * their holds covers {@code today}. A crew's members have no dates, so are always active.
+     */
+    public List<PoolMember> crewMembers(String sheetId, LocalDate today, LocalDate asOf) {
+        Date on = sqlDate(asOf);
+        String added = "(CAST(? AS DATE) IS NULL OR %1$s.added_on IS NULL OR %1$s.added_on <= ?)";
+        String flags = " CASE WHEN CAST(? AS DATE) IS NULL THEN p.retired_from ELSE"
+                + " (SELECT r.from_date FROM person_retirement r WHERE r.person_id = p.id AND r.set_on <= ?"
+                + " ORDER BY r.id DESC LIMIT 1) END AS retired_from,"
+                + " EXISTS (SELECT 1 FROM person_hold h WHERE h.person_id = p.id"
+                + " AND h.from_date <= ? AND (h.to_date IS NULL OR h.to_date >= ?)"
+                + " AND " + added.formatted("h").replace("added_on", "made_on") + ") AS held";
+        Date day = Date.valueOf(today);
+        List<Object[]> rows = jdbc.query("SELECT pool, ord, person_id, name, retired_from, held FROM ("
+                + "SELECT c.name AS pool, 0 AS ord, p.id AS person_id, p.name AS name," + flags
+                + " FROM crew c JOIN person p ON p.id = c.lead_id WHERE c.sheet_id = ? AND " + added.formatted("c")
+                + " UNION ALL SELECT c.name AS pool, m.id AS ord, p.id AS person_id, p.name AS name," + flags
+                + " FROM crew_member m JOIN crew c ON c.id = m.crew_id JOIN person p ON p.id = m.person_id"
+                + " WHERE c.sheet_id = ? AND " + added.formatted("c") + " AND " + added.formatted("m")
+                + ") x ORDER BY pool, ord",
+                (rs, n) -> new Object[] { rs.getString("pool"), rs.getLong("person_id"), rs.getString("name"),
+                        rs.getDate("retired_from") != null, rs.getBoolean("held") },
+                on, on, day, day, on, on, sheetId, on, on,
+                on, on, day, day, on, on, sheetId, on, on, on, on);
+        Map<String, List<Object[]>> byCrew = new LinkedHashMap<>();
+        for (Object[] row : rows) byCrew.computeIfAbsent((String) row[0], k -> new ArrayList<>()).add(row);
+        List<PoolMember> members = new ArrayList<>();
+        for (List<Object[]> crew : byCrew.values()) {
+            List<BigDecimal> shares = crewShares(crew.size());
+            for (int i = 0; i < crew.size(); i++) {
+                Object[] row = crew.get(i);
+                members.add(new PoolMember(sheetId, (String) row[0], (Long) row[1], null, (String) row[2],
+                        shares.get(i), (Boolean) row[3], (Boolean) row[4], null, null, true));
+            }
+        }
+        return members;
+    }
+
+    /**
+     * A crew's {@code count} equal shares, its lead's first: 100.00 divided by the count, rounded half to even to two
+     * decimals, the remainder (100.00 less the shares added up) to the lead, as patrons' shares are split.
+     */
+    static List<BigDecimal> crewShares(int count) {
+        BigDecimal hundred = new BigDecimal("100.00");
+        BigDecimal each = hundred.divide(BigDecimal.valueOf(count), 2, RoundingMode.HALF_EVEN);
+        List<BigDecimal> shares = new ArrayList<>();
+        shares.add(hundred.subtract(each.multiply(BigDecimal.valueOf(count - 1))));
+        for (int i = 1; i < count; i++) shares.add(each);
+        return shares;
     }
 
     public boolean isMember(Pool pool, long personId) {

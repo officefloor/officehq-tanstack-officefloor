@@ -19,7 +19,8 @@ import type { Pool } from './pools';
 // or another pool (pool:<name>), and a share. A member pool's pot is its cut in the pool above. The server decides
 // what is refused — a taken or blank name, a person already in the pool, a share not more than 0.00 and at most
 // 100.00 with two decimals, a to-date before the from-date, a pool already in a pool, one containing itself through any chain, or a chain more than
-// three deep — and the form shows its error.
+// three deep — and the form shows its error. Each crew is listed as a pool too, under its name (no pool may take a
+// crew's name), its members kept by the crew: it has no member form and is offered as no pool's member.
 function Pools({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const pools = usePools(sheetId);
@@ -119,67 +120,69 @@ function PoolRow({ sheetId, pool }: { sheetId: string; pool: Pool }) {
           </li>
         ))}
       </ul>
-      <form onSubmit={submit}>
-        <select
-          data-testid="pool-member-select"
-          value={member}
-          onChange={(e) => {
-            setMember(e.target.value);
-            setError('');
-          }}
-        >
-          <option value="">Person…</option>
-          {(people.data ?? []).map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-          {(pools.data ?? [])
-            .filter((p) => p.name !== pool.name)
-            .map((p) => (
-              <option key={`pool:${p.name}`} value={`pool:${p.name}`}>
-                {`pool:${p.name}`}
+      {!pool.crew && (
+        <form onSubmit={submit}>
+          <select
+            data-testid="pool-member-select"
+            value={member}
+            onChange={(e) => {
+              setMember(e.target.value);
+              setError('');
+            }}
+          >
+            <option value="">Person…</option>
+            {(people.data ?? []).map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
               </option>
             ))}
-        </select>{' '}
-        <input
-          data-testid="pool-member-share"
-          placeholder="share %"
-          value={share}
-          onChange={(e) => {
-            setShare(e.target.value);
-            setError('');
-          }}
-        />{' '}
-        <input
-          type="date"
-          data-testid="pool-member-from"
-          aria-label="Member from"
-          value={from}
-          onChange={(e) => {
-            setFrom(e.target.value);
-            setError('');
-          }}
-        />{' '}
-        <input
-          type="date"
-          data-testid="pool-member-to"
-          aria-label="Member to"
-          value={to}
-          onChange={(e) => {
-            setTo(e.target.value);
-            setError('');
-          }}
-        />{' '}
-        <button type="submit" data-testid="pool-member-add" disabled={add.isPending}>
-          Add member
-        </button>
-        {error && (
-          <p role="alert" data-testid="pool-error">
-            {error}
-          </p>
-        )}
-      </form>
+            {(pools.data ?? [])
+              .filter((p) => p.name !== pool.name && !p.crew)
+              .map((p) => (
+                <option key={`pool:${p.name}`} value={`pool:${p.name}`}>
+                  {`pool:${p.name}`}
+                </option>
+              ))}
+          </select>{' '}
+          <input
+            data-testid="pool-member-share"
+            placeholder="share %"
+            value={share}
+            onChange={(e) => {
+              setShare(e.target.value);
+              setError('');
+            }}
+          />{' '}
+          <input
+            type="date"
+            data-testid="pool-member-from"
+            aria-label="Member from"
+            value={from}
+            onChange={(e) => {
+              setFrom(e.target.value);
+              setError('');
+            }}
+          />{' '}
+          <input
+            type="date"
+            data-testid="pool-member-to"
+            aria-label="Member to"
+            value={to}
+            onChange={(e) => {
+              setTo(e.target.value);
+              setError('');
+            }}
+          />{' '}
+          <button type="submit" data-testid="pool-member-add" disabled={add.isPending}>
+            Add member
+          </button>
+          {error && (
+            <p role="alert" data-testid="pool-error">
+              {error}
+            </p>
+          )}
+        </form>
+      )}
     </li>
   );
 }
