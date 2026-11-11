@@ -236,13 +236,14 @@ public class PersonRepository {
 
     /**
      * Move the person to another sheet, with their grades (and from-dates), terms, contact and aliases,
-     * as added there on that sheet's today, and with their statements: they are not retired. Patron links either way, pool memberships, watches and holds are dropped. Their claims
+     * as added there on that sheet's today, and with their statements: they are not retired. Patron links either way, pool and crew memberships, watches and holds are dropped. Their claims
      * are moved by the caller.
      */
     public void transfer(Person person, String toSheet) {
         long id = person.getId();
         jdbc.update("DELETE FROM person_patron WHERE person_id = ? OR patron_id = ?", id, id);
         jdbc.update("DELETE FROM pool_member WHERE person_id = ?", id);
+        jdbc.update("DELETE FROM crew_member WHERE person_id = ?", id);
         jdbc.update("DELETE FROM person_watch WHERE person_id = ?", id);
         jdbc.update("DELETE FROM person_hold WHERE person_id = ?", id);
         jdbc.update("UPDATE person_statement SET sheet_id = ? WHERE person_id = ?", toSheet, id);
