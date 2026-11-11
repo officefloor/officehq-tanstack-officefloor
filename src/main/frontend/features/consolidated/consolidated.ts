@@ -30,6 +30,8 @@ export type Figures = {
   dues: string[];
   /** Each person's overdue-total, in the order of `names`. */
   overdues: string[];
+  /** How many overdue claims count, over everyone on it (the sheet's overdue count). */
+  overdueCount: number;
 };
 
 const asName = (s: string) => s.trim().toLowerCase();
@@ -48,7 +50,8 @@ export function sheetFigures(
   const dueOf = (p: Person) => personDueTotal(rates, p.grades, today, claimsOf(p.id), liveHolds(p, today), floor, late, cap, heldParts(p.id, people, claims, rates, today, floor, late));
   const active = people.filter((p) => !p.retired);
   const dues = people.map(dueOf);
-  const overdues = people.map((p) => personOverdue(rates, p.grades, today, claimsOf(p.id), liveHolds(p, today), floor, late).total);
+  const overdueOf = people.map((p) => personOverdue(rates, p.grades, today, claimsOf(p.id), liveHolds(p, today), floor, late));
+  const overdues = overdueOf.map((o) => o.total);
   return {
     gradeDueTotals: Object.fromEntries(
       GRADES.map((g) => [g, sumDue(active.filter((p) => p.grade === g).map(dueOf))]),
@@ -60,6 +63,7 @@ export function sheetFigures(
     names: people.map((p) => [p.name, ...p.aliases].map(asName)),
     dues,
     overdues,
+    overdueCount: overdueOf.reduce((n, o) => n + o.count, 0),
   };
 }
 
