@@ -1,0 +1,279 @@
+diff --git a/src/main/frontend/features/hold/bulkhold.slot.tsx b/src/main/frontend/features/hold/bulkhold.slot.tsx
+new file mode 100644
+index 000000000..56c9dcb8f
+--- /dev/null
++++ b/src/main/frontend/features/hold/bulkhold.slot.tsx
+@@ -0,0 +1,89 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { useOnce } from '../../query/useOnce';
++import { postJson } from '../../api/http';
++import { SheetBody } from '../../slots/defs/sheetBody';
++import { clearRowError } from '../people/rowError';
++import { useUser } from '../session/session';
++import { clearSelectedPeople, useSelectedPeople } from '../bulkgrade/selection';
++
++// Holds the ticked people together from a from-date ('' for the sheet's today) to an optional to-date.
++// The server holds each in list order exactly as the row's hold would; the bar shows how many were
++// held. The count is cleared while it runs. A refusal shows the error and changes nothing.
++function BulkHold({ sheetId }: { sheetId: string }) {
++  const queryClient = useQueryClient();
++  const selected = useSelectedPeople(sheetId);
++  const [user] = useUser();
++  const [from, setFrom] = useState('');
++  const [to, setTo] = useState('');
++  const [held, setHeld] = useState<number | null>(null);
++  const [error, setError] = useState('');
++
++  const once = useOnce();
++  const apply = useMutation({
++    mutationFn: (personIds: string[]) =>
++      postJson<{ held: number }>(
++        `/api/sheets/${encodeURIComponent(sheetId)}/people/bulk-hold`,
++        { personIds, from: from.trim(), to: to.trim() },
++        user,
++      ),
++    onSuccess: (r) => {
++      setHeld(r.held);
++      clearSelectedPeople(sheetId);
++      void queryClient.invalidateQueries({ queryKey: ['sheet', sheetId] });
++    },
++    onError: () => setError('The selected people could not be put on hold.'),
++  });
++
++  const press = () => {
++    setHeld(null);
++    setError('');
++    const ids = [...selected];
++    ids.forEach(clearRowError);
++    once((done) => apply.mutate(ids, { onSettled: done }));
++  };
++
++  return (
++    <section data-testid="bulk-hold-bar">
++      <label>
++        Hold from{' '}
++        <input
++          type="date"
++          data-testid="bulk-hold-from"
++          value={from}
++          onChange={(e) => {
++            setFrom(e.target.value);
++            setError('');
++          }}
++        />
++      </label>{' '}
++      <label>
++        to{' '}
++        <input
++          type="date"
++          data-testid="bulk-hold-to"
++          value={to}
++          onChange={(e) => {
++            setTo(e.target.value);
++            setError('');
++          }}
++        />
++      </label>{' '}
++      <button type="button" data-testid="bulk-hold" onClick={press} disabled={apply.isPending}>
++        Hold selected ({selected.size})
++      </button>
++      {held !== null && (
++        <>
++          {' '}Held <span data-testid="bulk-held">{held}</span>
++        </>
++      )}
++      {error && (
++        <p role="alert" data-testid="person-error">
++          {error}
++        </p>
++      )}
++    </section>
++  );
++}
++
++export const contribution = SheetBody.fill({ order: 7.6, Component: BulkHold });
+diff --git a/src/main/java/net/officefloor/hq/app/person/BulkHoldRequest.java b/src/main/java/net/officefloor/hq/app/person/BulkHoldRequest.java
+new file mode 100644
+index 000000000..0d34ee1fe
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/BulkHoldRequest.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.person;
++
++import java.util.List;
++
++/**
++ * A bulk hold as the screen sends it: the ids of the selected people, the hold's from-date
++ * (yyyy-MM-dd; blank for the sheet's today) and its to-date (blank: none).
++ */
++public record BulkHoldRequest(List<String> personIds, String from, String to) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/BulkHoldResponse.java b/src/main/java/net/officefloor/hq/app/person/BulkHoldResponse.java
+new file mode 100644
+index 000000000..31f4c8104
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/BulkHoldResponse.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** How many of the selected people were held. */
++public record BulkHoldResponse(int held) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/HoldSelectedPeople.java b/src/main/java/net/officefloor/hq/app/person/HoldSelectedPeople.java
+new file mode 100644
+index 000000000..7ec0be508
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/HoldSelectedPeople.java
+@@ -0,0 +1,68 @@
++package net.officefloor.hq.app.person;
++
++import jakarta.servlet.http.HttpServletRequest;
++import java.time.LocalDate;
++import java.util.HashSet;
++import java.util.Set;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.role.Role;
++import net.officefloor.hq.app.role.RoleRepository;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.setting.SettingsRepository;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++/**
++ * Holds each selected person, in list order (the order they were added), exactly as the row's hold
++ * would (see {@link HoldPerson}). Each is audited as a single hold is: its PERSON_HELD line, then the
++ * figures it moved. A viewer, or anyone on an archived sheet, has every selected person refused: none
++ * is held and nothing is written. A to-date before the from-date refuses them all.
++ */
++public class HoldSelectedPeople {
++    public void hold(@Val Sheet sheet, @Val BulkHoldRequest request, PersonRepository people,
++            ClaimRepository claims, RateRepository rates, SettingsRepository settings, RoleRepository roles,
++            HttpServletRequest http, Audit audit, Out<BulkHoldResponse> result)
++            throws InvalidPersonException {
++        String user = Audit.user(http);
++        if (sheet.archived() || Role.VIEWER.equals(roles.roleOf(sheet.id(), user))) {
++            result.set(new BulkHoldResponse(0));
++            return;
++        }
++        Set<Long> selected = new HashSet<>();
++        for (String id : request.personIds()) {
++            try {
++                selected.add(Long.parseLong(id.trim()));
++            } catch (NumberFormatException | NullPointerException e) {
++                // not an id: no person on the sheet
++            }
++        }
++        LocalDate from = request.from().isEmpty() ? sheet.today() : LocalDate.parse(request.from());
++        LocalDate to = request.to().isEmpty() ? null : LocalDate.parse(request.to());
++        if (to != null && to.isBefore(from)) {
++            throw new InvalidPersonException("A hold's to-date is not before its from-date");
++        }
++        Rollup before = rollup(sheet, people, claims, rates, settings);
++        int held = 0;
++        for (Person person : people.findAll(sheet.id())) {
++            if (!selected.contains(person.getId())) continue;
++            Hold hold = new Hold(from, to);
++            person.getHolds().add(hold);
++            people.addHold(person, hold);
++            held++;
++            audit.record("PERSON_HELD sheet=" + sheet.id() + " by=" + user
++                    + " name=" + person.getName() + " from=" + hold.from());
++            Rollup after = rollup(sheet, people, claims, rates, settings);
++            after.changesSince(before, sheet.id(), user).forEach(audit::record);
++            before = after;
++        }
++        result.set(new BulkHoldResponse(held));
++    }
++
++    private static Rollup rollup(Sheet sheet, PersonRepository people, ClaimRepository claims, RateRepository rates,
++            SettingsRepository settings) {
++        return Rollup.of(sheet.id(), sheet.today(), people, claims, rates, settings.find(sheet.id()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithBulkHold.java b/src/main/java/net/officefloor/hq/app/person/RespondWithBulkHold.java
+new file mode 100644
+index 000000000..138a5cfc4
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithBulkHold.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithBulkHold {
++    public void respond(@Val BulkHoldResponse result, ObjectResponse<BulkHoldResponse> response) {
++        response.send(result);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateBulkHold.java b/src/main/java/net/officefloor/hq/app/person/ValidateBulkHold.java
+new file mode 100644
+index 000000000..ba8e947d5
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateBulkHold.java
+@@ -0,0 +1,36 @@
++package net.officefloor.hq.app.person;
++
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
++import java.util.List;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Refuses a hold's dates that are not dates, or a to-date before the from-date, before anything is read. */
++public class ValidateBulkHold {
++    public void validate(@RequestBody BulkHoldRequest request, Out<BulkHoldRequest> body)
++            throws InvalidPersonException {
++        String from = trim(request == null ? null : request.from());
++        String to = trim(request == null ? null : request.to());
++        LocalDate fromDate = date(from, "A hold's from-date is a date");
++        LocalDate toDate = date(to, "A hold's to-date is a date");
++        if (fromDate != null && toDate != null && toDate.isBefore(fromDate)) {
++            throw new InvalidPersonException("A hold's to-date is not before its from-date");
++        }
++        List<String> ids = request == null || request.personIds() == null ? List.of() : request.personIds();
++        body.set(new BulkHoldRequest(ids, from, to));
++    }
++
++    private static String trim(String value) {
++        return value == null ? "" : value.trim();
++    }
++
++    private static LocalDate date(String raw, String message) throws InvalidPersonException {
++        if (raw.isEmpty()) return null;
++        try {
++            return LocalDate.parse(raw);
++        } catch (DateTimeParseException e) {
++            throw new InvalidPersonException(message);
++        }
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/bulk-hold.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/bulk-hold.POST.yml
+new file mode 100644
+index 000000000..43d881dfc
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/bulk-hold.POST.yml
+@@ -0,0 +1,19 @@
++# Hold the selected people together from a from-date (blank for the sheet's today) to an optional
++# to-date, in list order, each exactly as the row's hold would. A bad date, or a to-date before the
++# from-date, is a 400: refused before anything is read or written. A viewer may change nothing, nor
++# anyone on an archived sheet: every selected person is refused and none is held.
++validate:
++  class: net.officefloor.hq.app.person.ValidateBulkHold
++  next: loadSheet
++loadSheet:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ transaction ]
++  next: hold
++# Each person held is audited as it is held: its own line, then the figures it moved.
++hold:
++  class: net.officefloor.hq.app.person.HoldSelectedPeople
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithBulkHold
++  govern: [ transaction ]
