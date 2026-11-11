@@ -1,7 +1,7 @@
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useClaims } from '../claims/claims';
 import { liveHolds, usePeople } from '../people/people';
-import { personDueTotal, sumDue, useRates } from '../rates/rates';
+import { heldParts, personDueTotal, sumDue, useRates } from '../rates/rates';
 import { useCap, useFloor, useLate } from '../access/access';
 import { useSheetToday } from '../sheet/sheet';
 import { classicPeriodDueTotal, usePeriods } from '../periods/periods';
@@ -20,7 +20,7 @@ function ClassicSummary({ sheetId }: { sheetId: string }) {
   const cap = useCap(sheetId);
 
   const totals = people.map((p) =>
-    personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap),
+    personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap, heldParts(p.id, people, claims, rates, today, floor, late)),
   );
 
   return (

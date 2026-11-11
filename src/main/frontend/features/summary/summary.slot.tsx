@@ -3,7 +3,7 @@ import { isReviewLate, useClaims } from '../claims/claims';
 import type { ClaimStatus } from '../claims/claims';
 import { GRADES, liveHolds, usePeople } from '../people/people';
 import type { Person } from '../people/people';
-import { diffDue, personDueTotal, sumDue, useRates } from '../rates/rates';
+import { diffDue, heldParts, personDueTotal, sumDue, useRates } from '../rates/rates';
 import { useCap, useFloor, useLate, useReviewSla } from '../access/access';
 import { useSheetToday } from '../sheet/sheet';
 import { periodDueTotal, usePeriods } from '../periods/periods';
@@ -32,7 +32,7 @@ function Summary({ sheetId }: { sheetId: string }) {
 
   const active = people.filter((p) => !p.retired);
   const claimsOf = (p: Person) => claims.filter((c) => c.personId === p.id);
-  const dueOf = (p: Person) => personDueTotal(rates, p.grades, today, claimsOf(p), liveHolds(p, today), floor, late, cap);
+  const dueOf = (p: Person) => personDueTotal(rates, p.grades, today, claimsOf(p), liveHolds(p, today), floor, late, cap, heldParts(p.id, people, claims, rates, today, floor, late));
 
   return (
     <section data-testid="summary">

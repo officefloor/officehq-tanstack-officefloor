@@ -72,6 +72,27 @@ public class ClaimRepository {
                 ROW, sheetId);
     }
 
+    /** Keep a share of the claim. */
+    public void addShare(Claim claim, ClaimShare share) {
+        jdbc.update("INSERT INTO claim_share (sheet_id, claim_id, person_id, share) VALUES (?, ?, ?, ?)",
+                claim.getSheetId(), claim.getId(), share.personId(), share.share());
+    }
+
+    /** The claim's shares, oldest first. */
+    public List<ClaimShare> sharesOf(Claim claim) {
+        return shares(claim.getSheetId()).getOrDefault(claim.getId(), List.of());
+    }
+
+    /** The sheet's shares by claim id, each claim's oldest first. */
+    public Map<Long, List<ClaimShare>> shares(String sheetId) {
+        Map<Long, List<ClaimShare>> shares = new HashMap<>();
+        jdbc.query("SELECT claim_id, person_id, share FROM claim_share WHERE sheet_id = ? ORDER BY id", (rs) -> {
+            shares.computeIfAbsent(rs.getLong("claim_id"), (k) -> new java.util.ArrayList<>())
+                    .add(new ClaimShare(rs.getLong("person_id"), rs.getBigDecimal("share").setScale(2)));
+        }, sheetId);
+        return shares;
+    }
+
     /** The person's claims on the sheet, newest first. */
     public List<Claim> findByPerson(String sheetId, long personId) {
         return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY listed DESC, id DESC",

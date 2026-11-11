@@ -5,7 +5,7 @@ import { SheetBody } from '../../slots/defs/sheetBody';
 import { useClaims } from '../claims/claims';
 import { liveHolds, peopleQuery } from '../people/people';
 import type { Person } from '../people/people';
-import { personDueTotal, useRates } from '../rates/rates';
+import { heldParts, personDueTotal, useRates } from '../rates/rates';
 import { useCap, useFloor, useLate } from '../access/access';
 import { useSheetToday } from '../sheet/sheet';
 
@@ -44,7 +44,7 @@ function SnapshotCompare({ sheetId }: { sheetId: string }) {
         people.map((p) => {
           const now =
             to === ''
-              ? personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap)
+              ? personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap, heldParts(p.id, people, claims, rates, today, floor, late))
               : snapshotOn(p, to);
           return [p.name, snapshotOn(p, from), now].join(' ').trim();
         }),

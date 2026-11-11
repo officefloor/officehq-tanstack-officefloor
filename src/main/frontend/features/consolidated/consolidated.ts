@@ -3,7 +3,7 @@ import { getJson } from '../../api/http';
 import type { Claim, ClaimStatus } from '../claims/claims';
 import { GRADES, liveHolds } from '../people/people';
 import type { Grade, Person } from '../people/people';
-import { personDueTotal, sumDue, trimmedSumDue } from '../rates/rates';
+import { heldParts, personDueTotal, sumDue, trimmedSumDue } from '../rates/rates';
 import type { Dated, Late, Rate } from '../rates/rates';
 import { personOverdue } from '../overdue/overdue';
 import { floorOf, lateOf } from '../access/access';
@@ -45,7 +45,7 @@ export function sheetFigures(
   cap: string,
 ): Figures {
   const claimsOf = (id: string) => claims.filter((c) => c.personId === id);
-  const dueOf = (p: Person) => personDueTotal(rates, p.grades, today, claimsOf(p.id), liveHolds(p, today), floor, late, cap);
+  const dueOf = (p: Person) => personDueTotal(rates, p.grades, today, claimsOf(p.id), liveHolds(p, today), floor, late, cap, heldParts(p.id, people, claims, rates, today, floor, late));
   const active = people.filter((p) => !p.retired);
   const dues = people.map(dueOf);
   const overdues = people.map((p) => personOverdue(rates, p.grades, today, claimsOf(p.id), liveHolds(p, today), floor, late).total);

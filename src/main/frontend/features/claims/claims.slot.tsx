@@ -10,7 +10,7 @@ import { useUser } from '../session/session';
 import { AMOUNT, CLAIM_AMOUNT, CLAIM_NUMBER, claimsKey, isReviewLate, showsDeferred, sumAmounts, useClaims } from './claims';
 import type { Claim } from './claims';
 import { selectClaim, useSelectedClaims } from './selection';
-import { claimDue, rateOn, useRates } from '../rates/rates';
+import { PCT, claimDue, rateOn, useRates } from '../rates/rates';
 import { periodOf, usePeriods } from '../periods/periods';
 import { PROOF_KINDS, useFloor, useLate, useReviewSla } from '../access/access';
 import { useSheetToday } from '../sheet/sheet';
@@ -88,6 +88,8 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   const [splitAmount, setSplitAmount] = useState<Record<string, string>>({});
   // The amount typed to part-settle off each claim, by claim id.
   const [partAmount, setPartAmount] = useState<Record<string, string>>({});
+  // The person picked to share each claim with and the percent typed for them, by claim id.
+  const [shareWith, setShareWith] = useState<Record<string, { personId: string; share: string }>>({});
   const [commentText, setCommentText] = useState<Record<string, string>>({});
   // The line typed to add to each draft (label, quantity, unit amount), by claim id.
   // Each claim's timeline as last shown: its audit lines, newest first.
@@ -96,7 +98,9 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   // The template picked to add a draft claim from.
   const [template, setTemplate] = useState('');
   const templates = useTemplates(sheetId).data ?? [];
-  const others = (usePeople(sheetId).data ?? []).filter((p) => p.id !== person.id);
+  const everyone = usePeople(sheetId).data ?? [];
+  const others = everyone.filter((p) => p.id !== person.id);
+  const nameOf = (id: string) => everyone.find((p) => p.id === id)?.name ?? id;
   const [user] = useUser();
   const rates = useRates(sheetId).data ?? [];
   const periods = usePeriods(sheetId).data ?? [];
@@ -365,6 +369,23 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
       setRefused({ id, message: 'Only an OPEN or PENDING claim can be held or released.' }),
   });
 
+  // A share of a DRAFT, REVIEW, OPEN or PENDING claim with another person, at a percent: refused for its
+  // own person, a person already holding one, or past 100.00 in all.
+  const share = useMutation({
+    mutationFn: ({ id, personId, share }: { id: string; personId: string; share: string }) =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/claims/${encodeURIComponent(id)}/share`,
+        { personId, share },
+        user,
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+    onError: (_e, { id }) =>
+      setRefused({
+        id,
+        message: 'That claim cannot be shared so: not with its own person or one already holding a share, not past 100.00 in all, and not once settled, void or deleted.',
+      }),
+  });
+
   // A comment is kept on a claim in any status, with who wrote it and the sheet's today.
   const comment = useMutation({
     mutationFn: ({ id, text }: { id: string; text: string }) =>
@@ -486,6 +507,25 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   const holdClaim = (id: string) => {
     setRefused(null);
     hold.mutate(id);
+  };
+
+  const shareClaim = (id: string) => {
+    setRefused(null);
+    const { personId = '', share: pct = '' } = shareWith[id] ?? {};
+    if (personId === '') {
+      setRefused({ id, message: 'Choose the person to share the claim with.' });
+      return;
+    }
+    if (!PCT.test(pct.trim()) || Number(pct) <= 0) {
+      setRefused({ id, message: 'A share is a percent with up to two decimals, more than 0.00.' });
+      return;
+    }
+    share.mutate({ id, personId, share: pct.trim() });
+  };
+
+  const setShareField = (id: string, field: 'personId' | 'share', value: string) => {
+    setShareWith((w) => ({ ...w, [id]: { ...(w[id] ?? { personId: '', share: '' }), [field]: value } }));
+    setRefused((r) => (r !== null && r.id === id ? null : r));
   };
 
   const addProof = (id: string) => {
@@ -735,6 +775,30 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
               <span data-testid="claim-held">{c.held ? 'yes' : 'no'}</span>{' '}
               <button type="button" data-testid="claim-hold" onClick={() => holdClaim(c.id)}>
                 {c.held ? 'Release' : 'Hold'}
+              </button>{' '}
+              <span data-testid="claim-shares">{c.shares.map((h) => `${nameOf(h.personId)} ${h.share}`).join(', ')}</span>{' '}
+              <select
+                data-testid="claim-share-select"
+                aria-label="Share with"
+                value={shareWith[c.id]?.personId ?? ''}
+                onChange={(e) => setShareField(c.id, 'personId', e.target.value)}
+              >
+                <option value="">Share with…</option>
+                {everyone.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>{' '}
+              <input
+                data-testid="claim-share-pct"
+                placeholder="Share %"
+                inputMode="decimal"
+                value={shareWith[c.id]?.share ?? ''}
+                onChange={(e) => setShareField(c.id, 'share', e.target.value)}
+              />{' '}
+              <button type="button" data-testid="claim-share-add" onClick={() => shareClaim(c.id)}>
+                Share
               </button>{' '}
               <select
                 data-testid="claim-proof-kind"

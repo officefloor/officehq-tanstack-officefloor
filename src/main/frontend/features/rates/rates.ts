@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { gradeOn } from '../people/people';
-import type { Grade, GradeFrom, Hold } from '../people/people';
+import { gradeOn, liveHolds } from '../people/people';
+import type { Grade, GradeFrom, Hold, Person } from '../people/people';
 import { counts, isBound, isCorrection, isDeferred, isOpen } from '../claims/claims';
-import type { Claim } from '../claims/claims';
+import type { Claim, ClaimStatus } from '../claims/claims';
 
 /**
  * A grade's rate: a percent with two decimals, from a date (yyyy-MM-dd; '' when it applies from the
@@ -261,8 +261,9 @@ export function claimDue(claim: Claim, pct: string | null, floor: Dated, late: L
  * date for their grade in force on its date), added up, skipping n/a. With no rate for their grade
  * today it is n/a, unless a claim that counts keeps a fixed figure (settled, or bound by a
  * statement), has a figure under another grade in force on its date, or has a figure dated on or
- * before today (under a rate that has since ended). Held to the sheet's `cap` ('' for none); n/a is
- * not capped.
+ * before today (under a rate that has since ended). A shared claim counts its due less its holders'
+ * parts; the parts `held` of others' claims shared with them count too (and keep it from n/a). Held to
+ * the sheet's `cap` ('' for none); n/a is not capped.
  */
 export function personDueTotal(
   rates: Rate[],
@@ -273,8 +274,9 @@ export function personDueTotal(
   floor: Dated,
   late: Late,
   cap: string,
+  held: HeldPart[] = [],
 ): string {
-  const total = uncappedDueTotal(rates, grades, today, claims, holds, floor, late);
+  const total = uncappedDueTotal(rates, grades, today, claims, holds, floor, late, held);
   if (total === NA || cap === '' || hundredths(total) <= hundredths(cap)) return total;
   return showCents(hundredths(cap));
 }
@@ -289,8 +291,9 @@ export function personExcess(
   floor: Dated,
   late: Late,
   cap: string,
+  held: HeldPart[] = [],
 ): string {
-  const total = uncappedDueTotal(rates, grades, today, claims, holds, floor, late);
+  const total = uncappedDueTotal(rates, grades, today, claims, holds, floor, late, held);
   if (total === NA || cap === '' || hundredths(total) <= hundredths(cap)) return '0.00';
   return showCents(hundredths(total) - hundredths(cap));
 }
@@ -303,21 +306,58 @@ function uncappedDueTotal(
   holds: Hold[],
   floor: Dated,
   late: Late,
+  held: HeldPart[],
 ): string {
   const counted = claims.filter((c) => counts(c, holds, today));
   const grade = gradeOn(grades, today);
   const kept = (c: Claim) => c.due !== '' || (isBound(c) && c.statedDue !== NA)
     || (gradeOn(grades, c.date) !== grade && rateOn(rates, gradeOn(grades, c.date), c.date, c.id) !== null)
     || (c.date <= today && rateOn(rates, gradeOn(grades, c.date), c.date, c.id) !== null);
-  if (rateOn(rates, grade, today) === null && !counted.some(kept)) return NA;
-  return sumDue(counted.map((c) => claimDue(c, rateOn(rates, gradeOn(grades, c.date), c.date, c.id), floor, late, gradeOn(grades, c.date))));
+  if (rateOn(rates, grade, today) === null && !counted.some(kept) && held.length === 0) return NA;
+  const own = counted.map((c) => ownPart(c, claimDue(c, rateOn(rates, gradeOn(grades, c.date), c.date, c.id), floor, late, gradeOn(grades, c.date))));
+  return sumDue([...own, ...held.map((h) => h.due)]);
+}
+
+/** A holder's part of a claim shared with them: its due times their share / 100, and the claim's status. */
+export type HeldPart = { due: string; status: ClaimStatus };
+
+/** A claim's due less its holders' parts (each its due times their share / 100, rounded half to even); n/a stays n/a. */
+export function ownPart(claim: Claim, due: string): string {
+  if (due === NA || claim.shares.length === 0) return due;
+  return showCents(claim.shares.reduce((n, s) => n - hundredths(shareOf(due, s.share)), hundredths(due)));
+}
+
+/**
+ * The parts a person holds of others' claims shared with them, each claim counting as it does for its
+ * own person (at its rate, by its own person's grade and holds), skipping n/a.
+ */
+export function heldParts(
+  personId: string,
+  people: Person[],
+  claims: Claim[],
+  rates: Rate[],
+  today: string,
+  floor: Dated,
+  late: Late,
+): HeldPart[] {
+  const parts: HeldPart[] = [];
+  for (const c of claims) {
+    const share = c.shares.find((s) => s.personId === personId);
+    const owner = share && people.find((p) => p.id === c.personId);
+    if (!share || !owner || !counts(c, liveHolds(owner, today), today)) continue;
+    const grade = gradeOn(owner.grades, c.date);
+    const due = claimDue(c, rateOn(rates, grade, c.date, c.id), floor, late, grade);
+    if (due !== NA) parts.push({ due: shareOf(due, share.share), status: c.status });
+  }
+  return parts;
 }
 
 
 /**
  * A person's due-total split by status, before the sheet's cap: their settled-total (the dues of
  * their SETTLED claims that count, at their frozen figures, corrections included) and their
- * open-total (the dues of their OPEN and PENDING claims that count), each added up, skipping n/a.
+ * open-total (the dues of their OPEN and PENDING claims that count), each added up, skipping n/a. A
+ * shared claim counts its due less its holders' parts; the parts `held` of others' claims count too.
  */
 export function personSplitTotals(
   rates: Rate[],
@@ -327,11 +367,13 @@ export function personSplitTotals(
   holds: Hold[],
   floor: Dated,
   late: Late,
+  held: HeldPart[] = [],
 ): { settled: string; open: string } {
   const counted = claims.filter((c) => counts(c, holds, today));
-  const dueOf = (c: Claim) => claimDue(c, rateOn(rates, gradeOn(grades, c.date), c.date, c.id), floor, late, gradeOn(grades, c.date));
+  const dueOf = (c: Claim) => ownPart(c, claimDue(c, rateOn(rates, gradeOn(grades, c.date), c.date, c.id), floor, late, gradeOn(grades, c.date)));
+  const heldIn = (statuses: ClaimStatus[]) => held.filter((h) => statuses.includes(h.status)).map((h) => h.due);
   return {
-    settled: sumDue(counted.filter((c) => c.status === 'SETTLED').map(dueOf)),
-    open: sumDue(counted.filter(isOpen).map(dueOf)),
+    settled: sumDue([...counted.filter((c) => c.status === 'SETTLED').map(dueOf), ...heldIn(['SETTLED'])]),
+    open: sumDue([...counted.filter(isOpen).map(dueOf), ...heldIn(['OPEN', 'PENDING'])]),
   };
 }

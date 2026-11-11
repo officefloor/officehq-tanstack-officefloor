@@ -4,7 +4,7 @@ import { liveHolds, peopleKey, usePeople } from '../people/people';
 import { useClaims } from '../claims/claims';
 import { useSheetToday } from '../sheet/sheet';
 import { useCap, useFloor, useLate } from '../access/access';
-import { NA, personDueTotal, sumDue, useRates } from '../rates/rates';
+import { NA, heldParts, personDueTotal, sumDue, useRates } from '../rates/rates';
 
 /** A person in a crew (never its lead). */
 export type CrewMember = { personId: string; name: string };
@@ -15,13 +15,15 @@ export type Crew = { name: string; leadId: string; lead: string; members: CrewMe
 // Under the people's key: a change to a person (a new name) reads the crews again too.
 export const crewsKey = (sheetId: string) => [...peopleKey(sheetId), 'crews'] as const;
 
+export const crewsQuery = (sheetId: string) => ({
+  queryKey: crewsKey(sheetId),
+  queryFn: async () =>
+    (await getJson<{ crews: Crew[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/crews`)).crews,
+});
+
 /** The crews on the sheet, by name. */
 export function useCrews(sheetId: string) {
-  return useQuery({
-    queryKey: crewsKey(sheetId),
-    queryFn: async () =>
-      (await getJson<{ crews: Crew[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/crews`)).crews,
-  });
+  return useQuery(crewsQuery(sheetId));
 }
 
 /** Each person's due-total by id, as their row shows it. */
@@ -36,7 +38,7 @@ export function useDueTotals(sheetId: string): Map<string, string> {
   return new Map(
     people.map((p) => [
       p.id,
-      personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap),
+      personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap, heldParts(p.id, people, claims, rates, today, floor, late)),
     ]),
   );
 }

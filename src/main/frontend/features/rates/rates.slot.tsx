@@ -11,7 +11,7 @@ import type { Grade, Person } from '../people/people';
 import { useUser } from '../session/session';
 import { useSheetToday } from '../sheet/sheet';
 import { useCap, useFloor, useLate } from '../access/access';
-import { NA, PCT, claimDue, personDueTotal, personExcess, personSplitTotals, rateOn, ratesKey, sumDue, trimmedSumDue, useRates } from './rates';
+import { NA, PCT, claimDue, heldParts, personDueTotal, personExcess, personSplitTotals, rateOn, ratesKey, sumDue, trimmedSumDue, useRates } from './rates';
 import type { Rate } from './rates';
 import { Col } from '../columns/columns';
 
@@ -307,7 +307,8 @@ function PersonDueTotal({ sheetId, person }: { sheetId: string; person: Person }
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const cap = useCap(sheetId);
-  return <Col name="due-total"><td data-testid="person-due-total">{personDueTotal(rates, person.grades, today, claims, liveHolds(person, today), floor, late, cap)}</td></Col>;
+  const held = heldParts(person.id, usePeople(sheetId).data ?? [], useClaims(sheetId).data ?? [], rates, today, floor, late);
+  return <Col name="due-total"><td data-testid="person-due-total">{personDueTotal(rates, person.grades, today, claims, liveHolds(person, today), floor, late, cap, held)}</td></Col>;
 }
 
 function ExcessHead() {
@@ -322,7 +323,8 @@ function PersonExcess({ sheetId, person }: { sheetId: string; person: Person }) 
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const cap = useCap(sheetId);
-  return <Col name="excess"><td data-testid="person-excess">{personExcess(rates, person.grades, today, claims, liveHolds(person, today), floor, late, cap)}</td></Col>;
+  const held = heldParts(person.id, usePeople(sheetId).data ?? [], useClaims(sheetId).data ?? [], rates, today, floor, late);
+  return <Col name="excess"><td data-testid="person-excess">{personExcess(rates, person.grades, today, claims, liveHolds(person, today), floor, late, cap, held)}</td></Col>;
 }
 
 // The sheet's due-total: everyone's due-total added up, skipping those with no rate, trimmed of the highest and lowest.
@@ -335,7 +337,8 @@ function DueTotal({ sheetId }: { sheetId: string }) {
   const late = useLate(sheetId);
   const cap = useCap(sheetId);
   const totals = people.map((p) =>
-    personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap),
+    personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap,
+      heldParts(p.id, people, claims, rates, today, floor, late)),
   );
   return (
     <p>
@@ -361,7 +364,8 @@ function PersonSplitTotals({ sheetId, person }: { sheetId: string; person: Perso
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
-  const split = personSplitTotals(rates, person.grades, today, claims, liveHolds(person, today), floor, late);
+  const held = heldParts(person.id, usePeople(sheetId).data ?? [], useClaims(sheetId).data ?? [], rates, today, floor, late);
+  const split = personSplitTotals(rates, person.grades, today, claims, liveHolds(person, today), floor, late, held);
   return (
     <>
       <td data-testid="person-settled-total">{split.settled}</td>
@@ -379,7 +383,8 @@ function SplitTotals({ sheetId }: { sheetId: string }) {
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const splits = people.map((p) =>
-    personSplitTotals(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late),
+    personSplitTotals(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late,
+      heldParts(p.id, people, claims, rates, today, floor, late)),
   );
   return (
     <p>

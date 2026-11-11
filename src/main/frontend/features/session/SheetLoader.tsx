@@ -3,20 +3,23 @@ import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOnce } from '../../query/useOnce';
 import { postJson } from '../../api/http';
-import { useSheetId } from './session';
+import { useSheetId, useUser } from './session';
 import { peopleQuery } from '../people/people';
 import { claimsQuery } from '../claims/claims';
 import { notesQuery } from '../notes/notes';
+import { myRoleQuery } from '../dashboard/dashboard';
+import { crewsQuery } from '../crews/crews';
 
 type Sheet = { id: string };
 
 // Choose a sheet by typing its id and loading it. An id never used before starts an empty sheet;
 // loading an id again drops what was cached for it, so the sheet is re-read from the store. The
-// sheet becomes the active one only once its people, claims and notes are read, so its rows are on
-// screen as soon as its id is.
+// sheet becomes the active one only once its people, claims and notes are read, and the user's role
+// and the crews that decide which rows they see, so its rows are on screen as soon as its id is.
 export function SheetLoader({ onLoaded }: { onLoaded: () => void }) {
   const queryClient = useQueryClient();
   const [sheetId, setSheetId] = useSheetId();
+  const [user] = useUser();
   const [input, setInput] = useState('');
   const [error, setError] = useState('');
 
@@ -29,6 +32,8 @@ export function SheetLoader({ onLoaded }: { onLoaded: () => void }) {
         queryClient.fetchQuery(peopleQuery(sheet.id)),
         queryClient.fetchQuery(claimsQuery(sheet.id)),
         queryClient.fetchQuery(notesQuery(sheet.id)),
+        queryClient.fetchQuery(myRoleQuery(sheet.id, user)),
+        queryClient.fetchQuery(crewsQuery(sheet.id)),
       ]);
       return sheet;
     },

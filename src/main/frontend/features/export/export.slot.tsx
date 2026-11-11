@@ -1,7 +1,7 @@
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useClaims } from '../claims/claims';
 import { gradeOn, liveHolds, usePeople } from '../people/people';
-import { claimDue, personDueTotal, rateOn, useRates } from '../rates/rates';
+import { claimDue, heldParts, personDueTotal, rateOn, useRates } from '../rates/rates';
 import { periodOf, usePeriods } from '../periods/periods';
 import { useCap, useFloor, useLate } from '../access/access';
 import { useSheetToday } from '../sheet/sheet';
@@ -26,7 +26,7 @@ function ExportPeople({ sheetId }: { sheetId: string }) {
     const lines = [['name', 'grade', 'retired-from', 'due-total']];
     for (const p of people) {
       const own = claims.filter((c) => c.personId === p.id);
-      lines.push([p.name, p.grade, p.retiredFrom, personDueTotal(rates, p.grades, today, own, liveHolds(p, today), floor, late, cap)]);
+      lines.push([p.name, p.grade, p.retiredFrom, personDueTotal(rates, p.grades, today, own, liveHolds(p, today), floor, late, cap, heldParts(p.id, people, claims, rates, today, floor, late))]);
     }
     downloadCsv(`people-${sheetId}.csv`, lines);
   };

@@ -1,9 +1,9 @@
 import { useClaims } from '../claims/claims';
 import { useSheetToday } from '../sheet/sheet';
 import { useCap, useFloor, useLate } from '../access/access';
-import { NA, personDueTotal, useRates } from '../rates/rates';
+import { NA, heldParts, personDueTotal, useRates } from '../rates/rates';
 import { asString, useSearchParam } from '../../url/useSearchParam';
-import { liveHolds } from './people';
+import { liveHolds, usePeople } from './people';
 import type { Person } from './people';
 
 export type SortKey = 'added' | 'name' | 'grade' | 'due-total';
@@ -28,6 +28,8 @@ const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 export function useSorted(sheetId: string, people: Person[]): Person[] {
   const [sortBy] = useSortBy();
   const claims = useClaims(sheetId).data ?? [];
+  // Everyone, not only those shown: a part held of a hidden person's claim still counts.
+  const everyone = usePeople(sheetId).data ?? [];
   const rates = useRates(sheetId).data ?? [];
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
@@ -39,7 +41,7 @@ export function useSorted(sheetId: string, people: Person[]): Person[] {
     if (sortBy === 'name') key = asName(p.name);
     else if (sortBy === 'grade') key = p.grade;
     else {
-      const total = personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap);
+      const total = personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap, heldParts(p.id, everyone, claims, rates, today, floor, late));
       const n = Number(total);
       key = total === NA || Number.isNaN(n) ? Infinity : n;
     }

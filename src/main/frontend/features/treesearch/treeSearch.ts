@@ -2,7 +2,7 @@ import { getJsonNow } from '../../api/http';
 import type { Claim } from '../claims/claims';
 import { liveHolds, nameWithGrade } from '../people/people';
 import type { Person } from '../people/people';
-import { personDueTotal } from '../rates/rates';
+import { heldParts, personDueTotal } from '../rates/rates';
 import type { Rate } from '../rates/rates';
 import { floorOf, lateOf } from '../access/access';
 import type { Settings } from '../access/access';
@@ -37,7 +37,7 @@ async function searchSheet(sheetId: string, text: string): Promise<Found[]> {
     .map((p) => ({
       sheetId,
       name: nameWithGrade(p),
-      dueTotal: personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap),
+      dueTotal: personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap, heldParts(p.id, people, claims, rates, today, floor, late)),
     }));
 }
 

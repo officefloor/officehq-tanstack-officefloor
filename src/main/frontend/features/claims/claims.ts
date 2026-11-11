@@ -79,7 +79,16 @@ export type Claim = {
   lines: string[];
   /** The sheet's today (yyyy-MM-dd) when it went to REVIEW; '' when it never did. */
   reviewOn: string;
+  /**
+   * Its shares with other people on the sheet, oldest first: each holder's person id and their percent
+   * (two decimals). A holder's part of its due is the due times their share divided by 100, rounded half
+   * to even; its own person keeps the rest.
+   */
+  shares: ClaimShare[];
 };
+
+/** A holder's share of a claim: their person id and their percent, two decimals. */
+export type ClaimShare = { personId: string; share: string };
 
 /** Whether a claim is a correction: it has no floor and no late charge. */
 export const isCorrection = (c: Claim) => c.corrects !== '';
