@@ -8,6 +8,7 @@ import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import net.officefloor.hq.app.sheet.SheetRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -53,8 +54,11 @@ public class ClaimRepository {
 
     private final JdbcTemplate jdbc;
 
-    public ClaimRepository(JdbcTemplate jdbc) {
+    private final SheetRepository sheets;
+
+    public ClaimRepository(JdbcTemplate jdbc, SheetRepository sheets) {
         this.jdbc = jdbc;
+        this.sheets = sheets;
     }
 
     /** The sheet's claims, newest first (a moved claim listed as made when it was moved). */
@@ -125,13 +129,21 @@ public class ClaimRepository {
     }
 
     /**
-     * The sheet's next claim number, taken in one statement so two claims opened at the same
-     * moment never share a number; it is never given out again.
+     * The next claim number in the sequence the sheet's tree shares: one after the last number given
+     * on any sheet of the tree (the sheet, its ancestors and its descendants), which every sheet of
+     * the tree then holds as its last. Taken in one statement so two claims opened at the same moment
+     * never share a number; it is never given out again.
      */
     public int nextNumber(String sheetId) {
-        return jdbc.queryForObject("SELECT last_claim_number FROM FINAL TABLE"
-                + " (UPDATE sheet SET last_claim_number = last_claim_number + 1 WHERE id = ?)",
-                Integer.class, sheetId);
+        List<String> tree = new java.util.ArrayList<>(List.of(sheetId));
+        tree.addAll(sheets.tree(sheetId));
+        String in = String.join(", ", java.util.Collections.nCopies(tree.size(), "?"));
+        List<Object> args = new java.util.ArrayList<>(tree);
+        args.addAll(tree);
+        return jdbc.queryForObject("SELECT MAX(last_claim_number) FROM FINAL TABLE"
+                + " (UPDATE sheet SET last_claim_number = (SELECT MAX(s.last_claim_number) + 1 FROM sheet s WHERE s.id IN (" + in + "))"
+                + " WHERE id IN (" + in + "))",
+                Integer.class, args.toArray());
     }
 
     /**
