@@ -1,0 +1,204 @@
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index a6c9d3395..28c3dc516 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -32,7 +32,9 @@ export function gradeOn(grades: GradeFrom[], date: string): Grade {
+ // `origin` is the sheet they were transferred from ('' when they never were). `retirements` are the
+ // retirements they were unretired from, oldest first, each as '<from> to <the day unretired>'.
+ // `snapshots` are their snapshot lines, one per SNAPSHOT written for them when the sheet's today
+-// changed, oldest first, each as '<the day being left> <due-total>'.
++// changed, oldest first, each as '<the day being left> <due-total>'. `statementLines` are their
++// statements still standing (a cancelled one is gone), oldest first by date, each as
++// '<statement date> <due-total>' — those a merge or a transfer brought over among them.
+ export type Person = {
+   id: string;
+   name: string;
+@@ -56,6 +58,7 @@ export type Person = {
+   origin: string;
+   retirements: string[];
+   snapshots: string[];
++  statementLines: string[];
+ };
+ 
+ /**
+diff --git a/src/main/frontend/features/statements/statement.slot.tsx b/src/main/frontend/features/statements/statement.slot.tsx
+index 818f60652..77b634445 100644
+--- a/src/main/frontend/features/statements/statement.slot.tsx
++++ b/src/main/frontend/features/statements/statement.slot.tsx
+@@ -16,6 +16,7 @@ function StatementHead() {
+       <Col name="statement-count"><th>Statements</th></Col>
+       <Col name="stated-total"><th>Stated</th></Col>
+       <Col name="statement-date"><th>Stated on</th></Col>
++      <th>Statement lines</th>
+       <th />
+     </>
+   );
+@@ -79,6 +80,13 @@ function PersonStatement({ sheetId, person }: { sheetId: string; person: Person
+       <Col name="statement-count"><td data-testid="person-statement-count">{person.statementCount}</td></Col>
+       <Col name="stated-total"><td data-testid="person-stated-total">{person.statedTotal}</td></Col>
+       <Col name="statement-date"><td data-testid="person-statement-date">{person.statementDate}</td></Col>
++      <td>
++        {person.statementLines.map((line, i) => (
++          <div key={i} data-testid="person-statement-line-line">
++            {line}
++          </div>
++        ))}
++      </td>
+       <td>
+         <input
+           type="date"
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 3bda55cf8..b4c25201a 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -254,9 +254,11 @@ public class ClaimRepository {
+      */
+     public boolean remind(Claim claim) {
+         Date on = Date.valueOf(claim.getRemindedOn());
+-        return jdbc.update("UPDATE claim SET reminded_on = ? WHERE id = ? AND sheet_id = ?"
++        boolean reminded = jdbc.update("UPDATE claim SET reminded_on = ? WHERE id = ? AND sheet_id = ?"
+                 + " AND status IN ('OPEN', 'PENDING') AND (reminded_on IS NULL OR reminded_on <> ?)",
+                 on, claim.getId(), claim.getSheetId(), on) == 1;
++        if (reminded) keepHistory(claim);
++        return reminded;
+     }
+ 
+     /** Whether another claim on the sheet than {@code exceptId} (null: any) has this reference, regardless of case. */
+@@ -414,7 +416,7 @@ public class ClaimRepository {
+     }
+ 
+     private static final String HISTORY_COLUMNS = "person_id, amount, claim_date, note, status, claim_number, settled_due,"
+-            + " opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, late_entry, listed, tags, void_reason, settle_batch, ext_ref";
++            + " opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, late_entry, listed, tags, void_reason, settle_batch, ext_ref, reminded_on";
+ 
+     /** Keeps the claim as the store now holds it in its history, with the sheet's today now. */
+     private void keepHistory(Claim claim) {
+@@ -448,6 +450,8 @@ public class ClaimRepository {
+                     claim.setRef(rs.getString("ext_ref"));
+                     claim.setVoidReason(rs.getString("void_reason"));
+                     claim.setSettleBatch((Integer) rs.getObject("settle_batch", Integer.class));
++                    Date reminded = rs.getDate("reminded_on");
++                    claim.setRemindedOn(reminded == null ? null : reminded.toLocalDate());
+                     latest.put(claim.getId(), claim);
+                     listed.put(claim.getId(), rs.getLong("listed"));
+                 }, sheetId, Date.valueOf(day));
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 000e27c14..202007238 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -27,6 +27,7 @@ public class Person {
+     private final List<String> aliases = new ArrayList<>();
+     private final List<PastRetirement> pastRetirements = new ArrayList<>();
+     private final List<String> snapshots = new ArrayList<>();
++    private final List<String> statementLines = new ArrayList<>();
+     private final TreeMap<LocalDate, String> datedGrades = new TreeMap<>();
+ 
+     public Person(Long id, String sheetId, String name, String grade) {
+@@ -99,6 +100,8 @@ public class Person {
+     public List<PastRetirement> getPastRetirements() { return pastRetirements; }
+     /** Their snapshot lines, oldest first, each as "<the day being left> <due-total>". */
+     public List<String> getSnapshots() { return snapshots; }
++    /** Their statements still standing, oldest first (by date), each as "<statement date> <due-total>". */
++    public List<String> getStatementLines() { return statementLines; }
+     /** Their holds, in the order added: each from a date to an optional to-date. */
+     public List<Hold> getHolds() { return holds; }
+     /** Whether they have any hold at all. */
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 6cd7652bf..b33cd28c7 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -90,6 +90,11 @@ public class PersonRepository {
+                     Person person = byId.get(rs.getLong("person_id"));
+                     if (person != null) person.getSnapshots().add(rs.getObject("snapshot_day", LocalDate.class) + " " + rs.getString("due_total"));
+                 }, sheetId);
++        jdbc.query("SELECT person_id, stated_total, statement_date FROM person_statement WHERE sheet_id = ? ORDER BY " + STATEMENT_ORDER,
++                (rs) -> {
++                    Person person = byId.get(rs.getLong("person_id"));
++                    if (person != null) person.getStatementLines().add(statementLine(rs));
++                }, sheetId);
+         return people;
+     }
+ 
+@@ -116,9 +121,19 @@ public class PersonRepository {
+         person.getSnapshots().addAll(jdbc.query(
+                 "SELECT snapshot_day, due_total FROM person_snapshot WHERE sheet_id = ? AND person_id = ? ORDER BY id",
+                 (rs, n) -> rs.getObject("snapshot_day", LocalDate.class) + " " + rs.getString("due_total"), sheetId, id));
++        person.getStatementLines().addAll(jdbc.query(
++                "SELECT stated_total, statement_date FROM person_statement WHERE sheet_id = ? AND person_id = ? ORDER BY " + STATEMENT_ORDER,
++                (rs, n) -> statementLine(rs), sheetId, id));
+         return person;
+     }
+ 
++    /** Statements oldest first: by date (one not kept first), then in the order taken. */
++    private static final String STATEMENT_ORDER = "statement_date NULLS FIRST, seq";
++
++    private static String statementLine(java.sql.ResultSet rs) throws java.sql.SQLException {
++        return rs.getObject("statement_date", LocalDate.class) + " " + rs.getString("stated_total");
++    }
++
+     private void loadPastRetirements(Person person) {
+         person.getPastRetirements().addAll(jdbc.query(
+                 "SELECT from_date, to_date FROM person_past_retirement WHERE sheet_id = ? AND person_id = ? ORDER BY id",
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+index 75272d7fd..4f39cbd44 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+@@ -16,13 +16,14 @@ import java.util.List;
+  * (in the order given), and whether they clash: their name or an alias is a name or alias on another
+  * sheet of the sheet's tree, the sheet they were transferred from ("" when never transferred), and
+  * the retirements they were unretired from, oldest first, each as "<from> to <to>", and their snapshot lines, oldest first, each as
+- * "<the day being left> <due-total>".
++ * "<the day being left> <due-total>", and their statements still standing, oldest first (by date), each as
++ * "<statement date> <due-total>".
+  */
+ public record PersonResponse(String id, String name, String grade, long version, int statementCount,
+         String statedTotal, String statementDate, boolean retired, String retiredFrom,
+         boolean held, List<HoldFrom> holds, java.util.List<String> patronIds, List<String> patronShares, List<GradeFrom> grades, String terms,
+         String contact, List<String> tags, List<String> aliases, boolean clashing, String origin, List<String> retirements,
+-        List<String> snapshots) {
++        List<String> snapshots, List<String> statementLines) {
+ 
+     /** A hold from a date to a date (yyyy-MM-dd; to "" when open-ended), both inclusive. */
+     public record HoldFrom(String from, String to) {}
+@@ -61,6 +62,6 @@ public record PersonResponse(String id, String name, String grade, long version,
+                 person.getContact() == null ? "" : person.getContact(), person.tagList(), List.copyOf(person.getAliases()), clashing,
+                 person.getOriginSheet() == null ? "" : person.getOriginSheet(),
+                 person.getPastRetirements().stream().map((r) -> r.from() + " to " + r.to()).toList(),
+-                List.copyOf(person.getSnapshots()));
++                List.copyOf(person.getSnapshots()), List.copyOf(person.getStatementLines()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+index 42d6ed1d1..bac987d77 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+@@ -108,15 +108,15 @@ public class RateRepository {
+     /**
+      * The sheet's rates as they stood at the end of {@code day}: for each grade and from-date, the
+      * last rate set for them while the sheet's today was on or before it, its version counting those
+-     * set for them by then; then its parent sheets'
+-     * (as they are named now) as they stood at the end of that day, each at its level.
++     * set for them by then; then its parent sheets' (as they are named now) as they are now, each at
++     * its level: a parent's rates are dated by its own today, not this sheet's, so are not rewound.
+      */
+     public List<Rate> findAsOf(String sheetId, LocalDate day) {
+         List<Rate> all = new ArrayList<>(findOwnAsOf(sheetId, day));
+         List<String> ancestors = ancestors(sheetId);
+         for (int i = 0; i < ancestors.size(); i++) {
+             int level = i + 1;
+-            findOwnAsOf(ancestors.get(i), day).forEach((r) -> all.add(r.up(level)));
++            findOwn(ancestors.get(i)).forEach((r) -> all.add(r.up(level)));
+         }
+         return all;
+     }
+diff --git a/src/main/resources/db/migration/V92__claim_history_reminded.sql b/src/main/resources/db/migration/V92__claim_history_reminded.sql
+new file mode 100644
+index 000000000..fd688d25b
+--- /dev/null
++++ b/src/main/resources/db/migration/V92__claim_history_reminded.sql
+@@ -0,0 +1,5 @@
++-- A claim's reminded date kept in its history too, so the sheet as of a date shows it. History kept
++-- before this takes the reminded date the claim has now, where it is on or before that history's day.
++ALTER TABLE claim_history ADD COLUMN reminded_on DATE;
++UPDATE claim_history SET reminded_on = (SELECT c.reminded_on FROM claim c WHERE c.id = claim_history.claim_id
++    AND c.reminded_on <= claim_history.set_on);
