@@ -63,8 +63,9 @@ function PersonPlans({ sheetId, person }: { sheetId: string; person: Person }) {
 
   const [pauseError, setPauseError] = useState<{ planId: string; message: string } | null>(null);
 
-  // Changes a plan's amount on the sheet's today: claims generated from then on take it, claims already
-  // generated keep theirs. An amount the claim form would refuse shows the error on the plan.
+  // Changes a plan's amount on the sheet's today: claims generated from then on take it, and the claims it
+  // generated that are still DRAFT are edited to it (so the whole sheet is re-read); claims in any other
+  // status keep theirs. An amount the claim form would refuse shows the error on the plan.
   const [newAmounts, setNewAmounts] = useState<Record<string, string>>({});
   const changeAmount = useMutation({
     mutationFn: ({ planId, amount }: { planId: string; amount: string }) =>
@@ -75,7 +76,7 @@ function PersonPlans({ sheetId, person }: { sheetId: string; person: Person }) {
       ),
     onSuccess: (_r, { planId }) => {
       setNewAmounts((m) => ({ ...m, [planId]: '' }));
-      return queryClient.invalidateQueries({ queryKey: plansKey(sheetId) });
+      return queryClient.invalidateQueries({ queryKey: ['sheet', sheetId] });
     },
     onError: (_e, { planId }) => setPauseError({ planId, message: 'That amount could not be saved.' }),
   });

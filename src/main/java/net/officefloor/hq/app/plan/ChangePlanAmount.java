@@ -9,7 +9,7 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * Changes the plan's amount on the sheet's today and audits it: claims generated from then on take the
- * new amount, claims already generated keep theirs.
+ * new amount; the drafts it already generated are edited to it next ({@code EditPlanDrafts}).
  */
 public class ChangePlanAmount {
     public void change(@Val PlanAmount input, @Val Sheet sheet, @Val Plan plan, PlanRepository plans,

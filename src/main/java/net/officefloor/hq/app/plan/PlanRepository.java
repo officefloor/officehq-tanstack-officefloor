@@ -104,6 +104,12 @@ public class PlanRepository {
                 (rs, n) -> rs.getDate("claim_date").toLocalDate(), planId));
     }
 
+    /** The ids of the claims the plan made, in the order it made them. */
+    public List<Long> madeClaims(long planId) {
+        return jdbc.query("SELECT claim_id FROM plan_claim WHERE plan_id = ? ORDER BY claim_id",
+                (rs, n) -> rs.getLong("claim_id"), planId);
+    }
+
     /** Records that the plan made this claim for that date. */
     public void recordMade(long planId, LocalDate date, long claimId) {
         jdbc.update("INSERT INTO plan_claim (plan_id, claim_date, claim_id) VALUES (?, ?, ?)", planId,
