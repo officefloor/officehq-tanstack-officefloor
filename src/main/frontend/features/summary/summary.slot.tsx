@@ -1,10 +1,10 @@
 import { SheetBody } from '../../slots/defs/sheetBody';
-import { useClaims } from '../claims/claims';
+import { isReviewLate, useClaims } from '../claims/claims';
 import type { ClaimStatus } from '../claims/claims';
 import { GRADES, liveHolds, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { diffDue, personDueTotal, sumDue, useRates } from '../rates/rates';
-import { useCap, useFloor, useLate } from '../access/access';
+import { useCap, useFloor, useLate, useReviewSla } from '../access/access';
 import { useSheetToday } from '../sheet/sheet';
 import { periodDueTotal, usePeriods } from '../periods/periods';
 import { isActive } from '../active/active';
@@ -17,7 +17,7 @@ const STATUSES: ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID', 
 // (retired people left out), their due-totals added up and how many of them are active; per
 // period, its due-total and its change from the period before it by from-date (none for the
 // earliest); per status, how many claims have it; per void reason on the list, how many
-// VOID claims were voided with it.
+// VOID claims were voided with it; and how many claims are late for review.
 function Summary({ sheetId }: { sheetId: string }) {
   const people = usePeople(sheetId).data ?? [];
   const claims = useClaims(sheetId).data ?? [];
@@ -27,6 +27,7 @@ function Summary({ sheetId }: { sheetId: string }) {
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const cap = useCap(sheetId);
+  const reviewSla = useReviewSla(sheetId);
   const voidReasons = useVoidReasons(sheetId).data ?? [];
 
   const active = people.filter((p) => !p.retired);
@@ -99,6 +100,10 @@ function Summary({ sheetId }: { sheetId: string }) {
               <td data-testid={`summary-status-${s}-count`}>{claims.filter((c) => c.status === s).length}</td>
             </tr>
           ))}
+          <tr>
+            <td>REVIEW late</td>
+            <td data-testid="summary-review-late-count">{claims.filter((c) => isReviewLate(c, today, reviewSla)).length}</td>
+          </tr>
         </tbody>
       </table>
       <table>

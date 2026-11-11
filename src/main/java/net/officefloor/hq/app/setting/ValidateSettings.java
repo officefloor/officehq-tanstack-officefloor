@@ -253,6 +253,15 @@ public class ValidateSettings {
             }
             escalateAfter = Integer.valueOf(value);
         }
+        boolean reviewSlaChanged = request != null && request.reviewSla() != null;
+        Integer reviewSla = null;
+        if (reviewSlaChanged && !request.reviewSla().trim().isEmpty()) {
+            String value = request.reviewSla().trim();
+            if (!DAYS.matcher(value).matches()) {
+                throw new InvalidSettingException("A review SLA is a whole number of days, 0 or more, or blank");
+            }
+            reviewSla = Integer.valueOf(value);
+        }
         Map<String, LocalDate> from = new LinkedHashMap<>();
         if (request != null && request.from() != null) {
             for (Map.Entry<String, String> entry : request.from().entrySet()) {
@@ -271,6 +280,6 @@ public class ValidateSettings {
                 thresholdChanged, threshold, perms, graceChanged, graceDays, noteThresholdChanged, noteThreshold,
                 entryChanged, entryDate, gradeGrace, gradeProofThreshold, potChanged, pot, parentChanged, parent,
                 fiscalChanged, fiscalStartMonth, alertChanged, alertThreshold, roundingChanged, rounding,
-                reviewThresholdChanged, reviewThreshold, escalateChanged, escalateAfter));
+                reviewThresholdChanged, reviewThreshold, escalateChanged, escalateAfter, reviewSlaChanged, reviewSla));
     }
 }

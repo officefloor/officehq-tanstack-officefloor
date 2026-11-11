@@ -17,13 +17,14 @@ import java.util.List;
  * and whether it was added while its period was soft-closed; and the last sheet's today it was reminded
  * as yyyy-MM-dd ("" when never); and its external reference ("" when none); and its tags, sorted (none: empty); and the reason it was voided with ("" when none); and its comments, oldest first, as
  * {@code <user> on <date>: <text>}; and the number of the bulk settle batch that settled it ("" when none did);
- * and its lines, oldest first, as {@code <label> <qty> x <unit>}.
+ * and its lines, oldest first, as {@code <label> <qty> x <unit>}; and its review day, the sheet's today when it
+ * went to REVIEW, as yyyy-MM-dd ("" when it never did).
  */
 public record ClaimResponse(String id, String personId, String amount, String date, String note,
         String status, String number, String due, String openedBy, boolean stated,
         String statedDue, String corrects, String roundDate, String dueBy, List<String> log, String deferredUntil,
         int proofs, String splitFrom, String lockedBy, boolean lateEntry, String remindedOn, String ref,
-        List<String> tags, String voidReason, List<String> comments, String batch, List<String> lines) {
+        List<String> tags, String voidReason, List<String> comments, String batch, List<String> lines, String reviewOn) {
     public static ClaimResponse from(Claim claim) {
         return from(claim, List.of(), List.of(), List.of());
     }
@@ -50,6 +51,7 @@ public record ClaimResponse(String id, String personId, String amount, String da
                 claim.getVoidReason() == null ? "" : claim.getVoidReason(),
                 comments,
                 claim.getSettleBatch() == null ? "" : String.valueOf(claim.getSettleBatch()),
-                lines);
+                lines,
+                claim.getReviewOn() == null ? "" : claim.getReviewOn().toString());
     }
 }

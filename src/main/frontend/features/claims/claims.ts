@@ -67,6 +67,8 @@ export type Claim = {
   batch: string;
   /** Its lines, oldest first, as `<label> <qty> x <unit>`; while it has any, its amount is their total. */
   lines: string[];
+  /** The sheet's today (yyyy-MM-dd) when it went to REVIEW; '' when it never did. */
+  reviewOn: string;
 };
 
 /** Whether a claim is a correction: it has no floor and no late charge. */
@@ -74,6 +76,17 @@ export const isCorrection = (c: Claim) => c.corrects !== '';
 
 /** Whether a claim is open: OPEN, or PENDING a steward's approval. */
 export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING';
+
+/**
+ * Whether a claim is late for review: it is in REVIEW and its review day plus the review SLA in days
+ * ('' for none: never late) is before the sheet's today.
+ */
+export function isReviewLate(c: Claim, today: string, reviewSla: string): boolean {
+  if (c.status !== 'REVIEW' || c.reviewOn === '' || reviewSla === '' || today === '') return false;
+  const [y, m, d] = c.reviewOn.split('-').map(Number);
+  const due = new Date(Date.UTC(y, m - 1, d + Number(reviewSla))).toISOString().slice(0, 10);
+  return due < today;
+}
 
 /**
  * Whether a claim's stated figure is in force: its person's last statement bound it and it is not

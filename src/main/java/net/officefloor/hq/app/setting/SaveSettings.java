@@ -9,7 +9,7 @@ import net.officefloor.plugin.variable.Val;
  * Saves the settings being changed, leaving the others as they are: a figure setting's value is
  * recorded from its from-date (the sheet's today when none is given), keeping the values recorded
  * from other dates and replacing one recorded from the same date. An action's entry in the
- * permission matrix is not dated: it replaces the one before, nor is the parent sheet, nor the alert threshold, nor the escalation gap.
+ * permission matrix is not dated: it replaces the one before, nor is the parent sheet, nor the alert threshold, nor the escalation gap, nor the review SLA.
  */
 public class SaveSettings {
     public void save(@Val SettingsInput input, @Val Sheet sheet, SettingsRepository repository,
@@ -18,7 +18,7 @@ public class SaveSettings {
         Settings now = repository.find(sheet.id());
         if (input.policyDateChanged() || input.periodNumberingFromChanged() || input.graceDaysChanged()
                 || input.entryDateChanged() || input.potChanged() || input.fiscalStartMonthChanged()
-                || input.alertThresholdChanged() || input.escalateAfterChanged()) {
+                || input.alertThresholdChanged() || input.escalateAfterChanged() || input.reviewSlaChanged()) {
             repository.saveUndated(new Settings(sheet.id(), now.today(), now.dated(),
                     input.policyDateChanged() ? input.policyDate() : now.policyDate(),
                     input.periodNumberingFromChanged() ? input.periodNumberingFrom() : now.periodNumberingFrom(), now.perms(),
@@ -27,7 +27,8 @@ public class SaveSettings {
                     input.potChanged() ? input.pot() : now.pot(),
                     input.fiscalStartMonthChanged() ? input.fiscalStartMonth() : now.fiscalStartMonth(),
                     input.alertThresholdChanged() ? input.alertThreshold() : now.alertThreshold(),
-                    input.escalateAfterChanged() ? input.escalateAfter() : now.escalateAfter()));
+                    input.escalateAfterChanged() ? input.escalateAfter() : now.escalateAfter(),
+                    input.reviewSlaChanged() ? input.reviewSla() : now.reviewSla()));
         }
         input.perms().forEach((action, roles) -> repository.recordPerm(sheet.id(), action, roles));
         java.util.Map<String, String> values = new java.util.LinkedHashMap<>(input.datedValues());

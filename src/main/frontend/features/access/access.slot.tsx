@@ -31,7 +31,8 @@ type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms' | 'gradeGrace' | 'grad
 // is alerted, and its rounding mode (half-up or half-even; blank: none, by the policy date), dated, by which
 // a claim dated then rounds, and its review threshold (blank: none), dated, above which a claim's due on its
 // date sends it to REVIEW instead of OPEN when it is opened, and its escalation gap in days (blank: off),
-// not dated, at least which after a claim's previous reminder a reminder escalates it, once. Only the settings typed in (or stepped into)
+// not dated, at least which after a claim's previous reminder a reminder escalates it, once, and its review
+// SLA in days (blank: none), not dated, past which after its review day a REVIEW claim is late. Only the settings typed in (or stepped into)
 // since the last save are sent, so saving one leaves the other as it is.
 function SettingsForm({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
@@ -55,6 +56,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
     rounding: '',
     reviewThreshold: '',
     escalateAfter: '',
+    reviewSla: '',
   });
   const [touched, setTouched] = useState<Set<Key>>(new Set());
   const [gradeFields, setGradeFields] = useState<Record<string, string>>({});
@@ -230,6 +232,14 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         return;
       }
       body.escalateAfter = escalateAfter;
+    }
+    if (touched.has('reviewSla')) {
+      const reviewSla = fields.reviewSla.trim();
+      if (reviewSla !== '' && !TERMS.test(reviewSla)) {
+        setError('A review SLA is a whole number of days, 0 or more, or blank.');
+        return;
+      }
+      body.reviewSla = reviewSla;
     }
     if (gradesTouched.size > 0) {
       const gradeTerms: Record<string, string> = {};
@@ -673,6 +683,20 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         </label>{' '}
         <span>
           now: <strong data-testid="setting-escalate-after-current">{settings.data?.escalateAfter ?? ''}</strong>
+        </span>{' '}
+        <label>
+          Review SLA days{' '}
+          <input
+            data-testid="setting-review-sla"
+            inputMode="numeric"
+            placeholder="none"
+            value={fields.reviewSla}
+            onFocus={() => touch('reviewSla')}
+            onChange={(e) => change('reviewSla', e.target.value)}
+          />
+        </label>{' '}
+        <span>
+          now: <strong data-testid="setting-review-sla-current">{settings.data?.reviewSla ?? ''}</strong>
         </span>{' '}
         {ACTIONS.map((action) => (
           <span key={action}>

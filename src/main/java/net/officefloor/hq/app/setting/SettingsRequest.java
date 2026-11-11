@@ -19,7 +19,8 @@ package net.officefloor.hq.app.setting;
  * proof-threshold-B, proof-threshold-C), and the pot, with up to two decimals (blank: none), not dated, and the parent sheet's id (blank: none), not dated,
  * and the fiscal year start month, 1 to 12, not dated, and the alert threshold, with up to two decimals
  * (blank: off), not dated, and the rounding mode, half-up or half-even (blank: none), dated by its key (rounding), and the review threshold, with up to two decimals (blank: none), dated by its key
- * (review-threshold), and the escalation gap, a whole number of days (blank: off), not dated.
+ * (review-threshold), and the escalation gap, a whole number of days (blank: off), not dated, and the review
+ * SLA, a whole number of days (blank: none), not dated.
  */
 public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom,
         java.util.Map<String, String> gradeTerms, String cap, java.util.Map<String, String> from,
@@ -27,5 +28,5 @@ public record SettingsRequest(String clerkLimit, String floor, String terms, Str
         String entryDate, java.util.Map<String, String> gradeGrace,
         java.util.Map<String, String> gradeProofThreshold, String pot, String parent,
         String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold,
-        String escalateAfter) {
+        String escalateAfter, String reviewSla) {
 }

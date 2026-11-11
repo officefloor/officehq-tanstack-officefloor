@@ -7,12 +7,12 @@ import { PersonHead, PersonRow } from '../../slots/defs/personRow';
 import { gradeOn, liveHolds, peopleKey, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { useUser } from '../session/session';
-import { AMOUNT, CLAIM_AMOUNT, CLAIM_NUMBER, claimsKey, showsDeferred, sumAmounts, useClaims } from './claims';
+import { AMOUNT, CLAIM_AMOUNT, CLAIM_NUMBER, claimsKey, isReviewLate, showsDeferred, sumAmounts, useClaims } from './claims';
 import type { Claim } from './claims';
 import { selectClaim, useSelectedClaims } from './selection';
 import { claimDue, rateOn, useRates } from '../rates/rates';
 import { periodOf, usePeriods } from '../periods/periods';
-import { useFloor, useLate } from '../access/access';
+import { useFloor, useLate, useReviewSla } from '../access/access';
 import { useSheetToday } from '../sheet/sheet';
 import { dueBy, isOverdue } from '../overdue/overdue';
 import { useVoidReasons } from '../voidreasons/voidReasons';
@@ -96,6 +96,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   const floor = useFloor(sheetId);
   const today = useSheetToday(sheetId);
   const late = useLate(sheetId);
+  const reviewSla = useReviewSla(sheetId);
   const selected = useSelectedClaims(sheetId);
 
   const reset = () => {
@@ -639,6 +640,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
               <span data-testid="claim-deferred-until">{c.deferredUntil}</span>{' '}
               <span data-testid="claim-proofs">{c.proofs}</span>{' '}
               <span data-testid="claim-split-from">{c.splitFrom}</span>{' '}
+              <span data-testid="claim-review-late">{isReviewLate(c, today, reviewSla) ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-reminded">{c.remindedOn}</span>{' '}
               <span data-testid="claim-batch">{c.batch}</span>{' '}

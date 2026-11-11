@@ -51,6 +51,8 @@ export type Settings = {
   reviewThreshold: string;
   /** The escalation gap in days ('' for off), not dated: a reminder at least that many days after the claim's previous one escalates it, once. */
   escalateAfter: string;
+  /** The review SLA in days ('' for none), not dated: a REVIEW claim whose review day plus it is before the sheet's today is late. */
+  reviewSla: string;
   /**
    * Every value recorded for each figure setting, by key (clerk-limit, floor, terms, late-pct,
    * terms-A, terms-B, terms-C, cap, proof-threshold, note-threshold, grace-A, grace-B, grace-C, proof-threshold-A, proof-threshold-B,
@@ -151,6 +153,11 @@ export function lateOf(settings: Settings | undefined, today: string): Late {
 /** The sheet's cap on a person's due-total ('' for none, until the settings are read). */
 export function useCap(sheetId: string): string {
   return useSettings(sheetId).data?.cap ?? '';
+}
+
+/** The sheet's review SLA in days ('' for none, until the settings are read). */
+export function useReviewSla(sheetId: string): string {
+  return useSettings(sheetId).data?.reviewSla ?? '';
 }
 
 /** The roles assigned on the sheet, by user name. */

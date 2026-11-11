@@ -13,7 +13,7 @@ import net.officefloor.plugin.variable.Val;
  * action's entry in the permission matrix (blank for the standing rule, never dated), then the grace
  * days (blank for off, never dated), then the entry date (blank for off, never dated), then each
  * grade's grace days (blank for none), then each grade's proof threshold (blank for none), then the pot
- * (blank for none, never dated), then the parent sheet (blank for none, never dated), then the fiscal start month (never dated), then the alert threshold (blank for off, never dated), then the rounding mode (blank for none), then the review threshold (blank for none), then the escalation gap (blank for off, never dated); a figure
+ * (blank for none, never dated), then the parent sheet (blank for none, never dated), then the fiscal start month (never dated), then the alert threshold (blank for off, never dated), then the rounding mode (blank for none), then the review threshold (blank for none), then the escalation gap (blank for off, never dated), then the review SLA (blank for none, never dated); a figure
  * setting saved from a from-date given ends with it. Runs after every rule has passed, so a refused
  * change writes nothing.
  */
@@ -63,6 +63,10 @@ public class AuditSettingChanged {
         if (input.escalateAfterChanged()) {
             audit.record(head + " key=" + Settings.ESCALATE_AFTER + " value="
                     + (input.escalateAfter() == null ? "" : input.escalateAfter()));
+        }
+        if (input.reviewSlaChanged()) {
+            audit.record(head + " key=" + Settings.REVIEW_SLA + " value="
+                    + (input.reviewSla() == null ? "" : input.reviewSla()));
         }
         if (input.parentChanged()) {
             audit.record(head + " key=parent value=" + (input.parent() == null ? "" : input.parent()));

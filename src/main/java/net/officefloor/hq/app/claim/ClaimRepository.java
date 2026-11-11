@@ -18,7 +18,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, edited_by, stated, stated_due, corrects, due_by, terms, deferred_until, proofs, split_from, late_entry, reminded_on, ext_ref, tags, void_reason, settle_batch,"
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, edited_by, stated, stated_due, corrects, due_by, terms, deferred_until, proofs, split_from, late_entry, reminded_on, ext_ref, tags, void_reason, settle_batch, review_on,"
             + " (SELECT c.claim_date FROM claim c WHERE c.sheet_id = claim.sheet_id AND c.person_id = claim.person_id"
             + " AND c.claim_number = claim.corrects) AS corrected_date,"
             + " CASE WHEN locked_on = (SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id) THEN locked_by END AS locked_by_now";
@@ -42,6 +42,8 @@ public class ClaimRepository {
         claim.setLateEntry(rs.getBoolean("late_entry"));
         java.sql.Date reminded = rs.getDate("reminded_on");
         claim.setRemindedOn(reminded == null ? null : reminded.toLocalDate());
+        java.sql.Date review = rs.getDate("review_on");
+        claim.setReviewOn(review == null ? null : review.toLocalDate());
         claim.setRef(rs.getString("ext_ref"));
         claim.setTags(rs.getString("tags"));
         claim.setVoidReason(rs.getString("void_reason"));
@@ -81,13 +83,15 @@ public class ClaimRepository {
     }
 
     /**
-     * Mark the claim with its new status, OPEN or REVIEW, in the store when it is still DRAFT there, holding its row until the
+     * Mark the claim with its new status, OPEN or REVIEW (its review day then the sheet's today), in the store when it is still DRAFT there, holding its row until the
      * request commits so two opens of the same claim cannot both go through; false when another
      * request changed it first.
      */
     public boolean markOpened(Claim claim) {
-        boolean opened = jdbc.update("UPDATE claim SET status = ? WHERE id = ? AND sheet_id = ? AND status = 'DRAFT'",
-                claim.getStatus().name(), claim.getId(), claim.getSheetId()) == 1;
+        boolean opened = jdbc.update("UPDATE claim SET status = ?, review_on = CASE WHEN ? = 'REVIEW'"
+                + " THEN (SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id) ELSE review_on END"
+                + " WHERE id = ? AND sheet_id = ? AND status = 'DRAFT'",
+                claim.getStatus().name(), claim.getStatus().name(), claim.getId(), claim.getSheetId()) == 1;
         if (opened) keepHistory(claim);
         return opened;
     }
@@ -367,9 +371,9 @@ public class ClaimRepository {
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement("INSERT INTO claim (sheet_id, person_id, amount, claim_date, note,"
                     + " status, settled_due, opened_by, edited_by, due_by, terms, deferred_until, proofs, late_entry,"
-                    + " reminded_on, void_reason, listed)"
+                    + " reminded_on, review_on, void_reason, listed)"
                     + " SELECT ?, ?, amount, claim_date, note, status, settled_due, opened_by, edited_by, due_by, terms,"
-                    + " deferred_until, proofs, late_entry, reminded_on, void_reason, ? FROM claim WHERE id = ? AND sheet_id = ?",
+                    + " deferred_until, proofs, late_entry, reminded_on, review_on, void_reason, ? FROM claim WHERE id = ? AND sheet_id = ?",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, toSheet);
             ps.setLong(2, toPersonId);
@@ -422,7 +426,7 @@ public class ClaimRepository {
     }
 
     private static final String HISTORY_COLUMNS = "person_id, amount, claim_date, note, status, claim_number, settled_due,"
-            + " opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, late_entry, listed, tags, void_reason, settle_batch, ext_ref, reminded_on";
+            + " opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, late_entry, listed, tags, void_reason, settle_batch, ext_ref, reminded_on, review_on";
 
     /** Keeps the claim as the store now holds it in its history, with the sheet's today now. */
     private void keepHistory(Claim claim) {
@@ -458,6 +462,8 @@ public class ClaimRepository {
                     claim.setSettleBatch((Integer) rs.getObject("settle_batch", Integer.class));
                     Date reminded = rs.getDate("reminded_on");
                     claim.setRemindedOn(reminded == null ? null : reminded.toLocalDate());
+                    Date review = rs.getDate("review_on");
+                    claim.setReviewOn(review == null ? null : review.toLocalDate());
                     latest.put(claim.getId(), claim);
                     listed.put(claim.getId(), rs.getLong("listed"));
                 }, sheetId, Date.valueOf(day));

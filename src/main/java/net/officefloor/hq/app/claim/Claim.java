@@ -29,6 +29,7 @@ public class Claim {
     private String lockedBy;
     private boolean lateEntry;
     private LocalDate remindedOn;
+    private LocalDate reviewOn;
     private String ref;
     private String tags;
     private String voidReason;
@@ -127,6 +128,9 @@ public class Claim {
     /** The last sheet's today a reminder was written for it; null when it was never reminded. */
     public LocalDate getRemindedOn() { return remindedOn; }
     public void setRemindedOn(LocalDate remindedOn) { this.remindedOn = remindedOn; }
+    /** The sheet's today when it went to REVIEW (null: it never did). */
+    public LocalDate getReviewOn() { return reviewOn; }
+    public void setReviewOn(LocalDate reviewOn) { this.reviewOn = reviewOn; }
     /** Remind it on {@code today}: only an OPEN or PENDING claim, and once per sheet's today. */
     public void remind(LocalDate today) throws InvalidClaimStatusException {
         if (!isOpen()) throw new InvalidClaimStatusException("A " + status + " claim cannot be reminded");
@@ -263,6 +267,7 @@ public class Claim {
         then.splitFrom = splitFrom;
         then.lateEntry = lateEntry;
         then.remindedOn = remindedOn;
+        then.reviewOn = reviewOn;
         then.ref = ref;
         then.tags = tags;
         then.voidReason = voidReason;
