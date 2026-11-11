@@ -26,7 +26,13 @@ public class VoidClaim {
     public void apply(@Val Sheet sheet, @Val Claim claim, @Val VoidRequest body, RoleRepository roles,
             SettingsRepository settings, ClaimLogRepository log, VoidReasonRepository reasons,
             HttpServletRequest request) throws InvalidClaimStatusException, InvalidClaimException {
-        String user = Audit.user(request);
+        voidClaim(sheet, claim, body.reason(), Audit.user(request), roles, settings, log, reasons);
+    }
+
+    /** Voids the claim with the reason (null: none) as the user, by the rules above; refused, it is left as it was. */
+    static void voidClaim(Sheet sheet, Claim claim, String reason, String user, RoleRepository roles,
+            SettingsRepository settings, ClaimLogRepository log, VoidReasonRepository reasons)
+            throws InvalidClaimStatusException, InvalidClaimException {
         String role = roles.roleOf(sheet.id(), user);
         if (!settings.find(sheet.id()).allows("void", role)) {
             throw new InvalidClaimStatusException("A " + role + " may not void a claim");
@@ -43,7 +49,6 @@ public class VoidClaim {
             }
         }
         java.util.List<String> listed = reasons.findAll(sheet.id()).stream().map(VoidReason::reason).toList();
-        String reason = body.reason();
         if (!listed.isEmpty()) {
             if (reason == null) throw new InvalidClaimException("A void needs a reason from the sheet's list");
             if (!listed.contains(reason)) throw new InvalidClaimException(reason + " is not on the sheet's void reasons");

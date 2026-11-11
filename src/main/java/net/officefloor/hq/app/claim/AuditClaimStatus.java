@@ -15,14 +15,19 @@ import jakarta.servlet.http.HttpServletRequest;
 public class AuditClaimStatus {
     public void audit(@Val Sheet sheet, @Val Claim claim, PersonRepository people, ClaimLogRepository log,
             HttpServletRequest request, Audit audit) {
-        String line = line(sheet, claim, Audit.user(request), people);
+        audit.record(line(sheet, claim, Audit.user(request), people, log));
+    }
+
+    /** The claim's status line as the given user changed it, with a void's reversed figure and reason. */
+    static String line(Sheet sheet, Claim claim, String user, PersonRepository people, ClaimLogRepository log) {
+        String line = line(sheet, claim, user, people);
         if (claim.getStatus() == ClaimStatus.VOID && log.settledOn(claim) != null) {
             line += " reversed=" + (claim.getSettledDue() == null ? "n/a" : claim.getSettledDue().toPlainString());
         }
         if (claim.getStatus() == ClaimStatus.VOID && claim.getVoidReason() != null) {
             line += " reason=" + claim.getVoidReason();
         }
-        audit.record(line);
+        return line;
     }
 
     /** The claim's status line as the given user changed it. */
