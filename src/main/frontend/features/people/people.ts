@@ -28,7 +28,8 @@ export function gradeOn(grades: GradeFrom[], date: string): Grade {
 // any name or alias on the sheet, nor on another sheet of its tree (its ancestors and descendants).
 // `clashing` is whether, all the same, their name or an alias is one on another sheet of the tree
 // (they clashed before the rule): every edit of them is refused until it renames them out of it.
-// `origin` is the sheet they were transferred from ('' when they never were).
+// `origin` is the sheet they were transferred from ('' when they never were). `retirements` are the
+// retirements they were unretired from, oldest first, each as '<from> to <the day unretired>'.
 export type Person = {
   id: string;
   name: string;
@@ -49,6 +50,7 @@ export type Person = {
   aliases: string[];
   clashing: boolean;
   origin: string;
+  retirements: string[];
 };
 
 /**

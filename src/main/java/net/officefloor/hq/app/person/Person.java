@@ -24,6 +24,7 @@ public class Person {
     private final List<Hold> holds = new ArrayList<>();
     private final List<Long> patronIds = new ArrayList<>();
     private final List<String> aliases = new ArrayList<>();
+    private final List<PastRetirement> pastRetirements = new ArrayList<>();
     private final TreeMap<LocalDate, String> datedGrades = new TreeMap<>();
 
     public Person(Long id, String sheetId, String name, String grade) {
@@ -87,6 +88,8 @@ public class Person {
     public LocalDate getRetiredFrom() { return retiredFrom; }
     public void setRetiredFrom(LocalDate retiredFrom) { this.retiredFrom = retiredFrom; }
     public boolean isRetired() { return retiredFrom != null; }
+    /** The retirements they were unretired from, oldest first. */
+    public List<PastRetirement> getPastRetirements() { return pastRetirements; }
     /** Their holds, in the order added: each from a date to an optional to-date. */
     public List<Hold> getHolds() { return holds; }
     /** Whether they have any hold at all. */
@@ -104,6 +107,11 @@ public class Person {
     public List<Long> getPatronIds() { return patronIds; }
     /** Their aliases, trimmed, in the order given: like names, none equal (ignoring case) any name or alias on the sheet. */
     public List<String> getAliases() { return aliases; }
-    /** Whether a claim on this date is refused: they are retired from an earlier date. */
-    public boolean retiredBefore(LocalDate date) { return retiredFrom != null && date.isAfter(retiredFrom); }
+    /**
+     * Whether a claim on this date is refused: they are retired from an earlier date, or it is after
+     * the from and before the to of a past retirement.
+     */
+    public boolean retiredBefore(LocalDate date) {
+        return (retiredFrom != null && date.isAfter(retiredFrom)) || pastRetirements.stream().anyMatch((r) -> r.refuses(date));
+    }
 }

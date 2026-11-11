@@ -79,6 +79,11 @@ public class PersonRepository {
                     Person person = byId.get(rs.getLong("person_id"));
                     if (person != null) person.getAliases().add(rs.getString("alias"));
                 }, sheetId);
+        jdbc.query("SELECT person_id, from_date, to_date FROM person_past_retirement WHERE sheet_id = ? ORDER BY id",
+                (rs) -> {
+                    Person person = byId.get(rs.getLong("person_id"));
+                    if (person != null) person.getPastRetirements().add(pastRetirement(rs));
+                }, sheetId);
         return people;
     }
 
@@ -95,7 +100,18 @@ public class PersonRepository {
                 "SELECT patron_id FROM person_patron WHERE sheet_id = ? AND person_id = ? ORDER BY named_seq NULLS FIRST, patron_id",
                 Long.class, sheetId, id));
         loadAliases(person);
+        loadPastRetirements(person);
         return person;
+    }
+
+    private void loadPastRetirements(Person person) {
+        person.getPastRetirements().addAll(jdbc.query(
+                "SELECT from_date, to_date FROM person_past_retirement WHERE sheet_id = ? AND person_id = ? ORDER BY id",
+                (rs, n) -> pastRetirement(rs), person.getSheetId(), person.getId()));
+    }
+
+    private static PastRetirement pastRetirement(java.sql.ResultSet rs) throws java.sql.SQLException {
+        return new PastRetirement(rs.getObject("from_date", LocalDate.class), rs.getObject("to_date", LocalDate.class));
     }
 
     /**
@@ -185,6 +201,7 @@ public class PersonRepository {
         jdbc.update("DELETE FROM person_statement WHERE person_id = ?", id);
         jdbc.update("DELETE FROM person_statement_history WHERE person_id = ?", id);
         jdbc.update("DELETE FROM person_retirement WHERE person_id = ?", id);
+        jdbc.update("DELETE FROM person_past_retirement WHERE person_id = ?", id);
         jdbc.update("DELETE FROM person_grade_history WHERE person_id = ?", id);
         jdbc.update("DELETE FROM person_terms_history WHERE person_id = ?", id);
         jdbc.update("UPDATE person_grade SET sheet_id = ? WHERE person_id = ?", toSheet, id);
@@ -358,6 +375,16 @@ public class PersonRepository {
                 person.getRetiredFrom() == null ? null : Date.valueOf(person.getRetiredFrom()), person.getSheetId());
     }
 
+    /**
+     * Record that the person is unretired: no longer retired (kept in the retirement history as no
+     * date), their retirement kept as the past one given.
+     */
+    public void saveUnretired(Person person, PastRetirement past) {
+        saveRetired(person);
+        jdbc.update("INSERT INTO person_past_retirement (sheet_id, person_id, from_date, to_date) VALUES (?, ?, ?, ?)",
+                person.getSheetId(), person.getId(), Date.valueOf(past.from()), Date.valueOf(past.to()));
+    }
+
     /** Record a new hold on the person, leaving the rest as stored. */
     public void addHold(Person person, Hold hold) {
         jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date, made_on)"
@@ -473,6 +500,7 @@ public class PersonRepository {
                 + " AND set_on <= ? ORDER BY id DESC LIMIT 1", (rs, n) -> rs.getObject("from_date", LocalDate.class),
                 person.getSheetId(), person.getId(), on);
         then.setRetiredFrom(retired.isEmpty() ? null : retired.get(0));
+        then.getPastRetirements().addAll(person.getPastRetirements().stream().filter((r) -> !r.to().isAfter(day)).toList());
         then.getPatronIds().addAll(jdbc.queryForList("SELECT patron_id FROM person_patron WHERE sheet_id = ?"
                 + " AND person_id = ? AND (added_on IS NULL OR added_on <= ?) ORDER BY named_seq NULLS FIRST, patron_id", Long.class,
                 person.getSheetId(), person.getId(), on));

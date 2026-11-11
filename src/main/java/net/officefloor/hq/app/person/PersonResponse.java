@@ -14,12 +14,13 @@ import java.util.List;
  * grade they have been given with the date it is from (the first "", from the beginning of time),
  * by from-date, their own terms in days ("" for none), their contact ("" for none), their aliases
  * (in the order given), and whether they clash: their name or an alias is a name or alias on another
- * sheet of the sheet's tree, and the sheet they were transferred from ("" when never transferred).
+ * sheet of the sheet's tree, the sheet they were transferred from ("" when never transferred), and
+ * the retirements they were unretired from, oldest first, each as "<from> to <to>".
  */
 public record PersonResponse(String id, String name, String grade, long version, int statementCount,
         String statedTotal, String statementDate, boolean retired, String retiredFrom,
         boolean held, List<HoldFrom> holds, java.util.List<String> patronIds, List<String> patronShares, List<GradeFrom> grades, String terms,
-        String contact, List<String> aliases, boolean clashing, String origin) {
+        String contact, List<String> aliases, boolean clashing, String origin, List<String> retirements) {
 
     /** A hold from a date to a date (yyyy-MM-dd; to "" when open-ended), both inclusive. */
     public record HoldFrom(String from, String to) {}
@@ -56,6 +57,7 @@ public record PersonResponse(String id, String name, String grade, long version,
                 person.getPatronIds().stream().map(String::valueOf).toList(), shares(person.getPatronIds().size()), grades,
                 person.getTerms() == null ? "" : person.getTerms().toString(),
                 person.getContact() == null ? "" : person.getContact(), List.copyOf(person.getAliases()), clashing,
-                person.getOriginSheet() == null ? "" : person.getOriginSheet());
+                person.getOriginSheet() == null ? "" : person.getOriginSheet(),
+                person.getPastRetirements().stream().map((r) -> r.from() + " to " + r.to()).toList());
     }
 }
