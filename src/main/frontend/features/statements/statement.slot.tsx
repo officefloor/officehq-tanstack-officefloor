@@ -5,12 +5,25 @@ import { postJson } from '../../api/http';
 import { PersonHead, PersonRow } from '../../slots/defs/personRow';
 import { peopleKey } from '../people/people';
 import type { Person } from '../people/people';
-import { claimsKey } from '../claims/claims';
+import { claimsKey, claimsQuery } from '../claims/claims';
+import { downloadCsv } from '../export/csv';
 import { useUser } from '../session/session';
 import { useRowError } from '../people/rowError';
 import { Col } from '../columns/columns';
 
 function StatementHead() {
+  // Downloads their statement as a CSV file: a header line, then one line per claim of theirs their
+  // last statement bound, oldest first, with the bound figure as the claim shows it (n/a when it had
+  // none) and its status now. The claims are read afresh when pressed, so a change just made is in it.
+  const exportStatement = async () => {
+    const all = await queryClient.fetchQuery({ ...claimsQuery(sheetId), staleTime: 0 });
+    // The sheet's claims come newest first.
+    const own = all.filter((c) => c.personId === person.id && c.stated).reverse();
+    const lines = [['number', 'date', 'amount', 'figure', 'status']];
+    for (const c of own) lines.push([c.number, c.date, c.amount, c.statedDue, c.status]);
+    downloadCsv(`statement-${sheetId}-${person.id}.csv`, lines);
+  };
+
   return (
     <>
       <Col name="statement-count"><th>Statements</th></Col>
@@ -75,6 +88,18 @@ function PersonStatement({ sheetId, person }: { sheetId: string; person: Person 
     once((done) => cancel.mutate(undefined, { onSettled: done }));
   };
 
+  // Downloads their statement as a CSV file: a header line, then one line per claim of theirs their
+  // last statement bound, oldest first, with the bound figure as the claim shows it (n/a when it had
+  // none) and its status now. The claims are read afresh when pressed, so a change just made is in it.
+  const exportStatement = async () => {
+    const all = await queryClient.fetchQuery({ ...claimsQuery(sheetId), staleTime: 0 });
+    // The sheet's claims come newest first.
+    const own = all.filter((c) => c.personId === person.id && c.stated).reverse();
+    const lines = [['number', 'date', 'amount', 'figure', 'status']];
+    for (const c of own) lines.push([c.number, c.date, c.amount, c.statedDue, c.status]);
+    downloadCsv(`statement-${sheetId}-${person.id}.csv`, lines);
+  };
+
   return (
     <>
       <Col name="statement-count"><td data-testid="person-statement-count">{person.statementCount}</td></Col>
@@ -102,6 +127,9 @@ function PersonStatement({ sheetId, person }: { sheetId: string; person: Person 
         </button>
         <button type="button" data-testid="person-unstate" onClick={unstate} disabled={cancel.isPending}>
           Cancel statement
+        </button>
+        <button type="button" data-testid="person-export-statement" onClick={() => void exportStatement()}>
+          Export statement (CSV)
         </button>
         {error && (
           <p role="alert" data-testid="person-error">

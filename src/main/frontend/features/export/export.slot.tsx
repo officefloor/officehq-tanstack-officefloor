@@ -7,23 +7,7 @@ import { useCap, useFloor, useLate } from '../access/access';
 import { useSheetToday } from '../sheet/sheet';
 import { getJson } from '../../api/http';
 import type { Pool } from '../pools/pools';
-
-// A CSV value: wrapped in double quotes (any quote inside doubled) when it holds a comma, a quote
-// or a line break.
-const csvValue = (v: string) => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
-
-// Downloads `lines` as a CSV file named `name`, each line ending with a line feed.
-function downloadCsv(name: string, lines: string[][]) {
-  const csv = lines.map((l) => l.map(csvValue).join(',') + '\n').join('');
-  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
+import { downloadCsv } from './csv';
 
 // Downloads the people as a CSV file: a header line, then one line per person in list order,
 // retired people included, with the grade in force today, the retired-from date ('' when not
