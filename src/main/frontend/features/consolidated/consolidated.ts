@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { getJsonNow } from '../../api/http';
+import { getJson } from '../../api/http';
 import type { Claim } from '../claims/claims';
 import { liveHolds } from '../people/people';
 import type { Person } from '../people/people';
@@ -38,41 +38,31 @@ export function sheetFigures(
 const enc = encodeURIComponent;
 
 /**
- * A sheet's figures as it is now, every part of it read fresh from the store: the consolidated
- * figures are always the current ones, whatever as-of date the screen shows.
+ * A sheet's figures, every part of it read fresh from the store: as it is now, or, while the screen
+ * shows an as-of date, as it stood at the end of that date (each read names it, and the sheet read
+ * answers with that date as its today).
  */
 async function readFigures(sheetId: string): Promise<Figures> {
   const [sheet, people, claims, rates, settings] = await Promise.all([
-    getJsonNow<Sheet>(`/api/sheets/${enc(sheetId)}`),
-    getJsonNow<{ people: Person[] }>(`/api/sheets/${enc(sheetId)}/people`).then((r) => r.people),
-    getJsonNow<{ claims: Claim[] }>(`/api/sheets/${enc(sheetId)}/claims`).then((r) => r.claims),
-    getJsonNow<{ rates: Rate[] }>(`/api/sheets/${enc(sheetId)}/rates`).then((r) => r.rates),
-    getJsonNow<Settings>(`/api/sheets/${enc(sheetId)}/settings`),
+    getJson<Sheet>(`/api/sheets/${enc(sheetId)}`),
+    getJson<{ people: Person[] }>(`/api/sheets/${enc(sheetId)}/people`).then((r) => r.people),
+    getJson<{ claims: Claim[] }>(`/api/sheets/${enc(sheetId)}/claims`).then((r) => r.claims),
+    getJson<{ rates: Rate[] }>(`/api/sheets/${enc(sheetId)}/rates`).then((r) => r.rates),
+    getJson<Settings>(`/api/sheets/${enc(sheetId)}/settings`),
   ]);
   return sheetFigures(people, claims, rates, sheet.today, floorOf(settings), lateOf(settings, sheet.today), settings.cap ?? '');
 }
 
 /**
- * The sheet's own figures as it is now, read while the screen shows it as of a date (otherwise the
- * screen's own reads are already the current ones).
- */
-export function useFiguresNow(sheetId: string, enabled: boolean) {
-  return useQuery({
-    queryKey: ['sheet', sheetId, 'figures-now'] as const,
-    queryFn: () => readFigures(sheetId),
-    enabled,
-  });
-}
-
-/**
  * The figures of each of the sheet's descendants: the sheets naming it as their parent, theirs, and
- * so on. Kept under the sheet's own key, so loading the sheet again re-reads them all.
+ * so on, each as the screen's as-of date shows it (as it is now while none is set). Kept under the
+ * sheet's own key with the as-of date, so loading the sheet again, or changing the date, re-reads them all.
  */
-export function useDescendantFigures(sheetId: string) {
+export function useDescendantFigures(sheetId: string, asOf: string) {
   return useQuery({
-    queryKey: ['sheet', sheetId, 'descendants'] as const,
+    queryKey: ['sheet', sheetId, 'descendants', asOf] as const,
     queryFn: async () => {
-      const { descendants } = await getJsonNow<{ descendants: string[] }>(`/api/sheets/${enc(sheetId)}/descendants`);
+      const { descendants } = await getJson<{ descendants: string[] }>(`/api/sheets/${enc(sheetId)}/descendants`);
       return Promise.all(descendants.map(readFigures));
     },
   });

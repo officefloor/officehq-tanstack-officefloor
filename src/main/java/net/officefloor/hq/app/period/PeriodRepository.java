@@ -149,4 +149,34 @@ public class PeriodRepository {
     public Map<Long, BigDecimal> personTotals(Period period) {
         return personTotals(period.sheetId()).getOrDefault(period.name(), Map.of());
     }
+
+    /** Fix each person's carried figure for the closed period. */
+    public void savePersonCarried(Period period, Map<Long, BigDecimal> carried) {
+        for (Map.Entry<Long, BigDecimal> e : carried.entrySet()) {
+            jdbc.update("INSERT INTO period_person_carried (sheet_id, period_name, person_id, carried) VALUES (?, ?, ?, ?)",
+                    period.sheetId(), period.name(), e.getKey(), e.getValue());
+        }
+    }
+
+    /** Clear the people's fixed carried figures for the reopened period. */
+    public void deletePersonCarried(Period period) {
+        jdbc.update("DELETE FROM period_person_carried WHERE sheet_id = ? AND period_name = ?",
+                period.sheetId(), period.name());
+    }
+
+    /** The people's fixed carried figures for the sheet's closed periods: by period name, then person id. */
+    public Map<String, Map<Long, BigDecimal>> personCarried(String sheetId) {
+        Map<String, Map<Long, BigDecimal>> found = new HashMap<>();
+        jdbc.query("SELECT period_name, person_id, carried FROM period_person_carried WHERE sheet_id = ? ORDER BY person_id",
+                rs -> {
+                    found.computeIfAbsent(rs.getString("period_name"), n -> new LinkedHashMap<>())
+                            .put(rs.getLong("person_id"), rs.getBigDecimal("carried"));
+                }, sheetId);
+        return found;
+    }
+
+    /** The people's fixed carried figures for the period, by person id (empty while it is open). */
+    public Map<Long, BigDecimal> personCarried(Period period) {
+        return personCarried(period.sheetId()).getOrDefault(period.name(), Map.of());
+    }
 }

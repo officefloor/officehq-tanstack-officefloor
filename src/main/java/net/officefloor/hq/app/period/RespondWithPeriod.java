@@ -7,6 +7,6 @@ import net.officefloor.web.ObjectResponse;
 public class RespondWithPeriod {
     public void respond(@Val Period period, PeriodRepository repository, SettingsRepository settings,
             ObjectResponse<PeriodResponse> response) {
-        response.send(PeriodResponse.from(period, repository.personTotals(period), settings.find(period.sheetId())));
+        response.send(PeriodResponse.from(period, repository.personTotals(period), repository.personCarried(period), settings.find(period.sheetId())));
     }
 }

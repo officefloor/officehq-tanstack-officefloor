@@ -9,7 +9,7 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /**
- * Reopens a closed period, making its due-total live again. Only a role the permission matrix allows (by
+ * Reopens a closed period, making its due-total, and each person's figure and carried figure, live again. Only a role the permission matrix allows (by
  * the standing rule, a steward) may reopen; a period that
  * is not closed is refused.
  */
@@ -27,6 +27,7 @@ public class ReopenPeriod {
             throw new InvalidPeriodException("Period " + period.name() + " is not closed");
         }
         periods.deletePersonTotals(reopened);
+        periods.deletePersonCarried(reopened);
         reopenedOut.set(reopened);
     }
 }

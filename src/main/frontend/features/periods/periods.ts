@@ -25,6 +25,8 @@ export type Period = {
   fy: string;
   /** The most OPEN or PENDING claims a person may have in it ('' for no cap). */
   cap: string;
+  /** Each person's carried figure fixed when it was closed, by person id (empty while open). */
+  personCarried: Record<string, string>;
 };
 
 export const periodsKey = (sheetId: string) => ['sheet', sheetId, 'periods'] as const;
@@ -66,7 +68,8 @@ export function personPeriodDueTotal(
 }
 
 /**
- * A person's carried figure for a period: the due as shown now of their claims that count and belong
+ * A person's carried figure for a period: the one fixed when it was closed (0.00 for a person added
+ * after), else the due as shown now of their claims that count and belong
  * to a period (by due-by) ending before this one starts, and were still OPEN or PENDING at the end of
  * this period's last day by the status their log records then, added up.
  */
@@ -79,6 +82,7 @@ export function personPeriodCarried(
   floor: Dated,
   late: Late,
 ): string {
+  if (period.closed) return period.personCarried?.[person.id] ?? '0.00';
   const holds = liveHolds(person, late.today);
   return sumDue(
     claims

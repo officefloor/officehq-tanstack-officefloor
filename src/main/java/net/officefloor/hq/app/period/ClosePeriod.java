@@ -26,7 +26,7 @@ import net.officefloor.plugin.variable.Val;
  * Closes the period, fixing its due-total at this moment: the figures of the claims that counted at
  * the end of its last day, by the status their log records then (OPEN, PENDING and SETTLED, but not an
  * unbound open one dated within a hold of its person, nor one deferred now), due by a date inside it (an overdue one with its late charge), added up, skipping n/a. Each person's own figure for the period is fixed
- * too, and the period's due-total is the sum of them. A soft-closed period closes too, its figures
+ * too, and the period's due-total is the sum of them; and so is each person's carried figure for it. A soft-closed period closes too, its figures
  * fixed afresh. A period already closed is refused, and so is a role the permission matrix does not allow to close.
  */
 public class ClosePeriod {
@@ -54,8 +54,10 @@ public class ClosePeriod {
         Settings sheetSettings = settings.find(sheet.id());
         List<Claim> sheetClaims = claims.findAll(sheet.id());
         Map<Long, ClaimStatus> statusesThen = log.statusesOn(sheet.id(), period.to());
+        List<Period> sheetPeriods = periods.findAll(sheet.id());
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         Map<Long, BigDecimal> personTotals = new LinkedHashMap<>();
+        Map<Long, BigDecimal> personCarried = new LinkedHashMap<>();
         for (Person person : people.findAll(sheet.id())) {
             BigDecimal personTotal = BigDecimal.ZERO.setScale(2);
             for (Claim claim : sheetClaims) {
@@ -65,12 +67,37 @@ public class ClosePeriod {
                 if (figure != null) personTotal = personTotal.add(figure);
             }
             personTotals.put(person.getId(), personTotal);
+            personCarried.put(person.getId(), carried(sheet, period, sheetPeriods, person, sheetClaims, statusesThen, all, sheetSettings));
             total = total.add(personTotal);
         }
         Period closed = soft ? period.softClose(total) : period.close(total);
         if (!periods.markClosed(closed, period.soft())) return null;
         periods.deletePersonTotals(closed);
         periods.savePersonTotals(closed, personTotals);
+        periods.deletePersonCarried(closed);
+        periods.savePersonCarried(closed, personCarried);
         return closed;
+    }
+
+    /**
+     * The person's carried figure for the period, as the screen works it while the period is open:
+     * the figures of their claims that count and belong to a period (by due-by) ending before this one
+     * starts, and were still OPEN or PENDING at the end of this period's last day by the status their
+     * log records then, added up, skipping n/a.
+     */
+    private static BigDecimal carried(Sheet sheet, Period period, List<Period> sheetPeriods, Person person,
+            List<Claim> sheetClaims, Map<Long, ClaimStatus> statusesThen, List<Rate> all, Settings sheetSettings) {
+        BigDecimal carried = BigDecimal.ZERO.setScale(2);
+        for (Claim claim : sheetClaims) {
+            if (claim.getPersonId() != person.getId() || claim.getDueBy() == null) continue;
+            Period own = sheetPeriods.stream().filter((p) -> p.contains(claim.getDueBy())).findFirst().orElse(null);
+            if (own == null || !own.to().isBefore(period.from())) continue;
+            ClaimStatus then = statusesThen.get(claim.getId());
+            if (then != ClaimStatus.OPEN && then != ClaimStatus.PENDING) continue;
+            if (!claim.countsAsOf(then, person.heldOn(claim.getDate(), sheet.today()), sheet.today())) continue;
+            BigDecimal figure = ClaimFigure.withLate(claim, all, person.gradeOn(claim.getDate()), sheetSettings, sheet.today());
+            if (figure != null) carried = carried.add(figure);
+        }
+        return carried;
     }
 }
