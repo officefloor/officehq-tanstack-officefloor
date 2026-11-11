@@ -129,20 +129,29 @@ public class ClaimRepository {
     }
 
     /**
-     * The next claim number in the sequence the sheet's tree shares: one after the last number given
-     * on any sheet of the tree (the sheet, its ancestors and its descendants), which every sheet of
-     * the tree then holds as its last. Taken in one statement so two claims opened at the same moment
-     * never share a number; it is never given out again.
+     * The next claim number within fiscal year {@code fiscalYear} (FY<yyyy>) in the sequence the
+     * sheet's tree shares, counting from 1: one after the last number given in that year on any sheet
+     * of the tree, which every sheet of the tree then holds as its last. Taken in one statement so two
+     * claims opened at the same moment never share a number; it is never given out again.
      */
-    public int nextNumber(String sheetId) {
+    public int nextNumberInFiscalYear(String sheetId, String fiscalYear) {
         List<String> tree = new java.util.ArrayList<>(List.of(sheetId));
         tree.addAll(sheets.tree(sheetId));
+        for (String id : tree) {
+            jdbc.update("MERGE INTO fiscal_number f USING (VALUES (CAST(? AS VARCHAR(200)), CAST(? AS VARCHAR(20)))) v (sheet_id, fiscal_year)"
+                    + " ON f.sheet_id = v.sheet_id AND f.fiscal_year = v.fiscal_year"
+                    + " WHEN NOT MATCHED THEN INSERT (sheet_id, fiscal_year, last_number) VALUES (v.sheet_id, v.fiscal_year, 0)",
+                    id, fiscalYear);
+        }
         String in = String.join(", ", java.util.Collections.nCopies(tree.size(), "?"));
         List<Object> args = new java.util.ArrayList<>(tree);
+        args.add(fiscalYear);
         args.addAll(tree);
-        return jdbc.queryForObject("SELECT MAX(last_claim_number) FROM FINAL TABLE"
-                + " (UPDATE sheet SET last_claim_number = (SELECT MAX(s.last_claim_number) + 1 FROM sheet s WHERE s.id IN (" + in + "))"
-                + " WHERE id IN (" + in + "))",
+        args.add(fiscalYear);
+        return jdbc.queryForObject("SELECT MAX(last_number) FROM FINAL TABLE"
+                + " (UPDATE fiscal_number SET last_number = (SELECT MAX(f.last_number) + 1 FROM fiscal_number f"
+                + " WHERE f.sheet_id IN (" + in + ") AND f.fiscal_year = ?)"
+                + " WHERE sheet_id IN (" + in + ") AND fiscal_year = ?)",
                 Integer.class, args.toArray());
     }
 

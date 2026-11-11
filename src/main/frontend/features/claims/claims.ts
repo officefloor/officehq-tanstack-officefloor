@@ -167,7 +167,8 @@ export const AMOUNT = /^\d+(\.\d{1,2})?$/;
 export const CLAIM_AMOUNT = /^-?\d+(\.\d{1,2})?$/;
 
 /**
- * A claim number, as a correction names the claim it corrects: a sheet-wide number, or a number
+ * A claim number, as a correction names the claim it corrects: a sheet-wide number (one given
+ * before numbering restarted each fiscal year), a number within a fiscal year (<FY>-<n>), or a number
  * within a period (<period name>-<n>, X-<n> for a claim in no period).
  */
 export const CLAIM_NUMBER = /^(\d+|.+-\d+)$/;
