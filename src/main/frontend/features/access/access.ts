@@ -104,7 +104,7 @@ export const gradeProofThresholdKey = (grade: string) => `proof-threshold-${grad
 export const gradeClerkLimitKey = (grade: string) => `clerk-limit-${grade}`;
 
 /** The actions of the permission matrix, in the order they are shown. */
-export const ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'] as const;
+export const ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen', 'today'] as const;
 
 /** Who may take each action while its entry is blank. */
 export const STANDING_RULE: Record<string, string> = {
@@ -114,6 +114,7 @@ export const STANDING_RULE: Record<string, string> = {
   reassign: 'steward',
   close: 'clerk,steward',
   reopen: 'steward',
+  today: 'clerk,steward',
 };
 
 /** A save of the settings: only those being changed are sent. */

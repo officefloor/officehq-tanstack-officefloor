@@ -26,7 +26,8 @@ import java.util.NavigableMap;
  * on or after it half to even, and its period numbering from (null: off): while the sheet's today
  * is on or after it, a claim opened is numbered within its period, and its permission matrix
  * ({@code perms}, by action, the roles that may take it as a comma separated list; blank or missing:
- * the standing rule, open, settle, void and close by clerk and steward, reassign and reopen by steward),
+ * the standing rule, open, settle, void, close and changing the sheet's today ({@code today}) by clerk and
+ * steward, reassign and reopen by steward),
  * and its grace days (null: off): when the sheet's today is changed, every open period whose to-date
  * plus the grace days is before the new today is closed, and its entry date (null: off): while it is
  * set, the date of a new claim left undated instead of the sheet's today, and its pot (null: none),
@@ -102,7 +103,7 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
     public static final String HALF_EVEN = "half-even";
 
     /** The actions of the permission matrix, in the order they are shown and audited. */
-    public static final List<String> ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
+    public static final List<String> ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen", "today");
 
     /** The key of an action's entry in the permission matrix. */
     public static String permKey(String action) {
