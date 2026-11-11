@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.setting;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
@@ -55,8 +56,8 @@ public class SettingsRepository {
     }
 
     /**
-     * The sheet's settings as they stood at the end of {@code day}: each dated value and the policy
-     * date as last recorded while the sheet's today was on or before it, and that date standing in for
+     * The sheet's settings as they stood at the end of {@code day}: each dated value, the policy date
+     * and the pot as last recorded while the sheet's today was on or before it, and that date standing in for
      * the sheet's today. The others are as they are now.
      */
     public Settings findAsOf(String sheetId, LocalDate day) {
@@ -64,6 +65,8 @@ public class SettingsRepository {
         Map<String, NavigableMap<LocalDate, String>> dated = new HashMap<>();
         LocalDate[] policy = { null };
         boolean[] policyKept = { false };
+        BigDecimal[] pot = { null };
+        boolean[] potKept = { false };
         jdbc.query("SELECT setting_key, from_date, setting_value, set_on FROM setting_history WHERE sheet_id = ? ORDER BY id",
                 (RowCallbackHandler) (rs) -> {
                     String key = rs.getString("setting_key");
@@ -72,16 +75,21 @@ public class SettingsRepository {
                     if (POLICY_DATE.equals(key)) {
                         policyKept[0] = true;
                         if (counts) policy[0] = value.isBlank() ? null : LocalDate.parse(value);
+                    } else if (POT.equals(key)) {
+                        potKept[0] = true;
+                        if (counts) pot[0] = value.isBlank() ? null : new BigDecimal(value);
                     } else if (counts) {
                         dated.computeIfAbsent(key, (k) -> new TreeMap<>()).put(rs.getDate("from_date").toLocalDate(), value);
                     }
                 }, sheetId);
         return new Settings(sheetId, day, dated, policyKept[0] ? policy[0] : now.policyDate(),
-                now.periodNumberingFrom(), now.perms(), now.graceDays(), now.entryDate(), now.pot(), now.fiscalStartMonth(),
+                now.periodNumberingFrom(), now.perms(), now.graceDays(), now.entryDate(), potKept[0] ? pot[0] : now.pot(), now.fiscalStartMonth(),
                 now.alertThreshold());
     }
 
     private static final String POLICY_DATE = "policy-date";
+
+    private static final String POT = "pot";
 
     /** Records the roles ('' for the standing rule) that may take an action. */
     public void recordPerm(String sheetId, String action, String roles) {
@@ -99,5 +107,6 @@ public class SettingsRepository {
                 settings.pot(), settings.fiscalStartMonth(), settings.alertThreshold(), settings.sheetId());
         history(settings.sheetId(), POLICY_DATE, null,
                 settings.policyDate() == null ? "" : settings.policyDate().toString());
+        history(settings.sheetId(), POT, null, settings.pot() == null ? "" : settings.pot().toPlainString());
     }
 }

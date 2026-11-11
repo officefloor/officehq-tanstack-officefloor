@@ -44,6 +44,8 @@ public class SheetCloneRepository {
                 + " FROM setting_value WHERE sheet_id = ? ORDER BY setting_key, from_date", today, to);
         jdbc.update("INSERT INTO setting_history (sheet_id, setting_key, from_date, setting_value, set_on)"
                 + " SELECT id, 'policy-date', NULL, COALESCE(CAST(policy_date AS VARCHAR), ''), today FROM sheet WHERE id = ?", to);
+        jdbc.update("INSERT INTO setting_history (sheet_id, setting_key, from_date, setting_value, set_on)"
+                + " SELECT id, 'pot', NULL, COALESCE(CAST(pot AS VARCHAR), ''), today FROM sheet WHERE id = ?", to);
         jdbc.update("INSERT INTO setting_perm (sheet_id, action, roles) SELECT ?, action, roles FROM setting_perm"
                 + " WHERE sheet_id = ?", to, from);
         jdbc.update("INSERT INTO grade_terms (sheet_id, grade, terms) SELECT ?, grade, terms FROM grade_terms"
@@ -126,28 +128,30 @@ public class SheetCloneRepository {
                 }, from);
 
         Map<Long, Long> pools = new HashMap<>();
-        jdbc.query("SELECT id, name FROM pool WHERE sheet_id = ? ORDER BY id", (rs) -> {
+        jdbc.query("SELECT id, name, added_on FROM pool WHERE sheet_id = ? ORDER BY id", (rs) -> {
             long id = rs.getLong("id");
             String name = rs.getString("name");
+            java.sql.Date addedOn = rs.getDate("added_on");
             GeneratedKeyHolder keys = new GeneratedKeyHolder();
             jdbc.update(con -> {
-                PreparedStatement ps = con.prepareStatement("INSERT INTO pool (sheet_id, name) VALUES (?, ?)",
+                PreparedStatement ps = con.prepareStatement("INSERT INTO pool (sheet_id, name, added_on) VALUES (?, ?, ?)",
                         Statement.RETURN_GENERATED_KEYS);
                 ps.setString(1, to);
                 ps.setString(2, name);
+                ps.setDate(3, addedOn);
                 return ps;
             }, keys);
             pools.put(id, keys.getKey().longValue());
         }, from);
-        jdbc.query("SELECT m.pool_id, m.person_id, m.member_pool_id, m.share, m.from_date, m.to_date FROM pool_member m"
+        jdbc.query("SELECT m.pool_id, m.person_id, m.member_pool_id, m.share, m.from_date, m.to_date, m.added_on FROM pool_member m"
                 + " JOIN pool p ON p.id = m.pool_id WHERE p.sheet_id = ? ORDER BY m.id", (rs) -> {
                     Long pool = pools.get(rs.getLong("pool_id"));
                     Long person = rs.getObject("person_id") == null ? null : people.get(rs.getLong("person_id"));
                     Long member = rs.getObject("member_pool_id") == null ? null : pools.get(rs.getLong("member_pool_id"));
                     if (pool == null || (person == null && member == null)) return;
-                    jdbc.update("INSERT INTO pool_member (pool_id, person_id, member_pool_id, share, from_date, to_date)"
-                            + " VALUES (?, ?, ?, ?, ?, ?)", pool, person, member, rs.getBigDecimal("share"),
-                            rs.getDate("from_date"), rs.getDate("to_date"));
+                    jdbc.update("INSERT INTO pool_member (pool_id, person_id, member_pool_id, share, from_date, to_date, added_on)"
+                            + " VALUES (?, ?, ?, ?, ?, ?, ?)", pool, person, member, rs.getBigDecimal("share"),
+                            rs.getDate("from_date"), rs.getDate("to_date"), rs.getDate("added_on"));
                 }, from);
         return people;
     }

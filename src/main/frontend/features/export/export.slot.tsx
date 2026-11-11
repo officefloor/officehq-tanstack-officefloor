@@ -27,7 +27,8 @@ function downloadCsv(name: string, lines: string[][]) {
 
 // Downloads the people as a CSV file: a header line, then one line per person in list order,
 // retired people included, with the grade in force today, the retired-from date ('' when not
-// retired) and the due-total as the list shows it. Lines end with a line feed.
+// retired) and the due-total as the list shows it. Lines end with a line feed. While an as-of date
+// is set every figure is as of it, as the list shows it then.
 function ExportPeople({ sheetId }: { sheetId: string }) {
   const people = usePeople(sheetId).data ?? [];
   const claims = useClaims(sheetId).data ?? [];
@@ -92,7 +93,8 @@ function ExportClaims({ sheetId }: { sheetId: string }) {
 // Downloads the pools as a CSV file: a header line, then one line per member, pools in the order
 // added and each pool's members in the order added, a member pool as pool:<name> and the cut as
 // the pool's row shows it ('' when none). Quoted and ended as the people export. The pools are read
-// afresh when pressed, so a change just made is always in the file.
+// afresh when pressed, so a change just made is always in the file; while an as-of date is set they
+// are read as of it (members, pot and cuts as they stood then).
 function ExportPools({ sheetId }: { sheetId: string }) {
   const download = async () => {
     const { pools } = await getJson<{ pools: Pool[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/pools`);

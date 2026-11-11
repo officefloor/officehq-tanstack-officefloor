@@ -19,8 +19,15 @@ public class PoolRepository {
 
     /** The sheet's pools, by name. */
     public List<Pool> findAll(String sheetId) {
-        return jdbc.query("SELECT id, sheet_id, name FROM pool WHERE sheet_id = ? ORDER BY name",
-                (rs, n) -> new Pool(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name")), sheetId);
+        return findAll(sheetId, null);
+    }
+
+    /** The sheet's pools, by name: as they stood at the end of {@code asOf} (null: now). */
+    public List<Pool> findAll(String sheetId, LocalDate asOf) {
+        return jdbc.query("SELECT id, sheet_id, name FROM pool WHERE sheet_id = ?"
+                + " AND (CAST(? AS DATE) IS NULL OR added_on IS NULL OR added_on <= ?) ORDER BY name",
+                (rs, n) -> new Pool(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name")),
+                sheetId, sqlDate(asOf), sqlDate(asOf));
     }
 
     /** The pool with this name on the sheet, or null when there is none. */
@@ -31,7 +38,8 @@ public class PoolRepository {
     }
 
     public Pool save(String sheetId, String name) {
-        jdbc.update("INSERT INTO pool (sheet_id, name) VALUES (?, ?)", sheetId, name);
+        jdbc.update("INSERT INTO pool (sheet_id, name, added_on) VALUES (?, ?, (SELECT today FROM sheet WHERE id = ?))",
+                sheetId, name, sheetId);
         return find(sheetId, name);
     }
 
@@ -40,12 +48,29 @@ public class PoolRepository {
      * a person held when one of their holds covers {@code today}, a member active when its dates include it.
      */
     public List<PoolMember> members(String sheetId, LocalDate today) {
+        return members(sheetId, today, null);
+    }
+
+    /**
+     * The members as they stood at the end of {@code asOf} (null: now): only those added, to pools added,
+     * by then, and each person's retirement and holds as given by then.
+     */
+    public List<PoolMember> members(String sheetId, LocalDate today, LocalDate asOf) {
+        Date on = sqlDate(asOf);
+        String added = "(CAST(? AS DATE) IS NULL OR %1$s.added_on IS NULL OR %1$s.added_on <= ?)";
         return jdbc.query("SELECT pl.name AS pool, m.person_id, mp.name AS member_pool, COALESCE(p.name, mp.name) AS name,"
-                + " m.share, m.from_date, m.to_date, p.retired_from, EXISTS (SELECT 1 FROM person_hold h WHERE h.person_id = m.person_id"
-                + " AND h.from_date <= ? AND (h.to_date IS NULL OR h.to_date >= ?)) AS held FROM pool_member m"
+                + " m.share, m.from_date, m.to_date, CASE WHEN CAST(? AS DATE) IS NULL THEN p.retired_from ELSE"
+                + " (SELECT r.from_date FROM person_retirement r WHERE r.person_id = m.person_id AND r.set_on <= ?"
+                + " ORDER BY r.id DESC LIMIT 1) END AS retired_from,"
+                + " EXISTS (SELECT 1 FROM person_hold h WHERE h.person_id = m.person_id"
+                + " AND h.from_date <= ? AND (h.to_date IS NULL OR h.to_date >= ?)"
+                + " AND " + added.formatted("h").replace("added_on", "made_on") + ") AS held FROM pool_member m"
                 + " JOIN pool pl ON pl.id = m.pool_id LEFT JOIN person p ON p.id = m.person_id"
                 + " LEFT JOIN pool mp ON mp.id = m.member_pool_id"
-                + " WHERE pl.sheet_id = ? ORDER BY pl.name, m.id",
+                + " WHERE pl.sheet_id = ? AND " + added.formatted("m") + " AND " + added.formatted("pl")
+                + " AND (m.person_id IS NULL OR " + added.formatted("p") + ")"
+                + " AND (m.member_pool_id IS NULL OR " + added.formatted("mp") + ")"
+                + " ORDER BY pl.name, m.id",
                 (rs, n) -> {
                     long personId = rs.getLong("person_id");
                     Long id = rs.wasNull() ? null : personId;
@@ -57,7 +82,7 @@ public class PoolRepository {
                             rs.getString("member_pool"), rs.getString("name"), rs.getBigDecimal("share"),
                             rs.getDate("retired_from") != null, rs.getBoolean("held"), fromDate, toDate,
                             PoolMember.covers(fromDate, toDate, today));
-                }, Date.valueOf(today), Date.valueOf(today), sheetId);
+                }, on, on, Date.valueOf(today), Date.valueOf(today), on, on, sheetId, on, on, on, on, on, on, on, on);
     }
 
     public boolean isMember(Pool pool, long personId) {
@@ -67,8 +92,9 @@ public class PoolRepository {
     }
 
     public void addMember(Pool pool, long personId, BigDecimal share, LocalDate from, LocalDate to) {
-        jdbc.update("INSERT INTO pool_member (pool_id, person_id, share, from_date, to_date) VALUES (?, ?, ?, ?, ?)",
-                pool.id(), personId, share, sqlDate(from), sqlDate(to));
+        jdbc.update("INSERT INTO pool_member (pool_id, person_id, share, from_date, to_date, added_on)"
+                + " VALUES (?, ?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
+                pool.id(), personId, share, sqlDate(from), sqlDate(to), pool.sheetId());
     }
 
     /** The pool this pool is a member of, or null when it is a member of none. */
@@ -87,8 +113,9 @@ public class PoolRepository {
     }
 
     public void addMemberPool(Pool pool, Pool member, BigDecimal share, LocalDate from, LocalDate to) {
-        jdbc.update("INSERT INTO pool_member (pool_id, member_pool_id, share, from_date, to_date) VALUES (?, ?, ?, ?, ?)",
-                pool.id(), member.id(), share, sqlDate(from), sqlDate(to));
+        jdbc.update("INSERT INTO pool_member (pool_id, member_pool_id, share, from_date, to_date, added_on)"
+                + " VALUES (?, ?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
+                pool.id(), member.id(), share, sqlDate(from), sqlDate(to), pool.sheetId());
     }
 
     private static Date sqlDate(LocalDate day) {
