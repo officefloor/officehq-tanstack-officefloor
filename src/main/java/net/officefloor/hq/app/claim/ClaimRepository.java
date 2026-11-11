@@ -18,7 +18,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, edited_by, stated, stated_due, stated_late, corrects, due_by, terms, deferred_until, proofs, proof_photos, split_from, late_entry, reminded_on, ext_ref, tags, void_reason, settle_batch, review_on, waived, held, review_user,"
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, edited_by, stated, stated_due, stated_late, corrects, due_by, terms, deferred_until, proofs, proof_photos, split_from, late_entry, reminded_on, ext_ref, tags, void_reason, settle_batch, review_on, pending_on, waived, held, review_user,"
             + " (SELECT c.claim_date FROM claim c WHERE c.sheet_id = claim.sheet_id AND c.person_id = claim.person_id"
             + " AND c.claim_number = claim.corrects) AS corrected_date,"
             + " CASE WHEN locked_on = (SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id) THEN locked_by END AS locked_by_now";
@@ -48,6 +48,8 @@ public class ClaimRepository {
         claim.setReviewUser(rs.getString("review_user"));
         java.sql.Date review = rs.getDate("review_on");
         claim.setReviewOn(review == null ? null : review.toLocalDate());
+        java.sql.Date pending = rs.getDate("pending_on");
+        claim.setPendingOn(pending == null ? null : pending.toLocalDate());
         claim.setRef(rs.getString("ext_ref"));
         claim.setTags(rs.getString("tags"));
         claim.setVoidReason(rs.getString("void_reason"));
@@ -73,10 +75,11 @@ public class ClaimRepository {
                 ROW, sheetId);
     }
 
-    /** Keep a share of the claim. */
+    /** Keep a share of the claim, added on the sheet's today. */
     public void addShare(Claim claim, ClaimShare share) {
-        jdbc.update("INSERT INTO claim_share (sheet_id, claim_id, person_id, share) VALUES (?, ?, ?, ?)",
-                claim.getSheetId(), claim.getId(), share.personId(), share.share());
+        jdbc.update("INSERT INTO claim_share (sheet_id, claim_id, person_id, share, on_date)"
+                + " VALUES (?, ?, ?, ?, (SELECT s.today FROM sheet s WHERE s.id = ?))",
+                claim.getSheetId(), claim.getId(), share.personId(), share.share(), claim.getSheetId());
     }
 
     /** The claim's shares, oldest first. */
@@ -86,11 +89,17 @@ public class ClaimRepository {
 
     /** The sheet's shares by claim id, each claim's oldest first. */
     public Map<Long, List<ClaimShare>> shares(String sheetId) {
+        return shares(sheetId, null);
+    }
+
+    /** The sheet's shares by claim id, each claim's oldest first, as added by the end of {@code day} (null: all). */
+    public Map<Long, List<ClaimShare>> shares(String sheetId, LocalDate day) {
         Map<Long, List<ClaimShare>> shares = new HashMap<>();
-        jdbc.query("SELECT claim_id, person_id, share FROM claim_share WHERE sheet_id = ? ORDER BY id", (rs) -> {
+        jdbc.query("SELECT claim_id, person_id, share FROM claim_share WHERE sheet_id = ?"
+                + (day == null ? "" : " AND (on_date IS NULL OR on_date <= ?)") + " ORDER BY id", (rs) -> {
             shares.computeIfAbsent(rs.getLong("claim_id"), (k) -> new java.util.ArrayList<>())
                     .add(new ClaimShare(rs.getLong("person_id"), rs.getBigDecimal("share").setScale(2)));
-        }, sheetId);
+        }, day == null ? new Object[] { sheetId } : new Object[] { sheetId, Date.valueOf(day) });
         return shares;
     }
 
@@ -347,8 +356,11 @@ public class ClaimRepository {
                         claim.getPersonId(), nextListed(claim.getSheetId()), claim.getId(), claim.getSheetId());
             }
             keepBinding(claim);
-            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?, edited_by = ?, stated = ?, stated_due = ?, stated_late = ?, corrects = ?, deferred_until = ?, proofs = ?, proof_photos = ?, ext_ref = ?, tags = ?, void_reason = ?, settle_batch = ? WHERE id = ? AND sheet_id = ?",
-                    claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(),
+            // The sheet's today is its pending day when this save takes it to PENDING from another status.
+            jdbc.update("UPDATE claim SET pending_on = CASE WHEN ? = 'PENDING' AND status <> 'PENDING'"
+                    + " THEN (SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id) ELSE pending_on END,"
+                    + " amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?, edited_by = ?, stated = ?, stated_due = ?, stated_late = ?, corrects = ?, deferred_until = ?, proofs = ?, proof_photos = ?, ext_ref = ?, tags = ?, void_reason = ?, settle_batch = ? WHERE id = ? AND sheet_id = ?",
+                    claim.getStatus().name(), claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(),
                     claim.getStatus().name(), claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getEditedBy(),
                     claim.isStated(), claim.getStatedDue(), claim.getStatedLate(), claim.getCorrects(),
                     claim.getDeferredUntil() == null ? null : Date.valueOf(claim.getDeferredUntil()), claim.getProofs(), claim.getProofPhotos(), claim.getRef(), claim.getTags(), claim.getVoidReason(), claim.getSettleBatch(), claim.getId(),
@@ -432,9 +444,9 @@ public class ClaimRepository {
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement("INSERT INTO claim (sheet_id, person_id, amount, claim_date, note,"
                     + " status, settled_due, opened_by, edited_by, due_by, terms, deferred_until, proofs, proof_photos, late_entry,"
-                    + " reminded_on, review_on, void_reason, waived, held, listed)"
+                    + " reminded_on, review_on, pending_on, void_reason, waived, held, listed)"
                     + " SELECT ?, ?, amount, claim_date, note, status, settled_due, opened_by, edited_by, due_by, terms,"
-                    + " deferred_until, proofs, proof_photos, late_entry, reminded_on, review_on, void_reason, waived, held, ? FROM claim WHERE id = ? AND sheet_id = ?",
+                    + " deferred_until, proofs, proof_photos, late_entry, reminded_on, review_on, pending_on, void_reason, waived, held, ? FROM claim WHERE id = ? AND sheet_id = ?",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, toSheet);
             ps.setLong(2, toPersonId);
@@ -487,7 +499,7 @@ public class ClaimRepository {
     }
 
     private static final String HISTORY_COLUMNS = "person_id, amount, claim_date, note, status, claim_number, settled_due,"
-            + " opened_by, stated, stated_due, stated_late, corrects, due_by, deferred_until, proofs, proof_photos, split_from, late_entry, listed, tags, void_reason, settle_batch, ext_ref, reminded_on, review_on, waived, held, review_user";
+            + " opened_by, stated, stated_due, stated_late, corrects, due_by, deferred_until, proofs, proof_photos, split_from, late_entry, listed, tags, void_reason, settle_batch, ext_ref, reminded_on, review_on, waived, held, review_user, pending_on";
 
     /** Keeps the claim as the store now holds it in its history, with the sheet's today now. */
     private void keepHistory(Claim claim) {
@@ -529,6 +541,8 @@ public class ClaimRepository {
                     claim.setReviewUser(rs.getString("review_user"));
                     Date review = rs.getDate("review_on");
                     claim.setReviewOn(review == null ? null : review.toLocalDate());
+                    Date pending = rs.getDate("pending_on");
+                    claim.setPendingOn(pending == null ? null : pending.toLocalDate());
                     latest.put(claim.getId(), claim);
                     listed.put(claim.getId(), rs.getLong("listed"));
                 }, sheetId, Date.valueOf(day));

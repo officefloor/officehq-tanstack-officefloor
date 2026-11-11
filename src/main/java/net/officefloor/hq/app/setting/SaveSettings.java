@@ -20,7 +20,8 @@ public class SaveSettings {
                 || input.entryDateChanged() || input.potChanged() || input.fiscalStartMonthChanged()
                 || input.alertThresholdChanged() || input.escalateAfterChanged() || input.reviewSlaChanged()
                 || input.proofKindsChanged() || input.defaultGradeChanged() || input.scoreMidChanged()
-                || input.scoreHighChanged() || input.scoreLogChanged() || input.maxOpenChanged()) {
+                || input.scoreHighChanged() || input.scoreLogChanged() || input.maxOpenChanged()
+                || input.pendingSlaChanged()) {
             repository.saveUndated(new Settings(sheet.id(), now.today(), now.dated(),
                     input.policyDateChanged() ? input.policyDate() : now.policyDate(),
                     input.periodNumberingFromChanged() ? input.periodNumberingFrom() : now.periodNumberingFrom(), now.perms(),
@@ -36,7 +37,8 @@ public class SaveSettings {
                     input.scoreMidChanged() ? input.scoreMid() : now.scoreMid(),
                     input.scoreHighChanged() ? input.scoreHigh() : now.scoreHigh(),
                     input.scoreLogChanged() ? input.scoreLog() : now.scoreLog(),
-                    input.maxOpenChanged() ? input.maxOpen() : now.maxOpen()));
+                    input.maxOpenChanged() ? input.maxOpen() : now.maxOpen(),
+                    input.pendingSlaChanged() ? input.pendingSla() : now.pendingSla()));
         }
         input.perms().forEach((action, roles) -> repository.recordPerm(sheet.id(), action, roles));
         java.util.Map<String, String> values = new java.util.LinkedHashMap<>(input.datedValues());

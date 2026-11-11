@@ -29,7 +29,7 @@ public record ClaimResponse(String id, String personId, String amount, String da
         int proofs, String splitFrom, String lockedBy, boolean lateEntry, String remindedOn, String ref,
         List<String> tags, String voidReason, List<String> comments, String batch, List<String> lines, String reviewOn, boolean waived,
         String statedLate, int proofReceipts, int proofPhotos, boolean held, List<Shared> shares,
-        String reviewUser) {
+        String reviewUser, String pendingOn) {
 
     /** A share of the claim as the screen reads it: the holder's person id and their percent, two decimals. */
     public record Shared(String personId, String share) {
@@ -72,6 +72,7 @@ public record ClaimResponse(String id, String personId, String amount, String da
                 claim.getStatedLate() == null ? "" : claim.getStatedLate().toPlainString(),
                 claim.getProofReceipts(), claim.getProofPhotos(), claim.isHeld(),
                 shares.stream().map((s) -> new Shared(String.valueOf(s.personId()), s.share().toPlainString())).toList(),
-                claim.getReviewUser() == null ? "" : claim.getReviewUser());
+                claim.getReviewUser() == null ? "" : claim.getReviewUser(),
+                claim.getPendingOn() == null ? "" : claim.getPendingOn().toString());
     }
 }

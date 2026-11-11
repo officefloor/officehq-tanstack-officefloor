@@ -91,6 +91,10 @@ public class AuditSettingChanged {
         if (input.maxOpenChanged()) {
             audit.record(head + " key=" + Settings.MAX_OPEN + " value=" + (input.maxOpen() == null ? "" : input.maxOpen()));
         }
+        if (input.pendingSlaChanged()) {
+            audit.record(head + " key=" + Settings.PENDING_SLA + " value="
+                    + (input.pendingSla() == null ? "" : input.pendingSla()));
+        }
         if (input.parentChanged()) {
             audit.record(head + " key=parent value=" + (input.parent() == null ? "" : input.parent()));
         }

@@ -44,7 +44,7 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
         LocalDate policyDate, LocalDate periodNumberingFrom, Map<String, String> perms, Integer graceDays,
         LocalDate entryDate, BigDecimal pot, Integer fiscalStartMonth, BigDecimal alertThreshold,
         Integer escalateAfter, Integer reviewSla, String proofKinds, String defaultGrade, Integer scoreMid,
-        Integer scoreHigh, boolean scoreLog, Integer maxOpen) {
+        Integer scoreHigh, boolean scoreLog, Integer maxOpen, Integer pendingSla) {
     /** The grade a new person takes when none is given: the default grade, else A. */
     public String newPersonGrade() {
         return defaultGrade == null || defaultGrade.isBlank() ? "A" : defaultGrade;
@@ -86,6 +86,7 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
     public static final String SCORE_HIGH = "score-high";
     public static final String SCORE_LOG = "score-log";
     public static final String MAX_OPEN = "max-open";
+    public static final String PENDING_SLA = "pending-sla";
 
     /** The value the score log switch is recorded and shown as while it is on. */
     public static final String ON = "on";

@@ -47,7 +47,8 @@ public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, Bi
         boolean defaultGradeChanged, String defaultGrade,
         boolean scoreMidChanged, Integer scoreMid, boolean scoreHighChanged, Integer scoreHigh,
         boolean scoreLogChanged, boolean scoreLog,
-        java.util.Map<String, BigDecimal> gradeClerkLimit, boolean maxOpenChanged, Integer maxOpen) {
+        java.util.Map<String, BigDecimal> gradeClerkLimit, boolean maxOpenChanged, Integer maxOpen,
+        boolean pendingSlaChanged, Integer pendingSla) {
 
     /**
      * The figure settings being changed, by key in the order they are audited, each with the value

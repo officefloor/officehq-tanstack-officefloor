@@ -67,6 +67,8 @@ export type Settings = {
   scoreLog: string;
   /** The maximum of open claims per person, a whole number ('' for none), not dated: opening a claim is refused while its person already has that many OPEN or PENDING. */
   maxOpen: string;
+  /** The pending SLA in days ('' for none), not dated: a PENDING claim whose pending day plus it is before the sheet's today is late. */
+  pendingSla: string;
   /**
    * Every value recorded for each figure setting, by key (clerk-limit, floor, terms, late-pct,
    * terms-A, terms-B, terms-C, cap, proof-threshold, note-threshold, grace-A, grace-B, grace-C, proof-threshold-A, proof-threshold-B,
@@ -179,6 +181,11 @@ export function useCap(sheetId: string): string {
 /** The sheet's review SLA in days ('' for none, until the settings are read). */
 export function useReviewSla(sheetId: string): string {
   return useSettings(sheetId).data?.reviewSla ?? '';
+}
+
+/** The sheet's pending SLA in days ('' for none, until the settings are read). */
+export function usePendingSla(sheetId: string): string {
+  return useSettings(sheetId).data?.pendingSla ?? '';
 }
 
 /** The sheet's score thresholds, mid and high ('' for none, until the settings are read). */

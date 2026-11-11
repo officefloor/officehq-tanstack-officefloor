@@ -66,6 +66,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
     scoreHigh: '',
     scoreLog: '',
     maxOpen: '',
+    pendingSla: '',
   });
   const [touched, setTouched] = useState<Set<Key>>(new Set());
   const [gradeFields, setGradeFields] = useState<Record<string, string>>({});
@@ -294,6 +295,14 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         return;
       }
       body.maxOpen = maxOpen;
+    }
+    if (touched.has('pendingSla')) {
+      const pendingSla = fields.pendingSla.trim();
+      if (pendingSla !== '' && !TERMS.test(pendingSla)) {
+        setError('A pending SLA is a whole number of days, 0 or more, or blank.');
+        return;
+      }
+      body.pendingSla = pendingSla;
     }
     if (gradesTouched.size > 0) {
       const gradeTerms: Record<string, string> = {};
@@ -875,6 +884,20 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         </label>{' '}
         <span>
           now: <strong data-testid="setting-max-open-current">{settings.data?.maxOpen ?? ''}</strong>
+        </span>{' '}
+        <label>
+          Pending SLA days{' '}
+          <input
+            data-testid="setting-pending-sla"
+            inputMode="numeric"
+            placeholder="none"
+            value={fields.pendingSla}
+            onFocus={() => touch('pendingSla')}
+            onChange={(e) => change('pendingSla', e.target.value)}
+          />
+        </label>{' '}
+        <span>
+          now: <strong data-testid="setting-pending-sla-current">{settings.data?.pendingSla ?? ''}</strong>
         </span>{' '}
         {ACTIONS.map((action) => (
           <span key={action}>

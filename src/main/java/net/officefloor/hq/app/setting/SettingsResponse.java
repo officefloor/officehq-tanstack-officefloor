@@ -27,7 +27,8 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
         String entryDate, Map<String, String> gradeGrace, Map<String, String> gradeProofThreshold,
         String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding,
         String reviewThreshold, String escalateAfter, String reviewSla, String proofKinds, String defaultGrade,
-        String scoreMid, String scoreHigh, String scoreLog, Map<String, String> gradeClerkLimit, String maxOpen) {
+        String scoreMid, String scoreHigh, String scoreLog, Map<String, String> gradeClerkLimit, String maxOpen,
+        String pendingSla) {
 
     /** A value ('' for none) recorded from a date (yyyy-MM-dd). */
     public record Dated(String from, String value) {
@@ -62,7 +63,8 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
                 settings.scoreHigh() == null ? "" : settings.scoreHigh().toString(),
                 settings.scoreLog() ? Settings.ON : "",
                 gradeClerkLimit(settings, grades),
-                settings.maxOpen() == null ? "" : settings.maxOpen().toString());
+                settings.maxOpen() == null ? "" : settings.maxOpen().toString(),
+                settings.pendingSla() == null ? "" : settings.pendingSla().toString());
     }
 
     private static String rounding(String value) {

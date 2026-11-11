@@ -323,6 +323,15 @@ public class ValidateSettings {
             }
             maxOpen = Integer.valueOf(value);
         }
+        boolean pendingSlaChanged = request != null && request.pendingSla() != null;
+        Integer pendingSla = null;
+        if (pendingSlaChanged && !request.pendingSla().trim().isEmpty()) {
+            String value = request.pendingSla().trim();
+            if (!DAYS.matcher(value).matches()) {
+                throw new InvalidSettingException("A pending SLA is a whole number of days, 0 or more, or blank");
+            }
+            pendingSla = Integer.valueOf(value);
+        }
         Map<String, LocalDate> from = new LinkedHashMap<>();
         if (request != null && request.from() != null) {
             for (Map.Entry<String, String> entry : request.from().entrySet()) {
@@ -344,7 +353,7 @@ public class ValidateSettings {
                 reviewThresholdChanged, reviewThreshold, escalateChanged, escalateAfter, reviewSlaChanged, reviewSla,
                 proofKindsChanged, proofKinds, defaultGradeChanged, defaultGrade,
                 scoreMidChanged, scoreMid, scoreHighChanged, scoreHigh, scoreLogChanged, scoreLog, gradeClerkLimit,
-                maxOpenChanged, maxOpen));
+                maxOpenChanged, maxOpen, pendingSlaChanged, pendingSla));
     }
 
     /** A score threshold: a whole number (null for blank). */

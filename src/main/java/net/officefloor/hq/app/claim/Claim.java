@@ -35,6 +35,8 @@ public class Claim {
     private boolean held;
     private String reviewUser;
     private LocalDate reviewOn;
+    /** The sheet's today when it last went to PENDING (null: never). */
+    private LocalDate pendingOn;
     private String ref;
     private String tags;
     private String voidReason;
@@ -167,6 +169,8 @@ public class Claim {
     /** The sheet's today when it went to REVIEW (null: it never did). */
     public LocalDate getReviewOn() { return reviewOn; }
     public void setReviewOn(LocalDate reviewOn) { this.reviewOn = reviewOn; }
+    public LocalDate getPendingOn() { return pendingOn; }
+    public void setPendingOn(LocalDate pendingOn) { this.pendingOn = pendingOn; }
     /** Remind it on {@code today}: only an OPEN or PENDING claim, and once per sheet's today. */
     public void remind(LocalDate today) throws InvalidClaimStatusException {
         if (!isOpen()) throw new InvalidClaimStatusException("A " + status + " claim cannot be reminded");
@@ -334,6 +338,7 @@ public class Claim {
         then.held = held;
         then.reviewUser = reviewUser;
         then.reviewOn = reviewOn;
+        then.pendingOn = pendingOn;
         then.ref = ref;
         then.tags = tags;
         then.voidReason = voidReason;

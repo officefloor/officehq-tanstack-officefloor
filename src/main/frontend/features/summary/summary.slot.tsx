@@ -1,10 +1,10 @@
 import { SheetBody } from '../../slots/defs/sheetBody';
-import { isReviewLate, useClaims } from '../claims/claims';
+import { isPendingLate, isReviewLate, useClaims } from '../claims/claims';
 import type { ClaimStatus } from '../claims/claims';
 import { liveHolds, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { diffDue, heldParts, personDueTotal, sumDue, useRates } from '../rates/rates';
-import { useCap, useFloor, useLate, useReviewSla } from '../access/access';
+import { useCap, useFloor, useLate, usePendingSla, useReviewSla } from '../access/access';
 import { useSheetToday } from '../sheet/sheet';
 import { periodDueTotal, usePeriods } from '../periods/periods';
 import { isActive } from '../active/active';
@@ -32,6 +32,7 @@ function Summary({ sheetId }: { sheetId: string }) {
   const cap = useCap(sheetId);
   const cutOf = useCutTotals(sheetId);
   const reviewSla = useReviewSla(sheetId);
+  const pendingSla = usePendingSla(sheetId);
   const voidReasons = useVoidReasons(sheetId).data ?? [];
 
   const active = people.filter((p) => !p.retired);
@@ -107,6 +108,10 @@ function Summary({ sheetId }: { sheetId: string }) {
           <tr>
             <td>REVIEW late</td>
             <td data-testid="summary-review-late-count">{claims.filter((c) => isReviewLate(c, today, reviewSla)).length}</td>
+          </tr>
+          <tr>
+            <td>PENDING late</td>
+            <td data-testid="summary-pending-late-count">{claims.filter((c) => isPendingLate(c, today, pendingSla)).length}</td>
           </tr>
         </tbody>
       </table>

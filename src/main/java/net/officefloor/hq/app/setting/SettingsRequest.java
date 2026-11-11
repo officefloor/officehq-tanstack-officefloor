@@ -35,5 +35,5 @@ public record SettingsRequest(String clerkLimit, String floor, String terms, Str
         String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold,
         String escalateAfter, String reviewSla, String proofKinds, String defaultGrade,
         String scoreMid, String scoreHigh, String scoreLog,
-        java.util.Map<String, String> gradeClerkLimit, String maxOpen) {
+        java.util.Map<String, String> gradeClerkLimit, String maxOpen, String pendingSla) {
 }

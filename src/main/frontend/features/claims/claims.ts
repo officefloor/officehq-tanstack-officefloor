@@ -87,6 +87,8 @@ export type Claim = {
   shares: ClaimShare[];
   /** The user a steward assigned it to review while in REVIEW; '' when none. Kept once it leaves REVIEW. */
   reviewUser: string;
+  /** The sheet's today (yyyy-MM-dd) when it last went to PENDING; '' when it never did. */
+  pendingOn: string;
 };
 
 /** A holder's share of a claim: their person id and their percent, two decimals. */
@@ -97,6 +99,17 @@ export const isCorrection = (c: Claim) => c.corrects !== '';
 
 /** Whether a claim is open: OPEN, or PENDING a steward's approval. */
 export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING';
+
+/**
+ * Whether a claim is late pending: it is PENDING and its pending day plus the pending SLA in days
+ * ('' for none: never late) is before the sheet's today.
+ */
+export function isPendingLate(c: Claim, today: string, pendingSla: string): boolean {
+  if (c.status !== 'PENDING' || c.pendingOn === '' || pendingSla === '' || today === '') return false;
+  const [y, m, d] = c.pendingOn.split('-').map(Number);
+  const due = new Date(Date.UTC(y, m - 1, d + Number(pendingSla))).toISOString().slice(0, 10);
+  return due < today;
+}
 
 /**
  * Whether a claim is late for review: it is in REVIEW and its review day plus the review SLA in days

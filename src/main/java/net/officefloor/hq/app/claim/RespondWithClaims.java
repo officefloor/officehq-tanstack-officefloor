@@ -19,7 +19,7 @@ public class RespondWithClaims {
         Map<Long, List<String>> logs = asOf == null ? log.findAll(sheet.id()) : log.findAllOn(sheet.id(), asOf);
         Map<Long, List<String>> notes = comments.findAll(sheet.id(), asOf);
         Map<Long, List<String>> items = lines.findAll(sheet.id(), asOf);
-        Map<Long, List<ClaimShare>> held = repository.shares(sheet.id());
+        Map<Long, List<ClaimShare>> held = repository.shares(sheet.id(), asOf);
         List<Claim> claims = asOf == null ? repository.findAll(sheet.id()) : repository.findAllAsOf(sheet.id(), asOf);
         response.send(new ClaimsResponse(claims.stream()
                 .map((claim) -> ClaimResponse.from(claim, logs.getOrDefault(claim.getId(), List.of()),
