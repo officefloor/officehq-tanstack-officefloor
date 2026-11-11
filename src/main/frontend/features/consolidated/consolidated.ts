@@ -24,7 +24,15 @@ export type Figures = {
   overdueTotal: string;
   gradeDueTotals: Record<Grade, string>;
   statusCounts: Record<string, number>;
+  /** Each person's names (their name and aliases, as names are compared). */
+  names: string[][];
+  /** Each person's due-total, in the order of `names`. */
+  dues: string[];
+  /** Each person's overdue-total, in the order of `names`. */
+  overdues: string[];
 };
+
+const asName = (s: string) => s.trim().toLowerCase();
 
 /** A sheet's figures from what it holds — the one working the header and the consolidated figures share. */
 export function sheetFigures(
@@ -39,18 +47,43 @@ export function sheetFigures(
   const claimsOf = (id: string) => claims.filter((c) => c.personId === id);
   const dueOf = (p: Person) => personDueTotal(rates, p.grades, today, claimsOf(p.id), liveHolds(p, today), floor, late, cap);
   const active = people.filter((p) => !p.retired);
+  const dues = people.map(dueOf);
+  const overdues = people.map((p) => personOverdue(rates, p.grades, today, claimsOf(p.id), liveHolds(p, today), floor, late).total);
   return {
     gradeDueTotals: Object.fromEntries(
       GRADES.map((g) => [g, sumDue(active.filter((p) => p.grade === g).map(dueOf))]),
     ) as Record<Grade, string>,
     statusCounts: Object.fromEntries(STATUSES.map((s) => [s, claims.filter((c) => c.status === s).length])),
     people: people.length,
-    dueTotal: trimmedSumDue(
-      people.map(dueOf),
-    ),
-    overdueTotal: trimmedSumDue(
-      people.map((p) => personOverdue(rates, p.grades, today, claimsOf(p.id), liveHolds(p, today), floor, late).total),
-    ),
+    dueTotal: trimmedSumDue(dues),
+    overdueTotal: trimmedSumDue(overdues),
+    names: people.map((p) => [p.name, ...p.aliases].map(asName)),
+    dues,
+    overdues,
+  };
+}
+
+/**
+ * The figures of a whole tree from each sheet's: the due-total and overdue-total trimmed once over
+ * every person of the tree, and the people counted once each — people whose names or aliases match
+ * (as names are compared), on any sheet of it, are one person.
+ */
+export function treeTotals(all: Figures[]): { people: number; dueTotal: string; overdueTotal: string } {
+  const names = all.flatMap((f) => f.names);
+  const root = names.map((_, i) => i);
+  const find = (i: number): number => (root[i] === i ? i : (root[i] = find(root[i])));
+  const seen = new Map<string, number>();
+  names.forEach((ns, i) =>
+    ns.forEach((n) => {
+      const j = seen.get(n);
+      if (j === undefined) seen.set(n, i);
+      else root[find(i)] = find(j);
+    }),
+  );
+  return {
+    people: new Set(names.map((_, i) => find(i))).size,
+    dueTotal: trimmedSumDue(all.flatMap((f) => f.dues)),
+    overdueTotal: trimmedSumDue(all.flatMap((f) => f.overdues)),
   };
 }
 

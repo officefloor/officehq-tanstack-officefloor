@@ -6,11 +6,12 @@ import { useSheetToday } from '../sheet/sheet';
 import { useCap, useFloor, useLate } from '../access/access';
 import { useAsOf } from '../sheet/asof.slot';
 import { GRADES } from '../people/people';
-import { STATUSES, sheetFigures, useDescendantFigures } from './consolidated';
+import { STATUSES, sheetFigures, treeTotals, useDescendantFigures } from './consolidated';
 
-// The consolidated figures, over the sheet and all its descendants: everyone on them, and each
-// sheet's due-total and overdue-total as that sheet shows them, added up. The sheet's own figures
-// are the header's; with no children these are just those. Per grade, the due-totals of the people
+// The consolidated figures, over the sheet and all its descendants: everyone on them, counted once
+// each (people whose names or aliases match are one), and the due-total and overdue-total of every
+// person on them, with the single highest and lowest over the whole tree left out (three or more).
+// With no children these are the header's. Per grade, the due-totals of the people
 // on it (retired people left out), and per status the count of claims in it, added up over the tree. While the screen shows an as-of date,
 // every sheet of the tree is shown as it stood at the end of that date, with that date as its today.
 function Consolidated({ sheetId }: { sheetId: string }) {
@@ -26,13 +27,13 @@ function Consolidated({ sheetId }: { sheetId: string }) {
 
   const own = sheetFigures(people, claims, rates, today, floor, late, cap);
   const all = [own, ...descendants];
-  const count = all.reduce((n, f) => n + f.people, 0);
+  const { people: count, dueTotal, overdueTotal } = treeTotals(all);
 
   return (
     <section data-testid="consolidated">
       Consolidated — People: <strong data-testid="consolidated-people-count">{count}</strong>{' '}
-      Due: <strong data-testid="consolidated-due-total">{sumDue(all.map((f) => f.dueTotal))}</strong>{' '}
-      Overdue: <strong data-testid="consolidated-overdue-total">{sumDue(all.map((f) => f.overdueTotal))}</strong>
+      Due: <strong data-testid="consolidated-due-total">{dueTotal}</strong>{' '}
+      Overdue: <strong data-testid="consolidated-overdue-total">{overdueTotal}</strong>
       <table>
         <tbody>
           {GRADES.map((g) => (
