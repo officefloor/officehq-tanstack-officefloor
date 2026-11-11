@@ -6,6 +6,7 @@ import java.util.HashSet;
 import java.util.Set;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.grade.GradeRepository;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.role.RoleRepository;
@@ -25,7 +26,7 @@ import net.officefloor.plugin.variable.Val;
 public class GradeSelectedPeople {
     public void grade(@Val Sheet sheet, @Val BulkGradeRequest request, PersonRepository people,
             ClaimRepository claims, RateRepository rates, SettingsRepository settings, RoleRepository roles, HttpServletRequest http,
-            Audit audit, Out<BulkGradeResponse> result) {
+            GradeRepository grades, Audit audit, Out<BulkGradeResponse> result) {
         String user = Audit.user(http);
         if (sheet.archived() || Role.VIEWER.equals(roles.roleOf(sheet.id(), user))) {
             result.set(new BulkGradeResponse(0));
@@ -40,10 +41,13 @@ public class GradeSelectedPeople {
             }
         }
         boolean dated = !request.gradeFrom().isEmpty();
+        boolean retired = grades.isRetired(sheet.id(), request.grade());
         Rollup before = rollup(sheet, people, claims, rates, settings);
         int graded = 0;
         for (Person person : people.findAll(sheet.id())) {
             if (!selected.contains(person.getId())) continue;
+            // A retired grade is chosen only for someone not already on it: they are refused.
+            if (retired && (dated || !request.grade().equals(person.gradeOn(sheet.today())))) continue;
             if (dated || !request.grade().equals(person.gradeOn(sheet.today()))) {
                 person.setGradeFrom(request.grade(), dated ? LocalDate.parse(request.gradeFrom()) : sheet.today());
             }

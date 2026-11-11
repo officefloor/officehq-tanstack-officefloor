@@ -3,6 +3,7 @@ package net.officefloor.hq.app.person;
 import java.util.ArrayList;
 import java.util.List;
 import net.officefloor.plugin.variable.Out;
+import net.officefloor.hq.app.grade.GradeRepository;
 import net.officefloor.hq.app.setting.SettingsRepository;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -14,7 +15,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  */
 public class ValidateImportPeople {
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ImportPeopleRequest request,
-            SettingsRepository settings, Out<ImportPeopleLines> linesOut)
+            SettingsRepository settings, GradeRepository grades, Out<ImportPeopleLines> linesOut)
             throws InvalidPersonException {
         String text = request == null || request.text() == null ? "" : request.text();
         List<PersonRequest> lines = new ArrayList<>();
@@ -29,7 +30,7 @@ public class ValidateImportPeople {
             String contact = fields.length > 3 ? fields[3] : "";
             String grade = fields[1];
             if (grade.isBlank()) {
-                if (defaultGrade == null) defaultGrade = settings.find(sheetId).newPersonGrade();
+                if (defaultGrade == null) defaultGrade = grades.newPersonGrade(settings.find(sheetId));
                 grade = defaultGrade;
             }
             try {

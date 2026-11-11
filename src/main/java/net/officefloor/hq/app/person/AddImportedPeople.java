@@ -8,6 +8,7 @@ import java.util.Locale;
 import java.util.Set;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.grade.GradeRepository;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.setting.SettingsRepository;
@@ -23,13 +24,15 @@ import net.officefloor.plugin.variable.Val;
  * Every line is checked first, as the person form checks a person (their name unused on the sheet and
  * its tree, their contact unused on the sheet), and a name, person or contact repeated within the import
  * is refused too, so a refused import writes nothing; then each person is saved and audited as the form
- * does (PERSON_ADDED or PERSON_EDITED), then the figures it moved.
+ * does (PERSON_ADDED or PERSON_EDITED), then the figures it moved. A line choosing a retired grade refuses the import.
  */
 public class AddImportedPeople {
     public void add(@Val Sheet sheet, @Val ImportPeopleLines lines, PersonRepository people, SheetRepository sheets,
-            ClaimRepository claims, RateRepository rates, SettingsRepository settings, HttpServletRequest request,
-            Audit audit, Out<ImportPeopleResponse> result)
-            throws DuplicatePersonNameException, DuplicatePersonContactException, StalePersonException {
+            ClaimRepository claims, RateRepository rates, SettingsRepository settings, GradeRepository grades,
+            HttpServletRequest request, Audit audit, Out<ImportPeopleResponse> result)
+            throws DuplicatePersonNameException, DuplicatePersonContactException, StalePersonException,
+            InvalidPersonException {
+        Set<String> retired = grades.retired(sheet.id());
         record Change(Person person, TermsEdit termsEdit, ContactEdit contactEdit) {}
         List<Change> built = new ArrayList<>();
         Set<String> names = new HashSet<>();
@@ -44,6 +47,8 @@ public class AddImportedPeople {
             Person person = people.findByName(sheet.id(), line.name());
             TermsEdit termsEdit = null;
             ContactEdit contactEdit = null;
+            boolean chosen = person == null || !line.grade().equals(person.gradeOn(sheet.today()));
+            if (chosen && retired.contains(line.grade())) throw RetiredGrades.refused(line.grade());
             if (person == null) {
                 person = new Person(null, sheet.id(), line.name(), line.grade());
                 person.setTerms(line.termsDays());
