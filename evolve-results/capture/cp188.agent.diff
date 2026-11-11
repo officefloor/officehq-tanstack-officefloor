@@ -1,0 +1,153 @@
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index f16a085c3..a913542f8 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -8,7 +8,8 @@ import type { Claim } from '../claims/claims';
+ /**
+  * A grade's rate: a percent with two decimals, from a date (yyyy-MM-dd; '' when it applies from the
+  * beginning of time) through a date (yyyy-MM-dd; '' when it has no end), and its level: 0 when set
+- * on the sheet itself, 1 on its parent sheet, and so on up to MAX_LEVEL; and its version: how many
++ * on the sheet itself, 1 on its parent sheet, and so on up to MAX_LEVEL, then on past them the sheet
++ * it was cloned from and its own; and its version: how many
+  * times a rate has been set for its grade and from-date (it is the newest of them). A forward-only
+  * rate (saved with a from-date on or after the sheet's today) applies only to claims added after it
+  * was saved: those whose id is above `addedAfter` ('' when it applies to every claim); an older claim
+@@ -44,14 +45,15 @@ function forClaim(rate: Rate, claimId: string): Rate | null {
+ 
+ /**
+  * A grade's rate in force on a date (yyyy-MM-dd): the sheet's own, else its parent sheet's, and so
+- * on up the levels. Null when no level has one in force. For a claim (`claimId`), only the rates
++ * on up the levels (past the parents, the sheet it was cloned from's). Null when no level has one in force. For a claim (`claimId`), only the rates
+  * that apply to it count (a forward-only rate applies only to claims added after it was saved);
+  * without one, every rate in force counts, as the rates panel shows them.
+  */
+ export function rateOn(rates: Rate[], grade: Grade, date: string, claimId?: string): string | null {
+   const applying = claimId === undefined ? rates
+     : rates.map((r) => forClaim(r, claimId)).filter((r): r is Rate => r !== null);
+-  for (let level = 0; level <= MAX_LEVEL; level++) {
++  const top = applying.reduce((max, r) => Math.max(max, r.level ?? 0), 0);
++  for (let level = 0; level <= top; level++) {
+     const pct = rateAt(applying, grade, date, level);
+     if (pct !== null) return pct;
+   }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/Rate.java b/src/main/java/net/officefloor/hq/app/rate/Rate.java
+index a17750da2..8d6c7f178 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/Rate.java
++++ b/src/main/java/net/officefloor/hq/app/rate/Rate.java
+@@ -10,7 +10,8 @@ import java.util.Optional;
+ /**
+  * A grade's rate on a sheet: a percent with two decimals, from a date (null: from the beginning of
+  * time) through a date (null: with no end). Its level is how far up the sheet's parent chain it is
+- * set: 0 on the sheet itself, 1 on its parent, up to {@link #MAX_LEVEL}. Its version counts how many
++ * set: 0 on the sheet itself, 1 on its parent, up to {@link #MAX_LEVEL}, then on past them
++ * the sheet it was cloned from and its own. Its version counts how many
+  * times a rate has been set for its grade and from-date (1 for the first); it is the newest of them.
+  * A forward-only rate (saved with a from-date on or after the sheet's today) applies only to claims
+  * added after it was saved: those with an id above {@code addedAfter} (null: it applies to every
+@@ -68,10 +69,12 @@ public record Rate(String sheetId, String grade, BigDecimal pct, LocalDate from,
+ 
+     /**
+      * The grade's rate in force on the date: on the sheet itself, else on its parent, and so on up
+-     * the levels. Empty when no level has one in force.
++     * the levels (past the parents, those of the sheet it was cloned from). Empty when no level has
++     * one in force.
+      */
+     public static Optional<BigDecimal> inForce(List<Rate> rates, String grade, LocalDate date) {
+-        for (int level = 0; level <= MAX_LEVEL; level++) {
++        int top = rates.stream().mapToInt(Rate::level).max().orElse(0);
++        for (int level = 0; level <= top; level++) {
+             Optional<BigDecimal> found = inForce(rates, grade, date, level);
+             if (found.isPresent()) return found;
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+index 28f9d1dc8..a720c6562 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+@@ -29,7 +29,8 @@ public class RateRepository {
+ 
+     /**
+      * The sheet's rates, by grade then from-date (none first), then those of its parent sheet and on
+-     * up to {@link Rate#MAX_LEVEL} levels, each at its level.
++     * up to {@link Rate#MAX_LEVEL} levels, then those of the sheet it was cloned from and on up its
++     * own (see {@link #ancestors}), each at its level.
+      */
+     public List<Rate> findAll(String sheetId) {
+         List<Rate> all = new ArrayList<>(findOwn(sheetId));
+@@ -41,20 +42,35 @@ public class RateRepository {
+         return all;
+     }
+ 
+-    /** The sheet's parent, its parent's parent and so on, up to {@link Rate#MAX_LEVEL} of them. */
++    /**
++     * The sheets a rate is looked for on after the sheet itself, in order: its parent, its parent's
++     * parent and so on, up to {@link Rate#MAX_LEVEL} of them; then, when it was cloned, the sheet it
++     * was cloned from and that sheet's own (its parents, then the sheet it was cloned from, and so on).
++     */
+     private List<String> ancestors(String sheetId) {
+         List<String> ancestors = new ArrayList<>();
+-        String at = sheetId;
+-        while (ancestors.size() < Rate.MAX_LEVEL) {
+-            List<String> parent = jdbc.query("SELECT parent_id FROM sheet WHERE id = ?",
+-                    (rs, n) -> rs.getString("parent_id"), at);
+-            if (parent.isEmpty() || parent.get(0) == null) break;
+-            at = parent.get(0);
+-            ancestors.add(at);
++        java.util.Set<String> seen = new java.util.HashSet<>(List.of(sheetId));
++        String sheet = sheetId;
++        while (sheet != null) {
++            String at = sheet;
++            for (int up = 0; up < Rate.MAX_LEVEL; up++) {
++                at = column("parent_id", at);
++                if (at == null || !seen.add(at)) break;
++                ancestors.add(at);
++            }
++            sheet = column("cloned_from", sheet);
++            if (sheet == null || !seen.add(sheet)) break;
++            ancestors.add(sheet);
+         }
+         return ancestors;
+     }
+ 
++    private String column(String column, String sheetId) {
++        List<String> found = jdbc.query("SELECT " + column + " FROM sheet WHERE id = ?",
++                (rs, n) -> rs.getString(column), sheetId);
++        return found.isEmpty() ? null : found.get(0);
++    }
++
+     /**
+      * The rates set on the sheet itself, by grade then from-date (none first), each with the older
+      * versions it replaced (for the claims a forward-only version does not apply to).
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
+index de087ca3d..db5c64a08 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
+@@ -24,7 +24,7 @@ public class SheetCloneRepository {
+ 
+     /**
+      * Create sheet {@code to} as a copy of sheet {@code from}: its today and settings (dated and undated,
+-     * its permissions and parent), roles, rates, holidays, void reasons and templates; its people (not those
++     * its permissions and parent; it names this sheet as the one it was cloned from), roles, rates, holidays, void reasons and templates; its people (not those
+      * merged away) in list order, with their grades, terms, contacts, tags, aliases, holds, retirements and
+      * patrons, but no statements; its pools and their members; its periods, all open. It is not archived,
+      * and its claim numbers, settle batches and period numbers start again. Returns the copy's person id
+@@ -32,9 +32,9 @@ public class SheetCloneRepository {
+      */
+     public Map<Long, Long> copy(String from, String to) {
+         jdbc.update("INSERT INTO sheet (id, today, clerk_limit, due_floor, terms, late_pct, policy_date,"
+-                + " period_numbering_from, cap, grace_days, entry_date, pot, parent_id, fiscal_start_month, alert_threshold, escalate_after, review_sla)"
++                + " period_numbering_from, cap, grace_days, entry_date, pot, parent_id, fiscal_start_month, alert_threshold, escalate_after, review_sla, cloned_from)"
+                 + " SELECT ?, today, clerk_limit, due_floor, terms, late_pct, policy_date, period_numbering_from, cap,"
+-                + " grace_days, entry_date, pot, parent_id, fiscal_start_month, alert_threshold, escalate_after, review_sla FROM sheet WHERE id = ?", to, from);
++                + " grace_days, entry_date, pot, parent_id, fiscal_start_month, alert_threshold, escalate_after, review_sla, id FROM sheet WHERE id = ?", to, from);
+         java.sql.Date today = jdbc.queryForObject("SELECT today FROM sheet WHERE id = ?", java.sql.Date.class, to);
+ 
+         jdbc.update("INSERT INTO setting_value (sheet_id, setting_key, from_date, setting_value)"
+diff --git a/src/main/resources/db/migration/V108__sheet_cloned_from.sql b/src/main/resources/db/migration/V108__sheet_cloned_from.sql
+new file mode 100644
+index 000000000..5bed1a35f
+--- /dev/null
++++ b/src/main/resources/db/migration/V108__sheet_cloned_from.sql
+@@ -0,0 +1,3 @@
++-- The sheet a sheet was cloned from: a grade with no rate in force on a date on this sheet nor on
++-- its parents takes that sheet's (and so on up its parents and the sheet it was cloned from). Null: none.
++ALTER TABLE sheet ADD COLUMN cloned_from VARCHAR(200);
