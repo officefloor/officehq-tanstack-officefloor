@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { countedOn } from '../claims/claims';
+import { counts, countedOn } from '../claims/claims';
 import type { Claim } from '../claims/claims';
 import { gradeOn, liveHolds } from '../people/people';
 import type { Person } from '../people/people';
@@ -75,4 +75,27 @@ export function periodDueTotal(
   late: Late,
 ): string {
   return sumDue(people.map((person) => personPeriodDueTotal(period, person, claims, rates, floor, late)));
+}
+
+/**
+ * A period's classic due-total: the due-total fixed when it was closed, else the due as shown now
+ * of the claims due by a date in it that count by their status now (OPEN, PENDING and SETTLED),
+ * added up over everyone.
+ */
+export function classicPeriodDueTotal(
+  period: Period,
+  people: Person[],
+  claims: Claim[],
+  rates: Rate[],
+  floor: Dated,
+  late: Late,
+): string {
+  if (period.closed) return period.closedTotal !== '' ? period.closedTotal : periodDueTotal(period, people, claims, rates, floor, late);
+  return sumDue(
+    people.flatMap((person) =>
+      claims
+        .filter((c) => c.personId === person.id && counts(c, liveHolds(person, late.today), late.today) && period.from <= c.dueBy && c.dueBy <= period.to)
+        .map((c) => claimDue(c, rateOn(rates, gradeOn(person.grades, c.date), c.date), floor, late, gradeOn(person.grades, c.date))),
+    ),
+  );
 }
