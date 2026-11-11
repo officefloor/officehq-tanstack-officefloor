@@ -14,6 +14,12 @@ export type PoolMember = {
   share: string;
   retired: boolean;
   cut: string;
+  /** The membership's from- and to-dates ('' for open). */
+  from: string;
+  to: string;
+  /** Whether the dates include the sheet's today: a member not active is left out of the total, the balance and
+   *  the cuts (its cut is ''). */
+  active: boolean;
 };
 
 /** A pool on the sheet: its members in the order added, their total share, and balanced when it is exactly 100.00. */

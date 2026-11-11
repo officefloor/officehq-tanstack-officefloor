@@ -33,9 +33,9 @@ public class SavePoolMember {
             if (level + height(member, pools) > MAX_DEPTH) {
                 throw new InvalidPoolException("A chain of pools is at most " + MAX_DEPTH + " deep");
             }
-            pools.addMemberPool(pool, member, input.share());
+            pools.addMemberPool(pool, member, input.share(), input.from(), input.to());
             memberOut.set(new PoolMember(sheet.id(), pool.name(), null, member.name(), member.name(), input.share(),
-                    false, false));
+                    false, false, input.from(), input.to(), PoolMember.covers(input.from(), input.to(), sheet.today())));
             return;
         }
         Person person = people.find(sheet.id(), input.personId());
@@ -43,9 +43,10 @@ public class SavePoolMember {
         if (pools.isMember(pool, person.getId())) {
             throw new InvalidPoolException(person.getName() + " is already in " + pool.name());
         }
-        pools.addMember(pool, person.getId(), input.share());
+        pools.addMember(pool, person.getId(), input.share(), input.from(), input.to());
         memberOut.set(new PoolMember(sheet.id(), pool.name(), person.getId(), null, person.getName(), input.share(),
-                person.isRetired(), person.getHolds().stream().anyMatch(h -> h.covers(sheet.today()))));
+                person.isRetired(), person.getHolds().stream().anyMatch(h -> h.covers(sheet.today())), input.from(), input.to(),
+                PoolMember.covers(input.from(), input.to(), sheet.today())));
     }
 
     /** How many pools deep the chain below this pool goes, the pool itself counting as one. */

@@ -14,10 +14,11 @@ import type { Pool } from './pools';
 
 // The sheet's pools: a name entry and an add button, each pool listed below with its total share, whether
 // it is balanced (the shares total exactly 100.00; a retired member's counts as 0.00) and its members, each
-// with their share and their cut of the pot (blank when the pool is unbalanced or there is no pot). A member is added from the pool's row: a person,
+// with their share and their cut of the pot (blank when the pool is unbalanced or there is no pot, or the member's
+// optional from- and to-dates do not include the sheet's today: such a member is left out of the total and balance too). A member is added from the pool's row: a person,
 // or another pool (pool:<name>), and a share. A member pool's pot is its cut in the pool above. The server decides
 // what is refused — a taken or blank name, a person already in the pool, a share not more than 0.00 and at most
-// 100.00 with two decimals, a pool already in a pool, one containing itself through any chain, or a chain more than
+// 100.00 with two decimals, a to-date before the from-date, a pool already in a pool, one containing itself through any chain, or a chain more than
 // three deep — and the form shows its error.
 function Pools({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
@@ -80,12 +81,14 @@ function PoolRow({ sheetId, pool }: { sheetId: string; pool: Pool }) {
   // A person's id, or pool:<name> for a member pool.
   const [member, setMember] = useState('');
   const [share, setShare] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const [error, setError] = useState('');
   const [user] = useUser();
 
   const once = useOnce();
   const add = useMutation({
-    mutationFn: (body: { pool: string; personId: string; memberPool: string; share: string }) =>
+    mutationFn: (body: { pool: string; personId: string; memberPool: string; share: string; from: string; to: string }) =>
       postJson(`/api/sheets/${encodeURIComponent(sheetId)}/pool-members`, body, user),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) }),
     onError: () => setError(`That member could not be added to ${pool.name}.`),
@@ -96,7 +99,7 @@ function PoolRow({ sheetId, pool }: { sheetId: string; pool: Pool }) {
     setError('');
     const memberPool = member.startsWith('pool:') ? member.slice('pool:'.length) : '';
     const personId = memberPool ? '' : member;
-    once((done) => add.mutate({ pool: pool.name, personId, memberPool, share }, { onSettled: done }));
+    once((done) => add.mutate({ pool: pool.name, personId, memberPool, share, from, to }, { onSettled: done }));
   };
 
   return (
@@ -112,6 +115,7 @@ function PoolRow({ sheetId, pool }: { sheetId: string; pool: Pool }) {
             {m.name}
             {m.retired ? ' (retired)' : ''}: <span data-testid="pool-share">{m.share}</span>%, cut{' '}
             <span data-testid="pool-cut">{m.cut}</span>
+            {m.from || m.to ? ` (${m.from || 'open'} to ${m.to || 'open'}${m.active ? '' : ', not active'})` : ''}
           </li>
         ))}
       </ul>
@@ -144,6 +148,26 @@ function PoolRow({ sheetId, pool }: { sheetId: string; pool: Pool }) {
           value={share}
           onChange={(e) => {
             setShare(e.target.value);
+            setError('');
+          }}
+        />{' '}
+        <input
+          type="date"
+          data-testid="pool-member-from"
+          aria-label="Member from"
+          value={from}
+          onChange={(e) => {
+            setFrom(e.target.value);
+            setError('');
+          }}
+        />{' '}
+        <input
+          type="date"
+          data-testid="pool-member-to"
+          aria-label="Member to"
+          value={to}
+          onChange={(e) => {
+            setTo(e.target.value);
             setError('');
           }}
         />{' '}

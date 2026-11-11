@@ -204,8 +204,10 @@ function RatePreview({ sheetId }: { sheetId: string }) {
     preview.mutate({ grade, pct: value });
   };
 
+  // A changed grade or rate makes the shown result stale: it goes, so the next preview is told apart.
   const changed = () => {
     setError('');
+    setResult(null);
   };
 
   return (

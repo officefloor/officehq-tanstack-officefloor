@@ -13,7 +13,8 @@ import java.util.List;
  * today, 0.00), with the remainder, the pot minus the cuts added up, going to the member with a cut with
  * the largest share, the earliest added on a tie, so the cuts total exactly the pot (each is 0.00 when no
  * member has a cut). A hold changes neither the total nor whether the pool is balanced. An
- * unbalanced pool, or no pot, has no cuts. A pool that is a member of another has no pot of its own: its
+ * unbalanced pool, or no pot, has no cuts. A member whose dates do not include the sheet's today is
+ * left out entirely: not in the total, not in the balance, and no cut (not even 0.00). A pool that is a member of another has no pot of its own: its
  * pot is its cut in the pool above (none when that pool has no cuts).
  */
 public record PoolResponse(String name, List<PoolMemberResponse> members, String totalShare, boolean balanced) {
@@ -30,10 +31,10 @@ public record PoolResponse(String name, List<PoolMemberResponse> members, String
         return new PoolResponse(pool.name(), shown, total.toPlainString(), balanced);
     }
 
-    /** The members' shares added up, a retired member's counting as 0.00. */
+    /** The active members' shares added up, a retired member's counting as 0.00. */
     static BigDecimal total(List<PoolMember> members) {
         BigDecimal total = BigDecimal.ZERO.setScale(2);
-        for (PoolMember m : members) if (!m.retired()) total = total.add(m.share());
+        for (PoolMember m : members) if (m.active() && !m.retired()) total = total.add(m.share());
         return total;
     }
 
@@ -42,9 +43,9 @@ public record PoolResponse(String name, List<PoolMemberResponse> members, String
         return pot != null && total(members).compareTo(HUNDRED) == 0 ? cuts(members, pot) : null;
     }
 
-    /** Whether the member has a cut: neither retired nor held on the sheet's today. */
+    /** Whether the member has a cut: active, neither retired nor held on the sheet's today. */
     private static boolean hasCut(PoolMember m) {
-        return !m.retired() && !m.held();
+        return m.active() && !m.retired() && !m.held();
     }
 
     private static List<BigDecimal> cuts(List<PoolMember> members, BigDecimal pot) {
@@ -55,6 +56,10 @@ public record PoolResponse(String name, List<PoolMemberResponse> members, String
         int largest = -1;
         for (int i = 0; i < members.size(); i++) {
             PoolMember m = members.get(i);
+            if (!m.active()) {
+                cuts.add(null);
+                continue;
+            }
             BigDecimal cut = !hasCut(m) || shares.signum() == 0 ? BigDecimal.ZERO.setScale(2)
                     : pot.multiply(m.share()).divide(shares, 2, RoundingMode.HALF_EVEN);
             cuts.add(cut);
