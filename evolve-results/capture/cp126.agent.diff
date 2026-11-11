@@ -1,0 +1,524 @@
+diff --git a/src/main/frontend/features/sheet/today.slot.tsx b/src/main/frontend/features/sheet/today.slot.tsx
+index f9b35702f..0748f0381 100644
+--- a/src/main/frontend/features/sheet/today.slot.tsx
++++ b/src/main/frontend/features/sheet/today.slot.tsx
+@@ -12,13 +12,16 @@ import type { Sheet } from './sheet';
+ // The sheet's today: shown, and changeable. A change re-reads everything kept for the sheet, as
+ // whatever depends on the date may now read differently. Also whether the sheet is archived, and
+ // the button a steward archives it with; once archived, every change on the sheet is refused. Also
+-// the sheet's parent sheet (nothing when none).
++// the sheet's parent sheet (nothing when none). Also an entry for another sheet's id and the button
++// a steward clones this sheet there with (an id never used), and the id of the last clone made.
+ function SheetToday({ sheetId }: { sheetId: string }) {
+   const queryClient = useQueryClient();
+   const sheet = useSheet(sheetId);
+   const settings = useSettings(sheetId);
+   const [input, setInput] = useState('');
+   const [error, setError] = useState('');
++  const [cloneTo, setCloneTo] = useState('');
++  const [clonedTo, setClonedTo] = useState('');
+   const [user] = useUser();
+ 
+   const once = useOnce();
+@@ -41,6 +44,22 @@ function SheetToday({ sheetId }: { sheetId: string }) {
+     onError: () => setError('The sheet could not be archived.'),
+   });
+ 
++  const clone = useMutation({
++    mutationFn: (toSheet: string) =>
++      postJson<{ toSheet: string }>(`/api/sheets/${encodeURIComponent(sheetId)}/clone`, { toSheet }, user),
++    onSuccess: async (made) => {
++      setClonedTo(made.toSheet);
++      await queryClient.invalidateQueries({ queryKey: ['sheet', made.toSheet] });
++    },
++    onError: () => setError('The sheet could not be cloned there.'),
++  });
++
++  const cloneSheet = () => {
++    setError('');
++    setClonedTo('');
++    once((done) => clone.mutate(cloneTo, { onSettled: done }));
++  };
++
+   const archiveSheet = () => {
+     setError('');
+     once((done) => archive.mutate(undefined, { onSettled: done }));
+@@ -79,7 +98,23 @@ function SheetToday({ sheetId }: { sheetId: string }) {
+       <button type="button" data-testid="sheet-archive" onClick={archiveSheet} disabled={archive.isPending}>
+         Archive sheet
+       </button>{' '}
+-      Parent: <strong data-testid="sheet-parent">{settings.data?.parent ?? ''}</strong>
++      Parent: <strong data-testid="sheet-parent">{settings.data?.parent ?? ''}</strong>{' '}
++      <label>
++        Clone to{' '}
++        <input
++          data-testid="sheet-clone-to"
++          value={cloneTo}
++          placeholder="sheet id"
++          onChange={(e) => {
++            setCloneTo(e.target.value);
++            setError('');
++          }}
++        />
++      </label>{' '}
++      <button type="button" data-testid="sheet-clone" onClick={cloneSheet} disabled={clone.isPending}>
++        Clone sheet
++      </button>{' '}
++      Cloned to: <strong data-testid="sheet-cloned-to">{clonedTo}</strong>
+       {(error || sheet.isError) && (
+         <p role="alert" data-testid="sheet-error">
+           {error || 'The sheet could not be read.'}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 9c3b197c3..4b5132dc3 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -307,6 +307,48 @@ public class ClaimRepository {
+                 + " FROM claim WHERE id = ? AND sheet_id = ?", claim.getId(), toSheet);
+     }
+ 
++    /**
++     * Copy the claim, with its log, to another sheet for {@code toPersonId}, listed there as its newest:
++     * its status, amount, dates, terms, note, frozen figure, proofs and who opened and edited it. It takes
++     * no number (nor correction or split numbers) until {@link #numberCopy}, and leaves behind any figure a
++     * statement bound it to, its reference, tags, settle batch, comments and any lock. Returns its new id.
++     */
++    public long copy(Claim claim, String toSheet, long toPersonId) {
++        GeneratedKeyHolder keys = new GeneratedKeyHolder();
++        long listed = nextListed(toSheet);
++        jdbc.update(con -> {
++            PreparedStatement ps = con.prepareStatement("INSERT INTO claim (sheet_id, person_id, amount, claim_date, note,"
++                    + " status, settled_due, opened_by, edited_by, due_by, terms, deferred_until, proofs, late_entry,"
++                    + " reminded_on, void_reason, listed)"
++                    + " SELECT ?, ?, amount, claim_date, note, status, settled_due, opened_by, edited_by, due_by, terms,"
++                    + " deferred_until, proofs, late_entry, reminded_on, void_reason, ? FROM claim WHERE id = ? AND sheet_id = ?",
++                    Statement.RETURN_GENERATED_KEYS);
++            ps.setString(1, toSheet);
++            ps.setLong(2, toPersonId);
++            ps.setLong(3, listed);
++            ps.setLong(4, claim.getId());
++            ps.setString(5, claim.getSheetId());
++            return ps;
++        }, keys);
++        long id = keys.getKey().longValue();
++        jdbc.update("INSERT INTO claim_log (sheet_id, claim_id, status, by_user, on_date, due)"
++                + " SELECT ?, ?, status, by_user, on_date, due FROM claim_log WHERE claim_id = ? AND sheet_id = ? ORDER BY id",
++                toSheet, id, claim.getId(), claim.getSheetId());
++        return id;
++    }
++
++    /**
++     * Give a claim copied by {@link #copy} its number (null: none) and the numbers it corrects and was
++     * split from, and keep it in its history, with its sheet's today now.
++     */
++    public void numberCopy(String sheetId, long id, String number, String corrects, String splitFrom) {
++        jdbc.update("UPDATE claim SET claim_number = ?, corrects = ?, split_from = ? WHERE id = ? AND sheet_id = ?",
++                number, corrects, splitFrom, id, sheetId);
++        jdbc.update("INSERT INTO claim_history (sheet_id, claim_id, " + HISTORY_COLUMNS + ", set_on)"
++                + " SELECT sheet_id, id, " + HISTORY_COLUMNS + ", (SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id)"
++                + " FROM claim WHERE id = ? AND sheet_id = ?", id, sheetId);
++    }
++
+     /** Keep a due-by fixed again (its history kept, with the sheet's today now). */
+     public void saveDueBy(Claim claim) {
+         jdbc.update("UPDATE claim SET due_by = ? WHERE id = ? AND sheet_id = ?", Date.valueOf(claim.getDueBy()),
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/AuditSheetCloned.java b/src/main/java/net/officefloor/hq/app/sheet/AuditSheetCloned.java
+new file mode 100644
+index 000000000..c05514223
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/AuditSheetCloned.java
+@@ -0,0 +1,29 @@
++package net.officefloor.hq.app.sheet;
++
++import jakarta.servlet.http.HttpServletRequest;
++import java.util.Map;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.setting.SettingsRepository;
++import net.officefloor.plugin.variable.Val;
++
++/**
++ * Records the clone on this sheet, then the clone's first lines: where it was cloned from, followed by
++ * its rollup lines for every person and its totals. Runs after every rule has passed, so a refused
++ * clone writes nothing.
++ */
++public class AuditSheetCloned {
++    public void audit(@Val Sheet sheet, @Val Clone clone, PersonRepository people, ClaimRepository claims,
++            RateRepository rates, SettingsRepository settings, HttpServletRequest request, Audit audit) {
++        String user = Audit.user(request);
++        String to = clone.to().id();
++        audit.record("SHEET_CLONE_MADE sheet=" + sheet.id() + " by=" + user + " to=" + to);
++        audit.record("SHEET_CLONED sheet=" + to + " by=" + user + " from=" + sheet.id());
++        Rollup none = new Rollup(Map.of(), "", "", "");
++        Rollup.of(to, clone.to().today(), people, claims, rates, settings.find(to))
++                .changesSince(none, to, user).forEach(audit::record);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/Clone.java b/src/main/java/net/officefloor/hq/app/sheet/Clone.java
+new file mode 100644
+index 000000000..9810d621e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/Clone.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.sheet;
++
++/** A clone just made: the new sheet. */
++public record Clone(Sheet to) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/CloneInput.java b/src/main/java/net/officefloor/hq/app/sheet/CloneInput.java
+new file mode 100644
+index 000000000..9288051d4
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/CloneInput.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.sheet;
++
++/** A validated clone: the id of the sheet to clone this one to, trimmed. */
++public record CloneInput(String toSheet) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/CloneRequest.java b/src/main/java/net/officefloor/hq/app/sheet/CloneRequest.java
+new file mode 100644
+index 000000000..597de7f85
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/CloneRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.sheet;
++
++/** A clone as the screen sends it: the id of the sheet to clone this one to. */
++public record CloneRequest(String toSheet) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/CloneResponse.java b/src/main/java/net/officefloor/hq/app/sheet/CloneResponse.java
+new file mode 100644
+index 000000000..03cac2305
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/CloneResponse.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.sheet;
++
++/** A clone made, as the screen reads it: the id of the sheet made. */
++public record CloneResponse(String toSheet) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/CloneSheet.java b/src/main/java/net/officefloor/hq/app/sheet/CloneSheet.java
+new file mode 100644
+index 000000000..2fcda763e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/CloneSheet.java
+@@ -0,0 +1,83 @@
++package net.officefloor.hq.app.sheet;
++
++import jakarta.servlet.http.HttpServletRequest;
++import java.time.LocalDate;
++import java.util.ArrayList;
++import java.util.Collections;
++import java.util.Comparator;
++import java.util.HashMap;
++import java.util.List;
++import java.util.Map;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimNumbers;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.role.Role;
++import net.officefloor.hq.app.role.RoleRepository;
++import net.officefloor.hq.app.role.StewardOnlyException;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.setting.SettingsRepository;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++/**
++ * Clones the sheet to another id (a steward), only one never used. The clone gets this sheet's today,
++ * settings, roles, rates, holidays, void reasons, templates, people, pools and periods (all open; see
++ * {@link SheetCloneRepository}), then each person's claims, oldest listed first, with their status,
++ * frozen figures, dates, notes and logs. Each claim that had a number takes the clone's next, in the
++ * order the claims were opened (by the sheet's today then, then the order added to the clone); a
++ * correction or split names the new numbers. Statements are not copied.
++ */
++public class CloneSheet {
++    public void cloneSheet(@Val CloneInput input, @Val Sheet sheet, SheetRepository sheets, SheetCloneRepository copier,
++            PersonRepository people, ClaimRepository claims, RoleRepository roles, SettingsRepository settings,
++            PeriodRepository periods, HttpServletRequest request, Out<Clone> cloneOut)
++            throws StewardOnlyException, InvalidSheetIdException {
++        if (!Role.STEWARD.equals(roles.roleOf(sheet.id(), Audit.user(request)))) {
++            throw new StewardOnlyException("Only a steward may clone the sheet");
++        }
++        if (sheets.find(input.toSheet()) != null) {
++            throw new InvalidSheetIdException("A sheet can only be cloned to an id never used");
++        }
++        Map<Long, Long> copies = copier.copy(sheet.id(), input.toSheet());
++        Sheet to = sheets.find(input.toSheet());
++        Settings toSettings = settings.find(to.id());
++
++        List<Claim> copied = new ArrayList<>();
++        Map<Long, Long> copyOf = new HashMap<>();
++        for (Person person : people.findAll(sheet.id())) {
++            List<Claim> theirs = new ArrayList<>(claims.findByPerson(sheet.id(), person.getId()));
++            Collections.reverse(theirs);
++            for (Claim claim : theirs) {
++                copyOf.put(claim.getId(), claims.copy(claim, to.id(), copies.get(person.getId())));
++                copied.add(claim);
++            }
++        }
++        Map<Long, LocalDate> openedOn = new HashMap<>();
++        List<Claim> numbered = new ArrayList<>();
++        for (Claim claim : copied) {
++            if (claim.getNumber() == null) continue;
++            LocalDate opened = claims.openedOn(claim);
++            openedOn.put(claim.getId(), opened == null ? claim.getDate() : opened);
++            numbered.add(claim);
++        }
++        numbered.sort(Comparator.comparing((Claim c) -> openedOn.get(c.getId()))
++                .thenComparing((Claim c) -> copyOf.get(c.getId())));
++        Map<String, String> renumbered = new HashMap<>();
++        Map<Long, String> numbers = new HashMap<>();
++        for (Claim claim : numbered) {
++            String number = ClaimNumbers.next(to, claim, toSettings, periods, claims);
++            renumbered.put(claim.getNumber(), number);
++            numbers.put(claim.getId(), number);
++        }
++        for (Claim claim : copied) {
++            claims.numberCopy(to.id(), copyOf.get(claim.getId()), numbers.get(claim.getId()),
++                    claim.getCorrects() == null ? null : renumbered.getOrDefault(claim.getCorrects(), claim.getCorrects()),
++                    claim.getSplitFrom() == null ? null : renumbered.getOrDefault(claim.getSplitFrom(), claim.getSplitFrom()));
++        }
++        cloneOut.set(new Clone(to));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/InvalidSheetIdException.java b/src/main/java/net/officefloor/hq/app/sheet/InvalidSheetIdException.java
+index a90483f5f..217837633 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/InvalidSheetIdException.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/InvalidSheetIdException.java
+@@ -1,8 +1,12 @@
+ package net.officefloor.hq.app.sheet;
+ 
+-/** A sheet id that is blank. */
++/** A sheet id that is blank, or one that cannot be used as asked. */
+ public class InvalidSheetIdException extends Exception {
+     public InvalidSheetIdException() {
+         super("A sheet id is required");
+     }
++
++    public InvalidSheetIdException(String message) {
++        super(message);
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RespondWithClone.java b/src/main/java/net/officefloor/hq/app/sheet/RespondWithClone.java
+new file mode 100644
+index 000000000..cf57d06c1
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/RespondWithClone.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithClone {
++    public void respond(@Val Clone clone, ObjectResponse<CloneResponse> response) {
++        response.send(new CloneResponse(clone.to().id()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
+new file mode 100644
+index 000000000..a61cd6034
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
+@@ -0,0 +1,148 @@
++package net.officefloor.hq.app.sheet;
++
++import java.sql.PreparedStatement;
++import java.sql.Statement;
++import java.util.HashMap;
++import java.util.List;
++import java.util.Map;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.jdbc.support.GeneratedKeyHolder;
++import org.springframework.stereotype.Repository;
++
++/**
++ * Copies a sheet to a new id: everything but its claims (see {@code ClaimRepository#copy}). What the
++ * copy is given is kept in its histories as given on its today.
++ */
++@Repository
++public class SheetCloneRepository {
++
++    private final JdbcTemplate jdbc;
++
++    public SheetCloneRepository(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /**
++     * Create sheet {@code to} as a copy of sheet {@code from}: its today and settings (dated and undated,
++     * its permissions and parent), roles, rates, holidays, void reasons and templates; its people (not those
++     * merged away) in list order, with their grades, terms, contacts, aliases, holds, retirements and
++     * patrons, but no statements; its pools and their members; its periods, all open. It is not archived,
++     * and its claim numbers, settle batches and period numbers start again. Returns the copy's person id
++     * for each person copied, by their id here.
++     */
++    public Map<Long, Long> copy(String from, String to) {
++        jdbc.update("INSERT INTO sheet (id, today, clerk_limit, due_floor, terms, late_pct, policy_date,"
++                + " period_numbering_from, cap, grace_days, entry_date, pot, parent_id)"
++                + " SELECT ?, today, clerk_limit, due_floor, terms, late_pct, policy_date, period_numbering_from, cap,"
++                + " grace_days, entry_date, pot, parent_id FROM sheet WHERE id = ?", to, from);
++        java.sql.Date today = jdbc.queryForObject("SELECT today FROM sheet WHERE id = ?", java.sql.Date.class, to);
++
++        jdbc.update("INSERT INTO setting_value (sheet_id, setting_key, from_date, setting_value)"
++                + " SELECT ?, setting_key, from_date, setting_value FROM setting_value WHERE sheet_id = ?", to, from);
++        jdbc.update("INSERT INTO setting_history (sheet_id, setting_key, from_date, setting_value, set_on)"
++                + " SELECT sheet_id, setting_key, from_date, setting_value, ?"
++                + " FROM setting_value WHERE sheet_id = ? ORDER BY setting_key, from_date", today, to);
++        jdbc.update("INSERT INTO setting_history (sheet_id, setting_key, from_date, setting_value, set_on)"
++                + " SELECT id, 'policy-date', NULL, COALESCE(CAST(policy_date AS VARCHAR), ''), today FROM sheet WHERE id = ?", to);
++        jdbc.update("INSERT INTO setting_perm (sheet_id, action, roles) SELECT ?, action, roles FROM setting_perm"
++                + " WHERE sheet_id = ?", to, from);
++        jdbc.update("INSERT INTO grade_terms (sheet_id, grade, terms) SELECT ?, grade, terms FROM grade_terms"
++                + " WHERE sheet_id = ?", to, from);
++
++        jdbc.update("INSERT INTO sheet_role (sheet_id, user_name, role) SELECT ?, user_name, role FROM sheet_role"
++                + " WHERE sheet_id = ?", to, from);
++        jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date) SELECT ?, grade, pct, from_date, to_date"
++                + " FROM rate WHERE sheet_id = ?", to, from);
++        jdbc.update("INSERT INTO rate_history (sheet_id, grade, pct, from_date, to_date, set_on)"
++                + " SELECT sheet_id, grade, pct, from_date, to_date, ?"
++                + " FROM rate WHERE sheet_id = ? ORDER BY grade, from_date NULLS FIRST", today, to);
++        jdbc.update("INSERT INTO sheet_holiday (sheet_id, holiday_date) SELECT ?, holiday_date FROM sheet_holiday"
++                + " WHERE sheet_id = ?", to, from);
++        jdbc.update("INSERT INTO sheet_void_reason (sheet_id, reason) SELECT ?, reason FROM sheet_void_reason"
++                + " WHERE sheet_id = ? ORDER BY id", to, from);
++        jdbc.update("INSERT INTO claim_template (sheet_id, name, amount, note) SELECT ?, name, amount, note"
++                + " FROM claim_template WHERE sheet_id = ? ORDER BY id", to, from);
++        jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, added_on)"
++                + " SELECT ?, name, from_date, to_date, added_on FROM period WHERE sheet_id = ?", to, from);
++
++        Map<Long, Long> people = new HashMap<>();
++        List<Long> ids = jdbc.queryForList("SELECT id FROM person WHERE sheet_id = ? AND merged_into IS NULL"
++                + " ORDER BY list_pos, id", Long.class, from);
++        long pos = 0;
++        for (long id : ids) {
++            long at = ++pos;
++            GeneratedKeyHolder keys = new GeneratedKeyHolder();
++            jdbc.update(con -> {
++                PreparedStatement ps = con.prepareStatement("INSERT INTO person (sheet_id, name, grade, terms, contact,"
++                        + " retired_from, added_on, origin_sheet, list_pos)"
++                        + " SELECT ?, name, grade, terms, contact, retired_from, added_on, origin_sheet, ?"
++                        + " FROM person WHERE id = ? AND sheet_id = ?", Statement.RETURN_GENERATED_KEYS);
++                ps.setString(1, to);
++                ps.setLong(2, at);
++                ps.setLong(3, id);
++                ps.setString(4, from);
++                return ps;
++            }, keys);
++            people.put(id, keys.getKey().longValue());
++        }
++        for (long id : ids) {
++            long copy = people.get(id);
++            jdbc.update("INSERT INTO person_grade (sheet_id, person_id, from_date, grade)"
++                    + " SELECT ?, ?, from_date, grade FROM person_grade WHERE person_id = ?", to, copy, id);
++            jdbc.update("INSERT INTO person_grade_history (sheet_id, person_id, from_date, grade, set_on)"
++                    + " SELECT sheet_id, id, NULL, grade, ? FROM person WHERE id = ?", today, copy);
++            jdbc.update("INSERT INTO person_grade_history (sheet_id, person_id, from_date, grade, set_on)"
++                    + " SELECT sheet_id, person_id, from_date, grade, ?"
++                    + " FROM person_grade WHERE person_id = ? ORDER BY from_date", today, copy);
++            jdbc.update("INSERT INTO person_terms_history (sheet_id, person_id, terms, set_on)"
++                    + " SELECT sheet_id, id, terms, ? FROM person WHERE id = ?", today, copy);
++            jdbc.update("INSERT INTO person_retirement (sheet_id, person_id, from_date, set_on)"
++                    + " SELECT sheet_id, id, retired_from, ? FROM person WHERE id = ? AND retired_from IS NOT NULL",
++                    today, copy);
++            jdbc.update("INSERT INTO person_past_retirement (sheet_id, person_id, from_date, to_date)"
++                    + " SELECT ?, ?, from_date, to_date FROM person_past_retirement WHERE person_id = ? ORDER BY id",
++                    to, copy, id);
++            jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias, added_on)"
++                    + " SELECT ?, ?, alias, added_on FROM person_alias WHERE person_id = ? ORDER BY id", to, copy, id);
++            jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date, made_on)"
++                    + " SELECT ?, ?, from_date, to_date, made_on FROM person_hold WHERE person_id = ? ORDER BY id",
++                    to, copy, id);
++        }
++        // Patrons in the order each person named them.
++        jdbc.query("SELECT person_id, patron_id, added_on FROM person_patron WHERE sheet_id = ?"
++                + " ORDER BY person_id, named_seq NULLS FIRST, patron_id", (rs) -> {
++                    Long person = people.get(rs.getLong("person_id"));
++                    Long patron = people.get(rs.getLong("patron_id"));
++                    if (person == null || patron == null) return;
++                    jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id, added_on, named_seq)"
++                            + " VALUES (?, ?, ?, ?, NEXT VALUE FOR person_patron_seq)", to, person, patron,
++                            rs.getDate("added_on"));
++                }, from);
++
++        Map<Long, Long> pools = new HashMap<>();
++        jdbc.query("SELECT id, name FROM pool WHERE sheet_id = ? ORDER BY id", (rs) -> {
++            long id = rs.getLong("id");
++            String name = rs.getString("name");
++            GeneratedKeyHolder keys = new GeneratedKeyHolder();
++            jdbc.update(con -> {
++                PreparedStatement ps = con.prepareStatement("INSERT INTO pool (sheet_id, name) VALUES (?, ?)",
++                        Statement.RETURN_GENERATED_KEYS);
++                ps.setString(1, to);
++                ps.setString(2, name);
++                return ps;
++            }, keys);
++            pools.put(id, keys.getKey().longValue());
++        }, from);
++        jdbc.query("SELECT m.pool_id, m.person_id, m.member_pool_id, m.share, m.from_date, m.to_date FROM pool_member m"
++                + " JOIN pool p ON p.id = m.pool_id WHERE p.sheet_id = ? ORDER BY m.id", (rs) -> {
++                    Long pool = pools.get(rs.getLong("pool_id"));
++                    Long person = rs.getObject("person_id") == null ? null : people.get(rs.getLong("person_id"));
++                    Long member = rs.getObject("member_pool_id") == null ? null : pools.get(rs.getLong("member_pool_id"));
++                    if (pool == null || (person == null && member == null)) return;
++                    jdbc.update("INSERT INTO pool_member (pool_id, person_id, member_pool_id, share, from_date, to_date)"
++                            + " VALUES (?, ?, ?, ?, ?, ?)", pool, person, member, rs.getBigDecimal("share"),
++                            rs.getDate("from_date"), rs.getDate("to_date"));
++                }, from);
++        return people;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/ValidateClone.java b/src/main/java/net/officefloor/hq/app/sheet/ValidateClone.java
+new file mode 100644
+index 000000000..b28453ff1
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/ValidateClone.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ValidateClone {
++    public void validate(@RequestBody CloneRequest request, Out<CloneInput> body) throws InvalidSheetIdException {
++        String to = request == null || request.toSheet() == null ? "" : request.toSheet().trim();
++        if (to.isEmpty()) throw new InvalidSheetIdException("Give the id of the sheet to clone to");
++        body.set(new CloneInput(to));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/clone.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/clone.POST.yml
+new file mode 100644
+index 000000000..d32e6bbb1
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/clone.POST.yml
+@@ -0,0 +1,21 @@
++# Clone the sheet to another id (a steward). Validate first so a blank id is a 400, not a 404. Anyone
++# else, or an id already used, is refused and writes nothing.
++validate:
++  class: net.officefloor.hq.app.sheet.ValidateClone
++  next: load
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ transaction ]
++  next: clone
++clone:
++  class: net.officefloor.hq.app.sheet.CloneSheet
++  govern: [ transaction ]
++  next: audit
++# Last before the response: the clone is saved. This sheet's line, then the clone's first lines.
++audit:
++  class: net.officefloor.hq.app.sheet.AuditSheetCloned
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.sheet.RespondWithClone
++  govern: [ transaction ]
