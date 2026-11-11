@@ -849,7 +849,7 @@ function Roles({ sheetId }: { sheetId: string }) {
       return;
     }
     if (!(ROLES as readonly string[]).includes(role)) {
-      setError('A role is clerk, steward or viewer.');
+      setError('A role is clerk, steward, viewer or restricted.');
       return;
     }
     once((done) => save.mutate({ user: name, role }, { onSettled: done }));

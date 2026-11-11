@@ -109,10 +109,14 @@ export const STANDING_RULE: Record<string, string> = {
 /** A save of the settings: only those being changed are sent. */
 export type SettingsChange = Partial<Omit<Settings, 'dated'>> & { from?: Record<string, string> };
 
-/** A user's role on a sheet. A name with no role assigned is a clerk; a viewer sees everything and changes nothing. */
+/**
+ * A user's role on a sheet. A name with no role assigned is a clerk; a viewer sees everything and changes nothing;
+ * a restricted user acts as a clerk but sees on the people list only the people of the crews they lead or
+ * belong to (as the person with their name) and that person.
+ */
 export type Role = { user: string; role: string };
 
-export const ROLES = ['clerk', 'steward', 'viewer'] as const;
+export const ROLES = ['clerk', 'steward', 'viewer', 'restricted'] as const;
 
 /** The roles the permission matrix may name: a viewer may take no action. */
 export const PERM_ROLES = ['clerk', 'steward'] as const;

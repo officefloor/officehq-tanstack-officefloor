@@ -60,10 +60,10 @@ function Header({ sheetId }: { sheetId: string }) {
         Overdue: <strong data-testid="header-overdue-total">{overdueTotal}</strong>
       </span>{' '}
       <span>
-        My due: <strong data-testid="my-due-total">{mine?.dueTotal ?? ''}</strong>
+        My due: <strong data-testid="my-due-total">{mine?.dues[0] ?? ''}</strong>
       </span>{' '}
       <span>
-        My overdue: <strong data-testid="my-overdue-total">{mine?.overdueTotal ?? ''}</strong>
+        My overdue: <strong data-testid="my-overdue-total">{mine?.overdues[0] ?? ''}</strong>
       </span>{' '}
       <span>
         My crews due: <strong data-testid="my-crew-due-total">{myCrewDue}</strong>

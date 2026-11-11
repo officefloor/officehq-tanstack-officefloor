@@ -11,6 +11,7 @@ import type { Grade, Person } from './people';
 import { SORT_KEYS, useSorted, useSortBy } from './sort';
 import type { SortKey } from './sort';
 import { Col } from '../columns/columns';
+import { useVisiblePeople } from './visible';
 
 // `gradeFrom` is the date the grade is from ('' for the sheet's today). A person's first grade
 // applies from the beginning of time; an edit records the grade from its date, keeping the others,
@@ -34,7 +35,11 @@ function People({ sheetId }: { sheetId: string }) {
   const [user] = useUser();
   const [showRetired, setShowRetired] = useShowRetired();
   const [sortBy, setSortBy] = useSortBy();
-  const shown = useSorted(sheetId, (people.data ?? []).filter((p) => showRetired || !p.retired));
+  const visible = useVisiblePeople(sheetId, user);
+  const shown = useSorted(
+    sheetId,
+    (people.data ?? []).filter((p) => (showRetired || !p.retired) && visible(p)),
+  );
 
   const reset = () => {
     setFields(EMPTY);

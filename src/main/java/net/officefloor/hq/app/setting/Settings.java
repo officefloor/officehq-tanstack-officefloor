@@ -106,6 +106,7 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
     /** Whether a role may take an action. */
     public boolean allows(String action, String role) {
         if (net.officefloor.hq.app.role.Role.VIEWER.equals(role)) return false; // a viewer changes nothing
+        if (net.officefloor.hq.app.role.Role.RESTRICTED.equals(role)) role = net.officefloor.hq.app.role.Role.CLERK; // acts as a clerk
         return rolesFor(action).contains(role);
     }
 
