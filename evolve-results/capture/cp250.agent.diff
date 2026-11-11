@@ -1,0 +1,71 @@
+diff --git a/src/main/frontend/features/export/export.slot.tsx b/src/main/frontend/features/export/export.slot.tsx
+index 8fc5f591a..3d83713c7 100644
+--- a/src/main/frontend/features/export/export.slot.tsx
++++ b/src/main/frontend/features/export/export.slot.tsx
+@@ -1,7 +1,7 @@
+ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { useClaims } from '../claims/claims';
+ import { gradeOn, liveHolds, usePeople } from '../people/people';
+-import { claimDue, heldParts, personDueTotal, rateOn, useRates } from '../rates/rates';
++import { claimDue, heldParts, personDueTotal, rateOn, sumDue, useRates } from '../rates/rates';
+ import { periodOf, personPeriodCarried, personPeriodDueTotal, usePeriods } from '../periods/periods';
+ import { useCap, useFloor, useLate } from '../access/access';
+ import { useSheetToday } from '../sheet/sheet';
+@@ -10,6 +10,7 @@ import type { Pool } from '../pools/pools';
+ import { downloadCsv } from './csv';
+ import { useCutTotals } from '../pools/pools';
+ import { treePeople } from '../treesearch/treeSearch';
++import type { PolicyVersion } from '../policy/policy';
+ 
+ // Downloads the people as a CSV file: a header line, then one line per person in list order,
+ // retired people included, with the grade in force today, the retired-from date ('' when not
+@@ -162,10 +163,49 @@ function ExportTree({ sheetId }: { sheetId: string }) {
+   );
+ }
+ 
++// Downloads the policy versions as a CSV file: a header line, then one line per version, oldest first,
++// with its number, from-date ('' for none), the setting it changed with its value, the count of claims
++// whose policy version it is (DELETED claims counting nowhere) and the due of those claims, as their
++// rows show it, added up. The versions are read afresh when pressed. Quoted and ended as the people export.
++function ExportPolicy({ sheetId }: { sheetId: string }) {
++  const people = usePeople(sheetId).data ?? [];
++  const claims = useClaims(sheetId).data ?? [];
++  const rates = useRates(sheetId).data ?? [];
++  const floor = useFloor(sheetId);
++  const late = useLate(sheetId);
++
++  const download = async () => {
++    const { versions } = await getJson<{ versions: PolicyVersion[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/policy`);
++    // A claim's policy version: the number of versions whose from-date is on or before its date.
++    const versionOn = (date: string) => versions.filter((v) => v.from === '' || v.from <= date).length;
++    const dues = new Map<number, string[]>();
++    for (const p of people) {
++      for (const c of claims) {
++        if (c.personId !== p.id || c.status === 'DELETED') continue;
++        const grade = gradeOn(p.grades, c.date);
++        const n = versionOn(c.date);
++        dues.set(n, [...(dues.get(n) ?? []), claimDue(c, rateOn(rates, grade, c.date, c.id), floor, late, grade)]);
++      }
++    }
++    const lines = [['version', 'from', 'key', 'value', 'claims', 'due-total']];
++    for (const v of versions) lines.push([String(v.version), v.from, v.key, v.value, String(v.claims), sumDue(dues.get(v.version) ?? [])]);
++    downloadCsv(`policy-${sheetId}.csv`, lines);
++  };
++
++  return (
++    <p>
++      <button type="button" data-testid="export-policy" onClick={() => void download()}>
++        Export policy versions (CSV)
++      </button>
++    </p>
++  );
++}
++
+ export const contributions = [
+   SheetBody.fill({ order: 2, Component: ExportPeople }),
+   SheetBody.fill({ order: 2.1, Component: ExportClaims }),
+   SheetBody.fill({ order: 2.2, Component: ExportPools }),
+   SheetBody.fill({ order: 2.3, Component: ExportPeriods }),
+   SheetBody.fill({ order: 2.4, Component: ExportTree }),
++  SheetBody.fill({ order: 2.5, Component: ExportPolicy }),
+ ];
