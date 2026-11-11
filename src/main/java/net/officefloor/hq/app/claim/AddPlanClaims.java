@@ -53,7 +53,7 @@ public class AddPlanClaims {
                 if (done.contains(date)) continue;
                 Claim claim = new Claim(null, sheet.id(), person.getId(), plan.amount(), date, "",
                         ClaimStatus.DRAFT, null, null, null);
-                claim.fixDueBy(terms.termsFor(person, date), holidayDates);
+                claim.fixDueBy(terms.termsFor(person, sheet.today()), holidayDates);
                 try {
                     new CheckClaimPeriod().check(sheet, claim, periods);
                     new CheckClaimRetired().check(sheet, claim, people);

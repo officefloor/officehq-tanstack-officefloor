@@ -20,8 +20,8 @@ import java.util.NavigableMap;
  * its proof threshold per grade (none: the sheet's proof threshold), and its review threshold (none: none),
  * above which a claim's due, on the claim's date, sends it to REVIEW when it is opened. The value in force on a date is the one with the
  * latest from-date on or before it; before every from-date the starting value (floor 1.00, late
- * percent 0.00, terms 14; none for the others). A claim takes its floor, late percent and terms on
- * its date; the clerk limit and the cap are those in force on the sheet's today ({@code today}).
+ * percent 0.00, terms 14; none for the others). A claim takes its floor and late percent on
+ * its date, and its terms on the day it was made; the clerk limit and the cap are those in force on the sheet's today ({@code today}).
  * Not dated: its policy date (null: the sheet's today): a claim dated before it rounds half up, one
  * on or after it half to even, and its period numbering from (null: off): while the sheet's today
  * is on or after it, a claim opened is numbered within its period, and its permission matrix
@@ -185,7 +185,7 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
         return value == null || value.isEmpty() ? null : Integer.valueOf(value);
     }
 
-    /** The terms of a person's claim on a date: their own in force then, else their grade's then, else the sheet's. */
+    /** The terms of a person's claim made on a date (the sheet's today then): their own in force then, else their grade's then, else the sheet's. */
     public int termsFor(net.officefloor.hq.app.person.Person person, LocalDate date) {
         Integer own = person.termsOn(date);
         return own != null ? own : termsFor(person.gradeOn(date), date);

@@ -36,7 +36,7 @@ public class SplitClaim {
                 claim.getNote(), ClaimStatus.OPEN, null, null, user);
         made.setSplitFrom(claim.getNumber());
         made.setTags(claim.getTags());
-        made.fixDueBy(settings.termsFor(person, claim.getDate()), holidays.dates(sheet.id()));
+        made.fixDueBy(settings.termsFor(person, sheet.today()), holidays.dates(sheet.id()));
         made.setLateEntry(periods.softClosedOn(sheet.id(), made.getDueBy()) != null);
         splitOut.set(new Split(made));
     }
