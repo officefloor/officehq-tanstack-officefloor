@@ -24,7 +24,8 @@ package net.officefloor.hq.app.setting;
  * kinds, receipt or photo (blank: none), not dated, and the default grade, one of the grades (blank: A), not dated, and the score
  * thresholds, mid and high, whole numbers (blank: none), not dated, and the score log switch, on (blank: off), not dated, and
  * the clerk limit of each grade being changed, with up to two decimals (blank: none, the sheet's), dated by its key
- * (clerk-limit-A, clerk-limit-B, clerk-limit-C).
+ * (clerk-limit-A, clerk-limit-B, clerk-limit-C), and the maximum of open claims per person, a whole number (blank:
+ * none), not dated.
  */
 public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom,
         java.util.Map<String, String> gradeTerms, String cap, java.util.Map<String, String> from,
@@ -34,5 +35,5 @@ public record SettingsRequest(String clerkLimit, String floor, String terms, Str
         String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold,
         String escalateAfter, String reviewSla, String proofKinds, String defaultGrade,
         String scoreMid, String scoreHigh, String scoreLog,
-        java.util.Map<String, String> gradeClerkLimit) {
+        java.util.Map<String, String> gradeClerkLimit, String maxOpen) {
 }

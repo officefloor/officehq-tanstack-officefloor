@@ -41,7 +41,7 @@ import net.officefloor.hq.app.paste.PasteResponse;
  * newest such DRAFT is edited to the line's amount and opened; a line whose matches hold no DRAFT is
  * refused. Every line is checked first, as the claim form checks a claim (its person on the sheet, its
  * reference unused on the sheet and in the paste, its due-by outside a closed period and not after its
- * person's retirement) and as the editor checks an edit (not locked by another user, its lines' total),
+ * person's retirement) and as the editor checks an edit (not locked by another user, its lines' total), and its person under the sheet's maximum of open claims,
  * then each is opened as the open button opens it (the user's role allowed to open, a note when its due
  * needs one, its period's cap). One refusal refuses the whole paste: it is a single transaction, and
  * its audit lines are only written once every line has gone through. Each line writes CLAIM_ADDED (or
@@ -67,6 +67,8 @@ public class AddPastedClaims {
         Map<Long, List<Claim>> before = new HashMap<>();
         Set<Long> taken = new HashSet<>();
         Set<String> refs = new HashSet<>();
+        // Each person's OPEN or PENDING claims, counting the lines before that open one of theirs.
+        Map<Long, Long> held = new HashMap<>();
         int number = 0;
         for (PasteLine line : paste.lines()) {
             number++;
@@ -129,6 +131,11 @@ public class AddPastedClaims {
                 new CheckClaimRetired().check(sheet, claim, people);
                 existing.add(false);
                 edited.add(false);
+            }
+            if (terms.maxOpen() != null) {
+                long now = held.computeIfAbsent(person.getId(), id -> MaxOpen.held(sheet, id, claims));
+                if (now >= terms.maxOpen()) throw MaxOpen.refused(terms);
+                if (OpenClaim.opensTo(sheet, claim, people, rates, settings) == ClaimStatus.OPEN) held.put(person.getId(), now + 1);
             }
             persons.add(person);
             built.add(claim);

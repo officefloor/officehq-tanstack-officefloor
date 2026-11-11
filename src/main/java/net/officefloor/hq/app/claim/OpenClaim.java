@@ -12,11 +12,12 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Opens the claim, recording the signed-in user who opened it. Only a role the permission matrix allows may open. A
  * claim whose due is above the note threshold in force on its date is refused while its note is empty. A claim
- * whose due is above the review threshold in force on its date goes to REVIEW instead, still recording who opened it.
+ * whose due is above the review threshold in force on its date goes to REVIEW instead, still recording who opened it. A claim whose person already has the sheet's maximum of OPEN
+ * or PENDING claims is refused.
  */
 public class OpenClaim {
     public void apply(@Val Sheet sheet, @Val Claim claim, RoleRepository roles, SettingsRepository settings,
-            PersonRepository people, RateRepository rates, HttpServletRequest request) throws InvalidClaimStatusException {
+            PersonRepository people, RateRepository rates, ClaimRepository claims, HttpServletRequest request) throws InvalidClaimStatusException {
         String user = Audit.user(request);
         String role = roles.roleOf(sheet.id(), user);
         if (!settings.find(sheet.id()).allows("open", role)) {
@@ -26,6 +27,7 @@ public class OpenClaim {
             throw new InvalidClaimStatusException("Only a steward may open a claim of a flagged person");
         }
         if (needsNote(sheet, claim, people, rates, settings)) throw new InvalidClaimStatusException(NoteRequired.MESSAGE);
+        if (claim.getStatus() == ClaimStatus.DRAFT) MaxOpen.check(sheet, claim, settings.find(sheet.id()), claims);
         claim.moveTo(opensTo(sheet, claim, people, rates, settings));
         claim.setOpenedBy(user);
     }

@@ -25,7 +25,7 @@ import java.time.LocalDate;
  * to what, a comma separated list of kinds (null: none), and whether the default grade is changed and to
  * what, one of the grades (null: A), and whether each score threshold, mid and high, is changed and to what
  * (null: none), and whether the score log switch is changed and to what (false: off), and the grades whose clerk limit is changed, in A, B, C order, and to
- * what (null: none, the sheet's).
+ * what (null: none, the sheet's), and whether the maximum of open claims per person is changed and to what (null: none).
  */
 public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, BigDecimal floor, Integer terms, BigDecimal latePct,
         boolean policyDateChanged, LocalDate policyDate,
@@ -47,7 +47,7 @@ public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, Bi
         boolean defaultGradeChanged, String defaultGrade,
         boolean scoreMidChanged, Integer scoreMid, boolean scoreHighChanged, Integer scoreHigh,
         boolean scoreLogChanged, boolean scoreLog,
-        java.util.Map<String, BigDecimal> gradeClerkLimit) {
+        java.util.Map<String, BigDecimal> gradeClerkLimit, boolean maxOpenChanged, Integer maxOpen) {
 
     /**
      * The figure settings being changed, by key in the order they are audited, each with the value

@@ -13,7 +13,7 @@ import net.officefloor.plugin.variable.Val;
  * action's entry in the permission matrix (blank for the standing rule, never dated), then the grace
  * days (blank for off, never dated), then the entry date (blank for off, never dated), then each
  * grade's grace days (blank for none), then each grade's proof threshold (blank for none), then the pot
- * (blank for none, never dated), then the parent sheet (blank for none, never dated), then the fiscal start month (never dated), then the alert threshold (blank for off, never dated), then the rounding mode (blank for none), then the review threshold (blank for none), then the escalation gap (blank for off, never dated), then the review SLA (blank for none, never dated), then the proof kinds (blank for none, never dated), then the default grade (blank for A, never dated), then the score thresholds, mid then high (blank for none, never dated); a figure
+ * (blank for none, never dated), then the parent sheet (blank for none, never dated), then the fiscal start month (never dated), then the alert threshold (blank for off, never dated), then the rounding mode (blank for none), then the review threshold (blank for none), then the escalation gap (blank for off, never dated), then the review SLA (blank for none, never dated), then the proof kinds (blank for none, never dated), then the default grade (blank for A, never dated), then the score thresholds, mid then high (blank for none, never dated), then the maximum of open claims (blank for none, never dated); a figure
  * setting saved from a from-date given ends with it. Runs after every rule has passed, so a refused
  * change writes nothing.
  */
@@ -87,6 +87,9 @@ public class AuditSettingChanged {
         }
         if (input.scoreLogChanged()) {
             audit.record(head + " key=" + Settings.SCORE_LOG + " value=" + (input.scoreLog() ? Settings.ON : ""));
+        }
+        if (input.maxOpenChanged()) {
+            audit.record(head + " key=" + Settings.MAX_OPEN + " value=" + (input.maxOpen() == null ? "" : input.maxOpen()));
         }
         if (input.parentChanged()) {
             audit.record(head + " key=parent value=" + (input.parent() == null ? "" : input.parent()));

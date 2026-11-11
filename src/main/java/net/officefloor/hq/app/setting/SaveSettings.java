@@ -9,7 +9,7 @@ import net.officefloor.plugin.variable.Val;
  * Saves the settings being changed, leaving the others as they are: a figure setting's value is
  * recorded from its from-date (the sheet's today when none is given), keeping the values recorded
  * from other dates and replacing one recorded from the same date. An action's entry in the
- * permission matrix is not dated: it replaces the one before, nor is the parent sheet, nor the alert threshold, nor the escalation gap, nor the review SLA, nor the proof kinds, nor the default grade, nor the score thresholds, nor the score log switch.
+ * permission matrix is not dated: it replaces the one before, nor is the parent sheet, nor the alert threshold, nor the escalation gap, nor the review SLA, nor the proof kinds, nor the default grade, nor the score thresholds, nor the score log switch, nor the maximum of open claims.
  */
 public class SaveSettings {
     public void save(@Val SettingsInput input, @Val Sheet sheet, SettingsRepository repository,
@@ -20,7 +20,7 @@ public class SaveSettings {
                 || input.entryDateChanged() || input.potChanged() || input.fiscalStartMonthChanged()
                 || input.alertThresholdChanged() || input.escalateAfterChanged() || input.reviewSlaChanged()
                 || input.proofKindsChanged() || input.defaultGradeChanged() || input.scoreMidChanged()
-                || input.scoreHighChanged() || input.scoreLogChanged()) {
+                || input.scoreHighChanged() || input.scoreLogChanged() || input.maxOpenChanged()) {
             repository.saveUndated(new Settings(sheet.id(), now.today(), now.dated(),
                     input.policyDateChanged() ? input.policyDate() : now.policyDate(),
                     input.periodNumberingFromChanged() ? input.periodNumberingFrom() : now.periodNumberingFrom(), now.perms(),
@@ -35,7 +35,8 @@ public class SaveSettings {
                     input.defaultGradeChanged() ? input.defaultGrade() : now.defaultGrade(),
                     input.scoreMidChanged() ? input.scoreMid() : now.scoreMid(),
                     input.scoreHighChanged() ? input.scoreHigh() : now.scoreHigh(),
-                    input.scoreLogChanged() ? input.scoreLog() : now.scoreLog()));
+                    input.scoreLogChanged() ? input.scoreLog() : now.scoreLog(),
+                    input.maxOpenChanged() ? input.maxOpen() : now.maxOpen()));
         }
         input.perms().forEach((action, roles) -> repository.recordPerm(sheet.id(), action, roles));
         java.util.Map<String, String> values = new java.util.LinkedHashMap<>(input.datedValues());

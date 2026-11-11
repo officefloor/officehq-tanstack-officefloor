@@ -36,13 +36,15 @@ import java.util.NavigableMap;
  * comma separated list of kinds: while set, a claim that needs a proof needs at least one of each, and its
  * default grade (null: A), the grade a quick-added person and an imported line with a blank grade take, and
  * its score thresholds, mid and high (null: none): while both are set, each person shows a band by their score, and
- * its score log switch (false: off): while it is on, changing the sheet's today writes a SCORE line per person.
+ * its score log switch (false: off): while it is on, changing the sheet's today writes a SCORE line per person, and
+ * its maximum of open claims per person (null: none): opening a claim is refused while its person already has that
+ * many OPEN or PENDING claims.
  */
 public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap<LocalDate, String>> dated,
         LocalDate policyDate, LocalDate periodNumberingFrom, Map<String, String> perms, Integer graceDays,
         LocalDate entryDate, BigDecimal pot, Integer fiscalStartMonth, BigDecimal alertThreshold,
         Integer escalateAfter, Integer reviewSla, String proofKinds, String defaultGrade, Integer scoreMid,
-        Integer scoreHigh, boolean scoreLog) {
+        Integer scoreHigh, boolean scoreLog, Integer maxOpen) {
     /** The grade a new person takes when none is given: the default grade, else A. */
     public String newPersonGrade() {
         return defaultGrade == null || defaultGrade.isBlank() ? "A" : defaultGrade;
@@ -78,6 +80,7 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
     public static final String SCORE_MID = "score-mid";
     public static final String SCORE_HIGH = "score-high";
     public static final String SCORE_LOG = "score-log";
+    public static final String MAX_OPEN = "max-open";
 
     /** The value the score log switch is recorded and shown as while it is on. */
     public static final String ON = "on";

@@ -65,6 +65,8 @@ export type Settings = {
   scoreHigh: string;
   /** The score log switch, on ('' for off), not dated: while on, changing the sheet's today writes a SCORE line per person. */
   scoreLog: string;
+  /** The maximum of open claims per person, a whole number ('' for none), not dated: opening a claim is refused while its person already has that many OPEN or PENDING. */
+  maxOpen: string;
   /**
    * Every value recorded for each figure setting, by key (clerk-limit, floor, terms, late-pct,
    * terms-A, terms-B, terms-C, cap, proof-threshold, note-threshold, grace-A, grace-B, grace-C, proof-threshold-A, proof-threshold-B,

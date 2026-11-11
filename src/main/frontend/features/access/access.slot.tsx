@@ -63,6 +63,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
     scoreMid: '',
     scoreHigh: '',
     scoreLog: '',
+    maxOpen: '',
   });
   const [touched, setTouched] = useState<Set<Key>>(new Set());
   const [gradeFields, setGradeFields] = useState<Record<string, string>>({});
@@ -283,6 +284,14 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         return;
       }
       body.scoreLog = scoreLog;
+    }
+    if (touched.has('maxOpen')) {
+      const maxOpen = fields.maxOpen.trim();
+      if (maxOpen !== '' && !TERMS.test(maxOpen)) {
+        setError('A maximum of open claims is a whole number, 0 or more, or blank.');
+        return;
+      }
+      body.maxOpen = maxOpen;
     }
     if (gradesTouched.size > 0) {
       const gradeTerms: Record<string, string> = {};
@@ -850,6 +859,20 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         </label>{' '}
         <span>
           now: <strong data-testid="setting-score-log-current">{settings.data?.scoreLog ?? ''}</strong>
+        </span>{' '}
+        <label>
+          Max open claims per person{' '}
+          <input
+            data-testid="setting-max-open"
+            inputMode="numeric"
+            placeholder="none"
+            value={fields.maxOpen}
+            onFocus={() => touch('maxOpen')}
+            onChange={(e) => change('maxOpen', e.target.value)}
+          />
+        </label>{' '}
+        <span>
+          now: <strong data-testid="setting-max-open-current">{settings.data?.maxOpen ?? ''}</strong>
         </span>{' '}
         {ACTIONS.map((action) => (
           <span key={action}>

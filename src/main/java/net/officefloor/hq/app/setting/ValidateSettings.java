@@ -314,6 +314,15 @@ public class ValidateSettings {
             }
             scoreLog = true;
         }
+        boolean maxOpenChanged = request != null && request.maxOpen() != null;
+        Integer maxOpen = null;
+        if (maxOpenChanged && !request.maxOpen().trim().isEmpty()) {
+            String value = request.maxOpen().trim();
+            if (!DAYS.matcher(value).matches()) {
+                throw new InvalidSettingException("A maximum of open claims is a whole number, 0 or more, or blank");
+            }
+            maxOpen = Integer.valueOf(value);
+        }
         Map<String, LocalDate> from = new LinkedHashMap<>();
         if (request != null && request.from() != null) {
             for (Map.Entry<String, String> entry : request.from().entrySet()) {
@@ -334,7 +343,8 @@ public class ValidateSettings {
                 fiscalChanged, fiscalStartMonth, alertChanged, alertThreshold, roundingChanged, rounding,
                 reviewThresholdChanged, reviewThreshold, escalateChanged, escalateAfter, reviewSlaChanged, reviewSla,
                 proofKindsChanged, proofKinds, defaultGradeChanged, defaultGrade,
-                scoreMidChanged, scoreMid, scoreHighChanged, scoreHigh, scoreLogChanged, scoreLog, gradeClerkLimit));
+                scoreMidChanged, scoreMid, scoreHighChanged, scoreHigh, scoreLogChanged, scoreLog, gradeClerkLimit,
+                maxOpenChanged, maxOpen));
     }
 
     /** A score threshold: a whole number (null for blank). */
