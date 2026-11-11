@@ -1,0 +1,160 @@
+diff --git a/src/main/frontend/features/consolidated/consolidated.slot.tsx b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+index e30f865f8..c070f13fd 100644
+--- a/src/main/frontend/features/consolidated/consolidated.slot.tsx
++++ b/src/main/frontend/features/consolidated/consolidated.slot.tsx
+@@ -10,7 +10,8 @@ import { usePools } from '../pools/pools';
+ import { useGradeCodes } from '../grades/grades';
+ 
+ // The consolidated figures, over the sheet and all its descendants: everyone on them, counted once
+-// each (people whose names or aliases match are one), and the due-total and overdue-total of every
++// each (people whose names or aliases match are one), and the due-total, overdue-total, settled-total,
++// open-total and cut total of every
+ // person on them, with the single highest and lowest over the whole tree left out (three or more).
+ // With no children these are the header's. Per grade, the due-totals of the people
+ // on it (retired people left out), and per status the count of claims in it, added up over the tree. While the screen shows an as-of date,
+@@ -30,13 +31,16 @@ function Consolidated({ sheetId }: { sheetId: string }) {
+ 
+   const own = sheetFigures(people, claims, rates, today, floor, late, cap, pools);
+   const all = [own, ...descendants];
+-  const { people: count, dueTotal, overdueTotal } = treeTotals(all);
++  const { people: count, dueTotal, overdueTotal, settledTotal, openTotal, cutTotal } = treeTotals(all);
+ 
+   return (
+     <section data-testid="consolidated">
+       Consolidated — People: <strong data-testid="consolidated-people-count">{count}</strong>{' '}
+       Due: <strong data-testid="consolidated-due-total">{dueTotal}</strong>{' '}
+-      Overdue: <strong data-testid="consolidated-overdue-total">{overdueTotal}</strong>
++      Overdue: <strong data-testid="consolidated-overdue-total">{overdueTotal}</strong>{' '}
++      Settled: <strong data-testid="consolidated-settled-total">{settledTotal}</strong>{' '}
++      Open: <strong data-testid="consolidated-open-total">{openTotal}</strong>{' '}
++      Cut: <strong data-testid="consolidated-cut-total">{cutTotal}</strong>
+       <table>
+         <tbody>
+           {GRADES.map((g) => (
+diff --git a/src/main/frontend/features/consolidated/consolidated.ts b/src/main/frontend/features/consolidated/consolidated.ts
+index d200a14c5..1e04807f0 100644
+--- a/src/main/frontend/features/consolidated/consolidated.ts
++++ b/src/main/frontend/features/consolidated/consolidated.ts
+@@ -3,7 +3,7 @@ import { getJson } from '../../api/http';
+ import type { Claim, ClaimStatus } from '../claims/claims';
+ import { GRADES, liveHolds } from '../people/people';
+ import type { Grade, Person } from '../people/people';
+-import { heldParts, personDueTotal, sumDue, trimmedSumDue } from '../rates/rates';
++import { heldParts, personDueTotal, personSplitTotals, sumDue, trimmedSumDue } from '../rates/rates';
+ import type { Dated, Late, Rate } from '../rates/rates';
+ import { personOverdue } from '../overdue/overdue';
+ import { floorOf, lateOf } from '../access/access';
+@@ -32,6 +32,12 @@ export type Figures = {
+   dues: string[];
+   /** Each person's overdue-total, in the order of `names`. */
+   overdues: string[];
++  /** Each person's settled-total, in the order of `names`. */
++  settleds: string[];
++  /** Each person's open-total, in the order of `names`. */
++  opens: string[];
++  /** Each person's cut total, in the order of `names`. */
++  cuts: string[];
+   /** How many overdue claims count, over everyone on it (the sheet's overdue count). */
+   overdueCount: number;
+ };
+@@ -55,6 +61,7 @@ export function sheetFigures(
+   const dues = people.map(dueOf);
+   const overdueOf = people.map((p) => personOverdue(rates, p.grades, today, claimsOf(p.id), liveHolds(p, today), floor, late));
+   const overdues = overdueOf.map((o) => o.total);
++  const splits = people.map((p) => personSplitTotals(rates, p.grades, today, claimsOf(p.id), liveHolds(p, today), floor, late, heldParts(p.id, people, claims, rates, today, floor, late)));
+   return {
+     gradeDueTotals: Object.fromEntries(
+       [...new Set([...GRADES, ...people.map((p) => p.grade)])].map((g) => [
+@@ -69,16 +76,27 @@ export function sheetFigures(
+     names: people.map((p) => [p.name, ...p.aliases].map(asName)),
+     dues,
+     overdues,
++    settleds: splits.map((s) => s.settled),
++    opens: splits.map((s) => s.open),
++    cuts: people.map((p) => cutTotal(pools, p.id)),
+     overdueCount: overdueOf.reduce((n, o) => n + o.count, 0),
+   };
+ }
+ 
+ /**
+- * The figures of a whole tree from each sheet's: the due-total and overdue-total trimmed once over
++ * The figures of a whole tree from each sheet's: the due-total, overdue-total, settled-total, open-total
++ * and cut total each trimmed once over
+  * every person of the tree, and the people counted once each — people whose names or aliases match
+  * (as names are compared), on any sheet of it, are one person.
+  */
+-export function treeTotals(all: Figures[]): { people: number; dueTotal: string; overdueTotal: string } {
++export function treeTotals(all: Figures[]): {
++  people: number;
++  dueTotal: string;
++  overdueTotal: string;
++  settledTotal: string;
++  openTotal: string;
++  cutTotal: string;
++} {
+   const names = all.flatMap((f) => f.names);
+   const root = names.map((_, i) => i);
+   const find = (i: number): number => (root[i] === i ? i : (root[i] = find(root[i])));
+@@ -94,6 +112,9 @@ export function treeTotals(all: Figures[]): { people: number; dueTotal: string;
+     people: new Set(names.map((_, i) => find(i))).size,
+     dueTotal: trimmedSumDue(all.flatMap((f) => f.dues)),
+     overdueTotal: trimmedSumDue(all.flatMap((f) => f.overdues)),
++    settledTotal: trimmedSumDue(all.flatMap((f) => f.settleds)),
++    openTotal: trimmedSumDue(all.flatMap((f) => f.opens)),
++    cutTotal: trimmedSumDue(all.flatMap((f) => f.cuts)),
+   };
+ }
+ 
+diff --git a/src/main/frontend/features/pools/pools.slot.tsx b/src/main/frontend/features/pools/pools.slot.tsx
+index 42804d94b..56eb13fe3 100644
+--- a/src/main/frontend/features/pools/pools.slot.tsx
++++ b/src/main/frontend/features/pools/pools.slot.tsx
+@@ -8,7 +8,7 @@ import { PersonHead, PersonRow } from '../../slots/defs/personRow';
+ import { useUser } from '../session/session';
+ import { usePeople } from '../people/people';
+ import type { Person } from '../people/people';
+-import { sumDue } from '../rates/rates';
++import { trimmedSumDue } from '../rates/rates';
+ import { cutTotal, poolsKey, usePools } from './pools';
+ import type { Pool } from './pools';
+ 
+@@ -202,13 +202,13 @@ function PersonCutTotal({ sheetId, person }: { sheetId: string; person: Person }
+   return <td data-testid="person-cut-total">{cutTotal(pools, person.id)}</td>;
+ }
+ 
+-// The sheet's cut total: everyone's cut total added up.
++// The sheet's cut total: everyone's cut total added up, trimmed of the highest and lowest.
+ function SheetCutTotal({ sheetId }: { sheetId: string }) {
+   const people = usePeople(sheetId).data ?? [];
+   const pools = usePools(sheetId).data ?? [];
+   return (
+     <p>
+-      Cut in all: <strong data-testid="rollup-cut-total">{sumDue(people.map((p) => cutTotal(pools, p.id)))}</strong>
++      Cut in all: <strong data-testid="rollup-cut-total">{trimmedSumDue(people.map((p) => cutTotal(pools, p.id)))}</strong>
+     </p>
+   );
+ }
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index 4034b1cd3..74908448d 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -381,7 +381,7 @@ function PersonSplitTotals({ sheetId, person }: { sheetId: string; person: Perso
+   );
+ }
+ 
+-// The sheet's settled-total and open-total: everyone's figure simply added up (not trimmed).
++// The sheet's settled-total and open-total: everyone's figure added up, trimmed of the highest and lowest.
+ function SplitTotals({ sheetId }: { sheetId: string }) {
+   const people = usePeople(sheetId).data ?? [];
+   const claims = useClaims(sheetId).data ?? [];
+@@ -395,8 +395,8 @@ function SplitTotals({ sheetId }: { sheetId: string }) {
+   );
+   return (
+     <p>
+-      Settled in all: <strong data-testid="rollup-settled-total">{sumDue(splits.map((s) => s.settled))}</strong>, open in
+-      all: <strong data-testid="rollup-open-total">{sumDue(splits.map((s) => s.open))}</strong>
++      Settled in all: <strong data-testid="rollup-settled-total">{trimmedSumDue(splits.map((s) => s.settled))}</strong>, open in
++      all: <strong data-testid="rollup-open-total">{trimmedSumDue(splits.map((s) => s.open))}</strong>
+     </p>
+   );
+ }
