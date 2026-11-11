@@ -1,0 +1,184 @@
+diff --git a/src/main/frontend/features/crews/crews.slot.tsx b/src/main/frontend/features/crews/crews.slot.tsx
+index cbf846515..a4f7b9bcb 100644
+--- a/src/main/frontend/features/crews/crews.slot.tsx
++++ b/src/main/frontend/features/crews/crews.slot.tsx
+@@ -5,7 +5,7 @@ import { useOnce } from '../../query/useOnce';
+ import { postJson } from '../../api/http';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { useUser } from '../session/session';
+-import { usePeople } from '../people/people';
++import { nameWithGrade, usePeople } from '../people/people';
+ import { crewDueTotal, crewsKey, useCrews, useDueTotals } from './crews';
+ import type { Crew } from './crews';
+ import { poolsKey } from '../pools/pools';
+@@ -120,10 +120,11 @@ function CrewRow({ sheetId, crew, dues }: { sheetId: string; crew: Crew; dues: M
+   };
+ 
+   const total = crewDueTotal(crew, dues);
++  const lead = people.data?.find((p) => p.id === crew.leadId);
+ 
+   return (
+     <li data-testid={`crew-row-${crew.name}`}>
+-      <strong>{crew.name}</strong> — lead <span data-testid="crew-lead">{crew.lead}</span>, due{' '}
++      <strong>{crew.name}</strong> — lead <span data-testid="crew-lead">{lead ? nameWithGrade(lead) : crew.lead}</span>, due{' '}
+       <span data-testid="crew-due-total">{total}</span>
+       <ul>
+         {crew.members.map((m) => (
+diff --git a/src/main/frontend/features/paste/paste.slot.tsx b/src/main/frontend/features/paste/paste.slot.tsx
+index 16c0e0db1..0a71fd957 100644
+--- a/src/main/frontend/features/paste/paste.slot.tsx
++++ b/src/main/frontend/features/paste/paste.slot.tsx
+@@ -1,12 +1,12 @@
+ import { useState } from 'react';
+ import type { FormEvent } from 'react';
+-import { useIsFetching, useMutation, useQueryClient } from '@tanstack/react-query';
++import { notifyManager, useMutation, useQueryClient } from '@tanstack/react-query';
+ import { useOnce } from '../../query/useOnce';
+ import { postJson } from '../../api/http';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { useUser } from '../session/session';
+-import { peopleKey } from '../people/people';
+-import { claimsKey } from '../claims/claims';
++import { peopleKey, peopleQuery } from '../people/people';
++import { claimsKey, claimsQuery } from '../claims/claims';
+ 
+ type Result = { added: number };
+ 
+@@ -22,8 +22,6 @@ function PasteClaims({ sheetId }: { sheetId: string }) {
+   const [result, setResult] = useState<Result | null>(null);
+   const [error, setError] = useState('');
+   const [user] = useUser();
+-  const rereading =
+-    useIsFetching({ queryKey: peopleKey(sheetId) }) + useIsFetching({ queryKey: claimsKey(sheetId) }) > 0;
+ 
+   const once = useOnce();
+   const paste = useMutation({
+@@ -37,16 +35,24 @@ function PasteClaims({ sheetId }: { sheetId: string }) {
+       return postJson<Result>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/paste`, body, user);
+     },
+     // The count shows once the lists are re-read, so the pasted claims are listed when it appears:
+-    // it is kept at once, while the re-read is under way, and held back until that is done, so the
+-    // rows and the count show in the same render.
++    // the people and the claims are read again together and stored, with the count, in one batch,
++    // so the rows and the count show in the same render. What else hangs off the people and the
++    // claims is re-read after.
+     onSuccess: async (r) => {
+       setText('');
+-      const reread = Promise.all([
+-        queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+-        queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
++      const [people, claims] = await Promise.all([
++        peopleQuery(sheetId).queryFn(),
++        claimsQuery(sheetId).queryFn(),
++      ]);
++      notifyManager.batch(() => {
++        queryClient.setQueryData(peopleKey(sheetId), people);
++        queryClient.setQueryData(claimsKey(sheetId), claims);
++        notifyManager.schedule(() => setResult(r));
++      });
++      await Promise.all([
++        queryClient.invalidateQueries({ queryKey: peopleKey(sheetId), predicate: (q) => q.queryKey.length > 3 }),
++        queryClient.invalidateQueries({ queryKey: claimsKey(sheetId), predicate: (q) => q.queryKey.length > 3 }),
+       ]);
+-      setResult(r);
+-      await reread;
+     },
+     onError: () => setError('Those claims could not be added and opened: check every line.'),
+   });
+@@ -80,7 +86,7 @@ function PasteClaims({ sheetId }: { sheetId: string }) {
+         <button type="submit" data-testid="paste-submit" disabled={paste.isPending}>
+           Add and open pasted claims
+         </button>
+-        {result !== null && !rereading && (
++        {result !== null && (
+           <>
+             {' '}Went through <span data-testid="paste-added">{result.added}</span>
+           </>
+diff --git a/src/main/frontend/features/patrons/patrons.slot.tsx b/src/main/frontend/features/patrons/patrons.slot.tsx
+index dea90edcf..b0061c33f 100644
+--- a/src/main/frontend/features/patrons/patrons.slot.tsx
++++ b/src/main/frontend/features/patrons/patrons.slot.tsx
+@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { useOnce } from '../../query/useOnce';
+ import { postJson } from '../../api/http';
+ import { PersonHead, PersonRow } from '../../slots/defs/personRow';
+-import { gradeOn, usePeople, peopleKey } from '../people/people';
++import { gradeOn, nameWithGrade, usePeople, peopleKey } from '../people/people';
+ import type { Person } from '../people/people';
+ import { useClaims } from '../claims/claims';
+ import { addDays, claimDue, rateOn, shareOf, sumDue, useRates } from '../rates/rates';
+@@ -46,7 +46,7 @@ function PersonPatrons({ sheetId, person }: { sheetId: string; person: Person })
+   const names = patrons
+     .slice()
+     .sort((a, b) => a.person.name.localeCompare(b.person.name))
+-    .map(({ person: p, share }) => `${p.name} ${share}`)
++    .map(({ person: p, share }) => `${nameWithGrade(p)} ${share}`)
+     .join(', ');
+   const since = today === '' ? '' : addDays(today, -89);
+   const backing = sumDue(
+diff --git a/src/main/frontend/features/people/people.slot.tsx b/src/main/frontend/features/people/people.slot.tsx
+index 4e86724ce..54fe76085 100644
+--- a/src/main/frontend/features/people/people.slot.tsx
++++ b/src/main/frontend/features/people/people.slot.tsx
+@@ -6,7 +6,7 @@ import { HttpError, postJson, putJson } from '../../api/http';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { PersonHead, PersonRow } from '../../slots/defs/personRow';
+ import { useUser } from '../session/session';
+-import { GRADES, peopleKey, peopleQuery, usePeople, useShowRetired } from './people';
++import { GRADES, nameWithGrade, peopleKey, peopleQuery, usePeople, useShowRetired } from './people';
+ import type { Grade, Person } from './people';
+ import { SORT_KEYS, useSorted, useSortBy } from './sort';
+ import type { SortKey } from './sort';
+@@ -231,7 +231,7 @@ function People({ sheetId }: { sheetId: string }) {
+         <tbody>
+           {shown.map((p) => (
+             <tr key={p.id} data-testid={`person-row-${p.id}`}>
+-              <td data-testid="person-name">{p.name}</td>
++              <td data-testid="person-name">{nameWithGrade(p)}</td>
+               <td data-testid="person-grade">{p.grade}</td>
+               <Col name="terms"><td data-testid="person-terms">{p.terms}</td></Col>
+               <Col name="contact"><td data-testid="person-contact">{p.contact}</td></Col>
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index 7717ba5e8..5c3df4f1b 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -15,6 +15,9 @@ export function gradeOn(grades: GradeFrom[], date: string): Grade {
+   return best.grade;
+ }
+ 
++/** How the screen shows a person: their name and, in brackets, their grade in force on the sheet's today. */
++export const nameWithGrade = (p: Pick<Person, 'name' | 'grade'>) => `${p.name} (${p.grade})`;
++
+ // `version` is raised by each save; an edit sends the version it was made from. `statementCount`
+ // is how many statements have been taken for them; `statedTotal` and `statementDate` are the last
+ // one's due-total and date ('' before the first). `retired` is set once they have a retirement
+diff --git a/src/main/frontend/features/treesearch/treeSearch.ts b/src/main/frontend/features/treesearch/treeSearch.ts
+index 5c0ee2eaf..d49d166cc 100644
+--- a/src/main/frontend/features/treesearch/treeSearch.ts
++++ b/src/main/frontend/features/treesearch/treeSearch.ts
+@@ -1,6 +1,6 @@
+ import { getJsonNow } from '../../api/http';
+ import type { Claim } from '../claims/claims';
+-import { liveHolds } from '../people/people';
++import { liveHolds, nameWithGrade } from '../people/people';
+ import type { Person } from '../people/people';
+ import { personDueTotal } from '../rates/rates';
+ import type { Rate } from '../rates/rates';
+@@ -8,7 +8,7 @@ import { floorOf, lateOf } from '../access/access';
+ import type { Settings } from '../access/access';
+ import type { Sheet } from '../sheet/sheet';
+ 
+-/** One person found: their sheet, their name and their due-total as their sheet's list shows it. */
++/** One person found: their sheet, their name with their grade and their due-total as their sheet's list shows it. */
+ export type Found = { sheetId: string; name: string; dueTotal: string };
+ 
+ const enc = encodeURIComponent;
+@@ -36,7 +36,7 @@ async function searchSheet(sheetId: string, text: string): Promise<Found[]> {
+     .filter((p) => matches(p, text))
+     .map((p) => ({
+       sheetId,
+-      name: p.name,
++      name: nameWithGrade(p),
+       dueTotal: personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap),
+     }));
+ }
