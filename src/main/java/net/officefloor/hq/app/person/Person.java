@@ -24,6 +24,7 @@ public class Person {
     private String originSheet;
     private String flagReason;
     private LocalDate flagUntil;
+    private String approver;
     private final List<Hold> holds = new ArrayList<>();
     private final List<Long> patronIds = new ArrayList<>();
     private final List<String> aliases = new ArrayList<>();
@@ -113,6 +114,11 @@ public class Person {
         this.flagReason = reason;
         this.flagUntil = until;
     }
+    /** The user who may approve or reject their PENDING claims as a steward may; null when none. */
+    public String getApprover() { return approver; }
+    public void setApprover(String approver) { this.approver = approver; }
+    /** Whether {@code user} is their approver. */
+    public boolean approvedBy(String user) { return approver != null && !approver.isEmpty() && approver.equals(user); }
     /** Whether their flag is in force on {@code today}: only a steward may open a claim of theirs. */
     public boolean flaggedOn(LocalDate today) {
         return flagReason != null && flagUntil != null && today != null && !today.isAfter(flagUntil);

@@ -15,7 +15,7 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Approves a PENDING claim: it is settled, its due fixed at this moment at its rate figure (the
  * figure a statement bound it to, else its live figure) with the late charge it has gained by the sheet's today.
- * Only a steward may approve it, and not the user who opened it or last edited it; and not while it has no proofs
+ * Only a steward or the person's approver may approve it, and not the user who opened it or last edited it; and not while it has no proofs
  * when its due is above the proof threshold in force on its date.
  */
 public class ApproveClaim {
@@ -26,8 +26,9 @@ public class ApproveClaim {
             throw new InvalidClaimStatusException(claim.getStatus(), ClaimStatus.SETTLED);
         }
         String user = Audit.user(request);
-        if (!Role.STEWARD.equals(roles.roleOf(sheet.id(), user))) {
-            throw new ApprovalException("Only a steward may approve a claim: " + user + " is a clerk");
+        Person person = people.find(sheet.id(), claim.getPersonId());
+        if (!Role.STEWARD.equals(roles.roleOf(sheet.id(), user)) && !person.approvedBy(user)) {
+            throw new ApprovalException("Only a steward or the person's approver may approve a claim: " + user + " is neither");
         }
         if (user.equals(claim.getOpenedBy())) {
             throw new ApprovalException("A claim cannot be approved by " + user + ", who opened it");
@@ -35,7 +36,6 @@ public class ApproveClaim {
         if (claim.isOwnedBy(user)) {
             throw new ApprovalException("A claim cannot be approved by " + user + ", who last edited it");
         }
-        Person person = people.find(sheet.id(), claim.getPersonId());
         Settings sheetSettings = settings.find(sheet.id());
         // Read while the claim is still PENDING: its rate figure and its late charge.
         java.math.BigDecimal due = ClaimFigure.withLate(claim, rates.findAll(sheet.id()), person.gradeOn(claim.getDate()),

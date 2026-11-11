@@ -39,7 +39,8 @@ export const nameWithGrade = (p: Pick<Person, 'name' | 'grade'>) => `${p.name} (
 // statements still standing (a cancelled one is gone), oldest first by date, each as
 // '<statement date> <due-total>' — those a merge or a transfer brought over among them.
 // `flag` is the reason a steward flagged them with while the flag is in force on the sheet's today
-// ('' otherwise): while it is, only a steward may open a claim of theirs.
+// ('' otherwise): while it is, only a steward may open a claim of theirs. `approver` is the user who
+// may approve or reject their PENDING claims as a steward may ('' for none).
 export type Person = {
   id: string;
   name: string;
@@ -65,6 +66,7 @@ export type Person = {
   snapshots: string[];
   statementLines: string[];
   flag: string;
+  approver: string;
 };
 
 /**
