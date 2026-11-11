@@ -93,4 +93,9 @@ public record PoolResponse(String name, List<PoolMemberResponse> members, String
         if (to >= 0 && shares.signum() > 0) cuts.set(to, cuts.get(to).add(pot.subtract(sum)));
         return cuts;
     }
+
+    /** This pool, with these members shown. */
+    PoolResponse withMembers(List<PoolMemberResponse> members) {
+        return new PoolResponse(name, members, totalShare, balanced, added, crew);
+    }
 }

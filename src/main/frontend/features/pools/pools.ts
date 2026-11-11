@@ -20,6 +20,9 @@ export type PoolMember = {
   /** Whether the dates include the sheet's today: a member not active is left out of the total, the balance and
    *  the cuts (its cut is ''). */
   active: boolean;
+  /** For each period whose to-date is on or before the sheet's today, by from-date: the member's cut as it stood at
+   *  the end of that period (the pools, members, pot and holds as of that day), '' when there was none. */
+  periodCuts: { period: string; cut: string }[];
 };
 
 /** A pool on the sheet: its members in the order added, their total share, and balanced when it is exactly 100.00.

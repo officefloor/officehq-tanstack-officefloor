@@ -116,6 +116,12 @@ function PoolRow({ sheetId, pool }: { sheetId: string; pool: Pool }) {
             {m.name}
             {m.retired ? ' (retired)' : ''}: <span data-testid="pool-share">{m.share}</span>%, cut{' '}
             <span data-testid="pool-cut">{m.cut}</span>
+            {m.periodCuts.map((c) => (
+              <span key={c.period}>
+                , {c.period}{' '}
+                <span data-testid={`pool-cut-${c.period}`}>{c.cut}</span>
+              </span>
+            ))}
             {m.from || m.to ? ` (${m.from || 'open'} to ${m.to || 'open'}${m.active ? '' : ', not active'})` : ''}
           </li>
         ))}
