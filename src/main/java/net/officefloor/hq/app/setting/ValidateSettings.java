@@ -244,6 +244,15 @@ public class ValidateSettings {
             }
             alertThreshold = new BigDecimal(value).setScale(2);
         }
+        boolean escalateChanged = request != null && request.escalateAfter() != null;
+        Integer escalateAfter = null;
+        if (escalateChanged && !request.escalateAfter().trim().isEmpty()) {
+            String value = request.escalateAfter().trim();
+            if (!DAYS.matcher(value).matches()) {
+                throw new InvalidSettingException("An escalation gap is a whole number of days, 0 or more, or blank");
+            }
+            escalateAfter = Integer.valueOf(value);
+        }
         Map<String, LocalDate> from = new LinkedHashMap<>();
         if (request != null && request.from() != null) {
             for (Map.Entry<String, String> entry : request.from().entrySet()) {
@@ -262,6 +271,6 @@ public class ValidateSettings {
                 thresholdChanged, threshold, perms, graceChanged, graceDays, noteThresholdChanged, noteThreshold,
                 entryChanged, entryDate, gradeGrace, gradeProofThreshold, potChanged, pot, parentChanged, parent,
                 fiscalChanged, fiscalStartMonth, alertChanged, alertThreshold, roundingChanged, rounding,
-                reviewThresholdChanged, reviewThreshold));
+                reviewThresholdChanged, reviewThreshold, escalateChanged, escalateAfter));
     }
 }

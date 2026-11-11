@@ -49,6 +49,8 @@ export type Settings = {
   rounding: string;
   /** The due above which a claim, on its date, goes to REVIEW instead of OPEN when it is opened ('' for none), dated. */
   reviewThreshold: string;
+  /** The escalation gap in days ('' for off), not dated: a reminder at least that many days after the claim's previous one escalates it, once. */
+  escalateAfter: string;
   /**
    * Every value recorded for each figure setting, by key (clerk-limit, floor, terms, late-pct,
    * terms-A, terms-B, terms-C, cap, proof-threshold, note-threshold, grace-A, grace-B, grace-C, proof-threshold-A, proof-threshold-B,

@@ -30,7 +30,8 @@ type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms' | 'gradeGrace' | 'grad
 // (1 to 12), not dated, and its alert threshold (blank: off), not dated, above which a person's due-total
 // is alerted, and its rounding mode (half-up or half-even; blank: none, by the policy date), dated, by which
 // a claim dated then rounds, and its review threshold (blank: none), dated, above which a claim's due on its
-// date sends it to REVIEW instead of OPEN when it is opened. Only the settings typed in (or stepped into)
+// date sends it to REVIEW instead of OPEN when it is opened, and its escalation gap in days (blank: off),
+// not dated, at least which after a claim's previous reminder a reminder escalates it, once. Only the settings typed in (or stepped into)
 // since the last save are sent, so saving one leaves the other as it is.
 function SettingsForm({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
@@ -53,6 +54,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
     alertThreshold: '',
     rounding: '',
     reviewThreshold: '',
+    escalateAfter: '',
   });
   const [touched, setTouched] = useState<Set<Key>>(new Set());
   const [gradeFields, setGradeFields] = useState<Record<string, string>>({});
@@ -220,6 +222,14 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         return;
       }
       body.reviewThreshold = threshold;
+    }
+    if (touched.has('escalateAfter')) {
+      const escalateAfter = fields.escalateAfter.trim();
+      if (escalateAfter !== '' && !TERMS.test(escalateAfter)) {
+        setError('An escalation gap is a whole number of days, 0 or more, or blank.');
+        return;
+      }
+      body.escalateAfter = escalateAfter;
     }
     if (gradesTouched.size > 0) {
       const gradeTerms: Record<string, string> = {};
@@ -649,6 +659,20 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         {fromInput('review-threshold')}{' '}
         <span>
           now: <strong data-testid="setting-review-threshold-current">{settings.data?.reviewThreshold ?? ''}</strong>
+        </span>{' '}
+        <label>
+          Escalate after days{' '}
+          <input
+            data-testid="setting-escalate-after"
+            inputMode="numeric"
+            placeholder="off"
+            value={fields.escalateAfter}
+            onFocus={() => touch('escalateAfter')}
+            onChange={(e) => change('escalateAfter', e.target.value)}
+          />
+        </label>{' '}
+        <span>
+          now: <strong data-testid="setting-escalate-after-current">{settings.data?.escalateAfter ?? ''}</strong>
         </span>{' '}
         {ACTIONS.map((action) => (
           <span key={action}>

@@ -20,7 +20,7 @@ import java.time.LocalDate;
  * and to what id (null: none), and whether the fiscal year start month is changed and to what, and whether the alert threshold is
  * changed and to what (null: off), and whether the rounding mode is changed and to what, half-up or
  * half-even (null: none), dated by its key (rounding), and whether the review threshold is changed and to
- * what (null: none).
+ * what (null: none), and whether the escalation gap is changed and to what, in days (null: off).
  */
 public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, BigDecimal floor, Integer terms, BigDecimal latePct,
         boolean policyDateChanged, LocalDate policyDate,
@@ -35,7 +35,8 @@ public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, Bi
         boolean fiscalStartMonthChanged, Integer fiscalStartMonth,
         boolean alertThresholdChanged, BigDecimal alertThreshold,
         boolean roundingChanged, String rounding,
-        boolean reviewThresholdChanged, BigDecimal reviewThreshold) {
+        boolean reviewThresholdChanged, BigDecimal reviewThreshold,
+        boolean escalateAfterChanged, Integer escalateAfter) {
 
     /**
      * The figure settings being changed, by key in the order they are audited, each with the value

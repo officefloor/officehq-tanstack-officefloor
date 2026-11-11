@@ -30,11 +30,13 @@ import java.util.NavigableMap;
  * and its grace days (null: off): when the sheet's today is changed, every open period whose to-date
  * plus the grace days is before the new today is closed, and its entry date (null: off): while it is
  * set, the date of a new claim left undated instead of the sheet's today, and its pot (null: none),
- * shared out as cuts among a balanced pool's members, and its fiscal year start month (null: 1), and its alert threshold (null: off).
+ * shared out as cuts among a balanced pool's members, and its fiscal year start month (null: 1), and its alert threshold (null: off),
+ * and its escalation gap in days (null: off).
  */
 public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap<LocalDate, String>> dated,
         LocalDate policyDate, LocalDate periodNumberingFrom, Map<String, String> perms, Integer graceDays,
-        LocalDate entryDate, BigDecimal pot, Integer fiscalStartMonth, BigDecimal alertThreshold) {
+        LocalDate entryDate, BigDecimal pot, Integer fiscalStartMonth, BigDecimal alertThreshold,
+        Integer escalateAfter) {
     /** The month, 1 to 12, a fiscal year starts in. */
     public int fiscalStart() {
         return fiscalStartMonth == null ? 1 : fiscalStartMonth;
@@ -56,6 +58,7 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
     public static final String PROOF_THRESHOLD = "proof-threshold";
     public static final String NOTE_THRESHOLD = "note-threshold";
     public static final String ALERT_THRESHOLD = "alert-threshold";
+    public static final String ESCALATE_AFTER = "escalate-after";
     public static final String ROUNDING = "rounding";
     public static final String REVIEW_THRESHOLD = "review-threshold";
 

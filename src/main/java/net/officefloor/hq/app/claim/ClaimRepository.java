@@ -261,6 +261,12 @@ public class ClaimRepository {
         return reminded;
     }
 
+    /** Escalate the claim: only once ever, so of two escalations at once only one is written. */
+    public boolean escalate(Claim claim) {
+        return jdbc.update("UPDATE claim SET escalated = TRUE WHERE id = ? AND sheet_id = ? AND NOT escalated",
+                claim.getId(), claim.getSheetId()) == 1;
+    }
+
     /** Whether another claim on the sheet than {@code exceptId} (null: any) has this reference, regardless of case. */
     public boolean refTaken(String sheetId, String ref, Long exceptId) {
         Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND UPPER(ext_ref) = UPPER(?)"
