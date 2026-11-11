@@ -8,12 +8,14 @@ import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimFigure;
 import net.officefloor.hq.app.claim.ClaimLogRepository;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.claim.ClaimShare;
 import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.pool.CutTotals;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.hq.app.setting.SettingsRepository;
 import net.officefloor.hq.app.sheet.Sheet;
@@ -24,7 +26,7 @@ import net.officefloor.plugin.variable.Val;
  * Takes the person's statement: their due-total now (the figures of their claims that count, added
  * up, skipping n/a; n/a when their grade in force today has no rate today and no claim that counts keeps a fixed
  * figure, has one under another grade in force on its date, or has one dated on or before today (under a
- * rate that has since ended); held to the sheet's cap; each claim at its date's grade's rate; an overdue claim's late charge on top), as the screen shows it. Every claim of theirs that counts is bound to its rate figure now
+ * rate that has since ended); held to the sheet's cap; each claim at its date's grade's rate; an overdue claim's late charge on top; a shared claim less its holders' parts, and the person's parts of claims shared with them added), as the screen shows it. Every claim of theirs that counts is bound to its rate figure now
  * (a live one floored) and the late charge on it as shown now (a figure and charge an earlier
  * statement bound stay as they are);
  * every other claim of theirs is left unbound (live). The person's statement count goes up by one,
@@ -56,6 +58,16 @@ public class TakeStatement {
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         boolean fixed = false;
         int counted = 0;
+        // Taken now, a shared claim counts less its holders' parts, and the parts of others' claims shared with them count.
+        Map<Long, List<ClaimShare>> shares = asOf == null ? claims.shares(sheet.id()) : Map.of();
+        if (asOf == null) {
+            BigDecimal held = Rollup.heldParts(people.findAll(sheet.id()), claims.findAll(sheet.id()), shares, all,
+                    sheetSettings, today).get(person.getId());
+            if (held != null) {
+                total = total.add(held);
+                fixed = true;
+            }
+        }
         for (Claim live : claims.findByPerson(sheet.id(), person.getId())) {
             Claim claim = live;
             if (asOf != null) {
@@ -79,7 +91,7 @@ public class TakeStatement {
                 if (figure != null && !claim.getDate().isAfter(today)) fixed = true;
                 // The due-total carries the late charge; the claim is bound to the floored rate figure under it.
                 BigDecimal due = ClaimFigure.withLate(claim, all, grade, sheetSettings, today);
-                if (due != null) total = total.add(due);
+                if (due != null) total = total.add(Rollup.ownPart(due, shares.get(claim.getId())));
                 // Bound with the late charge on it as shown (a bound one stays as it is).
                 BigDecimal late = figure == null || claim.getSettledDue() != null ? null
                         : ClaimFigure.late(claim, figure, grade, sheetSettings, today);

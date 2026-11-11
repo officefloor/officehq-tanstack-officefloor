@@ -119,7 +119,7 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
      * the claim's figure times their share divided by 100, rounded half to even, added up. A holder of
      * no part of a figure is absent.
      */
-    private static Map<Long, BigDecimal> heldParts(List<Person> everyone, List<Claim> sheetClaims,
+    public static Map<Long, BigDecimal> heldParts(List<Person> everyone, List<Claim> sheetClaims,
             Map<Long, List<ClaimShare>> shares, List<Rate> all, Settings settings, LocalDate today) {
         Map<Long, BigDecimal> held = new HashMap<>();
         for (Person owner : everyone) {
@@ -136,7 +136,7 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
     }
 
     /** A claim's figure less its holders' parts (the whole figure when it has no shares). */
-    private static BigDecimal ownPart(BigDecimal figure, List<ClaimShare> shares) {
+    public static BigDecimal ownPart(BigDecimal figure, List<ClaimShare> shares) {
         if (shares == null) return figure;
         BigDecimal own = figure;
         for (ClaimShare share : shares) own = own.subtract(share.partOf(figure));

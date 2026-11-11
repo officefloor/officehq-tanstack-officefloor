@@ -23,6 +23,16 @@ function refuseWhileAsOf(method: string, path: string): void {
   }
 }
 
+// The preview date the screen reads the sheet at ('' for none): the `preview` search param. While it
+// is set (and no as-of date is) every read names it, so the server answers with the sheet's current
+// records as if its today were that date; changes never carry it and use the sheet's real today.
+export const PREVIEW_PARAM = 'preview';
+
+export function previewDate(): string {
+  if (asOf() !== '') return '';
+  return new URLSearchParams(window.location.search).get(PREVIEW_PARAM) ?? '';
+}
+
 async function send<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init);
   if (!res.ok) {
@@ -37,7 +47,15 @@ export function getJson<T>(path: string, user?: string): Promise<T> {
   if (user !== undefined) headers['X-User'] = encodeURIComponent(user);
   const date = asOf();
   if (date !== '') headers['X-As-Of'] = date;
+  const preview = previewDate();
+  if (preview !== '') headers['X-Preview'] = preview;
   return send<T>(path, { headers });
+}
+
+// A read at the sheet's real today, whatever preview date the screen shows (an as-of date still applies).
+export function getJsonUnpreviewed<T>(path: string): Promise<T> {
+  const date = asOf();
+  return send<T>(path, date !== '' ? { headers: { 'X-As-Of': date } } : undefined);
 }
 
 // A read of the sheet as it is now, whatever as-of date the screen shows.
