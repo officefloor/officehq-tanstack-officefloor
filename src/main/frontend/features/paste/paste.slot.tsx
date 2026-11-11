@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useIsFetching, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOnce } from '../../query/useOnce';
 import { postJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
@@ -22,19 +22,24 @@ function PasteClaims({ sheetId }: { sheetId: string }) {
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState('');
   const [user] = useUser();
+  const rereading =
+    useIsFetching({ queryKey: peopleKey(sheetId) }) + useIsFetching({ queryKey: claimsKey(sheetId) }) > 0;
 
   const once = useOnce();
   const paste = useMutation({
     mutationFn: (body: { text: string }) =>
       postJson<Result>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/paste`, body, user),
-    // The count shows once the lists are re-read, so the pasted claims are listed when it appears.
+    // The count shows once the lists are re-read, so the pasted claims are listed when it appears:
+    // it is kept at once, while the re-read is under way, and held back until that is done, so the
+    // rows and the count show in the same render.
     onSuccess: async (r) => {
       setText('');
-      await Promise.all([
+      const reread = Promise.all([
         queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
         queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
       ]);
       setResult(r);
+      await reread;
     },
     onError: () => setError('Those claims could not be added and opened: check every line.'),
   });
@@ -68,7 +73,7 @@ function PasteClaims({ sheetId }: { sheetId: string }) {
         <button type="submit" data-testid="paste-submit" disabled={paste.isPending}>
           Add and open pasted claims
         </button>
-        {result !== null && (
+        {result !== null && !rereading && (
           <>
             {' '}Went through <span data-testid="paste-added">{result.added}</span>
           </>

@@ -8,7 +8,7 @@ import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Val;
 
 /**
- * Rejects a PENDING claim: it is OPEN again, bound again by its person's last statement when that
+ * Rejects a PENDING claim: it is OPEN again, still bound by its person's last statement when that
  * statement included it. Only a steward may reject it.
  */
 public class RejectClaim {

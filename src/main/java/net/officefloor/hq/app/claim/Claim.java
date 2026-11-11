@@ -216,14 +216,14 @@ public class Claim {
     public BigDecimal getStatedDue() { return statedDue; }
     /**
      * The figure a statement binds it to now: its stated figure (null for n/a), but null when it
-     * is not stated or is PENDING (a PENDING claim shows its live figure; a rejection binds it again).
+     * is not stated.
      */
     public BigDecimal boundDue() {
         return isBound() ? statedDue : null;
     }
-    /** Whether its stated figure is in force: it is stated and not PENDING. */
+    /** Whether its stated figure is in force: it is stated (whether OPEN or PENDING). */
     public boolean isBound() {
-        return stated && status != ClaimStatus.PENDING;
+        return stated;
     }
     /** Bind it to a figure (null: n/a), or leave it unbound (live) when {@code stated} is false. */
     public void bind(boolean stated, BigDecimal statedDue) {
@@ -290,7 +290,7 @@ public class Claim {
         status = ClaimStatus.SETTLED;
         settledDue = due;
     }
-    /** A steward's rejection of a PENDING claim: it is OPEN again, bound again by its statement. */
+    /** A steward's rejection of a PENDING claim: it is OPEN again, still bound by its statement. */
     public void reject() throws InvalidClaimStatusException {
         if (status != ClaimStatus.PENDING) throw new InvalidClaimStatusException(status, ClaimStatus.OPEN);
         status = ClaimStatus.OPEN;

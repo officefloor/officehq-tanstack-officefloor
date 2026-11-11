@@ -89,10 +89,10 @@ export function isReviewLate(c: Claim, today: string, reviewSla: string): boolea
 }
 
 /**
- * Whether a claim's stated figure is in force: its person's last statement bound it and it is not
- * PENDING (a PENDING claim shows its live figure).
+ * Whether a claim's stated figure is in force: its person's last statement bound it (OPEN or
+ * PENDING alike).
  */
-export const isBound = (c: Claim) => c.stated && c.status !== 'PENDING';
+export const isBound = (c: Claim) => c.stated;
 
 /**
  * Whether a claim is deferred on the sheet's `today`: OPEN and deferred until a date after today.

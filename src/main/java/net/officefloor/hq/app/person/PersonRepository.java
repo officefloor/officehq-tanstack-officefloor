@@ -575,6 +575,19 @@ public class PersonRepository {
                     then.setStatements(rs.getInt("statement_count"), rs.getString("stated_total"),
                             rs.getObject("statement_date", LocalDate.class));
                 }, person.getSheetId(), person.getId(), on);
+        // Each statement as it stood then (the last kept for its number), up to the count then.
+        Map<Integer, Object[]> stated = new HashMap<>();
+        jdbc.query("SELECT statement_count, stated_total, statement_date FROM person_statement_history"
+                + " WHERE sheet_id = ? AND person_id = ? AND set_on <= ? AND statement_count > 0 ORDER BY id", (rs) -> {
+                    stated.put(rs.getInt("statement_count"), new Object[] {
+                            rs.getObject("statement_date", LocalDate.class), rs.getString("stated_total") });
+                }, person.getSheetId(), person.getId(), on);
+        stated.entrySet().stream()
+                .filter((e) -> e.getKey() <= then.getStatementCount())
+                .sorted(java.util.Comparator.comparing((Map.Entry<Integer, Object[]> e) -> (LocalDate) e.getValue()[0],
+                        java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder()))
+                        .thenComparing(Map.Entry::getKey))
+                .forEach((e) -> then.getStatementLines().add(e.getValue()[0] + " " + e.getValue()[1]));
         dated.forEach((from, grade) -> then.setGradeFrom(grade, from));
         jdbc.query("SELECT from_date, to_date FROM person_hold WHERE sheet_id = ? AND person_id = ?"
                 + " AND (made_on IS NULL OR made_on <= ?) ORDER BY id", (rs) -> {

@@ -239,7 +239,7 @@ export function trimmedSumDue(values: string[]): string {
 /**
  * A claim's due: the one fixed when it was settled (its late charge frozen in), else its live due:
  * the greater of the sheet's `floor` in force on its date and its figure (the one its person's last
- * statement bound it to, never while it is PENDING, else its amount at the rate in force on its date)
+ * statement bound it to (OPEN or PENDING alike), else its amount at the rate in force on its date)
  * plus the late charge an overdue claim gains on that figure (by the grace of its `grade`, the one in
  * force on its date). A correction takes no floor; n/a stays n/a.
  */

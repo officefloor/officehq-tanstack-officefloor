@@ -10,7 +10,7 @@ import net.officefloor.hq.app.setting.Settings;
 
 /**
  * A claim's figures, as the screen shows them. Its rate figure: the figure its person's last
- * statement bound it to (never while it is PENDING), else its amount times its grade's rate in
+ * statement bound it to (OPEN or PENDING alike), else its amount times its grade's rate in
  * force on its date (of the rates that apply to it: a forward-only rate only to claims added after it
  * was saved), divided by 100 and rounded to two decimals. Its live due: the greater of the
  * sheet's floor in force on its date and its rate figure plus its late charge (worked out on the
