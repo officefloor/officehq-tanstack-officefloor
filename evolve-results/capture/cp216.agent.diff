@@ -1,0 +1,286 @@
+diff --git a/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java b/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java
+index f62228edb..a0477ee64 100644
+--- a/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java
++++ b/src/main/java/net/officefloor/hq/app/period/AutoClosePeriods.java
+@@ -8,6 +8,7 @@ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.claim.ClaimLogRepository;
+ import net.officefloor.hq.app.claim.ClaimRepository;
+ import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.pool.FrozenCuts;
+ import net.officefloor.hq.app.rate.RateRepository;
+ import net.officefloor.hq.app.setting.Settings;
+ import net.officefloor.hq.app.setting.SettingsRepository;
+@@ -22,14 +23,14 @@ import net.officefloor.plugin.variable.Val;
+ public class AutoClosePeriods {
+     public void close(@Val Sheet sheet, @Val LocalDate today, PeriodRepository periods, PersonRepository people,
+             ClaimRepository claims, ClaimLogRepository log, RateRepository rates, SettingsRepository settings,
+-            HttpServletRequest request, Audit audit) {
++            FrozenCuts frozen, HttpServletRequest request, Audit audit) {
+         Settings sheetSettings = settings.find(sheet.id());
+         Sheet now = new Sheet(sheet.id(), today, sheet.archived());
+         List<Period> due = periods.findAll(sheet.id()).stream()
+                 .filter((p) -> !p.closed() && sheetSettings.pastGrace(p.to(), today))
+                 .sorted(Comparator.comparing(Period::to)).toList();
+         for (Period period : due) {
+-            Period closed = ClosePeriod.fix(now, period, false, periods, people, claims, log, rates, settings);
++            Period closed = ClosePeriod.fix(now, period, false, periods, people, claims, log, rates, settings, frozen);
+             if (closed == null) continue; // another request closed it first
+             audit.record("PERIOD_CLOSED sheet=" + sheet.id() + " by=" + Audit.user(request)
+                     + " period=" + closed.name() + " total=" + closed.closedTotal().setScale(2).toPlainString()
+diff --git a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+index 73261e552..4ff279085 100644
+--- a/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/ClosePeriod.java
+@@ -12,6 +12,7 @@ import net.officefloor.hq.app.claim.ClaimLogRepository;
+ import net.officefloor.hq.app.claim.ClaimStatus;
+ import net.officefloor.hq.app.claim.ClaimRepository;
+ import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.pool.FrozenCuts;
+ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.rate.Rate;
+ import net.officefloor.hq.app.rate.RateRepository;
+@@ -27,18 +28,18 @@ import net.officefloor.plugin.variable.Val;
+  * the end of its last day, by the status their log records then (OPEN, PENDING and SETTLED, but not an
+  * unbound open one of a person whose retirement date is reached, nor one deferred now), due by a date inside it (an overdue one with its late charge), added up, skipping n/a. Each person's own figure for the period is fixed
+  * too, and the period's due-total is the sum of them; and so is each person's carried figure for it. A soft-closed period closes too, its figures
+- * fixed afresh. A period already closed is refused, and so is a role the permission matrix does not allow to close.
++ * fixed afresh. Every pool member's cut is fixed for it too, as it stands at this moment. A period already closed is refused, and so is a role the permission matrix does not allow to close.
+  */
+ public class ClosePeriod {
+     public void close(@Val Sheet sheet, @Val Period period, PeriodRepository periods, PersonRepository people,
+             ClaimRepository claims, ClaimLogRepository log, RateRepository rates, SettingsRepository settings, RoleRepository roles,
+-            HttpServletRequest request, Out<Period> closedOut) throws InvalidPeriodException {
++            FrozenCuts frozen, HttpServletRequest request, Out<Period> closedOut) throws InvalidPeriodException {
+         String role = roles.roleOf(sheet.id(), Audit.user(request));
+         if (!settings.find(sheet.id()).allows("close", role)) {
+             throw new InvalidPeriodException("A " + role + " may not close period " + period.name());
+         }
+         if (period.hardClosed()) throw new InvalidPeriodException("Period " + period.name() + " is already closed");
+-        Period closed = fix(sheet, period, false, periods, people, claims, log, rates, settings);
++        Period closed = fix(sheet, period, false, periods, people, claims, log, rates, settings, frozen);
+         if (closed == null) throw new InvalidPeriodException("Period " + period.name() + " is already closed");
+         closedOut.set(closed);
+     }
+@@ -49,7 +50,7 @@ public class ClosePeriod {
+      * when another request changed it first.
+      */
+     static Period fix(Sheet sheet, Period period, boolean soft, PeriodRepository periods, PersonRepository people,
+-            ClaimRepository claims, ClaimLogRepository log, RateRepository rates, SettingsRepository settings) {
++            ClaimRepository claims, ClaimLogRepository log, RateRepository rates, SettingsRepository settings, FrozenCuts frozen) {
+         List<Rate> all = rates.findAll(sheet.id());
+         Settings sheetSettings = settings.find(sheet.id());
+         List<Claim> sheetClaims = claims.findAll(sheet.id());
+@@ -78,6 +79,7 @@ public class ClosePeriod {
+         periods.savePersonTotals(closed, personTotals);
+         periods.deletePersonCarried(closed);
+         periods.savePersonCarried(closed, personCarried);
++        frozen.freeze(sheet, closed);
+         return closed;
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/period/ReopenPeriod.java b/src/main/java/net/officefloor/hq/app/period/ReopenPeriod.java
+index d1e73c995..5c2eb0850 100644
+--- a/src/main/java/net/officefloor/hq/app/period/ReopenPeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/ReopenPeriod.java
+@@ -2,6 +2,7 @@ package net.officefloor.hq.app.period;
+ 
+ import jakarta.servlet.http.HttpServletRequest;
+ import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.pool.FrozenCuts;
+ import net.officefloor.hq.app.role.RoleRepository;
+ import net.officefloor.hq.app.setting.SettingsRepository;
+ import net.officefloor.hq.app.sheet.Sheet;
+@@ -9,13 +10,13 @@ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+- * Reopens a closed period, making its due-total, and each person's figure and carried figure, live again. Only a role the permission matrix allows (by
++ * Reopens a closed period, making its due-total, and each person's figure and carried figure, and every pool member's cut for it, live again. Only a role the permission matrix allows (by
+  * the standing rule, a steward) may reopen; a period that
+  * is not closed, or is locked, is refused.
+  */
+ public class ReopenPeriod {
+     public void reopen(@Val Sheet sheet, @Val Period period, PeriodRepository periods, RoleRepository roles, SettingsRepository settings,
+-            HttpServletRequest request, Out<Period> reopenedOut) throws InvalidPeriodException {
++            FrozenCuts frozen, HttpServletRequest request, Out<Period> reopenedOut) throws InvalidPeriodException {
+         String user = Audit.user(request);
+         String role = roles.roleOf(sheet.id(), user);
+         if (!settings.find(sheet.id()).allows("reopen", role)) {
+@@ -29,6 +30,7 @@ public class ReopenPeriod {
+         }
+         periods.deletePersonTotals(reopened);
+         periods.deletePersonCarried(reopened);
++        frozen.thaw(reopened);
+         reopenedOut.set(reopened);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/SoftClosePeriod.java b/src/main/java/net/officefloor/hq/app/period/SoftClosePeriod.java
+index 5dbb2a32b..c57f8ef3d 100644
+--- a/src/main/java/net/officefloor/hq/app/period/SoftClosePeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/SoftClosePeriod.java
+@@ -5,6 +5,7 @@ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.claim.ClaimLogRepository;
+ import net.officefloor.hq.app.claim.ClaimRepository;
+ import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.pool.FrozenCuts;
+ import net.officefloor.hq.app.rate.RateRepository;
+ import net.officefloor.hq.app.role.RoleRepository;
+ import net.officefloor.hq.app.setting.SettingsRepository;
+@@ -20,13 +21,13 @@ import net.officefloor.plugin.variable.Val;
+ public class SoftClosePeriod {
+     public void close(@Val Sheet sheet, @Val Period period, PeriodRepository periods, PersonRepository people,
+             ClaimRepository claims, ClaimLogRepository log, RateRepository rates, SettingsRepository settings, RoleRepository roles,
+-            HttpServletRequest request, Out<Period> closedOut) throws InvalidPeriodException {
++            FrozenCuts frozen, HttpServletRequest request, Out<Period> closedOut) throws InvalidPeriodException {
+         String role = roles.roleOf(sheet.id(), Audit.user(request));
+         if (!settings.find(sheet.id()).allows("close", role)) {
+             throw new InvalidPeriodException("A " + role + " may not soft-close period " + period.name());
+         }
+         if (period.closed()) throw new InvalidPeriodException("Period " + period.name() + " is already closed");
+-        Period closed = ClosePeriod.fix(sheet, period, true, periods, people, claims, log, rates, settings);
++        Period closed = ClosePeriod.fix(sheet, period, true, periods, people, claims, log, rates, settings, frozen);
+         if (closed == null) throw new InvalidPeriodException("Period " + period.name() + " is already closed");
+         closedOut.set(closed);
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/pool/FrozenCuts.java b/src/main/java/net/officefloor/hq/app/pool/FrozenCuts.java
+new file mode 100644
+index 000000000..ba0dd0545
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/pool/FrozenCuts.java
+@@ -0,0 +1,57 @@
++package net.officefloor.hq.app.pool;
++
++import java.util.HashMap;
++import java.util.Map;
++import net.officefloor.hq.app.crew.CrewRepository;
++import net.officefloor.hq.app.period.Period;
++import net.officefloor.hq.app.setting.SettingsRepository;
++import net.officefloor.hq.app.sheet.Sheet;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Repository;
++
++/**
++ * The pool members' cuts fixed for closed periods: closing or soft-closing a period fixes every pool
++ * member's cut as it stood at that moment, and reopening it clears them, making them live again.
++ */
++@Repository
++public class FrozenCuts {
++
++    private final JdbcTemplate jdbc;
++    private final PoolRepository pools;
++    private final CrewRepository crews;
++    private final SettingsRepository settings;
++
++    public FrozenCuts(JdbcTemplate jdbc, PoolRepository pools, CrewRepository crews, SettingsRepository settings) {
++        this.jdbc = jdbc;
++        this.pools = pools;
++        this.crews = crews;
++        this.settings = settings;
++    }
++
++    /** Fix each pool member's cut for the closed period, as it stands now with the sheet's today. */
++    public void freeze(Sheet sheet, Period period) {
++        thaw(period);
++        for (PoolResponse pool : RespondWithPools.read(sheet.id(), sheet.today(), null, pools, crews, settings)) {
++            for (PoolMemberResponse m : pool.members()) {
++                jdbc.update("MERGE INTO period_pool_cut (sheet_id, period_name, pool, member_key, cut) KEY (sheet_id, period_name, pool, member_key)"
++                        + " VALUES (?, ?, ?, ?, ?)", sheet.id(), period.name(), pool.name(), RespondWithPools.key(m), m.cut());
++            }
++        }
++    }
++
++    /** Clear the members' fixed cuts for the reopened period. */
++    public void thaw(Period period) {
++        jdbc.update("DELETE FROM period_pool_cut WHERE sheet_id = ? AND period_name = ?", period.sheetId(), period.name());
++    }
++
++    /** The fixed cuts for the sheet's closed periods: by period name, then pool name, then member key. */
++    public Map<String, Map<String, Map<String, String>>> find(String sheetId) {
++        Map<String, Map<String, Map<String, String>>> found = new HashMap<>();
++        jdbc.query("SELECT period_name, pool, member_key, cut FROM period_pool_cut WHERE sheet_id = ?", rs -> {
++            found.computeIfAbsent(rs.getString("period_name"), k -> new HashMap<>())
++                    .computeIfAbsent(rs.getString("pool"), k -> new HashMap<>())
++                    .put(rs.getString("member_key"), rs.getString("cut"));
++        }, sheetId);
++        return found;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolMemberResponse.java b/src/main/java/net/officefloor/hq/app/pool/PoolMemberResponse.java
+index 1e53a753f..b553f986b 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolMemberResponse.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolMemberResponse.java
+@@ -5,7 +5,8 @@ package net.officefloor.hq.app.pool;
+  * name ('' for a person), the name, their share, whether they are retired, and their cut of the pool's
+  * pot with two decimals ('' for none), its from- and to-dates ('' for open) and whether they
+  * include the sheet's today. {@code periodCuts} is, for each period whose to-date is on or before the sheet's
+- * today (by from-date), their cut as it stood at the end of that period ('' for none).
++ * today, or closed (by from-date), their cut as it stood at the end of that period, or as fixed when it closed
++ * ('' for none).
+  */
+ public record PoolMemberResponse(String personId, String memberPool, String name, String share, boolean retired,
+         String cut, String from, String to, boolean active, java.util.List<PeriodCut> periodCuts) {
+diff --git a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+index 57353eb73..776e626a8 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+@@ -25,17 +25,26 @@ import net.officefloor.web.ObjectResponse;
+  * among the pools by name: its lead and members at equal shares, the sheet's pot its pot. For every period
+  * whose to-date is on or before the sheet's today, each member carries its cut as it stood at the end of that
+  * period (the pools, their members, the pot and the holds as of that day, it standing in for the sheet's today).
++ * A closed (or soft-closed) period carries instead each member's cut fixed when it closed (see {@link FrozenCuts}),
++ * even when it closed after its to-date, and is listed even before its to-date is reached.
+  */
+ public class RespondWithPools {
+     public void respond(@Val Sheet sheet, PoolRepository repository, CrewRepository crews, SettingsRepository settings,
+-            PeriodRepository periods, HttpServletRequest request, ObjectResponse<PoolsResponse> response) {
++            PeriodRepository periods, FrozenCuts frozen, HttpServletRequest request, ObjectResponse<PoolsResponse> response) {
+         LocalDate asOf = AsOf.of(request);
+         List<PoolResponse> now = read(sheet.id(), sheet.today(), asOf, repository, crews, settings);
+         List<Period> ended = (asOf == null ? periods.findAll(sheet.id()) : periods.findAllAsOf(sheet.id(), asOf))
+-                .stream().filter(p -> !p.to().isAfter(sheet.today())).toList();
++                .stream().filter(p -> p.closed() || !p.to().isAfter(sheet.today())).toList();
++        Map<String, Map<String, Map<String, String>>> fixed = frozen.find(sheet.id());
+         // pool name -> member key -> period name -> cut
+         Map<String, Map<String, Map<String, String>>> history = new HashMap<>();
+         for (Period period : ended) {
++            if (period.closed() && fixed.containsKey(period.name())) {
++                fixed.get(period.name()).forEach((pool, cuts) -> cuts.forEach((member, cut) -> history
++                        .computeIfAbsent(pool, k -> new HashMap<>()).computeIfAbsent(member, k -> new HashMap<>())
++                        .put(period.name(), cut)));
++                continue;
++            }
+             for (PoolResponse pool : read(sheet.id(), period.to(), period.to(), repository, crews, settings)) {
+                 for (PoolMemberResponse m : pool.members()) {
+                     history.computeIfAbsent(pool.name(), k -> new HashMap<>())
+@@ -51,12 +60,12 @@ public class RespondWithPools {
+     }
+ 
+     /** A member's key within its pool: the person's id, or pool-<name> for a member pool. */
+-    private static String key(PoolMemberResponse m) {
++    static String key(PoolMemberResponse m) {
+         return m.memberPool().isEmpty() ? m.personId() : "pool-" + m.memberPool();
+     }
+ 
+     /** The pools, with {@code today} as the sheet's today, as they stood at the end of {@code asOf} (null: now). */
+-    private static List<PoolResponse> read(String sheetId, LocalDate today, LocalDate asOf, PoolRepository repository,
++    static List<PoolResponse> read(String sheetId, LocalDate today, LocalDate asOf, PoolRepository repository,
+             CrewRepository crews, SettingsRepository settings) {
+         List<PoolMember> members = new ArrayList<>(repository.members(sheetId, today, asOf));
+         members.addAll(repository.crewMembers(sheetId, today, asOf));
+diff --git a/src/main/resources/db/migration/V117__period_pool_cut.sql b/src/main/resources/db/migration/V117__period_pool_cut.sql
+new file mode 100644
+index 000000000..1a5935948
+--- /dev/null
++++ b/src/main/resources/db/migration/V117__period_pool_cut.sql
+@@ -0,0 +1,11 @@
++-- Each pool member's cut for a closed (or soft-closed) period, fixed when the period was closed: as
++-- it stood at that moment, with two decimals ('' for none). The member is the person's id, or
++-- pool-<name> for a member pool. Removed when the period is reopened, making the cuts live again.
++CREATE TABLE period_pool_cut (
++    sheet_id VARCHAR(200) NOT NULL REFERENCES sheet(id),
++    period_name VARCHAR(200) NOT NULL,
++    pool VARCHAR(200) NOT NULL,
++    member_key VARCHAR(200) NOT NULL,
++    cut VARCHAR(30) NOT NULL,
++    PRIMARY KEY (sheet_id, period_name, pool, member_key)
++);
