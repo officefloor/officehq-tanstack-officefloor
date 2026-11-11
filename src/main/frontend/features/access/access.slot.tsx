@@ -60,6 +60,8 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
     reviewSla: '',
     proofKinds: '',
     defaultGrade: '',
+    scoreMid: '',
+    scoreHigh: '',
   });
   const [touched, setTouched] = useState<Set<Key>>(new Set());
   const [gradeFields, setGradeFields] = useState<Record<string, string>>({});
@@ -263,6 +265,15 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         return;
       }
       body.defaultGrade = defaultGrade;
+    }
+    for (const [key, which] of [['scoreMid', 'mid'], ['scoreHigh', 'high']] as const) {
+      if (!touched.has(key)) continue;
+      const value = fields[key].trim();
+      if (value !== '' && !/^-?\d{1,9}$/.test(value)) {
+        setError(`A ${which} score threshold is a whole number, or blank.`);
+        return;
+      }
+      body[key] = value;
     }
     if (gradesTouched.size > 0) {
       const gradeTerms: Record<string, string> = {};
@@ -789,6 +800,34 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         </label>{' '}
         <span>
           now: <strong data-testid="setting-default-grade-current">{settings.data?.defaultGrade ?? ''}</strong>
+        </span>{' '}
+        <label>
+          Mid score{' '}
+          <input
+            data-testid="setting-score-mid"
+            inputMode="numeric"
+            placeholder="none"
+            value={fields.scoreMid}
+            onFocus={() => touch('scoreMid')}
+            onChange={(e) => change('scoreMid', e.target.value)}
+          />
+        </label>{' '}
+        <span>
+          now: <strong data-testid="setting-score-mid-current">{settings.data?.scoreMid ?? ''}</strong>
+        </span>{' '}
+        <label>
+          High score{' '}
+          <input
+            data-testid="setting-score-high"
+            inputMode="numeric"
+            placeholder="none"
+            value={fields.scoreHigh}
+            onFocus={() => touch('scoreHigh')}
+            onChange={(e) => change('scoreHigh', e.target.value)}
+          />
+        </label>{' '}
+        <span>
+          now: <strong data-testid="setting-score-high-current">{settings.data?.scoreHigh ?? ''}</strong>
         </span>{' '}
         {ACTIONS.map((action) => (
           <span key={action}>

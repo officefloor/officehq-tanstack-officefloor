@@ -23,7 +23,8 @@ import java.time.LocalDate;
  * what (null: none), and whether the escalation gap is changed and to what, in days (null: off), and whether
  * the review SLA is changed and to what, in days (null: none), and whether the proof kinds are changed and
  * to what, a comma separated list of kinds (null: none), and whether the default grade is changed and to
- * what, one of the grades (null: A), and the grades whose clerk limit is changed, in A, B, C order, and to
+ * what, one of the grades (null: A), and whether each score threshold, mid and high, is changed and to what
+ * (null: none), and the grades whose clerk limit is changed, in A, B, C order, and to
  * what (null: none, the sheet's).
  */
 public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, BigDecimal floor, Integer terms, BigDecimal latePct,
@@ -44,6 +45,7 @@ public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, Bi
         boolean reviewSlaChanged, Integer reviewSla,
         boolean proofKindsChanged, String proofKinds,
         boolean defaultGradeChanged, String defaultGrade,
+        boolean scoreMidChanged, Integer scoreMid, boolean scoreHighChanged, Integer scoreHigh,
         java.util.Map<String, BigDecimal> gradeClerkLimit) {
 
     /**

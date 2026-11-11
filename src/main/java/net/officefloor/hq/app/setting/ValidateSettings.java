@@ -302,6 +302,10 @@ public class ValidateSettings {
                 throw new InvalidSettingException("A default grade is one of A, B or C, or blank");
             }
         }
+        boolean scoreMidChanged = request != null && request.scoreMid() != null;
+        Integer scoreMid = scoreMidChanged ? score(request.scoreMid(), "mid") : null;
+        boolean scoreHighChanged = request != null && request.scoreHigh() != null;
+        Integer scoreHigh = scoreHighChanged ? score(request.scoreHigh(), "high") : null;
         Map<String, LocalDate> from = new LinkedHashMap<>();
         if (request != null && request.from() != null) {
             for (Map.Entry<String, String> entry : request.from().entrySet()) {
@@ -321,6 +325,19 @@ public class ValidateSettings {
                 entryChanged, entryDate, gradeGrace, gradeProofThreshold, potChanged, pot, parentChanged, parent,
                 fiscalChanged, fiscalStartMonth, alertChanged, alertThreshold, roundingChanged, rounding,
                 reviewThresholdChanged, reviewThreshold, escalateChanged, escalateAfter, reviewSlaChanged, reviewSla,
-                proofKindsChanged, proofKinds, defaultGradeChanged, defaultGrade, gradeClerkLimit));
+                proofKindsChanged, proofKinds, defaultGradeChanged, defaultGrade,
+                scoreMidChanged, scoreMid, scoreHighChanged, scoreHigh, gradeClerkLimit));
     }
+
+    /** A score threshold: a whole number (null for blank). */
+    private static Integer score(String given, String which) throws InvalidSettingException {
+        String value = given.trim();
+        if (value.isEmpty()) return null;
+        if (!SCORE.matcher(value).matches()) {
+            throw new InvalidSettingException("A " + which + " score threshold is a whole number, or blank");
+        }
+        return Integer.valueOf(value);
+    }
+
+    private static final Pattern SCORE = Pattern.compile("-?\\d{1,9}");
 }

@@ -32,9 +32,9 @@ public class SheetCloneRepository {
      */
     public Map<Long, Long> copy(String from, String to) {
         jdbc.update("INSERT INTO sheet (id, today, clerk_limit, due_floor, terms, late_pct, policy_date,"
-                + " period_numbering_from, cap, grace_days, entry_date, pot, parent_id, fiscal_start_month, alert_threshold, escalate_after, review_sla, cloned_from)"
+                + " period_numbering_from, cap, grace_days, entry_date, pot, parent_id, fiscal_start_month, alert_threshold, escalate_after, review_sla, score_mid, score_high, cloned_from)"
                 + " SELECT ?, today, clerk_limit, due_floor, terms, late_pct, policy_date, period_numbering_from, cap,"
-                + " grace_days, entry_date, pot, parent_id, fiscal_start_month, alert_threshold, escalate_after, review_sla, id FROM sheet WHERE id = ?", to, from);
+                + " grace_days, entry_date, pot, parent_id, fiscal_start_month, alert_threshold, escalate_after, review_sla, score_mid, score_high, id FROM sheet WHERE id = ?", to, from);
         java.sql.Date today = jdbc.queryForObject("SELECT today FROM sheet WHERE id = ?", java.sql.Date.class, to);
 
         jdbc.update("INSERT INTO setting_value (sheet_id, setting_key, from_date, setting_value)"

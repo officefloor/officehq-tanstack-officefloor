@@ -59,6 +59,10 @@ export type Settings = {
   proofKinds: string;
   /** The default grade, one of the grades ('' for A), not dated: the grade a quick-added person and an imported line with a blank grade take. */
   defaultGrade: string;
+  /** The mid score threshold, a whole number ('' for none), not dated: while both thresholds are set, a score at or above it is MID. */
+  scoreMid: string;
+  /** The high score threshold, a whole number ('' for none), not dated: while both thresholds are set, a score at or above it is HIGH. */
+  scoreHigh: string;
   /**
    * Every value recorded for each figure setting, by key (clerk-limit, floor, terms, late-pct,
    * terms-A, terms-B, terms-C, cap, proof-threshold, note-threshold, grace-A, grace-B, grace-C, proof-threshold-A, proof-threshold-B,
@@ -171,6 +175,12 @@ export function useCap(sheetId: string): string {
 /** The sheet's review SLA in days ('' for none, until the settings are read). */
 export function useReviewSla(sheetId: string): string {
   return useSettings(sheetId).data?.reviewSla ?? '';
+}
+
+/** The sheet's score thresholds, mid and high ('' for none, until the settings are read). */
+export function useScoreThresholds(sheetId: string): { mid: string; high: string } {
+  const data = useSettings(sheetId).data;
+  return { mid: data?.scoreMid ?? '', high: data?.scoreHigh ?? '' };
 }
 
 /** The roles assigned on the sheet, by user name. */

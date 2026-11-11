@@ -6,6 +6,18 @@ import { claimDue, NA, rateOn } from '../rates/rates';
 import type { Dated, Late, Rate } from '../rates/rates';
 import { personOverdue } from '../overdue/overdue';
 
+/**
+ * A person's band by their score: HIGH at or above the high threshold, MID at or above the mid one, else
+ * LOW; '' while either threshold is blank.
+ */
+export function scoreBand(score: string, mid: string, high: string): string {
+  if (mid === '' || high === '') return '';
+  const n = BigInt(score);
+  if (n >= BigInt(high)) return 'HIGH';
+  if (n >= BigInt(mid)) return 'MID';
+  return 'LOW';
+}
+
 /** A two-decimal figure as a whole count of hundredths. */
 function hundredths(value: string): bigint {
   const negative = value.startsWith('-');

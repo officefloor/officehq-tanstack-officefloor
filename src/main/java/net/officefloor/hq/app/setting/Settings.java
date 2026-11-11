@@ -34,12 +34,14 @@ import java.util.NavigableMap;
  * and its escalation gap in days (null: off), and its review SLA in days (null: none): a REVIEW claim whose
  * review day plus it is before the sheet's today is late for review, and its proof kinds (null: none), a
  * comma separated list of kinds: while set, a claim that needs a proof needs at least one of each, and its
- * default grade (null: A), the grade a quick-added person and an imported line with a blank grade take.
+ * default grade (null: A), the grade a quick-added person and an imported line with a blank grade take, and
+ * its score thresholds, mid and high (null: none): while both are set, each person shows a band by their score.
  */
 public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap<LocalDate, String>> dated,
         LocalDate policyDate, LocalDate periodNumberingFrom, Map<String, String> perms, Integer graceDays,
         LocalDate entryDate, BigDecimal pot, Integer fiscalStartMonth, BigDecimal alertThreshold,
-        Integer escalateAfter, Integer reviewSla, String proofKinds, String defaultGrade) {
+        Integer escalateAfter, Integer reviewSla, String proofKinds, String defaultGrade, Integer scoreMid,
+        Integer scoreHigh) {
     /** The grade a new person takes when none is given: the default grade, else A. */
     public String newPersonGrade() {
         return defaultGrade == null || defaultGrade.isBlank() ? "A" : defaultGrade;
@@ -72,6 +74,8 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
     public static final String REVIEW_THRESHOLD = "review-threshold";
     public static final String PROOF_KINDS = "proof-kinds";
     public static final String DEFAULT_GRADE = "default-grade";
+    public static final String SCORE_MID = "score-mid";
+    public static final String SCORE_HIGH = "score-high";
 
     /** The kinds of proof the proof kinds list (none set: none). */
     public List<String> proofKindList() {
