@@ -11,9 +11,11 @@ import { claimsKey } from '../claims/claims';
 type Result = { added: number };
 
 // The paste box: lines of name,amount,date,note (the date may be blank for the sheet's entry date while set, else its today, the
-// note may be absent and may hold commas) each add a DRAFT claim, in order, for the named person on
-// the sheet. The server checks every line by the claim form's rules first: one bad line refuses the
-// whole paste and adds nothing. The box shows how many were added; the count is cleared while it runs.
+// note may be absent and may hold commas) each add a claim, in order, for the named person on the
+// sheet and open it as the open button would; a line matching one of their DRAFTs by date and note
+// updates that DRAFT to its amount and opens it instead. The server checks every line first: one bad
+// line or refused open refuses the whole paste and changes nothing. The box shows how many lines went
+// through; the count is cleared while it runs.
 function PasteClaims({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const [text, setText] = useState('');
@@ -31,7 +33,7 @@ function PasteClaims({ sheetId }: { sheetId: string }) {
       void queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
       void queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
     },
-    onError: () => setError('Those claims could not be added: check every line.'),
+    onError: () => setError('Those claims could not be added and opened: check every line.'),
   });
 
   const submit = (e: FormEvent) => {
@@ -61,11 +63,11 @@ function PasteClaims({ sheetId }: { sheetId: string }) {
           />
         </label>{' '}
         <button type="submit" data-testid="paste-submit" disabled={paste.isPending}>
-          Add pasted claims
+          Add and open pasted claims
         </button>
         {result !== null && (
           <>
-            {' '}Added <span data-testid="paste-added">{result.added}</span>
+            {' '}Went through <span data-testid="paste-added">{result.added}</span>
           </>
         )}
         {error && (

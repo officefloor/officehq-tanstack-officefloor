@@ -1,5 +1,5 @@
 package net.officefloor.hq.app.paste;
 
-/** How many claims the paste added. */
+/** How many pasted lines went through: each added or updated, and opened. */
 public record PasteResponse(int added) {
 }
