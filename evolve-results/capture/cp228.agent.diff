@@ -1,0 +1,154 @@
+diff --git a/src/main/java/net/officefloor/hq/app/crew/CrewRepository.java b/src/main/java/net/officefloor/hq/app/crew/CrewRepository.java
+index 7ed3afd26..b3429e195 100644
+--- a/src/main/java/net/officefloor/hq/app/crew/CrewRepository.java
++++ b/src/main/java/net/officefloor/hq/app/crew/CrewRepository.java
+@@ -17,6 +17,14 @@ public class CrewRepository {
+     private static final RowMapper<Crew> CREW = (rs, n) -> new Crew(rs.getLong("id"), rs.getString("sheet_id"),
+             rs.getString("name"), rs.getObject("lead_id", Long.class), rs.getString("lead"));
+ 
++    /**
++     * The crew members as they stood at the end of the date bound twice (null: now): the members now, and
++     * those a merge took away after that date. The row's added_on still limits it to members added by then.
++     */
++    public static final String MEMBERS_AS_OF = "SELECT id, crew_id, person_id, added_on FROM crew_member"
++            + " UNION ALL SELECT id, crew_id, person_id, added_on FROM crew_member_removed"
++            + " WHERE CAST(? AS DATE) IS NOT NULL AND removed_on > ?";
++
+     private final JdbcTemplate jdbc;
+ 
+     public CrewRepository(JdbcTemplate jdbc) {
+@@ -46,11 +54,11 @@ public class CrewRepository {
+     /** The members of every crew on the sheet, each crew's in the order they were added, as they stood at the end of {@code asOf} (null: now). */
+     public List<CrewMember> members(String sheetId, LocalDate asOf) {
+         Date on = sqlDate(asOf);
+-        return jdbc.query("SELECT c.name AS crew, m.person_id, p.name FROM crew_member m"
++        return jdbc.query("SELECT c.name AS crew, m.person_id, p.name FROM (" + MEMBERS_AS_OF + ") m"
+                 + " JOIN crew c ON c.id = m.crew_id JOIN person p ON p.id = m.person_id WHERE c.sheet_id = ?"
+                 + " AND (CAST(? AS DATE) IS NULL OR m.added_on IS NULL OR m.added_on <= ?) ORDER BY c.name, m.id",
+                 (rs, n) -> new CrewMember(sheetId, rs.getString("crew"), rs.getLong("person_id"), rs.getString("name")),
+-                sheetId, on, on);
++                on, on, sheetId, on, on);
+     }
+ 
+     public boolean isMember(Crew crew, long personId) {
+@@ -73,11 +81,17 @@ public class CrewRepository {
+      * to the other's lead: dropped from a crew the other is already in or leads.
+      */
+     public void mergeMembers(long fromId, long intoId) {
++        // Every membership the merge takes away is kept, so the crews still read as they stood before it.
++        jdbc.update("INSERT INTO crew_member_removed (id, crew_id, person_id, added_on, removed_on)"
++                + " SELECT m.id, m.crew_id, m.person_id, m.added_on, s.today FROM crew_member m"
++                + " JOIN crew c ON c.id = m.crew_id JOIN sheet s ON s.id = c.sheet_id"
++                + " WHERE m.person_id = ? OR (m.person_id = ? AND c.lead_id = ?)", fromId, intoId, fromId);
+         jdbc.update("UPDATE crew SET lead_id = ? WHERE lead_id = ?", intoId, fromId);
+         jdbc.update("DELETE FROM crew_member WHERE person_id IN (?, ?) AND crew_id IN"
+                 + " (SELECT id FROM crew WHERE lead_id = ?)", fromId, intoId, intoId);
+         jdbc.update("DELETE FROM crew_member WHERE person_id = ? AND crew_id IN"
+                 + " (SELECT crew_id FROM crew_member WHERE person_id = ?)", fromId, intoId);
+-        jdbc.update("UPDATE crew_member SET person_id = ? WHERE person_id = ?", intoId, fromId);
++        jdbc.update("UPDATE crew_member SET person_id = ?, added_on = (SELECT s.today FROM sheet s JOIN crew c"
++                + " ON c.sheet_id = s.id WHERE c.id = crew_member.crew_id) WHERE person_id = ?", intoId, fromId);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/RolloverFiscalYear.java b/src/main/java/net/officefloor/hq/app/period/RolloverFiscalYear.java
+index cbb04155b..1179c1860 100644
+--- a/src/main/java/net/officefloor/hq/app/period/RolloverFiscalYear.java
++++ b/src/main/java/net/officefloor/hq/app/period/RolloverFiscalYear.java
+@@ -15,6 +15,7 @@ import net.officefloor.hq.app.claim.ClaimRepository;
+ import net.officefloor.hq.app.claim.ClaimStatus;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.pool.FrozenCuts;
+ import net.officefloor.hq.app.rate.Rate;
+ import net.officefloor.hq.app.rate.RateRepository;
+ import net.officefloor.hq.app.role.Role;
+@@ -35,12 +36,14 @@ import net.officefloor.plugin.variable.Val;
+  * their opening balance for the new year's first period (OPENING_SET; none for a figure of 0.00).
+  * A year rolled over again while an earlier rollover of it stands carries no openings a second time. Last,
+  * ROLLOVER with the old year and how many periods were made. The rollover is kept, with the periods it
+- * made and the openings it added, so it can be undone (see {@link UndoRollover}).
++ * made and the openings it added, so it can be undone (see {@link UndoRollover}). After ROLLOVER, every
++ * period of the old year still open is soft-closed, in order of their from-dates, exactly as a soft close
++ * by hand would, each recording PERIOD_SOFT_CLOSED.
+  */
+ public class RolloverFiscalYear {
+     public void rollover(@Val FiscalYear fiscalYear, @Val Sheet sheet, SettingsRepository settings,
+             PeriodRepository periods, PersonRepository people, ClaimRepository claims, ClaimLogRepository log,
+-            RateRepository rates, RoleRepository roles, RolloverRepository rollovers, HttpServletRequest request, Audit audit,
++            RateRepository rates, RoleRepository roles, RolloverRepository rollovers, FrozenCuts frozen, HttpServletRequest request, Audit audit,
+             Out<GeneratePeriodsResponse> result) throws StewardOnlyException, InvalidPeriodException {
+         String user = Audit.user(request);
+         if (!Role.STEWARD.equals(roles.roleOf(sheet.id(), user))) {
+@@ -88,6 +91,15 @@ public class RolloverFiscalYear {
+         }
+         rollovers.insert(sheet.id(), oldFy, user, sheet.today(), generated, openings);
+         audit.record("ROLLOVER sheet=" + sheet.id() + " by=" + user + " fy=" + oldFy + " periods=" + made);
++        List<Period> stillOpen = periods.findAll(sheet.id()).stream()
++                .filter((p) -> !p.closed() && oldFy.equals(sheetSettings.fiscalYearOf(p.from())))
++                .sorted(Comparator.comparing(Period::from)).toList();
++        for (Period period : stillOpen) {
++            Period closed = ClosePeriod.fix(sheet, period, true, periods, people, claims, log, rates, settings, frozen);
++            if (closed == null) continue; // another request closed it first
++            audit.record("PERIOD_SOFT_CLOSED sheet=" + sheet.id() + " by=" + user + " period=" + closed.name()
++                    + " total=" + closed.closedTotal().setScale(2).toPlainString());
++        }
+         result.set(new GeneratePeriodsResponse(made));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+index 62acd35b7..51b5e65f5 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+@@ -8,6 +8,7 @@ import java.util.ArrayList;
+ import java.util.LinkedHashMap;
+ import java.util.List;
+ import java.util.Map;
++import net.officefloor.hq.app.crew.CrewRepository;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+ 
+@@ -108,13 +109,13 @@ public class PoolRepository {
+                 + "SELECT c.name AS pool, 0 AS ord, p.id AS person_id, p.name AS name," + flags
+                 + " FROM crew c JOIN person p ON p.id = c.lead_id WHERE c.sheet_id = ? AND " + added.formatted("c")
+                 + " UNION ALL SELECT c.name AS pool, m.id AS ord, p.id AS person_id, p.name AS name," + flags
+-                + " FROM crew_member m JOIN crew c ON c.id = m.crew_id JOIN person p ON p.id = m.person_id"
++                + " FROM (" + CrewRepository.MEMBERS_AS_OF + ") m JOIN crew c ON c.id = m.crew_id JOIN person p ON p.id = m.person_id"
+                 + " WHERE c.sheet_id = ? AND " + added.formatted("c") + " AND " + added.formatted("m")
+                 + ") x ORDER BY pool, ord",
+                 (rs, n) -> new Object[] { rs.getString("pool"), rs.getLong("person_id"), rs.getString("name"),
+                         rs.getDate("retired_from") != null, rs.getBoolean("held") },
+                 on, on, day, day, on, on, sheetId, on, on,
+-                on, on, day, day, on, on, sheetId, on, on, on, on);
++                on, on, day, day, on, on, on, on, sheetId, on, on, on, on);
+         Map<String, List<Object[]>> byCrew = new LinkedHashMap<>();
+         for (Object[] row : rows) byCrew.computeIfAbsent((String) row[0], k -> new ArrayList<>()).add(row);
+         List<PoolMember> members = new ArrayList<>();
+diff --git a/src/main/resources/db/migration/V122__crew_member_removed.sql b/src/main/resources/db/migration/V122__crew_member_removed.sql
+new file mode 100644
+index 000000000..fe7241912
+--- /dev/null
++++ b/src/main/resources/db/migration/V122__crew_member_removed.sql
+@@ -0,0 +1,9 @@
++-- Crew memberships a merge took away: the member row as it stood (its id keeps its place in the crew's
++-- order) and the sheet's today when it was taken away, so the crews can still be read as of an earlier date.
++CREATE TABLE crew_member_removed (
++    id BIGINT NOT NULL,
++    crew_id BIGINT NOT NULL REFERENCES crew(id),
++    person_id BIGINT NOT NULL REFERENCES person(id),
++    added_on DATE,
++    removed_on DATE
++);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/rollover.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/rollover.POST.yml
+index 2bdebecdf..b0311cd00 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/rollover.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/rollover.POST.yml
+@@ -12,7 +12,8 @@ load:
+   class: net.officefloor.hq.app.sheet.LoadSheet
+   govern: [ transaction ]
+   next: rollover
+-# Only a steward; a year with no periods is refused. Audits OPENING_SET lines, then ROLLOVER.
++# Only a steward; a year with no periods is refused. Audits OPENING_SET lines, then ROLLOVER, then
++# PERIOD_SOFT_CLOSED for each period of the old year still open, soft-closed in start-date order.
+ rollover:
+   class: net.officefloor.hq.app.period.RolloverFiscalYear
+   govern: [ transaction ]
