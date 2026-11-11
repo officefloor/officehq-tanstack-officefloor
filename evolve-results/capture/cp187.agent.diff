@@ -1,0 +1,173 @@
+diff --git a/src/main/frontend/features/pools/pools.slot.tsx b/src/main/frontend/features/pools/pools.slot.tsx
+index f2a6057a0..a5faf2641 100644
+--- a/src/main/frontend/features/pools/pools.slot.tsx
++++ b/src/main/frontend/features/pools/pools.slot.tsx
+@@ -116,6 +116,12 @@ function PoolRow({ sheetId, pool }: { sheetId: string; pool: Pool }) {
+             {m.name}
+             {m.retired ? ' (retired)' : ''}: <span data-testid="pool-share">{m.share}</span>%, cut{' '}
+             <span data-testid="pool-cut">{m.cut}</span>
++            {m.periodCuts.map((c) => (
++              <span key={c.period}>
++                , {c.period}{' '}
++                <span data-testid={`pool-cut-${c.period}`}>{c.cut}</span>
++              </span>
++            ))}
+             {m.from || m.to ? ` (${m.from || 'open'} to ${m.to || 'open'}${m.active ? '' : ', not active'})` : ''}
+           </li>
+         ))}
+diff --git a/src/main/frontend/features/pools/pools.ts b/src/main/frontend/features/pools/pools.ts
+index 00554a26d..6d1d5dd2d 100644
+--- a/src/main/frontend/features/pools/pools.ts
++++ b/src/main/frontend/features/pools/pools.ts
+@@ -20,6 +20,9 @@ export type PoolMember = {
+   /** Whether the dates include the sheet's today: a member not active is left out of the total, the balance and
+    *  the cuts (its cut is ''). */
+   active: boolean;
++  /** For each period whose to-date is on or before the sheet's today, by from-date: the member's cut as it stood at
++   *  the end of that period (the pools, members, pot and holds as of that day), '' when there was none. */
++  periodCuts: { period: string; cut: string }[];
+ };
+ 
+ /** A pool on the sheet: its members in the order added, their total share, and balanced when it is exactly 100.00.
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PeriodCut.java b/src/main/java/net/officefloor/hq/app/pool/PeriodCut.java
+new file mode 100644
+index 000000000..7524ec845
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/pool/PeriodCut.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.pool;
++
++/** A pool member's cut as it stood at the end of a period, with two decimals ('' for none). */
++public record PeriodCut(String period, String cut) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolMemberResponse.java b/src/main/java/net/officefloor/hq/app/pool/PoolMemberResponse.java
+index e7863e149..1e53a753f 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolMemberResponse.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolMemberResponse.java
+@@ -4,14 +4,20 @@ package net.officefloor.hq.app.pool;
+  * A pool member, as the screen reads it: the person's id ('' for a member pool) or the member pool's
+  * name ('' for a person), the name, their share, whether they are retired, and their cut of the pool's
+  * pot with two decimals ('' for none), its from- and to-dates ('' for open) and whether they
+- * include the sheet's today.
++ * include the sheet's today. {@code periodCuts} is, for each period whose to-date is on or before the sheet's
++ * today (by from-date), their cut as it stood at the end of that period ('' for none).
+  */
+ public record PoolMemberResponse(String personId, String memberPool, String name, String share, boolean retired,
+-        String cut, String from, String to, boolean active) {
++        String cut, String from, String to, boolean active, java.util.List<PeriodCut> periodCuts) {
+     public static PoolMemberResponse from(PoolMember m, java.math.BigDecimal cut) {
+         return new PoolMemberResponse(m.personId() == null ? "" : String.valueOf(m.personId()),
+                 m.memberPool() == null ? "" : m.memberPool(), m.name(), m.share().toPlainString(), m.retired(),
+                 cut == null ? "" : cut.toPlainString(), m.from() == null ? "" : m.from().toString(),
+-                m.to() == null ? "" : m.to().toString(), m.active());
++                m.to() == null ? "" : m.to().toString(), m.active(), java.util.List.of());
++    }
++
++    /** This member, with its cuts at the end of each period. */
++    public PoolMemberResponse withPeriodCuts(java.util.List<PeriodCut> periodCuts) {
++        return new PoolMemberResponse(personId, memberPool, name, share, retired, cut, from, to, active, periodCuts);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java b/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
+index 66940df45..353067bac 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
+@@ -93,4 +93,9 @@ public record PoolResponse(String name, List<PoolMemberResponse> members, String
+         if (to >= 0 && shares.signum() > 0) cuts.set(to, cuts.get(to).add(pot.subtract(sum)));
+         return cuts;
+     }
++
++    /** This pool, with these members shown. */
++    PoolResponse withMembers(List<PoolMemberResponse> members) {
++        return new PoolResponse(name, members, totalShare, balanced, added, crew);
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+index 4c9f296cb..57353eb73 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+@@ -11,6 +11,8 @@ import java.util.Map;
+ import net.officefloor.hq.app.AsOf;
+ import net.officefloor.hq.app.crew.Crew;
+ import net.officefloor.hq.app.crew.CrewRepository;
++import net.officefloor.hq.app.period.Period;
++import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.hq.app.setting.SettingsRepository;
+ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+@@ -20,20 +22,50 @@ import net.officefloor.web.ObjectResponse;
+  * The sheet's pot is the pot of each pool that is a member of none; a pool that is a member of another
+  * has its cut in that pool as its pot. A read made as of a date (see {@link AsOf}) answers with the pools,
+  * their members and the pot as they stood at the end of it. Each crew is a pool too, under its name, listed
+- * among the pools by name: its lead and members at equal shares, the sheet's pot its pot.
++ * among the pools by name: its lead and members at equal shares, the sheet's pot its pot. For every period
++ * whose to-date is on or before the sheet's today, each member carries its cut as it stood at the end of that
++ * period (the pools, their members, the pot and the holds as of that day, it standing in for the sheet's today).
+  */
+ public class RespondWithPools {
+     public void respond(@Val Sheet sheet, PoolRepository repository, CrewRepository crews, SettingsRepository settings,
+-            HttpServletRequest request, ObjectResponse<PoolsResponse> response) {
++            PeriodRepository periods, HttpServletRequest request, ObjectResponse<PoolsResponse> response) {
+         LocalDate asOf = AsOf.of(request);
+-        List<PoolMember> members = new ArrayList<>(repository.members(sheet.id(), sheet.today(), asOf));
+-        members.addAll(repository.crewMembers(sheet.id(), sheet.today(), asOf));
+-        BigDecimal sheetPot = (asOf == null ? settings.find(sheet.id()) : settings.findAsOf(sheet.id(), asOf)).pot();
+-        List<Pool> pools = new ArrayList<>(repository.findAll(sheet.id(), asOf));
++        List<PoolResponse> now = read(sheet.id(), sheet.today(), asOf, repository, crews, settings);
++        List<Period> ended = (asOf == null ? periods.findAll(sheet.id()) : periods.findAllAsOf(sheet.id(), asOf))
++                .stream().filter(p -> !p.to().isAfter(sheet.today())).toList();
++        // pool name -> member key -> period name -> cut
++        Map<String, Map<String, Map<String, String>>> history = new HashMap<>();
++        for (Period period : ended) {
++            for (PoolResponse pool : read(sheet.id(), period.to(), period.to(), repository, crews, settings)) {
++                for (PoolMemberResponse m : pool.members()) {
++                    history.computeIfAbsent(pool.name(), k -> new HashMap<>())
++                            .computeIfAbsent(key(m), k -> new HashMap<>()).put(period.name(), m.cut());
++                }
++            }
++        }
++        response.send(new PoolsResponse(now.stream().map(pool -> pool.withMembers(pool.members().stream().map(m -> {
++            Map<String, String> then = history.getOrDefault(pool.name(), Map.of()).getOrDefault(key(m), Map.of());
++            return m.withPeriodCuts(ended.stream()
++                    .map(period -> new PeriodCut(period.name(), then.getOrDefault(period.name(), ""))).toList());
++        }).toList())).toList()));
++    }
++
++    /** A member's key within its pool: the person's id, or pool-<name> for a member pool. */
++    private static String key(PoolMemberResponse m) {
++        return m.memberPool().isEmpty() ? m.personId() : "pool-" + m.memberPool();
++    }
++
++    /** The pools, with {@code today} as the sheet's today, as they stood at the end of {@code asOf} (null: now). */
++    private static List<PoolResponse> read(String sheetId, LocalDate today, LocalDate asOf, PoolRepository repository,
++            CrewRepository crews, SettingsRepository settings) {
++        List<PoolMember> members = new ArrayList<>(repository.members(sheetId, today, asOf));
++        members.addAll(repository.crewMembers(sheetId, today, asOf));
++        BigDecimal sheetPot = (asOf == null ? settings.find(sheetId) : settings.findAsOf(sheetId, asOf)).pot();
++        List<Pool> pools = new ArrayList<>(repository.findAll(sheetId, asOf));
+         Map<String, Long> crewIds = new HashMap<>();
+-        for (Crew c : crews.findAll(sheet.id(), asOf)) {
++        for (Crew c : crews.findAll(sheetId, asOf)) {
+             crewIds.put(c.name(), c.id());
+-            pools.add(new Pool(c.id(), sheet.id(), c.name()));
++            pools.add(new Pool(c.id(), sheetId, c.name()));
+         }
+         pools.sort(Comparator.comparing(Pool::name));
+         Map<String, List<PoolMember>> byPool = new HashMap<>();
+@@ -41,14 +73,14 @@ public class RespondWithPools {
+             byPool.put(p.name(), members.stream().filter(m -> m.pool().equals(p.name())).toList());
+         }
+         Map<String, BigDecimal> pots = new HashMap<>();
+-        response.send(new PoolsResponse(pools.stream()
++        return pools.stream()
+                 .map(p -> {
+                     BigDecimal pot = pot(p.name(), members, byPool, sheetPot, pots);
+                     Long crewId = crewIds.get(p.name());
+                     return crewId == null ? PoolResponse.from(p, byPool.get(p.name()), pot)
+                             : PoolResponse.ofCrew(p, crewId, byPool.get(p.name()), pot);
+                 })
+-                .toList()));
++                .toList();
+     }
+ 
+     /** The pool's pot: the sheet's when it is a member of no pool, else its cut in the pool above (null for none). */
