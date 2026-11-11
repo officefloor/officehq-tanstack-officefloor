@@ -94,7 +94,7 @@ const enc = encodeURIComponent;
  * shows an as-of date, as it stood at the end of that date (each read names it, and the sheet read
  * answers with that date as its today).
  */
-async function readFigures(sheetId: string): Promise<Figures> {
+export async function readFigures(sheetId: string): Promise<Figures> {
   const [sheet, people, claims, rates, settings] = await Promise.all([
     getJson<Sheet>(`/api/sheets/${enc(sheetId)}`),
     getJson<{ people: Person[] }>(`/api/sheets/${enc(sheetId)}/people`).then((r) => r.people),
