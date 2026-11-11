@@ -217,6 +217,15 @@ public class ValidateSettings {
             }
             fiscalStartMonth = Integer.valueOf(value);
         }
+        boolean alertChanged = request != null && request.alertThreshold() != null;
+        BigDecimal alertThreshold = null;
+        if (alertChanged && !request.alertThreshold().trim().isEmpty()) {
+            String value = request.alertThreshold().trim();
+            if (!FIGURE.matcher(value).matches()) {
+                throw new InvalidSettingException("An alert threshold is 0.00 or more, with up to two decimals, or blank");
+            }
+            alertThreshold = new BigDecimal(value).setScale(2);
+        }
         Map<String, LocalDate> from = new LinkedHashMap<>();
         if (request != null && request.from() != null) {
             for (Map.Entry<String, String> entry : request.from().entrySet()) {
@@ -234,6 +243,6 @@ public class ValidateSettings {
                 numberingChanged, numberingFrom, gradeTerms, capChanged, cap, from,
                 thresholdChanged, threshold, perms, graceChanged, graceDays, noteThresholdChanged, noteThreshold,
                 entryChanged, entryDate, gradeGrace, gradeProofThreshold, potChanged, pot, parentChanged, parent,
-                fiscalChanged, fiscalStartMonth));
+                fiscalChanged, fiscalStartMonth, alertChanged, alertThreshold));
     }
 }

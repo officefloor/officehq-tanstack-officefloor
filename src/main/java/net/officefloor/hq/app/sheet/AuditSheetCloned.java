@@ -22,7 +22,7 @@ public class AuditSheetCloned {
         String to = clone.to().id();
         audit.record("SHEET_CLONE_MADE sheet=" + sheet.id() + " by=" + user + " to=" + to);
         audit.record("SHEET_CLONED sheet=" + to + " by=" + user + " from=" + sheet.id());
-        Rollup none = new Rollup(Map.of(), "", "", "");
+        Rollup none = new Rollup(Map.of(), "", "", "", null);
         Rollup.of(to, clone.to().today(), people, claims, rates, settings.find(to))
                 .changesSince(none, to, user).forEach(audit::record);
     }

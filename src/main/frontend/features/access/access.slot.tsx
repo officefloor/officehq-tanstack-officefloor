@@ -7,7 +7,7 @@ import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/session';
 import { poolsKey } from '../pools/pools';
 import { periodsKey } from '../periods/periods';
-import { ACTIONS, CAP, DATED_KEYS, FLOOR, GRADES, LATE_PCT, LIMIT, NOTE_THRESHOLD, PERM_ROLES, POLICY_DATE, POT, PROOF_THRESHOLD, STANDING_RULE, TERMS, ROLES, gradeGraceKey, gradeProofThresholdKey, rolesKey, settingsKey, useRoles, useSettings } from './access';
+import { ACTIONS, ALERT_THRESHOLD, CAP, DATED_KEYS, FLOOR, GRADES, LATE_PCT, LIMIT, NOTE_THRESHOLD, PERM_ROLES, POLICY_DATE, POT, PROOF_THRESHOLD, STANDING_RULE, TERMS, ROLES, gradeGraceKey, gradeProofThresholdKey, rolesKey, settingsKey, useRoles, useSettings } from './access';
 import type { Role, Settings, SettingsChange } from './access';
 
 type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms' | 'gradeGrace' | 'gradeProofThreshold'>;
@@ -27,7 +27,8 @@ type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms' | 'gradeGrace' | 'grad
 // (blank: none, the sheet's), dated, in place of the sheet's for a claim of the grade, and its pot (blank:
 // none), not dated, shared out as cuts among a balanced pool's members, and its parent sheet (blank: none), not
 // dated, whose rates a grade takes on a date this sheet has none in force, and its fiscal year start month
-// (1 to 12), not dated. Only the settings typed in (or stepped into)
+// (1 to 12), not dated, and its alert threshold (blank: off), not dated, above which a person's due-total
+// is alerted. Only the settings typed in (or stepped into)
 // since the last save are sent, so saving one leaves the other as it is.
 function SettingsForm({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
@@ -47,6 +48,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
     pot: '',
     parent: '',
     fiscalStartMonth: '',
+    alertThreshold: '',
   });
   const [touched, setTouched] = useState<Set<Key>>(new Set());
   const [gradeFields, setGradeFields] = useState<Record<string, string>>({});
@@ -157,6 +159,14 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         return;
       }
       body.pot = pot;
+    }
+    if (touched.has('alertThreshold')) {
+      const threshold = fields.alertThreshold.trim();
+      if (threshold !== '' && !ALERT_THRESHOLD.test(threshold)) {
+        setError('An alert threshold is 0.00 or more, with up to two decimals, or blank.');
+        return;
+      }
+      body.alertThreshold = threshold;
     }
     if (touched.has('parent')) body.parent = fields.parent.trim();
     if (touched.has('fiscalStartMonth')) {
@@ -482,6 +492,20 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         </label>{' '}
         <span>
           now: <strong data-testid="setting-pot-current">{settings.data?.pot ?? ''}</strong>
+        </span>{' '}
+        <label>
+          Alert threshold{' '}
+          <input
+            data-testid="setting-alert-threshold"
+            inputMode="decimal"
+            placeholder="off"
+            value={fields.alertThreshold}
+            onFocus={() => touch('alertThreshold')}
+            onChange={(e) => change('alertThreshold', e.target.value)}
+          />
+        </label>{' '}
+        <span>
+          now: <strong data-testid="setting-alert-threshold-current">{settings.data?.alertThreshold ?? ''}</strong>
         </span>{' '}
         <label>
           Fiscal year starts in month{' '}

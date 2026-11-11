@@ -43,6 +43,8 @@ export type Settings = {
   parent: string;
   /** The fiscal year start month, 1 to 12 (1 unless set), not dated: a fiscal year FY<yyyy> starts on its first day in year yyyy. */
   fiscalStartMonth: string;
+  /** The alert threshold, with two decimals ('' for off), not dated: a person whose due-total crosses above it is alerted. */
+  alertThreshold: string;
   /**
    * Every value recorded for each figure setting, by key (clerk-limit, floor, terms, late-pct,
    * terms-A, terms-B, terms-C, cap, proof-threshold, note-threshold, grace-A, grace-B, grace-C, proof-threshold-A, proof-threshold-B,
@@ -157,6 +159,9 @@ export const LIMIT = /^\d+(\.\d{1,2})?$/;
 /** A cap as the screen takes it: blank, or 0.00 or more with up to two decimals. */
 export const CAP = /^\d+(\.\d{1,2})?$/;
 export const POT = /^\d+(\.\d{1,2})?$/;
+
+/** An alert threshold as the screen takes it: blank, or 0.00 or more with up to two decimals. */
+export const ALERT_THRESHOLD = /^\d+(\.\d{1,2})?$/;
 
 /** A proof threshold as the screen takes it: blank, or 0.00 or more with up to two decimals. */
 export const PROOF_THRESHOLD = /^\d+(\.\d{1,2})?$/;

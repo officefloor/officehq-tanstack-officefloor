@@ -17,15 +17,22 @@ import net.officefloor.hq.app.setting.Settings;
 
 /**
  * The sheet's figures as the screen shows them: each person's claimed, due-total and overdue-total (by person id,
- * in the order they were added), and the sheet's claimed-total, due-total and overdue-total.
+ * in the order they were added), and the sheet's claimed-total, due-total and overdue-total, and the sheet's alert
+ * threshold (null: off).
  */
-public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueTotal, String overdueTotal) {
+public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueTotal, String overdueTotal,
+        BigDecimal alertThreshold) {
 
     /** A person's figures: their name, claimed, due-total (n/a when none) and overdue-total. */
     public record Figures(String name, String claimed, String dueTotal, String overdueTotal) {
         boolean sameFigures(Figures other) {
             return other != null && claimed.equals(other.claimed) && dueTotal.equals(other.dueTotal)
                     && overdueTotal.equals(other.overdueTotal);
+        }
+
+        /** Whether their due-total is above a threshold (never when they have none). */
+        boolean above(BigDecimal threshold) {
+            return !"n/a".equals(dueTotal) && new BigDecimal(dueTotal).compareTo(threshold) > 0;
         }
     }
 
@@ -75,7 +82,8 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
             figures.put(person.getId(), new Figures(person.getName(), show(claimed), none ? "n/a" : show(due),
                     show(overdue)));
         }
-        return new Rollup(figures, show(claimedTotal), show(trimmed(dues)), show(trimmed(overdues)));
+        return new Rollup(figures, show(claimedTotal), show(trimmed(dues)), show(trimmed(overdues)),
+                settings.alertThreshold());
     }
 
     /** People's figures added up: with three or more, the single highest and single lowest left out. */
@@ -98,7 +106,8 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
     /**
      * The audit lines for the move from {@code before} to this: one ROLLUP line per person whose
      * figures changed (a person new since counts as changed), then a TOTALS line when any of the
-     * sheet's three totals changed.
+     * sheet's three totals changed, then, while the alert threshold is set, one ALERT line per person, in
+     * list order, whose due-total went from at or below it (or none, or not there before) to above it.
      */
     public List<String> changesSince(Rollup before, String sheetId, String user) {
         List<String> lines = new ArrayList<>();
@@ -113,6 +122,14 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
                 || !overdueTotal.equals(before.overdueTotal())) {
             lines.add("TOTALS" + head + " claimed-total=" + claimedTotal + " due-total=" + dueTotal
                     + " overdue-total=" + overdueTotal);
+        }
+        if (alertThreshold != null) {
+            people.forEach((id, now) -> {
+                Figures was = before.people().get(id);
+                if (now.above(alertThreshold) && (was == null || !was.above(alertThreshold))) {
+                    lines.add("ALERT" + head + " name=" + now.name() + " due-total=" + now.dueTotal());
+                }
+            });
         }
         return lines;
     }

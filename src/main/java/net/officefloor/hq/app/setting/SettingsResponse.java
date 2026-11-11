@@ -18,13 +18,13 @@ import java.util.Map;
  * decimals ('' for none); and the entry date as yyyy-MM-dd ('' for off); and each grade's grace
  * days ('' for none); and each grade's proof threshold with two decimals ('' for none); and the pot
  * with two decimals ('' for none); and the parent sheet's id ('' for none); and the fiscal year start
- * month, 1 to 12.
+ * month, 1 to 12; and the alert threshold with two decimals ('' for off).
  */
 public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
         String periodNumberingFrom, Map<String, String> gradeTerms, String cap, Map<String, List<Dated>> dated,
         String proofThreshold, Map<String, String> perms, String graceDays, String noteThreshold,
         String entryDate, Map<String, String> gradeGrace, Map<String, String> gradeProofThreshold,
-        String pot, String parent, String fiscalStartMonth) {
+        String pot, String parent, String fiscalStartMonth, String alertThreshold) {
 
     /** A value ('' for none) recorded from a date (yyyy-MM-dd). */
     public record Dated(String from, String value) {
@@ -48,7 +48,7 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
                 gradeGrace(settings),
                 gradeProofThreshold(settings),
                 show(settings.pot()), parent == null ? "" : parent,
-                Integer.toString(settings.fiscalStart()));
+                Integer.toString(settings.fiscalStart()), show(settings.alertThreshold()));
     }
 
     private static String show(java.math.BigDecimal figure) {
