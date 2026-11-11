@@ -14,7 +14,16 @@ public class ValidatePeriod {
         LocalDate from = date(request.from(), "from");
         LocalDate to = date(request.to(), "to");
         if (to == null) throw new InvalidPeriodException("A to-date is required");
-        body.set(new PeriodInput(name, from, to));
+        body.set(new PeriodInput(name, from, to, cap(request.cap())));
+    }
+
+    private static Integer cap(String raw) throws InvalidPeriodException {
+        String value = raw == null ? "" : raw.trim();
+        if (value.isEmpty()) return null;
+        if (!value.matches("[0-9]{1,9}") || Integer.parseInt(value) < 1) {
+            throw new InvalidPeriodException("A period's cap is a whole number, at least 1");
+        }
+        return Integer.parseInt(value);
     }
 
     private static LocalDate date(String raw, String which) throws InvalidPeriodException {

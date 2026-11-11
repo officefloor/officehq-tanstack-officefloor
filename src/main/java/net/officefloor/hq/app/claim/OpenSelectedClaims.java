@@ -5,6 +5,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.period.PeriodCaps;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
@@ -20,7 +21,7 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Opens the selected claims in list order (people by their position in the list, each person's
  * claims newest first), numbering each as it is opened. A claim that cannot be opened (not a
- * draft, dated inside a closed period, not on the sheet, above the note threshold with an empty note) is refused and left as it is; every one is
+ * draft, dated inside a closed period, its person at its period's cap, not on the sheet, above the note threshold with an empty note) is refused and left as it is; every one is
  * refused when the permission matrix does not allow the user's role to open, or the sheet is
  * archived. Each claim opened is logged and audited as a single open is: its CLAIM_OPENED line,
  * then the figures it moved.
@@ -66,9 +67,10 @@ public class OpenSelectedClaims {
         result.set(new BulkOpenResponse(opened, requested - opened));
     }
 
-    /** Moves the claim to OPEN when its status and period allow it and no one opened it first. */
+    /** Moves the claim to OPEN when its status, period and period's cap allow it and no one opened it first. */
     private static boolean opens(Sheet sheet, Claim claim, PeriodRepository periods, ClaimRepository claims) {
         if (periods.closedOn(sheet.id(), claim.getDueBy()) != null) return false;
+        if (PeriodCaps.full(sheet, claim, periods, claims) != null) return false;
         try {
             claim.moveTo(ClaimStatus.OPEN);
         } catch (InvalidClaimStatusException e) {

@@ -7,12 +7,22 @@ import java.time.LocalDate;
  * A period on a sheet: its name (unique on the sheet), its from and to dates, inclusive, whether it
  * is closed, and the due-total fixed when it was closed (null while open). A soft-closed period is
  * closed with {@code soft} set: its figures are fixed, but claims dated inside it can still change.
+ * Its cap, when set, is the most OPEN or PENDING claims a person may have due by a date in it.
  */
 public record Period(String sheetId, String name, LocalDate from, LocalDate to, boolean closed,
-        BigDecimal closedTotal, boolean soft) {
+        BigDecimal closedTotal, boolean soft, Integer cap) {
 
     public Period(String sheetId, String name, LocalDate from, LocalDate to) {
-        this(sheetId, name, from, to, false, null, false);
+        this(sheetId, name, from, to, null);
+    }
+
+    public Period(String sheetId, String name, LocalDate from, LocalDate to, Integer cap) {
+        this(sheetId, name, from, to, false, null, false, cap);
+    }
+
+    public Period(String sheetId, String name, LocalDate from, LocalDate to, boolean closed,
+            BigDecimal closedTotal, boolean soft) {
+        this(sheetId, name, from, to, closed, closedTotal, soft, null);
     }
 
     /** Whether the two periods share a day. */
@@ -27,12 +37,12 @@ public record Period(String sheetId, String name, LocalDate from, LocalDate to, 
 
     /** This period, closed with its due-total fixed. */
     public Period close(BigDecimal total) {
-        return new Period(sheetId, name, from, to, true, total, false);
+        return new Period(sheetId, name, from, to, true, total, false, cap);
     }
 
     /** This period, soft-closed with its due-total fixed. */
     public Period softClose(BigDecimal total) {
-        return new Period(sheetId, name, from, to, true, total, true);
+        return new Period(sheetId, name, from, to, true, total, true, cap);
     }
 
     /** Whether it is closed for good: claims dated inside it cannot change. */
@@ -42,6 +52,6 @@ public record Period(String sheetId, String name, LocalDate from, LocalDate to, 
 
     /** This period, reopened: its due-total live again. */
     public Period reopen() {
-        return new Period(sheetId, name, from, to, false, null, false);
+        return new Period(sheetId, name, from, to, false, null, false, cap);
     }
 }

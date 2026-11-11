@@ -62,8 +62,8 @@ public class SheetCloneRepository {
                 + " WHERE sheet_id = ? ORDER BY id", to, from);
         jdbc.update("INSERT INTO claim_template (sheet_id, name, amount, note) SELECT ?, name, amount, note"
                 + " FROM claim_template WHERE sheet_id = ? ORDER BY id", to, from);
-        jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, added_on)"
-                + " SELECT ?, name, from_date, to_date, added_on FROM period WHERE sheet_id = ?", to, from);
+        jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, cap, added_on)"
+                + " SELECT ?, name, from_date, to_date, cap, added_on FROM period WHERE sheet_id = ?", to, from);
 
         Map<Long, Long> people = new HashMap<>();
         List<Long> ids = jdbc.queryForList("SELECT id FROM person WHERE sheet_id = ? AND merged_into IS NULL"

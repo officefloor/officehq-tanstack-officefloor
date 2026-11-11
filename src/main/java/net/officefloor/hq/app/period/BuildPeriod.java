@@ -13,7 +13,7 @@ public class BuildPeriod {
     public void build(@Val PeriodInput input, @Val Sheet sheet, PeriodRepository repository,
             Out<Period> periodOut) throws InvalidPeriodException {
         Period period = new Period(sheet.id(), input.name(),
-                input.from() == null ? sheet.today() : input.from(), input.to());
+                input.from() == null ? sheet.today() : input.from(), input.to(), input.cap());
         if (period.to().isBefore(period.from())) {
             throw new InvalidPeriodException("A period's to-date is on or after its from-date");
         }

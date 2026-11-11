@@ -23,6 +23,8 @@ export type Period = {
   soft: boolean;
   /** The fiscal year its from-date falls in, FY<yyyy>. */
   fy: string;
+  /** The most OPEN or PENDING claims a person may have in it ('' for no cap). */
+  cap: string;
 };
 
 export const periodsKey = (sheetId: string) => ['sheet', sheetId, 'periods'] as const;

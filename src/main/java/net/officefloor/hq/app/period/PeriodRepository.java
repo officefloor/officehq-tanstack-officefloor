@@ -14,12 +14,12 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PeriodRepository {
 
-    private static final String COLUMNS = "sheet_id, name, from_date, to_date, closed, closed_total, soft";
+    private static final String COLUMNS = "sheet_id, name, from_date, to_date, closed, closed_total, soft, cap";
 
     private static final RowMapper<Period> ROW = (rs, n) -> new Period(rs.getString("sheet_id"),
             rs.getString("name"), rs.getObject("from_date", LocalDate.class),
             rs.getObject("to_date", LocalDate.class), rs.getBoolean("closed"), rs.getBigDecimal("closed_total"),
-            rs.getBoolean("soft"));
+            rs.getBoolean("soft"), rs.getObject("cap", Integer.class));
 
     private final JdbcTemplate jdbc;
 
@@ -57,10 +57,17 @@ public class PeriodRepository {
         return found.isEmpty() ? null : found.get(0);
     }
 
+    /** The period on the sheet whose dates contain the date, or null when none does. */
+    public Period on(String sheetId, LocalDate date) {
+        List<Period> found = jdbc.query("SELECT " + COLUMNS + " FROM period WHERE sheet_id = ?"
+                + " AND from_date <= ? AND to_date >= ?", ROW, sheetId, date, date);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
     public void insert(Period period) {
-        jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, added_on) VALUES (?, ?, ?, ?,"
+        jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, cap, added_on) VALUES (?, ?, ?, ?, ?,"
                 + " (SELECT today FROM sheet WHERE id = ?))",
-                period.sheetId(), period.name(), period.from(), period.to(), period.sheetId());
+                period.sheetId(), period.name(), period.from(), period.to(), period.cap(), period.sheetId());
     }
 
     /** Keeps the period's closed state, as now stored, in its history with the sheet's today now. */
@@ -84,8 +91,8 @@ public class PeriodRepository {
         return jdbc.query("SELECT " + COLUMNS + " FROM period WHERE sheet_id = ? AND (added_on IS NULL OR added_on <= ?)"
                 + " ORDER BY from_date", ROW, sheetId, java.sql.Date.valueOf(day)).stream().map((p) -> {
                     Period state = then.get(p.name());
-                    return state == null ? new Period(p.sheetId(), p.name(), p.from(), p.to())
-                            : new Period(p.sheetId(), p.name(), p.from(), p.to(), state.closed(), state.closedTotal(), state.soft());
+                    return state == null ? new Period(p.sheetId(), p.name(), p.from(), p.to(), p.cap())
+                            : new Period(p.sheetId(), p.name(), p.from(), p.to(), state.closed(), state.closedTotal(), state.soft(), p.cap());
                 }).toList();
     }
 

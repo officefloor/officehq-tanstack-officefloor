@@ -12,8 +12,9 @@ import { useFloor, useLate } from '../access/access';
 import { periodDueTotal, periodsKey, usePeriods } from './periods';
 import type { Period } from './periods';
 
-type Fields = { name: string; from: string; to: string };
-const EMPTY: Fields = { name: '', from: '', to: '' };
+// A cap, when given, is the most OPEN or PENDING claims a person may have in the period.
+type Fields = { name: string; from: string; to: string; cap: string };
+const EMPTY: Fields = { name: '', from: '', to: '', cap: '' };
 
 // The sheet's periods: a form that adds one (a from-date left blank is the sheet's today), and each
 // period with its due-total: the due of the claims dated in it that counted at its end (by their status log), fixed when the
@@ -103,13 +104,17 @@ function Periods({ sheetId }: { sheetId: string }) {
   const submit = (e: FormEvent) => {
     e.preventDefault();
     setError('');
-    const body = { name: fields.name.trim(), from: fields.from.trim(), to: fields.to.trim() };
+    const body = { name: fields.name.trim(), from: fields.from.trim(), to: fields.to.trim(), cap: fields.cap.trim() };
     if (body.name === '') {
       setError('A name is required.');
       return;
     }
     if (body.to === '') {
       setError('A to-date is required.');
+      return;
+    }
+    if (body.cap !== '' && !/^[1-9]\d*$/.test(body.cap)) {
+      setError('A cap is a whole number, at least 1.');
       return;
     }
     once((done) => save.mutate(body, { onSettled: done }));
@@ -207,6 +212,10 @@ function Periods({ sheetId }: { sheetId: string }) {
             onChange={(e) => change({ to: e.target.value })}
           />
         </label>{' '}
+        <label>
+          Cap{' '}
+          <input data-testid="period-form-cap" value={fields.cap} onChange={(e) => change({ cap: e.target.value })} />
+        </label>{' '}
         <button type="submit" data-testid="period-form-submit" disabled={save.isPending}>
           Add period
         </button>
@@ -281,6 +290,7 @@ function Periods({ sheetId }: { sheetId: string }) {
             <th>Due</th>
             <th>Closed</th>
             <th>Fiscal year</th>
+            <th>Cap</th>
             <th></th>
           </tr>
         </thead>
@@ -293,6 +303,7 @@ function Periods({ sheetId }: { sheetId: string }) {
               <td data-testid="period-due-total">{periodDueTotal(p, people, claims, rates, floor, late)}</td>
               <td data-testid="period-closed">{p.closed ? (p.soft ? 'soft' : 'yes') : 'no'}</td>
               <td data-testid="period-fy">{p.fy}</td>
+              <td data-testid="period-cap">{p.cap}</td>
               <td>
                 <button
                   type="button"
