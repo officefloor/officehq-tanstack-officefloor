@@ -1,0 +1,618 @@
+diff --git a/src/main/frontend/features/grades/grades.slot.tsx b/src/main/frontend/features/grades/grades.slot.tsx
+new file mode 100644
+index 000000000..286d2f3ef
+--- /dev/null
++++ b/src/main/frontend/features/grades/grades.slot.tsx
+@@ -0,0 +1,80 @@
++import { useState } from 'react';
++import type { FormEvent } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { useOnce } from '../../query/useOnce';
++import { postJson } from '../../api/http';
++import { SheetBody } from '../../slots/defs/sheetBody';
++import { useUser } from '../session/session';
++import { useGrades } from './grades';
++import type { Grade } from './grades';
++
++// The sheet's grades: a select and a retire button, each grade listed with whether it is retired. A
++// grade already retired is refused. People on a retired grade keep it, but it cannot be chosen for a new
++// person or in an edit, and a default grade that is retired falls back to A.
++function Grades({ sheetId }: { sheetId: string }) {
++  const queryClient = useQueryClient();
++  const grades = useGrades(sheetId);
++  const [grade, setGrade] = useState('A');
++  const [error, setError] = useState('');
++  const [user] = useUser();
++
++  const once = useOnce();
++  const retire = useMutation({
++    mutationFn: (body: { grade: string }) =>
++      postJson<{ grades: Grade[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/grades/retire`, body, user),
++    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sheet', sheetId] }),
++    onError: () => setError('That grade could not be retired.'),
++  });
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    setError('');
++    if ((grades.data ?? []).some((g) => g.grade === grade && g.retired)) {
++      setError(`Grade ${grade} is already retired.`);
++      return;
++    }
++    once((done) => retire.mutate({ grade }, { onSettled: done }));
++  };
++
++  return (
++    <section data-testid="grades">
++      <h2>Grades</h2>
++      <form onSubmit={submit}>
++        <label>
++          Grade{' '}
++          <select
++            data-testid="grade-retire-select"
++            value={grade}
++            onChange={(e) => {
++              setGrade(e.target.value);
++              setError('');
++            }}
++          >
++            {(grades.data ?? []).map((g) => (
++              <option key={g.grade} value={g.grade}>
++                {g.grade}
++              </option>
++            ))}
++          </select>
++        </label>{' '}
++        <button type="submit" data-testid="grade-retire" disabled={retire.isPending}>
++          Retire grade
++        </button>
++        {error && (
++          <p role="alert" data-testid="grade-error">
++            {error}
++          </p>
++        )}
++      </form>
++      <ul data-testid="grade-list">
++        {(grades.data ?? []).map((g) => (
++          <li key={g.grade} data-testid={`grade-row-${g.grade}`}>
++            {g.grade} retired: <span data-testid="grade-retired">{g.retired ? 'yes' : 'no'}</span>
++          </li>
++        ))}
++      </ul>
++    </section>
++  );
++}
++
++export const contribution = SheetBody.fill({ order: -6, Component: Grades });
+diff --git a/src/main/frontend/features/grades/grades.ts b/src/main/frontend/features/grades/grades.ts
+new file mode 100644
+index 000000000..1f224bfa9
+--- /dev/null
++++ b/src/main/frontend/features/grades/grades.ts
+@@ -0,0 +1,16 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++
++/** A grade on the sheet and whether it is retired: a retired grade cannot be chosen for a new person or in an edit. */
++export type Grade = { grade: string; retired: boolean };
++
++export const gradesKey = (sheetId: string) => ['sheet', sheetId, 'grades'] as const;
++
++/** The grades A, B and C on the sheet, in order. */
++export function useGrades(sheetId: string) {
++  return useQuery({
++    queryKey: gradesKey(sheetId),
++    queryFn: async () =>
++      (await getJson<{ grades: Grade[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/grades`)).grades,
++  });
++}
+diff --git a/src/main/java/net/officefloor/hq/app/grade/AuditGradeRetired.java b/src/main/java/net/officefloor/hq/app/grade/AuditGradeRetired.java
+new file mode 100644
+index 000000000..f40f04c12
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/grade/AuditGradeRetired.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.grade;
++
++import jakarta.servlet.http.HttpServletRequest;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++
++/** Records the grade retired. Runs after every rule has passed, so a refused change writes nothing. */
++public class AuditGradeRetired {
++    public void audit(@Val RetiredGrade retired, HttpServletRequest request, Audit audit) {
++        audit.record("GRADE_RETIRED sheet=" + retired.sheetId() + " by=" + Audit.user(request)
++                + " grade=" + retired.grade());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/grade/GradeRepository.java b/src/main/java/net/officefloor/hq/app/grade/GradeRepository.java
+new file mode 100644
+index 000000000..1c12b46d5
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/grade/GradeRepository.java
+@@ -0,0 +1,39 @@
++package net.officefloor.hq.app.grade;
++
++import java.util.HashSet;
++import java.util.Set;
++import net.officefloor.hq.app.setting.Settings;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Repository;
++
++/** The grades retired on each sheet. */
++@Repository
++public class GradeRepository {
++
++    private final JdbcTemplate jdbc;
++
++    public GradeRepository(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /** The grades retired on the sheet. */
++    public Set<String> retired(String sheetId) {
++        return new HashSet<>(jdbc.queryForList("SELECT grade FROM grade_retired WHERE sheet_id = ?", String.class, sheetId));
++    }
++
++    public boolean isRetired(String sheetId, String grade) {
++        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM grade_retired WHERE sheet_id = ? AND grade = ?",
++                Integer.class, sheetId, grade);
++        return n != null && n > 0;
++    }
++
++    public void retire(String sheetId, String grade) {
++        jdbc.update("INSERT INTO grade_retired (sheet_id, grade) VALUES (?, ?)", sheetId, grade);
++    }
++
++    /** The grade a new person takes when none is given: the default grade, else (or when it is retired) A. */
++    public String newPersonGrade(Settings settings) {
++        String grade = settings.newPersonGrade();
++        return isRetired(settings.sheetId(), grade) ? "A" : grade;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/grade/GradeRequest.java b/src/main/java/net/officefloor/hq/app/grade/GradeRequest.java
+new file mode 100644
+index 000000000..5921774e7
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/grade/GradeRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.grade;
++
++/** A grade to retire, as the screen sends it: A, B or C. */
++public record GradeRequest(String grade) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/grade/GradeResponse.java b/src/main/java/net/officefloor/hq/app/grade/GradeResponse.java
+new file mode 100644
+index 000000000..c95f174bd
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/grade/GradeResponse.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.grade;
++
++/** A grade on a sheet and whether it is retired. */
++public record GradeResponse(String grade, boolean retired) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/grade/GradesResponse.java b/src/main/java/net/officefloor/hq/app/grade/GradesResponse.java
+new file mode 100644
+index 000000000..73538d8d8
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/grade/GradesResponse.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.grade;
++
++import java.util.List;
++
++/** The grades A, B and C on a sheet, in order. */
++public record GradesResponse(List<GradeResponse> grades) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/grade/HandleInvalidGrade.java b/src/main/java/net/officefloor/hq/app/grade/HandleInvalidGrade.java
+new file mode 100644
+index 000000000..b83679bf8
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/grade/HandleInvalidGrade.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.grade;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleInvalidGrade {
++    public void handle(@Parameter InvalidGradeException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.BAD_REQUEST));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/grade/InvalidGradeException.java b/src/main/java/net/officefloor/hq/app/grade/InvalidGradeException.java
+new file mode 100644
+index 000000000..d04b83895
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/grade/InvalidGradeException.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.grade;
++
++/** A grade other than A, B or C, or one already retired. */
++public class InvalidGradeException extends Exception {
++    public InvalidGradeException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/grade/RespondWithGrades.java b/src/main/java/net/officefloor/hq/app/grade/RespondWithGrades.java
+new file mode 100644
+index 000000000..df1f20bff
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/grade/RespondWithGrades.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.grade;
++
++import java.util.Set;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithGrades {
++    public void respond(@Val Sheet sheet, GradeRepository repository, ObjectResponse<GradesResponse> response) {
++        Set<String> retired = repository.retired(sheet.id());
++        response.send(new GradesResponse(
++                Settings.GRADES.stream().map(g -> new GradeResponse(g, retired.contains(g))).toList()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/grade/RetireGrade.java b/src/main/java/net/officefloor/hq/app/grade/RetireGrade.java
+new file mode 100644
+index 000000000..ea364d243
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/grade/RetireGrade.java
+@@ -0,0 +1,17 @@
++package net.officefloor.hq.app.grade;
++
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++/** A grade already retired on the sheet is refused. */
++public class RetireGrade {
++    public void retire(@Val GradeRequest request, @Val Sheet sheet, GradeRepository repository,
++            Out<RetiredGrade> retiredOut) throws InvalidGradeException {
++        if (repository.isRetired(sheet.id(), request.grade())) {
++            throw new InvalidGradeException("Grade " + request.grade() + " is already retired");
++        }
++        repository.retire(sheet.id(), request.grade());
++        retiredOut.set(new RetiredGrade(sheet.id(), request.grade()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/grade/RetiredGrade.java b/src/main/java/net/officefloor/hq/app/grade/RetiredGrade.java
+new file mode 100644
+index 000000000..6717a664a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/grade/RetiredGrade.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.grade;
++
++/** The grade just retired on a sheet. */
++public record RetiredGrade(String sheetId, String grade) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/grade/ValidateGrade.java b/src/main/java/net/officefloor/hq/app/grade/ValidateGrade.java
+new file mode 100644
+index 000000000..195472c1f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/grade/ValidateGrade.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app.grade;
++
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Refuses a grade other than A, B or C before anything is read. */
++public class ValidateGrade {
++    public void validate(@RequestBody GradeRequest request, Out<GradeRequest> body) throws InvalidGradeException {
++        String grade = request == null || request.grade() == null ? "" : request.grade().trim();
++        if (!Settings.GRADES.contains(grade)) throw new InvalidGradeException("A grade is one of A, B or C");
++        body.set(new GradeRequest(grade));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/AddImportedPeople.java b/src/main/java/net/officefloor/hq/app/person/AddImportedPeople.java
+index 84d3b5267..d83c27446 100644
+--- a/src/main/java/net/officefloor/hq/app/person/AddImportedPeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/AddImportedPeople.java
+@@ -8,6 +8,7 @@ import java.util.Locale;
+ import java.util.Set;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.grade.GradeRepository;
+ import net.officefloor.hq.app.rate.RateRepository;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.setting.SettingsRepository;
+@@ -23,13 +24,15 @@ import net.officefloor.plugin.variable.Val;
+  * Every line is checked first, as the person form checks a person (their name unused on the sheet and
+  * its tree, their contact unused on the sheet), and a name, person or contact repeated within the import
+  * is refused too, so a refused import writes nothing; then each person is saved and audited as the form
+- * does (PERSON_ADDED or PERSON_EDITED), then the figures it moved.
++ * does (PERSON_ADDED or PERSON_EDITED), then the figures it moved. A line choosing a retired grade refuses the import.
+  */
+ public class AddImportedPeople {
+     public void add(@Val Sheet sheet, @Val ImportPeopleLines lines, PersonRepository people, SheetRepository sheets,
+-            ClaimRepository claims, RateRepository rates, SettingsRepository settings, HttpServletRequest request,
+-            Audit audit, Out<ImportPeopleResponse> result)
+-            throws DuplicatePersonNameException, DuplicatePersonContactException, StalePersonException {
++            ClaimRepository claims, RateRepository rates, SettingsRepository settings, GradeRepository grades,
++            HttpServletRequest request, Audit audit, Out<ImportPeopleResponse> result)
++            throws DuplicatePersonNameException, DuplicatePersonContactException, StalePersonException,
++            InvalidPersonException {
++        Set<String> retired = grades.retired(sheet.id());
+         record Change(Person person, TermsEdit termsEdit, ContactEdit contactEdit) {}
+         List<Change> built = new ArrayList<>();
+         Set<String> names = new HashSet<>();
+@@ -44,6 +47,8 @@ public class AddImportedPeople {
+             Person person = people.findByName(sheet.id(), line.name());
+             TermsEdit termsEdit = null;
+             ContactEdit contactEdit = null;
++            boolean chosen = person == null || !line.grade().equals(person.gradeOn(sheet.today()));
++            if (chosen && retired.contains(line.grade())) throw RetiredGrades.refused(line.grade());
+             if (person == null) {
+                 person = new Person(null, sheet.id(), line.name(), line.grade());
+                 person.setTerms(line.termsDays());
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyInlineGrade.java b/src/main/java/net/officefloor/hq/app/person/ApplyInlineGrade.java
+index dbe437891..5334119b6 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ApplyInlineGrade.java
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyInlineGrade.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.person;
+ 
++import net.officefloor.hq.app.grade.GradeRepository;
+ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+@@ -10,11 +11,12 @@ import net.officefloor.plugin.variable.Val;
+  * as the row shows it records nothing. Their name, terms, contact and tags are untouched.
+  */
+ public class ApplyInlineGrade {
+-    public void apply(@Val InlineGradeRequest request, @Val Person person, @Val Sheet sheet, Out<TermsEdit> termsEdit,
+-            Out<ContactEdit> contactEdit) {
++    public void apply(@Val InlineGradeRequest request, @Val Person person, @Val Sheet sheet, GradeRepository grades,
++            Out<TermsEdit> termsEdit, Out<ContactEdit> contactEdit) throws InvalidPersonException {
+         termsEdit.set(new TermsEdit(false));
+         contactEdit.set(new ContactEdit(false));
+         if (request.grade().equals(person.gradeOn(sheet.today()))) return;
++        if (grades.isRetired(sheet.id(), request.grade())) throw RetiredGrades.refused(request.grade());
+         person.setGradeFrom(request.grade(), sheet.today());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+index 8568ddc5d..096a51691 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.person;
+ 
+ import java.time.LocalDate;
++import net.officefloor.hq.app.grade.GradeRepository;
+ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+@@ -11,11 +12,13 @@ import net.officefloor.plugin.variable.Val;
+  * sheet's today) with the from-date blank records nothing. The form's terms are recorded from its
+  * terms from-date, keeping those already recorded; with the from-date blank they become the terms from
+  * the beginning of time, but terms left as the row showed them (those in force on the sheet's today)
+- * record nothing. Whether the form's terms differ from those the row showed is published for the audit; likewise their contact. Their tags become the form's.
++ * record nothing. A retired grade is refused unless it is the one in force, left as it was with the from-date blank. Whether the form's terms differ from those the row showed is published for the audit; likewise their contact. Their tags become the form's.
+  */
+ public class ApplyPerson {
+-    public void apply(@Val PersonRequest request, @Val Person person, @Val Sheet sheet, Out<TermsEdit> termsEdit,
+-            Out<ContactEdit> contactEdit) {
++    public void apply(@Val PersonRequest request, @Val Person person, @Val Sheet sheet, GradeRepository grades,
++            Out<TermsEdit> termsEdit, Out<ContactEdit> contactEdit) throws InvalidPersonException {
++        boolean kept = request.gradeFrom().isEmpty() && request.grade().equals(person.gradeOn(sheet.today()));
++        if (!kept && grades.isRetired(sheet.id(), request.grade())) throw RetiredGrades.refused(request.grade());
+         person.setName(request.name());
+         Integer terms = request.termsDays();
+         boolean termsShown = java.util.Objects.equals(terms, person.termsOn(sheet.today()));
+diff --git a/src/main/java/net/officefloor/hq/app/person/BuildPerson.java b/src/main/java/net/officefloor/hq/app/person/BuildPerson.java
+index 430f22519..8b131b9b6 100644
+--- a/src/main/java/net/officefloor/hq/app/person/BuildPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/BuildPerson.java
+@@ -1,11 +1,14 @@
+ package net.officefloor.hq.app.person;
+ 
++import net.officefloor.hq.app.grade.GradeRepository;
+ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ public class BuildPerson {
+-    public void build(@Val PersonRequest request, @Val Sheet sheet, Out<Person> personOut) {
++    public void build(@Val PersonRequest request, @Val Sheet sheet, GradeRepository grades, Out<Person> personOut)
++            throws InvalidPersonException {
++        if (grades.isRetired(sheet.id(), request.grade())) throw RetiredGrades.refused(request.grade());
+         Person person = new Person(null, sheet.id(), request.name(), request.grade());
+         if (request.termsFrom().isEmpty()) person.setTerms(request.termsDays());
+         else person.setTermsFrom(request.termsDays(), java.time.LocalDate.parse(request.termsFrom()));
+diff --git a/src/main/java/net/officefloor/hq/app/person/GradeSelectedPeople.java b/src/main/java/net/officefloor/hq/app/person/GradeSelectedPeople.java
+index a4b4fcd3b..d60a0d493 100644
+--- a/src/main/java/net/officefloor/hq/app/person/GradeSelectedPeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/GradeSelectedPeople.java
+@@ -6,6 +6,7 @@ import java.util.HashSet;
+ import java.util.Set;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.grade.GradeRepository;
+ import net.officefloor.hq.app.rate.RateRepository;
+ import net.officefloor.hq.app.role.Role;
+ import net.officefloor.hq.app.role.RoleRepository;
+@@ -25,7 +26,7 @@ import net.officefloor.plugin.variable.Val;
+ public class GradeSelectedPeople {
+     public void grade(@Val Sheet sheet, @Val BulkGradeRequest request, PersonRepository people,
+             ClaimRepository claims, RateRepository rates, SettingsRepository settings, RoleRepository roles, HttpServletRequest http,
+-            Audit audit, Out<BulkGradeResponse> result) {
++            GradeRepository grades, Audit audit, Out<BulkGradeResponse> result) {
+         String user = Audit.user(http);
+         if (sheet.archived() || Role.VIEWER.equals(roles.roleOf(sheet.id(), user))) {
+             result.set(new BulkGradeResponse(0));
+@@ -40,10 +41,13 @@ public class GradeSelectedPeople {
+             }
+         }
+         boolean dated = !request.gradeFrom().isEmpty();
++        boolean retired = grades.isRetired(sheet.id(), request.grade());
+         Rollup before = rollup(sheet, people, claims, rates, settings);
+         int graded = 0;
+         for (Person person : people.findAll(sheet.id())) {
+             if (!selected.contains(person.getId())) continue;
++            // A retired grade is chosen only for someone not already on it: they are refused.
++            if (retired && (dated || !request.grade().equals(person.gradeOn(sheet.today())))) continue;
+             if (dated || !request.grade().equals(person.gradeOn(sheet.today()))) {
+                 person.setGradeFrom(request.grade(), dated ? LocalDate.parse(request.gradeFrom()) : sheet.today());
+             }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RetiredGrades.java b/src/main/java/net/officefloor/hq/app/person/RetiredGrades.java
+new file mode 100644
+index 000000000..5595a5a4f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/RetiredGrades.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app.person;
++
++/** The refusal of a retired grade chosen for a new person or in an edit. */
++final class RetiredGrades {
++    private RetiredGrades() {
++    }
++
++    static InvalidPersonException refused(String grade) {
++        return new InvalidPersonException("Grade " + grade + " is retired");
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateImportPeople.java b/src/main/java/net/officefloor/hq/app/person/ValidateImportPeople.java
+index b7bf33a5e..119efeade 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidateImportPeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateImportPeople.java
+@@ -3,6 +3,7 @@ package net.officefloor.hq.app.person;
+ import java.util.ArrayList;
+ import java.util.List;
+ import net.officefloor.plugin.variable.Out;
++import net.officefloor.hq.app.grade.GradeRepository;
+ import net.officefloor.hq.app.setting.SettingsRepository;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+@@ -14,7 +15,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+  */
+ public class ValidateImportPeople {
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ImportPeopleRequest request,
+-            SettingsRepository settings, Out<ImportPeopleLines> linesOut)
++            SettingsRepository settings, GradeRepository grades, Out<ImportPeopleLines> linesOut)
+             throws InvalidPersonException {
+         String text = request == null || request.text() == null ? "" : request.text();
+         List<PersonRequest> lines = new ArrayList<>();
+@@ -29,7 +30,7 @@ public class ValidateImportPeople {
+             String contact = fields.length > 3 ? fields[3] : "";
+             String grade = fields[1];
+             if (grade.isBlank()) {
+-                if (defaultGrade == null) defaultGrade = settings.find(sheetId).newPersonGrade();
++                if (defaultGrade == null) defaultGrade = grades.newPersonGrade(settings.find(sheetId));
+                 grade = defaultGrade;
+             }
+             try {
+diff --git a/src/main/java/net/officefloor/hq/app/quick/FindQuickAddPerson.java b/src/main/java/net/officefloor/hq/app/quick/FindQuickAddPerson.java
+index 6e0a4b757..2429c4cbc 100644
+--- a/src/main/java/net/officefloor/hq/app/quick/FindQuickAddPerson.java
++++ b/src/main/java/net/officefloor/hq/app/quick/FindQuickAddPerson.java
+@@ -9,12 +9,12 @@ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+- * The person on the sheet with the typed name (ignoring case), or a new one with the sheet's default grade, not yet saved:
++ * The person on the sheet with the typed name (ignoring case), or a new one with the sheet's default grade (A when it is retired), not yet saved:
+  * refused when the name is a name or alias on another sheet of the sheet's tree.
+  */
+ public class FindQuickAddPerson {
+     public void find(@Val QuickAdd quick, @Val Sheet sheet, PersonRepository repository, SheetRepository sheets,
+-            net.officefloor.hq.app.setting.SettingsRepository settings,
++            net.officefloor.hq.app.setting.SettingsRepository settings, net.officefloor.hq.app.grade.GradeRepository grades,
+             Out<Person> personOut, Out<QuickAddPerson> createdOut) throws DuplicatePersonNameException {
+         Person person = repository.findByName(sheet.id(), quick.name());
+         if (person == null && repository.nameTakenIn(sheets.tree(sheet.id()), quick.name(), null)) {
+@@ -22,6 +22,6 @@ public class FindQuickAddPerson {
+         }
+         createdOut.set(new QuickAddPerson(person == null));
+         personOut.set(person != null ? person : new Person(null, sheet.id(), quick.name(),
+-                settings.find(sheet.id()).newPersonGrade()));
++                grades.newPersonGrade(settings.find(sheet.id()))));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
+index 0481ebb6d..d91dafdc9 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
+@@ -65,6 +65,8 @@ public class SheetCloneRepository {
+                 + " FROM rate WHERE sheet_id = ? ORDER BY grade, from_date NULLS FIRST", today, to);
+         jdbc.update("INSERT INTO sheet_holiday (sheet_id, holiday_date) SELECT ?, holiday_date FROM sheet_holiday"
+                 + " WHERE sheet_id = ?", to, from);
++        jdbc.update("INSERT INTO grade_retired (sheet_id, grade) SELECT ?, grade FROM grade_retired"
++                + " WHERE sheet_id = ?", to, from);
+         jdbc.update("INSERT INTO sheet_void_reason (sheet_id, reason) SELECT ?, reason FROM sheet_void_reason"
+                 + " WHERE sheet_id = ? ORDER BY id", to, from);
+         jdbc.update("INSERT INTO claim_template (sheet_id, name, amount, note) SELECT ?, name, amount, note"
+diff --git a/src/main/resources/db/migration/V121__grade_retired.sql b/src/main/resources/db/migration/V121__grade_retired.sql
+new file mode 100644
+index 000000000..b230164f0
+--- /dev/null
++++ b/src/main/resources/db/migration/V121__grade_retired.sql
+@@ -0,0 +1,7 @@
++-- The grades retired on a sheet. A retired grade cannot be chosen for a new person or in an edit;
++-- people already on it keep it.
++CREATE TABLE grade_retired (
++    sheet_id VARCHAR(200) NOT NULL REFERENCES sheet(id),
++    grade VARCHAR(10) NOT NULL,
++    PRIMARY KEY (sheet_id, grade)
++);
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.grade.InvalidGradeException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.grade.InvalidGradeException.yml
+new file mode 100644
+index 000000000..6d54c7fb2
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.grade.InvalidGradeException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.grade.HandleInvalidGrade
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades.GET.yml
+new file mode 100644
+index 000000000..8fc395836
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades.GET.yml
+@@ -0,0 +1,8 @@
++# The grades A, B and C on a sheet, each with whether it is retired.
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ readonly-transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.grade.RespondWithGrades
++  govern: [ readonly-transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades/retire.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades/retire.POST.yml
+new file mode 100644
+index 000000000..566c4fee5
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades/retire.POST.yml
+@@ -0,0 +1,25 @@
++# Retire a grade on the sheet: it can no longer be chosen for a new person or in an edit; people
++# already on it keep it. A grade other than A, B or C, or one already retired, is refused (a 400)
++# and writes nothing. A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: validate
++validate:
++  class: net.officefloor.hq.app.grade.ValidateGrade
++  next: load
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ transaction ]
++  next: retire
++retire:
++  class: net.officefloor.hq.app.grade.RetireGrade
++  govern: [ transaction ]
++  next: audit
++# Last before the response: every rule has passed and the change is saved.
++audit:
++  class: net.officefloor.hq.app.grade.AuditGradeRetired
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.grade.RespondWithGrades
++  govern: [ transaction ]
