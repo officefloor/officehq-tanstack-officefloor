@@ -18,9 +18,9 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * Settles the claim and fixes its due: its amount times the rate of its person's grade in force on its date, in force on the
- * claim's date, divided by 100 and rounded to two decimals as the claim rounds (by the sheet's policy date), or
- * for a claim a statement bound its bound figure; with the late charge it has gained on that figure
- * by the sheet's today frozen in on top, and at least the floor in force on its date (applied last).
+ * claim's date, divided by 100 and rounded to two decimals as the claim rounds (by the sheet's policy date) and held to
+ * at least the floor in force on its date, or for a claim a statement bound its bound figure; with the late
+ * charge it has gained on that floored figure by the sheet's today frozen in on top.
  * With no such rate the due is not fixed. The user who opened the claim, or last edited it, may not settle it.
  * When a clerk (any user not made a steward) settles a claim whose due is above the sheet's clerk
  * limit, it goes to PENDING instead, its due left live until a steward approves or rejects it; a
@@ -67,7 +67,7 @@ public class SettleClaim {
         List<Rate> all = rates.findAsOf(sheet.id(), on);
         Settings settings = settingsStore.findAsOf(sheet.id(), on);
         BigDecimal figure = ClaimFigure.of(then, all, grade, settings, on);
-        return figure == null ? null : ClaimFigure.floored(then, figure, ClaimFigure.late(then, figure, grade, settings, on), settings);
+        return figure == null ? null : ClaimFigure.due(figure, ClaimFigure.late(then, figure, grade, settings, on));
     }
 
     /** Settles the claim as the given user would, by the rules above; throws when it may not. */
@@ -98,8 +98,7 @@ public class SettleClaim {
             throw new InvalidClaimStatusException("A " + role + " may not settle a claim");
         }
         String grade = person.gradeOn(claim.getDate());
-        BigDecimal figure = claim.isStated() ? claim.getStatedDue()
-                : ClaimFigure.live(claim, rates.findAll(sheet.id()), grade, settings, sheet.today());
+        BigDecimal figure = ClaimFigure.of(claim, rates.findAll(sheet.id()), grade, settings, sheet.today());
         // The late charge is read while the claim is still OPEN.
         BigDecimal late = ClaimFigure.late(claim, figure, grade, settings, sheet.today());
         if (claim.isDeferredOn(sheet.today())) {
@@ -108,7 +107,7 @@ public class SettleClaim {
         if (!claim.getStatus().canMoveTo(ClaimStatus.SETTLED)) {
             throw new InvalidClaimStatusException(claim.getStatus(), ClaimStatus.SETTLED);
         }
-        BigDecimal due = fixed != null ? fixed[0] : ClaimFigure.floored(claim, figure, late, settings);
+        BigDecimal due = fixed != null ? fixed[0] : ClaimFigure.due(figure, late);
         if (!judged) judge(claim, user, due, grade, settings);
         if (!settings.withinClerkLimit(due, grade, sheet.today()) && Role.CLERK.equals(role)) {
             claim.moveTo(ClaimStatus.PENDING);
@@ -131,8 +130,7 @@ public class SettleClaim {
 
     /** The due the claim would be settled at now, by the rules above; null for n/a. */
     static BigDecimal dueNow(Sheet sheet, Claim claim, String grade, RateRepository rates, Settings settings) {
-        BigDecimal figure = claim.isStated() ? claim.getStatedDue()
-                : ClaimFigure.live(claim, rates.findAll(sheet.id()), grade, settings, sheet.today());
-        return ClaimFigure.floored(claim, figure, ClaimFigure.late(claim, figure, grade, settings, sheet.today()), settings);
+        BigDecimal figure = ClaimFigure.of(claim, rates.findAll(sheet.id()), grade, settings, sheet.today());
+        return ClaimFigure.due(figure, ClaimFigure.late(claim, figure, grade, settings, sheet.today()));
     }
 }

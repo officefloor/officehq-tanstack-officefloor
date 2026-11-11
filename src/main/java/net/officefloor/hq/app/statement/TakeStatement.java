@@ -24,8 +24,8 @@ import net.officefloor.plugin.variable.Val;
  * up, skipping n/a; n/a when their grade in force today has no rate today and no claim that counts keeps a fixed
  * figure, has one under another grade in force on its date, or has one dated on or before today (under a
  * rate that has since ended); held to the sheet's cap; each claim at its date's grade's rate; an overdue claim's late charge on top), as the screen shows it. Every claim of theirs that counts is bound to its rate figure now
- * (a live one before the floor) and the late charge on it as shown now (a figure and charge an earlier
- * statement bound stay as they are), never the floor;
+ * (a live one floored) and the late charge on it as shown now (a figure and charge an earlier
+ * statement bound stay as they are);
  * every other claim of theirs is left unbound (live). The person's statement count goes up by one,
  * and the due-total and the sheet's today are kept as the last statement's.
  * <p>
@@ -76,10 +76,10 @@ public class TakeStatement {
                 if (figure != null && !grade.equals(then.gradeOn(today))) fixed = true;
                 // So is one dated on or before today, found under a rate that has since ended.
                 if (figure != null && !claim.getDate().isAfter(today)) fixed = true;
-                // The due-total carries the late charge and the floor; the claim is bound to the rate figure under them.
+                // The due-total carries the late charge; the claim is bound to the floored rate figure under it.
                 BigDecimal due = ClaimFigure.withLate(claim, all, grade, sheetSettings, today);
                 if (due != null) total = total.add(due);
-                // Bound with the late charge on it as shown (a bound one stays as it is), never the floor.
+                // Bound with the late charge on it as shown (a bound one stays as it is).
                 BigDecimal late = figure == null || claim.getSettledDue() != null ? null
                         : ClaimFigure.late(claim, figure, grade, sheetSettings, today);
                 live.bind(true, figure, late);

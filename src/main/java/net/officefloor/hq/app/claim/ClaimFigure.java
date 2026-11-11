@@ -10,11 +10,11 @@ import net.officefloor.hq.app.setting.Settings;
 
 /**
  * A claim's figures, as the screen shows them. Its rate figure: the figure its person's last
- * statement bound it to (OPEN or PENDING alike), else its amount times its grade's rate in
- * force on its date (of the rates that apply to it: a forward-only rate only to claims added after it
- * was saved), divided by 100 and rounded to two decimals. Its live due: the greater of the
- * sheet's floor in force on its date and its rate figure plus its late charge (worked out on the
- * rate figure alone); a correction, a negative amount, has no floor and no late charge. A settled
+ * statement bound it to (OPEN or PENDING alike; the floored figure), else the greater of the sheet's
+ * floor in force on its date and its amount times its grade's rate in force on its date (of the rates
+ * that apply to it: a forward-only rate only to claims added after it was saved), divided by 100 and
+ * rounded to two decimals. Its live due: that floored rate figure plus its late charge (worked out on
+ * the floored figure); a correction, a negative amount, has no floor and no late charge. A settled
  * claim's due stays as it was fixed. Null for n/a (no floor applies to n/a). Every rounding of a
  * claim's live figures is by the sheet's policy date ({@link Settings#rounding}): half up when the
  * claim is dated before it, half to even on or after; a correction rounds by the date of the claim
@@ -23,10 +23,16 @@ import net.officefloor.hq.app.setting.Settings;
 public final class ClaimFigure {
     private ClaimFigure() {}
 
-    /** The claim's rate figure: its bound figure when a statement bound it, else its live rate figure. */
+    /** The claim's rate figure: its bound figure when a statement bound it, else its live rate figure floored. */
     public static BigDecimal of(Claim claim, List<Rate> rates, String grade, Settings settings, LocalDate today) {
         if (claim.isBound()) return claim.getStatedDue();
-        return live(claim, rates, grade, settings, today);
+        return floor(claim, live(claim, rates, grade, settings, today), settings);
+    }
+
+    /** A live rate figure held to at least the floor in force on the claim's date; a correction has no floor. Null for n/a. */
+    public static BigDecimal floor(Claim claim, BigDecimal figure, Settings settings) {
+        if (figure == null || claim.isCorrection()) return figure;
+        return figure.max(settings.floorOn(claim.getDate()));
     }
 
     /** The claim's amount at its grade's rate on its date, before any floor or late charge. */
@@ -37,14 +43,9 @@ public final class ClaimFigure {
                 .orElse(null);
     }
 
-    /**
-     * The due on a rate figure with a late charge: the greater of the floor in force on the claim's
-     * date and the figure plus the charge; a correction has no floor. Null for n/a.
-     */
-    public static BigDecimal floored(Claim claim, BigDecimal figure, BigDecimal late, Settings settings) {
-        if (figure == null) return null;
-        BigDecimal due = figure.add(late);
-        return claim.isCorrection() ? due : due.max(settings.floorOn(claim.getDate()));
+    /** The due on a floored rate figure ({@link #floor}) with the late charge on it. Null for n/a. */
+    public static BigDecimal due(BigDecimal figure, BigDecimal late) {
+        return figure == null ? null : figure.add(late);
     }
 
     /** How the claim's live figures round, by the date it rounds by and the sheet's policy date. */
@@ -53,15 +54,15 @@ public final class ClaimFigure {
     }
 
     /**
-     * The claim's due as the screen shows it: the due fixed when it was settled, else its live due
-     * ({@link #floored}) on its rate figure ({@link #of}) and the late charge an OPEN or PENDING claim
-     * gains on that figure while overdue on {@code today}. Null for n/a.
+     * The claim's due as the screen shows it: the due fixed when it was settled, else its live due:
+     * its floored rate figure ({@link #of}) plus the late charge an OPEN or PENDING claim gains on that
+     * figure while overdue on {@code today}. Null for n/a.
      */
     public static BigDecimal withLate(Claim claim, List<Rate> rates, String grade, Settings settings,
             LocalDate today) {
         if (claim.getSettledDue() != null) return claim.getSettledDue();
         BigDecimal figure = of(claim, rates, grade, settings, today);
-        return figure == null ? null : floored(claim, figure, late(claim, figure, grade, settings, today), settings);
+        return figure == null ? null : due(figure, late(claim, figure, grade, settings, today));
     }
 
     /**
