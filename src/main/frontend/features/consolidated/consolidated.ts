@@ -3,7 +3,7 @@ import { getJson } from '../../api/http';
 import type { Claim, ClaimStatus } from '../claims/claims';
 import { GRADES, liveHolds } from '../people/people';
 import type { Grade, Person } from '../people/people';
-import { heldParts, personDueTotal, sumDue, trimmedSumDue } from '../rates/rates';
+import { heldParts, personDueTotal, personSplitTotals, sumDue, trimmedSumDue } from '../rates/rates';
 import type { Dated, Late, Rate } from '../rates/rates';
 import { personOverdue } from '../overdue/overdue';
 import { floorOf, lateOf } from '../access/access';
@@ -32,6 +32,12 @@ export type Figures = {
   dues: string[];
   /** Each person's overdue-total, in the order of `names`. */
   overdues: string[];
+  /** Each person's settled-total, in the order of `names`. */
+  settleds: string[];
+  /** Each person's open-total, in the order of `names`. */
+  opens: string[];
+  /** Each person's cut total, in the order of `names`. */
+  cuts: string[];
   /** How many overdue claims count, over everyone on it (the sheet's overdue count). */
   overdueCount: number;
 };
@@ -55,6 +61,7 @@ export function sheetFigures(
   const dues = people.map(dueOf);
   const overdueOf = people.map((p) => personOverdue(rates, p.grades, today, claimsOf(p.id), liveHolds(p, today), floor, late));
   const overdues = overdueOf.map((o) => o.total);
+  const splits = people.map((p) => personSplitTotals(rates, p.grades, today, claimsOf(p.id), liveHolds(p, today), floor, late, heldParts(p.id, people, claims, rates, today, floor, late)));
   return {
     gradeDueTotals: Object.fromEntries(
       [...new Set([...GRADES, ...people.map((p) => p.grade)])].map((g) => [
@@ -69,16 +76,27 @@ export function sheetFigures(
     names: people.map((p) => [p.name, ...p.aliases].map(asName)),
     dues,
     overdues,
+    settleds: splits.map((s) => s.settled),
+    opens: splits.map((s) => s.open),
+    cuts: people.map((p) => cutTotal(pools, p.id)),
     overdueCount: overdueOf.reduce((n, o) => n + o.count, 0),
   };
 }
 
 /**
- * The figures of a whole tree from each sheet's: the due-total and overdue-total trimmed once over
+ * The figures of a whole tree from each sheet's: the due-total, overdue-total, settled-total, open-total
+ * and cut total each trimmed once over
  * every person of the tree, and the people counted once each — people whose names or aliases match
  * (as names are compared), on any sheet of it, are one person.
  */
-export function treeTotals(all: Figures[]): { people: number; dueTotal: string; overdueTotal: string } {
+export function treeTotals(all: Figures[]): {
+  people: number;
+  dueTotal: string;
+  overdueTotal: string;
+  settledTotal: string;
+  openTotal: string;
+  cutTotal: string;
+} {
   const names = all.flatMap((f) => f.names);
   const root = names.map((_, i) => i);
   const find = (i: number): number => (root[i] === i ? i : (root[i] = find(root[i])));
@@ -94,6 +112,9 @@ export function treeTotals(all: Figures[]): { people: number; dueTotal: string; 
     people: new Set(names.map((_, i) => find(i))).size,
     dueTotal: trimmedSumDue(all.flatMap((f) => f.dues)),
     overdueTotal: trimmedSumDue(all.flatMap((f) => f.overdues)),
+    settledTotal: trimmedSumDue(all.flatMap((f) => f.settleds)),
+    openTotal: trimmedSumDue(all.flatMap((f) => f.opens)),
+    cutTotal: trimmedSumDue(all.flatMap((f) => f.cuts)),
   };
 }
 

@@ -381,7 +381,7 @@ function PersonSplitTotals({ sheetId, person }: { sheetId: string; person: Perso
   );
 }
 
-// The sheet's settled-total and open-total: everyone's figure simply added up (not trimmed).
+// The sheet's settled-total and open-total: everyone's figure added up, trimmed of the highest and lowest.
 function SplitTotals({ sheetId }: { sheetId: string }) {
   const people = usePeople(sheetId).data ?? [];
   const claims = useClaims(sheetId).data ?? [];
@@ -395,8 +395,8 @@ function SplitTotals({ sheetId }: { sheetId: string }) {
   );
   return (
     <p>
-      Settled in all: <strong data-testid="rollup-settled-total">{sumDue(splits.map((s) => s.settled))}</strong>, open in
-      all: <strong data-testid="rollup-open-total">{sumDue(splits.map((s) => s.open))}</strong>
+      Settled in all: <strong data-testid="rollup-settled-total">{trimmedSumDue(splits.map((s) => s.settled))}</strong>, open in
+      all: <strong data-testid="rollup-open-total">{trimmedSumDue(splits.map((s) => s.open))}</strong>
     </p>
   );
 }

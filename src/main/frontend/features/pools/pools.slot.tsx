@@ -8,7 +8,7 @@ import { PersonHead, PersonRow } from '../../slots/defs/personRow';
 import { useUser } from '../session/session';
 import { usePeople } from '../people/people';
 import type { Person } from '../people/people';
-import { sumDue } from '../rates/rates';
+import { trimmedSumDue } from '../rates/rates';
 import { cutTotal, poolsKey, usePools } from './pools';
 import type { Pool } from './pools';
 
@@ -202,13 +202,13 @@ function PersonCutTotal({ sheetId, person }: { sheetId: string; person: Person }
   return <td data-testid="person-cut-total">{cutTotal(pools, person.id)}</td>;
 }
 
-// The sheet's cut total: everyone's cut total added up.
+// The sheet's cut total: everyone's cut total added up, trimmed of the highest and lowest.
 function SheetCutTotal({ sheetId }: { sheetId: string }) {
   const people = usePeople(sheetId).data ?? [];
   const pools = usePools(sheetId).data ?? [];
   return (
     <p>
-      Cut in all: <strong data-testid="rollup-cut-total">{sumDue(people.map((p) => cutTotal(pools, p.id)))}</strong>
+      Cut in all: <strong data-testid="rollup-cut-total">{trimmedSumDue(people.map((p) => cutTotal(pools, p.id)))}</strong>
     </p>
   );
 }
