@@ -1,0 +1,53 @@
+import { getJsonNow } from '../../api/http';
+import type { Claim } from '../claims/claims';
+import { liveHolds } from '../people/people';
+import type { Person } from '../people/people';
+import { personDueTotal } from '../rates/rates';
+import type { Rate } from '../rates/rates';
+import { floorOf, lateOf } from '../access/access';
+import type { Settings } from '../access/access';
+import type { Sheet } from '../sheet/sheet';
+
+/** One person found: their sheet, their name and their due-total as their sheet's list shows it. */
+export type Found = { sheetId: string; name: string; dueTotal: string };
+
+const enc = encodeURIComponent;
+
+/** Whether the person's name or one of their aliases holds the text, case ignored. */
+function matches(p: Person, text: string): boolean {
+  const t = text.toLowerCase();
+  return [p.name, ...p.aliases].some((n) => n.toLowerCase().includes(t));
+}
+
+/** The people on one sheet matching the text, in list order, each read fresh from the store. */
+async function searchSheet(sheetId: string, text: string): Promise<Found[]> {
+  const [sheet, people, claims, rates, settings] = await Promise.all([
+    getJsonNow<Sheet>(`/api/sheets/${enc(sheetId)}`),
+    getJsonNow<{ people: Person[] }>(`/api/sheets/${enc(sheetId)}/people`).then((r) => r.people),
+    getJsonNow<{ claims: Claim[] }>(`/api/sheets/${enc(sheetId)}/claims`).then((r) => r.claims),
+    getJsonNow<{ rates: Rate[] }>(`/api/sheets/${enc(sheetId)}/rates`).then((r) => r.rates),
+    getJsonNow<Settings>(`/api/sheets/${enc(sheetId)}/settings`),
+  ]);
+  const today = sheet.today;
+  const floor = floorOf(settings);
+  const late = lateOf(settings, today);
+  const cap = settings.cap ?? '';
+  return people
+    .filter((p) => matches(p, text))
+    .map((p) => ({
+      sheetId,
+      name: p.name,
+      dueTotal: personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap),
+    }));
+}
+
+/**
+ * Everyone over the sheet and the other sheets of its tree (its ancestors and descendants) whose
+ * name or an alias holds the text, case ignored: the sheet's own people first in list order, then
+ * the other sheets' by sheet id.
+ */
+export async function searchTree(sheetId: string, text: string): Promise<Found[]> {
+  const { sheets } = await getJsonNow<{ sheets: string[] }>(`/api/sheets/${enc(sheetId)}/tree`);
+  const found = await Promise.all([sheetId, ...sheets].map((id) => searchSheet(id, text)));
+  return found.flat();
+}
