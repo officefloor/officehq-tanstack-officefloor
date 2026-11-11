@@ -25,17 +25,26 @@ import net.officefloor.web.ObjectResponse;
  * among the pools by name: its lead and members at equal shares, the sheet's pot its pot. For every period
  * whose to-date is on or before the sheet's today, each member carries its cut as it stood at the end of that
  * period (the pools, their members, the pot and the holds as of that day, it standing in for the sheet's today).
+ * A closed (or soft-closed) period carries instead each member's cut fixed when it closed (see {@link FrozenCuts}),
+ * even when it closed after its to-date, and is listed even before its to-date is reached.
  */
 public class RespondWithPools {
     public void respond(@Val Sheet sheet, PoolRepository repository, CrewRepository crews, SettingsRepository settings,
-            PeriodRepository periods, HttpServletRequest request, ObjectResponse<PoolsResponse> response) {
+            PeriodRepository periods, FrozenCuts frozen, HttpServletRequest request, ObjectResponse<PoolsResponse> response) {
         LocalDate asOf = AsOf.of(request);
         List<PoolResponse> now = read(sheet.id(), sheet.today(), asOf, repository, crews, settings);
         List<Period> ended = (asOf == null ? periods.findAll(sheet.id()) : periods.findAllAsOf(sheet.id(), asOf))
-                .stream().filter(p -> !p.to().isAfter(sheet.today())).toList();
+                .stream().filter(p -> p.closed() || !p.to().isAfter(sheet.today())).toList();
+        Map<String, Map<String, Map<String, String>>> fixed = frozen.find(sheet.id());
         // pool name -> member key -> period name -> cut
         Map<String, Map<String, Map<String, String>>> history = new HashMap<>();
         for (Period period : ended) {
+            if (period.closed() && fixed.containsKey(period.name())) {
+                fixed.get(period.name()).forEach((pool, cuts) -> cuts.forEach((member, cut) -> history
+                        .computeIfAbsent(pool, k -> new HashMap<>()).computeIfAbsent(member, k -> new HashMap<>())
+                        .put(period.name(), cut)));
+                continue;
+            }
             for (PoolResponse pool : read(sheet.id(), period.to(), period.to(), repository, crews, settings)) {
                 for (PoolMemberResponse m : pool.members()) {
                     history.computeIfAbsent(pool.name(), k -> new HashMap<>())
@@ -51,12 +60,12 @@ public class RespondWithPools {
     }
 
     /** A member's key within its pool: the person's id, or pool-<name> for a member pool. */
-    private static String key(PoolMemberResponse m) {
+    static String key(PoolMemberResponse m) {
         return m.memberPool().isEmpty() ? m.personId() : "pool-" + m.memberPool();
     }
 
     /** The pools, with {@code today} as the sheet's today, as they stood at the end of {@code asOf} (null: now). */
-    private static List<PoolResponse> read(String sheetId, LocalDate today, LocalDate asOf, PoolRepository repository,
+    static List<PoolResponse> read(String sheetId, LocalDate today, LocalDate asOf, PoolRepository repository,
             CrewRepository crews, SettingsRepository settings) {
         List<PoolMember> members = new ArrayList<>(repository.members(sheetId, today, asOf));
         members.addAll(repository.crewMembers(sheetId, today, asOf));

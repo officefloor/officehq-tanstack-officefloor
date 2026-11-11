@@ -5,7 +5,8 @@ package net.officefloor.hq.app.pool;
  * name ('' for a person), the name, their share, whether they are retired, and their cut of the pool's
  * pot with two decimals ('' for none), its from- and to-dates ('' for open) and whether they
  * include the sheet's today. {@code periodCuts} is, for each period whose to-date is on or before the sheet's
- * today (by from-date), their cut as it stood at the end of that period ('' for none).
+ * today, or closed (by from-date), their cut as it stood at the end of that period, or as fixed when it closed
+ * ('' for none).
  */
 public record PoolMemberResponse(String personId, String memberPool, String name, String share, boolean retired,
         String cut, String from, String to, boolean active, java.util.List<PeriodCut> periodCuts) {

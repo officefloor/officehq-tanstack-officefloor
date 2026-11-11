@@ -5,6 +5,7 @@ import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.ClaimLogRepository;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.person.PersonRepository;
+import net.officefloor.hq.app.pool.FrozenCuts;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.role.RoleRepository;
 import net.officefloor.hq.app.setting.SettingsRepository;
@@ -20,13 +21,13 @@ import net.officefloor.plugin.variable.Val;
 public class SoftClosePeriod {
     public void close(@Val Sheet sheet, @Val Period period, PeriodRepository periods, PersonRepository people,
             ClaimRepository claims, ClaimLogRepository log, RateRepository rates, SettingsRepository settings, RoleRepository roles,
-            HttpServletRequest request, Out<Period> closedOut) throws InvalidPeriodException {
+            FrozenCuts frozen, HttpServletRequest request, Out<Period> closedOut) throws InvalidPeriodException {
         String role = roles.roleOf(sheet.id(), Audit.user(request));
         if (!settings.find(sheet.id()).allows("close", role)) {
             throw new InvalidPeriodException("A " + role + " may not soft-close period " + period.name());
         }
         if (period.closed()) throw new InvalidPeriodException("Period " + period.name() + " is already closed");
-        Period closed = ClosePeriod.fix(sheet, period, true, periods, people, claims, log, rates, settings);
+        Period closed = ClosePeriod.fix(sheet, period, true, periods, people, claims, log, rates, settings, frozen);
         if (closed == null) throw new InvalidPeriodException("Period " + period.name() + " is already closed");
         closedOut.set(closed);
     }

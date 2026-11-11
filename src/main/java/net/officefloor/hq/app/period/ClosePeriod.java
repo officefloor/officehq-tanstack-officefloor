@@ -12,6 +12,7 @@ import net.officefloor.hq.app.claim.ClaimLogRepository;
 import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.pool.FrozenCuts;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
@@ -27,18 +28,18 @@ import net.officefloor.plugin.variable.Val;
  * the end of its last day, by the status their log records then (OPEN, PENDING and SETTLED, but not an
  * unbound open one of a person whose retirement date is reached, nor one deferred now), due by a date inside it (an overdue one with its late charge), added up, skipping n/a. Each person's own figure for the period is fixed
  * too, and the period's due-total is the sum of them; and so is each person's carried figure for it. A soft-closed period closes too, its figures
- * fixed afresh. A period already closed is refused, and so is a role the permission matrix does not allow to close.
+ * fixed afresh. Every pool member's cut is fixed for it too, as it stands at this moment. A period already closed is refused, and so is a role the permission matrix does not allow to close.
  */
 public class ClosePeriod {
     public void close(@Val Sheet sheet, @Val Period period, PeriodRepository periods, PersonRepository people,
             ClaimRepository claims, ClaimLogRepository log, RateRepository rates, SettingsRepository settings, RoleRepository roles,
-            HttpServletRequest request, Out<Period> closedOut) throws InvalidPeriodException {
+            FrozenCuts frozen, HttpServletRequest request, Out<Period> closedOut) throws InvalidPeriodException {
         String role = roles.roleOf(sheet.id(), Audit.user(request));
         if (!settings.find(sheet.id()).allows("close", role)) {
             throw new InvalidPeriodException("A " + role + " may not close period " + period.name());
         }
         if (period.hardClosed()) throw new InvalidPeriodException("Period " + period.name() + " is already closed");
-        Period closed = fix(sheet, period, false, periods, people, claims, log, rates, settings);
+        Period closed = fix(sheet, period, false, periods, people, claims, log, rates, settings, frozen);
         if (closed == null) throw new InvalidPeriodException("Period " + period.name() + " is already closed");
         closedOut.set(closed);
     }
@@ -49,7 +50,7 @@ public class ClosePeriod {
      * when another request changed it first.
      */
     static Period fix(Sheet sheet, Period period, boolean soft, PeriodRepository periods, PersonRepository people,
-            ClaimRepository claims, ClaimLogRepository log, RateRepository rates, SettingsRepository settings) {
+            ClaimRepository claims, ClaimLogRepository log, RateRepository rates, SettingsRepository settings, FrozenCuts frozen) {
         List<Rate> all = rates.findAll(sheet.id());
         Settings sheetSettings = settings.find(sheet.id());
         List<Claim> sheetClaims = claims.findAll(sheet.id());
@@ -78,6 +79,7 @@ public class ClosePeriod {
         periods.savePersonTotals(closed, personTotals);
         periods.deletePersonCarried(closed);
         periods.savePersonCarried(closed, personCarried);
+        frozen.freeze(sheet, closed);
         return closed;
     }
 

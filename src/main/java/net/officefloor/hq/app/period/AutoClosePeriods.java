@@ -8,6 +8,7 @@ import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.ClaimLogRepository;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.person.PersonRepository;
+import net.officefloor.hq.app.pool.FrozenCuts;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.setting.Settings;
 import net.officefloor.hq.app.setting.SettingsRepository;
@@ -22,14 +23,14 @@ import net.officefloor.plugin.variable.Val;
 public class AutoClosePeriods {
     public void close(@Val Sheet sheet, @Val LocalDate today, PeriodRepository periods, PersonRepository people,
             ClaimRepository claims, ClaimLogRepository log, RateRepository rates, SettingsRepository settings,
-            HttpServletRequest request, Audit audit) {
+            FrozenCuts frozen, HttpServletRequest request, Audit audit) {
         Settings sheetSettings = settings.find(sheet.id());
         Sheet now = new Sheet(sheet.id(), today, sheet.archived());
         List<Period> due = periods.findAll(sheet.id()).stream()
                 .filter((p) -> !p.closed() && sheetSettings.pastGrace(p.to(), today))
                 .sorted(Comparator.comparing(Period::to)).toList();
         for (Period period : due) {
-            Period closed = ClosePeriod.fix(now, period, false, periods, people, claims, log, rates, settings);
+            Period closed = ClosePeriod.fix(now, period, false, periods, people, claims, log, rates, settings, frozen);
             if (closed == null) continue; // another request closed it first
             audit.record("PERIOD_CLOSED sheet=" + sheet.id() + " by=" + Audit.user(request)
                     + " period=" + closed.name() + " total=" + closed.closedTotal().setScale(2).toPlainString()
