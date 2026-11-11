@@ -1,0 +1,427 @@
+diff --git a/src/main/frontend/features/access/access.slot.tsx b/src/main/frontend/features/access/access.slot.tsx
+index e9ae263b9..7d40e9c92 100644
+--- a/src/main/frontend/features/access/access.slot.tsx
++++ b/src/main/frontend/features/access/access.slot.tsx
+@@ -59,6 +59,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
+     escalateAfter: '',
+     reviewSla: '',
+     proofKinds: '',
++    defaultGrade: '',
+   });
+   const [touched, setTouched] = useState<Set<Key>>(new Set());
+   const [gradeFields, setGradeFields] = useState<Record<string, string>>({});
+@@ -252,6 +253,14 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
+       }
+       body.proofKinds = proofKinds;
+     }
++    if (touched.has('defaultGrade')) {
++      const defaultGrade = fields.defaultGrade.trim();
++      if (defaultGrade !== '' && !(GRADES as readonly string[]).includes(defaultGrade)) {
++        setError('A default grade is one of A, B or C, or blank.');
++        return;
++      }
++      body.defaultGrade = defaultGrade;
++    }
+     if (gradesTouched.size > 0) {
+       const gradeTerms: Record<string, string> = {};
+       for (const grade of GRADES) {
+@@ -722,6 +731,19 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
+         <span>
+           now: <strong data-testid="setting-proof-kinds-current">{settings.data?.proofKinds ?? ''}</strong>
+         </span>{' '}
++        <label>
++          Default grade{' '}
++          <input
++            data-testid="setting-default-grade"
++            placeholder="A"
++            value={fields.defaultGrade}
++            onFocus={() => touch('defaultGrade')}
++            onChange={(e) => change('defaultGrade', e.target.value)}
++          />
++        </label>{' '}
++        <span>
++          now: <strong data-testid="setting-default-grade-current">{settings.data?.defaultGrade ?? ''}</strong>
++        </span>{' '}
+         {ACTIONS.map((action) => (
+           <span key={action}>
+             <label>
+diff --git a/src/main/frontend/features/access/access.ts b/src/main/frontend/features/access/access.ts
+index b96cb6c38..d39b84410 100644
+--- a/src/main/frontend/features/access/access.ts
++++ b/src/main/frontend/features/access/access.ts
+@@ -55,6 +55,8 @@ export type Settings = {
+   reviewSla: string;
+   /** The proof kinds, a comma separated list of kinds, receipt or photo ('' for none), not dated: while set, a claim above the proof threshold needs a proof of each. */
+   proofKinds: string;
++  /** The default grade, one of the grades ('' for A), not dated: the grade a quick-added person and an imported line with a blank grade take. */
++  defaultGrade: string;
+   /**
+    * Every value recorded for each figure setting, by key (clerk-limit, floor, terms, late-pct,
+    * terms-A, terms-B, terms-C, cap, proof-threshold, note-threshold, grace-A, grace-B, grace-C, proof-threshold-A, proof-threshold-B,
+diff --git a/src/main/frontend/features/importpeople/importPeople.slot.tsx b/src/main/frontend/features/importpeople/importPeople.slot.tsx
+index c27087bba..aed6c2423 100644
+--- a/src/main/frontend/features/importpeople/importPeople.slot.tsx
++++ b/src/main/frontend/features/importpeople/importPeople.slot.tsx
+@@ -9,7 +9,7 @@ import { peopleKey } from '../people/people';
+ 
+ type Result = { added: number; updated: number };
+ 
+-// The import box: lines of name,grade,terms,contact (the terms and contact may be absent or blank)
++// The import box: lines of name,grade,terms,contact (the terms and contact may be absent or blank; a blank grade takes the sheet's default grade)
+ // each add a person, in order, as the person form would; a line naming a person on the sheet (by name or
+ // alias) updates them instead, as the edit form would (terms and contact only when the line gives them). The server checks every line by the form's
+ // rules first (a name or contact repeated within the import is refused too): one bad line refuses the
+diff --git a/src/main/frontend/features/quickadd/quickadd.slot.tsx b/src/main/frontend/features/quickadd/quickadd.slot.tsx
+index 17013653e..314a55055 100644
+--- a/src/main/frontend/features/quickadd/quickadd.slot.tsx
++++ b/src/main/frontend/features/quickadd/quickadd.slot.tsx
+@@ -13,7 +13,7 @@ type Fields = { name: string; amount: string };
+ const EMPTY: Fields = { name: '', amount: '' };
+ 
+ // The quick-add bar under the people list: a name and an amount make a DRAFT claim dated the
+-// sheet's entry date while set (else its today), with no note, for that person, adding them (grade A) when the name is not on the
++// sheet's entry date while set (else its today), with no note, for that person, adding them (the sheet's default grade, else A) when the name is not on the
+ // sheet. The server makes it one change: a refusal adds no one.
+ function QuickAdd({ sheetId }: { sheetId: string }) {
+   const queryClient = useQueryClient();
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateImportPeople.java b/src/main/java/net/officefloor/hq/app/person/ValidateImportPeople.java
+index a98a9706c..b7bf33a5e 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidateImportPeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateImportPeople.java
+@@ -3,18 +3,23 @@ package net.officefloor.hq.app.person;
+ import java.util.ArrayList;
+ import java.util.List;
+ import net.officefloor.plugin.variable.Out;
++import net.officefloor.hq.app.setting.SettingsRepository;
++import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ /**
+  * Splits the import into lines (blank lines skipped) and checks each by the person form's rules; the
+- * first line that fails refuses the whole import. An import with no lines is refused too.
++ * first line that fails refuses the whole import. An import with no lines is refused too. A line with
++ * a blank grade takes the sheet's default grade.
+  */
+ public class ValidateImportPeople {
+-    public void validate(@RequestBody ImportPeopleRequest request, Out<ImportPeopleLines> linesOut)
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ImportPeopleRequest request,
++            SettingsRepository settings, Out<ImportPeopleLines> linesOut)
+             throws InvalidPersonException {
+         String text = request == null || request.text() == null ? "" : request.text();
+         List<PersonRequest> lines = new ArrayList<>();
+         int number = 0;
++        String defaultGrade = null;
+         for (String raw : text.split("\\r?\\n|\\r")) {
+             number++;
+             if (raw.isBlank()) continue;
+@@ -22,8 +27,13 @@ public class ValidateImportPeople {
+             if (fields.length < 2) throw new InvalidPersonException("Line " + number + ": name,grade,terms,contact");
+             String terms = fields.length > 2 ? fields[2] : "";
+             String contact = fields.length > 3 ? fields[3] : "";
++            String grade = fields[1];
++            if (grade.isBlank()) {
++                if (defaultGrade == null) defaultGrade = settings.find(sheetId).newPersonGrade();
++                grade = defaultGrade;
++            }
+             try {
+-                lines.add(PersonRequest.checked(new PersonRequest(fields[0], fields[1], null, "", terms, contact, null, "")));
++                lines.add(PersonRequest.checked(new PersonRequest(fields[0], grade, null, "", terms, contact, null, "")));
+             } catch (InvalidPersonException e) {
+                 throw new InvalidPersonException("Line " + number + ": " + e.getMessage());
+             }
+diff --git a/src/main/java/net/officefloor/hq/app/quick/FindQuickAddPerson.java b/src/main/java/net/officefloor/hq/app/quick/FindQuickAddPerson.java
+index 87a655a59..6e0a4b757 100644
+--- a/src/main/java/net/officefloor/hq/app/quick/FindQuickAddPerson.java
++++ b/src/main/java/net/officefloor/hq/app/quick/FindQuickAddPerson.java
+@@ -9,17 +9,19 @@ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+- * The person on the sheet with the typed name (ignoring case), or a new one with grade A, not yet saved:
++ * The person on the sheet with the typed name (ignoring case), or a new one with the sheet's default grade, not yet saved:
+  * refused when the name is a name or alias on another sheet of the sheet's tree.
+  */
+ public class FindQuickAddPerson {
+     public void find(@Val QuickAdd quick, @Val Sheet sheet, PersonRepository repository, SheetRepository sheets,
++            net.officefloor.hq.app.setting.SettingsRepository settings,
+             Out<Person> personOut, Out<QuickAddPerson> createdOut) throws DuplicatePersonNameException {
+         Person person = repository.findByName(sheet.id(), quick.name());
+         if (person == null && repository.nameTakenIn(sheets.tree(sheet.id()), quick.name(), null)) {
+             throw new DuplicatePersonNameException(quick.name());
+         }
+         createdOut.set(new QuickAddPerson(person == null));
+-        personOut.set(person != null ? person : new Person(null, sheet.id(), quick.name(), "A"));
++        personOut.set(person != null ? person : new Person(null, sheet.id(), quick.name(),
++                settings.find(sheet.id()).newPersonGrade()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/AuditSettingChanged.java b/src/main/java/net/officefloor/hq/app/setting/AuditSettingChanged.java
+index f3202d90d..c5df0fdc0 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/AuditSettingChanged.java
++++ b/src/main/java/net/officefloor/hq/app/setting/AuditSettingChanged.java
+@@ -13,7 +13,7 @@ import net.officefloor.plugin.variable.Val;
+  * action's entry in the permission matrix (blank for the standing rule, never dated), then the grace
+  * days (blank for off, never dated), then the entry date (blank for off, never dated), then each
+  * grade's grace days (blank for none), then each grade's proof threshold (blank for none), then the pot
+- * (blank for none, never dated), then the parent sheet (blank for none, never dated), then the fiscal start month (never dated), then the alert threshold (blank for off, never dated), then the rounding mode (blank for none), then the review threshold (blank for none), then the escalation gap (blank for off, never dated), then the review SLA (blank for none, never dated), then the proof kinds (blank for none, never dated); a figure
++ * (blank for none, never dated), then the parent sheet (blank for none, never dated), then the fiscal start month (never dated), then the alert threshold (blank for off, never dated), then the rounding mode (blank for none), then the review threshold (blank for none), then the escalation gap (blank for off, never dated), then the review SLA (blank for none, never dated), then the proof kinds (blank for none, never dated), then the default grade (blank for A, never dated); a figure
+  * setting saved from a from-date given ends with it. Runs after every rule has passed, so a refused
+  * change writes nothing.
+  */
+@@ -72,6 +72,10 @@ public class AuditSettingChanged {
+             audit.record(head + " key=" + Settings.PROOF_KINDS + " value="
+                     + (input.proofKinds() == null ? "" : input.proofKinds()));
+         }
++        if (input.defaultGradeChanged()) {
++            audit.record(head + " key=" + Settings.DEFAULT_GRADE + " value="
++                    + (input.defaultGrade() == null ? "" : input.defaultGrade()));
++        }
+         if (input.parentChanged()) {
+             audit.record(head + " key=parent value=" + (input.parent() == null ? "" : input.parent()));
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SaveSettings.java b/src/main/java/net/officefloor/hq/app/setting/SaveSettings.java
+index 6a1fcac2d..6a83f1353 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SaveSettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SaveSettings.java
+@@ -9,7 +9,7 @@ import net.officefloor.plugin.variable.Val;
+  * Saves the settings being changed, leaving the others as they are: a figure setting's value is
+  * recorded from its from-date (the sheet's today when none is given), keeping the values recorded
+  * from other dates and replacing one recorded from the same date. An action's entry in the
+- * permission matrix is not dated: it replaces the one before, nor is the parent sheet, nor the alert threshold, nor the escalation gap, nor the review SLA, nor the proof kinds.
++ * permission matrix is not dated: it replaces the one before, nor is the parent sheet, nor the alert threshold, nor the escalation gap, nor the review SLA, nor the proof kinds, nor the default grade.
+  */
+ public class SaveSettings {
+     public void save(@Val SettingsInput input, @Val Sheet sheet, SettingsRepository repository,
+@@ -19,7 +19,7 @@ public class SaveSettings {
+         if (input.policyDateChanged() || input.periodNumberingFromChanged() || input.graceDaysChanged()
+                 || input.entryDateChanged() || input.potChanged() || input.fiscalStartMonthChanged()
+                 || input.alertThresholdChanged() || input.escalateAfterChanged() || input.reviewSlaChanged()
+-                || input.proofKindsChanged()) {
++                || input.proofKindsChanged() || input.defaultGradeChanged()) {
+             repository.saveUndated(new Settings(sheet.id(), now.today(), now.dated(),
+                     input.policyDateChanged() ? input.policyDate() : now.policyDate(),
+                     input.periodNumberingFromChanged() ? input.periodNumberingFrom() : now.periodNumberingFrom(), now.perms(),
+@@ -30,7 +30,8 @@ public class SaveSettings {
+                     input.alertThresholdChanged() ? input.alertThreshold() : now.alertThreshold(),
+                     input.escalateAfterChanged() ? input.escalateAfter() : now.escalateAfter(),
+                     input.reviewSlaChanged() ? input.reviewSla() : now.reviewSla(),
+-                    input.proofKindsChanged() ? input.proofKinds() : now.proofKinds()));
++                    input.proofKindsChanged() ? input.proofKinds() : now.proofKinds(),
++                    input.defaultGradeChanged() ? input.defaultGrade() : now.defaultGrade()));
+         }
+         input.perms().forEach((action, roles) -> repository.recordPerm(sheet.id(), action, roles));
+         java.util.Map<String, String> values = new java.util.LinkedHashMap<>(input.datedValues());
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Settings.java b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+index f10bf836f..b2918cdd9 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+@@ -33,12 +33,18 @@ import java.util.NavigableMap;
+  * shared out as cuts among a balanced pool's members, and its fiscal year start month (null: 1), and its alert threshold (null: off),
+  * and its escalation gap in days (null: off), and its review SLA in days (null: none): a REVIEW claim whose
+  * review day plus it is before the sheet's today is late for review, and its proof kinds (null: none), a
+- * comma separated list of kinds: while set, a claim that needs a proof needs at least one of each.
++ * comma separated list of kinds: while set, a claim that needs a proof needs at least one of each, and its
++ * default grade (null: A), the grade a quick-added person and an imported line with a blank grade take.
+  */
+ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap<LocalDate, String>> dated,
+         LocalDate policyDate, LocalDate periodNumberingFrom, Map<String, String> perms, Integer graceDays,
+         LocalDate entryDate, BigDecimal pot, Integer fiscalStartMonth, BigDecimal alertThreshold,
+-        Integer escalateAfter, Integer reviewSla, String proofKinds) {
++        Integer escalateAfter, Integer reviewSla, String proofKinds, String defaultGrade) {
++    /** The grade a new person takes when none is given: the default grade, else A. */
++    public String newPersonGrade() {
++        return defaultGrade == null || defaultGrade.isBlank() ? "A" : defaultGrade;
++    }
++
+     /** The month, 1 to 12, a fiscal year starts in. */
+     public int fiscalStart() {
+         return fiscalStartMonth == null ? 1 : fiscalStartMonth;
+@@ -65,6 +71,7 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
+     public static final String ROUNDING = "rounding";
+     public static final String REVIEW_THRESHOLD = "review-threshold";
+     public static final String PROOF_KINDS = "proof-kinds";
++    public static final String DEFAULT_GRADE = "default-grade";
+ 
+     /** The kinds of proof the proof kinds list (none set: none). */
+     public List<String> proofKindList() {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsInput.java b/src/main/java/net/officefloor/hq/app/setting/SettingsInput.java
+index e20ab2f44..b7cceb7e6 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsInput.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsInput.java
+@@ -22,7 +22,8 @@ import java.time.LocalDate;
+  * half-even (null: none), dated by its key (rounding), and whether the review threshold is changed and to
+  * what (null: none), and whether the escalation gap is changed and to what, in days (null: off), and whether
+  * the review SLA is changed and to what, in days (null: none), and whether the proof kinds are changed and
+- * to what, a comma separated list of kinds (null: none).
++ * to what, a comma separated list of kinds (null: none), and whether the default grade is changed and to
++ * what, one of the grades (null: A).
+  */
+ public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, BigDecimal floor, Integer terms, BigDecimal latePct,
+         boolean policyDateChanged, LocalDate policyDate,
+@@ -40,7 +41,8 @@ public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, Bi
+         boolean reviewThresholdChanged, BigDecimal reviewThreshold,
+         boolean escalateAfterChanged, Integer escalateAfter,
+         boolean reviewSlaChanged, Integer reviewSla,
+-        boolean proofKindsChanged, String proofKinds) {
++        boolean proofKindsChanged, String proofKinds,
++        boolean defaultGradeChanged, String defaultGrade) {
+ 
+     /**
+      * The figure settings being changed, by key in the order they are audited, each with the value
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsRepository.java b/src/main/java/net/officefloor/hq/app/setting/SettingsRepository.java
+index c070c3a44..448162aad 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsRepository.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsRepository.java
+@@ -29,7 +29,7 @@ public class SettingsRepository {
+         Map<String, String> perms = new HashMap<>();
+         jdbc.query("SELECT action, roles FROM setting_perm WHERE sheet_id = ?",
+                 (RowCallbackHandler) (rs) -> perms.put(rs.getString("action"), rs.getString("roles")), sheetId);
+-        List<Settings> found = jdbc.query("SELECT today, policy_date, period_numbering_from, grace_days, entry_date, pot, fiscal_start_month, alert_threshold, escalate_after, review_sla, proof_kinds FROM sheet WHERE id = ?",
++        List<Settings> found = jdbc.query("SELECT today, policy_date, period_numbering_from, grace_days, entry_date, pot, fiscal_start_month, alert_threshold, escalate_after, review_sla, proof_kinds, default_grade FROM sheet WHERE id = ?",
+                 (rs, n) -> new Settings(sheetId, rs.getDate("today").toLocalDate(), dated,
+                         rs.getDate("policy_date") == null ? null : rs.getDate("policy_date").toLocalDate(),
+                         rs.getDate("period_numbering_from") == null ? null : rs.getDate("period_numbering_from").toLocalDate(), perms,
+@@ -37,9 +37,9 @@ public class SettingsRepository {
+                         rs.getDate("entry_date") == null ? null : rs.getDate("entry_date").toLocalDate(),
+                         rs.getBigDecimal("pot"), rs.getObject("fiscal_start_month", Integer.class),
+                         rs.getBigDecimal("alert_threshold"), rs.getObject("escalate_after", Integer.class),
+-                        rs.getObject("review_sla", Integer.class), rs.getString("proof_kinds")),
++                        rs.getObject("review_sla", Integer.class), rs.getString("proof_kinds"), rs.getString("default_grade")),
+                 sheetId);
+-        return found.isEmpty() ? new Settings(sheetId, null, dated, null, null, perms, null, null, null, null, null, null, null, null) : found.get(0);
++        return found.isEmpty() ? new Settings(sheetId, null, dated, null, null, perms, null, null, null, null, null, null, null, null, null) : found.get(0);
+     }
+ 
+     /** Records a dated setting's value from a date, replacing any value already recorded from it. */
+@@ -85,7 +85,7 @@ public class SettingsRepository {
+                 }, sheetId);
+         return new Settings(sheetId, day, dated, policyKept[0] ? policy[0] : now.policyDate(),
+                 now.periodNumberingFrom(), now.perms(), now.graceDays(), now.entryDate(), potKept[0] ? pot[0] : now.pot(), now.fiscalStartMonth(),
+-                now.alertThreshold(), now.escalateAfter(), now.reviewSla(), now.proofKinds());
++                now.alertThreshold(), now.escalateAfter(), now.reviewSla(), now.proofKinds(), now.defaultGrade());
+     }
+ 
+     private static final String POLICY_DATE = "policy-date";
+@@ -100,12 +100,12 @@ public class SettingsRepository {
+ 
+     /** Saves the undated settings. */
+     public void saveUndated(Settings settings) {
+-        jdbc.update("UPDATE sheet SET policy_date = ?, period_numbering_from = ?, grace_days = ?, entry_date = ?, pot = ?, fiscal_start_month = ?, alert_threshold = ?, escalate_after = ?, review_sla = ?, proof_kinds = ? WHERE id = ?",
++        jdbc.update("UPDATE sheet SET policy_date = ?, period_numbering_from = ?, grace_days = ?, entry_date = ?, pot = ?, fiscal_start_month = ?, alert_threshold = ?, escalate_after = ?, review_sla = ?, proof_kinds = ?, default_grade = ? WHERE id = ?",
+                 settings.policyDate() == null ? null : java.sql.Date.valueOf(settings.policyDate()),
+                 settings.periodNumberingFrom() == null ? null : java.sql.Date.valueOf(settings.periodNumberingFrom()),
+                 settings.graceDays(),
+                 settings.entryDate() == null ? null : java.sql.Date.valueOf(settings.entryDate()),
+-                settings.pot(), settings.fiscalStartMonth(), settings.alertThreshold(), settings.escalateAfter(), settings.reviewSla(), settings.proofKinds(), settings.sheetId());
++                settings.pot(), settings.fiscalStartMonth(), settings.alertThreshold(), settings.escalateAfter(), settings.reviewSla(), settings.proofKinds(), settings.defaultGrade(), settings.sheetId());
+         history(settings.sheetId(), POLICY_DATE, null,
+                 settings.policyDate() == null ? "" : settings.policyDate().toString());
+         history(settings.sheetId(), POT, null, settings.pot() == null ? "" : settings.pot().toPlainString());
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java b/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
+index c16fc8938..0a7d5698f 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
+@@ -21,7 +21,7 @@ package net.officefloor.hq.app.setting;
+  * (blank: off), not dated, and the rounding mode, half-up or half-even (blank: none), dated by its key (rounding), and the review threshold, with up to two decimals (blank: none), dated by its key
+  * (review-threshold), and the escalation gap, a whole number of days (blank: off), not dated, and the review
+  * SLA, a whole number of days (blank: none), not dated, and the proof kinds, a comma separated list of
+- * kinds, receipt or photo (blank: none), not dated.
++ * kinds, receipt or photo (blank: none), not dated, and the default grade, one of the grades (blank: A), not dated.
+  */
+ public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom,
+         java.util.Map<String, String> gradeTerms, String cap, java.util.Map<String, String> from,
+@@ -29,5 +29,5 @@ public record SettingsRequest(String clerkLimit, String floor, String terms, Str
+         String entryDate, java.util.Map<String, String> gradeGrace,
+         java.util.Map<String, String> gradeProofThreshold, String pot, String parent,
+         String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold,
+-        String escalateAfter, String reviewSla, String proofKinds) {
++        String escalateAfter, String reviewSla, String proofKinds, String defaultGrade) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+index 0dc4bba29..abdd647ea 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+@@ -19,14 +19,14 @@ import java.util.Map;
+  * days ('' for none); and each grade's proof threshold with two decimals ('' for none); and the pot
+  * with two decimals ('' for none); and the parent sheet's id ('' for none); and the fiscal year start
+  * month, 1 to 12; and the alert threshold with two decimals ('' for off); and the rounding mode,
+- * half-up or half-even ('' for none); and the review threshold with two decimals ('' for none); and the escalation gap in days ('' for off); and the review SLA in days ('' for none); and the proof kinds, a comma separated list ('' for none).
++ * half-up or half-even ('' for none); and the review threshold with two decimals ('' for none); and the escalation gap in days ('' for off); and the review SLA in days ('' for none); and the proof kinds, a comma separated list ('' for none); and the default grade ('' for A).
+  */
+ public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
+         String periodNumberingFrom, Map<String, String> gradeTerms, String cap, Map<String, List<Dated>> dated,
+         String proofThreshold, Map<String, String> perms, String graceDays, String noteThreshold,
+         String entryDate, Map<String, String> gradeGrace, Map<String, String> gradeProofThreshold,
+         String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding,
+-        String reviewThreshold, String escalateAfter, String reviewSla, String proofKinds) {
++        String reviewThreshold, String escalateAfter, String reviewSla, String proofKinds, String defaultGrade) {
+ 
+     /** A value ('' for none) recorded from a date (yyyy-MM-dd). */
+     public record Dated(String from, String value) {
+@@ -55,7 +55,8 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
+                 show(settings.reviewThresholdOn(today)),
+                 settings.escalateAfter() == null ? "" : settings.escalateAfter().toString(),
+                 settings.reviewSla() == null ? "" : settings.reviewSla().toString(),
+-                settings.proofKinds() == null ? "" : settings.proofKinds());
++                settings.proofKinds() == null ? "" : settings.proofKinds(),
++                settings.defaultGrade() == null ? "" : settings.defaultGrade());
+     }
+ 
+     private static String rounding(String value) {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
+index c4300ba1a..b7a197500 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
+@@ -275,6 +275,14 @@ public class ValidateSettings {
+             }
+             proofKinds = String.join(",", kinds);
+         }
++        boolean defaultGradeChanged = request != null && request.defaultGrade() != null;
++        String defaultGrade = null;
++        if (defaultGradeChanged && !request.defaultGrade().trim().isEmpty()) {
++            defaultGrade = request.defaultGrade().trim();
++            if (!Settings.GRADES.contains(defaultGrade)) {
++                throw new InvalidSettingException("A default grade is one of A, B or C, or blank");
++            }
++        }
+         Map<String, LocalDate> from = new LinkedHashMap<>();
+         if (request != null && request.from() != null) {
+             for (Map.Entry<String, String> entry : request.from().entrySet()) {
+@@ -294,6 +302,6 @@ public class ValidateSettings {
+                 entryChanged, entryDate, gradeGrace, gradeProofThreshold, potChanged, pot, parentChanged, parent,
+                 fiscalChanged, fiscalStartMonth, alertChanged, alertThreshold, roundingChanged, rounding,
+                 reviewThresholdChanged, reviewThreshold, escalateChanged, escalateAfter, reviewSlaChanged, reviewSla,
+-                proofKindsChanged, proofKinds));
++                proofKindsChanged, proofKinds, defaultGradeChanged, defaultGrade));
+     }
+ }
+diff --git a/src/main/resources/db/migration/V109__default_grade.sql b/src/main/resources/db/migration/V109__default_grade.sql
+new file mode 100644
+index 000000000..ce49d35db
+--- /dev/null
++++ b/src/main/resources/db/migration/V109__default_grade.sql
+@@ -0,0 +1,3 @@
++-- The sheet's default grade, the grade a quick-added person and an imported line with a blank grade
++-- take (null: A). Not dated.
++ALTER TABLE sheet ADD COLUMN default_grade VARCHAR(10);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/import.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/import.POST.yml
+index 6c4115921..aeab22dc9 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/import.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/import.POST.yml
+@@ -1,4 +1,4 @@
+-# Import people: a person per line of name,grade,terms,contact, in order. A line naming a person on the
++# Import people: a person per line of name,grade,terms,contact, in order (a blank grade: the sheet's default grade). A line naming a person on the
+ # sheet (by name or alias) updates them as the edit form would; any other line adds one. One change: every line is
+ # checked by the person form's rules before anything is written (a name or contact repeated within the
+ # import refuses it too), so a refused line refuses the whole import. A bad line is a 400, a name or
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick.POST.yml
+index 4f84d9776..8154a593c 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick.POST.yml
+@@ -1,5 +1,5 @@
+ # Quick-add: a DRAFT claim for the named person, dated the sheet's entry date while it is set (else its today) with no note, adding the
+-# person (grade A) when the name is not on the sheet. One change: every rule is checked before
++# person (the sheet's default grade, else A) when the name is not on the sheet. One change: every rule is checked before
+ # anything is written, so a refusal leaves no new person behind. A bad name or amount is a 400.
+ # A viewer may change nothing: refused before anything is read or written.
+ viewer:
