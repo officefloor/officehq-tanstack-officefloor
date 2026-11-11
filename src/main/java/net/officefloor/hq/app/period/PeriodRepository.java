@@ -64,6 +64,14 @@ public class PeriodRepository {
         return found.isEmpty() ? null : found.get(0);
     }
 
+    /** The sheet's periods' names, by the order they were added: a larger number added later. */
+    public Map<String, Long> addedOrder(String sheetId) {
+        Map<String, Long> order = new HashMap<>();
+        jdbc.query("SELECT name, added_seq FROM period WHERE sheet_id = ?",
+                rs -> { order.put(rs.getString("name"), rs.getLong("added_seq")); }, sheetId);
+        return order;
+    }
+
     public void insert(Period period) {
         jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, cap, added_on) VALUES (?, ?, ?, ?, ?,"
                 + " (SELECT today FROM sheet WHERE id = ?))",

@@ -2,7 +2,7 @@ import { SheetBody } from '../../slots/defs/sheetBody';
 import { useClaims } from '../claims/claims';
 import { gradeOn, liveHolds, usePeople } from '../people/people';
 import { claimDue, heldParts, personDueTotal, rateOn, useRates } from '../rates/rates';
-import { periodOf, usePeriods } from '../periods/periods';
+import { periodOf, personPeriodCarried, personPeriodDueTotal, usePeriods } from '../periods/periods';
 import { useCap, useFloor, useLate } from '../access/access';
 import { useSheetToday } from '../sheet/sheet';
 import { getJson } from '../../api/http';
@@ -105,8 +105,45 @@ function ExportPools({ sheetId }: { sheetId: string }) {
   );
 }
 
+// Downloads the period figures as a CSV file: a header line, then one line per person and period,
+// people in list order (retired people included) and periods in the order added, with the figure
+// and carried figure as the person's row shows them. Quoted and ended as the people export.
+function ExportPeriods({ sheetId }: { sheetId: string }) {
+  const people = usePeople(sheetId).data ?? [];
+  const claims = useClaims(sheetId).data ?? [];
+  const rates = useRates(sheetId).data ?? [];
+  const periods = usePeriods(sheetId).data ?? [];
+  const floor = useFloor(sheetId);
+  const late = useLate(sheetId);
+
+  const download = () => {
+    const lines = [['person', 'period', 'figure', 'carried']];
+    const added = [...periods].sort((a, b) => a.added - b.added);
+    for (const p of people) {
+      for (const period of added) {
+        lines.push([
+          p.name,
+          period.name,
+          personPeriodDueTotal(period, p, claims, rates, floor, late),
+          personPeriodCarried(period, periods, p, claims, rates, floor, late),
+        ]);
+      }
+    }
+    downloadCsv(`periods-${sheetId}.csv`, lines);
+  };
+
+  return (
+    <p>
+      <button type="button" data-testid="export-periods" onClick={download}>
+        Export periods (CSV)
+      </button>
+    </p>
+  );
+}
+
 export const contributions = [
   SheetBody.fill({ order: 2, Component: ExportPeople }),
   SheetBody.fill({ order: 2.1, Component: ExportClaims }),
   SheetBody.fill({ order: 2.2, Component: ExportPools }),
+  SheetBody.fill({ order: 2.3, Component: ExportPeriods }),
 ];

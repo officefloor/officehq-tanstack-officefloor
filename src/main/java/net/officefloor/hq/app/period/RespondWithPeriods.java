@@ -45,10 +45,12 @@ public class RespondWithPeriods {
         Map<String, Map<Long, BigDecimal>> carried = personCarried;
         Map<String, Map<Long, BigDecimal>> openings = repository.personOpenings(sheet.id());
         Settings settings = settingsRepository.find(sheet.id());
+        Map<String, Long> added = repository.addedOrder(sheet.id());
         response.send(new PeriodsResponse(periods.stream()
                 .map(p -> PeriodResponse.from(p, totals.getOrDefault(p.name(), Map.of()),
                         carried.getOrDefault(p.name(), Map.of()),
-                        openings.getOrDefault(p.name(), Map.of()), settings)).toList()));
+                        openings.getOrDefault(p.name(), Map.of()), settings,
+                        added.getOrDefault(p.name(), 0L))).toList()));
     }
 
     private static boolean same(BigDecimal a, BigDecimal b) {

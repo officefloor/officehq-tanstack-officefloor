@@ -31,6 +31,8 @@ export type Period = {
   personOpenings: Record<string, string>;
   /** Whether it is locked: a locked period cannot be reopened. */
   locked: boolean;
+  /** The order it was added in: a larger one added later. */
+  added: number;
 };
 
 export const periodsKey = (sheetId: string) => ['sheet', sheetId, 'periods'] as const;
