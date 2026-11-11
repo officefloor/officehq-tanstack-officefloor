@@ -10,13 +10,18 @@ import type { Grade } from './grades';
 
 // The sheet's grades: a select and a retire button, each grade listed with whether it is retired. A
 // grade already retired is refused. People on a retired grade keep it, but it cannot be chosen for a new
-// person or in an edit, and a default grade that is retired falls back to A.
+// person or in an edit, and a default grade that is retired falls back to A. A steward may also merge a
+// grade into another: everyone on the merged grade today is given the other from the sheet's today.
 function Grades({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const grades = useGrades(sheetId);
   const [grade, setGrade] = useState('A');
   const [error, setError] = useState('');
   const [user] = useUser();
+
+  const [from, setFrom] = useState('A');
+  const [into, setInto] = useState('B');
+  const [merged, setMerged] = useState('');
 
   const once = useOnce();
   const retire = useMutation({
@@ -25,6 +30,33 @@ function Grades({ sheetId }: { sheetId: string }) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sheet', sheetId] }),
     onError: () => setError('That grade could not be retired.'),
   });
+
+  const merge = useMutation({
+    mutationFn: (body: { from: string; into: string }) =>
+      postJson<{ merged: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/grades/merge`, body, user),
+    onSuccess: (data) => {
+      setMerged(String(data.merged));
+      return queryClient.invalidateQueries({ queryKey: ['sheet', sheetId] });
+    },
+    onError: () => setError('Those grades could not be merged.'),
+  });
+
+  const submitMerge = (e: FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setMerged('');
+    if (from === into) {
+      setError('A grade cannot be merged into itself.');
+      return;
+    }
+    once((done) => merge.mutate({ from, into }, { onSettled: done }));
+  };
+
+  const options = (grades.data ?? []).map((g) => (
+    <option key={g.grade} value={g.grade}>
+      {g.grade}
+    </option>
+  ));
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -65,6 +97,38 @@ function Grades({ sheetId }: { sheetId: string }) {
             {error}
           </p>
         )}
+      </form>
+      <form onSubmit={submitMerge}>
+        <label>
+          Merge{' '}
+          <select
+            data-testid="grade-merge-from"
+            value={from}
+            onChange={(e) => {
+              setFrom(e.target.value);
+              setError('');
+            }}
+          >
+            {options}
+          </select>
+        </label>{' '}
+        <label>
+          into{' '}
+          <select
+            data-testid="grade-merge-into"
+            value={into}
+            onChange={(e) => {
+              setInto(e.target.value);
+              setError('');
+            }}
+          >
+            {options}
+          </select>
+        </label>{' '}
+        <button type="submit" data-testid="grade-merge" disabled={merge.isPending}>
+          Merge grade
+        </button>{' '}
+        People moved: <span data-testid="grade-merged">{merged}</span>
       </form>
       <ul data-testid="grade-list">
         {(grades.data ?? []).map((g) => (
