@@ -122,6 +122,28 @@ public class RateRepository {
     }
 
     /**
+     * Withdraw the newest version of the grade's rate from its from-date (null: from the beginning of
+     * time): the version before it, when there is one, is in force again; with none the rate is gone.
+     * Its last record in the rate history goes with it. False when the sheet has no such rate.
+     */
+    public boolean withdraw(String sheetId, String grade, LocalDate from) {
+        String where = " WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?";
+        if (jdbc.update("DELETE FROM rate" + where, sheetId, grade, from) == 0) return false;
+        List<Long> older = jdbc.query("SELECT id FROM rate_version" + where + " ORDER BY version DESC, id DESC LIMIT 1",
+                (rs, n) -> rs.getLong("id"), sheetId, grade, from);
+        if (!older.isEmpty()) {
+            jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date, version, added_after)"
+                    + " SELECT sheet_id, grade, pct, from_date, to_date, version, added_after FROM rate_version WHERE id = ?",
+                    older.get(0));
+            jdbc.update("DELETE FROM rate_version WHERE id = ?", older.get(0));
+        }
+        List<Long> history = jdbc.query("SELECT id FROM rate_history" + where + " ORDER BY id DESC LIMIT 1",
+                (rs, n) -> rs.getLong("id"), sheetId, grade, from);
+        if (!history.isEmpty()) jdbc.update("DELETE FROM rate_history WHERE id = ?", history.get(0));
+        return true;
+    }
+
+    /**
      * The sheet's rates as they stood at the end of {@code day}: for each grade and from-date, the
      * last rate set for them while the sheet's today was on or before it, its version counting those
      * set for them by then; then its parent sheets' (as they are named now), each at its level and read

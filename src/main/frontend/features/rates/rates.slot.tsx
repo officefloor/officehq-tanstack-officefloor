@@ -43,6 +43,19 @@ function Rates({ sheetId }: { sheetId: string }) {
     onError: () => setError('That rate could not be set.'),
   });
 
+  // A steward withdraws a rate's newest version: the one before it applies again, or with none it is gone.
+  const withdraw = useMutation({
+    mutationFn: (body: { grade: Grade; from: string }) =>
+      postJson(`/api/sheets/${encodeURIComponent(sheetId)}/rates/withdraw`, body, user),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ratesKey(sheetId) }),
+    onError: () => setError('That rate could not be withdrawn.'),
+  });
+
+  const withdrawRate = (r: Rate) => {
+    setError('');
+    once((done) => withdraw.mutate({ grade: r.grade, from: r.from }, { onSettled: done }));
+  };
+
   const submit = (e: FormEvent) => {
     e.preventDefault();
     setError('');
@@ -158,6 +171,7 @@ function Rates({ sheetId }: { sheetId: string }) {
             <th>To</th>
             <th>Rate %</th>
             <th>Version</th>
+            <th />
           </tr>
         </thead>
         <tbody>
@@ -168,6 +182,11 @@ function Rates({ sheetId }: { sheetId: string }) {
               <td data-testid="rate-to">{r.to}</td>
               <td data-testid="rate-pct">{r.pct}</td>
               <td data-testid="rate-version">{r.version}</td>
+              <td>
+                <button type="button" data-testid="rate-withdraw" disabled={withdraw.isPending} onClick={() => withdrawRate(r)}>
+                  Withdraw
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>
