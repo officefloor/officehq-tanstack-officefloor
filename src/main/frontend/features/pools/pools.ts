@@ -3,9 +3,9 @@ import { getJson } from '../../api/http';
 import { peopleKey } from '../people/people';
 
 /** A person in a pool, or another pool (memberPool its name, personId ''), with a share percent (two decimals). A
- *  retired member's share counts as 0.00 toward the total. Their cut is their part of the pool's pot, two decimals
- *  ('' when the pool is unbalanced or there is no pot); a person with a hold in force on the sheet's today
- *  gets 0.00, their share spread over the members with a cut. A pool that is a member of no pool has the sheet's pot; one
+ *  retired member's share counts toward the total. Their cut is their part of the pool's pot, two decimals
+ *  ('' when the pool is unbalanced, there is no pot, or every member is retired); a retired person, or one with a
+ *  hold in force on the sheet's today, gets 0.00, their share spread over the members with a cut. A pool that is a member of no pool has the sheet's pot; one
  *  that is a member of another has its cut there as its pot. */
 export type PoolMember = {
   personId: string;

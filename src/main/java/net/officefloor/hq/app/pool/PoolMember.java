@@ -5,8 +5,8 @@ import java.time.LocalDate;
 
 /**
  * A member of a pool with a share percent: a person (personId set, memberPool null), or another pool
- * (memberPool its name, personId null; name the pool's name). A retired person's share counts as 0.00
- * toward the pool's total. {@code held} is whether a person has a hold in force on the sheet's today: they
+ * (memberPool its name, personId null; name the pool's name). A retired person's share counts as given
+ * toward the pool's total, but they get no cut, their share being spread over the members with one. {@code held} is whether a person has a hold in force on the sheet's today: they
  * get no cut, their share being spread over the members with one, though it still counts toward the total.
  * {@code from} and {@code to} are the membership's optional dates; {@code active} is whether they include the
  * sheet's today: a member not active is left out entirely, of the total, the balance and the cuts.

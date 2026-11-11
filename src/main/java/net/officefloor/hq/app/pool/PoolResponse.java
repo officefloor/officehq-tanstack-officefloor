@@ -7,12 +7,12 @@ import java.util.List;
 
 /**
  * A pool, as the screen reads it: its members in the order added, the total of their shares (a retired
- * member's counting as 0.00) and whether that total is exactly 100.00. Each member of a balanced pool
+ * member's counting as given) and whether that total is exactly 100.00. Each member of a balanced pool
  * has a cut of the sheet's pot: the pot times their share divided by the shares of the members with a cut
  * added up, rounded half to even to two decimals (a retired member's, and a member held on the sheet's
  * today, 0.00), with the remainder, the pot minus the cuts added up, going to the member with a cut with
  * the largest share, the earliest added on a tie, so the cuts total exactly the pot (each is 0.00 when no
- * member has a cut). A hold changes neither the total nor whether the pool is balanced. An
+ * member has a cut). A pool whose every member is retired has no cuts. A hold or a retirement changes neither the total nor whether the pool is balanced. An
  * unbalanced pool, or no pot, has no cuts. A member whose dates do not include the sheet's today is
  * left out entirely: not in the total, not in the balance, and no cut (not even 0.00). A pool that is a member of another has no pot of its own: its
  * pot is its cut in the pool above (none when that pool has no cuts).
@@ -31,16 +31,20 @@ public record PoolResponse(String name, List<PoolMemberResponse> members, String
         return new PoolResponse(pool.name(), shown, total.toPlainString(), balanced);
     }
 
-    /** The active members' shares added up, a retired member's counting as 0.00. */
+    /** The active members' shares added up, a retired member's counting as given. */
     static BigDecimal total(List<PoolMember> members) {
         BigDecimal total = BigDecimal.ZERO.setScale(2);
-        for (PoolMember m : members) if (m.active() && !m.retired()) total = total.add(m.share());
+        for (PoolMember m : members) if (m.active()) total = total.add(m.share());
         return total;
     }
 
-    /** Each member's cut of the pot, in the members' order; null when the pool is unbalanced or there is no pot. */
+    /**
+     * Each member's cut of the pot, in the members' order; null when the pool is unbalanced, there is no pot,
+     * or every member is retired.
+     */
     static List<BigDecimal> cutsOf(List<PoolMember> members, BigDecimal pot) {
-        return pot != null && total(members).compareTo(HUNDRED) == 0 ? cuts(members, pot) : null;
+        boolean allRetired = members.stream().filter(PoolMember::active).allMatch(PoolMember::retired);
+        return pot != null && !allRetired && total(members).compareTo(HUNDRED) == 0 ? cuts(members, pot) : null;
     }
 
     /** Whether the member has a cut: active, neither retired nor held on the sheet's today. */

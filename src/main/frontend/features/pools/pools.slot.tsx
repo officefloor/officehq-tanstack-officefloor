@@ -13,8 +13,8 @@ import { poolsKey, usePools } from './pools';
 import type { Pool } from './pools';
 
 // The sheet's pools: a name entry and an add button, each pool listed below with its total share, whether
-// it is balanced (the shares total exactly 100.00; a retired member's counts as 0.00) and its members, each
-// with their share and their cut of the pot (blank when the pool is unbalanced or there is no pot, or the member's
+// it is balanced (the shares total exactly 100.00; a retired member's counts as given) and its members, each
+// with their share and their cut of the pot (blank when the pool is unbalanced, there is no pot or every member is retired, or the member's
 // optional from- and to-dates do not include the sheet's today: such a member is left out of the total and balance too). A member is added from the pool's row: a person,
 // or another pool (pool:<name>), and a share. A member pool's pot is its cut in the pool above. The server decides
 // what is refused — a taken or blank name, a person already in the pool, a share not more than 0.00 and at most
