@@ -1,0 +1,380 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 5e2154311..ce9bd3250 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -90,6 +90,8 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person })
+   const [partAmount, setPartAmount] = useState<Record<string, string>>({});
+   // The person picked to share each claim with and the percent typed for them, by claim id.
+   const [shareWith, setShareWith] = useState<Record<string, { personId: string; share: string }>>({});
++  // The user typed to assign each REVIEW claim to review, by claim id.
++  const [reviewUser, setReviewUser] = useState<Record<string, string>>({});
+   const [commentText, setCommentText] = useState<Record<string, string>>({});
+   // The line typed to add to each draft (label, quantity, unit amount), by claim id.
+   // Each claim's timeline as last shown: its audit lines, newest first.
+@@ -386,6 +388,19 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person })
+       }),
+   });
+ 
++  // A steward assigns a REVIEW claim to a user to review: refused for a blank user or any other status.
++  const assignReview = useMutation({
++    mutationFn: ({ id, reviewer }: { id: string; reviewer: string }) =>
++      postJson<Claim>(
++        `/api/sheets/${encodeURIComponent(sheetId)}/claims/${encodeURIComponent(id)}/review-assign`,
++        { user: reviewer },
++        user,
++      ),
++    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
++    onError: (_e, { id }) =>
++      setRefused({ id, message: 'Only a steward can assign a REVIEW claim, to a named user.' }),
++  });
++
+   // A comment is kept on a claim in any status, with who wrote it and the sheet's today.
+   const comment = useMutation({
+     mutationFn: ({ id, text }: { id: string; text: string }) =>
+@@ -523,6 +538,16 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person })
+     share.mutate({ id, personId, share: pct.trim() });
+   };
+ 
++  const assignReviewClaim = (id: string) => {
++    setRefused(null);
++    const reviewer = (reviewUser[id] ?? '').trim();
++    if (reviewer === '') {
++      setRefused({ id, message: 'Name the user to assign the review to.' });
++      return;
++    }
++    assignReview.mutate({ id, reviewer });
++  };
++
+   const setShareField = (id: string, field: 'personId' | 'share', value: string) => {
+     setShareWith((w) => ({ ...w, [id]: { ...(w[id] ?? { personId: '', share: '' }), [field]: value } }));
+     setRefused((r) => (r !== null && r.id === id ? null : r));
+@@ -776,6 +801,19 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person })
+               <button type="button" data-testid="claim-hold" onClick={() => holdClaim(c.id)}>
+                 {c.held ? 'Release' : 'Hold'}
+               </button>{' '}
++              <span data-testid="claim-review-assigned">{c.reviewUser}</span>{' '}
++              <input
++                data-testid="claim-review-user"
++                placeholder="Reviewer"
++                value={reviewUser[c.id] ?? ''}
++                onChange={(e) => {
++                  setReviewUser((u) => ({ ...u, [c.id]: e.target.value }));
++                  setRefused((r) => (r !== null && r.id === c.id ? null : r));
++                }}
++              />{' '}
++              <button type="button" data-testid="claim-review-assign" onClick={() => assignReviewClaim(c.id)}>
++                Assign review
++              </button>{' '}
+               <span data-testid="claim-shares">{c.shares.map((h) => `${nameOf(h.personId)} ${h.share}`).join(', ')}</span>{' '}
+               <select
+                 data-testid="claim-share-select"
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 741f2dd51..58cc3b1bc 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -85,6 +85,8 @@ export type Claim = {
+    * to even; its own person keeps the rest.
+    */
+   shares: ClaimShare[];
++  /** The user a steward assigned it to review while in REVIEW; '' when none. Kept once it leaves REVIEW. */
++  reviewUser: string;
+ };
+ 
+ /** A holder's share of a claim: their person id and their percent, two decimals. */
+diff --git a/src/main/frontend/features/header/header.slot.tsx b/src/main/frontend/features/header/header.slot.tsx
+index 1f6024449..4365c2e0e 100644
+--- a/src/main/frontend/features/header/header.slot.tsx
++++ b/src/main/frontend/features/header/header.slot.tsx
+@@ -20,7 +20,8 @@ const STATUSES: ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID',
+ // figures as the summary and the sheet's totals, so each always equals the figure it repeats.
+ // Beside them, the signed-in user's own figures: the due-total and overdue-total of the person whose
+ // name or alias is the user's name — blank when there is no such person — and their crew total: the
+-// due-totals of the crews led by a person with the user's name, added up — blank when they lead none.
++// due-totals of the crews led by a person with the user's name, added up — blank when they lead none —
++// and the count of REVIEW claims assigned to them to review.
+ function Header({ sheetId }: { sheetId: string }) {
+   const people = usePeople(sheetId).data ?? [];
+   const claims = useClaims(sheetId).data ?? [];
+@@ -40,6 +41,7 @@ function Header({ sheetId }: { sheetId: string }) {
+     user ? people.filter((p) => [p.name, ...p.aliases].some((n) => asName(n) === asName(user))).map((p) => p.id) : [],
+   );
+   const led = crews.filter((c) => myIds.has(c.leadId));
++  const myReviews = user ? claims.filter((c) => c.status === 'REVIEW' && c.reviewUser === user.trim()).length : 0;
+   const myCrewDue = led.length > 0 ? sumDue(led.map((c) => crewDueTotal(c, dues))) : '';
+ 
+   return (
+@@ -67,6 +69,9 @@ function Header({ sheetId }: { sheetId: string }) {
+       </span>{' '}
+       <span>
+         My crews due: <strong data-testid="my-crew-due-total">{myCrewDue}</strong>
++      </span>{' '}
++      <span>
++        My reviews: <strong data-testid="my-reviews-count">{myReviews}</strong>
+       </span>
+     </header>
+   );
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AssignReview.java b/src/main/java/net/officefloor/hq/app/claim/AssignReview.java
+new file mode 100644
+index 000000000..3d96a658f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/AssignReview.java
+@@ -0,0 +1,32 @@
++package net.officefloor.hq.app.claim;
++
++import jakarta.servlet.http.HttpServletRequest;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.role.Role;
++import net.officefloor.hq.app.role.RoleRepository;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++
++/**
++ * Assigns a claim in REVIEW to a user to review, replacing any assigned before. Only a steward may
++ * assign it; a claim in any other status is refused. Writes only when every rule passes.
++ */
++public class AssignReview {
++    public void apply(@Val Sheet sheet, @Val Claim claim, @Val ReviewAssignment assignment, RoleRepository roles,
++            ClaimRepository repository, HttpServletRequest request)
++            throws InvalidClaimStatusException, ApprovalException {
++        if (claim.getStatus() != ClaimStatus.REVIEW) {
++            throw new InvalidClaimStatusException("Only a REVIEW claim is assigned for review, not a "
++                    + claim.getStatus() + " one");
++        }
++        String user = Audit.user(request);
++        if (!Role.STEWARD.equals(roles.roleOf(sheet.id(), user))) {
++            throw new ApprovalException("Only a steward may assign a review: " + user + " is a "
++                    + roles.roleOf(sheet.id(), user));
++        }
++        claim.setReviewUser(assignment.user());
++        if (!repository.assignReview(claim)) {
++            throw new InvalidClaimStatusException("The claim was changed by another request");
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditReviewAssigned.java b/src/main/java/net/officefloor/hq/app/claim/AuditReviewAssigned.java
+new file mode 100644
+index 000000000..212a88d2a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditReviewAssigned.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.claim;
++
++import jakarta.servlet.http.HttpServletRequest;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++
++/** Records the review assignment, naming the claim; the line ends with the user it is assigned to. */
++public class AuditReviewAssigned {
++    public void audit(@Val Sheet sheet, @Val Claim claim, PersonRepository people,
++            HttpServletRequest request, Audit audit) {
++        audit.record(ClaimAudit.line("REVIEW_ASSIGNED", sheet, Audit.user(request),
++                people.find(sheet.id(), claim.getPersonId()), claim) + " user=" + claim.getReviewUser());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 37d0dfb11..0517233bf 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -33,6 +33,7 @@ public class Claim {
+     private LocalDate remindedOn;
+     private boolean waived;
+     private boolean held;
++    private String reviewUser;
+     private LocalDate reviewOn;
+     private String ref;
+     private String tags;
+@@ -155,6 +156,9 @@ public class Claim {
+     /** Whether it is held: it still counts in every total. */
+     public boolean isHeld() { return held; }
+     public void setHeld(boolean held) { this.held = held; }
++    /** The user a steward assigned it to review while in REVIEW; null when none. Kept once it leaves REVIEW. */
++    public String getReviewUser() { return reviewUser; }
++    public void setReviewUser(String reviewUser) { this.reviewUser = reviewUser; }
+     /** Hold it, or release it when held: only an OPEN or PENDING claim. */
+     public void toggleHold() throws InvalidClaimStatusException {
+         if (!isOpen()) throw new InvalidClaimStatusException("A " + status + " claim cannot be held or released");
+@@ -328,6 +332,7 @@ public class Claim {
+         then.remindedOn = remindedOn;
+         then.waived = waived;
+         then.held = held;
++        then.reviewUser = reviewUser;
+         then.reviewOn = reviewOn;
+         then.ref = ref;
+         then.tags = tags;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 8752e4cc6..549121aed 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -18,7 +18,7 @@ import org.springframework.stereotype.Repository;
+ @Repository
+ public class ClaimRepository {
+ 
+-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, edited_by, stated, stated_due, stated_late, corrects, due_by, terms, deferred_until, proofs, proof_photos, split_from, late_entry, reminded_on, ext_ref, tags, void_reason, settle_batch, review_on, waived, held,"
++    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, edited_by, stated, stated_due, stated_late, corrects, due_by, terms, deferred_until, proofs, proof_photos, split_from, late_entry, reminded_on, ext_ref, tags, void_reason, settle_batch, review_on, waived, held, review_user,"
+             + " (SELECT c.claim_date FROM claim c WHERE c.sheet_id = claim.sheet_id AND c.person_id = claim.person_id"
+             + " AND c.claim_number = claim.corrects) AS corrected_date,"
+             + " CASE WHEN locked_on = (SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id) THEN locked_by END AS locked_by_now";
+@@ -45,6 +45,7 @@ public class ClaimRepository {
+         claim.setRemindedOn(reminded == null ? null : reminded.toLocalDate());
+         claim.setWaived(rs.getBoolean("waived"));
+         claim.setHeld(rs.getBoolean("held"));
++        claim.setReviewUser(rs.getString("review_user"));
+         java.sql.Date review = rs.getDate("review_on");
+         claim.setReviewOn(review == null ? null : review.toLocalDate());
+         claim.setRef(rs.getString("ext_ref"));
+@@ -302,6 +303,16 @@ public class ClaimRepository {
+         return held;
+     }
+ 
++    /**
++     * Assign the claim to review to {@link Claim#getReviewUser}: only while it is still in REVIEW.
++     */
++    public boolean assignReview(Claim claim) {
++        boolean assigned = jdbc.update("UPDATE claim SET review_user = ? WHERE id = ? AND sheet_id = ?"
++                + " AND status = 'REVIEW'", claim.getReviewUser(), claim.getId(), claim.getSheetId()) == 1;
++        if (assigned) keepHistory(claim);
++        return assigned;
++    }
++
+     /**
+      * Record the claim's reminder on its reminded date: only while it is still OPEN or PENDING and
+      * not already reminded that day, so of two reminders at once only one is written.
+@@ -476,7 +487,7 @@ public class ClaimRepository {
+     }
+ 
+     private static final String HISTORY_COLUMNS = "person_id, amount, claim_date, note, status, claim_number, settled_due,"
+-            + " opened_by, stated, stated_due, stated_late, corrects, due_by, deferred_until, proofs, proof_photos, split_from, late_entry, listed, tags, void_reason, settle_batch, ext_ref, reminded_on, review_on, waived, held";
++            + " opened_by, stated, stated_due, stated_late, corrects, due_by, deferred_until, proofs, proof_photos, split_from, late_entry, listed, tags, void_reason, settle_batch, ext_ref, reminded_on, review_on, waived, held, review_user";
+ 
+     /** Keeps the claim as the store now holds it in its history, with the sheet's today now. */
+     private void keepHistory(Claim claim) {
+@@ -515,6 +526,7 @@ public class ClaimRepository {
+                     claim.setRemindedOn(reminded == null ? null : reminded.toLocalDate());
+                     claim.setWaived(rs.getBoolean("waived"));
+                     claim.setHeld(rs.getBoolean("held"));
++                    claim.setReviewUser(rs.getString("review_user"));
+                     Date review = rs.getDate("review_on");
+                     claim.setReviewOn(review == null ? null : review.toLocalDate());
+                     latest.put(claim.getId(), claim);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+index a55037849..7c9a38745 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+@@ -20,14 +20,16 @@ import java.util.List;
+  * and its lines, oldest first, as {@code <label> <qty> x <unit>}; and its review day, the sheet's today when it
+  * went to REVIEW, as yyyy-MM-dd ("" when it never did); and whether a steward waived its late charge; and the
+  * late charge its statement bound it to with its figure ("" when none is bound); and how many of its proofs are
+- * receipts and how many photos; and whether it is held; and its shares, oldest first.
++ * receipts and how many photos; and whether it is held; and its shares, oldest first;
++ * and the user assigned to review it ("" when none).
+  */
+ public record ClaimResponse(String id, String personId, String amount, String date, String note,
+         String status, String number, String due, String openedBy, boolean stated,
+         String statedDue, String corrects, String roundDate, String dueBy, List<String> log, String deferredUntil,
+         int proofs, String splitFrom, String lockedBy, boolean lateEntry, String remindedOn, String ref,
+         List<String> tags, String voidReason, List<String> comments, String batch, List<String> lines, String reviewOn, boolean waived,
+-        String statedLate, int proofReceipts, int proofPhotos, boolean held, List<Shared> shares) {
++        String statedLate, int proofReceipts, int proofPhotos, boolean held, List<Shared> shares,
++        String reviewUser) {
+ 
+     /** A share of the claim as the screen reads it: the holder's person id and their percent, two decimals. */
+     public record Shared(String personId, String share) {
+@@ -69,6 +71,7 @@ public record ClaimResponse(String id, String personId, String amount, String da
+                 claim.isWaived(),
+                 claim.getStatedLate() == null ? "" : claim.getStatedLate().toPlainString(),
+                 claim.getProofReceipts(), claim.getProofPhotos(), claim.isHeld(),
+-                shares.stream().map((s) -> new Shared(String.valueOf(s.personId()), s.share().toPlainString())).toList());
++                shares.stream().map((s) -> new Shared(String.valueOf(s.personId()), s.share().toPlainString())).toList(),
++                claim.getReviewUser() == null ? "" : claim.getReviewUser());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ReviewAssignRequest.java b/src/main/java/net/officefloor/hq/app/claim/ReviewAssignRequest.java
+new file mode 100644
+index 000000000..23263e627
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ReviewAssignRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.claim;
++
++/** A review assignment as the screen sends it: the user to assign the REVIEW claim to. */
++public record ReviewAssignRequest(String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ReviewAssignment.java b/src/main/java/net/officefloor/hq/app/claim/ReviewAssignment.java
+new file mode 100644
+index 000000000..cd1d83333
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ReviewAssignment.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.claim;
++
++/** A review assignment, read from its request: the user (trimmed) to assign the claim to. */
++public record ReviewAssignment(String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateReviewAssign.java b/src/main/java/net/officefloor/hq/app/claim/ValidateReviewAssign.java
+new file mode 100644
+index 000000000..168b7b97c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateReviewAssign.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** A review assignment needs a user, not blank. */
++public class ValidateReviewAssign {
++    public void validate(@RequestBody ReviewAssignRequest request, Out<ReviewAssignment> body)
++            throws InvalidClaimException {
++        String user = request == null || request.user() == null ? "" : request.user().trim();
++        if (user.isEmpty()) throw new InvalidClaimException("A review is assigned to a user");
++        body.set(new ReviewAssignment(user));
++    }
++}
+diff --git a/src/main/resources/db/migration/V119__claim_review_user.sql b/src/main/resources/db/migration/V119__claim_review_user.sql
+new file mode 100644
+index 000000000..2ac3a3cbe
+--- /dev/null
++++ b/src/main/resources/db/migration/V119__claim_review_user.sql
+@@ -0,0 +1,3 @@
++-- The user a steward assigned a REVIEW claim to review (null: none). Kept once it leaves REVIEW.
++ALTER TABLE claim ADD COLUMN review_user VARCHAR(200);
++ALTER TABLE claim_history ADD COLUMN review_user VARCHAR(200);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/review-assign.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/review-assign.POST.yml
+new file mode 100644
+index 000000000..069b068c1
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/review-assign.POST.yml
+@@ -0,0 +1,31 @@
++# Assign a claim in REVIEW to a user to review (a steward). A blank user is a 400, a claim not in
++# REVIEW a 409, and anyone not a steward is refused; each writes nothing.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: validate
++validate:
++  class: net.officefloor.hq.app.claim.ValidateReviewAssign
++  govern: [ transaction ]
++  next: loadSheet
++loadSheet:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ transaction ]
++  next: load
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ transaction ]
++  next: apply
++# Checks the status and the steward, and writes the assignment only when both allow it.
++apply:
++  class: net.officefloor.hq.app.claim.AssignReview
++  govern: [ transaction ]
++  next: audit
++# Last before the response: every rule has passed and the assignment is saved.
++audit:
++  class: net.officefloor.hq.app.claim.AuditReviewAssigned
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaim
++  govern: [ transaction ]
