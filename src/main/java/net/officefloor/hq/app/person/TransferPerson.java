@@ -35,7 +35,9 @@ import net.officefloor.plugin.variable.Val;
  * order the claims were opened (by the sheet's today then, then the order added); a correction or
  * split names the new numbers. Figures a statement bound are lost, the statement count starts at 0,
  * and references and settle batches are not carried. They leave this sheet entirely: patron links
- * either way, pool memberships, watches and holds are dropped.
+ * either way, pool memberships, watches and holds are dropped. When one person on the other sheet
+ * already has their name or an alias (as names are compared, and not retired), they are then merged into
+ * that person there, as a merge does (their contact dropped, so it need not be free there).
  */
 public class TransferPerson {
     public void transfer(@Val TransferInput input, @Val Sheet sheet, @Val Person person, PersonRepository people,
@@ -53,15 +55,28 @@ public class TransferPerson {
         }
         if (to.archived()) throw new SheetArchivedException(to.id());
         java.util.Set<String> toTree = sheets.tree(to.id());
-        if (people.nameTaken(to.id(), person.getName(), null) || people.nameTakenIn(toTree, person.getName(), person.getId())) {
+        // One already there by their name or an alias: they are merged into that person on arrival.
+        Person into = null;
+        List<String> names = new ArrayList<>(List.of(person.getName()));
+        names.addAll(person.getAliases());
+        for (String name : names) {
+            Person found = people.findByName(to.id(), name);
+            if (found == null) continue;
+            if (into != null && !into.getId().equals(found.getId())) {
+                throw new InvalidPersonException("Their names are on more than one person on the sheet transferred to");
+            }
+            into = found;
+        }
+        if (into != null && into.isRetired()) throw new InvalidPersonException("A retired person cannot be merged");
+        if (people.nameTakenIn(toTree, person.getName(), person.getId())) {
             throw new InvalidPersonException("That name is already on the sheet transferred to");
         }
         for (String alias : person.getAliases()) {
-            if (people.nameTaken(to.id(), alias, null) || people.nameTakenIn(toTree, alias, person.getId())) {
+            if (people.nameTakenIn(toTree, alias, person.getId())) {
                 throw new InvalidPersonException("An alias is already on the sheet transferred to");
             }
         }
-        if (person.getContact() != null && people.contactTaken(to.id(), person.getContact(), null)) {
+        if (into == null && person.getContact() != null && people.contactTaken(to.id(), person.getContact(), null)) {
             throw new InvalidPersonException("That contact is already on the sheet transferred to");
         }
         Settings toSettings = settings.find(to.id());
@@ -93,6 +108,16 @@ public class TransferPerson {
                     claim.getSplitFrom() == null ? null : renumbered.getOrDefault(claim.getSplitFrom(), claim.getSplitFrom()));
         }
         people.transfer(person, to.id());
-        transferOut.set(new Transfer(person, to, toBefore));
+        if (into != null) {
+            Person arrived = people.find(to.id(), person.getId());
+            List<Claim> merging = new ArrayList<>(claims.findByPerson(to.id(), arrived.getId()));
+            Collections.reverse(merging);
+            for (Claim claim : merging) {
+                claim.mergeTo(into.getId());
+                claims.save(claim);
+            }
+            people.merge(arrived, into);
+        }
+        transferOut.set(new Transfer(person, to, toBefore, into));
     }
 }

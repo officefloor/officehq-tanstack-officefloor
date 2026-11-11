@@ -11,7 +11,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Val;
 
 /**
- * Records the transfer on the sheet the person went to, followed by that sheet's rollup lines: the
+ * Records the transfer on the sheet the person went to (and the merge there, if any), followed by that sheet's rollup lines: the
  * figures their arrival moved there.
  */
 public class AuditPersonArrived {
@@ -22,6 +22,10 @@ public class AuditPersonArrived {
         String user = Audit.user(request);
         audit.record("PERSON_TRANSFERRED sheet=" + to + " by=" + user
                 + " name=" + transfer.person().getName() + " from=" + sheet.id());
+        if (transfer.mergedInto() != null) {
+            audit.record("PERSON_MERGED sheet=" + to + " by=" + user
+                    + " from=" + transfer.person().getName() + " into=" + transfer.mergedInto().getName());
+        }
         Rollup after = Rollup.of(to, sheets.today(to), people, claims, rates, settings.find(to));
         after.changesSince(transfer.toBefore(), to, user).forEach(audit::record);
     }
