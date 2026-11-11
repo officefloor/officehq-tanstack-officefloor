@@ -14,7 +14,7 @@ function PlansHead() {
   return <th>Plans</th>;
 }
 
-// A person's plans, each with how many claims it has made, and a form adding one: an amount, a
+// A person's plans, each with how many claims it has made and its next five dates, and a form adding one: an amount, a
 // start (blank: the sheet's today), every N days (a whole number, at least 1) or a day of the month (1 to 31), and an end not
 // before the start. A refused plan shows the error on the row and adds nothing.
 function PersonPlans({ sheetId, person }: { sheetId: string; person: Person }) {
@@ -68,7 +68,8 @@ function PersonPlans({ sheetId, person }: { sheetId: string; person: Person }) {
         .map((p) => (
           <div key={p.id} data-testid={`plan-row-${p.id}`}>
             <span data-testid="plan-amount-shown">{p.amount}</span> from {p.start} {p.day !== null ? `monthly on day ${p.day}` : `every ${p.every} days`} to {p.end},
-            made <span data-testid="plan-generated">{p.generated}</span>
+            made <span data-testid="plan-generated">{p.generated}</span>,
+            next <span data-testid="plan-next-dates">{p.nextDates}</span>
           </div>
         ))}
       <input data-testid="plan-form-amount" aria-label="Plan amount" value={amount} onChange={changed(setAmount)} />{' '}

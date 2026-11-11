@@ -6,6 +6,6 @@ import net.officefloor.web.ObjectResponse;
 
 public class RespondWithPlans {
     public void respond(@Val Sheet sheet, PlanRepository repository, ObjectResponse<PlansResponse> response) {
-        response.send(new PlansResponse(repository.findAll(sheet.id()).stream().map(PlanResponse::from).toList()));
+        response.send(new PlansResponse(repository.findAll(sheet.id()).stream().map(p -> PlanResponse.from(p, sheet.today())).toList()));
     }
 }

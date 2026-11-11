@@ -29,4 +29,9 @@ public record Plan(Long id, String sheetId, long personId, BigDecimal amount, Lo
         }
         return dates;
     }
+
+    /** The first {@code count} plan dates after {@code today} and on or before its end, in order. */
+    public List<LocalDate> nextDates(LocalDate today, int count) {
+        return datesUpTo(end).stream().filter(d -> d.isAfter(today)).limit(count).toList();
+    }
 }
