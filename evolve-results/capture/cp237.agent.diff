@@ -1,0 +1,88 @@
+diff --git a/src/main/frontend/features/access/access.ts b/src/main/frontend/features/access/access.ts
+index fe2112e05..5b412f563 100644
+--- a/src/main/frontend/features/access/access.ts
++++ b/src/main/frontend/features/access/access.ts
+@@ -104,7 +104,7 @@ export const gradeProofThresholdKey = (grade: string) => `proof-threshold-${grad
+ export const gradeClerkLimitKey = (grade: string) => `clerk-limit-${grade}`;
+ 
+ /** The actions of the permission matrix, in the order they are shown. */
+-export const ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'] as const;
++export const ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen', 'today'] as const;
+ 
+ /** Who may take each action while its entry is blank. */
+ export const STANDING_RULE: Record<string, string> = {
+@@ -114,6 +114,7 @@ export const STANDING_RULE: Record<string, string> = {
+   reassign: 'steward',
+   close: 'clerk,steward',
+   reopen: 'steward',
++  today: 'clerk,steward',
+ };
+ 
+ /** A save of the settings: only those being changed are sent. */
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Settings.java b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+index 1e436a713..56c5731fd 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+@@ -26,7 +26,8 @@ import java.util.NavigableMap;
+  * on or after it half to even, and its period numbering from (null: off): while the sheet's today
+  * is on or after it, a claim opened is numbered within its period, and its permission matrix
+  * ({@code perms}, by action, the roles that may take it as a comma separated list; blank or missing:
+- * the standing rule, open, settle, void and close by clerk and steward, reassign and reopen by steward),
++ * the standing rule, open, settle, void, close and changing the sheet's today ({@code today}) by clerk and
++ * steward, reassign and reopen by steward),
+  * and its grace days (null: off): when the sheet's today is changed, every open period whose to-date
+  * plus the grace days is before the new today is closed, and its entry date (null: off): while it is
+  * set, the date of a new claim left undated instead of the sheet's today, and its pot (null: none),
+@@ -102,7 +103,7 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
+     public static final String HALF_EVEN = "half-even";
+ 
+     /** The actions of the permission matrix, in the order they are shown and audited. */
+-    public static final List<String> ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
++    public static final List<String> ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen", "today");
+ 
+     /** The key of an action's entry in the permission matrix. */
+     public static String permKey(String action) {
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/CheckTodayPermission.java b/src/main/java/net/officefloor/hq/app/sheet/CheckTodayPermission.java
+new file mode 100644
+index 000000000..f7418cb73
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/CheckTodayPermission.java
+@@ -0,0 +1,22 @@
++package net.officefloor.hq.app.sheet;
++
++import jakarta.servlet.http.HttpServletRequest;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.role.RoleRepository;
++import net.officefloor.hq.app.role.ViewerException;
++import net.officefloor.hq.app.setting.SettingsRepository;
++import net.officefloor.plugin.variable.Val;
++
++/**
++ * Refuses a change of the sheet's today by a role the permission matrix does not allow (by the
++ * standing rule, anyone but a viewer), before anything is written.
++ */
++public class CheckTodayPermission {
++    public void check(@Val Sheet sheet, RoleRepository roles, SettingsRepository settings, HttpServletRequest request)
++            throws ViewerException {
++        String role = roles.roleOf(sheet.id(), Audit.user(request));
++        if (!settings.find(sheet.id()).allows("today", role)) {
++            throw new ViewerException("A " + role + " may not change the sheet's today");
++        }
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
+index e0e5be41c..5b9321511 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
+@@ -9,6 +9,11 @@ validate:
+ load:
+   class: net.officefloor.hq.app.sheet.LoadSheet
+   govern: [ transaction ]
++  next: permit
++# Only a role the permission matrix allows (by the standing rule, anyone but a viewer) may change it.
++permit:
++  class: net.officefloor.hq.app.sheet.CheckTodayPermission
++  govern: [ transaction ]
+   next: before
+ # The sheet's figures before the change, so the rollup lines tell which moved.
+ before:
