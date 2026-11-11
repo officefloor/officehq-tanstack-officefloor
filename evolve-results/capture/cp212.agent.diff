@@ -1,0 +1,53 @@
+diff --git a/src/main/frontend/features/score/score.ts b/src/main/frontend/features/score/score.ts
+index 9afa44481..faa9fe120 100644
+--- a/src/main/frontend/features/score/score.ts
++++ b/src/main/frontend/features/score/score.ts
+@@ -1,6 +1,6 @@
+ import { gradeOn } from '../people/people';
+ import type { GradeFrom, Hold } from '../people/people';
+-import { counts } from '../claims/claims';
++import { counts, isCorrection } from '../claims/claims';
+ import type { Claim } from '../claims/claims';
+ import { claimDue, NA, rateOn } from '../rates/rates';
+ import type { Dated, Late, Rate } from '../rates/rates';
+@@ -39,7 +39,7 @@ function divHalfEven(n: bigint, d: bigint): bigint {
+ }
+ 
+ /**
+- * A person's score: the due of their SETTLED claims that count (skipping n/a) divided by 100, minus 5
++ * A person's score: the due of their SETTLED claims that count and correct nothing (skipping n/a) divided by 100, minus 5
+  * for every overdue claim of theirs that counts, rounded half to even to a whole number.
+  */
+ export function personScore(
+@@ -52,7 +52,7 @@ export function personScore(
+   late: Late,
+ ): string {
+   const settled = claims
+-    .filter((c) => c.status === 'SETTLED' && counts(c, holds, today))
++    .filter((c) => c.status === 'SETTLED' && !isCorrection(c) && counts(c, holds, today))
+     .map((c) => claimDue(c, rateOn(rates, gradeOn(grades, c.date), c.date, c.id), floor, late, gradeOn(grades, c.date)))
+     .filter((d) => d !== NA)
+     .reduce((n, d) => n + hundredths(d), 0n);
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 2aaf2f909..fc7628e3a 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -25,7 +25,7 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
+ 
+     /**
+      * A person's figures: their name, claimed, due-total (n/a when none) and overdue-total, and their score:
+-     * the due of their SETTLED claims that count (skipping n/a) divided by 100, minus 5 for every overdue
++     * the due of their SETTLED claims that count and correct nothing (skipping n/a) divided by 100, minus 5 for every overdue
+      * claim of theirs that counts, rounded half to even to a whole number.
+      */
+     public record Figures(String name, String claimed, String dueTotal, String overdueTotal, String score) {
+@@ -77,7 +77,8 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
+                 BigDecimal figure = ClaimFigure.withLate(claim, all, grade, settings, today);
+                 if (figure != null) due = due.add(figure);
+                 if (figure != null && overdue(claim, grade, settings, today)) overdue = overdue.add(figure);
+-                if (figure != null && claim.getStatus() == net.officefloor.hq.app.claim.ClaimStatus.SETTLED) {
++                if (figure != null && claim.getStatus() == net.officefloor.hq.app.claim.ClaimStatus.SETTLED
++                        && !claim.isCorrection()) {
+                     settled = settled.add(figure);
+                 }
+                 if (overdue(claim, grade, settings, today)) overdueCount++;
