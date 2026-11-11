@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOnce } from '../../query/useOnce';
@@ -84,12 +84,15 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
   const [error, setError] = useState('');
   const [user] = useUser();
 
+  // The fields the save in flight sent: only those are cleared when it lands, so a field touched
+  // while it was in flight is still sent by the next save.
+  const sent = useRef<Set<Key>>(new Set());
   const once = useOnce();
   const save = useMutation({
     mutationFn: (body: SettingsChange) =>
       postJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`, body, user),
     onSuccess: (saved, body) => {
-      setTouched(new Set());
+      setTouched((t) => new Set([...t].filter((k) => !sent.current.has(k))));
       setGradesTouched(new Set());
       setGraceTouched(new Set());
       setThresholdsTouched(new Set());
@@ -391,6 +394,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
       setError('Type a setting to save.');
       return;
     }
+    sent.current = new Set(touched);
     once((done) => save.mutate(body, { onSettled: done }));
   };
 
