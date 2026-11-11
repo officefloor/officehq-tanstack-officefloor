@@ -8,6 +8,7 @@ import { useSheetToday } from '../sheet/sheet';
 import { getJson } from '../../api/http';
 import type { Pool } from '../pools/pools';
 import { downloadCsv } from './csv';
+import { useCutTotals } from '../pools/pools';
 
 // Downloads the people as a CSV file: a header line, then one line per person in list order,
 // retired people included, with the grade in force today, the retired-from date ('' when not
@@ -21,12 +22,13 @@ function ExportPeople({ sheetId }: { sheetId: string }) {
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const cap = useCap(sheetId);
+  const cutOf = useCutTotals(sheetId);
 
   const download = () => {
     const lines = [['name', 'grade', 'retired-from', 'due-total']];
     for (const p of people) {
       const own = claims.filter((c) => c.personId === p.id);
-      lines.push([p.name, p.grade, p.retiredFrom, personDueTotal(rates, p.grades, today, own, liveHolds(p, today), floor, late, cap, heldParts(p.id, people, claims, rates, today, floor, late))]);
+      lines.push([p.name, p.grade, p.retiredFrom, personDueTotal(rates, p.grades, today, own, liveHolds(p, today), floor, late, cap, heldParts(p.id, people, claims, rates, today, floor, late), cutOf(p.id))]);
     }
     downloadCsv(`people-${sheetId}.csv`, lines);
   };

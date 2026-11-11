@@ -11,6 +11,7 @@ import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
+import net.officefloor.hq.app.pool.CutTotals;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.setting.Settings;
@@ -89,7 +90,8 @@ public class TakeStatement {
             claims.save(live);
         }
         String dueTotal = Rate.inForce(all, then.gradeOn(today), today).isEmpty() && !fixed
-                ? "n/a" : sheetSettings.capped(total, today).toPlainString();
+                ? "n/a" : sheetSettings.capped(total,
+                        CutTotals.of(sheet.id(), today, asOf).getOrDefault(person.getId(), BigDecimal.ZERO), today).toPlainString();
         person.setStatements(person.getStatementCount() + 1, dueTotal, today);
         people.saveStatements(person);
         statementOut.set(new Statement(dueTotal, counted, asOf));

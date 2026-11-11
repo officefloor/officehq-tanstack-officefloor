@@ -14,6 +14,7 @@ import { useCap, useFloor, useLate } from '../access/access';
 import { NA, PCT, claimDue, heldParts, personDueTotal, personExcess, personSplitTotals, rateOn, ratesKey, sumDue, trimmedSumDue, useRates } from './rates';
 import type { Rate } from './rates';
 import { Col } from '../columns/columns';
+import { useCutTotals } from '../pools/pools';
 
 type Fields = { grade: Grade; pct: string; from: string; to: string };
 const EMPTY: Fields = { grade: 'A', pct: '', from: '', to: '' };
@@ -299,7 +300,7 @@ function DueHead() {
   return <Col name="due-total"><th>Due</th></Col>;
 }
 
-// A person's due-total: the due figures of their claims that count, added up, held to the sheet's cap.
+// A person's due-total: the due figures of their claims that count, added up, held to the sheet's cap less their cut total.
 function PersonDueTotal({ sheetId, person }: { sheetId: string; person: Person }) {
   const claims = (useClaims(sheetId).data ?? []).filter((c) => c.personId === person.id);
   const rates = useRates(sheetId).data ?? [];
@@ -307,15 +308,16 @@ function PersonDueTotal({ sheetId, person }: { sheetId: string; person: Person }
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const cap = useCap(sheetId);
+  const cutOf = useCutTotals(sheetId);
   const held = heldParts(person.id, usePeople(sheetId).data ?? [], useClaims(sheetId).data ?? [], rates, today, floor, late);
-  return <Col name="due-total"><td data-testid="person-due-total">{personDueTotal(rates, person.grades, today, claims, liveHolds(person, today), floor, late, cap, held)}</td></Col>;
+  return <Col name="due-total"><td data-testid="person-due-total">{personDueTotal(rates, person.grades, today, claims, liveHolds(person, today), floor, late, cap, held, cutOf(person.id))}</td></Col>;
 }
 
 function ExcessHead() {
   return <Col name="excess"><th>Excess</th></Col>;
 }
 
-// A person's excess: how far the due figures of their claims that count go above the sheet's cap.
+// A person's excess: how far the due figures of their claims that count, with their cut total, go above the sheet's cap.
 function PersonExcess({ sheetId, person }: { sheetId: string; person: Person }) {
   const claims = (useClaims(sheetId).data ?? []).filter((c) => c.personId === person.id);
   const rates = useRates(sheetId).data ?? [];
@@ -323,8 +325,9 @@ function PersonExcess({ sheetId, person }: { sheetId: string; person: Person }) 
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const cap = useCap(sheetId);
+  const cutOf = useCutTotals(sheetId);
   const held = heldParts(person.id, usePeople(sheetId).data ?? [], useClaims(sheetId).data ?? [], rates, today, floor, late);
-  return <Col name="excess"><td data-testid="person-excess">{personExcess(rates, person.grades, today, claims, liveHolds(person, today), floor, late, cap, held)}</td></Col>;
+  return <Col name="excess"><td data-testid="person-excess">{personExcess(rates, person.grades, today, claims, liveHolds(person, today), floor, late, cap, held, cutOf(person.id))}</td></Col>;
 }
 
 // The sheet's due-total: everyone's due-total added up, skipping those with no rate, trimmed of the highest and lowest.
@@ -336,9 +339,10 @@ function DueTotal({ sheetId }: { sheetId: string }) {
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const cap = useCap(sheetId);
+  const cutOf = useCutTotals(sheetId);
   const totals = people.map((p) =>
     personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap,
-      heldParts(p.id, people, claims, rates, today, floor, late)),
+      heldParts(p.id, people, claims, rates, today, floor, late), cutOf(p.id)),
   );
   return (
     <p>

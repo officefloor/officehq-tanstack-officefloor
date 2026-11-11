@@ -9,6 +9,7 @@ import { useSheetToday } from '../sheet/sheet';
 import { useCap, useFloor, useLate } from '../access/access';
 import { useUser } from '../session/session';
 import { useWatches } from '../watch/watch';
+import { usePools } from '../pools/pools';
 
 // Names are compared trimmed and ignoring case, aliases alike.
 const asName = (s: string) => s.trim().toLowerCase();
@@ -32,14 +33,15 @@ function Header({ sheetId }: { sheetId: string }) {
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const cap = useCap(sheetId);
+  const pools = usePools(sheetId).data ?? [];
   const [user] = useUser();
   const crews = useCrews(sheetId).data ?? [];
   const dues = useDueTotals(sheetId);
   const watched = useWatches(sheetId, user).data ?? [];
 
-  const { dueTotal, overdueTotal } = sheetFigures(people, claims, rates, today, floor, late, cap);
+  const { dueTotal, overdueTotal } = sheetFigures(people, claims, rates, today, floor, late, cap, pools);
   const me = user ? people.find((p) => [p.name, ...p.aliases].some((n) => asName(n) === asName(user))) : undefined;
-  const mine = me ? sheetFigures([me], claims, rates, today, floor, late, cap) : undefined;
+  const mine = me ? sheetFigures([me], claims, rates, today, floor, late, cap, pools) : undefined;
   const myIds = new Set(
     user ? people.filter((p) => [p.name, ...p.aliases].some((n) => asName(n) === asName(user))).map((p) => p.id) : [],
   );

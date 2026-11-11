@@ -7,6 +7,8 @@ import type { Rate } from '../rates/rates';
 import { floorOf, lateOf } from '../access/access';
 import type { Settings } from '../access/access';
 import type { Sheet } from '../sheet/sheet';
+import { cutTotal } from '../pools/pools';
+import type { Pool } from '../pools/pools';
 
 /** One person found: their sheet, their name with their grade and their due-total as their sheet's list shows it. */
 export type Found = { sheetId: string; name: string; dueTotal: string };
@@ -21,12 +23,13 @@ function matches(p: Person, text: string): boolean {
 
 /** The people on one sheet matching the text, in list order, each read fresh from the store. */
 async function searchSheet(sheetId: string, text: string): Promise<Found[]> {
-  const [sheet, people, claims, rates, settings] = await Promise.all([
+  const [sheet, people, claims, rates, settings, pools] = await Promise.all([
     getJsonNow<Sheet>(`/api/sheets/${enc(sheetId)}`),
     getJsonNow<{ people: Person[] }>(`/api/sheets/${enc(sheetId)}/people`).then((r) => r.people),
     getJsonNow<{ claims: Claim[] }>(`/api/sheets/${enc(sheetId)}/claims`).then((r) => r.claims),
     getJsonNow<{ rates: Rate[] }>(`/api/sheets/${enc(sheetId)}/rates`).then((r) => r.rates),
     getJsonNow<Settings>(`/api/sheets/${enc(sheetId)}/settings`),
+    getJsonNow<{ pools: Pool[] }>(`/api/sheets/${enc(sheetId)}/pools`).then((r) => r.pools),
   ]);
   const today = sheet.today;
   const floor = floorOf(settings);
@@ -37,7 +40,7 @@ async function searchSheet(sheetId: string, text: string): Promise<Found[]> {
     .map((p) => ({
       sheetId,
       name: nameWithGrade(p),
-      dueTotal: personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap, heldParts(p.id, people, claims, rates, today, floor, late)),
+      dueTotal: personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap, heldParts(p.id, people, claims, rates, today, floor, late), cutTotal(pools, p.id)),
     }));
 }
 

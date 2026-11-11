@@ -5,6 +5,7 @@ import { NA, heldParts, personDueTotal, useRates } from '../rates/rates';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { liveHolds, usePeople } from './people';
 import type { Person } from './people';
+import { useCutTotals } from '../pools/pools';
 
 export type SortKey = 'added' | 'name' | 'grade' | 'due-total';
 export const SORT_KEYS: SortKey[] = ['added', 'name', 'grade', 'due-total'];
@@ -35,13 +36,14 @@ export function useSorted(sheetId: string, people: Person[]): Person[] {
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const cap = useCap(sheetId);
+  const cutOf = useCutTotals(sheetId);
   if (sortBy === 'added') return people;
   const keyed = people.map((p, i) => {
     let key: string | number = 0;
     if (sortBy === 'name') key = asName(p.name);
     else if (sortBy === 'grade') key = p.grade;
     else {
-      const total = personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap, heldParts(p.id, everyone, claims, rates, today, floor, late));
+      const total = personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap, heldParts(p.id, everyone, claims, rates, today, floor, late), cutOf(p.id));
       const n = Number(total);
       key = total === NA || Number.isNaN(n) ? Infinity : n;
     }

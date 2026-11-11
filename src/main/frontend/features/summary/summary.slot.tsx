@@ -9,6 +9,7 @@ import { useSheetToday } from '../sheet/sheet';
 import { periodDueTotal, usePeriods } from '../periods/periods';
 import { isActive } from '../active/active';
 import { useVoidReasons } from '../voidreasons/voidReasons';
+import { useCutTotals } from '../pools/pools';
 
 // Every status the summary counts.
 const STATUSES: ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID', 'REVIEW'];
@@ -27,12 +28,13 @@ function Summary({ sheetId }: { sheetId: string }) {
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const cap = useCap(sheetId);
+  const cutOf = useCutTotals(sheetId);
   const reviewSla = useReviewSla(sheetId);
   const voidReasons = useVoidReasons(sheetId).data ?? [];
 
   const active = people.filter((p) => !p.retired);
   const claimsOf = (p: Person) => claims.filter((c) => c.personId === p.id);
-  const dueOf = (p: Person) => personDueTotal(rates, p.grades, today, claimsOf(p), liveHolds(p, today), floor, late, cap, heldParts(p.id, people, claims, rates, today, floor, late));
+  const dueOf = (p: Person) => personDueTotal(rates, p.grades, today, claimsOf(p), liveHolds(p, today), floor, late, cap, heldParts(p.id, people, claims, rates, today, floor, late), cutOf(p.id));
 
   return (
     <section data-testid="summary">

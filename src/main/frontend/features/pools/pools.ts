@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { peopleKey } from '../people/people';
+import { sumDue } from '../rates/rates';
 
 /** A person in a pool, or another pool (memberPool its name, personId ''), with a share percent (two decimals). A
  *  retired member's share counts toward the total. Their cut is their part of the pool's pot, two decimals
@@ -48,4 +49,17 @@ export function usePools(sheetId: string) {
     queryFn: async () =>
       (await getJson<{ pools: Pool[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/pools`)).pools,
   });
+}
+
+/** A person's cut total: their cuts in every pool they are a member of, added up (a pool with no cuts adds nothing). */
+export function cutTotal(pools: Pool[], personId: string): string {
+  return sumDue(
+    pools.flatMap((p) => p.members.filter((m) => !m.memberPool && m.personId === personId && m.cut !== '').map((m) => m.cut)),
+  );
+}
+
+/** Each person's cut total, by their id, as the sheet's pools stand now. */
+export function useCutTotals(sheetId: string): (personId: string) => string {
+  const pools = usePools(sheetId).data ?? [];
+  return (personId) => cutTotal(pools, personId);
 }

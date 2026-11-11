@@ -7,6 +7,7 @@ import { useCap, useFloor, useLate } from '../access/access';
 import { useAsOf } from '../sheet/asof.slot';
 import { GRADES } from '../people/people';
 import { STATUSES, sheetFigures, treeTotals, useDescendantFigures } from './consolidated';
+import { usePools } from '../pools/pools';
 
 // The consolidated figures, over the sheet and all its descendants: everyone on them, counted once
 // each (people whose names or aliases match are one), and the due-total and overdue-total of every
@@ -22,10 +23,11 @@ function Consolidated({ sheetId }: { sheetId: string }) {
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const cap = useCap(sheetId);
+  const pools = usePools(sheetId).data ?? [];
   const [asOf] = useAsOf();
   const descendants = useDescendantFigures(sheetId, asOf).data ?? [];
 
-  const own = sheetFigures(people, claims, rates, today, floor, late, cap);
+  const own = sheetFigures(people, claims, rates, today, floor, late, cap, pools);
   const all = [own, ...descendants];
   const { people: count, dueTotal, overdueTotal } = treeTotals(all);
 

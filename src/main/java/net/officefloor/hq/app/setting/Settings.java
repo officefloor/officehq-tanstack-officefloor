@@ -337,10 +337,15 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
         return periodNumberingFrom != null && !today.isBefore(periodNumberingFrom);
     }
 
-    /** A person's due-total (null: n/a) held to the cap in force on {@code today}. A due-total of n/a is not capped. */
-    public BigDecimal capped(BigDecimal dueTotal, LocalDate today) {
+    /**
+     * A person's due-total (null: n/a) held to the cap in force on {@code today} less their cut total (not below
+     * 0.00): the cap covers their due-total and their cut total together. A due-total of n/a is not capped.
+     */
+    public BigDecimal capped(BigDecimal dueTotal, BigDecimal cutTotal, LocalDate today) {
         BigDecimal cap = capOn(today);
-        return cap == null || dueTotal == null || dueTotal.compareTo(cap) <= 0 ? dueTotal : cap;
+        if (cap == null || dueTotal == null) return dueTotal;
+        BigDecimal room = cap.subtract(cutTotal).max(BigDecimal.ZERO).setScale(2);
+        return dueTotal.compareTo(room) <= 0 ? dueTotal : room;
     }
 
     /**

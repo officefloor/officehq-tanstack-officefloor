@@ -9,6 +9,8 @@ import { personOverdue } from '../overdue/overdue';
 import { floorOf, lateOf } from '../access/access';
 import type { Settings } from '../access/access';
 import type { Sheet } from '../sheet/sheet';
+import { cutTotal } from '../pools/pools';
+import type { Pool } from '../pools/pools';
 
 /** Every status the consolidated figures count. */
 export const STATUSES: ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID', 'REVIEW'];
@@ -45,9 +47,10 @@ export function sheetFigures(
   floor: Dated,
   late: Late,
   cap: string,
+  pools: Pool[] = [],
 ): Figures {
   const claimsOf = (id: string) => claims.filter((c) => c.personId === id);
-  const dueOf = (p: Person) => personDueTotal(rates, p.grades, today, claimsOf(p.id), liveHolds(p, today), floor, late, cap, heldParts(p.id, people, claims, rates, today, floor, late));
+  const dueOf = (p: Person) => personDueTotal(rates, p.grades, today, claimsOf(p.id), liveHolds(p, today), floor, late, cap, heldParts(p.id, people, claims, rates, today, floor, late), cutTotal(pools, p.id));
   const active = people.filter((p) => !p.retired);
   const dues = people.map(dueOf);
   const overdueOf = people.map((p) => personOverdue(rates, p.grades, today, claimsOf(p.id), liveHolds(p, today), floor, late));
@@ -99,14 +102,15 @@ const enc = encodeURIComponent;
  * answers with that date as its today).
  */
 export async function readFigures(sheetId: string): Promise<Figures> {
-  const [sheet, people, claims, rates, settings] = await Promise.all([
+  const [sheet, people, claims, rates, settings, pools] = await Promise.all([
     getJson<Sheet>(`/api/sheets/${enc(sheetId)}`),
     getJson<{ people: Person[] }>(`/api/sheets/${enc(sheetId)}/people`).then((r) => r.people),
     getJson<{ claims: Claim[] }>(`/api/sheets/${enc(sheetId)}/claims`).then((r) => r.claims),
     getJson<{ rates: Rate[] }>(`/api/sheets/${enc(sheetId)}/rates`).then((r) => r.rates),
     getJson<Settings>(`/api/sheets/${enc(sheetId)}/settings`),
+    getJson<{ pools: Pool[] }>(`/api/sheets/${enc(sheetId)}/pools`).then((r) => r.pools),
   ]);
-  return sheetFigures(people, claims, rates, sheet.today, floorOf(settings), lateOf(settings, sheet.today), settings.cap ?? '');
+  return sheetFigures(people, claims, rates, sheet.today, floorOf(settings), lateOf(settings, sheet.today), settings.cap ?? '', pools);
 }
 
 /**

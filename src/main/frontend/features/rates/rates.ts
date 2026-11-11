@@ -263,7 +263,7 @@ export function claimDue(claim: Claim, pct: string | null, floor: Dated, late: L
  * statement), has a figure under another grade in force on its date, or has a figure dated on or
  * before today (under a rate that has since ended). A shared claim counts its due less its holders'
  * parts; the parts `held` of others' claims shared with them count too (and keep it from n/a). Held to
- * the sheet's `cap` ('' for none); n/a is not capped.
+ * the sheet's `cap` ('' for none) less their `cut` total (not below 0.00); n/a is not capped.
  */
 export function personDueTotal(
   rates: Rate[],
@@ -275,13 +275,19 @@ export function personDueTotal(
   late: Late,
   cap: string,
   held: HeldPart[] = [],
+  cut = '0.00',
 ): string {
   const total = uncappedDueTotal(rates, grades, today, claims, holds, floor, late, held);
-  if (total === NA || cap === '' || hundredths(total) <= hundredths(cap)) return total;
-  return showCents(hundredths(cap));
+  if (total === NA || cap === '') return total;
+  const left = hundredths(cap) - hundredths(cut);
+  const room = left > 0n ? left : 0n;
+  return hundredths(total) <= room ? total : showCents(room);
 }
 
-/** How far a person's due-total, before the sheet's `cap` ('' for none), goes above it: 0.00 when it does not. */
+/**
+ * How far a person's due-total, before the sheet's `cap` ('' for none), plus their `cut` total goes above
+ * the cap: 0.00 when it does not.
+ */
 export function personExcess(
   rates: Rate[],
   grades: GradeFrom[],
@@ -292,10 +298,12 @@ export function personExcess(
   late: Late,
   cap: string,
   held: HeldPart[] = [],
+  cut = '0.00',
 ): string {
   const total = uncappedDueTotal(rates, grades, today, claims, holds, floor, late, held);
-  if (total === NA || cap === '' || hundredths(total) <= hundredths(cap)) return '0.00';
-  return showCents(hundredths(total) - hundredths(cap));
+  if (total === NA || cap === '') return '0.00';
+  const figures = hundredths(total) + hundredths(cut);
+  return figures <= hundredths(cap) ? '0.00' : showCents(figures - hundredths(cap));
 }
 
 function uncappedDueTotal(

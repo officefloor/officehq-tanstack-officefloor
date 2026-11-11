@@ -5,6 +5,7 @@ import { heldParts, personDueTotal, sumDue, useRates } from '../rates/rates';
 import { useCap, useFloor, useLate } from '../access/access';
 import { useSheetToday } from '../sheet/sheet';
 import { classicPeriodDueTotal, usePeriods } from '../periods/periods';
+import { useCutTotals } from '../pools/pools';
 
 // The classic summary, shown beside the summary: per period, its due-total counting each claim by
 // its status now (a closed period shows the figure fixed when it closed), and the sheet's due-total
@@ -18,9 +19,10 @@ function ClassicSummary({ sheetId }: { sheetId: string }) {
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const cap = useCap(sheetId);
+  const cutOf = useCutTotals(sheetId);
 
   const totals = people.map((p) =>
-    personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap, heldParts(p.id, people, claims, rates, today, floor, late)),
+    personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap, heldParts(p.id, people, claims, rates, today, floor, late), cutOf(p.id)),
   );
 
   return (

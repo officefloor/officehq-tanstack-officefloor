@@ -8,6 +8,7 @@ import type { Person } from '../people/people';
 import { heldParts, personDueTotal, useRates } from '../rates/rates';
 import { useCap, useFloor, useLate } from '../access/access';
 import { useSheetToday } from '../sheet/sheet';
+import { useCutTotals } from '../pools/pools';
 
 /** A person's due-total in the SNAPSHOT written when the sheet's today was changed away from `day` ('' when none; the last when several). */
 function snapshotOn(p: Person, day: string): string {
@@ -31,6 +32,7 @@ function SnapshotCompare({ sheetId }: { sheetId: string }) {
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const cap = useCap(sheetId);
+  const cutOf = useCutTotals(sheetId);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [lines, setLines] = useState<string[] | null>(null);
@@ -44,7 +46,7 @@ function SnapshotCompare({ sheetId }: { sheetId: string }) {
         people.map((p) => {
           const now =
             to === ''
-              ? personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap, heldParts(p.id, people, claims, rates, today, floor, late))
+              ? personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap, heldParts(p.id, people, claims, rates, today, floor, late), cutOf(p.id))
               : snapshotOn(p, to);
           return [p.name, snapshotOn(p, from), now].join(' ').trim();
         }),

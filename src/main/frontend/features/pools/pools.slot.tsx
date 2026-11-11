@@ -9,7 +9,7 @@ import { useUser } from '../session/session';
 import { usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { sumDue } from '../rates/rates';
-import { poolsKey, usePools } from './pools';
+import { cutTotal, poolsKey, usePools } from './pools';
 import type { Pool } from './pools';
 
 // The sheet's pools: a name entry and an add button, each pool listed below with its total share, whether
@@ -190,13 +190,6 @@ function PoolRow({ sheetId, pool }: { sheetId: string; pool: Pool }) {
         </form>
       )}
     </li>
-  );
-}
-
-/** A person's cut total: their cuts in every pool they are a member of, added up (a pool with no cuts adds nothing). */
-function cutTotal(pools: Pool[], personId: string): string {
-  return sumDue(
-    pools.flatMap((p) => p.members.filter((m) => !m.memberPool && m.personId === personId && m.cut !== '').map((m) => m.cut)),
   );
 }
 
