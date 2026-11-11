@@ -1,0 +1,79 @@
+diff --git a/src/main/frontend/features/audit/audit.slot.tsx b/src/main/frontend/features/audit/audit.slot.tsx
+index e3259911f..552a87203 100644
+--- a/src/main/frontend/features/audit/audit.slot.tsx
++++ b/src/main/frontend/features/audit/audit.slot.tsx
+@@ -7,7 +7,8 @@ import { useUser } from '../session/session';
+ 
+ // The audit viewer: a filter entry, a show button and the sheet's audit lines, read from the audit
+ // file exactly as it holds them, newest first. A name in the filter keeps only the lines about that
+-// person (name= or person= that name, case and surrounding spaces ignored), followed, for someone
++// person (name= or person= that name, case and surrounding spaces ignored), then the matching lines of
++// the sheet's descendants (each sheet newest first, the sheets by id), followed, for someone
+ // transferred here, by the lines about them from the sheet they came from. It writes nothing.
+ function AuditViewer({ sheetId }: { sheetId: string }) {
+   const [user] = useUser();
+diff --git a/src/main/java/net/officefloor/hq/app/audit/RespondWithAuditLines.java b/src/main/java/net/officefloor/hq/app/audit/RespondWithAuditLines.java
+index 65aeeb55e..06848df98 100644
+--- a/src/main/java/net/officefloor/hq/app/audit/RespondWithAuditLines.java
++++ b/src/main/java/net/officefloor/hq/app/audit/RespondWithAuditLines.java
+@@ -8,24 +8,32 @@ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
+ 
+ /**
+  * The audit viewer: the sheet's lines read from the audit file (it is not a second record), newest
+  * first. With a name in {@code ?name=} only the lines carrying {@code name=} or {@code person=} that
+- * name, compared as names are compared (case and surrounding spaces ignored). When that name is a
++ * name, compared as names are compared (case and surrounding spaces ignored), followed by the
++ * matching lines of the sheet's descendants (each sheet's newest first, the sheets in id order). When that name is a
+  * person on the sheet transferred from another sheet, the lines about them from the sheet they came
+  * from follow, newest first, as that sheet's file holds them.
+  */
+ public class RespondWithAuditLines {
+-    public void respond(@Val Sheet sheet, Audit audit, PersonRepository people, HttpServletRequest request,
++    public void respond(@Val Sheet sheet, Audit audit, PersonRepository people, SheetRepository sheets,
++            HttpServletRequest request,
+             ObjectResponse<AuditLinesResponse> response) {
+         String name = request.getParameter("name");
+         name = name == null ? "" : name;
+         List<String> lines = new ArrayList<>(audit.linesFor(sheet.id(), name));
+         Collections.reverse(lines);
+         if (!name.isBlank()) {
++            for (String descendant : sheets.descendants(sheet.id())) {
++                List<String> below = new ArrayList<>(audit.linesFor(descendant, name));
++                Collections.reverse(below);
++                lines.addAll(below);
++            }
+             Person person = people.findByName(sheet.id(), name);
+             if (person != null && person.getOriginSheet() != null) {
+                 List<String> origin = new ArrayList<>(audit.linesFor(person.getOriginSheet(), person.getName()));
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+index b5e0d4198..0b0da10e1 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+@@ -89,6 +89,21 @@ public class SheetRepository {
+         return seen;
+     }
+ 
++    /**
++     * The sheet's descendants (the sheets naming it as their parent, those naming them and so on),
++     * each once and never the sheet itself, in id order.
++     */
++    public List<String> descendants(String id) {
++        java.util.Set<String> seen = new java.util.TreeSet<>();
++        java.util.Deque<String> pending = new java.util.ArrayDeque<>(List.of(id));
++        while (!pending.isEmpty()) {
++            for (String child : children(pending.removeFirst())) {
++                if (!child.equals(id) && seen.add(child)) pending.addLast(child);
++            }
++        }
++        return new java.util.ArrayList<>(seen);
++    }
++
+     /** Names the sheet's parent sheet (null: none). */
+     public void saveParent(String id, String parent) {
+         jdbc.update("UPDATE sheet SET parent_id = ? WHERE id = ?", parent, id);
