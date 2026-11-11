@@ -53,6 +53,8 @@ export type Settings = {
   escalateAfter: string;
   /** The review SLA in days ('' for none), not dated: a REVIEW claim whose review day plus it is before the sheet's today is late. */
   reviewSla: string;
+  /** The proof kinds, a comma separated list of kinds, receipt or photo ('' for none), not dated: while set, a claim above the proof threshold needs a proof of each. */
+  proofKinds: string;
   /**
    * Every value recorded for each figure setting, by key (clerk-limit, floor, terms, late-pct,
    * terms-A, terms-B, terms-C, cap, proof-threshold, note-threshold, grace-A, grace-B, grace-C, proof-threshold-A, proof-threshold-B,
@@ -184,6 +186,9 @@ export const PROOF_THRESHOLD = /^\d+(\.\d{1,2})?$/;
 
 /** A note threshold as the screen takes it: blank, or 0.00 or more with up to two decimals. */
 export const NOTE_THRESHOLD = /^\d+(\.\d{1,2})?$/;
+
+/** The kinds a proof may have, in the order they are shown: a proof with none chosen is a receipt. */
+export const PROOF_KINDS: readonly string[] = ['receipt', 'photo'];
 
 /** A review threshold as the screen takes it: blank, or 0.00 or more with up to two decimals. */
 export const REVIEW_THRESHOLD = /^\d+(\.\d{1,2})?$/;

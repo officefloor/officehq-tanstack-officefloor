@@ -7,7 +7,7 @@ import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/session';
 import { poolsKey } from '../pools/pools';
 import { periodsKey } from '../periods/periods';
-import { ACTIONS, ALERT_THRESHOLD, CAP, DATED_KEYS, FLOOR, GRADES, LATE_PCT, LIMIT, NOTE_THRESHOLD, PERM_ROLES, REVIEW_THRESHOLD, POLICY_DATE, POT, PROOF_THRESHOLD, ROUNDING, STANDING_RULE, TERMS, ROLES, gradeGraceKey, gradeProofThresholdKey, rolesKey, settingsKey, useRoles, useSettings } from './access';
+import { ACTIONS, ALERT_THRESHOLD, CAP, DATED_KEYS, FLOOR, GRADES, LATE_PCT, LIMIT, NOTE_THRESHOLD, PERM_ROLES, REVIEW_THRESHOLD, POLICY_DATE, POT, PROOF_KINDS, PROOF_THRESHOLD, ROUNDING, STANDING_RULE, TERMS, ROLES, gradeGraceKey, gradeProofThresholdKey, rolesKey, settingsKey, useRoles, useSettings } from './access';
 import type { Role, Settings, SettingsChange } from './access';
 
 type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms' | 'gradeGrace' | 'gradeProofThreshold'>;
@@ -32,7 +32,8 @@ type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms' | 'gradeGrace' | 'grad
 // a claim dated then rounds, and its review threshold (blank: none), dated, above which a claim's due on its
 // date sends it to REVIEW instead of OPEN when it is opened, and its escalation gap in days (blank: off),
 // not dated, at least which after a claim's previous reminder a reminder escalates it, once, and its review
-// SLA in days (blank: none), not dated, past which after its review day a REVIEW claim is late. Only the settings typed in (or stepped into)
+// SLA in days (blank: none), not dated, past which after its review day a REVIEW claim is late, and its
+// proof kinds (blank: none), not dated, a comma separated list of receipt or photo. Only the settings typed in (or stepped into)
 // since the last save are sent, so saving one leaves the other as it is.
 function SettingsForm({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
@@ -57,6 +58,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
     reviewThreshold: '',
     escalateAfter: '',
     reviewSla: '',
+    proofKinds: '',
   });
   const [touched, setTouched] = useState<Set<Key>>(new Set());
   const [gradeFields, setGradeFields] = useState<Record<string, string>>({});
@@ -240,6 +242,15 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         return;
       }
       body.reviewSla = reviewSla;
+    }
+    if (touched.has('proofKinds')) {
+      const proofKinds = fields.proofKinds.trim();
+      const kinds = proofKinds.split(',').map((k) => k.trim());
+      if (proofKinds !== '' && !kinds.every((k) => PROOF_KINDS.includes(k))) {
+        setError('Proof kinds are receipt or photo, separated by commas, or blank.');
+        return;
+      }
+      body.proofKinds = proofKinds;
     }
     if (gradesTouched.size > 0) {
       const gradeTerms: Record<string, string> = {};
@@ -697,6 +708,19 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         </label>{' '}
         <span>
           now: <strong data-testid="setting-review-sla-current">{settings.data?.reviewSla ?? ''}</strong>
+        </span>{' '}
+        <label>
+          Proof kinds{' '}
+          <input
+            data-testid="setting-proof-kinds"
+            placeholder="none"
+            value={fields.proofKinds}
+            onFocus={() => touch('proofKinds')}
+            onChange={(e) => change('proofKinds', e.target.value)}
+          />
+        </label>{' '}
+        <span>
+          now: <strong data-testid="setting-proof-kinds-current">{settings.data?.proofKinds ?? ''}</strong>
         </span>{' '}
         {ACTIONS.map((action) => (
           <span key={action}>

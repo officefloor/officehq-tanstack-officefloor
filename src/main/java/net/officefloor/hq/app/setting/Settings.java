@@ -32,12 +32,13 @@ import java.util.NavigableMap;
  * set, the date of a new claim left undated instead of the sheet's today, and its pot (null: none),
  * shared out as cuts among a balanced pool's members, and its fiscal year start month (null: 1), and its alert threshold (null: off),
  * and its escalation gap in days (null: off), and its review SLA in days (null: none): a REVIEW claim whose
- * review day plus it is before the sheet's today is late for review.
+ * review day plus it is before the sheet's today is late for review, and its proof kinds (null: none), a
+ * comma separated list of kinds: while set, a claim that needs a proof needs at least one of each.
  */
 public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap<LocalDate, String>> dated,
         LocalDate policyDate, LocalDate periodNumberingFrom, Map<String, String> perms, Integer graceDays,
         LocalDate entryDate, BigDecimal pot, Integer fiscalStartMonth, BigDecimal alertThreshold,
-        Integer escalateAfter, Integer reviewSla) {
+        Integer escalateAfter, Integer reviewSla, String proofKinds) {
     /** The month, 1 to 12, a fiscal year starts in. */
     public int fiscalStart() {
         return fiscalStartMonth == null ? 1 : fiscalStartMonth;
@@ -63,6 +64,13 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
     public static final String REVIEW_SLA = "review-sla";
     public static final String ROUNDING = "rounding";
     public static final String REVIEW_THRESHOLD = "review-threshold";
+    public static final String PROOF_KINDS = "proof-kinds";
+
+    /** The kinds of proof the proof kinds list (none set: none). */
+    public List<String> proofKindList() {
+        if (proofKinds == null || proofKinds.isBlank()) return List.of();
+        return java.util.Arrays.stream(proofKinds.split(",")).map(String::trim).filter((k) -> !k.isEmpty()).toList();
+    }
 
     /** The rounding modes a sheet may set, as they are recorded. */
     public static final String HALF_UP = "half-up";
@@ -209,13 +217,18 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
     }
 
     /**
-     * Whether a claim of a grade dated {@code date} with a due (null: n/a) and a proofs count needs
-     * a proof before it is settled or approved: its due is above its proof threshold and it has no
-     * proofs. A due of n/a, or no threshold, needs none.
+     * Whether a claim of a grade dated {@code date} with a due (null: n/a) needs a proof before it is
+     * settled or approved: its due is above its proof threshold and it has no proofs, or, while the
+     * proof kinds are set, none of a kind they list. A due of n/a, or no threshold, needs none.
      */
-    public boolean needsProof(BigDecimal due, String grade, LocalDate date, int proofs) {
+    public boolean needsProof(BigDecimal due, String grade, LocalDate date, net.officefloor.hq.app.claim.Claim claim) {
         BigDecimal threshold = proofThresholdFor(grade, date);
-        return proofs == 0 && threshold != null && due != null && due.compareTo(threshold) > 0;
+        if (threshold == null || due == null || due.compareTo(threshold) <= 0) return false;
+        if (claim.getProofs() == 0) return true;
+        for (String kind : proofKindList()) {
+            if (claim.proofsOf(kind) == 0) return true;
+        }
+        return false;
     }
 
     /** The note threshold in force on a date (null: none). */

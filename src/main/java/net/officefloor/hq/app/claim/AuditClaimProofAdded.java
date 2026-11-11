@@ -6,11 +6,12 @@ import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Val;
 
-/** Records the proof added; the line ends with the claim's proofs count now. */
+/** Records the proof added; the line ends with the claim's proofs count now, then the kind when one was chosen. */
 public class AuditClaimProofAdded {
-    public void audit(@Val Sheet sheet, @Val Claim claim, PersonRepository people,
+    public void audit(@Val Sheet sheet, @Val Claim claim, @Val ProofKind kind, PersonRepository people,
             HttpServletRequest request, Audit audit) {
         audit.record(ClaimAudit.line("CLAIM_PROOF_ADDED", sheet, Audit.user(request),
-                people.find(sheet.id(), claim.getPersonId()), claim) + " proofs=" + claim.getProofs());
+                people.find(sheet.id(), claim.getPersonId()), claim) + " proofs=" + claim.getProofs()
+                + (kind.kind() == null ? "" : " kind=" + kind.kind()));
     }
 }

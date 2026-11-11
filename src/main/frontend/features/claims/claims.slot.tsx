@@ -12,7 +12,7 @@ import type { Claim } from './claims';
 import { selectClaim, useSelectedClaims } from './selection';
 import { claimDue, rateOn, useRates } from '../rates/rates';
 import { periodOf, usePeriods } from '../periods/periods';
-import { useFloor, useLate, useReviewSla } from '../access/access';
+import { PROOF_KINDS, useFloor, useLate, useReviewSla } from '../access/access';
 import { useSheetToday } from '../sheet/sheet';
 import { dueBy, isOverdue } from '../overdue/overdue';
 import { useVoidReasons } from '../voidreasons/voidReasons';
@@ -75,6 +75,8 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   const [moveTo, setMoveTo] = useState<Record<string, string>>({});
   // The date typed to defer each claim until, by claim id.
   const [deferUntil, setDeferUntil] = useState<Record<string, string>>({});
+  // The kind chosen for each claim's next proof ('' or missing: none chosen, a receipt).
+  const [proofKind, setProofKind] = useState<Record<string, string>>({});
   // The new date typed to re-date each claim to, by claim id.
   const [newDate, setNewDate] = useState<Record<string, string>>({});
   // The amount typed in each draft's own row, to save as its new amount, by claim id.
@@ -271,16 +273,19 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
     inline.mutate({ c, amount });
   };
 
-  // A proof is added to a claim that is not SETTLED or VOID.
+  // A proof, of the kind chosen (none: a receipt), is added to a claim that is not SETTLED or VOID.
   const proof = useMutation({
-    mutationFn: (id: string) =>
+    mutationFn: ({ id, kind }: { id: string; kind: string }) =>
       postJson<Claim>(
         `/api/sheets/${encodeURIComponent(sheetId)}/claims/${encodeURIComponent(id)}/proof`,
-        {},
+        { kind },
         user,
       ),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
-    onError: (_e, id) => setRefused({ id, message: 'A proof cannot be added to that claim.' }),
+    onSuccess: (_c, { id }) => {
+      setProofKind((k) => ({ ...k, [id]: '' }));
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+    onError: (_e, { id }) => setRefused({ id, message: 'A proof cannot be added to that claim.' }),
   });
 
   // An OPEN or PENDING claim is reminded, once per sheet's today.
@@ -429,7 +434,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
 
   const addProof = (id: string) => {
     setRefused(null);
-    proof.mutate(id);
+    proof.mutate({ id, kind: proofKind[id] ?? '' });
   };
 
   const deferClaim = (id: string) => {
@@ -657,6 +662,8 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
               <span data-testid="claim-deferred">{showsDeferred(c, today) ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-deferred-until">{c.deferredUntil}</span>{' '}
               <span data-testid="claim-proofs">{c.proofs}</span>{' '}
+              (receipts <span data-testid="claim-proofs-receipt">{c.proofReceipts}</span>, photos{' '}
+              <span data-testid="claim-proofs-photo">{c.proofPhotos}</span>){' '}
               <span data-testid="claim-split-from">{c.splitFrom}</span>{' '}
               <span data-testid="claim-review-late">{isReviewLate(c, today, reviewSla) ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</span>{' '}
@@ -669,6 +676,22 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
               <button type="button" data-testid="claim-waive" onClick={() => waiveClaim(c.id)}>
                 Waive late charge
               </button>{' '}
+              <select
+                data-testid="claim-proof-kind"
+                aria-label="Proof kind"
+                value={proofKind[c.id] ?? ''}
+                onChange={(e) => {
+                  setProofKind((k) => ({ ...k, [c.id]: e.target.value }));
+                  setRefused((r) => (r !== null && r.id === c.id ? null : r));
+                }}
+              >
+                <option value="">kind: receipt</option>
+                {PROOF_KINDS.map((kind) => (
+                  <option key={kind} value={kind}>
+                    {kind}
+                  </option>
+                ))}
+              </select>{' '}
               <button type="button" data-testid="claim-proof" onClick={() => addProof(c.id)}>
                 Add proof
               </button>{' '}

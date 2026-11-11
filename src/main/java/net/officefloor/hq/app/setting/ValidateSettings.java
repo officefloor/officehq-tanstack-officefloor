@@ -262,6 +262,19 @@ public class ValidateSettings {
             }
             reviewSla = Integer.valueOf(value);
         }
+        boolean proofKindsChanged = request != null && request.proofKinds() != null;
+        String proofKinds = null;
+        if (proofKindsChanged && !request.proofKinds().trim().isEmpty()) {
+            java.util.List<String> kinds = new java.util.ArrayList<>();
+            for (String kind : request.proofKinds().split(",", -1)) {
+                kind = kind.trim();
+                if (!net.officefloor.hq.app.claim.ProofKind.KINDS.contains(kind)) {
+                    throw new InvalidSettingException("Proof kinds are receipt or photo, separated by commas, or blank");
+                }
+                if (!kinds.contains(kind)) kinds.add(kind);
+            }
+            proofKinds = String.join(",", kinds);
+        }
         Map<String, LocalDate> from = new LinkedHashMap<>();
         if (request != null && request.from() != null) {
             for (Map.Entry<String, String> entry : request.from().entrySet()) {
@@ -280,6 +293,7 @@ public class ValidateSettings {
                 thresholdChanged, threshold, perms, graceChanged, graceDays, noteThresholdChanged, noteThreshold,
                 entryChanged, entryDate, gradeGrace, gradeProofThreshold, potChanged, pot, parentChanged, parent,
                 fiscalChanged, fiscalStartMonth, alertChanged, alertThreshold, roundingChanged, rounding,
-                reviewThresholdChanged, reviewThreshold, escalateChanged, escalateAfter, reviewSlaChanged, reviewSla));
+                reviewThresholdChanged, reviewThreshold, escalateChanged, escalateAfter, reviewSlaChanged, reviewSla,
+                proofKindsChanged, proofKinds));
     }
 }

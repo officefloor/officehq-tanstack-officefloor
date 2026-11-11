@@ -22,7 +22,7 @@ import net.officefloor.plugin.variable.Val;
  * When a clerk (any user not made a steward) settles a claim whose due is above the sheet's clerk
  * limit, it goes to PENDING instead, its due left live until a steward approves or rejects it; a
  * due of n/a is within any limit. Before the clerk limit is considered, a claim whose due is above
- * the proof threshold in force on its date is refused while it has no proofs. Only a role the
+ * the proof threshold in force on its date is refused while it has no proofs, or none of a kind the proof kinds list. Only a role the
  * permission matrix allows may settle.
  */
 public class SettleClaim {
@@ -57,7 +57,7 @@ public class SettleClaim {
         if (user.equals(claim.getOpenedBy())) throw new SelfSettleException(user);
         if (claim.isOwnedBy(user)) throw new SelfSettleException(user, "last edited");
         BigDecimal due = ClaimFigure.floored(claim, figure, late, settings);
-        if (settings.needsProof(due, grade, claim.getDate(), claim.getProofs())) throw new InvalidClaimStatusException(ProofRequired.MESSAGE);
+        if (settings.needsProof(due, grade, claim.getDate(), claim)) throw new InvalidClaimStatusException(ProofRequired.MESSAGE);
         if (!settings.withinClerkLimit(due, sheet.today()) && Role.CLERK.equals(role)) {
             claim.moveTo(ClaimStatus.PENDING);
             return;

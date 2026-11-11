@@ -7,6 +7,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.crew.CrewRepository;
 import net.officefloor.hq.app.pool.PoolRepository;
 import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.role.RoleRepository;
@@ -20,12 +21,12 @@ import net.officefloor.plugin.variable.Val;
  * claims move to the other (numbers and dates kept, listed after the other's in the order they were
  * added, each keeping any figure a statement bound it to); their statement count is added to the other's
  * (whose last statement stays theirs, or, having none, becomes this person's); their name and aliases become the other's
- * aliases; their patrons and pool memberships go to the other, and anyone naming them as patron names
+ * aliases; their patrons, pool and crew memberships (and a crew they lead) go to the other, and anyone naming them as patron names
  * the other instead. Their holds, watchers and contact are dropped, and they leave the list.
  */
 public class MergePerson {
     public void merge(@Val MergeInput input, @Val Sheet sheet, @Val Person person, PersonRepository people,
-            ClaimRepository claims, PoolRepository pools, RoleRepository roles, HttpServletRequest request,
+            ClaimRepository claims, PoolRepository pools, CrewRepository crews, RoleRepository roles, HttpServletRequest request,
             Out<Merge> mergeOut) throws StewardOnlyException, InvalidPersonException {
         if (!Role.STEWARD.equals(roles.roleOf(sheet.id(), Audit.user(request)))) {
             throw new StewardOnlyException("Only a steward may merge people");
@@ -43,6 +44,7 @@ public class MergePerson {
             claims.save(claim);
         }
         pools.mergeMembers(person.getId(), into.getId());
+        crews.mergeMembers(person.getId(), into.getId());
         people.merge(person, into);
         mergeOut.set(new Merge(person, into));
     }

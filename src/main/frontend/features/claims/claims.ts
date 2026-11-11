@@ -49,6 +49,10 @@ export type Claim = {
   deferredUntil: string;
   /** How many proofs it has had added. */
   proofs: number;
+  /** How many of its proofs are receipts. */
+  proofReceipts: number;
+  /** How many of its proofs are photos. */
+  proofPhotos: number;
   /** The number of the claim it was split off; '' when it was not split off one. */
   splitFrom: string;
   /** The user whose open editor locks it on the sheet's today; '' when no one's does. */

@@ -67,4 +67,17 @@ public class CrewRepository {
     private static Date sqlDate(LocalDate day) {
         return day == null ? null : Date.valueOf(day);
     }
+
+    /**
+     * Move a merged person's crew memberships to the person they were merged into, and a crew they lead
+     * to the other's lead: dropped from a crew the other is already in or leads.
+     */
+    public void mergeMembers(long fromId, long intoId) {
+        jdbc.update("UPDATE crew SET lead_id = ? WHERE lead_id = ?", intoId, fromId);
+        jdbc.update("DELETE FROM crew_member WHERE person_id IN (?, ?) AND crew_id IN"
+                + " (SELECT id FROM crew WHERE lead_id = ?)", fromId, intoId, intoId);
+        jdbc.update("DELETE FROM crew_member WHERE person_id = ? AND crew_id IN"
+                + " (SELECT crew_id FROM crew_member WHERE person_id = ?)", fromId, intoId);
+        jdbc.update("UPDATE crew_member SET person_id = ? WHERE person_id = ?", intoId, fromId);
+    }
 }

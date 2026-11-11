@@ -26,6 +26,7 @@ public class Claim {
     private int terms;
     private LocalDate deferredUntil;
     private int proofs;
+    private int proofPhotos;
     private String splitFrom;
     private String lockedBy;
     private boolean lateEntry;
@@ -120,12 +121,22 @@ public class Claim {
     /** How many proofs it has had added. */
     public int getProofs() { return proofs; }
     public void setProofs(int proofs) { this.proofs = proofs; }
-    /** Add a proof: not to a SETTLED or VOID claim. */
-    public void addProof() throws InvalidClaimStatusException {
+    /** How many of its proofs are photos. */
+    public int getProofPhotos() { return proofPhotos; }
+    public void setProofPhotos(int proofPhotos) { this.proofPhotos = proofPhotos; }
+    /** How many of its proofs are receipts: those that are not photos. */
+    public int getProofReceipts() { return proofs - proofPhotos; }
+    /** How many of its proofs are of a kind (receipt or photo). */
+    public int proofsOf(String kind) {
+        return ProofKind.PHOTO.equals(kind) ? getProofPhotos() : ProofKind.RECEIPT.equals(kind) ? getProofReceipts() : 0;
+    }
+    /** Add a proof of a kind (null: a receipt): not to a SETTLED or VOID claim. */
+    public void addProof(String kind) throws InvalidClaimStatusException {
         if (status == ClaimStatus.SETTLED || status == ClaimStatus.VOID || status == ClaimStatus.DELETED) {
             throw new InvalidClaimStatusException("A " + status + " claim cannot have a proof added");
         }
         proofs++;
+        if (ProofKind.PHOTO.equals(kind)) proofPhotos++;
     }
     /** The last sheet's today a reminder was written for it; null when it was never reminded. */
     public LocalDate getRemindedOn() { return remindedOn; }
@@ -289,6 +300,7 @@ public class Claim {
         then.terms = terms;
         then.deferredUntil = deferredUntil;
         then.proofs = proofs;
+        then.proofPhotos = proofPhotos;
         then.splitFrom = splitFrom;
         then.lateEntry = lateEntry;
         then.remindedOn = remindedOn;
