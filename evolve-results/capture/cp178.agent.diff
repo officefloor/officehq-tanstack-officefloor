@@ -1,0 +1,244 @@
+diff --git a/src/main/frontend/features/access/access.slot.tsx b/src/main/frontend/features/access/access.slot.tsx
+index 2cd6e282e..e9ae263b9 100644
+--- a/src/main/frontend/features/access/access.slot.tsx
++++ b/src/main/frontend/features/access/access.slot.tsx
+@@ -764,7 +764,10 @@ function Roles({ sheetId }: { sheetId: string }) {
+   const save = useMutation({
+     mutationFn: (body: Role) =>
+       postJson<Role>(`/api/sheets/${encodeURIComponent(sheetId)}/roles`, body, user),
+-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: rolesKey(sheetId) }),
++    onSuccess: () => {
++      void queryClient.invalidateQueries({ queryKey: rolesKey(sheetId) });
++      void queryClient.invalidateQueries({ queryKey: ['sheet', sheetId, 'my-role'] });
++    },
+     onError: () => setError('That role could not be set.'),
+   });
+ 
+diff --git a/src/main/frontend/features/dashboard/dashboard.slot.tsx b/src/main/frontend/features/dashboard/dashboard.slot.tsx
+new file mode 100644
+index 000000000..331ac94a5
+--- /dev/null
++++ b/src/main/frontend/features/dashboard/dashboard.slot.tsx
+@@ -0,0 +1,39 @@
++import { SheetBody } from '../../slots/defs/sheetBody';
++import { useClaims } from '../claims/claims';
++import { liveHolds, usePeople } from '../people/people';
++import { useRates } from '../rates/rates';
++import { useSheetToday } from '../sheet/sheet';
++import { useFloor, useLate } from '../access/access';
++import { personOverdue } from '../overdue/overdue';
++import { useUser } from '../session/session';
++import { useMyRole } from './dashboard';
++
++// The steward's dashboard: over the sheet, how many claims are PENDING, how many are in REVIEW, and
++// how many overdue claims count (the same figure as the sheet's overdue count). Shown only to a user
++// acting as a steward — the cells are empty for anyone else; as of a date, by the role they had then.
++function Dashboard({ sheetId }: { sheetId: string }) {
++  const [user] = useUser();
++  const role = useMyRole(sheetId, user).data;
++  const people = usePeople(sheetId).data ?? [];
++  const claims = useClaims(sheetId).data ?? [];
++  const rates = useRates(sheetId).data ?? [];
++  const today = useSheetToday(sheetId);
++  const floor = useFloor(sheetId);
++  const late = useLate(sheetId);
++
++  const steward = role === 'steward';
++  const overdue = people
++    .map((p) => personOverdue(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late))
++    .reduce((n, o) => n + o.count, 0);
++  const shown = (n: number) => (steward ? String(n) : '');
++
++  return (
++    <section data-testid="dashboard">
++      Steward: PENDING <strong data-testid="dash-pending-count">{shown(claims.filter((c) => c.status === 'PENDING').length)}</strong>,
++      REVIEW <strong data-testid="dash-review-count">{shown(claims.filter((c) => c.status === 'REVIEW').length)}</strong>,
++      overdue <strong data-testid="dash-overdue-count">{shown(overdue)}</strong>
++    </section>
++  );
++}
++
++export const contribution = SheetBody.fill({ order: -98, Component: Dashboard });
+diff --git a/src/main/frontend/features/dashboard/dashboard.ts b/src/main/frontend/features/dashboard/dashboard.ts
+new file mode 100644
+index 000000000..47a7fa7a7
+--- /dev/null
++++ b/src/main/frontend/features/dashboard/dashboard.ts
+@@ -0,0 +1,15 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import type { Role } from '../access/access';
++
++// The role is per user: each signed-in user acts in their own role on a sheet.
++export const myRoleKey = (sheetId: string, user: string) => ['sheet', sheetId, 'my-role', user] as const;
++
++/** The role the signed-in user acts in on the sheet; while viewing as of a date, the role they had then. */
++export function useMyRole(sheetId: string, user: string) {
++  return useQuery({
++    queryKey: myRoleKey(sheetId, user),
++    queryFn: async () =>
++      (await getJson<Role>(`/api/sheets/${encodeURIComponent(sheetId)}/my-role`, user)).role,
++  });
++}
+diff --git a/src/main/frontend/features/delegation/delegation.slot.tsx b/src/main/frontend/features/delegation/delegation.slot.tsx
+index 8a144cda2..a4561ca24 100644
+--- a/src/main/frontend/features/delegation/delegation.slot.tsx
++++ b/src/main/frontend/features/delegation/delegation.slot.tsx
+@@ -25,6 +25,7 @@ function Delegations({ sheetId }: { sheetId: string }) {
+       postJson<Delegation>(`/api/sheets/${encodeURIComponent(sheetId)}/delegations`, body, user),
+     onSuccess: () => {
+       void queryClient.invalidateQueries({ queryKey: delegationsKey(sheetId) });
++      void queryClient.invalidateQueries({ queryKey: ['sheet', sheetId, 'my-role'] });
+     },
+     onError: () => setError('That delegation could not be made.'),
+   });
+diff --git a/src/main/java/net/officefloor/hq/app/delegation/DelegationRepository.java b/src/main/java/net/officefloor/hq/app/delegation/DelegationRepository.java
+index dc5cf47ae..7ff778d43 100644
+--- a/src/main/java/net/officefloor/hq/app/delegation/DelegationRepository.java
++++ b/src/main/java/net/officefloor/hq/app/delegation/DelegationRepository.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.delegation;
+ 
+ import java.sql.Date;
++import java.time.LocalDate;
+ import java.util.List;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.jdbc.core.RowMapper;
+@@ -37,10 +38,22 @@ public class DelegationRepository {
+         return found.isEmpty() ? null : found.get(0);
+     }
+ 
++    /**
++     * Whether the steward role was delegated to the user for {@code day}, by a delegation made while the
++     * sheet's today was on or before it.
++     */
++    public boolean delegatedOn(String sheetId, String user, LocalDate day) {
++        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM sheet_delegation WHERE sheet_id = ? AND user_name = ?"
++                + " AND ? BETWEEN from_date AND to_date AND (made_on IS NULL OR made_on <= ?)", Integer.class,
++                sheetId, user, Date.valueOf(day), Date.valueOf(day));
++        return n != null && n > 0;
++    }
++
+     public Delegation save(Delegation delegation) {
+-        jdbc.update("INSERT INTO sheet_delegation (sheet_id, user_name, by_user, from_date, to_date) VALUES (?, ?, ?, ?, ?)",
++        jdbc.update("INSERT INTO sheet_delegation (sheet_id, user_name, by_user, from_date, to_date, made_on)"
++                + " SELECT ?, ?, ?, ?, ?, today FROM sheet WHERE id = ?",
+                 delegation.sheetId(), delegation.user(), delegation.by(),
+-                Date.valueOf(delegation.from()), Date.valueOf(delegation.to()));
++                Date.valueOf(delegation.from()), Date.valueOf(delegation.to()), delegation.sheetId());
+         Long id = jdbc.queryForObject("SELECT MAX(id) FROM sheet_delegation WHERE sheet_id = ?", Long.class,
+                 delegation.sheetId());
+         return new Delegation(id, delegation.sheetId(), delegation.user(), delegation.by(), delegation.from(),
+diff --git a/src/main/java/net/officefloor/hq/app/role/RespondWithMyRole.java b/src/main/java/net/officefloor/hq/app/role/RespondWithMyRole.java
+new file mode 100644
+index 000000000..84a884f61
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/role/RespondWithMyRole.java
+@@ -0,0 +1,20 @@
++package net.officefloor.hq.app.role;
++
++import jakarta.servlet.http.HttpServletRequest;
++import java.time.LocalDate;
++import net.officefloor.hq.app.AsOf;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++/** The role the signed-in user acts in on the sheet; read as of a date, the role they had then. */
++public class RespondWithMyRole {
++    public void respond(@Val Sheet sheet, RoleRepository roles, HttpServletRequest request,
++            ObjectResponse<RoleResponse> response) {
++        String user = Audit.user(request);
++        LocalDate asOf = AsOf.of(request);
++        String role = asOf == null ? roles.roleOf(sheet.id(), user) : roles.roleOf(sheet.id(), user, asOf);
++        response.send(new RoleResponse(user, role));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/role/RoleRepository.java b/src/main/java/net/officefloor/hq/app/role/RoleRepository.java
+index af66a7584..f50b962e1 100644
+--- a/src/main/java/net/officefloor/hq/app/role/RoleRepository.java
++++ b/src/main/java/net/officefloor/hq/app/role/RoleRepository.java
+@@ -1,5 +1,7 @@
+ package net.officefloor.hq.app.role;
+ 
++import java.sql.Date;
++import java.time.LocalDate;
+ import java.util.List;
+ import net.officefloor.hq.app.delegation.DelegationRepository;
+ import org.springframework.jdbc.core.JdbcTemplate;
+@@ -36,6 +38,17 @@ public class RoleRepository {
+         return assignedRoleOf(sheetId, user);
+     }
+ 
++    /**
++     * The role the user acted in on the sheet as it stood at the end of {@code day}: steward while the
++     * steward role was delegated to them for it, otherwise the last role assigned to them by then.
++     */
++    public String roleOf(String sheetId, String user, LocalDate day) {
++        if (delegations.delegatedOn(sheetId, user, day)) return Role.STEWARD;
++        List<String> found = jdbc.queryForList("SELECT role FROM role_history WHERE sheet_id = ? AND user_name = ?"
++                + " AND set_on <= ? ORDER BY id DESC LIMIT 1", String.class, sheetId, user, Date.valueOf(day));
++        return found.isEmpty() ? Role.CLERK : found.get(0);
++    }
++
+     /** The user's own assigned role on the sheet, leaving out any delegation: clerk when none was assigned. */
+     public String assignedRoleOf(String sheetId, String user) {
+         List<String> found = jdbc.queryForList(
+@@ -48,5 +61,7 @@ public class RoleRepository {
+         jdbc.update("DELETE FROM sheet_role WHERE sheet_id = ? AND user_name = ?", role.sheetId(), role.user());
+         jdbc.update("INSERT INTO sheet_role (sheet_id, user_name, role) VALUES (?, ?, ?)",
+                 role.sheetId(), role.user(), role.role());
++        jdbc.update("INSERT INTO role_history (sheet_id, user_name, role, set_on) SELECT ?, ?, ?, today FROM sheet"
++                + " WHERE id = ?", role.sheetId(), role.user(), role.role(), role.sheetId());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
+index 7f784c926..de087ca3d 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
+@@ -53,6 +53,8 @@ public class SheetCloneRepository {
+ 
+         jdbc.update("INSERT INTO sheet_role (sheet_id, user_name, role) SELECT ?, user_name, role FROM sheet_role"
+                 + " WHERE sheet_id = ?", to, from);
++        jdbc.update("INSERT INTO role_history (sheet_id, user_name, role, set_on)"
++                + " SELECT sheet_id, user_name, role, ? FROM sheet_role WHERE sheet_id = ? ORDER BY user_name", today, to);
+         jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date, version, added_after)"
+                 + " SELECT ?, grade, pct, from_date, to_date, version, added_after FROM rate WHERE sheet_id = ?", to, from);
+         jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, pct, to_date, added_after)"
+diff --git a/src/main/resources/db/migration/V103__role_history.sql b/src/main/resources/db/migration/V103__role_history.sql
+new file mode 100644
+index 000000000..3457ab557
+--- /dev/null
++++ b/src/main/resources/db/migration/V103__role_history.sql
+@@ -0,0 +1,16 @@
++-- Every role assigned on a sheet, oldest first, with the sheet's today when it was assigned: the
++-- role a user had as of a date is the last one assigned to them on or before it (clerk when none).
++-- What was already assigned before this history was kept counts from the beginning of time.
++CREATE TABLE role_history (
++    id BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id VARCHAR(200) NOT NULL REFERENCES sheet(id),
++    user_name VARCHAR(200) NOT NULL,
++    role VARCHAR(20) NOT NULL,
++    set_on DATE NOT NULL
++);
++CREATE INDEX role_history_sheet ON role_history(sheet_id, user_name, id);
++INSERT INTO role_history (sheet_id, user_name, role, set_on)
++    SELECT sheet_id, user_name, role, DATE '0001-01-01' FROM sheet_role;
++
++-- The sheet's today when a delegation was made (null: from the beginning of time).
++ALTER TABLE sheet_delegation ADD COLUMN made_on DATE;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/my-role.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/my-role.GET.yml
+new file mode 100644
+index 000000000..372139937
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/my-role.GET.yml
+@@ -0,0 +1,8 @@
++# The role the signed-in user acts in on a sheet; read as of a date, the role they had then.
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ readonly-transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.role.RespondWithMyRole
++  govern: [ readonly-transaction ]
