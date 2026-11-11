@@ -1,0 +1,350 @@
+diff --git a/src/main/frontend/features/access/access.slot.tsx b/src/main/frontend/features/access/access.slot.tsx
+index 6bd7ddc7b..95bce5daa 100644
+--- a/src/main/frontend/features/access/access.slot.tsx
++++ b/src/main/frontend/features/access/access.slot.tsx
+@@ -7,7 +7,7 @@ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { useUser } from '../session/session';
+ import { poolsKey } from '../pools/pools';
+ import { periodsKey } from '../periods/periods';
+-import { ACTIONS, ALERT_THRESHOLD, CAP, DATED_KEYS, FLOOR, GRADES, LATE_PCT, LIMIT, NOTE_THRESHOLD, PERM_ROLES, POLICY_DATE, POT, PROOF_THRESHOLD, STANDING_RULE, TERMS, ROLES, gradeGraceKey, gradeProofThresholdKey, rolesKey, settingsKey, useRoles, useSettings } from './access';
++import { ACTIONS, ALERT_THRESHOLD, CAP, DATED_KEYS, FLOOR, GRADES, LATE_PCT, LIMIT, NOTE_THRESHOLD, PERM_ROLES, POLICY_DATE, POT, PROOF_THRESHOLD, ROUNDING, STANDING_RULE, TERMS, ROLES, gradeGraceKey, gradeProofThresholdKey, rolesKey, settingsKey, useRoles, useSettings } from './access';
+ import type { Role, Settings, SettingsChange } from './access';
+ 
+ type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms' | 'gradeGrace' | 'gradeProofThreshold'>;
+@@ -28,7 +28,8 @@ type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms' | 'gradeGrace' | 'grad
+ // none), not dated, shared out as cuts among a balanced pool's members, and its parent sheet (blank: none), not
+ // dated, whose rates a grade takes on a date this sheet has none in force, and its fiscal year start month
+ // (1 to 12), not dated, and its alert threshold (blank: off), not dated, above which a person's due-total
+-// is alerted. Only the settings typed in (or stepped into)
++// is alerted, and its rounding mode (half-up or half-even; blank: none, by the policy date), dated, by which
++// a claim dated then rounds. Only the settings typed in (or stepped into)
+ // since the last save are sent, so saving one leaves the other as it is.
+ function SettingsForm({ sheetId }: { sheetId: string }) {
+   const queryClient = useQueryClient();
+@@ -49,6 +50,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
+     parent: '',
+     fiscalStartMonth: '',
+     alertThreshold: '',
++    rounding: '',
+   });
+   const [touched, setTouched] = useState<Set<Key>>(new Set());
+   const [gradeFields, setGradeFields] = useState<Record<string, string>>({});
+@@ -201,6 +203,14 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
+       }
+       body.noteThreshold = threshold;
+     }
++    if (touched.has('rounding')) {
++      const rounding = fields.rounding.trim();
++      if (rounding !== '' && !ROUNDING.test(rounding)) {
++        setError('A rounding mode is half-up or half-even, or blank.');
++        return;
++      }
++      body.rounding = rounding;
++    }
+     if (gradesTouched.size > 0) {
+       const gradeTerms: Record<string, string> = {};
+       for (const grade of GRADES) {
+@@ -601,6 +611,20 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
+         <span>
+           now: <strong data-testid="setting-note-threshold-current">{settings.data?.noteThreshold ?? ''}</strong>
+         </span>{' '}
++        <label>
++          Rounding{' '}
++          <input
++            data-testid="setting-rounding"
++            placeholder="none"
++            value={fields.rounding}
++            onFocus={() => touch('rounding')}
++            onChange={(e) => change('rounding', e.target.value)}
++          />
++        </label>{' '}
++        {fromInput('rounding')}{' '}
++        <span>
++          now: <strong data-testid="setting-rounding-current">{settings.data?.rounding ?? ''}</strong>
++        </span>{' '}
+         {ACTIONS.map((action) => (
+           <span key={action}>
+             <label>
+diff --git a/src/main/frontend/features/access/access.ts b/src/main/frontend/features/access/access.ts
+index aa6bd6b89..b26f4fc8f 100644
+--- a/src/main/frontend/features/access/access.ts
++++ b/src/main/frontend/features/access/access.ts
+@@ -45,6 +45,8 @@ export type Settings = {
+   fiscalStartMonth: string;
+   /** The alert threshold, with two decimals ('' for off), not dated: a person whose due-total crosses above it is alerted. */
+   alertThreshold: string;
++  /** The rounding mode, half-up or half-even ('' for none: by the policy date), dated: a claim rounds by the one in force on its date. */
++  rounding: string;
+   /**
+    * Every value recorded for each figure setting, by key (clerk-limit, floor, terms, late-pct,
+    * terms-A, terms-B, terms-C, cap, proof-threshold, note-threshold, grace-A, grace-B, grace-C, proof-threshold-A, proof-threshold-B,
+@@ -63,6 +65,7 @@ export const DATED_KEYS = {
+   cap: 'cap',
+   proofThreshold: 'proof-threshold',
+   noteThreshold: 'note-threshold',
++  rounding: 'rounding',
+ } as const;
+ 
+ /** The grades that may have their own terms. */
+@@ -136,7 +139,8 @@ export function lateOf(settings: Settings | undefined, today: string): Late {
+   const grace = Object.fromEntries(
+     GRADES.map((g) => [g, { start: '', values: settings?.dated?.[gradeGraceKey(g)] ?? [] }]),
+   );
+-  return { pct, today, policyDate: settings?.policyDate ?? '', grace };
++  const rounding: Dated = { start: '', values: settings?.dated?.rounding ?? [] };
++  return { pct, today, policyDate: settings?.policyDate ?? '', grace, rounding };
+ }
+ 
+ /** The sheet's cap on a person's due-total ('' for none, until the settings are read). */
+@@ -169,6 +173,9 @@ export const PROOF_THRESHOLD = /^\d+(\.\d{1,2})?$/;
+ /** A note threshold as the screen takes it: blank, or 0.00 or more with up to two decimals. */
+ export const NOTE_THRESHOLD = /^\d+(\.\d{1,2})?$/;
+ 
++/** A rounding mode as the screen takes it: blank, half-up or half-even. */
++export const ROUNDING = /^(half-up|half-even)$/;
++
+ /** A floor as the screen takes it: 0.00 or more with up to two decimals. */
+ export const FLOOR = /^\d+(\.\d{1,2})?$/;
+ 
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 871706cd4..4071a60bc 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -126,9 +126,10 @@ function percentOf(figure: string, pct: string, times: bigint, halfUp: boolean):
+  * claim takes the one in force on its date), its
+  * today (yyyy-MM-dd; '' until read) and its policy date (yyyy-MM-dd; '' for its
+  * today), and each grade's grace days (dated, '' for none: a claim takes those of its grade, the one in
+- * force on its date, in force on its date).
++ * force on its date, in force on its date), and its rounding mode (dated, half-up or half-even, '' for
++ * none: a claim rounds by the one in force on its date, else by the policy date).
+  */
+-export type Late = { pct: Dated; today: string; policyDate: string; grace: Record<string, Dated> };
++export type Late = { pct: Dated; today: string; policyDate: string; grace: Record<string, Dated>; rounding: Dated };
+ 
+ /**
+  * The day a claim's overdue count starts from: its due-by plus the grace days of its `grade` (the one
+@@ -143,11 +144,14 @@ export function overdueFrom(claim: Claim, grade: string, late: Late): string {
+ }
+ 
+ /**
+- * Whether a claim's live figures round half up: it rounds by a date (its own, or for a correction
++ * Whether a claim's live figures round half up: by the rounding mode in force on the date it rounds
++ * by when there is one; else it rounds by a date (its own, or for a correction
+  * the date of the claim it corrects) before the sheet's policy date (its today when blank); on or
+  * after it they round half to even.
+  */
+ export function roundsHalfUp(claim: Claim, late: Late): boolean {
++  const mode = valueOn(late.rounding, claim.roundDate || claim.date);
++  if (mode !== '') return mode === 'half-up';
+   const policy = late.policyDate !== '' ? late.policyDate : late.today;
+   return (claim.roundDate || claim.date) < policy;
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/AuditSettingChanged.java b/src/main/java/net/officefloor/hq/app/setting/AuditSettingChanged.java
+index 2bbdf7e04..5692f769b 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/AuditSettingChanged.java
++++ b/src/main/java/net/officefloor/hq/app/setting/AuditSettingChanged.java
+@@ -13,7 +13,7 @@ import net.officefloor.plugin.variable.Val;
+  * action's entry in the permission matrix (blank for the standing rule, never dated), then the grace
+  * days (blank for off, never dated), then the entry date (blank for off, never dated), then each
+  * grade's grace days (blank for none), then each grade's proof threshold (blank for none), then the pot
+- * (blank for none, never dated), then the parent sheet (blank for none, never dated), then the fiscal start month (never dated), then the alert threshold (blank for off, never dated); a figure
++ * (blank for none, never dated), then the parent sheet (blank for none, never dated), then the fiscal start month (never dated), then the alert threshold (blank for off, never dated), then the rounding mode (blank for none); a figure
+  * setting saved from a from-date given ends with it. Runs after every rule has passed, so a refused
+  * change writes nothing.
+  */
+@@ -56,6 +56,7 @@ public class AuditSettingChanged {
+             audit.record(head + " key=" + Settings.ALERT_THRESHOLD + " value="
+                     + (input.alertThreshold() == null ? "" : input.alertThreshold().toPlainString()));
+         }
++        if (input.roundingValue() != null) audit.record(line(head, Settings.ROUNDING, input.roundingValue(), input));
+         if (input.parentChanged()) {
+             audit.record(head + " key=parent value=" + (input.parent() == null ? "" : input.parent()));
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SaveSettings.java b/src/main/java/net/officefloor/hq/app/setting/SaveSettings.java
+index 94e8277aa..717e23602 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SaveSettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SaveSettings.java
+@@ -36,6 +36,7 @@ public class SaveSettings {
+         if (input.capValue() != null) values.put(Settings.CAP, input.capValue());
+         if (input.proofThresholdValue() != null) values.put(Settings.PROOF_THRESHOLD, input.proofThresholdValue());
+         if (input.noteThresholdValue() != null) values.put(Settings.NOTE_THRESHOLD, input.noteThresholdValue());
++        if (input.roundingValue() != null) values.put(Settings.ROUNDING, input.roundingValue());
+         values.forEach((key, value) -> {
+             LocalDate from = input.from().getOrDefault(key, sheet.today());
+             repository.record(sheet.id(), key, from, value);
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Settings.java b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+index 723e30d0e..207a9e275 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+@@ -16,6 +16,7 @@ import java.util.NavigableMap;
+  * no cap), the most a person's due-total may be, and its proof threshold (none: none), above which a
+  * claim's due, on the claim's date, needs a proof before it is settled or approved, and its note
+  * threshold (none: none), above which a claim's due, on the claim's date, needs a note before it is opened, and
++ * its rounding mode (half-up or half-even; none: by the policy date), how a claim dated then rounds, and
+  * its proof threshold per grade (none: the sheet's proof threshold). The value in force on a date is the one with the
+  * latest from-date on or before it; before every from-date the starting value (floor 1.00, late
+  * percent 0.00, terms 14; none for the others). A claim takes its floor, late percent and terms on
+@@ -54,6 +55,11 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
+     public static final String PROOF_THRESHOLD = "proof-threshold";
+     public static final String NOTE_THRESHOLD = "note-threshold";
+     public static final String ALERT_THRESHOLD = "alert-threshold";
++    public static final String ROUNDING = "rounding";
++
++    /** The rounding modes a sheet may set, as they are recorded. */
++    public static final String HALF_UP = "half-up";
++    public static final String HALF_EVEN = "half-even";
+ 
+     /** The actions of the permission matrix, in the order they are shown and audited. */
+     public static final List<String> ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
+@@ -225,11 +231,22 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
+         return figureOn(CAP, date);
+     }
+ 
++    /** The rounding mode in force on a date (null: none). */
++    public RoundingMode roundingOn(LocalDate date) {
++        String value = valueOn(ROUNDING, date);
++        if (HALF_UP.equals(value)) return RoundingMode.HALF_UP;
++        if (HALF_EVEN.equals(value)) return RoundingMode.HALF_EVEN;
++        return null;
++    }
++
+     /**
+-     * How every figure of a claim that rounds by {@code date} is rounded: half up before the policy
+-     * date ({@code today} when it is blank), half to even on or after it.
++     * How every figure of a claim that rounds by {@code date} is rounded: by the rounding mode in
++     * force on that date when there is one, else half up before the policy date ({@code today} when
++     * it is blank), half to even on or after it.
+      */
+     public RoundingMode rounding(LocalDate date, LocalDate today) {
++        RoundingMode mode = roundingOn(date);
++        if (mode != null) return mode;
+         LocalDate policy = policyDate != null ? policyDate : today;
+         return date.isBefore(policy) ? RoundingMode.HALF_UP : RoundingMode.HALF_EVEN;
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsInput.java b/src/main/java/net/officefloor/hq/app/setting/SettingsInput.java
+index 070ef413c..f039f6292 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsInput.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsInput.java
+@@ -18,7 +18,8 @@ import java.time.LocalDate;
+  * and to what (null: none), and the grades whose proof threshold is changed, in A, B, C order, and
+  * to what (null: none), and whether the pot is changed and to what (null: none), and whether the parent sheet is changed
+  * and to what id (null: none), and whether the fiscal year start month is changed and to what, and whether the alert threshold is
+- * changed and to what (null: off).
++ * changed and to what (null: off), and whether the rounding mode is changed and to what, half-up or
++ * half-even (null: none), dated by its key (rounding).
+  */
+ public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, BigDecimal floor, Integer terms, BigDecimal latePct,
+         boolean policyDateChanged, LocalDate policyDate,
+@@ -31,7 +32,8 @@ public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, Bi
+         java.util.Map<String, BigDecimal> gradeProofThreshold,
+         boolean potChanged, BigDecimal pot, boolean parentChanged, String parent,
+         boolean fiscalStartMonthChanged, Integer fiscalStartMonth,
+-        boolean alertThresholdChanged, BigDecimal alertThreshold) {
++        boolean alertThresholdChanged, BigDecimal alertThreshold,
++        boolean roundingChanged, String rounding) {
+ 
+     /**
+      * The figure settings being changed, by key in the order they are audited, each with the value
+@@ -78,6 +80,11 @@ public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, Bi
+         return !proofThresholdChanged ? null : proofThreshold == null ? "" : proofThreshold.toPlainString();
+     }
+ 
++    /** The rounding mode as it is recorded ('' for none), or null when it is not changed. */
++    public String roundingValue() {
++        return !roundingChanged ? null : rounding == null ? "" : rounding;
++    }
++
+     /** The note threshold as it is recorded ('' for none), or null when it is not changed. */
+     public String noteThresholdValue() {
+         return !noteThresholdChanged ? null : noteThreshold == null ? "" : noteThreshold.toPlainString();
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java b/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
+index 5fa3572b8..7a9c5a5d6 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
+@@ -18,12 +18,12 @@ package net.officefloor.hq.app.setting;
+  * changed, with up to two decimals (blank: none, the sheet's), dated by its key (proof-threshold-A,
+  * proof-threshold-B, proof-threshold-C), and the pot, with up to two decimals (blank: none), not dated, and the parent sheet's id (blank: none), not dated,
+  * and the fiscal year start month, 1 to 12, not dated, and the alert threshold, with up to two decimals
+- * (blank: off), not dated.
++ * (blank: off), not dated, and the rounding mode, half-up or half-even (blank: none), dated by its key (rounding).
+  */
+ public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom,
+         java.util.Map<String, String> gradeTerms, String cap, java.util.Map<String, String> from,
+         String proofThreshold, java.util.Map<String, String> perms, String graceDays, String noteThreshold,
+         String entryDate, java.util.Map<String, String> gradeGrace,
+         java.util.Map<String, String> gradeProofThreshold, String pot, String parent,
+-        String fiscalStartMonth, String alertThreshold) {
++        String fiscalStartMonth, String alertThreshold, String rounding) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+index 422824ae3..0b7ea4b42 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+@@ -18,13 +18,14 @@ import java.util.Map;
+  * decimals ('' for none); and the entry date as yyyy-MM-dd ('' for off); and each grade's grace
+  * days ('' for none); and each grade's proof threshold with two decimals ('' for none); and the pot
+  * with two decimals ('' for none); and the parent sheet's id ('' for none); and the fiscal year start
+- * month, 1 to 12; and the alert threshold with two decimals ('' for off).
++ * month, 1 to 12; and the alert threshold with two decimals ('' for off); and the rounding mode,
++ * half-up or half-even ('' for none).
+  */
+ public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
+         String periodNumberingFrom, Map<String, String> gradeTerms, String cap, Map<String, List<Dated>> dated,
+         String proofThreshold, Map<String, String> perms, String graceDays, String noteThreshold,
+         String entryDate, Map<String, String> gradeGrace, Map<String, String> gradeProofThreshold,
+-        String pot, String parent, String fiscalStartMonth, String alertThreshold) {
++        String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding) {
+ 
+     /** A value ('' for none) recorded from a date (yyyy-MM-dd). */
+     public record Dated(String from, String value) {
+@@ -48,7 +49,12 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
+                 gradeGrace(settings),
+                 gradeProofThreshold(settings),
+                 show(settings.pot()), parent == null ? "" : parent,
+-                Integer.toString(settings.fiscalStart()), show(settings.alertThreshold()));
++                Integer.toString(settings.fiscalStart()), show(settings.alertThreshold()),
++                rounding(settings.valueOn(Settings.ROUNDING, today)));
++    }
++
++    private static String rounding(String value) {
++        return value == null ? "" : value;
+     }
+ 
+     private static String show(java.math.BigDecimal figure) {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
+index 9b812df00..06aa39b38 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
+@@ -16,7 +16,7 @@ public class ValidateSettings {
+     private static final Pattern MONTH = Pattern.compile("0?[1-9]|1[0-2]");
+     private static final java.util.Set<String> DATED = java.util.Set.of(Settings.CLERK_LIMIT, Settings.FLOOR,
+             Settings.TERMS, Settings.LATE_PCT, Settings.CAP, Settings.gradeTermsKey("A"), Settings.gradeTermsKey("B"),
+-            Settings.gradeTermsKey("C"), Settings.PROOF_THRESHOLD, Settings.NOTE_THRESHOLD,
++            Settings.gradeTermsKey("C"), Settings.PROOF_THRESHOLD, Settings.NOTE_THRESHOLD, Settings.ROUNDING,
+             Settings.gradeGraceKey("A"), Settings.gradeGraceKey("B"), Settings.gradeGraceKey("C"),
+             Settings.gradeProofThresholdKey("A"), Settings.gradeProofThresholdKey("B"),
+             Settings.gradeProofThresholdKey("C"));
+@@ -155,6 +155,15 @@ public class ValidateSettings {
+             }
+             noteThreshold = new BigDecimal(value).setScale(2);
+         }
++        boolean roundingChanged = request != null && request.rounding() != null;
++        String rounding = null;
++        if (roundingChanged && !request.rounding().trim().isEmpty()) {
++            String value = request.rounding().trim();
++            if (!Settings.HALF_UP.equals(value) && !Settings.HALF_EVEN.equals(value)) {
++                throw new InvalidSettingException("A rounding mode is half-up or half-even, or blank");
++            }
++            rounding = value;
++        }
+         Map<String, String> perms = new LinkedHashMap<>();
+         if (request != null && request.perms() != null) {
+             for (String action : request.perms().keySet()) {
+@@ -243,6 +252,6 @@ public class ValidateSettings {
+                 numberingChanged, numberingFrom, gradeTerms, capChanged, cap, from,
+                 thresholdChanged, threshold, perms, graceChanged, graceDays, noteThresholdChanged, noteThreshold,
+                 entryChanged, entryDate, gradeGrace, gradeProofThreshold, potChanged, pot, parentChanged, parent,
+-                fiscalChanged, fiscalStartMonth, alertChanged, alertThreshold));
++                fiscalChanged, fiscalStartMonth, alertChanged, alertThreshold, roundingChanged, rounding));
+     }
+ }
