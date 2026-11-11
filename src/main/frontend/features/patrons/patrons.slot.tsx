@@ -10,12 +10,13 @@ import { addDays, claimDue, rateOn, shareOf, sumDue, useRates } from '../rates/r
 import { useSheetToday } from '../sheet/sheet';
 import { useFloor, useLate } from '../access/access';
 import { useUser } from '../session/session';
+import { Col } from '../columns/columns';
 
 function PatronsHead() {
   return (
     <>
-      <th>Patrons</th>
-      <th>Backing</th>
+      <Col name="patrons"><th>Patrons</th></Col>
+      <Col name="backing"><th>Backing</th></Col>
       <th />
     </>
   );
@@ -82,8 +83,8 @@ function PersonPatrons({ sheetId, person }: { sheetId: string; person: Person })
 
   return (
     <>
-      <td data-testid="person-patrons">{names}</td>
-      <td data-testid="person-backing">{backing}</td>
+      <Col name="patrons"><td data-testid="person-patrons">{names}</td></Col>
+      <Col name="backing"><td data-testid="person-backing">{backing}</td></Col>
       <td>
         <select
           data-testid="person-patron-select"

@@ -13,6 +13,7 @@ import { useSheetToday } from '../sheet/sheet';
 import { useCap, useFloor, useLate } from '../access/access';
 import { NA, PCT, claimDue, personDueTotal, personExcess, personSplitTotals, rateOn, ratesKey, sumDue, trimmedSumDue, useRates } from './rates';
 import type { Rate } from './rates';
+import { Col } from '../columns/columns';
 
 type Fields = { grade: Grade; pct: string; from: string; to: string };
 const EMPTY: Fields = { grade: 'A', pct: '', from: '', to: '' };
@@ -262,7 +263,7 @@ function RatePreview({ sheetId }: { sheetId: string }) {
 }
 
 function DueHead() {
-  return <th>Due</th>;
+  return <Col name="due-total"><th>Due</th></Col>;
 }
 
 // A person's due-total: the due figures of their claims that count, added up, held to the sheet's cap.
@@ -273,11 +274,11 @@ function PersonDueTotal({ sheetId, person }: { sheetId: string; person: Person }
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const cap = useCap(sheetId);
-  return <td data-testid="person-due-total">{personDueTotal(rates, person.grades, today, claims, liveHolds(person, today), floor, late, cap)}</td>;
+  return <Col name="due-total"><td data-testid="person-due-total">{personDueTotal(rates, person.grades, today, claims, liveHolds(person, today), floor, late, cap)}</td></Col>;
 }
 
 function ExcessHead() {
-  return <th>Excess</th>;
+  return <Col name="excess"><th>Excess</th></Col>;
 }
 
 // A person's excess: how far the due figures of their claims that count go above the sheet's cap.
@@ -288,7 +289,7 @@ function PersonExcess({ sheetId, person }: { sheetId: string; person: Person }) 
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const cap = useCap(sheetId);
-  return <td data-testid="person-excess">{personExcess(rates, person.grades, today, claims, liveHolds(person, today), floor, late, cap)}</td>;
+  return <Col name="excess"><td data-testid="person-excess">{personExcess(rates, person.grades, today, claims, liveHolds(person, today), floor, late, cap)}</td></Col>;
 }
 
 // The sheet's due-total: everyone's due-total added up, skipping those with no rate, trimmed of the highest and lowest.

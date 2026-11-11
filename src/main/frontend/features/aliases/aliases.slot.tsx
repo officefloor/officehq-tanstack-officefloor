@@ -7,11 +7,12 @@ import { peopleKey } from '../people/people';
 import type { Person } from '../people/people';
 import { useRowError } from '../people/rowError';
 import { useUser } from '../session/session';
+import { Col } from '../columns/columns';
 
 function AliasesHead() {
   return (
     <>
-      <th>Aliases</th>
+      <Col name="aliases"><th>Aliases</th></Col>
       <th />
     </>
   );
@@ -58,7 +59,7 @@ function PersonAliases({ sheetId, person }: { sheetId: string; person: Person })
 
   return (
     <>
-      <td data-testid="person-aliases">{shown}</td>
+      <Col name="aliases"><td data-testid="person-aliases">{shown}</td></Col>
       <td>
         <input
           data-testid="person-alias-input"

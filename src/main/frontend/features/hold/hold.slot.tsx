@@ -7,11 +7,12 @@ import { peopleKey } from '../people/people';
 import type { Person } from '../people/people';
 import { useUser } from '../session/session';
 import { useRowError } from '../people/rowError';
+import { Col } from '../columns/columns';
 
 function HoldHead() {
   return (
     <>
-      <th>On hold</th>
+      <Col name="hold"><th>On hold</th></Col>
       <th>Holds</th>
       <th />
     </>
@@ -50,7 +51,7 @@ function PersonHold({ sheetId, person }: { sheetId: string; person: Person }) {
 
   return (
     <>
-      <td data-testid="person-hold">{person.held ? 'yes' : 'no'}</td>
+      <Col name="hold"><td data-testid="person-hold">{person.held ? 'yes' : 'no'}</td></Col>
       <td>
         {person.holds.map((h, i) => (
           <div key={i} data-testid="person-hold-line">

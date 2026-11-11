@@ -17,6 +17,7 @@ import { useSheetToday } from '../sheet/sheet';
 import { dueBy, isOverdue } from '../overdue/overdue';
 import { useVoidReasons } from '../voidreasons/voidReasons';
 import { useTemplates } from '../templates/templates';
+import { Col } from '../columns/columns';
 
 // A clerk's settle above the clerk limit leaves the claim PENDING; a steward approves it or rejects
 // it with a reason (typed in the row). A steward re-settles a SETTLED claim at its figure today.
@@ -42,7 +43,7 @@ const ACTIONS: { action: Action; label: string }[] = [
 function ClaimsHead() {
   return (
     <>
-      <th>Claimed</th>
+      <Col name="claimed"><th>Claimed</th></Col>
       <th>Claims</th>
     </>
   );
@@ -513,7 +514,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
 
   return (
     <>
-      <td data-testid="person-claimed">{sumAmounts(claims, () => liveHolds(person, today), today)}</td>
+      <Col name="claimed"><td data-testid="person-claimed">{sumAmounts(claims, () => liveHolds(person, today), today)}</td></Col>
       <td>
         <form onSubmit={submit} data-testid="claim-form">
           <input

@@ -7,11 +7,12 @@ import { peopleKey } from '../people/people';
 import type { Person } from '../people/people';
 import { useUser } from '../session/session';
 import { useRowError } from '../people/rowError';
+import { Col } from '../columns/columns';
 
 function RetireHead() {
   return (
     <>
-      <th>Retired</th>
+      <Col name="retired"><th>Retired</th></Col>
       <th>Retired from</th>
       <th>Past retirements</th>
       <th />
@@ -65,7 +66,7 @@ function PersonRetire({ sheetId, person }: { sheetId: string; person: Person }) 
 
   return (
     <>
-      <td data-testid="person-retired">{person.retired ? 'yes' : 'no'}</td>
+      <Col name="retired"><td data-testid="person-retired">{person.retired ? 'yes' : 'no'}</td></Col>
       <td data-testid="person-retired-from">{person.retiredFrom}</td>
       <td>
         {person.retirements.map((r, i) => (

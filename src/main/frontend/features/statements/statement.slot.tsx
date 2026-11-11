@@ -8,13 +8,14 @@ import type { Person } from '../people/people';
 import { claimsKey } from '../claims/claims';
 import { useUser } from '../session/session';
 import { useRowError } from '../people/rowError';
+import { Col } from '../columns/columns';
 
 function StatementHead() {
   return (
     <>
-      <th>Statements</th>
-      <th>Stated</th>
-      <th>Stated on</th>
+      <Col name="statement-count"><th>Statements</th></Col>
+      <Col name="stated-total"><th>Stated</th></Col>
+      <Col name="statement-date"><th>Stated on</th></Col>
       <th />
     </>
   );
@@ -75,9 +76,9 @@ function PersonStatement({ sheetId, person }: { sheetId: string; person: Person 
 
   return (
     <>
-      <td data-testid="person-statement-count">{person.statementCount}</td>
-      <td data-testid="person-stated-total">{person.statedTotal}</td>
-      <td data-testid="person-statement-date">{person.statementDate}</td>
+      <Col name="statement-count"><td data-testid="person-statement-count">{person.statementCount}</td></Col>
+      <Col name="stated-total"><td data-testid="person-stated-total">{person.statedTotal}</td></Col>
+      <Col name="statement-date"><td data-testid="person-statement-date">{person.statementDate}</td></Col>
       <td>
         <input
           type="date"

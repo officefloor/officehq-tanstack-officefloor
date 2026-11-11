@@ -10,6 +10,7 @@ import { GRADES, peopleKey, peopleQuery, usePeople, useShowRetired } from './peo
 import type { Grade, Person } from './people';
 import { SORT_KEYS, useSorted, useSortBy } from './sort';
 import type { SortKey } from './sort';
+import { Col } from '../columns/columns';
 
 // `gradeFrom` is the date the grade is from ('' for the sheet's today). A person's first grade
 // applies from the beginning of time; an edit records the grade from its date, keeping the others,
@@ -209,8 +210,8 @@ function People({ sheetId }: { sheetId: string }) {
           <tr>
             <th>Name</th>
             <th>Grade</th>
-            <th>Terms</th>
-            <th>Contact</th>
+            <Col name="terms"><th>Terms</th></Col>
+            <Col name="contact"><th>Contact</th></Col>
             <th>Tags</th>
             <th>Clashing</th>
             <th />
@@ -222,8 +223,8 @@ function People({ sheetId }: { sheetId: string }) {
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>
-              <td data-testid="person-terms">{p.terms}</td>
-              <td data-testid="person-contact">{p.contact}</td>
+              <Col name="terms"><td data-testid="person-terms">{p.terms}</td></Col>
+              <Col name="contact"><td data-testid="person-contact">{p.contact}</td></Col>
               <td data-testid="person-tags">{p.tags.join(', ')}</td>
               <td data-testid="person-clashing">{p.clashing ? 'yes' : 'no'}</td>
               <td>

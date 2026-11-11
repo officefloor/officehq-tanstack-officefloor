@@ -7,12 +7,13 @@ import { trimmedSumDue, useRates } from '../rates/rates';
 import { useSheetToday } from '../sheet/sheet';
 import { useFloor, useLate } from '../access/access';
 import { personOverdue } from './overdue';
+import { Col } from '../columns/columns';
 
 function OverdueHead() {
   return (
     <>
-      <th>Overdue</th>
-      <th>Overdue due</th>
+      <Col name="overdue-count"><th>Overdue</th></Col>
+      <Col name="overdue-total"><th>Overdue due</th></Col>
     </>
   );
 }
@@ -27,8 +28,8 @@ function PersonOverdue({ sheetId, person }: { sheetId: string; person: Person })
   const { count, total } = personOverdue(rates, person.grades, today, claims, liveHolds(person, today), floor, late);
   return (
     <>
-      <td data-testid="person-overdue-count">{count}</td>
-      <td data-testid="person-overdue-total">{total}</td>
+      <Col name="overdue-count"><td data-testid="person-overdue-count">{count}</td></Col>
+      <Col name="overdue-total"><td data-testid="person-overdue-total">{total}</td></Col>
     </>
   );
 }
