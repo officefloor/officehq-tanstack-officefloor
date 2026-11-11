@@ -1,0 +1,128 @@
+diff --git a/src/main/frontend/features/export/export.slot.tsx b/src/main/frontend/features/export/export.slot.tsx
+index 0bcab5683..8fc5f591a 100644
+--- a/src/main/frontend/features/export/export.slot.tsx
++++ b/src/main/frontend/features/export/export.slot.tsx
+@@ -9,6 +9,7 @@ import { getJson } from '../../api/http';
+ import type { Pool } from '../pools/pools';
+ import { downloadCsv } from './csv';
+ import { useCutTotals } from '../pools/pools';
++import { treePeople } from '../treesearch/treeSearch';
+ 
+ // Downloads the people as a CSV file: a header line, then one line per person in list order,
+ // retired people included, with the grade in force today, the retired-from date ('' when not
+@@ -141,9 +142,30 @@ function ExportPeriods({ sheetId }: { sheetId: string }) {
+   );
+ }
+ 
++// Downloads the people of the whole tree as a CSV file: a header line, then one line per person,
++// this sheet's people first in list order, then the other sheets' of its tree by sheet id, with the
++// grade in force today and the due-total as their sheet's list shows it. Every sheet is read afresh
++// when pressed. Quoted and ended as the people export.
++function ExportTree({ sheetId }: { sheetId: string }) {
++  const download = async () => {
++    const lines = [['sheet', 'name', 'grade', 'due-total']];
++    for (const t of await treePeople(sheetId)) lines.push([t.sheetId, t.person.name, t.person.grade, t.dueTotal]);
++    downloadCsv(`tree-${sheetId}.csv`, lines);
++  };
++
++  return (
++    <p>
++      <button type="button" data-testid="export-tree" onClick={() => void download()}>
++        Export tree people (CSV)
++      </button>
++    </p>
++  );
++}
++
+ export const contributions = [
+   SheetBody.fill({ order: 2, Component: ExportPeople }),
+   SheetBody.fill({ order: 2.1, Component: ExportClaims }),
+   SheetBody.fill({ order: 2.2, Component: ExportPools }),
+   SheetBody.fill({ order: 2.3, Component: ExportPeriods }),
++  SheetBody.fill({ order: 2.4, Component: ExportTree }),
+ ];
+diff --git a/src/main/frontend/features/treesearch/treeSearch.ts b/src/main/frontend/features/treesearch/treeSearch.ts
+index ad9168e1c..da56b146a 100644
+--- a/src/main/frontend/features/treesearch/treeSearch.ts
++++ b/src/main/frontend/features/treesearch/treeSearch.ts
+@@ -21,8 +21,11 @@ function matches(p: Person, text: string): boolean {
+   return [p.name, ...p.aliases].some((n) => n.toLowerCase().includes(t));
+ }
+ 
+-/** The people on one sheet matching the text, in list order, each read fresh from the store. */
+-async function searchSheet(sheetId: string, text: string): Promise<Found[]> {
++/** One person of the tree: their sheet, the person and their due-total as their sheet's list shows it. */
++export type TreePerson = { sheetId: string; person: Person; dueTotal: string };
++
++/** The people on one sheet, in list order, each read fresh from the store. */
++async function sheetPeople(sheetId: string): Promise<TreePerson[]> {
+   const [sheet, people, claims, rates, settings, pools] = await Promise.all([
+     getJsonNow<Sheet>(`/api/sheets/${enc(sheetId)}`),
+     getJsonNow<{ people: Person[] }>(`/api/sheets/${enc(sheetId)}/people`).then((r) => r.people),
+@@ -35,13 +38,11 @@ async function searchSheet(sheetId: string, text: string): Promise<Found[]> {
+   const floor = floorOf(settings);
+   const late = lateOf(settings, today);
+   const cap = settings.cap ?? '';
+-  return people
+-    .filter((p) => matches(p, text))
+-    .map((p) => ({
+-      sheetId,
+-      name: nameWithGrade(p),
+-      dueTotal: personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap, heldParts(p.id, people, claims, rates, today, floor, late), cutTotal(pools, p.id)),
+-    }));
++  return people.map((p) => ({
++    sheetId,
++    person: p,
++    dueTotal: personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap, heldParts(p.id, people, claims, rates, today, floor, late), cutTotal(pools, p.id)),
++  }));
+ }
+ 
+ /**
+@@ -50,7 +51,18 @@ async function searchSheet(sheetId: string, text: string): Promise<Found[]> {
+  * the other sheets' by sheet id.
+  */
+ export async function searchTree(sheetId: string, text: string): Promise<Found[]> {
++  const people = await treePeople(sheetId);
++  return people
++    .filter((t) => matches(t.person, text))
++    .map((t) => ({ sheetId: t.sheetId, name: nameWithGrade(t.person), dueTotal: t.dueTotal }));
++}
++
++/**
++ * Everyone over the sheet and the other sheets of its tree (its ancestors and descendants), read
++ * fresh: the sheet's own people first in list order, then the other sheets' by sheet id.
++ */
++export async function treePeople(sheetId: string): Promise<TreePerson[]> {
+   const { sheets } = await getJsonNow<{ sheets: string[] }>(`/api/sheets/${enc(sheetId)}/tree`);
+-  const found = await Promise.all([sheetId, ...sheets].map((id) => searchSheet(id, text)));
++  const found = await Promise.all([sheetId, ...sheets].map(sheetPeople));
+   return found.flat();
+ }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/waive.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/waive.POST.yml
+index 998515624..5706d76ba 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/waive.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/waive.POST.yml
+@@ -7,6 +7,11 @@ viewer:
+ loadSheet:
+   class: net.officefloor.hq.app.sheet.LoadSheet
+   govern: [ transaction ]
++  next: before
++# The sheet's figures before the change, so the rollup lines tell which moved.
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
+   next: load
+ load:
+   class: net.officefloor.hq.app.claim.LoadClaim
+@@ -21,6 +26,11 @@ apply:
+ audit:
+   class: net.officefloor.hq.app.claim.AuditClaimWaived
+   govern: [ transaction ]
++  next: rollup
++# After the change's own lines: the figures it moved.
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.claim.RespondWithClaim
