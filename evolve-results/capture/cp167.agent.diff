@@ -1,0 +1,143 @@
+diff --git a/src/main/frontend/features/crews/crews.slot.tsx b/src/main/frontend/features/crews/crews.slot.tsx
+index e36d6e981..492b3304b 100644
+--- a/src/main/frontend/features/crews/crews.slot.tsx
++++ b/src/main/frontend/features/crews/crews.slot.tsx
+@@ -5,31 +5,10 @@ import { useOnce } from '../../query/useOnce';
+ import { postJson } from '../../api/http';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { useUser } from '../session/session';
+-import { liveHolds, usePeople } from '../people/people';
+-import { useClaims } from '../claims/claims';
+-import { useSheetToday } from '../sheet/sheet';
+-import { useCap, useFloor, useLate } from '../access/access';
+-import { NA, personDueTotal, sumDue, useRates } from '../rates/rates';
+-import { crewsKey, useCrews } from './crews';
++import { usePeople } from '../people/people';
++import { crewDueTotal, crewsKey, useCrews, useDueTotals } from './crews';
+ import type { Crew } from './crews';
+ 
+-/** Each person's due-total by id, as their row shows it. */
+-function useDueTotals(sheetId: string): Map<string, string> {
+-  const people = usePeople(sheetId).data ?? [];
+-  const claims = useClaims(sheetId).data ?? [];
+-  const rates = useRates(sheetId).data ?? [];
+-  const today = useSheetToday(sheetId);
+-  const floor = useFloor(sheetId);
+-  const late = useLate(sheetId);
+-  const cap = useCap(sheetId);
+-  return new Map(
+-    people.map((p) => [
+-      p.id,
+-      personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap),
+-    ]),
+-  );
+-}
+-
+ // The sheet's crews: a name entry, a lead chosen from the people and an add button, each crew listed below
+ // with its lead, its members and its due-total (the lead's and the members' due-totals added up, n/a
+ // skipped). A member is added from the crew's row. The server decides what is refused — a taken or blank
+@@ -128,8 +107,7 @@ function CrewRow({ sheetId, crew, dues }: { sheetId: string; crew: Crew; dues: M
+     once((done) => add.mutate({ crew: crew.name, personId }, { onSettled: done }));
+   };
+ 
+-  const ids = [crew.leadId, ...crew.members.map((m) => m.personId)];
+-  const total = sumDue(ids.map((id) => dues.get(id) ?? NA));
++  const total = crewDueTotal(crew, dues);
+ 
+   return (
+     <li data-testid={`crew-row-${crew.name}`}>
+diff --git a/src/main/frontend/features/crews/crews.ts b/src/main/frontend/features/crews/crews.ts
+index 6ecec545b..cd3f76638 100644
+--- a/src/main/frontend/features/crews/crews.ts
++++ b/src/main/frontend/features/crews/crews.ts
+@@ -1,6 +1,10 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+-import { peopleKey } from '../people/people';
++import { liveHolds, peopleKey, usePeople } from '../people/people';
++import { useClaims } from '../claims/claims';
++import { useSheetToday } from '../sheet/sheet';
++import { useCap, useFloor, useLate } from '../access/access';
++import { NA, personDueTotal, sumDue, useRates } from '../rates/rates';
+ 
+ /** A person in a crew (never its lead). */
+ export type CrewMember = { personId: string; name: string };
+@@ -19,3 +23,26 @@ export function useCrews(sheetId: string) {
+       (await getJson<{ crews: Crew[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/crews`)).crews,
+   });
+ }
++
++/** Each person's due-total by id, as their row shows it. */
++export function useDueTotals(sheetId: string): Map<string, string> {
++  const people = usePeople(sheetId).data ?? [];
++  const claims = useClaims(sheetId).data ?? [];
++  const rates = useRates(sheetId).data ?? [];
++  const today = useSheetToday(sheetId);
++  const floor = useFloor(sheetId);
++  const late = useLate(sheetId);
++  const cap = useCap(sheetId);
++  return new Map(
++    people.map((p) => [
++      p.id,
++      personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap),
++    ]),
++  );
++}
++
++/** A crew's due-total: its lead's and its members' due-totals added up, n/a skipped. */
++export function crewDueTotal(crew: Crew, dues: Map<string, string>): string {
++  const ids = [crew.leadId, ...crew.members.map((m) => m.personId)];
++  return sumDue(ids.map((id) => dues.get(id) ?? NA));
++}
+diff --git a/src/main/frontend/features/header/header.slot.tsx b/src/main/frontend/features/header/header.slot.tsx
+index c25e9566c..24b40507b 100644
+--- a/src/main/frontend/features/header/header.slot.tsx
++++ b/src/main/frontend/features/header/header.slot.tsx
+@@ -2,7 +2,8 @@ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { useClaims } from '../claims/claims';
+ import type { ClaimStatus } from '../claims/claims';
+ import { usePeople } from '../people/people';
+-import { useRates } from '../rates/rates';
++import { sumDue, useRates } from '../rates/rates';
++import { crewDueTotal, useCrews, useDueTotals } from '../crews/crews';
+ import { sheetFigures } from '../consolidated/consolidated';
+ import { useSheetToday } from '../sheet/sheet';
+ import { useCap, useFloor, useLate } from '../access/access';
+@@ -18,7 +19,8 @@ const STATUSES: ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID',
+ // the claims in each status, and the sheet's due-total and overdue-total — worked from the same
+ // figures as the summary and the sheet's totals, so each always equals the figure it repeats.
+ // Beside them, the signed-in user's own figures: the due-total and overdue-total of the person whose
+-// name or alias is the user's name — blank when there is no such person.
++// name or alias is the user's name — blank when there is no such person — and their crew total: the
++// due-totals of the crews led by a person with the user's name, added up — blank when they lead none.
+ function Header({ sheetId }: { sheetId: string }) {
+   const people = usePeople(sheetId).data ?? [];
+   const claims = useClaims(sheetId).data ?? [];
+@@ -28,10 +30,17 @@ function Header({ sheetId }: { sheetId: string }) {
+   const late = useLate(sheetId);
+   const cap = useCap(sheetId);
+   const [user] = useUser();
++  const crews = useCrews(sheetId).data ?? [];
++  const dues = useDueTotals(sheetId);
+ 
+   const { dueTotal, overdueTotal } = sheetFigures(people, claims, rates, today, floor, late, cap);
+   const me = user ? people.find((p) => [p.name, ...p.aliases].some((n) => asName(n) === asName(user))) : undefined;
+   const mine = me ? sheetFigures([me], claims, rates, today, floor, late, cap) : undefined;
++  const myIds = new Set(
++    user ? people.filter((p) => [p.name, ...p.aliases].some((n) => asName(n) === asName(user))).map((p) => p.id) : [],
++  );
++  const led = crews.filter((c) => myIds.has(c.leadId));
++  const myCrewDue = led.length > 0 ? sumDue(led.map((c) => crewDueTotal(c, dues))) : '';
+ 
+   return (
+     <header data-testid="header">
+@@ -55,6 +64,9 @@ function Header({ sheetId }: { sheetId: string }) {
+       </span>{' '}
+       <span>
+         My overdue: <strong data-testid="my-overdue-total">{mine?.overdueTotal ?? ''}</strong>
++      </span>{' '}
++      <span>
++        My crews due: <strong data-testid="my-crew-due-total">{myCrewDue}</strong>
+       </span>
+     </header>
+   );
