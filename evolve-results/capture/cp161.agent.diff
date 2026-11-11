@@ -1,0 +1,294 @@
+diff --git a/src/main/frontend/features/export/export.slot.tsx b/src/main/frontend/features/export/export.slot.tsx
+index 97e2bf85f..ad86eb21c 100644
+--- a/src/main/frontend/features/export/export.slot.tsx
++++ b/src/main/frontend/features/export/export.slot.tsx
+@@ -27,7 +27,8 @@ function downloadCsv(name: string, lines: string[][]) {
+ 
+ // Downloads the people as a CSV file: a header line, then one line per person in list order,
+ // retired people included, with the grade in force today, the retired-from date ('' when not
+-// retired) and the due-total as the list shows it. Lines end with a line feed.
++// retired) and the due-total as the list shows it. Lines end with a line feed. While an as-of date
++// is set every figure is as of it, as the list shows it then.
+ function ExportPeople({ sheetId }: { sheetId: string }) {
+   const people = usePeople(sheetId).data ?? [];
+   const claims = useClaims(sheetId).data ?? [];
+@@ -92,7 +93,8 @@ function ExportClaims({ sheetId }: { sheetId: string }) {
+ // Downloads the pools as a CSV file: a header line, then one line per member, pools in the order
+ // added and each pool's members in the order added, a member pool as pool:<name> and the cut as
+ // the pool's row shows it ('' when none). Quoted and ended as the people export. The pools are read
+-// afresh when pressed, so a change just made is always in the file.
++// afresh when pressed, so a change just made is always in the file; while an as-of date is set they
++// are read as of it (members, pot and cuts as they stood then).
+ function ExportPools({ sheetId }: { sheetId: string }) {
+   const download = async () => {
+     const { pools } = await getJson<{ pools: Pool[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/pools`);
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+index 9600ceef1..3498deee7 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+@@ -19,8 +19,15 @@ public class PoolRepository {
+ 
+     /** The sheet's pools, by name. */
+     public List<Pool> findAll(String sheetId) {
+-        return jdbc.query("SELECT id, sheet_id, name FROM pool WHERE sheet_id = ? ORDER BY name",
+-                (rs, n) -> new Pool(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name")), sheetId);
++        return findAll(sheetId, null);
++    }
++
++    /** The sheet's pools, by name: as they stood at the end of {@code asOf} (null: now). */
++    public List<Pool> findAll(String sheetId, LocalDate asOf) {
++        return jdbc.query("SELECT id, sheet_id, name FROM pool WHERE sheet_id = ?"
++                + " AND (CAST(? AS DATE) IS NULL OR added_on IS NULL OR added_on <= ?) ORDER BY name",
++                (rs, n) -> new Pool(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name")),
++                sheetId, sqlDate(asOf), sqlDate(asOf));
+     }
+ 
+     /** The pool with this name on the sheet, or null when there is none. */
+@@ -31,7 +38,8 @@ public class PoolRepository {
+     }
+ 
+     public Pool save(String sheetId, String name) {
+-        jdbc.update("INSERT INTO pool (sheet_id, name) VALUES (?, ?)", sheetId, name);
++        jdbc.update("INSERT INTO pool (sheet_id, name, added_on) VALUES (?, ?, (SELECT today FROM sheet WHERE id = ?))",
++                sheetId, name, sheetId);
+         return find(sheetId, name);
+     }
+ 
+@@ -40,12 +48,29 @@ public class PoolRepository {
+      * a person held when one of their holds covers {@code today}, a member active when its dates include it.
+      */
+     public List<PoolMember> members(String sheetId, LocalDate today) {
++        return members(sheetId, today, null);
++    }
++
++    /**
++     * The members as they stood at the end of {@code asOf} (null: now): only those added, to pools added,
++     * by then, and each person's retirement and holds as given by then.
++     */
++    public List<PoolMember> members(String sheetId, LocalDate today, LocalDate asOf) {
++        Date on = sqlDate(asOf);
++        String added = "(CAST(? AS DATE) IS NULL OR %1$s.added_on IS NULL OR %1$s.added_on <= ?)";
+         return jdbc.query("SELECT pl.name AS pool, m.person_id, mp.name AS member_pool, COALESCE(p.name, mp.name) AS name,"
+-                + " m.share, m.from_date, m.to_date, p.retired_from, EXISTS (SELECT 1 FROM person_hold h WHERE h.person_id = m.person_id"
+-                + " AND h.from_date <= ? AND (h.to_date IS NULL OR h.to_date >= ?)) AS held FROM pool_member m"
++                + " m.share, m.from_date, m.to_date, CASE WHEN CAST(? AS DATE) IS NULL THEN p.retired_from ELSE"
++                + " (SELECT r.from_date FROM person_retirement r WHERE r.person_id = m.person_id AND r.set_on <= ?"
++                + " ORDER BY r.id DESC LIMIT 1) END AS retired_from,"
++                + " EXISTS (SELECT 1 FROM person_hold h WHERE h.person_id = m.person_id"
++                + " AND h.from_date <= ? AND (h.to_date IS NULL OR h.to_date >= ?)"
++                + " AND " + added.formatted("h").replace("added_on", "made_on") + ") AS held FROM pool_member m"
+                 + " JOIN pool pl ON pl.id = m.pool_id LEFT JOIN person p ON p.id = m.person_id"
+                 + " LEFT JOIN pool mp ON mp.id = m.member_pool_id"
+-                + " WHERE pl.sheet_id = ? ORDER BY pl.name, m.id",
++                + " WHERE pl.sheet_id = ? AND " + added.formatted("m") + " AND " + added.formatted("pl")
++                + " AND (m.person_id IS NULL OR " + added.formatted("p") + ")"
++                + " AND (m.member_pool_id IS NULL OR " + added.formatted("mp") + ")"
++                + " ORDER BY pl.name, m.id",
+                 (rs, n) -> {
+                     long personId = rs.getLong("person_id");
+                     Long id = rs.wasNull() ? null : personId;
+@@ -57,7 +82,7 @@ public class PoolRepository {
+                             rs.getString("member_pool"), rs.getString("name"), rs.getBigDecimal("share"),
+                             rs.getDate("retired_from") != null, rs.getBoolean("held"), fromDate, toDate,
+                             PoolMember.covers(fromDate, toDate, today));
+-                }, Date.valueOf(today), Date.valueOf(today), sheetId);
++                }, on, on, Date.valueOf(today), Date.valueOf(today), on, on, sheetId, on, on, on, on, on, on, on, on);
+     }
+ 
+     public boolean isMember(Pool pool, long personId) {
+@@ -67,8 +92,9 @@ public class PoolRepository {
+     }
+ 
+     public void addMember(Pool pool, long personId, BigDecimal share, LocalDate from, LocalDate to) {
+-        jdbc.update("INSERT INTO pool_member (pool_id, person_id, share, from_date, to_date) VALUES (?, ?, ?, ?, ?)",
+-                pool.id(), personId, share, sqlDate(from), sqlDate(to));
++        jdbc.update("INSERT INTO pool_member (pool_id, person_id, share, from_date, to_date, added_on)"
++                + " VALUES (?, ?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
++                pool.id(), personId, share, sqlDate(from), sqlDate(to), pool.sheetId());
+     }
+ 
+     /** The pool this pool is a member of, or null when it is a member of none. */
+@@ -87,8 +113,9 @@ public class PoolRepository {
+     }
+ 
+     public void addMemberPool(Pool pool, Pool member, BigDecimal share, LocalDate from, LocalDate to) {
+-        jdbc.update("INSERT INTO pool_member (pool_id, member_pool_id, share, from_date, to_date) VALUES (?, ?, ?, ?, ?)",
+-                pool.id(), member.id(), share, sqlDate(from), sqlDate(to));
++        jdbc.update("INSERT INTO pool_member (pool_id, member_pool_id, share, from_date, to_date, added_on)"
++                + " VALUES (?, ?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
++                pool.id(), member.id(), share, sqlDate(from), sqlDate(to), pool.sheetId());
+     }
+ 
+     private static Date sqlDate(LocalDate day) {
+diff --git a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+index d25196ed3..bc3542fd0 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+@@ -1,9 +1,12 @@
+ package net.officefloor.hq.app.pool;
+ 
++import jakarta.servlet.http.HttpServletRequest;
+ import java.math.BigDecimal;
++import java.time.LocalDate;
+ import java.util.HashMap;
+ import java.util.List;
+ import java.util.Map;
++import net.officefloor.hq.app.AsOf;
+ import net.officefloor.hq.app.setting.SettingsRepository;
+ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+@@ -11,19 +14,22 @@ import net.officefloor.web.ObjectResponse;
+ 
+ /**
+  * The sheet's pot is the pot of each pool that is a member of none; a pool that is a member of another
+- * has its cut in that pool as its pot.
++ * has its cut in that pool as its pot. A read made as of a date (see {@link AsOf}) answers with the pools,
++ * their members and the pot as they stood at the end of it.
+  */
+ public class RespondWithPools {
+     public void respond(@Val Sheet sheet, PoolRepository repository, SettingsRepository settings,
+-            ObjectResponse<PoolsResponse> response) {
+-        List<PoolMember> members = repository.members(sheet.id(), sheet.today());
+-        BigDecimal sheetPot = settings.find(sheet.id()).pot();
++            HttpServletRequest request, ObjectResponse<PoolsResponse> response) {
++        LocalDate asOf = AsOf.of(request);
++        List<PoolMember> members = repository.members(sheet.id(), sheet.today(), asOf);
++        BigDecimal sheetPot = (asOf == null ? settings.find(sheet.id()) : settings.findAsOf(sheet.id(), asOf)).pot();
++        List<Pool> pools = repository.findAll(sheet.id(), asOf);
+         Map<String, List<PoolMember>> byPool = new HashMap<>();
+-        for (Pool p : repository.findAll(sheet.id())) {
++        for (Pool p : pools) {
+             byPool.put(p.name(), members.stream().filter(m -> m.pool().equals(p.name())).toList());
+         }
+         Map<String, BigDecimal> pots = new HashMap<>();
+-        response.send(new PoolsResponse(repository.findAll(sheet.id()).stream()
++        response.send(new PoolsResponse(pools.stream()
+                 .map(p -> PoolResponse.from(p, byPool.get(p.name()), pot(p.name(), members, byPool, sheetPot, pots)))
+                 .toList()));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsRepository.java b/src/main/java/net/officefloor/hq/app/setting/SettingsRepository.java
+index 2114f487a..694c9eeeb 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsRepository.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsRepository.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.setting;
+ 
++import java.math.BigDecimal;
+ import java.time.LocalDate;
+ import java.util.HashMap;
+ import java.util.List;
+@@ -55,8 +56,8 @@ public class SettingsRepository {
+     }
+ 
+     /**
+-     * The sheet's settings as they stood at the end of {@code day}: each dated value and the policy
+-     * date as last recorded while the sheet's today was on or before it, and that date standing in for
++     * The sheet's settings as they stood at the end of {@code day}: each dated value, the policy date
++     * and the pot as last recorded while the sheet's today was on or before it, and that date standing in for
+      * the sheet's today. The others are as they are now.
+      */
+     public Settings findAsOf(String sheetId, LocalDate day) {
+@@ -64,6 +65,8 @@ public class SettingsRepository {
+         Map<String, NavigableMap<LocalDate, String>> dated = new HashMap<>();
+         LocalDate[] policy = { null };
+         boolean[] policyKept = { false };
++        BigDecimal[] pot = { null };
++        boolean[] potKept = { false };
+         jdbc.query("SELECT setting_key, from_date, setting_value, set_on FROM setting_history WHERE sheet_id = ? ORDER BY id",
+                 (RowCallbackHandler) (rs) -> {
+                     String key = rs.getString("setting_key");
+@@ -72,17 +75,22 @@ public class SettingsRepository {
+                     if (POLICY_DATE.equals(key)) {
+                         policyKept[0] = true;
+                         if (counts) policy[0] = value.isBlank() ? null : LocalDate.parse(value);
++                    } else if (POT.equals(key)) {
++                        potKept[0] = true;
++                        if (counts) pot[0] = value.isBlank() ? null : new BigDecimal(value);
+                     } else if (counts) {
+                         dated.computeIfAbsent(key, (k) -> new TreeMap<>()).put(rs.getDate("from_date").toLocalDate(), value);
+                     }
+                 }, sheetId);
+         return new Settings(sheetId, day, dated, policyKept[0] ? policy[0] : now.policyDate(),
+-                now.periodNumberingFrom(), now.perms(), now.graceDays(), now.entryDate(), now.pot(), now.fiscalStartMonth(),
++                now.periodNumberingFrom(), now.perms(), now.graceDays(), now.entryDate(), potKept[0] ? pot[0] : now.pot(), now.fiscalStartMonth(),
+                 now.alertThreshold());
+     }
+ 
+     private static final String POLICY_DATE = "policy-date";
+ 
++    private static final String POT = "pot";
++
+     /** Records the roles ('' for the standing rule) that may take an action. */
+     public void recordPerm(String sheetId, String action, String roles) {
+         jdbc.update("MERGE INTO setting_perm (sheet_id, action, roles) KEY (sheet_id, action) VALUES (?, ?, ?)",
+@@ -99,5 +107,6 @@ public class SettingsRepository {
+                 settings.pot(), settings.fiscalStartMonth(), settings.alertThreshold(), settings.sheetId());
+         history(settings.sheetId(), POLICY_DATE, null,
+                 settings.policyDate() == null ? "" : settings.policyDate().toString());
++        history(settings.sheetId(), POT, null, settings.pot() == null ? "" : settings.pot().toPlainString());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
+index 5549fab53..1160c378e 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
+@@ -44,6 +44,8 @@ public class SheetCloneRepository {
+                 + " FROM setting_value WHERE sheet_id = ? ORDER BY setting_key, from_date", today, to);
+         jdbc.update("INSERT INTO setting_history (sheet_id, setting_key, from_date, setting_value, set_on)"
+                 + " SELECT id, 'policy-date', NULL, COALESCE(CAST(policy_date AS VARCHAR), ''), today FROM sheet WHERE id = ?", to);
++        jdbc.update("INSERT INTO setting_history (sheet_id, setting_key, from_date, setting_value, set_on)"
++                + " SELECT id, 'pot', NULL, COALESCE(CAST(pot AS VARCHAR), ''), today FROM sheet WHERE id = ?", to);
+         jdbc.update("INSERT INTO setting_perm (sheet_id, action, roles) SELECT ?, action, roles FROM setting_perm"
+                 + " WHERE sheet_id = ?", to, from);
+         jdbc.update("INSERT INTO grade_terms (sheet_id, grade, terms) SELECT ?, grade, terms FROM grade_terms"
+@@ -126,28 +128,30 @@ public class SheetCloneRepository {
+                 }, from);
+ 
+         Map<Long, Long> pools = new HashMap<>();
+-        jdbc.query("SELECT id, name FROM pool WHERE sheet_id = ? ORDER BY id", (rs) -> {
++        jdbc.query("SELECT id, name, added_on FROM pool WHERE sheet_id = ? ORDER BY id", (rs) -> {
+             long id = rs.getLong("id");
+             String name = rs.getString("name");
++            java.sql.Date addedOn = rs.getDate("added_on");
+             GeneratedKeyHolder keys = new GeneratedKeyHolder();
+             jdbc.update(con -> {
+-                PreparedStatement ps = con.prepareStatement("INSERT INTO pool (sheet_id, name) VALUES (?, ?)",
++                PreparedStatement ps = con.prepareStatement("INSERT INTO pool (sheet_id, name, added_on) VALUES (?, ?, ?)",
+                         Statement.RETURN_GENERATED_KEYS);
+                 ps.setString(1, to);
+                 ps.setString(2, name);
++                ps.setDate(3, addedOn);
+                 return ps;
+             }, keys);
+             pools.put(id, keys.getKey().longValue());
+         }, from);
+-        jdbc.query("SELECT m.pool_id, m.person_id, m.member_pool_id, m.share, m.from_date, m.to_date FROM pool_member m"
++        jdbc.query("SELECT m.pool_id, m.person_id, m.member_pool_id, m.share, m.from_date, m.to_date, m.added_on FROM pool_member m"
+                 + " JOIN pool p ON p.id = m.pool_id WHERE p.sheet_id = ? ORDER BY m.id", (rs) -> {
+                     Long pool = pools.get(rs.getLong("pool_id"));
+                     Long person = rs.getObject("person_id") == null ? null : people.get(rs.getLong("person_id"));
+                     Long member = rs.getObject("member_pool_id") == null ? null : pools.get(rs.getLong("member_pool_id"));
+                     if (pool == null || (person == null && member == null)) return;
+-                    jdbc.update("INSERT INTO pool_member (pool_id, person_id, member_pool_id, share, from_date, to_date)"
+-                            + " VALUES (?, ?, ?, ?, ?, ?)", pool, person, member, rs.getBigDecimal("share"),
+-                            rs.getDate("from_date"), rs.getDate("to_date"));
++                    jdbc.update("INSERT INTO pool_member (pool_id, person_id, member_pool_id, share, from_date, to_date, added_on)"
++                            + " VALUES (?, ?, ?, ?, ?, ?, ?)", pool, person, member, rs.getBigDecimal("share"),
++                            rs.getDate("from_date"), rs.getDate("to_date"), rs.getDate("added_on"));
+                 }, from);
+         return people;
+     }
+diff --git a/src/main/resources/db/migration/V91__pool_as_of.sql b/src/main/resources/db/migration/V91__pool_as_of.sql
+new file mode 100644
+index 000000000..c60a507e6
+--- /dev/null
++++ b/src/main/resources/db/migration/V91__pool_as_of.sql
+@@ -0,0 +1,8 @@
++-- The sheet's today when a pool, and when a pool member, was added (null: from the beginning of
++-- time), so the pools can be read as of a date.
++ALTER TABLE pool ADD COLUMN added_on DATE;
++ALTER TABLE pool_member ADD COLUMN added_on DATE;
++
++-- Every pot set is recorded in the settings history (key pot, no from-date, '' for none).
++INSERT INTO setting_history (sheet_id, setting_key, from_date, setting_value, set_on)
++    SELECT id, 'pot', NULL, CAST(pot AS VARCHAR), DATE '0001-01-01' FROM sheet WHERE pot IS NOT NULL;
