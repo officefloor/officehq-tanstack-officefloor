@@ -1,0 +1,173 @@
+diff --git a/src/main/frontend/features/export/export.slot.tsx b/src/main/frontend/features/export/export.slot.tsx
+index 6fe102bd2..0bcab5683 100644
+--- a/src/main/frontend/features/export/export.slot.tsx
++++ b/src/main/frontend/features/export/export.slot.tsx
+@@ -2,7 +2,7 @@ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { useClaims } from '../claims/claims';
+ import { gradeOn, liveHolds, usePeople } from '../people/people';
+ import { claimDue, heldParts, personDueTotal, rateOn, useRates } from '../rates/rates';
+-import { periodOf, usePeriods } from '../periods/periods';
++import { periodOf, personPeriodCarried, personPeriodDueTotal, usePeriods } from '../periods/periods';
+ import { useCap, useFloor, useLate } from '../access/access';
+ import { useSheetToday } from '../sheet/sheet';
+ import { getJson } from '../../api/http';
+@@ -105,8 +105,45 @@ function ExportPools({ sheetId }: { sheetId: string }) {
+   );
+ }
+ 
++// Downloads the period figures as a CSV file: a header line, then one line per person and period,
++// people in list order (retired people included) and periods in the order added, with the figure
++// and carried figure as the person's row shows them. Quoted and ended as the people export.
++function ExportPeriods({ sheetId }: { sheetId: string }) {
++  const people = usePeople(sheetId).data ?? [];
++  const claims = useClaims(sheetId).data ?? [];
++  const rates = useRates(sheetId).data ?? [];
++  const periods = usePeriods(sheetId).data ?? [];
++  const floor = useFloor(sheetId);
++  const late = useLate(sheetId);
++
++  const download = () => {
++    const lines = [['person', 'period', 'figure', 'carried']];
++    const added = [...periods].sort((a, b) => a.added - b.added);
++    for (const p of people) {
++      for (const period of added) {
++        lines.push([
++          p.name,
++          period.name,
++          personPeriodDueTotal(period, p, claims, rates, floor, late),
++          personPeriodCarried(period, periods, p, claims, rates, floor, late),
++        ]);
++      }
++    }
++    downloadCsv(`periods-${sheetId}.csv`, lines);
++  };
++
++  return (
++    <p>
++      <button type="button" data-testid="export-periods" onClick={download}>
++        Export periods (CSV)
++      </button>
++    </p>
++  );
++}
++
+ export const contributions = [
+   SheetBody.fill({ order: 2, Component: ExportPeople }),
+   SheetBody.fill({ order: 2.1, Component: ExportClaims }),
+   SheetBody.fill({ order: 2.2, Component: ExportPools }),
++  SheetBody.fill({ order: 2.3, Component: ExportPeriods }),
+ ];
+diff --git a/src/main/frontend/features/periods/periods.ts b/src/main/frontend/features/periods/periods.ts
+index 82a42a187..80f1c91b9 100644
+--- a/src/main/frontend/features/periods/periods.ts
++++ b/src/main/frontend/features/periods/periods.ts
+@@ -31,6 +31,8 @@ export type Period = {
+   personOpenings: Record<string, string>;
+   /** Whether it is locked: a locked period cannot be reopened. */
+   locked: boolean;
++  /** The order it was added in: a larger one added later. */
++  added: number;
+ };
+ 
+ export const periodsKey = (sheetId: string) => ['sheet', sheetId, 'periods'] as const;
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java b/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java
+index a24d50ec7..83e969e84 100644
+--- a/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java
+@@ -64,6 +64,14 @@ public class PeriodRepository {
+         return found.isEmpty() ? null : found.get(0);
+     }
+ 
++    /** The sheet's periods' names, by the order they were added: a larger number added later. */
++    public Map<String, Long> addedOrder(String sheetId) {
++        Map<String, Long> order = new HashMap<>();
++        jdbc.query("SELECT name, added_seq FROM period WHERE sheet_id = ?",
++                rs -> { order.put(rs.getString("name"), rs.getLong("added_seq")); }, sheetId);
++        return order;
++    }
++
+     public void insert(Period period) {
+         jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, cap, added_on) VALUES (?, ?, ?, ?, ?,"
+                 + " (SELECT today FROM sheet WHERE id = ?))",
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java b/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java
+index e8440d31f..9eed1b117 100644
+--- a/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java
+@@ -11,13 +11,14 @@ import net.officefloor.hq.app.setting.Settings;
+  * when it was closed, by person id (empty while open), and whether it is soft-closed (closed, its
+  * claims still open to change), and the fiscal year its from-date falls in (FY<yyyy>), and its cap
+  * ("" for none), and each person's carried figure fixed when it was closed, by person id (empty while open),
+- * and each person's opening balance for it, by person id, and whether it is locked.
++ * and each person's opening balance for it, by person id, and whether it is locked, and the order it
++ * was added in ({@code added}: a larger one added later).
+  */
+ public record PeriodResponse(String name, String from, String to, boolean closed, String closedTotal,
+         Map<String, String> personTotals, boolean soft, String fy, String cap, Map<String, String> personCarried,
+-        Map<String, String> personOpenings, boolean locked) {
++        Map<String, String> personOpenings, boolean locked, long added) {
+     public static PeriodResponse from(Period period, Map<Long, BigDecimal> personTotals, Map<Long, BigDecimal> personCarried,
+-            Map<Long, BigDecimal> personOpenings, Settings settings) {
++            Map<Long, BigDecimal> personOpenings, Settings settings, long added) {
+         Map<String, String> totals = new LinkedHashMap<>();
+         personTotals.forEach((id, total) -> totals.put(String.valueOf(id), total.setScale(2).toPlainString()));
+         Map<String, String> carried = new LinkedHashMap<>();
+@@ -27,6 +28,6 @@ public record PeriodResponse(String name, String from, String to, boolean closed
+         return new PeriodResponse(period.name(), period.from().toString(), period.to().toString(),
+                 period.closed(), period.closedTotal() == null ? "" : period.closedTotal().setScale(2).toPlainString(),
+                 totals, period.soft(), settings.fiscalYearOf(period.from()),
+-                period.cap() == null ? "" : String.valueOf(period.cap()), carried, openings, period.locked());
++                period.cap() == null ? "" : String.valueOf(period.cap()), carried, openings, period.locked(), added);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/RespondWithPeriod.java b/src/main/java/net/officefloor/hq/app/period/RespondWithPeriod.java
+index dc154d979..8c1676e26 100644
+--- a/src/main/java/net/officefloor/hq/app/period/RespondWithPeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/RespondWithPeriod.java
+@@ -7,6 +7,7 @@ import net.officefloor.web.ObjectResponse;
+ public class RespondWithPeriod {
+     public void respond(@Val Period period, PeriodRepository repository, SettingsRepository settings,
+             ObjectResponse<PeriodResponse> response) {
+-        response.send(PeriodResponse.from(period, repository.personTotals(period), repository.personCarried(period), repository.personOpenings(period), settings.find(period.sheetId())));
++        response.send(PeriodResponse.from(period, repository.personTotals(period), repository.personCarried(period), repository.personOpenings(period), settings.find(period.sheetId()),
++                repository.addedOrder(period.sheetId()).getOrDefault(period.name(), 0L)));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java b/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java
+index e85a46259..6493da920 100644
+--- a/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java
++++ b/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java
+@@ -45,10 +45,12 @@ public class RespondWithPeriods {
+         Map<String, Map<Long, BigDecimal>> carried = personCarried;
+         Map<String, Map<Long, BigDecimal>> openings = repository.personOpenings(sheet.id());
+         Settings settings = settingsRepository.find(sheet.id());
++        Map<String, Long> added = repository.addedOrder(sheet.id());
+         response.send(new PeriodsResponse(periods.stream()
+                 .map(p -> PeriodResponse.from(p, totals.getOrDefault(p.name(), Map.of()),
+                         carried.getOrDefault(p.name(), Map.of()),
+-                        openings.getOrDefault(p.name(), Map.of()), settings)).toList()));
++                        openings.getOrDefault(p.name(), Map.of()), settings,
++                        added.getOrDefault(p.name(), 0L))).toList()));
+     }
+ 
+     private static boolean same(BigDecimal a, BigDecimal b) {
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
+index 5e2f4a14f..0534c0bd7 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
+@@ -72,7 +72,7 @@ public class SheetCloneRepository {
+         jdbc.update("INSERT INTO claim_template (sheet_id, name, amount, note) SELECT ?, name, amount, note"
+                 + " FROM claim_template WHERE sheet_id = ? ORDER BY id", to, from);
+         jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, cap, added_on)"
+-                + " SELECT ?, name, from_date, to_date, cap, added_on FROM period WHERE sheet_id = ?", to, from);
++                + " SELECT ?, name, from_date, to_date, cap, added_on FROM period WHERE sheet_id = ? ORDER BY added_seq", to, from);
+ 
+         Map<Long, Long> people = new HashMap<>();
+         List<Long> ids = jdbc.queryForList("SELECT id FROM person WHERE sheet_id = ? AND merged_into IS NULL"
+diff --git a/src/main/resources/db/migration/V126__period_added_seq.sql b/src/main/resources/db/migration/V126__period_added_seq.sql
+new file mode 100644
+index 000000000..a92e3c6fb
+--- /dev/null
++++ b/src/main/resources/db/migration/V126__period_added_seq.sql
+@@ -0,0 +1,2 @@
++-- The order a sheet's periods were added in: a larger one added later.
++ALTER TABLE period ADD COLUMN added_seq BIGINT AUTO_INCREMENT;
