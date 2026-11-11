@@ -228,7 +228,7 @@ public class Claim {
     public LocalDate getRoundDate() {
         return isCorrection() && correctedDate != null ? correctedDate : date;
     }
-    /** The claim's number on its sheet, given when it is opened; null for a draft. A voided claim
+    /** The claim's number on its sheet, given when it is settled (or approved); null until then. A voided claim
      *  keeps the number it had; a number is never reused. */
     public String getNumber() { return number; }
     public void setNumber(String number) { this.number = number; }

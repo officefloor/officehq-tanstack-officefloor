@@ -9,7 +9,7 @@ import { clearSelectedClaims, useSelectedClaims } from './selection';
 
 type Result = { opened: number; refused: number };
 
-// Opens the ticked claims together. The server opens and numbers each that can be opened in list
+// Opens the ticked claims together. The server opens each that can be opened in list
 // order (people in list order, each person's claims newest first) and leaves the rest as they are;
 // the bar shows how many were opened and how many refused. The counts are cleared while it runs.
 function BulkOpen({ sheetId }: { sheetId: string }) {

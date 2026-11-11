@@ -4,7 +4,7 @@ package net.officefloor.hq.app.claim;
  * A claim's status. It starts as DRAFT, is opened (OPEN) and then settled (SETTLED). A clerk's
  * settle above the clerk limit makes it PENDING instead, until a steward approves it (SETTLED) or
  * rejects it (back to OPEN). A claim whose due is above the review threshold in force on its date goes
- * to REVIEW instead of OPEN when it is opened, unnumbered, until a steward reviews it (OPEN, numbered then).
+ * to REVIEW instead of OPEN when it is opened, until a steward reviews it (OPEN). A claim is numbered only when it is SETTLED.
  * A DRAFT, REVIEW, OPEN or PENDING claim can be voided (VOID); a SETTLED one
  * too, by a steward within days of its settlement ({@link VoidClaim}). VOID is final. A DRAFT claim can be deleted
  * (DELETED), and made a DRAFT again by a restore on the sheet's today it was deleted ({@link RestoreClaim}). Only OPEN, PENDING and SETTLED claims count toward any total.

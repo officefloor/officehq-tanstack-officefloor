@@ -56,9 +56,6 @@ public class OpenSelectedClaims {
                 if (OpenClaim.needsNote(sheet, claim, people, rates, settings)) continue;
                 if (!opens(sheet, claim, periods, claims, people, rates, settings)) continue;
                 claim.setOpenedBy(user);
-                if (claim.getStatus() == ClaimStatus.OPEN) {
-                    claim.setNumber(ClaimNumbers.next(sheet, claim, settings.find(sheet.id()), periods, claims));
-                }
                 claims.save(claim);
                 log.record(claim, user, sheet.today(), LogClaimStatus.due(sheet, claim, people, rates, settings));
                 opened++;

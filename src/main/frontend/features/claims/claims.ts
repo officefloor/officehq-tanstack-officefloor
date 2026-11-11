@@ -8,14 +8,14 @@ import type { Hold } from '../people/people';
  * limit makes it PENDING until a steward approves it (SETTLED) or rejects it (OPEN again). A DRAFT,
  * OPEN or PENDING claim may be VOID; a SETTLED one too, by a steward within 7 days of its settlement.
  * A claim whose due is above the review threshold in force on its date goes to REVIEW instead of OPEN when
- * it is opened, unnumbered and counting in no total, until a steward reviews it (OPEN, numbered then); it
+ * it is opened, unnumbered and counting in no total, until a steward reviews it (OPEN); it
  * may be VOID too. A DRAFT may be DELETED (it counts nowhere), and restored to a DRAFT on the sheet's today it was deleted.
  */
 export type ClaimStatus = 'DRAFT' | 'REVIEW' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED';
 
 /**
  * A claim: its amount with two decimals, its date (yyyy-MM-dd), its note, its status and its
- * number on the sheet (given when it is opened; '' for a draft or a voided claim), and its due as
+ * number on the sheet (given when it is settled or approved; '' until then), and its due as
  * fixed when it was settled ('' while its due is live: unsettled, or settled with no rate), and
  * who opened it ('' until it is opened); whether its person's last statement bound it, and the
  * figure it was bound to ('' when not stated; n/a when it had none); and, for a correction (a

@@ -22,7 +22,7 @@ import { Col } from '../columns/columns';
 // A clerk's settle above the clerk limit leaves the claim PENDING; a steward approves it or rejects
 // it with a reason (typed in the row). A steward re-settles a SETTLED claim at its figure today.
 // A claim is settled as of a date typed beside its settle button (blank: today), its due frozen as it stood then.
-// A steward reviews a claim in REVIEW (above the review threshold when opened): it is OPEN, numbered then.
+// A steward reviews a claim in REVIEW (above the review threshold when opened): it is OPEN, numbered once settled.
 // A DRAFT is deleted, and restored to a DRAFT on the sheet's today it was deleted.
 type Action = 'open' | 'review' | 'settle' | 'void' | 'approve' | 'reject' | 'resettle' | 'delete' | 'restore';
 type Fields = { amount: string; date: string; note: string; corrects: string; ref: string; tags: string };

@@ -82,6 +82,7 @@ public class SettleSelectedClaims {
         Rollup before = rollup(sheet, sheets, people, claims, rates, settings);
         for (Claim claim : toSettle) {
             claim.setSettleBatch(batch);
+            ClaimNumbers.giveOnSettle(sheet, claim, settings.find(sheet.id()), periods, claims);
             claims.save(claim);
             log.record(claim, user, sheet.today(), LogClaimStatus.due(sheet, claim, people, rates, settings));
             settled++;

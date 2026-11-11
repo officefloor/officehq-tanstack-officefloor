@@ -15,7 +15,7 @@ public class AuditClaimSplit {
             HttpServletRequest request, Audit audit) {
         String user = Audit.user(request);
         audit.record(ClaimAudit.line("CLAIM_SPLIT", sheet, user, people.find(sheet.id(), claim.getPersonId()), claim)
-                + " into=" + split.made().getNumber());
+                + " into=" + (split.made().getNumber() == null ? "" : split.made().getNumber()));
         audit.record(AuditClaimStatus.line(sheet, split.made(), user, people));
     }
 }

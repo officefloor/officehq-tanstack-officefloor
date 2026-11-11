@@ -2,6 +2,7 @@ package net.officefloor.hq.app.claim;
 
 import jakarta.servlet.http.HttpServletRequest;
 import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.role.RoleRepository;
@@ -18,7 +19,7 @@ import net.officefloor.plugin.variable.Val;
  */
 public class SettleSplitClaim {
     public void settle(@Val Sheet sheet, @Val Split split, PersonRepository people, RateRepository rates,
-            RoleRepository roles, SettingsRepository settings, ClaimRepository claims, ClaimLogRepository log,
+            RoleRepository roles, SettingsRepository settings, ClaimRepository claims, PeriodRepository periods, ClaimLogRepository log,
             HttpServletRequest request, Out<PartSettle> partOut)
             throws InvalidClaimStatusException, SelfSettleException {
         partOut.set(new PartSettle(Rollup.of(sheet.id(), sheet.today(), people, claims, rates, settings.find(sheet.id()))));
@@ -26,6 +27,7 @@ public class SettleSplitClaim {
         String user = Audit.user(request);
         SettleClaim.settle(sheet, made, user, people, rates, roles, settings, true);
         made.setSettleBatch(null);
+        ClaimNumbers.giveOnSettle(sheet, made, settings.find(sheet.id()), periods, claims);
         claims.save(made);
         log.record(made, user, sheet.today(), LogClaimStatus.due(sheet, made, people, rates, settings));
     }
