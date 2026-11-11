@@ -1,0 +1,137 @@
+diff --git a/src/main/frontend/features/activity/activity.slot.tsx b/src/main/frontend/features/activity/activity.slot.tsx
+new file mode 100644
+index 000000000..c8b06765e
+--- /dev/null
++++ b/src/main/frontend/features/activity/activity.slot.tsx
+@@ -0,0 +1,52 @@
++import { useState } from 'react';
++import { useMutation } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { SheetBody } from '../../slots/defs/sheetBody';
++import { useUser } from '../session/session';
++
++// The sheet's activity: a show button and, for every user and every event in the sheet's audit
++// file, one line "<user> <EVENT> <count>", sorted by user then event. It writes nothing.
++function Activity({ sheetId }: { sheetId: string }) {
++  const [user] = useUser();
++  const [lines, setLines] = useState<string[]>([]);
++  const [error, setError] = useState('');
++
++  const show = useMutation({
++    mutationFn: () =>
++      getJson<{ lines: string[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/activity`, user),
++    onSuccess: (data) => setLines(data.lines),
++    onError: () => setError('The activity could not be read.'),
++  });
++
++  return (
++    <section data-testid="activity">
++      <h2>Activity</h2>
++      <button
++        type="button"
++        data-testid="activity-show"
++        disabled={show.isPending}
++        onClick={() => {
++          setError('');
++          setLines([]);
++          show.mutate();
++        }}
++      >
++        Show
++      </button>
++      {error && (
++        <p role="alert" data-testid="activity-error">
++          {error}
++        </p>
++      )}
++      <ul data-testid="activity-lines">
++        {lines.map((line, i) => (
++          <li key={i} data-testid="activity-line">
++            {line}
++          </li>
++        ))}
++      </ul>
++    </section>
++  );
++}
++
++export const contribution = SheetBody.fill({ order: 41, Component: Activity });
+diff --git a/src/main/java/net/officefloor/hq/app/Audit.java b/src/main/java/net/officefloor/hq/app/Audit.java
+index 9477e96fa..494f5498c 100644
+--- a/src/main/java/net/officefloor/hq/app/Audit.java
++++ b/src/main/java/net/officefloor/hq/app/Audit.java
+@@ -101,6 +101,15 @@ public class Audit {
+         }).toList();
+     }
+ 
++    /** The heads of the sheet's records, in file order: each its event name, then the user who made it. */
++    public synchronized List<String[]> headsFor(String sheetId) {
++        return linesFor(sheetId, "").stream().map(line -> {
++            Matcher head = HEAD.matcher(line);
++            head.find();
++            return new String[] { head.group(1), head.group(3) };
++        }).toList();
++    }
++
+     /** A field of a record: its key, then its value up to the next field. */
+     private static final Pattern FIELD = Pattern.compile("(?<= )([a-z][a-z-]*)=(.*?)(?= [a-z][a-z-]*=|$)");
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/audit/ActivityResponse.java b/src/main/java/net/officefloor/hq/app/audit/ActivityResponse.java
+new file mode 100644
+index 000000000..97b75b972
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/audit/ActivityResponse.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.audit;
++
++import java.util.List;
++
++/** A sheet's activity lines, {@code <user> <EVENT> <count>}, sorted by user then event. */
++public record ActivityResponse(List<String> lines) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/audit/RespondWithActivity.java b/src/main/java/net/officefloor/hq/app/audit/RespondWithActivity.java
+new file mode 100644
+index 000000000..19766e4c4
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/audit/RespondWithActivity.java
+@@ -0,0 +1,26 @@
++package net.officefloor.hq.app.audit;
++
++import java.util.ArrayList;
++import java.util.List;
++import java.util.Map;
++import java.util.TreeMap;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++/**
++ * The sheet's activity: for every user and every event in the sheet's audit lines (read from the
++ * audit file), one line {@code <user> <EVENT> <count>}, sorted by user then event. It writes nothing.
++ */
++public class RespondWithActivity {
++    public void respond(@Val Sheet sheet, Audit audit, ObjectResponse<ActivityResponse> response) {
++        Map<String, Map<String, Integer>> counts = new TreeMap<>();
++        for (String[] head : audit.headsFor(sheet.id())) {
++            counts.computeIfAbsent(head[1], u -> new TreeMap<>()).merge(head[0], 1, Integer::sum);
++        }
++        List<String> lines = new ArrayList<>();
++        counts.forEach((user, events) -> events.forEach((event, count) -> lines.add(user + " " + event + " " + count)));
++        response.send(new ActivityResponse(lines));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/activity.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/activity.GET.yml
+new file mode 100644
+index 000000000..2463a929d
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/activity.GET.yml
+@@ -0,0 +1,8 @@
++# The sheet's activity: for every user and event in its audit lines, the count, by user then event.
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ readonly-transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.audit.RespondWithActivity
++  govern: [ readonly-transaction ]
