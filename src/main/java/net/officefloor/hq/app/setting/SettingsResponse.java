@@ -19,7 +19,7 @@ import java.util.Map;
  * days ('' for none); and each grade's proof threshold with two decimals ('' for none); and the pot
  * with two decimals ('' for none); and the parent sheet's id ('' for none); and the fiscal year start
  * month, 1 to 12; and the alert threshold with two decimals ('' for off); and the rounding mode,
- * half-up or half-even ('' for none); and the review threshold with two decimals ('' for none); and the escalation gap in days ('' for off); and the review SLA in days ('' for none); and the proof kinds, a comma separated list ('' for none); and the default grade ('' for A); and the score thresholds, mid and high ('' for none); and each grade's own clerk limit with two decimals ('' for none).
+ * half-up or half-even ('' for none); and the review threshold with two decimals ('' for none); and the escalation gap in days ('' for off); and the review SLA in days ('' for none); and the proof kinds, a comma separated list ('' for none); and the default grade ('' for A); and the score thresholds, mid and high ('' for none); and the score log switch (on, '' for off); and each grade's own clerk limit with two decimals ('' for none).
  */
 public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
         String periodNumberingFrom, Map<String, String> gradeTerms, String cap, Map<String, List<Dated>> dated,
@@ -27,7 +27,7 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
         String entryDate, Map<String, String> gradeGrace, Map<String, String> gradeProofThreshold,
         String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding,
         String reviewThreshold, String escalateAfter, String reviewSla, String proofKinds, String defaultGrade,
-        String scoreMid, String scoreHigh, Map<String, String> gradeClerkLimit) {
+        String scoreMid, String scoreHigh, String scoreLog, Map<String, String> gradeClerkLimit) {
 
     /** A value ('' for none) recorded from a date (yyyy-MM-dd). */
     public record Dated(String from, String value) {
@@ -60,6 +60,7 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
                 settings.defaultGrade() == null ? "" : settings.defaultGrade(),
                 settings.scoreMid() == null ? "" : settings.scoreMid().toString(),
                 settings.scoreHigh() == null ? "" : settings.scoreHigh().toString(),
+                settings.scoreLog() ? Settings.ON : "",
                 gradeClerkLimit(settings));
     }
 

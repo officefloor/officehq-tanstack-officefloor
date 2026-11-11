@@ -85,6 +85,9 @@ public class AuditSettingChanged {
             audit.record(head + " key=" + Settings.SCORE_HIGH + " value="
                     + (input.scoreHigh() == null ? "" : input.scoreHigh()));
         }
+        if (input.scoreLogChanged()) {
+            audit.record(head + " key=" + Settings.SCORE_LOG + " value=" + (input.scoreLog() ? Settings.ON : ""));
+        }
         if (input.parentChanged()) {
             audit.record(head + " key=parent value=" + (input.parent() == null ? "" : input.parent()));
         }

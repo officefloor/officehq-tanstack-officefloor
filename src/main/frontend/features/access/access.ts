@@ -63,6 +63,8 @@ export type Settings = {
   scoreMid: string;
   /** The high score threshold, a whole number ('' for none), not dated: while both thresholds are set, a score at or above it is HIGH. */
   scoreHigh: string;
+  /** The score log switch, on ('' for off), not dated: while on, changing the sheet's today writes a SCORE line per person. */
+  scoreLog: string;
   /**
    * Every value recorded for each figure setting, by key (clerk-limit, floor, terms, late-pct,
    * terms-A, terms-B, terms-C, cap, proof-threshold, note-threshold, grace-A, grace-B, grace-C, proof-threshold-A, proof-threshold-B,

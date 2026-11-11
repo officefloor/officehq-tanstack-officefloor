@@ -22,7 +22,7 @@ package net.officefloor.hq.app.setting;
  * (review-threshold), and the escalation gap, a whole number of days (blank: off), not dated, and the review
  * SLA, a whole number of days (blank: none), not dated, and the proof kinds, a comma separated list of
  * kinds, receipt or photo (blank: none), not dated, and the default grade, one of the grades (blank: A), not dated, and the score
- * thresholds, mid and high, whole numbers (blank: none), not dated, and
+ * thresholds, mid and high, whole numbers (blank: none), not dated, and the score log switch, on (blank: off), not dated, and
  * the clerk limit of each grade being changed, with up to two decimals (blank: none, the sheet's), dated by its key
  * (clerk-limit-A, clerk-limit-B, clerk-limit-C).
  */
@@ -33,6 +33,6 @@ public record SettingsRequest(String clerkLimit, String floor, String terms, Str
         java.util.Map<String, String> gradeProofThreshold, String pot, String parent,
         String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold,
         String escalateAfter, String reviewSla, String proofKinds, String defaultGrade,
-        String scoreMid, String scoreHigh,
+        String scoreMid, String scoreHigh, String scoreLog,
         java.util.Map<String, String> gradeClerkLimit) {
 }

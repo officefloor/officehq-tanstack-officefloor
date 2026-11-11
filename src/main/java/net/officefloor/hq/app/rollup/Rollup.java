@@ -23,8 +23,12 @@ import net.officefloor.hq.app.setting.Settings;
 public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueTotal, String overdueTotal,
         BigDecimal alertThreshold) {
 
-    /** A person's figures: their name, claimed, due-total (n/a when none) and overdue-total. */
-    public record Figures(String name, String claimed, String dueTotal, String overdueTotal) {
+    /**
+     * A person's figures: their name, claimed, due-total (n/a when none) and overdue-total, and their score:
+     * the due of their SETTLED claims that count (skipping n/a) divided by 100, minus 5 for every overdue
+     * claim of theirs that counts, rounded half to even to a whole number.
+     */
+    public record Figures(String name, String claimed, String dueTotal, String overdueTotal, String score) {
         boolean sameFigures(Figures other) {
             return other != null && claimed.equals(other.claimed) && dueTotal.equals(other.dueTotal)
                     && overdueTotal.equals(other.overdueTotal);
@@ -60,6 +64,8 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
             BigDecimal due = BigDecimal.ZERO.setScale(2);
             BigDecimal overdue = BigDecimal.ZERO.setScale(2);
             boolean fixed = false;
+            BigDecimal settled = BigDecimal.ZERO.setScale(2);
+            int overdueCount = 0;
             for (Claim claim : sheetClaims) {
                 if (claim.getPersonId() != person.getId()) continue;
                 if (!claim.isCorrection() && claim.countsClaimed(person.retiredOn(today), today)) {
@@ -71,6 +77,10 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
                 BigDecimal figure = ClaimFigure.withLate(claim, all, grade, settings, today);
                 if (figure != null) due = due.add(figure);
                 if (figure != null && overdue(claim, grade, settings, today)) overdue = overdue.add(figure);
+                if (figure != null && claim.getStatus() == net.officefloor.hq.app.claim.ClaimStatus.SETTLED) {
+                    settled = settled.add(figure);
+                }
+                if (overdue(claim, grade, settings, today)) overdueCount++;
                 // A figure found under a grade other than today's is kept, whatever today's rate.
                 if (figure != null && !grade.equals(person.gradeOn(today))) fixed = true;
                 // So is one dated on or before today, found under a rate that has since ended.
@@ -82,10 +92,16 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
             due = settings.capped(due, today);
             if (!none) dues.add(due);
             figures.put(person.getId(), new Figures(person.getName(), show(claimed), none ? "n/a" : show(due),
-                    show(overdue)));
+                    show(overdue), score(settled, overdueCount)));
         }
         return new Rollup(figures, show(claimedTotal), show(trimmed(dues)), show(trimmed(overdues)),
                 settings.alertThreshold());
+    }
+
+    /** A score: settled due / 100, minus 5 per overdue claim, rounded half to even to a whole number. */
+    private static String score(BigDecimal settled, int overdueCount) {
+        return settled.movePointLeft(2).subtract(BigDecimal.valueOf(5L * overdueCount))
+                .setScale(0, java.math.RoundingMode.HALF_EVEN).toPlainString();
     }
 
     /** People's figures added up: with three or more, the single highest and single lowest left out. */

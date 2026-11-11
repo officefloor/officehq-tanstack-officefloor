@@ -62,6 +62,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
     defaultGrade: '',
     scoreMid: '',
     scoreHigh: '',
+    scoreLog: '',
   });
   const [touched, setTouched] = useState<Set<Key>>(new Set());
   const [gradeFields, setGradeFields] = useState<Record<string, string>>({});
@@ -274,6 +275,14 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         return;
       }
       body[key] = value;
+    }
+    if (touched.has('scoreLog')) {
+      const scoreLog = fields.scoreLog.trim();
+      if (scoreLog !== '' && scoreLog !== 'on') {
+        setError('The score log is on, or blank.');
+        return;
+      }
+      body.scoreLog = scoreLog;
     }
     if (gradesTouched.size > 0) {
       const gradeTerms: Record<string, string> = {};
@@ -828,6 +837,19 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         </label>{' '}
         <span>
           now: <strong data-testid="setting-score-high-current">{settings.data?.scoreHigh ?? ''}</strong>
+        </span>{' '}
+        <label>
+          Score log{' '}
+          <input
+            data-testid="setting-score-log"
+            placeholder="off"
+            value={fields.scoreLog}
+            onFocus={() => touch('scoreLog')}
+            onChange={(e) => change('scoreLog', e.target.value)}
+          />
+        </label>{' '}
+        <span>
+          now: <strong data-testid="setting-score-log-current">{settings.data?.scoreLog ?? ''}</strong>
         </span>{' '}
         {ACTIONS.map((action) => (
           <span key={action}>

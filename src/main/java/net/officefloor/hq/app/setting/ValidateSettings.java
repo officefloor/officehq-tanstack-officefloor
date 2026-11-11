@@ -306,6 +306,14 @@ public class ValidateSettings {
         Integer scoreMid = scoreMidChanged ? score(request.scoreMid(), "mid") : null;
         boolean scoreHighChanged = request != null && request.scoreHigh() != null;
         Integer scoreHigh = scoreHighChanged ? score(request.scoreHigh(), "high") : null;
+        boolean scoreLogChanged = request != null && request.scoreLog() != null;
+        boolean scoreLog = false;
+        if (scoreLogChanged && !request.scoreLog().trim().isEmpty()) {
+            if (!Settings.ON.equals(request.scoreLog().trim())) {
+                throw new InvalidSettingException("The score log is on, or blank");
+            }
+            scoreLog = true;
+        }
         Map<String, LocalDate> from = new LinkedHashMap<>();
         if (request != null && request.from() != null) {
             for (Map.Entry<String, String> entry : request.from().entrySet()) {
@@ -326,7 +334,7 @@ public class ValidateSettings {
                 fiscalChanged, fiscalStartMonth, alertChanged, alertThreshold, roundingChanged, rounding,
                 reviewThresholdChanged, reviewThreshold, escalateChanged, escalateAfter, reviewSlaChanged, reviewSla,
                 proofKindsChanged, proofKinds, defaultGradeChanged, defaultGrade,
-                scoreMidChanged, scoreMid, scoreHighChanged, scoreHigh, gradeClerkLimit));
+                scoreMidChanged, scoreMid, scoreHighChanged, scoreHigh, scoreLogChanged, scoreLog, gradeClerkLimit));
     }
 
     /** A score threshold: a whole number (null for blank). */
