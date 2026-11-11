@@ -101,6 +101,15 @@ public class Audit {
         }).toList();
     }
 
+    /** The heads of the sheet's records, in file order: each its event name, then the user who made it. */
+    public synchronized List<String[]> headsFor(String sheetId) {
+        return linesFor(sheetId, "").stream().map(line -> {
+            Matcher head = HEAD.matcher(line);
+            head.find();
+            return new String[] { head.group(1), head.group(3) };
+        }).toList();
+    }
+
     /** A field of a record: its key, then its value up to the next field. */
     private static final Pattern FIELD = Pattern.compile("(?<= )([a-z][a-z-]*)=(.*?)(?= [a-z][a-z-]*=|$)");
 
