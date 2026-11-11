@@ -510,4 +510,10 @@ public class ClaimRepository {
                         .reversed())
                 .toList();
     }
+
+    /** The claim as it stood at the end of {@code day}; null when it was not yet added then. */
+    public Claim findAsOf(String sheetId, long id, LocalDate day) {
+        return findAllAsOf(sheetId, day).stream().filter((c) -> c.getId() == id).findFirst().orElse(null);
+    }
+
 }

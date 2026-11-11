@@ -38,6 +38,7 @@ public class Claim {
     private String tags;
     private String voidReason;
     private Integer settleBatch;
+    private LocalDate settledOn;
 
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue,
@@ -205,6 +206,9 @@ public class Claim {
     /** The number of the bulk settle batch that settled it; null when no bulk settle did. */
     public Integer getSettleBatch() { return settleBatch; }
     public void setSettleBatch(Integer settleBatch) { this.settleBatch = settleBatch; }
+    /** The date it was just settled as of, for the settle's audit line; null when settled as of today. Not stored. */
+    public LocalDate getSettledOn() { return settledOn; }
+    public void setSettledOn(LocalDate settledOn) { this.settledOn = settledOn; }
     /** Its tags, sorted; empty when it has none. */
     public java.util.List<String> tagList() {
         return tags == null ? java.util.List.of() : java.util.List.of(tags.split(","));

@@ -8,7 +8,7 @@ import jakarta.servlet.http.HttpServletRequest;
 
 /**
  * Records the claim's new status; a settled claim's line ends with the due it was settled at (n/a
- * when its grade had no rate); a voided claim that had been settled ends with the frozen figure
+ * when its grade had no rate), then the date it was settled as of when it was given one; a voided claim that had been settled ends with the frozen figure
  * the void reversed out of every total, then the reason it was voided with, when it had one.
  * Runs after every rule has passed, so a refused change writes nothing.
  */
@@ -36,6 +36,7 @@ public class AuditClaimStatus {
                 people.find(sheet.id(), claim.getPersonId()), claim);
         if (claim.getStatus() == ClaimStatus.SETTLED) {
             line += " due=" + (claim.getSettledDue() == null ? "n/a" : claim.getSettledDue().toPlainString());
+            if (claim.getSettledOn() != null) line += " on=" + claim.getSettledOn();
         }
         return line;
     }

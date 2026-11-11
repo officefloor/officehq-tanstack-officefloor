@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOnce } from '../../query/useOnce';
@@ -21,6 +21,7 @@ import { Col } from '../columns/columns';
 
 // A clerk's settle above the clerk limit leaves the claim PENDING; a steward approves it or rejects
 // it with a reason (typed in the row). A steward re-settles a SETTLED claim at its figure today.
+// A claim is settled as of a date typed beside its settle button (blank: today), its due frozen as it stood then.
 // A steward reviews a claim in REVIEW (above the review threshold when opened): it is OPEN, numbered then.
 // A DRAFT is deleted, and restored to a DRAFT on the sheet's today it was deleted.
 type Action = 'open' | 'review' | 'settle' | 'void' | 'approve' | 'reject' | 'resettle' | 'delete' | 'restore';
@@ -73,6 +74,8 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   const voidReasonList = (useVoidReasons(sheetId).data ?? []).map((r) => r.reason);
   // The person picked to move each claim to (a steward's move), by claim id.
   const [moveTo, setMoveTo] = useState<Record<string, string>>({});
+  // The date typed to settle each claim as of ('' or missing: as of the sheet's today), by claim id.
+  const [settleOn, setSettleOn] = useState<Record<string, string>>({});
   // The date typed to defer each claim until, by claim id.
   const [deferUntil, setDeferUntil] = useState<Record<string, string>>({});
   // The kind chosen for each claim's next proof ('' or missing: none chosen, a receipt).
@@ -142,12 +145,15 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
           ? { reason: (reasons[id] ?? '').trim() }
           : action === 'void'
             ? { reason: voidReasons[id] ?? '' }
-            : {},
+            : action === 'settle'
+              ? { on: (settleOn[id] ?? '').trim() }
+              : {},
         user,
       ),
     onSuccess: (_c, { id, action }) => {
       if (action === 'reject') setReasons((r) => ({ ...r, [id]: '' }));
       if (action === 'void') setVoidReasons((r) => ({ ...r, [id]: '' }));
+      if (action === 'settle') setSettleOn((d) => ({ ...d, [id]: '' }));
       return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
     },
     onError: (_e, { id }) => setRefused({ id, message: 'That status change is not allowed.' }),
@@ -775,14 +781,23 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
                 ))}
               </select>{' '}
               {ACTIONS.map(({ action, label }) => (
-                <button
-                  key={action}
-                  type="button"
-                  data-testid={`claim-${action}`}
-                  onClick={() => act(c.id, action)}
-                >
-                  {label}
-                </button>
+                <Fragment key={action}>
+                  {action === 'settle' && (
+                    <input
+                      type="date"
+                      data-testid="claim-settle-date"
+                      aria-label="Settle as of"
+                      value={settleOn[c.id] ?? ''}
+                      onChange={(e) => {
+                        setSettleOn((d) => ({ ...d, [c.id]: e.target.value }));
+                        setRefused((r) => (r !== null && r.id === c.id ? null : r));
+                      }}
+                    />
+                  )}
+                  <button type="button" data-testid={`claim-${action}`} onClick={() => act(c.id, action)}>
+                    {label}
+                  </button>
+                </Fragment>
               ))}{' '}
               <input
                 type="date"
