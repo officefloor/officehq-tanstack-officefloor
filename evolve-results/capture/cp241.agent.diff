@@ -1,0 +1,48 @@
+diff --git a/src/main/java/net/officefloor/hq/app/role/RespondWithRoles.java b/src/main/java/net/officefloor/hq/app/role/RespondWithRoles.java
+index a3cd831ac..1b11d70e7 100644
+--- a/src/main/java/net/officefloor/hq/app/role/RespondWithRoles.java
++++ b/src/main/java/net/officefloor/hq/app/role/RespondWithRoles.java
+@@ -1,12 +1,18 @@
+ package net.officefloor.hq.app.role;
+ 
++import jakarta.servlet.http.HttpServletRequest;
++import java.time.LocalDate;
++import net.officefloor.hq.app.AsOf;
+ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
+ 
++/** The sheet's roles; read as of a date, those in force at the end of it. */
+ public class RespondWithRoles {
+-    public void respond(@Val Sheet sheet, RoleRepository repository, ObjectResponse<RolesResponse> response) {
+-        response.send(new RolesResponse(
+-                repository.findAll(sheet.id()).stream().map(RoleResponse::from).toList()));
++    public void respond(@Val Sheet sheet, RoleRepository repository, HttpServletRequest request,
++            ObjectResponse<RolesResponse> response) {
++        LocalDate asOf = AsOf.of(request);
++        response.send(new RolesResponse((asOf == null ? repository.findAll(sheet.id())
++                : repository.findAsOf(sheet.id(), asOf)).stream().map(RoleResponse::from).toList()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/role/RoleRepository.java b/src/main/java/net/officefloor/hq/app/role/RoleRepository.java
+index f50b962e1..1086472b4 100644
+--- a/src/main/java/net/officefloor/hq/app/role/RoleRepository.java
++++ b/src/main/java/net/officefloor/hq/app/role/RoleRepository.java
+@@ -29,6 +29,17 @@ public class RoleRepository {
+                 + " ORDER BY user_name", ROW, sheetId);
+     }
+ 
++    /**
++     * The sheet's roles as they stood at the end of {@code day}, by user name: for each user, the last role
++     * assigned to them on or before it. A user first assigned a role after it is left out.
++     */
++    public List<Role> findAsOf(String sheetId, LocalDate day) {
++        return jdbc.query("SELECT h.sheet_id, h.user_name, h.role FROM role_history h WHERE h.sheet_id = ?"
++                + " AND h.id = (SELECT MAX(l.id) FROM role_history l WHERE l.sheet_id = h.sheet_id"
++                + " AND l.user_name = h.user_name AND l.set_on <= ?) ORDER BY h.user_name", ROW,
++                sheetId, Date.valueOf(day));
++    }
++
+     /**
+      * The role the user acts in on the sheet, in every rule: steward while the steward role is delegated to
+      * them for the sheet's today, otherwise the role assigned.
