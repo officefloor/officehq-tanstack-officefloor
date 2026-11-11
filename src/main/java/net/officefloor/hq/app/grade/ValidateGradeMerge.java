@@ -10,8 +10,8 @@ public class ValidateGradeMerge {
             throws InvalidGradeException {
         String from = request == null || request.from() == null ? "" : request.from().trim();
         String into = request == null || request.into() == null ? "" : request.into().trim();
-        if (!Settings.GRADES.contains(from) || !Settings.GRADES.contains(into)) {
-            throw new InvalidGradeException("A grade is one of A, B or C");
+        if (!Settings.isGradeCode(from) || !Settings.isGradeCode(into)) {
+            throw new InvalidGradeException("A grade is one to three capital letters");
         }
         if (from.equals(into)) throw new InvalidGradeException("A grade cannot be merged into itself");
         body.set(new GradeMergeRequest(from, into));

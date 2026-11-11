@@ -5,11 +5,11 @@ import { postJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { PersonHead, PersonRow } from '../../slots/defs/personRow';
 import type { Person } from '../people/people';
-import { GRADES } from '../people/people';
 import type { Grade } from '../people/people';
 import { clearRowError } from '../people/rowError';
 import { useUser } from '../session/session';
 import { clearSelectedPeople, selectPerson, useSelectedPeople } from './selection';
+import { useGradeCodes } from '../grades/grades';
 
 function SelectHead() {
   return <th>Select</th>;
@@ -34,6 +34,7 @@ function PersonSelect({ sheetId, person }: { sheetId: string; person: Person }) 
 // grades each in list order exactly as the person form would; the bar shows how many were graded.
 // The count is cleared while it runs. A refusal shows the error and changes nothing.
 function BulkGrade({ sheetId }: { sheetId: string }) {
+  const GRADES = useGradeCodes(sheetId);
   const queryClient = useQueryClient();
   const selected = useSelectedPeople(sheetId);
   const [user] = useUser();

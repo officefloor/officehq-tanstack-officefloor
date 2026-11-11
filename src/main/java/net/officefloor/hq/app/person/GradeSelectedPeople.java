@@ -28,7 +28,7 @@ public class GradeSelectedPeople {
             ClaimRepository claims, RateRepository rates, SettingsRepository settings, RoleRepository roles, HttpServletRequest http,
             GradeRepository grades, Audit audit, Out<BulkGradeResponse> result) {
         String user = Audit.user(http);
-        if (sheet.archived() || Role.VIEWER.equals(roles.roleOf(sheet.id(), user))) {
+        if (sheet.archived() || !grades.exists(sheet.id(), request.grade()) || Role.VIEWER.equals(roles.roleOf(sheet.id(), user))) {
             result.set(new BulkGradeResponse(0));
             return;
         }

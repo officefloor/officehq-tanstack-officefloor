@@ -53,7 +53,7 @@ public record PersonRequest(String name, String grade, Long version, String grad
         if (request == null) throw new InvalidPersonException("A name is required");
         String name = PersonRequest.checkName(request.name());
         String grade = request.grade() == null ? "" : request.grade().trim();
-        if (!java.util.Set.of("A", "B", "C").contains(grade)) throw new InvalidPersonException("A grade is one of A, B or C");
+        if (!net.officefloor.hq.app.setting.Settings.isGradeCode(grade)) throw new InvalidPersonException("A grade is one to three capital letters");
         String gradeFrom = checkDate(request.gradeFrom());
         String terms = request.terms() == null ? "" : request.terms().trim();
         if (!terms.isEmpty() && !terms.matches("\\d{1,6}")) {

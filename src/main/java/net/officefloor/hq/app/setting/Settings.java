@@ -60,8 +60,13 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
         return "FY" + (date.getMonthValue() >= fiscalStart() ? date.getYear() : date.getYear() - 1);
     }
 
-    /** The grades that may have their own terms. */
+    /** The grades every sheet has; a sheet may add more (see GradeRepository). */
     public static final List<String> GRADES = List.of("A", "B", "C");
+
+    /** Whether a code is shaped as a grade: one to three capital letters. */
+    public static boolean isGradeCode(String grade) {
+        return grade != null && grade.matches("[A-Z]{1,3}");
+    }
 
     public static final String CLERK_LIMIT = "clerk-limit";
     public static final String FLOOR = "floor";

@@ -5,9 +5,9 @@ import { sumDue, useRates } from '../rates/rates';
 import { useSheetToday } from '../sheet/sheet';
 import { useCap, useFloor, useLate } from '../access/access';
 import { useAsOf } from '../sheet/asof.slot';
-import { GRADES } from '../people/people';
 import { STATUSES, sheetFigures, treeTotals, useDescendantFigures } from './consolidated';
 import { usePools } from '../pools/pools';
+import { useGradeCodes } from '../grades/grades';
 
 // The consolidated figures, over the sheet and all its descendants: everyone on them, counted once
 // each (people whose names or aliases match are one), and the due-total and overdue-total of every
@@ -16,6 +16,7 @@ import { usePools } from '../pools/pools';
 // on it (retired people left out), and per status the count of claims in it, added up over the tree. While the screen shows an as-of date,
 // every sheet of the tree is shown as it stood at the end of that date, with that date as its today.
 function Consolidated({ sheetId }: { sheetId: string }) {
+  const GRADES = useGradeCodes(sheetId);
   const people = usePeople(sheetId).data ?? [];
   const claims = useClaims(sheetId).data ?? [];
   const rates = useRates(sheetId).data ?? [];
@@ -41,7 +42,7 @@ function Consolidated({ sheetId }: { sheetId: string }) {
           {GRADES.map((g) => (
             <tr key={g}>
               <td>Grade {g}</td>
-              <td data-testid={`consolidated-grade-${g}-due-total`}>{sumDue(all.map((f) => f.gradeDueTotals[g]))}</td>
+              <td data-testid={`consolidated-grade-${g}-due-total`}>{sumDue(all.map((f) => f.gradeDueTotals[g] ?? '0.00'))}</td>
             </tr>
           ))}
           {STATUSES.map((s) => (

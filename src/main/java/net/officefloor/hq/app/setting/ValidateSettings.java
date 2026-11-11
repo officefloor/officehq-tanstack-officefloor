@@ -78,9 +78,9 @@ public class ValidateSettings {
         Map<String, Integer> gradeTerms = new LinkedHashMap<>();
         if (request != null && request.gradeTerms() != null) {
             for (String grade : request.gradeTerms().keySet()) {
-                if (!Settings.GRADES.contains(grade)) throw new InvalidSettingException("A grade is one of A, B or C");
+                if (!Settings.isGradeCode(grade)) throw new InvalidSettingException("A grade is one to three capital letters");
             }
-            for (String grade : Settings.GRADES) {
+            for (String grade : request.gradeTerms().keySet()) {
                 String value = request.gradeTerms().get(grade);
                 if (value == null) continue;
                 value = value.trim();
@@ -96,9 +96,9 @@ public class ValidateSettings {
         Map<String, Integer> gradeGrace = new LinkedHashMap<>();
         if (request != null && request.gradeGrace() != null) {
             for (String grade : request.gradeGrace().keySet()) {
-                if (!Settings.GRADES.contains(grade)) throw new InvalidSettingException("A grade is one of A, B or C");
+                if (!Settings.isGradeCode(grade)) throw new InvalidSettingException("A grade is one to three capital letters");
             }
-            for (String grade : Settings.GRADES) {
+            for (String grade : request.gradeGrace().keySet()) {
                 String value = request.gradeGrace().get(grade);
                 if (value == null) continue;
                 value = value.trim();
@@ -114,9 +114,9 @@ public class ValidateSettings {
         Map<String, BigDecimal> gradeProofThreshold = new LinkedHashMap<>();
         if (request != null && request.gradeProofThreshold() != null) {
             for (String grade : request.gradeProofThreshold().keySet()) {
-                if (!Settings.GRADES.contains(grade)) throw new InvalidSettingException("A grade is one of A, B or C");
+                if (!Settings.isGradeCode(grade)) throw new InvalidSettingException("A grade is one to three capital letters");
             }
-            for (String grade : Settings.GRADES) {
+            for (String grade : request.gradeProofThreshold().keySet()) {
                 String value = request.gradeProofThreshold().get(grade);
                 if (value == null) continue;
                 value = value.trim();
@@ -132,9 +132,9 @@ public class ValidateSettings {
         Map<String, BigDecimal> gradeClerkLimit = new LinkedHashMap<>();
         if (request != null && request.gradeClerkLimit() != null) {
             for (String grade : request.gradeClerkLimit().keySet()) {
-                if (!Settings.GRADES.contains(grade)) throw new InvalidSettingException("A grade is one of A, B or C");
+                if (!Settings.isGradeCode(grade)) throw new InvalidSettingException("A grade is one to three capital letters");
             }
-            for (String grade : Settings.GRADES) {
+            for (String grade : request.gradeClerkLimit().keySet()) {
                 String value = request.gradeClerkLimit().get(grade);
                 if (value == null) continue;
                 value = value.trim();
@@ -298,8 +298,8 @@ public class ValidateSettings {
         String defaultGrade = null;
         if (defaultGradeChanged && !request.defaultGrade().trim().isEmpty()) {
             defaultGrade = request.defaultGrade().trim();
-            if (!Settings.GRADES.contains(defaultGrade)) {
-                throw new InvalidSettingException("A default grade is one of A, B or C, or blank");
+            if (!Settings.isGradeCode(defaultGrade)) {
+                throw new InvalidSettingException("A default grade is one to three capital letters, or blank");
             }
         }
         boolean scoreMidChanged = request != null && request.scoreMid() != null;

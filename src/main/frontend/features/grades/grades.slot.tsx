@@ -8,7 +8,8 @@ import { useUser } from '../session/session';
 import { useGrades } from './grades';
 import type { Grade } from './grades';
 
-// The sheet's grades: a select and a retire button, each grade listed with whether it is retired. A
+// The sheet's grades: A, B and C, then those added. A grade is added by its code, one to three
+// capital letters not yet a grade on the sheet; anything else is refused. A select and a retire button, each grade listed with whether it is retired. A
 // grade already retired is refused. People on a retired grade keep it, but it cannot be chosen for a new
 // person or in an edit, and a default grade that is retired falls back to A. A steward may also merge a
 // grade into another: everyone on the merged grade today is given the other from the sheet's today.
@@ -22,6 +23,7 @@ function Grades({ sheetId }: { sheetId: string }) {
   const [from, setFrom] = useState('A');
   const [into, setInto] = useState('B');
   const [merged, setMerged] = useState('');
+  const [code, setCode] = useState('');
 
   const once = useOnce();
   const retire = useMutation({
@@ -30,6 +32,31 @@ function Grades({ sheetId }: { sheetId: string }) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['sheet', sheetId] }),
     onError: () => setError('That grade could not be retired.'),
   });
+
+  const add = useMutation({
+    mutationFn: (body: { grade: string }) =>
+      postJson<{ grades: Grade[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/grades`, body, user),
+    onSuccess: () => {
+      setCode('');
+      return queryClient.invalidateQueries({ queryKey: ['sheet', sheetId] });
+    },
+    onError: () => setError('That grade could not be added.'),
+  });
+
+  const submitAdd = (e: FormEvent) => {
+    e.preventDefault();
+    setError('');
+    const grade = code.trim();
+    if (!/^[A-Z]{1,3}$/.test(grade)) {
+      setError('A grade is one to three capital letters.');
+      return;
+    }
+    if ((grades.data ?? []).some((g) => g.grade === grade)) {
+      setError(`Grade ${grade} is already a grade.`);
+      return;
+    }
+    once((done) => add.mutate({ grade }, { onSettled: done }));
+  };
 
   const merge = useMutation({
     mutationFn: (body: { from: string; into: string }) =>
@@ -71,6 +98,22 @@ function Grades({ sheetId }: { sheetId: string }) {
   return (
     <section data-testid="grades">
       <h2>Grades</h2>
+      <form onSubmit={submitAdd}>
+        <label>
+          New grade{' '}
+          <input
+            data-testid="grade-add-code"
+            value={code}
+            onChange={(e) => {
+              setCode(e.target.value);
+              setError('');
+            }}
+          />
+        </label>{' '}
+        <button type="submit" data-testid="grade-add" disabled={add.isPending}>
+          Add grade
+        </button>
+      </form>
       <form onSubmit={submit}>
         <label>
           Grade{' '}

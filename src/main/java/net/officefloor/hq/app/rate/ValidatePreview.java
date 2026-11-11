@@ -1,19 +1,17 @@
 package net.officefloor.hq.app.rate;
 
 import java.math.BigDecimal;
-import java.util.Set;
 import java.util.regex.Pattern;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 public class ValidatePreview {
-    private static final Set<String> GRADES = Set.of("A", "B", "C");
     private static final Pattern PCT = Pattern.compile("\\d{1,15}(\\.\\d{1,2})?");
 
     public void validate(@RequestBody PreviewRequest request, Out<PreviewInput> body)
             throws InvalidRateException {
         String grade = request == null || request.grade() == null ? "" : request.grade().trim();
-        if (!GRADES.contains(grade)) throw new InvalidRateException("A grade is one of A, B or C");
+        if (!net.officefloor.hq.app.setting.Settings.isGradeCode(grade)) throw new InvalidRateException("A grade is one to three capital letters");
         String pct = request.pct() == null ? "" : request.pct().trim();
         if (pct.isEmpty()) throw new InvalidRateException("A rate is required");
         if (!PCT.matcher(pct).matches()) {

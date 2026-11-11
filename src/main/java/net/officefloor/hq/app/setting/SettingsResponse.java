@@ -33,14 +33,14 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
     public record Dated(String from, String value) {
     }
 
-    public static SettingsResponse from(Settings settings, String parent) {
+    public static SettingsResponse from(Settings settings, String parent, java.util.List<String> grades) {
         LocalDate today = settings.today();
         return new SettingsResponse(show(settings.clerkLimitOn(today)),
                 show(settings.floorOn(today)), Integer.toString(settings.termsOn(today)),
                 show(settings.latePctOn(today)),
                 settings.policyDate() == null ? "" : settings.policyDate().toString(),
                 settings.periodNumberingFrom() == null ? "" : settings.periodNumberingFrom().toString(),
-                gradeTerms(settings),
+                gradeTerms(settings, grades),
                 show(settings.capOn(today)),
                 dated(settings),
                 show(settings.proofThresholdOn(today)),
@@ -48,8 +48,8 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
                 settings.graceDays() == null ? "" : settings.graceDays().toString(),
                 show(settings.noteThresholdOn(today)),
                 settings.entryDate() == null ? "" : settings.entryDate().toString(),
-                gradeGrace(settings),
-                gradeProofThreshold(settings),
+                gradeGrace(settings, grades),
+                gradeProofThreshold(settings, grades),
                 show(settings.pot()), parent == null ? "" : parent,
                 Integer.toString(settings.fiscalStart()), show(settings.alertThreshold()),
                 rounding(settings.valueOn(Settings.ROUNDING, today)),
@@ -61,7 +61,7 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
                 settings.scoreMid() == null ? "" : settings.scoreMid().toString(),
                 settings.scoreHigh() == null ? "" : settings.scoreHigh().toString(),
                 settings.scoreLog() ? Settings.ON : "",
-                gradeClerkLimit(settings),
+                gradeClerkLimit(settings, grades),
                 settings.maxOpen() == null ? "" : settings.maxOpen().toString());
     }
 
@@ -73,33 +73,33 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
         return figure == null ? "" : figure.setScale(2).toPlainString();
     }
 
-    private static Map<String, String> gradeTerms(Settings settings) {
+    private static Map<String, String> gradeTerms(Settings settings, java.util.List<String> grades) {
         Map<String, String> shown = new LinkedHashMap<>();
-        for (String grade : Settings.GRADES) {
+        for (String grade : grades) {
             Integer own = settings.gradeTermsOn(grade, settings.today());
             shown.put(grade, own == null ? "" : own.toString());
         }
         return shown;
     }
 
-    private static Map<String, String> gradeGrace(Settings settings) {
+    private static Map<String, String> gradeGrace(Settings settings, java.util.List<String> grades) {
         Map<String, String> shown = new LinkedHashMap<>();
-        for (String grade : Settings.GRADES) {
+        for (String grade : grades) {
             Integer grace = settings.gradeGraceOn(grade, settings.today());
             shown.put(grade, grace == null ? "" : grace.toString());
         }
         return shown;
     }
 
-    private static Map<String, String> gradeProofThreshold(Settings settings) {
+    private static Map<String, String> gradeProofThreshold(Settings settings, java.util.List<String> grades) {
         Map<String, String> shown = new LinkedHashMap<>();
-        for (String grade : Settings.GRADES) shown.put(grade, show(settings.gradeProofThresholdOn(grade, settings.today())));
+        for (String grade : grades) shown.put(grade, show(settings.gradeProofThresholdOn(grade, settings.today())));
         return shown;
     }
 
-    private static Map<String, String> gradeClerkLimit(Settings settings) {
+    private static Map<String, String> gradeClerkLimit(Settings settings, java.util.List<String> grades) {
         Map<String, String> shown = new LinkedHashMap<>();
-        for (String grade : Settings.GRADES) shown.put(grade, show(settings.gradeClerkLimitOn(grade, settings.today())));
+        for (String grade : grades) shown.put(grade, show(settings.gradeClerkLimitOn(grade, settings.today())));
         return shown;
     }
 

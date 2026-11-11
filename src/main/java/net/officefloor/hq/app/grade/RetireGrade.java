@@ -8,6 +8,9 @@ import net.officefloor.plugin.variable.Val;
 public class RetireGrade {
     public void retire(@Val GradeRequest request, @Val Sheet sheet, GradeRepository repository,
             Out<RetiredGrade> retiredOut) throws InvalidGradeException {
+        if (!repository.exists(sheet.id(), request.grade())) {
+            throw new InvalidGradeException("Grade " + request.grade() + " is not a grade on the sheet");
+        }
         if (repository.isRetired(sheet.id(), request.grade())) {
             throw new InvalidGradeException("Grade " + request.grade() + " is already retired");
         }

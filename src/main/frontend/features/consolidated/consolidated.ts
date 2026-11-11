@@ -57,7 +57,10 @@ export function sheetFigures(
   const overdues = overdueOf.map((o) => o.total);
   return {
     gradeDueTotals: Object.fromEntries(
-      GRADES.map((g) => [g, sumDue(active.filter((p) => p.grade === g).map(dueOf))]),
+      [...new Set([...GRADES, ...people.map((p) => p.grade)])].map((g) => [
+        g,
+        sumDue(active.filter((p) => p.grade === g).map(dueOf)),
+      ]),
     ) as Record<Grade, string>,
     statusCounts: Object.fromEntries(STATUSES.map((s) => [s, claims.filter((c) => c.status === s).length])),
     people: people.length,

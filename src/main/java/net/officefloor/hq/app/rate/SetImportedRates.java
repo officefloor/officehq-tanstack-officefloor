@@ -3,6 +3,7 @@ package net.officefloor.hq.app.rate;
 import jakarta.servlet.http.HttpServletRequest;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.grade.GradeRepository;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.setting.SettingsRepository;
@@ -19,7 +20,12 @@ import net.officefloor.plugin.variable.Val;
 public class SetImportedRates {
     public void set(@Val Sheet sheet, @Val ImportRatesLines lines, RateRepository rates, PersonRepository people,
             SheetRepository sheets, ClaimRepository claims, SettingsRepository settings, HttpServletRequest request,
-            Audit audit, Out<ImportRatesResponse> result) {
+            GradeRepository grades, Audit audit, Out<ImportRatesResponse> result) throws InvalidRateException {
+        for (RateInput input : lines.lines()) {
+            if (!grades.exists(sheet.id(), input.grade())) {
+                throw new InvalidRateException("Grade " + input.grade() + " is not a grade on the sheet");
+            }
+        }
         String user = Audit.user(request);
         Rollup before = Rollup.of(sheet.id(), sheet.today(), people, claims, rates, settings.find(sheet.id()));
         for (RateInput input : lines.lines()) {

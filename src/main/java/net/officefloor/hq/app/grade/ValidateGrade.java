@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 public class ValidateGrade {
     public void validate(@RequestBody GradeRequest request, Out<GradeRequest> body) throws InvalidGradeException {
         String grade = request == null || request.grade() == null ? "" : request.grade().trim();
-        if (!Settings.GRADES.contains(grade)) throw new InvalidGradeException("A grade is one of A, B or C");
+        if (!Settings.isGradeCode(grade)) throw new InvalidGradeException("A grade is one to three capital letters");
         body.set(new GradeRequest(grade));
     }
 }

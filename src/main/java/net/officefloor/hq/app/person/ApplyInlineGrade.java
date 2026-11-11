@@ -16,6 +16,7 @@ public class ApplyInlineGrade {
         termsEdit.set(new TermsEdit(false));
         contactEdit.set(new ContactEdit(false));
         if (request.grade().equals(person.gradeOn(sheet.today()))) return;
+        if (!grades.exists(sheet.id(), request.grade())) throw RetiredGrades.unknown(request.grade());
         if (grades.isRetired(sheet.id(), request.grade())) throw RetiredGrades.refused(request.grade());
         person.setGradeFrom(request.grade(), sheet.today());
     }

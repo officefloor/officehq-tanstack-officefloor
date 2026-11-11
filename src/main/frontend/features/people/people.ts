@@ -2,7 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { asFlag, useSearchParam } from '../../url/useSearchParam';
 
-export type Grade = 'A' | 'B' | 'C';
+/** A grade: A, B or C, or one added on the sheet (one to three capital letters). */
+export type Grade = string;
+/** The grades every sheet has; the sheet's own list is useGradeCodes. */
 export const GRADES: Grade[] = ['A', 'B', 'C'];
 
 /** A grade in force from a date (yyyy-MM-dd; '' from the beginning of time) until the next one. */

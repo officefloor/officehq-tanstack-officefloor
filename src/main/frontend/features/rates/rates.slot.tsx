@@ -6,7 +6,7 @@ import { postJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { PersonHead, PersonRow } from '../../slots/defs/personRow';
 import { counts, useClaims, useTagsUsed } from '../claims/claims';
-import { GRADES, gradeOn, liveHolds, usePeople } from '../people/people';
+import { gradeOn, liveHolds, usePeople } from '../people/people';
 import type { Grade, Person } from '../people/people';
 import { useUser } from '../session/session';
 import { useSheetToday } from '../sheet/sheet';
@@ -15,6 +15,7 @@ import { NA, PCT, claimDue, heldParts, personDueTotal, personExcess, personSplit
 import type { Rate } from './rates';
 import { Col } from '../columns/columns';
 import { useCutTotals } from '../pools/pools';
+import { useGradeCodes } from '../grades/grades';
 
 type Fields = { grade: Grade; pct: string; from: string; to: string };
 const EMPTY: Fields = { grade: 'A', pct: '', from: '', to: '' };
@@ -23,6 +24,7 @@ const EMPTY: Fields = { grade: 'A', pct: '', from: '', to: '' };
 // through a date (or with no end),
 // every rate set, and each grade's rate in force on the sheet's today.
 function Rates({ sheetId }: { sheetId: string }) {
+  const GRADES = useGradeCodes(sheetId);
   const queryClient = useQueryClient();
   const rates = useRates(sheetId);
   const today = useSheetToday(sheetId);
@@ -147,7 +149,7 @@ function Rates({ sheetId }: { sheetId: string }) {
           ))}
         </tbody>
       </table>
-      <RateCalendar rates={all} today={today} />
+      <RateCalendar grades={GRADES} rates={all} today={today} />
       <table data-testid="rate-list">
         <thead>
           <tr>
@@ -176,7 +178,7 @@ function Rates({ sheetId }: { sheetId: string }) {
 
 // For each grade and each month of the sheet's today's calendar year, the rate in force on the
 // first day of that month (n/a when none).
-function RateCalendar({ rates, today }: { rates: Rate[]; today: string }) {
+function RateCalendar({ grades, rates, today }: { grades: string[]; rates: Rate[]; today: string }) {
   if (today === '') return null;
   const year = today.slice(0, 4);
   const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
@@ -191,7 +193,7 @@ function RateCalendar({ rates, today }: { rates: Rate[]; today: string }) {
         </tr>
       </thead>
       <tbody>
-        {GRADES.map((g) => (
+        {grades.map((g) => (
           <tr key={g}>
             <td>{g}</td>
             {months.map((m) => (
@@ -212,6 +214,7 @@ type Preview = { count: number; diff: string };
 // show a different due were it the grade's rate on every date, and the differences added up.
 // Nothing is saved.
 function RatePreview({ sheetId }: { sheetId: string }) {
+  const GRADES = useGradeCodes(sheetId);
   const [grade, setGrade] = useState<Grade>('A');
   const [pct, setPct] = useState('');
   const [result, setResult] = useState<Preview | null>(null);

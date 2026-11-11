@@ -17,6 +17,7 @@ import net.officefloor.plugin.variable.Val;
 public class ApplyPerson {
     public void apply(@Val PersonRequest request, @Val Person person, @Val Sheet sheet, GradeRepository grades,
             Out<TermsEdit> termsEdit, Out<ContactEdit> contactEdit) throws InvalidPersonException {
+        if (!grades.exists(sheet.id(), request.grade())) throw RetiredGrades.unknown(request.grade());
         boolean kept = request.gradeFrom().isEmpty() && request.grade().equals(person.gradeOn(sheet.today()));
         if (!kept && grades.isRetired(sheet.id(), request.grade())) throw RetiredGrades.refused(request.grade());
         person.setName(request.name());

@@ -9,6 +9,7 @@ import { poolsKey } from '../pools/pools';
 import { periodsKey } from '../periods/periods';
 import { ACTIONS, ALERT_THRESHOLD, CAP, DATED_KEYS, FLOOR, GRADES, LATE_PCT, LIMIT, NOTE_THRESHOLD, PERM_ROLES, REVIEW_THRESHOLD, POLICY_DATE, POT, PROOF_KINDS, PROOF_THRESHOLD, ROUNDING, STANDING_RULE, TERMS, ROLES, gradeClerkLimitKey, gradeGraceKey, gradeProofThresholdKey, rolesKey, settingsKey, useRoles, useSettings } from './access';
 import type { Role, Settings, SettingsChange } from './access';
+import { useGradeCodes } from '../grades/grades';
 
 type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms' | 'gradeGrace' | 'gradeProofThreshold' | 'gradeClerkLimit'>;
 
@@ -36,6 +37,7 @@ type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms' | 'gradeGrace' | 'grad
 // proof kinds (blank: none), not dated, a comma separated list of receipt or photo. Only the settings typed in (or stepped into)
 // since the last save are sent, so saving one leaves the other as it is.
 function SettingsForm({ sheetId }: { sheetId: string }) {
+  const sheetGrades = useGradeCodes(sheetId);
   const queryClient = useQueryClient();
   const settings = useSettings(sheetId);
   const [fields, setFields] = useState<Omit<Settings, 'gradeTerms' | 'perms' | 'gradeGrace' | 'gradeProofThreshold' | 'gradeClerkLimit'>>({
@@ -262,8 +264,8 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
     }
     if (touched.has('defaultGrade')) {
       const defaultGrade = fields.defaultGrade.trim();
-      if (defaultGrade !== '' && !(GRADES as readonly string[]).includes(defaultGrade)) {
-        setError('A default grade is one of A, B or C, or blank.');
+      if (defaultGrade !== '' && !sheetGrades.includes(defaultGrade)) {
+        setError('A default grade is one of the sheet\'s grades, or blank.');
         return;
       }
       body.defaultGrade = defaultGrade;

@@ -3,10 +3,10 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOnce } from '../../query/useOnce';
 import { postJson } from '../../api/http';
 import { PersonHead, PersonRow } from '../../slots/defs/personRow';
-import { GRADES } from '../people/people';
 import type { Grade, Person } from '../people/people';
 import { useRowError } from '../people/rowError';
 import { useUser } from '../session/session';
+import { useGradeCodes } from '../grades/grades';
 
 function InlineGradeHead() {
   return <th>Set grade</th>;
@@ -15,6 +15,7 @@ function InlineGradeHead() {
 // A grade select on each person's row (showing the grade in force until another is chosen) and a
 // button that records the chosen grade from the sheet's today, exactly as the person form would.
 function PersonInlineGrade({ sheetId, person }: { sheetId: string; person: Person }) {
+  const GRADES = useGradeCodes(sheetId);
   const queryClient = useQueryClient();
   const [user] = useUser();
   const [chosen, setChosen] = useState<Grade | null>(null);

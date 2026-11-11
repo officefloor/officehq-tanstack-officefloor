@@ -30,6 +30,9 @@ public class MergeGrade {
         if (!Role.STEWARD.equals(roles.roleOf(sheet.id(), user))) {
             throw new StewardOnlyException("Only a steward may merge grades");
         }
+        if (!grades.exists(sheet.id(), request.from()) || !grades.exists(sheet.id(), request.into())) {
+            throw new InvalidGradeException("A grade is one on the sheet");
+        }
         if (grades.isRetired(sheet.id(), request.into())) {
             throw new InvalidGradeException("Grade " + request.into() + " is retired");
         }

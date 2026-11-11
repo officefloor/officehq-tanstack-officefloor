@@ -6,12 +6,13 @@ import { HttpError, postJson, putJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { PersonHead, PersonRow } from '../../slots/defs/personRow';
 import { useUser } from '../session/session';
-import { GRADES, nameWithGrade, peopleKey, peopleQuery, usePeople, useShowRetired } from './people';
+import { nameWithGrade, peopleKey, peopleQuery, usePeople, useShowRetired } from './people';
 import type { Grade, Person } from './people';
 import { SORT_KEYS, useSorted, useSortBy } from './sort';
 import type { SortKey } from './sort';
 import { Col } from '../columns/columns';
 import { useVisiblePeople } from './visible';
+import { useGradeCodes } from '../grades/grades';
 
 // `gradeFrom` is the date the grade is from ('' for the sheet's today). A person's first grade
 // applies from the beginning of time; an edit records the grade from its date, keeping the others,
@@ -26,6 +27,7 @@ const EMPTY: Fields = { name: '', grade: 'A', gradeFrom: '', terms: '', termsFro
 // it loaded: if someone else has saved them since, the save is refused and the editor shows the
 // person as stored now (and their version, so saving again goes through).
 function People({ sheetId }: { sheetId: string }) {
+  const GRADES = useGradeCodes(sheetId);
   const queryClient = useQueryClient();
   const people = usePeople(sheetId);
   const [fields, setFields] = useState<Fields>(EMPTY);

@@ -1,7 +1,7 @@
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { isReviewLate, useClaims } from '../claims/claims';
 import type { ClaimStatus } from '../claims/claims';
-import { GRADES, liveHolds, usePeople } from '../people/people';
+import { liveHolds, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { diffDue, heldParts, personDueTotal, sumDue, useRates } from '../rates/rates';
 import { useCap, useFloor, useLate, useReviewSla } from '../access/access';
@@ -10,6 +10,7 @@ import { periodDueTotal, usePeriods } from '../periods/periods';
 import { isActive } from '../active/active';
 import { useVoidReasons } from '../voidreasons/voidReasons';
 import { useCutTotals } from '../pools/pools';
+import { useGradeCodes } from '../grades/grades';
 
 // Every status the summary counts.
 const STATUSES: ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID', 'REVIEW'];
@@ -20,6 +21,7 @@ const STATUSES: ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID', 
 // earliest); per status, how many claims have it; per void reason on the list, how many
 // VOID claims were voided with it; and how many claims are late for review.
 function Summary({ sheetId }: { sheetId: string }) {
+  const GRADES = useGradeCodes(sheetId);
   const people = usePeople(sheetId).data ?? [];
   const claims = useClaims(sheetId).data ?? [];
   const rates = useRates(sheetId).data ?? [];
