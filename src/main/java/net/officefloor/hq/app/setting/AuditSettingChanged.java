@@ -22,6 +22,7 @@ public class AuditSettingChanged {
             HttpServletRequest request, Audit audit) {
         String head = "SETTING_CHANGED sheet=" + sheet.id() + " by=" + Audit.user(request);
         input.datedValues().forEach((key, value) -> audit.record(line(head, key, value, input)));
+        input.gradeClerkLimitValues().forEach((key, value) -> audit.record(line(head, key, value, input)));
         if (input.policyDateChanged()) {
             audit.record(head + " key=policy-date value=" + (input.policyDate() == null ? "" : input.policyDate()));
         }

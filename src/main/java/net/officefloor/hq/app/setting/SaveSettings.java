@@ -38,6 +38,7 @@ public class SaveSettings {
         values.putAll(input.gradeTermsValues());
         values.putAll(input.gradeGraceValues());
         values.putAll(input.gradeProofThresholdValues());
+        values.putAll(input.gradeClerkLimitValues());
         if (input.capValue() != null) values.put(Settings.CAP, input.capValue());
         if (input.proofThresholdValue() != null) values.put(Settings.PROOF_THRESHOLD, input.proofThresholdValue());
         if (input.noteThresholdValue() != null) values.put(Settings.NOTE_THRESHOLD, input.noteThresholdValue());

@@ -66,7 +66,7 @@ public class SettleClaim {
         }
         BigDecimal due = ClaimFigure.floored(claim, figure, late, settings);
         if (!judged) judge(claim, user, due, grade, settings);
-        if (!settings.withinClerkLimit(due, sheet.today()) && Role.CLERK.equals(role)) {
+        if (!settings.withinClerkLimit(due, grade, sheet.today()) && Role.CLERK.equals(role)) {
             claim.moveTo(ClaimStatus.PENDING);
             return;
         }

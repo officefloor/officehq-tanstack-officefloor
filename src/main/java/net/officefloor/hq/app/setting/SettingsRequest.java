@@ -21,7 +21,9 @@ package net.officefloor.hq.app.setting;
  * (blank: off), not dated, and the rounding mode, half-up or half-even (blank: none), dated by its key (rounding), and the review threshold, with up to two decimals (blank: none), dated by its key
  * (review-threshold), and the escalation gap, a whole number of days (blank: off), not dated, and the review
  * SLA, a whole number of days (blank: none), not dated, and the proof kinds, a comma separated list of
- * kinds, receipt or photo (blank: none), not dated, and the default grade, one of the grades (blank: A), not dated.
+ * kinds, receipt or photo (blank: none), not dated, and the default grade, one of the grades (blank: A), not dated, and
+ * the clerk limit of each grade being changed, with up to two decimals (blank: none, the sheet's), dated by its key
+ * (clerk-limit-A, clerk-limit-B, clerk-limit-C).
  */
 public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom,
         java.util.Map<String, String> gradeTerms, String cap, java.util.Map<String, String> from,
@@ -29,5 +31,6 @@ public record SettingsRequest(String clerkLimit, String floor, String terms, Str
         String entryDate, java.util.Map<String, String> gradeGrace,
         java.util.Map<String, String> gradeProofThreshold, String pot, String parent,
         String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold,
-        String escalateAfter, String reviewSla, String proofKinds, String defaultGrade) {
+        String escalateAfter, String reviewSla, String proofKinds, String defaultGrade,
+        java.util.Map<String, String> gradeClerkLimit) {
 }

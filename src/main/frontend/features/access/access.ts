@@ -37,6 +37,8 @@ export type Settings = {
   gradeGrace?: Record<string, string>;
   /** Each grade's own proof threshold ('' for none: a claim of the grade takes the sheet's). */
   gradeProofThreshold?: Record<string, string>;
+  /** Each grade's own clerk limit ('' for none: a claim of the grade takes the sheet's). */
+  gradeClerkLimit?: Record<string, string>;
   /** The pot, with two decimals ('' for none), not dated: shared out as cuts among a balanced pool's members. */
   pot: string;
   /** The parent sheet's id ('' for none), not dated: a grade with no rate in force on a date takes the parent's, up to three levels up. */
@@ -60,7 +62,7 @@ export type Settings = {
   /**
    * Every value recorded for each figure setting, by key (clerk-limit, floor, terms, late-pct,
    * terms-A, terms-B, terms-C, cap, proof-threshold, note-threshold, grace-A, grace-B, grace-C, proof-threshold-A, proof-threshold-B,
-   * proof-threshold-C, rounding, review-threshold), in from-date order ('' for none). The values above are those
+   * proof-threshold-C, rounding, review-threshold, clerk-limit-A, clerk-limit-B, clerk-limit-C), in from-date order ('' for none). The values above are those
    * in force on the sheet's today.
    */
   dated?: Record<string, { from: string; value: string }[]>;
@@ -87,6 +89,9 @@ export const gradeGraceKey = (grade: string) => `grace-${grade}`;
 
 /** The key of a grade's own proof threshold, dated like the floor. */
 export const gradeProofThresholdKey = (grade: string) => `proof-threshold-${grade}`;
+
+/** The key of a grade's own clerk limit, dated like the floor. */
+export const gradeClerkLimitKey = (grade: string) => `clerk-limit-${grade}`;
 
 /** The actions of the permission matrix, in the order they are shown. */
 export const ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'] as const;

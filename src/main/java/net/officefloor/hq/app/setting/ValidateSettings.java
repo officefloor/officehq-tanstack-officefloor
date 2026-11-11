@@ -19,7 +19,8 @@ public class ValidateSettings {
             Settings.gradeTermsKey("C"), Settings.PROOF_THRESHOLD, Settings.NOTE_THRESHOLD, Settings.ROUNDING,
             Settings.gradeGraceKey("A"), Settings.gradeGraceKey("B"), Settings.gradeGraceKey("C"),
             Settings.gradeProofThresholdKey("A"), Settings.gradeProofThresholdKey("B"),
-            Settings.gradeProofThresholdKey("C"), Settings.REVIEW_THRESHOLD);
+            Settings.gradeProofThresholdKey("C"), Settings.REVIEW_THRESHOLD, Settings.gradeClerkLimitKey("A"),
+            Settings.gradeClerkLimitKey("B"), Settings.gradeClerkLimitKey("C"));
 
     public void validate(@RequestBody SettingsRequest request, Out<SettingsInput> body)
             throws InvalidSettingException {
@@ -125,6 +126,24 @@ public class ValidateSettings {
                     throw new InvalidSettingException("A proof threshold is 0.00 or more, with up to two decimals, or blank");
                 } else {
                     gradeProofThreshold.put(grade, new BigDecimal(value).setScale(2));
+                }
+            }
+        }
+        Map<String, BigDecimal> gradeClerkLimit = new LinkedHashMap<>();
+        if (request != null && request.gradeClerkLimit() != null) {
+            for (String grade : request.gradeClerkLimit().keySet()) {
+                if (!Settings.GRADES.contains(grade)) throw new InvalidSettingException("A grade is one of A, B or C");
+            }
+            for (String grade : Settings.GRADES) {
+                String value = request.gradeClerkLimit().get(grade);
+                if (value == null) continue;
+                value = value.trim();
+                if (value.isEmpty()) {
+                    gradeClerkLimit.put(grade, null);
+                } else if (!FIGURE.matcher(value).matches()) {
+                    throw new InvalidSettingException("A clerk limit is 0.00 or more, with up to two decimals, or blank");
+                } else {
+                    gradeClerkLimit.put(grade, new BigDecimal(value).setScale(2));
                 }
             }
         }
@@ -302,6 +321,6 @@ public class ValidateSettings {
                 entryChanged, entryDate, gradeGrace, gradeProofThreshold, potChanged, pot, parentChanged, parent,
                 fiscalChanged, fiscalStartMonth, alertChanged, alertThreshold, roundingChanged, rounding,
                 reviewThresholdChanged, reviewThreshold, escalateChanged, escalateAfter, reviewSlaChanged, reviewSla,
-                proofKindsChanged, proofKinds, defaultGradeChanged, defaultGrade));
+                proofKindsChanged, proofKinds, defaultGradeChanged, defaultGrade, gradeClerkLimit));
     }
 }

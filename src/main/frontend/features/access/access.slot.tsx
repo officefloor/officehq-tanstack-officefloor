@@ -7,10 +7,10 @@ import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/session';
 import { poolsKey } from '../pools/pools';
 import { periodsKey } from '../periods/periods';
-import { ACTIONS, ALERT_THRESHOLD, CAP, DATED_KEYS, FLOOR, GRADES, LATE_PCT, LIMIT, NOTE_THRESHOLD, PERM_ROLES, REVIEW_THRESHOLD, POLICY_DATE, POT, PROOF_KINDS, PROOF_THRESHOLD, ROUNDING, STANDING_RULE, TERMS, ROLES, gradeGraceKey, gradeProofThresholdKey, rolesKey, settingsKey, useRoles, useSettings } from './access';
+import { ACTIONS, ALERT_THRESHOLD, CAP, DATED_KEYS, FLOOR, GRADES, LATE_PCT, LIMIT, NOTE_THRESHOLD, PERM_ROLES, REVIEW_THRESHOLD, POLICY_DATE, POT, PROOF_KINDS, PROOF_THRESHOLD, ROUNDING, STANDING_RULE, TERMS, ROLES, gradeClerkLimitKey, gradeGraceKey, gradeProofThresholdKey, rolesKey, settingsKey, useRoles, useSettings } from './access';
 import type { Role, Settings, SettingsChange } from './access';
 
-type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms' | 'gradeGrace' | 'gradeProofThreshold'>;
+type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms' | 'gradeGrace' | 'gradeProofThreshold' | 'gradeClerkLimit'>;
 
 // The sheet's settings: its clerk limit, the highest due a clerk may settle (blank: no limit), and
 // its floor, the least a claim's live due may be, and its terms, the days after a claim's date that
@@ -38,7 +38,7 @@ type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms' | 'gradeGrace' | 'grad
 function SettingsForm({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const settings = useSettings(sheetId);
-  const [fields, setFields] = useState<Omit<Settings, 'gradeTerms' | 'perms' | 'gradeGrace' | 'gradeProofThreshold'>>({
+  const [fields, setFields] = useState<Omit<Settings, 'gradeTerms' | 'perms' | 'gradeGrace' | 'gradeProofThreshold' | 'gradeClerkLimit'>>({
     cap: '',
     proofThreshold: '',
     noteThreshold: '',
@@ -68,6 +68,8 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
   const [graceTouched, setGraceTouched] = useState<Set<string>>(new Set());
   const [thresholdFields, setThresholdFields] = useState<Record<string, string>>({});
   const [thresholdsTouched, setThresholdsTouched] = useState<Set<string>>(new Set());
+  const [limitFields, setLimitFields] = useState<Record<string, string>>({});
+  const [limitsTouched, setLimitsTouched] = useState<Set<string>>(new Set());
   const [permFields, setPermFields] = useState<Record<string, string>>({});
   const [permsTouched, setPermsTouched] = useState<Set<string>>(new Set());
   // The from-date typed for each figure setting, by its store key (blank: the sheet's today).
@@ -84,6 +86,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
       setGradesTouched(new Set());
       setGraceTouched(new Set());
       setThresholdsTouched(new Set());
+      setLimitsTouched(new Set());
       setPermsTouched(new Set());
       queryClient.setQueryData(settingsKey(sheetId), saved);
       queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
@@ -300,6 +303,19 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
       }
       body.gradeProofThreshold = gradeProofThreshold;
     }
+    if (limitsTouched.size > 0) {
+      const gradeClerkLimit: Record<string, string> = {};
+      for (const grade of GRADES) {
+        if (!limitsTouched.has(grade)) continue;
+        const limit = (limitFields[grade] ?? '').trim();
+        if (limit !== '' && !LIMIT.test(limit)) {
+          setError(`A clerk limit for grade ${grade} is 0.00 or more, with up to two decimals, or blank.`);
+          return;
+        }
+        gradeClerkLimit[grade] = limit;
+      }
+      body.gradeClerkLimit = gradeClerkLimit;
+    }
     if (permsTouched.size > 0) {
       const perms: Record<string, string> = {};
       for (const action of ACTIONS) {
@@ -319,6 +335,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
       ...GRADES.filter((grade) => gradesTouched.has(grade)).map((grade) => `terms-${grade}`),
       ...GRADES.filter((grade) => graceTouched.has(grade)).map(gradeGraceKey),
       ...GRADES.filter((grade) => thresholdsTouched.has(grade)).map(gradeProofThresholdKey),
+      ...GRADES.filter((grade) => limitsTouched.has(grade)).map(gradeClerkLimitKey),
     ];
     for (const key of datedKeys) {
       const date = (fromFields[key] ?? '').trim();
@@ -380,6 +397,13 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
     setError('');
   };
 
+  const touchLimit = (grade: string) => setLimitsTouched((t) => (t.has(grade) ? t : new Set(t).add(grade)));
+  const changeLimit = (grade: string, value: string) => {
+    setLimitFields((f) => ({ ...f, [grade]: value }));
+    touchLimit(grade);
+    setError('');
+  };
+
   const touchPerm = (action: string) => setPermsTouched((t) => (t.has(action) ? t : new Set(t).add(action)));
   const changePerm = (action: string, value: string) => {
     setPermFields((f) => ({ ...f, [action]: value }));
@@ -405,6 +429,28 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         <span>
           now: <strong data-testid="setting-clerk-limit-current">{settings.data?.clerkLimit ?? ''}</strong>
         </span>{' '}
+        {GRADES.map((grade) => (
+          <span key={grade}>
+            <label>
+              Clerk limit for grade {grade}{' '}
+              <input
+                data-testid={`setting-${gradeClerkLimitKey(grade)}`}
+                inputMode="decimal"
+                placeholder="sheet's"
+                value={limitFields[grade] ?? ''}
+                onFocus={() => touchLimit(grade)}
+                onChange={(e) => changeLimit(grade, e.target.value)}
+              />
+            </label>{' '}
+            {fromInput(gradeClerkLimitKey(grade))}{' '}
+            <span>
+              now:{' '}
+              <strong data-testid={`setting-${gradeClerkLimitKey(grade)}-current`}>
+                {settings.data?.gradeClerkLimit?.[grade] ?? ''}
+              </strong>
+            </span>{' '}
+          </span>
+        ))}
         <label>
           Floor{' '}
           <input

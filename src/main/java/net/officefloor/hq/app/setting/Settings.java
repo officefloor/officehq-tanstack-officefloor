@@ -10,7 +10,7 @@ import java.util.NavigableMap;
 /**
  * A sheet's settings. The figure settings are dated ({@code dated}, by key, each value from a
  * from-date; a blank value is "none"): its clerk limit, the highest due a clerk may settle (none: no
- * limit), its floor, the least a claim's live due may be, and its terms, the days after a claim's
+ * limit), and its clerk limit per grade (none: the sheet's), its floor, the least a claim's live due may be, and its terms, the days after a claim's
  * date that it is due by, and its late percent, what an overdue claim's due gains per full 30 days
  * overdue, and its terms per grade (a grade with none uses the sheet's terms), and its cap (none:
  * no cap), the most a person's due-total may be, and its proof threshold (none: none), above which a
@@ -204,6 +204,22 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
         return own != null ? own : termsOn(date);
     }
 
+    /** The key of a grade's own clerk limit. */
+    public static String gradeClerkLimitKey(String grade) {
+        return "clerk-limit-" + grade;
+    }
+
+    /** A grade's own clerk limit in force on a date, or null when it has none. */
+    public BigDecimal gradeClerkLimitOn(String grade, LocalDate date) {
+        return figureOn(gradeClerkLimitKey(grade), date);
+    }
+
+    /** The clerk limit of a grade in force on a date: the grade's own when it has one, else the sheet's (null: no limit). */
+    public BigDecimal clerkLimitFor(String grade, LocalDate date) {
+        BigDecimal own = grade == null ? null : gradeClerkLimitOn(grade, date);
+        return own != null ? own : clerkLimitOn(date);
+    }
+
     /** The clerk limit in force on a date (null: no limit). */
     public BigDecimal clerkLimitOn(LocalDate date) {
         return figureOn(CLERK_LIMIT, date);
@@ -314,9 +330,12 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
         return cap == null || dueTotal == null || dueTotal.compareTo(cap) <= 0 ? dueTotal : cap;
     }
 
-    /** Whether a due (null: n/a) is within the clerk limit in force on {@code today}. A due of n/a is within any limit. */
-    public boolean withinClerkLimit(BigDecimal due, LocalDate today) {
-        BigDecimal clerkLimit = clerkLimitOn(today);
+    /**
+     * Whether a due (null: n/a) of a claim of a grade is within the clerk limit in force on {@code today}:
+     * the grade's own when it has one, else the sheet's. A due of n/a is within any limit.
+     */
+    public boolean withinClerkLimit(BigDecimal due, String grade, LocalDate today) {
+        BigDecimal clerkLimit = clerkLimitFor(grade, today);
         return clerkLimit == null || due == null || due.compareTo(clerkLimit) <= 0;
     }
 }

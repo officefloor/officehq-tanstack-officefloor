@@ -23,7 +23,8 @@ import java.time.LocalDate;
  * what (null: none), and whether the escalation gap is changed and to what, in days (null: off), and whether
  * the review SLA is changed and to what, in days (null: none), and whether the proof kinds are changed and
  * to what, a comma separated list of kinds (null: none), and whether the default grade is changed and to
- * what, one of the grades (null: A).
+ * what, one of the grades (null: A), and the grades whose clerk limit is changed, in A, B, C order, and to
+ * what (null: none, the sheet's).
  */
 public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, BigDecimal floor, Integer terms, BigDecimal latePct,
         boolean policyDateChanged, LocalDate policyDate,
@@ -42,7 +43,8 @@ public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, Bi
         boolean escalateAfterChanged, Integer escalateAfter,
         boolean reviewSlaChanged, Integer reviewSla,
         boolean proofKindsChanged, String proofKinds,
-        boolean defaultGradeChanged, String defaultGrade) {
+        boolean defaultGradeChanged, String defaultGrade,
+        java.util.Map<String, BigDecimal> gradeClerkLimit) {
 
     /**
      * The figure settings being changed, by key in the order they are audited, each with the value
@@ -76,6 +78,14 @@ public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, Bi
         java.util.Map<String, String> values = new java.util.LinkedHashMap<>();
         gradeProofThreshold.forEach((grade, figure) ->
                 values.put(Settings.gradeProofThresholdKey(grade), figure == null ? "" : figure.toPlainString()));
+        return values;
+    }
+
+    /** The grades whose clerk limit is changed, by key, each with the value it is recorded as ('' for none). */
+    public java.util.Map<String, String> gradeClerkLimitValues() {
+        java.util.Map<String, String> values = new java.util.LinkedHashMap<>();
+        gradeClerkLimit.forEach((grade, figure) ->
+                values.put(Settings.gradeClerkLimitKey(grade), figure == null ? "" : figure.toPlainString()));
         return values;
     }
 
