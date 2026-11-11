@@ -9,7 +9,7 @@ import { usePeople } from '../people/people';
 import { useUser } from '../session/session';
 import { useRates } from '../rates/rates';
 import { useFloor, useLate } from '../access/access';
-import { periodDueTotal, periodsKey, usePeriods } from './periods';
+import { periodClaimCount, periodDueTotal, periodsKey, usePeriods } from './periods';
 import type { Period } from './periods';
 
 // A cap, when given, is the most OPEN or PENDING claims a person may have in the period.
@@ -433,6 +433,7 @@ function Periods({ sheetId }: { sheetId: string }) {
             <th>Fiscal year</th>
             <th>Cap</th>
             <th>Locked</th>
+            <th>Claims</th>
             <th></th>
           </tr>
         </thead>
@@ -447,6 +448,7 @@ function Periods({ sheetId }: { sheetId: string }) {
               <td data-testid="period-fy">{p.fy}</td>
               <td data-testid="period-cap">{p.cap}</td>
               <td data-testid="period-locked">{p.locked ? 'yes' : 'no'}</td>
+              <td data-testid="period-claims-count">{periodClaimCount(p, claims)}</td>
               <td>
                 <button
                   type="button"

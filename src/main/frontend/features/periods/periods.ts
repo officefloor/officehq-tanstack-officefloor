@@ -139,3 +139,13 @@ export function classicPeriodDueTotal(
     ),
   );
 }
+
+/**
+ * A period's claim count: the claims belonging to it (a claim's period is the one containing its
+ * due-by), VOID and DELETED claims left out.
+ */
+export function periodClaimCount(period: Period, claims: Claim[]): number {
+  return claims.filter(
+    (c) => c.status !== 'VOID' && c.status !== 'DELETED' && period.from <= c.dueBy && c.dueBy <= period.to,
+  ).length;
+}
