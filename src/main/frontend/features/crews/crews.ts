@@ -1,6 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { peopleKey } from '../people/people';
+import { liveHolds, peopleKey, usePeople } from '../people/people';
+import { useClaims } from '../claims/claims';
+import { useSheetToday } from '../sheet/sheet';
+import { useCap, useFloor, useLate } from '../access/access';
+import { NA, personDueTotal, sumDue, useRates } from '../rates/rates';
 
 /** A person in a crew (never its lead). */
 export type CrewMember = { personId: string; name: string };
@@ -18,4 +22,27 @@ export function useCrews(sheetId: string) {
     queryFn: async () =>
       (await getJson<{ crews: Crew[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/crews`)).crews,
   });
+}
+
+/** Each person's due-total by id, as their row shows it. */
+export function useDueTotals(sheetId: string): Map<string, string> {
+  const people = usePeople(sheetId).data ?? [];
+  const claims = useClaims(sheetId).data ?? [];
+  const rates = useRates(sheetId).data ?? [];
+  const today = useSheetToday(sheetId);
+  const floor = useFloor(sheetId);
+  const late = useLate(sheetId);
+  const cap = useCap(sheetId);
+  return new Map(
+    people.map((p) => [
+      p.id,
+      personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap),
+    ]),
+  );
+}
+
+/** A crew's due-total: its lead's and its members' due-totals added up, n/a skipped. */
+export function crewDueTotal(crew: Crew, dues: Map<string, string>): string {
+  const ids = [crew.leadId, ...crew.members.map((m) => m.personId)];
+  return sumDue(ids.map((id) => dues.get(id) ?? NA));
 }

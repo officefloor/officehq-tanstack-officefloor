@@ -2,7 +2,8 @@ import { SheetBody } from '../../slots/defs/sheetBody';
 import { useClaims } from '../claims/claims';
 import type { ClaimStatus } from '../claims/claims';
 import { usePeople } from '../people/people';
-import { useRates } from '../rates/rates';
+import { sumDue, useRates } from '../rates/rates';
+import { crewDueTotal, useCrews, useDueTotals } from '../crews/crews';
 import { sheetFigures } from '../consolidated/consolidated';
 import { useSheetToday } from '../sheet/sheet';
 import { useCap, useFloor, useLate } from '../access/access';
@@ -18,7 +19,8 @@ const STATUSES: ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID', 
 // the claims in each status, and the sheet's due-total and overdue-total — worked from the same
 // figures as the summary and the sheet's totals, so each always equals the figure it repeats.
 // Beside them, the signed-in user's own figures: the due-total and overdue-total of the person whose
-// name or alias is the user's name — blank when there is no such person.
+// name or alias is the user's name — blank when there is no such person — and their crew total: the
+// due-totals of the crews led by a person with the user's name, added up — blank when they lead none.
 function Header({ sheetId }: { sheetId: string }) {
   const people = usePeople(sheetId).data ?? [];
   const claims = useClaims(sheetId).data ?? [];
@@ -28,10 +30,17 @@ function Header({ sheetId }: { sheetId: string }) {
   const late = useLate(sheetId);
   const cap = useCap(sheetId);
   const [user] = useUser();
+  const crews = useCrews(sheetId).data ?? [];
+  const dues = useDueTotals(sheetId);
 
   const { dueTotal, overdueTotal } = sheetFigures(people, claims, rates, today, floor, late, cap);
   const me = user ? people.find((p) => [p.name, ...p.aliases].some((n) => asName(n) === asName(user))) : undefined;
   const mine = me ? sheetFigures([me], claims, rates, today, floor, late, cap) : undefined;
+  const myIds = new Set(
+    user ? people.filter((p) => [p.name, ...p.aliases].some((n) => asName(n) === asName(user))).map((p) => p.id) : [],
+  );
+  const led = crews.filter((c) => myIds.has(c.leadId));
+  const myCrewDue = led.length > 0 ? sumDue(led.map((c) => crewDueTotal(c, dues))) : '';
 
   return (
     <header data-testid="header">
@@ -55,6 +64,9 @@ function Header({ sheetId }: { sheetId: string }) {
       </span>{' '}
       <span>
         My overdue: <strong data-testid="my-overdue-total">{mine?.overdueTotal ?? ''}</strong>
+      </span>{' '}
+      <span>
+        My crews due: <strong data-testid="my-crew-due-total">{myCrewDue}</strong>
       </span>
     </header>
   );

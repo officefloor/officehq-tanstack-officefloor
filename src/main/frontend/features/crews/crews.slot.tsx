@@ -5,30 +5,9 @@ import { useOnce } from '../../query/useOnce';
 import { postJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/session';
-import { liveHolds, usePeople } from '../people/people';
-import { useClaims } from '../claims/claims';
-import { useSheetToday } from '../sheet/sheet';
-import { useCap, useFloor, useLate } from '../access/access';
-import { NA, personDueTotal, sumDue, useRates } from '../rates/rates';
-import { crewsKey, useCrews } from './crews';
+import { usePeople } from '../people/people';
+import { crewDueTotal, crewsKey, useCrews, useDueTotals } from './crews';
 import type { Crew } from './crews';
-
-/** Each person's due-total by id, as their row shows it. */
-function useDueTotals(sheetId: string): Map<string, string> {
-  const people = usePeople(sheetId).data ?? [];
-  const claims = useClaims(sheetId).data ?? [];
-  const rates = useRates(sheetId).data ?? [];
-  const today = useSheetToday(sheetId);
-  const floor = useFloor(sheetId);
-  const late = useLate(sheetId);
-  const cap = useCap(sheetId);
-  return new Map(
-    people.map((p) => [
-      p.id,
-      personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap),
-    ]),
-  );
-}
 
 // The sheet's crews: a name entry, a lead chosen from the people and an add button, each crew listed below
 // with its lead, its members and its due-total (the lead's and the members' due-totals added up, n/a
@@ -128,8 +107,7 @@ function CrewRow({ sheetId, crew, dues }: { sheetId: string; crew: Crew; dues: M
     once((done) => add.mutate({ crew: crew.name, personId }, { onSettled: done }));
   };
 
-  const ids = [crew.leadId, ...crew.members.map((m) => m.personId)];
-  const total = sumDue(ids.map((id) => dues.get(id) ?? NA));
+  const total = crewDueTotal(crew, dues);
 
   return (
     <li data-testid={`crew-row-${crew.name}`}>
