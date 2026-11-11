@@ -29,6 +29,14 @@ public class PersonStore {
         return found.isEmpty() ? null : found.get(0);
     }
 
+    /** Whether another person on the sheet (not {@code exceptId}) has this name, ignoring case. */
+    public boolean nameTaken(String sheetId, String name, Long exceptId) {
+        Integer n = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND name_key = LOWER(?) AND id <> ?",
+                Integer.class, sheetId, name.trim(), exceptId == null ? -1L : exceptId);
+        return n != null && n > 0;
+    }
+
     public Person add(String sheetId, String name, String grade) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {

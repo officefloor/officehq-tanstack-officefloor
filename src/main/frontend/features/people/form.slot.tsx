@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { postJson, putJson } from '../../api/http';
+import { HttpError, postJson, putJson } from '../../api/http';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { GRADES, type Person, peopleKey, useEditingPerson, usePeople } from './people';
@@ -91,7 +91,8 @@ function PersonForm() {
       )}
       {save.isError && (
         <span data-testid="person-form-error" role="alert">
-          {' '}A name is required.
+          {' '}
+          {save.error instanceof HttpError && save.error.reason ? `${save.error.reason}.` : 'A name is required.'}
         </span>
       )}
     </form>

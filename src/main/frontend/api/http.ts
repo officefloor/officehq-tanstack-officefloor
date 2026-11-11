@@ -1,9 +1,17 @@
 // The app's fetch surface. A non-2xx REJECTS, so useQuery/useMutation surface the failure instead
 // of a silent `if (res.ok)` that leaves the UI showing stale data.
+/** A refused request; `reason` is the text the server answered with (empty when none). */
+export class HttpError extends Error {
+  constructor(message: string, readonly reason: string) {
+    super(message);
+  }
+}
+
 async function send<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init);
   if (!res.ok) {
-    throw new Error(`${init?.method ?? 'GET'} ${path} -> ${res.status}`);
+    const reason = await res.text().catch(() => '');
+    throw new HttpError(`${init?.method ?? 'GET'} ${path} -> ${res.status}`, reason);
   }
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }
