@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { counts, countedOn } from '../claims/claims';
+import { counts, countedOn, statusOn } from '../claims/claims';
 import type { Claim } from '../claims/claims';
 import { gradeOn, liveHolds } from '../people/people';
 import type { Person } from '../people/people';
@@ -61,6 +61,34 @@ export function personPeriodDueTotal(
   return sumDue(
     claims
       .filter((c) => c.personId === person.id && countedOn(c, period.to, liveHolds(person, late.today), late.today) && period.from <= c.dueBy && c.dueBy <= period.to)
+      .map((c) => claimDue(c, rateOn(rates, gradeOn(person.grades, c.date), c.date, c.id), floor, late, gradeOn(person.grades, c.date))),
+  );
+}
+
+/**
+ * A person's carried figure for a period: the due as shown now of their claims that count and belong
+ * to a period (by due-by) ending before this one starts, and were still OPEN or PENDING at the end of
+ * this period's last day by the status their log records then, added up.
+ */
+export function personPeriodCarried(
+  period: Period,
+  periods: Period[],
+  person: Person,
+  claims: Claim[],
+  rates: Rate[],
+  floor: Dated,
+  late: Late,
+): string {
+  const holds = liveHolds(person, late.today);
+  return sumDue(
+    claims
+      .filter((c) => {
+        if (c.personId !== person.id) return false;
+        const own = periodOf(periods, c.dueBy);
+        if (own === null || own.to >= period.from) return false;
+        const status = statusOn(c, period.to);
+        return (status === 'OPEN' || status === 'PENDING') && countedOn(c, period.to, holds, late.today);
+      })
       .map((c) => claimDue(c, rateOn(rates, gradeOn(person.grades, c.date), c.date, c.id), floor, late, gradeOn(person.grades, c.date))),
   );
 }

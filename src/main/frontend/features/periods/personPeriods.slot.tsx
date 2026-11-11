@@ -1,23 +1,27 @@
+import { Fragment } from 'react';
 import { PersonHead, PersonRow } from '../../slots/defs/personRow';
 import type { Person } from '../people/people';
 import { useClaims } from '../claims/claims';
 import { useRates } from '../rates/rates';
 import { useFloor, useLate } from '../access/access';
-import { personPeriodDueTotal, usePeriods } from './periods';
+import { personPeriodCarried, personPeriodDueTotal, usePeriods } from './periods';
 
 function PersonPeriodsHead({ sheetId }: { sheetId: string }) {
   const periods = usePeriods(sheetId).data ?? [];
   return (
     <>
       {periods.map((p) => (
-        <th key={p.name}>{p.name}</th>
+        <Fragment key={p.name}>
+          <th>{p.name}</th>
+          <th>{p.name} carried</th>
+        </Fragment>
       ))}
     </>
   );
 }
 
 // A person's due-total for each period on the sheet: live while the period is open, fixed when it
-// was closed.
+// was closed; and the figure carried into it from earlier periods.
 function PersonPeriods({ sheetId, person }: { sheetId: string; person: Person }) {
   const periods = usePeriods(sheetId).data ?? [];
   const claims = useClaims(sheetId).data ?? [];
@@ -27,9 +31,14 @@ function PersonPeriods({ sheetId, person }: { sheetId: string; person: Person })
   return (
     <>
       {periods.map((p) => (
-        <td key={p.name} data-testid={`person-period-${p.name}-due-total`}>
-          {personPeriodDueTotal(p, person, claims, rates, floor, late)}
-        </td>
+        <Fragment key={p.name}>
+          <td data-testid={`person-period-${p.name}-due-total`}>
+            {personPeriodDueTotal(p, person, claims, rates, floor, late)}
+          </td>
+          <td data-testid={`person-period-${p.name}-carried`}>
+            {personPeriodCarried(p, periods, person, claims, rates, floor, late)}
+          </td>
+        </Fragment>
       ))}
     </>
   );
