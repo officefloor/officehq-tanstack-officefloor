@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 
-export type Sheet = { id: string };
+/** `today` (yyyy-MM-dd) is the sheet's own date: every date decision and default uses it, never the clock. */
+export type Sheet = { id: string; today: string };
 
 /** Every per-sheet query key starts with ['sheet', id], so loading a sheet re-reads all of it. */
 export const sheetKey = (id: string) => ['sheet', id] as const;
@@ -12,4 +13,9 @@ export function useSheet(id: string) {
     queryFn: () => getJson<Sheet>(`/api/sheets/${encodeURIComponent(id)}`),
     enabled: id !== '',
   });
+}
+
+/** The sheet's today (yyyy-MM-dd), or undefined while the sheet loads. Use it for every default date. */
+export function useSheetToday(id: string): string | undefined {
+  return useSheet(id).data?.today;
 }

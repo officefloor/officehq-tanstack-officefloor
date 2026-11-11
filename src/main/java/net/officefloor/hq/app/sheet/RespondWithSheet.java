@@ -4,7 +4,9 @@ import net.officefloor.web.ObjectResponse;
 import org.springframework.web.bind.annotation.PathVariable;
 
 public class RespondWithSheet {
-    public void respond(@PathVariable("sheetId") String sheetId, ObjectResponse<SheetResponse> response) {
-        response.send(new SheetResponse(sheetId.trim()));
+    public void respond(@PathVariable("sheetId") String sheetId, SheetStore store,
+            ObjectResponse<SheetResponse> response) {
+        String id = sheetId.trim();
+        response.send(new SheetResponse(id, store.today(id).toString()));
     }
 }
