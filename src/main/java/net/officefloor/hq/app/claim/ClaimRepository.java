@@ -300,7 +300,7 @@ public class ClaimRepository {
     }
 
     /**
-     * Move the claim, with its log and comments, to another sheet, listed there as its newest: it takes
+     * Move the claim, with its log, comments and lines, to another sheet, listed there as its newest: it takes
      * {@code number} (null: none) and names {@code corrects} and {@code splitFrom}; it keeps any figure a
      * statement bound it to, and loses its reference, its settle batch and any lock. Its history here is dropped
      * and kept again on the other sheet, with that sheet's today now.
@@ -314,6 +314,7 @@ public class ClaimRepository {
                 splitFrom, claim.getId(), claim.getSheetId());
         jdbc.update("UPDATE claim_log SET sheet_id = ? WHERE claim_id = ?", toSheet, claim.getId());
         jdbc.update("UPDATE claim_comment SET sheet_id = ? WHERE claim_id = ?", toSheet, claim.getId());
+        jdbc.update("UPDATE claim_line SET sheet_id = ? WHERE claim_id = ?", toSheet, claim.getId());
         // The figure a statement bound it to arrives with it, bound there from that sheet's today.
         if (claim.isStated()) {
             jdbc.update("INSERT INTO claim_binding (sheet_id, claim_id, stated, stated_due, set_on)"
@@ -326,7 +327,7 @@ public class ClaimRepository {
     }
 
     /**
-     * Copy the claim, with its log, to another sheet for {@code toPersonId}, listed there as its newest:
+     * Copy the claim, with its log and lines, to another sheet for {@code toPersonId}, listed there as its newest:
      * its status, amount, dates, terms, note, frozen figure, proofs and who opened and edited it. It takes
      * no number (nor correction or split numbers) until {@link #numberCopy}, and leaves behind any figure a
      * statement bound it to, its reference, tags, settle batch, comments and any lock. Returns its new id.
@@ -352,6 +353,10 @@ public class ClaimRepository {
         jdbc.update("INSERT INTO claim_log (sheet_id, claim_id, status, by_user, on_date, due)"
                 + " SELECT ?, ?, status, by_user, on_date, due FROM claim_log WHERE claim_id = ? AND sheet_id = ? ORDER BY id",
                 toSheet, id, claim.getId(), claim.getSheetId());
+        jdbc.update("INSERT INTO claim_line (sheet_id, claim_id, label, qty, unit, on_date)"
+                + " SELECT ?, ?, label, qty, unit, (SELECT s.today FROM sheet s WHERE s.id = ?) FROM claim_line"
+                + " WHERE claim_id = ? AND sheet_id = ? ORDER BY id",
+                toSheet, id, toSheet, claim.getId(), claim.getSheetId());
         return id;
     }
 

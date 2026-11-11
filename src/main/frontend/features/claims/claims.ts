@@ -63,6 +63,8 @@ export type Claim = {
   comments: string[];
   /** The number of the bulk settle batch that settled it; '' when none did (settled one at a time, or not settled). */
   batch: string;
+  /** Its lines, oldest first, as `<label> <qty> x <unit>`; while it has any, its amount is their total. */
+  lines: string[];
 };
 
 /** Whether a claim is a correction: it has no floor and no late charge. */

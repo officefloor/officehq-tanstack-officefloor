@@ -79,6 +79,8 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   // The amount typed to split off each claim, by claim id.
   const [splitAmount, setSplitAmount] = useState<Record<string, string>>({});
   const [commentText, setCommentText] = useState<Record<string, string>>({});
+  // The line typed to add to each draft (label, quantity, unit amount), by claim id.
+  const [lineFields, setLineFields] = useState<Record<string, { label: string; qty: string; unit: string }>>({});
   // The template picked to add a draft claim from.
   const [template, setTemplate] = useState('');
   const templates = useTemplates(sheetId).data ?? [];
@@ -302,6 +304,49 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
     },
     onError: (_e, { id }) => setRefused({ id, message: 'That claim cannot be commented.' }),
   });
+
+  // A line added to a draft is an edit of it: its amount becomes the lines' total, by the edit's rules.
+  const line = useMutation({
+    mutationFn: ({ id, label, qty, unit }: { id: string; label: string; qty: string; unit: string }) =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/claims/${encodeURIComponent(id)}/lines`,
+        { label, qty, unit },
+        user,
+      ),
+    onSuccess: (_c, { id }) => {
+      setLineFields((l) => ({ ...l, [id]: { label: '', qty: '', unit: '' } }));
+      void queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+    onError: (_e, { id }) =>
+      setRefused({ id, message: 'A line cannot be added now: the claim is not an editable draft, or someone else is editing it.' }),
+  });
+
+  const addLine = (id: string) => {
+    setRefused(null);
+    const f = lineFields[id] ?? { label: '', qty: '', unit: '' };
+    const label = f.label.trim();
+    const qty = f.qty.trim();
+    const unit = f.unit.trim();
+    if (label === '') {
+      setRefused({ id, message: 'A line needs a label.' });
+      return;
+    }
+    if (!/^\d{1,9}$/.test(qty) || Number(qty) < 1) {
+      setRefused({ id, message: 'A quantity is a whole number of at least 1.' });
+      return;
+    }
+    if (!/^\d{1,13}(\.\d{1,2})?$/.test(unit)) {
+      setRefused({ id, message: 'A unit amount is a number with up to two decimals.' });
+      return;
+    }
+    line.mutate({ id, label, qty, unit });
+  };
+
+  const setLineField = (id: string, key: 'label' | 'qty' | 'unit', value: string) => {
+    setLineFields((l) => ({ ...l, [id]: { ...(l[id] ?? { label: '', qty: '', unit: '' }), [key]: value } }));
+    setRefused((r) => (r !== null && r.id === id ? null : r));
+  };
 
   // A draft claim from a template: its amount and note as the template has them now, undated, by
   // every rule of the claim form; a refusal shows on the claim form.
@@ -709,6 +754,36 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
               <button type="button" data-testid="claim-comment-add" onClick={() => addComment(c.id)}>
                 Comment
               </button>
+              <input
+                data-testid="claim-line-label"
+                placeholder="Line"
+                value={lineFields[c.id]?.label ?? ''}
+                onChange={(e) => setLineField(c.id, 'label', e.target.value)}
+              />{' '}
+              <input
+                data-testid="claim-line-qty"
+                placeholder="Qty"
+                inputMode="numeric"
+                value={lineFields[c.id]?.qty ?? ''}
+                onChange={(e) => setLineField(c.id, 'qty', e.target.value)}
+              />{' '}
+              <input
+                data-testid="claim-line-unit"
+                placeholder="Unit"
+                inputMode="decimal"
+                value={lineFields[c.id]?.unit ?? ''}
+                onChange={(e) => setLineField(c.id, 'unit', e.target.value)}
+              />{' '}
+              <button type="button" data-testid="claim-line-add" onClick={() => addLine(c.id)}>
+                Add line
+              </button>
+              <ol data-testid="claim-lines">
+                {c.lines.map((l, i) => (
+                  <li key={i} data-testid="claim-lines-line">
+                    {l}
+                  </li>
+                ))}
+              </ol>
               <ol data-testid="claim-comments">
                 {c.comments.map((line, i) => (
                   <li key={i} data-testid="claim-comments-line">
