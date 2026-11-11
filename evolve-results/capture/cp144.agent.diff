@@ -1,0 +1,98 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 9ddeb97e3..b2feabfd7 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -167,7 +167,8 @@ export const AMOUNT = /^\d+(\.\d{1,2})?$/;
+ export const CLAIM_AMOUNT = /^-?\d+(\.\d{1,2})?$/;
+ 
+ /**
+- * A claim number, as a correction names the claim it corrects: a sheet-wide number, or a number
++ * A claim number, as a correction names the claim it corrects: a sheet-wide number (one given
++ * before numbering restarted each fiscal year), a number within a fiscal year (<FY>-<n>), or a number
+  * within a period (<period name>-<n>, X-<n> for a claim in no period).
+  */
+ export const CLAIM_NUMBER = /^(\d+|.+-\d+)$/;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimNumbers.java b/src/main/java/net/officefloor/hq/app/claim/ClaimNumbers.java
+index 34087ce4b..be1cd5422 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimNumbers.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimNumbers.java
+@@ -6,7 +6,8 @@ import net.officefloor.hq.app.setting.Settings;
+ import net.officefloor.hq.app.sheet.Sheet;
+ 
+ /**
+- * The number a claim being opened takes: the sheet's next (1, 2, ...), or, while the sheet's period
++ * The number a claim being opened takes: the next within the fiscal year of its due-by, in the
++ * sequence the sheet's tree shares (<FY>-<n>), or, while the sheet's period
+  * numbering from is set and its today is on or after it, the next within the claim's period (the one containing its due-by)
+  * (<period name>-<n>), or X-<n> when the claim is in no period.
+  */
+@@ -14,7 +15,10 @@ public final class ClaimNumbers {
+     private ClaimNumbers() {}
+ 
+     public static String next(Sheet sheet, Claim claim, Settings settings, PeriodRepository periods, ClaimRepository claims) {
+-        if (!settings.numbersByPeriod(sheet.today())) return String.valueOf(claims.nextNumber(sheet.id()));
++        if (!settings.numbersByPeriod(sheet.today())) {
++            String fiscalYear = settings.fiscalYearOf(claim.getDueBy());
++            return fiscalYear + "-" + claims.nextNumberInFiscalYear(sheet.id(), fiscalYear);
++        }
+         Period period = periods.findAll(sheet.id()).stream()
+                 .filter((p) -> p.contains(claim.getDueBy())).findFirst().orElse(null);
+         if (period == null) return "X-" + claims.nextNumberIn(sheet.id(), "");
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 1802bfab9..8e312e62d 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -129,20 +129,29 @@ public class ClaimRepository {
+     }
+ 
+     /**
+-     * The next claim number in the sequence the sheet's tree shares: one after the last number given
+-     * on any sheet of the tree (the sheet, its ancestors and its descendants), which every sheet of
+-     * the tree then holds as its last. Taken in one statement so two claims opened at the same moment
+-     * never share a number; it is never given out again.
++     * The next claim number within fiscal year {@code fiscalYear} (FY<yyyy>) in the sequence the
++     * sheet's tree shares, counting from 1: one after the last number given in that year on any sheet
++     * of the tree, which every sheet of the tree then holds as its last. Taken in one statement so two
++     * claims opened at the same moment never share a number; it is never given out again.
+      */
+-    public int nextNumber(String sheetId) {
++    public int nextNumberInFiscalYear(String sheetId, String fiscalYear) {
+         List<String> tree = new java.util.ArrayList<>(List.of(sheetId));
+         tree.addAll(sheets.tree(sheetId));
++        for (String id : tree) {
++            jdbc.update("MERGE INTO fiscal_number f USING (VALUES (CAST(? AS VARCHAR(200)), CAST(? AS VARCHAR(20)))) v (sheet_id, fiscal_year)"
++                    + " ON f.sheet_id = v.sheet_id AND f.fiscal_year = v.fiscal_year"
++                    + " WHEN NOT MATCHED THEN INSERT (sheet_id, fiscal_year, last_number) VALUES (v.sheet_id, v.fiscal_year, 0)",
++                    id, fiscalYear);
++        }
+         String in = String.join(", ", java.util.Collections.nCopies(tree.size(), "?"));
+         List<Object> args = new java.util.ArrayList<>(tree);
++        args.add(fiscalYear);
+         args.addAll(tree);
+-        return jdbc.queryForObject("SELECT MAX(last_claim_number) FROM FINAL TABLE"
+-                + " (UPDATE sheet SET last_claim_number = (SELECT MAX(s.last_claim_number) + 1 FROM sheet s WHERE s.id IN (" + in + "))"
+-                + " WHERE id IN (" + in + "))",
++        args.add(fiscalYear);
++        return jdbc.queryForObject("SELECT MAX(last_number) FROM FINAL TABLE"
++                + " (UPDATE fiscal_number SET last_number = (SELECT MAX(f.last_number) + 1 FROM fiscal_number f"
++                + " WHERE f.sheet_id IN (" + in + ") AND f.fiscal_year = ?)"
++                + " WHERE sheet_id IN (" + in + ") AND fiscal_year = ?)",
+                 Integer.class, args.toArray());
+     }
+ 
+diff --git a/src/main/resources/db/migration/V82__fiscal_number.sql b/src/main/resources/db/migration/V82__fiscal_number.sql
+new file mode 100644
+index 000000000..a5d7d54c8
+--- /dev/null
++++ b/src/main/resources/db/migration/V82__fiscal_number.sql
+@@ -0,0 +1,10 @@
++-- Sheet-wide numbering restarts each fiscal year: a claim opened takes <FY>-<n>, counting from 1
++-- within the fiscal year of its due-by, the sequence shared across the sheet's tree. The last
++-- number given in each fiscal year, which every sheet of the tree holds. Never given out again;
++-- numbers already given stay as they are.
++CREATE TABLE fiscal_number (
++    sheet_id VARCHAR(200) NOT NULL REFERENCES sheet(id),
++    fiscal_year VARCHAR(20) NOT NULL,
++    last_number INT NOT NULL,
++    PRIMARY KEY (sheet_id, fiscal_year)
++);
