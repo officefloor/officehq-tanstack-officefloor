@@ -6,7 +6,8 @@ import { getJson } from '../../api/http';
  *  length on its last day, dates before the start left out) — up to its end. `generated` is how many claims it has made so far; `nextDates` its first five
  *  dates after the sheet's today and on or before its end, comma and space separated, dates in a pause
  *  (on or after the day it was paused, before the day it was resumed) left out; `paused` whether it is paused now;
- *  `changes` its amount's changes, oldest first, each `<date> amount=<amount>` (`amount` is the amount now). */
+ *  `changes` its amount's changes, oldest first, each `<date> amount=<amount>` (`amount` is the amount now);
+ *  `sheet` the descendant sheet its claims are made on, for the person of the same name there (blank: its own). */
 export type Plan = {
   id: string;
   personId: string;
@@ -19,6 +20,7 @@ export type Plan = {
   nextDates: string;
   paused: boolean;
   changes: string[];
+  sheet: string;
 };
 
 export const plansKey = (sheetId: string) => ['sheet', sheetId, 'plans'] as const;

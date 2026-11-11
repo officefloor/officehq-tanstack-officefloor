@@ -42,7 +42,8 @@ public class ValidatePlan {
             every = Integer.parseInt(rawEvery);
         }
         if (start != null && end.isBefore(start)) throw new InvalidPlanException("A plan's end is not before its start");
-        body.set(new PlanInput(claim.amount(), start, every, day, end));
+        String sheet = request.sheet() == null || request.sheet().isBlank() ? null : request.sheet().trim();
+        body.set(new PlanInput(claim.amount(), start, every, day, end, sheet));
     }
 
     private static LocalDate date(String raw, String what) throws InvalidPlanException {

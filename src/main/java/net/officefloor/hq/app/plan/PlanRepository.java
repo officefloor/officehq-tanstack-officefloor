@@ -19,13 +19,13 @@ import org.springframework.stereotype.Repository;
 public class PlanRepository {
 
     private static final String COLUMNS = "p.id, p.sheet_id, p.person_id, p.amount, p.start_date, p.every_days, p.day_of_month,"
-            + " p.end_date, (SELECT COUNT(*) FROM plan_claim c WHERE c.plan_id = p.id) AS generated";
+            + " p.end_date, p.target_sheet_id, (SELECT COUNT(*) FROM plan_claim c WHERE c.plan_id = p.id) AS generated";
 
     private static final RowMapper<Plan> ROW = (rs, n) -> new Plan(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getLong("person_id"), rs.getBigDecimal("amount").setScale(2),
             rs.getDate("start_date").toLocalDate(), rs.getObject("every_days", Integer.class),
             rs.getObject("day_of_month", Integer.class), rs.getDate("end_date").toLocalDate(),
-            rs.getInt("generated"), List.of(), List.of());
+            rs.getInt("generated"), List.of(), List.of(), rs.getString("target_sheet_id"));
 
     private final JdbcTemplate jdbc;
 
@@ -55,7 +55,7 @@ public class PlanRepository {
                 (rs, n) -> new PlanChange(rs.getDate("changed_on").toLocalDate(), rs.getBigDecimal("amount").setScale(2)),
                 p.id());
         return new Plan(p.id(), p.sheetId(), p.personId(), p.amount(), p.start(), p.every(), p.day(), p.end(),
-                p.generated(), pauses, changes);
+                p.generated(), pauses, changes, p.target());
     }
 
     /** Pauses the plan from that day. */
@@ -81,7 +81,7 @@ public class PlanRepository {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO plan (sheet_id, person_id, amount, start_date, every_days, day_of_month, end_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO plan (sheet_id, person_id, amount, start_date, every_days, day_of_month, end_date, target_sheet_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, plan.sheetId());
             ps.setLong(2, plan.personId());
@@ -90,11 +90,12 @@ public class PlanRepository {
             ps.setObject(5, plan.every(), Types.INTEGER);
             ps.setObject(6, plan.day(), Types.INTEGER);
             ps.setDate(7, Date.valueOf(plan.end()));
+            ps.setString(8, plan.target());
             return ps;
         }, keys);
         long id = ((Number) keys.getKeys().get("ID")).longValue();
         return new Plan(id, plan.sheetId(), plan.personId(), plan.amount(), plan.start(), plan.every(), plan.day(),
-                plan.end(), 0, List.of(), List.of());
+                plan.end(), 0, List.of(), List.of(), plan.target());
     }
 
     /** The dates the plan has made its claim for. */
