@@ -1,0 +1,90 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index fbd977ef5..902d62bf3 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -135,11 +135,17 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person })
+       reset();
+       void queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+     },
+-    onError: (_e, { id }) => {
++    onError: (_e, { id, body }) => {
+       // Only a draft can be edited: an edit of an open (or later) claim is refused on the claim.
+       const claim = id === null ? undefined : claims.find((c) => c.id === id);
+       if (claim !== undefined && claim.status !== 'DRAFT') {
+         setRefused({ id: claim.id, message: 'Only a draft claim can be edited.' });
++      } else if (claim !== undefined && claim.lines.length > 0 && body.amount !== claim.amount) {
++        // A claim with lines takes their total as its amount: no save of this editor could change
++        // it, so the editor is closed (its lock released) and the form is back to adding.
++        unlock.mutate(claim.id);
++        reset();
++        setError('A claim with lines takes their total as its amount.');
+       } else {
+         setError('That claim could not be saved (is its reference already used on the sheet?).');
+       }
+diff --git a/src/main/frontend/features/timeline/timeline.slot.tsx b/src/main/frontend/features/timeline/timeline.slot.tsx
+new file mode 100644
+index 000000000..95c461793
+--- /dev/null
++++ b/src/main/frontend/features/timeline/timeline.slot.tsx
+@@ -0,0 +1,61 @@
++import { PersonHead, PersonRow } from '../../slots/defs/personRow';
++import type { Person } from '../people/people';
++import { useClaims } from '../claims/claims';
++import type { Claim } from '../claims/claims';
++
++function TimelineHead() {
++  return <th>Timeline</th>;
++}
++
++/** The order of a date's lines: grade changes, then claims, then holds, then retirements, then unretirements. */
++const KIND = { grade: 0, claim: 1, hold: 2, retired: 3, unretired: 4 } as const;
++
++type Line = { date: string; kind: number; text: string };
++
++/**
++ * A person's timeline: one line per dated thing about them, by date, then by kind (see KIND), then
++ * by the line itself — a grade they were given from a date, each of their claims (any status,
++ * deleted too), each hold, each retirement (past and current) and each unretirement.
++ */
++export function timeline(person: Person, claims: Claim[]): string[] {
++  const lines: Line[] = [];
++  person.grades.forEach((g) => {
++    if (g.from !== '') lines.push({ date: g.from, kind: KIND.grade, text: `grade ${g.grade}` });
++  });
++  claims
++    .filter((c) => c.personId === person.id)
++    .forEach((c) =>
++      lines.push({ date: c.date, kind: KIND.claim, text: `claim ${c.amount} ${c.status}` }),
++    );
++  person.holds.forEach((h) =>
++    lines.push({ date: h.from, kind: KIND.hold, text: h.to === '' ? 'hold' : `hold to ${h.to}` }),
++  );
++  person.retirements.forEach((r) => {
++    const [from, to] = r.split(' to ');
++    lines.push({ date: from, kind: KIND.retired, text: 'retired' });
++    lines.push({ date: to, kind: KIND.unretired, text: 'unretired' });
++  });
++  if (person.retiredFrom !== '') {
++    lines.push({ date: person.retiredFrom, kind: KIND.retired, text: 'retired' });
++  }
++  lines.sort((a, b) => a.date.localeCompare(b.date) || a.kind - b.kind || (a.text < b.text ? -1 : a.text > b.text ? 1 : 0));
++  return lines.map((l) => `${l.date} ${l.text}`);
++}
++
++function PersonTimeline({ sheetId, person }: { sheetId: string; person: Person }) {
++  const claims = useClaims(sheetId).data ?? [];
++  return (
++    <td>
++      {timeline(person, claims).map((line, i) => (
++        <div key={i} data-testid="person-timeline-line">
++          {line}
++        </div>
++      ))}
++    </td>
++  );
++}
++
++export const contributions = [
++  PersonHead.fill({ order: 45, Component: TimelineHead }),
++  PersonRow.fill({ order: 45, Component: PersonTimeline }),
++];
