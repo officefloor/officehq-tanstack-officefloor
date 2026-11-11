@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOnce } from '../../query/useOnce';
 import { postJson } from '../../api/http';
 import { PersonHead, PersonRow } from '../../slots/defs/personRow';
-import { gradeOn, usePeople, peopleKey } from '../people/people';
+import { gradeOn, nameWithGrade, usePeople, peopleKey } from '../people/people';
 import type { Person } from '../people/people';
 import { useClaims } from '../claims/claims';
 import { addDays, claimDue, rateOn, shareOf, sumDue, useRates } from '../rates/rates';
@@ -46,7 +46,7 @@ function PersonPatrons({ sheetId, person }: { sheetId: string; person: Person })
   const names = patrons
     .slice()
     .sort((a, b) => a.person.name.localeCompare(b.person.name))
-    .map(({ person: p, share }) => `${p.name} ${share}`)
+    .map(({ person: p, share }) => `${nameWithGrade(p)} ${share}`)
     .join(', ');
   const since = today === '' ? '' : addDays(today, -89);
   const backing = sumDue(

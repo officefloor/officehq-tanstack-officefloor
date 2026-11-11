@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { useIsFetching, useMutation, useQueryClient } from '@tanstack/react-query';
+import { notifyManager, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOnce } from '../../query/useOnce';
 import { postJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/session';
-import { peopleKey } from '../people/people';
-import { claimsKey } from '../claims/claims';
+import { peopleKey, peopleQuery } from '../people/people';
+import { claimsKey, claimsQuery } from '../claims/claims';
 
 type Result = { added: number };
 
@@ -22,8 +22,6 @@ function PasteClaims({ sheetId }: { sheetId: string }) {
   const [result, setResult] = useState<Result | null>(null);
   const [error, setError] = useState('');
   const [user] = useUser();
-  const rereading =
-    useIsFetching({ queryKey: peopleKey(sheetId) }) + useIsFetching({ queryKey: claimsKey(sheetId) }) > 0;
 
   const once = useOnce();
   const paste = useMutation({
@@ -37,16 +35,24 @@ function PasteClaims({ sheetId }: { sheetId: string }) {
       return postJson<Result>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/paste`, body, user);
     },
     // The count shows once the lists are re-read, so the pasted claims are listed when it appears:
-    // it is kept at once, while the re-read is under way, and held back until that is done, so the
-    // rows and the count show in the same render.
+    // the people and the claims are read again together and stored, with the count, in one batch,
+    // so the rows and the count show in the same render. What else hangs off the people and the
+    // claims is re-read after.
     onSuccess: async (r) => {
       setText('');
-      const reread = Promise.all([
-        queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
-        queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+      const [people, claims] = await Promise.all([
+        peopleQuery(sheetId).queryFn(),
+        claimsQuery(sheetId).queryFn(),
       ]);
-      setResult(r);
-      await reread;
+      notifyManager.batch(() => {
+        queryClient.setQueryData(peopleKey(sheetId), people);
+        queryClient.setQueryData(claimsKey(sheetId), claims);
+        notifyManager.schedule(() => setResult(r));
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheetId), predicate: (q) => q.queryKey.length > 3 }),
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheetId), predicate: (q) => q.queryKey.length > 3 }),
+      ]);
     },
     onError: () => setError('Those claims could not be added and opened: check every line.'),
   });
@@ -80,7 +86,7 @@ function PasteClaims({ sheetId }: { sheetId: string }) {
         <button type="submit" data-testid="paste-submit" disabled={paste.isPending}>
           Add and open pasted claims
         </button>
-        {result !== null && !rereading && (
+        {result !== null && (
           <>
             {' '}Went through <span data-testid="paste-added">{result.added}</span>
           </>

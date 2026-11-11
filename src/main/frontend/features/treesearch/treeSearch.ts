@@ -1,6 +1,6 @@
 import { getJsonNow } from '../../api/http';
 import type { Claim } from '../claims/claims';
-import { liveHolds } from '../people/people';
+import { liveHolds, nameWithGrade } from '../people/people';
 import type { Person } from '../people/people';
 import { personDueTotal } from '../rates/rates';
 import type { Rate } from '../rates/rates';
@@ -8,7 +8,7 @@ import { floorOf, lateOf } from '../access/access';
 import type { Settings } from '../access/access';
 import type { Sheet } from '../sheet/sheet';
 
-/** One person found: their sheet, their name and their due-total as their sheet's list shows it. */
+/** One person found: their sheet, their name with their grade and their due-total as their sheet's list shows it. */
 export type Found = { sheetId: string; name: string; dueTotal: string };
 
 const enc = encodeURIComponent;
@@ -36,7 +36,7 @@ async function searchSheet(sheetId: string, text: string): Promise<Found[]> {
     .filter((p) => matches(p, text))
     .map((p) => ({
       sheetId,
-      name: p.name,
+      name: nameWithGrade(p),
       dueTotal: personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap),
     }));
 }

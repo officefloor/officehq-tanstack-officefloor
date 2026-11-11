@@ -15,6 +15,9 @@ export function gradeOn(grades: GradeFrom[], date: string): Grade {
   return best.grade;
 }
 
+/** How the screen shows a person: their name and, in brackets, their grade in force on the sheet's today. */
+export const nameWithGrade = (p: Pick<Person, 'name' | 'grade'>) => `${p.name} (${p.grade})`;
+
 // `version` is raised by each save; an edit sends the version it was made from. `statementCount`
 // is how many statements have been taken for them; `statedTotal` and `statementDate` are the last
 // one's due-total and date ('' before the first). `retired` is set once they have a retirement

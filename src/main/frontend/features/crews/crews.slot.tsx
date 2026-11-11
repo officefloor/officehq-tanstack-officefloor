@@ -5,7 +5,7 @@ import { useOnce } from '../../query/useOnce';
 import { postJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/session';
-import { usePeople } from '../people/people';
+import { nameWithGrade, usePeople } from '../people/people';
 import { crewDueTotal, crewsKey, useCrews, useDueTotals } from './crews';
 import type { Crew } from './crews';
 import { poolsKey } from '../pools/pools';
@@ -120,10 +120,11 @@ function CrewRow({ sheetId, crew, dues }: { sheetId: string; crew: Crew; dues: M
   };
 
   const total = crewDueTotal(crew, dues);
+  const lead = people.data?.find((p) => p.id === crew.leadId);
 
   return (
     <li data-testid={`crew-row-${crew.name}`}>
-      <strong>{crew.name}</strong> — lead <span data-testid="crew-lead">{crew.lead}</span>, due{' '}
+      <strong>{crew.name}</strong> — lead <span data-testid="crew-lead">{lead ? nameWithGrade(lead) : crew.lead}</span>, due{' '}
       <span data-testid="crew-due-total">{total}</span>
       <ul>
         {crew.members.map((m) => (

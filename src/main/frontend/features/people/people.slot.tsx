@@ -6,7 +6,7 @@ import { HttpError, postJson, putJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { PersonHead, PersonRow } from '../../slots/defs/personRow';
 import { useUser } from '../session/session';
-import { GRADES, peopleKey, peopleQuery, usePeople, useShowRetired } from './people';
+import { GRADES, nameWithGrade, peopleKey, peopleQuery, usePeople, useShowRetired } from './people';
 import type { Grade, Person } from './people';
 import { SORT_KEYS, useSorted, useSortBy } from './sort';
 import type { SortKey } from './sort';
@@ -231,7 +231,7 @@ function People({ sheetId }: { sheetId: string }) {
         <tbody>
           {shown.map((p) => (
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
-              <td data-testid="person-name">{p.name}</td>
+              <td data-testid="person-name">{nameWithGrade(p)}</td>
               <td data-testid="person-grade">{p.grade}</td>
               <Col name="terms"><td data-testid="person-terms">{p.terms}</td></Col>
               <Col name="contact"><td data-testid="person-contact">{p.contact}</td></Col>
