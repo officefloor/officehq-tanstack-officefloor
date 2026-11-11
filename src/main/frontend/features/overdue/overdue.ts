@@ -31,6 +31,6 @@ export function personOverdue(
   const overdue = claims.filter((c) => counts(c, holds, today) && isOverdue(c, today, late, gradeOn(grades, c.date)));
   return {
     count: overdue.length,
-    total: sumDue(overdue.map((c) => claimDue(c, rateOn(rates, gradeOn(grades, c.date), c.date), floor, late, gradeOn(grades, c.date)))),
+    total: sumDue(overdue.map((c) => claimDue(c, rateOn(rates, gradeOn(grades, c.date), c.date, c.id), floor, late, gradeOn(grades, c.date)))),
   };
 }

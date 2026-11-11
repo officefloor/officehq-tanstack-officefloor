@@ -73,7 +73,7 @@ function ExportClaims({ sheetId }: { sheetId: string }) {
       const own = claims.filter((c) => c.personId === p.id).reverse();
       for (const c of own) {
         const grade = gradeOn(p.grades, c.date);
-        const due = claimDue(c, rateOn(rates, grade, c.date), floor, late, grade);
+        const due = claimDue(c, rateOn(rates, grade, c.date, c.id), floor, late, grade);
         lines.push([p.name, c.number, c.date, c.amount, due, c.status, periodOf(periods, c.dueBy)?.name ?? '']);
       }
     }

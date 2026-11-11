@@ -27,11 +27,14 @@ function PasteClaims({ sheetId }: { sheetId: string }) {
   const paste = useMutation({
     mutationFn: (body: { text: string }) =>
       postJson<Result>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/paste`, body, user),
-    onSuccess: (r) => {
-      setResult(r);
+    // The count shows once the lists are re-read, so the pasted claims are listed when it appears.
+    onSuccess: async (r) => {
       setText('');
-      void queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
-      void queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+      ]);
+      setResult(r);
     },
     onError: () => setError('Those claims could not be added and opened: check every line.'),
   });

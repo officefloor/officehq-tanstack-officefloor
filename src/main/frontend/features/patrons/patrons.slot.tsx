@@ -54,7 +54,7 @@ function PersonPatrons({ sheetId, person }: { sheetId: string; person: Person })
         sumDue(
           claims
             .filter((c) => c.personId === p.id && c.status === 'SETTLED' && c.date >= since && c.date <= today)
-            .map((c) => claimDue(c, rateOn(rates, gradeOn(p.grades, c.date), c.date), floor, late, gradeOn(p.grades, c.date))),
+            .map((c) => claimDue(c, rateOn(rates, gradeOn(p.grades, c.date), c.date, c.id), floor, late, gradeOn(p.grades, c.date))),
         ),
         share,
       ),

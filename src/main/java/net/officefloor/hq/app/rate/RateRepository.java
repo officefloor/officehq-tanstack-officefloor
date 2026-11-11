@@ -18,7 +18,8 @@ public class RateRepository {
 
     private static final RowMapper<Rate> ROW = (rs, n) -> new Rate(rs.getString("sheet_id"),
             rs.getString("grade"), rs.getBigDecimal("pct"), rs.getObject("from_date", LocalDate.class),
-            rs.getObject("to_date", LocalDate.class), 0, rs.getInt("version"));
+            rs.getObject("to_date", LocalDate.class), 0, rs.getInt("version"),
+            rs.getObject("added_after", Long.class), null);
 
     private final JdbcTemplate jdbc;
 
@@ -54,30 +55,53 @@ public class RateRepository {
         return ancestors;
     }
 
-    /** The rates set on the sheet itself, by grade then from-date (none first). */
+    /**
+     * The rates set on the sheet itself, by grade then from-date (none first), each with the older
+     * versions it replaced (for the claims a forward-only version does not apply to).
+     */
     private List<Rate> findOwn(String sheetId) {
-        return jdbc.query("SELECT sheet_id, grade, pct, from_date, to_date, version FROM rate WHERE sheet_id = ?"
-                + " ORDER BY grade, from_date NULLS FIRST", ROW, sheetId);
+        Map<String, Rate> older = new LinkedHashMap<>();
+        jdbc.query("SELECT sheet_id, grade, pct, from_date, to_date, version, added_after FROM rate_version"
+                + " WHERE sheet_id = ? ORDER BY version, id", (rs) -> {
+                    Rate rate = ROW.mapRow(rs, 0);
+                    String key = key(rate);
+                    older.put(key, rate.withHistory(rate.addedAfter(), older.get(key)));
+                }, sheetId);
+        return jdbc.query("SELECT sheet_id, grade, pct, from_date, to_date, version, added_after FROM rate"
+                + " WHERE sheet_id = ? ORDER BY grade, from_date NULLS FIRST", ROW, sheetId).stream()
+                .map((r) -> r.withHistory(r.addedAfter(), older.get(key(r))))
+                .toList();
+    }
+
+    private static String key(Rate rate) {
+        return rate.grade() + "|" + rate.from();
     }
 
     /**
      * Set the grade's rate from its from-date as a new version: any it had for that from-date is kept
-     * as an older version. Returns the rate at its version.
+     * as an older version. A rate with a from-date on or after the sheet's today is forward-only: it
+     * applies only to claims added after now (those above the highest claim id). Returns the rate at
+     * its version.
      */
     public Rate save(Rate rate) {
         String where = " WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?";
-        jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, pct, to_date)"
-                + " SELECT sheet_id, grade, from_date, version, pct, to_date FROM rate" + where,
+        jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, pct, to_date, added_after)"
+                + " SELECT sheet_id, grade, from_date, version, pct, to_date, added_after FROM rate" + where,
                 rate.sheetId(), rate.grade(), rate.from());
         Integer last = jdbc.queryForObject("SELECT MAX(version) FROM rate" + where, Integer.class,
                 rate.sheetId(), rate.grade(), rate.from());
-        Rate saved = rate.withVersion(last == null ? 1 : last + 1);
+        LocalDate today = jdbc.queryForObject("SELECT today FROM sheet WHERE id = ?", LocalDate.class, rate.sheetId());
+        Long addedAfter = rate.from() != null && today != null && !rate.from().isBefore(today)
+                ? jdbc.queryForObject("SELECT COALESCE(MAX(id), 0) FROM claim", Long.class)
+                : null;
+        Rate saved = rate.withVersion(last == null ? 1 : last + 1).withHistory(addedAfter, null);
         jdbc.update("DELETE FROM rate" + where, rate.sheetId(), rate.grade(), rate.from());
-        jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date, version) VALUES (?, ?, ?, ?, ?, ?)",
-                saved.sheetId(), saved.grade(), saved.pct(), saved.from(), saved.to(), saved.version());
-        jdbc.update("INSERT INTO rate_history (sheet_id, grade, pct, from_date, to_date, set_on)"
-                + " VALUES (?, ?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
-                rate.sheetId(), rate.grade(), rate.pct(), rate.from(), rate.to(), rate.sheetId());
+        jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date, version, added_after)"
+                + " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                saved.sheetId(), saved.grade(), saved.pct(), saved.from(), saved.to(), saved.version(), addedAfter);
+        jdbc.update("INSERT INTO rate_history (sheet_id, grade, pct, from_date, to_date, set_on, added_after)"
+                + " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                rate.sheetId(), rate.grade(), rate.pct(), rate.from(), rate.to(), today, addedAfter);
         return saved;
     }
 
@@ -99,12 +123,13 @@ public class RateRepository {
 
     private List<Rate> findOwnAsOf(String sheetId, LocalDate day) {
         Map<String, Rate> latest = new LinkedHashMap<>();
-        jdbc.query("SELECT sheet_id, grade, pct, from_date, to_date, 1 AS version FROM rate_history WHERE sheet_id = ?"
-                + " AND set_on <= ? ORDER BY id", (rs) -> {
+        jdbc.query("SELECT sheet_id, grade, pct, from_date, to_date, 1 AS version, added_after FROM rate_history"
+                + " WHERE sheet_id = ? AND set_on <= ? ORDER BY id", (rs) -> {
                     Rate rate = ROW.mapRow(rs, 0);
-                    String key = rate.grade() + "|" + rate.from();
+                    String key = key(rate);
                     Rate before = latest.get(key);
-                    latest.put(key, before == null ? rate : rate.withVersion(before.version() + 1));
+                    latest.put(key, before == null ? rate
+                            : rate.withVersion(before.version() + 1).withHistory(rate.addedAfter(), before));
                 }, sheetId, java.sql.Date.valueOf(day));
         return new ArrayList<>(latest.values());
     }

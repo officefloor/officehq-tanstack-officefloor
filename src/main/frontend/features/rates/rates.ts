@@ -9,9 +9,15 @@ import type { Claim } from '../claims/claims';
  * A grade's rate: a percent with two decimals, from a date (yyyy-MM-dd; '' when it applies from the
  * beginning of time) through a date (yyyy-MM-dd; '' when it has no end), and its level: 0 when set
  * on the sheet itself, 1 on its parent sheet, and so on up to MAX_LEVEL; and its version: how many
- * times a rate has been set for its grade and from-date (it is the newest of them).
+ * times a rate has been set for its grade and from-date (it is the newest of them). A forward-only
+ * rate (saved with a from-date on or after the sheet's today) applies only to claims added after it
+ * was saved: those whose id is above `addedAfter` ('' when it applies to every claim); an older claim
+ * sees the version it `replaced` (null for none) instead.
  */
-export type Rate = { grade: Grade; pct: string; from: string; to: string; level: number; version: number };
+export type Rate = {
+  grade: Grade; pct: string; from: string; to: string; level: number; version: number;
+  addedAfter?: string; replaced?: Rate | null;
+};
 
 /** How many parent sheets up a rate is looked for. */
 export const MAX_LEVEL = 3;
@@ -28,12 +34,25 @@ export function useRates(sheetId: string) {
 }
 
 /**
- * A grade's rate in force on a date (yyyy-MM-dd): the sheet's own, else its parent sheet's, and so
- * on up the levels. Null when no level has one in force.
+ * The version of a rate that applies to a claim (by its id): the rate unless it is forward-only and
+ * the claim was on the sheet when it was saved, then the one it replaced, and so on; null when none does.
  */
-export function rateOn(rates: Rate[], grade: Grade, date: string): string | null {
+function forClaim(rate: Rate, claimId: string): Rate | null {
+  if (!rate.addedAfter || !/^\d+$/.test(claimId) || BigInt(claimId) > BigInt(rate.addedAfter)) return rate;
+  return rate.replaced ? forClaim(rate.replaced, claimId) : null;
+}
+
+/**
+ * A grade's rate in force on a date (yyyy-MM-dd): the sheet's own, else its parent sheet's, and so
+ * on up the levels. Null when no level has one in force. For a claim (`claimId`), only the rates
+ * that apply to it count (a forward-only rate applies only to claims added after it was saved);
+ * without one, every rate in force counts, as the rates panel shows them.
+ */
+export function rateOn(rates: Rate[], grade: Grade, date: string, claimId?: string): string | null {
+  const applying = claimId === undefined ? rates
+    : rates.map((r) => forClaim(r, claimId)).filter((r): r is Rate => r !== null);
   for (let level = 0; level <= MAX_LEVEL; level++) {
-    const pct = rateAt(rates, grade, date, level);
+    const pct = rateAt(applying, grade, date, level);
     if (pct !== null) return pct;
   }
   return null;
@@ -285,10 +304,10 @@ function uncappedDueTotal(
   const counted = claims.filter((c) => counts(c, holds, today));
   const grade = gradeOn(grades, today);
   const kept = (c: Claim) => c.due !== '' || (isBound(c) && c.statedDue !== NA)
-    || (gradeOn(grades, c.date) !== grade && rateOn(rates, gradeOn(grades, c.date), c.date) !== null)
-    || (c.date <= today && rateOn(rates, gradeOn(grades, c.date), c.date) !== null);
+    || (gradeOn(grades, c.date) !== grade && rateOn(rates, gradeOn(grades, c.date), c.date, c.id) !== null)
+    || (c.date <= today && rateOn(rates, gradeOn(grades, c.date), c.date, c.id) !== null);
   if (rateOn(rates, grade, today) === null && !counted.some(kept)) return NA;
-  return sumDue(counted.map((c) => claimDue(c, rateOn(rates, gradeOn(grades, c.date), c.date), floor, late, gradeOn(grades, c.date))));
+  return sumDue(counted.map((c) => claimDue(c, rateOn(rates, gradeOn(grades, c.date), c.date, c.id), floor, late, gradeOn(grades, c.date))));
 }
 
 
@@ -307,7 +326,7 @@ export function personSplitTotals(
   late: Late,
 ): { settled: string; open: string } {
   const counted = claims.filter((c) => counts(c, holds, today));
-  const dueOf = (c: Claim) => claimDue(c, rateOn(rates, gradeOn(grades, c.date), c.date), floor, late, gradeOn(grades, c.date));
+  const dueOf = (c: Claim) => claimDue(c, rateOn(rates, gradeOn(grades, c.date), c.date, c.id), floor, late, gradeOn(grades, c.date));
   return {
     settled: sumDue(counted.filter((c) => c.status === 'SETTLED').map(dueOf)),
     open: sumDue(counted.filter(isOpen).map(dueOf)),

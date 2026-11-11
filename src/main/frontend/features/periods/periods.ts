@@ -61,7 +61,7 @@ export function personPeriodDueTotal(
   return sumDue(
     claims
       .filter((c) => c.personId === person.id && countedOn(c, period.to, liveHolds(person, late.today), late.today) && period.from <= c.dueBy && c.dueBy <= period.to)
-      .map((c) => claimDue(c, rateOn(rates, gradeOn(person.grades, c.date), c.date), floor, late, gradeOn(person.grades, c.date))),
+      .map((c) => claimDue(c, rateOn(rates, gradeOn(person.grades, c.date), c.date, c.id), floor, late, gradeOn(person.grades, c.date))),
   );
 }
 
@@ -95,7 +95,7 @@ export function classicPeriodDueTotal(
     people.flatMap((person) =>
       claims
         .filter((c) => c.personId === person.id && counts(c, liveHolds(person, late.today), late.today) && period.from <= c.dueBy && c.dueBy <= period.to)
-        .map((c) => claimDue(c, rateOn(rates, gradeOn(person.grades, c.date), c.date), floor, late, gradeOn(person.grades, c.date))),
+        .map((c) => claimDue(c, rateOn(rates, gradeOn(person.grades, c.date), c.date, c.id), floor, late, gradeOn(person.grades, c.date))),
     ),
   );
 }

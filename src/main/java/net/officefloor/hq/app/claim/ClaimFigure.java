@@ -11,7 +11,8 @@ import net.officefloor.hq.app.setting.Settings;
 /**
  * A claim's figures, as the screen shows them. Its rate figure: the figure its person's last
  * statement bound it to (never while it is PENDING), else its amount times its grade's rate in
- * force on its date, divided by 100 and rounded to two decimals. Its live due: the greater of the
+ * force on its date (of the rates that apply to it: a forward-only rate only to claims added after it
+ * was saved), divided by 100 and rounded to two decimals. Its live due: the greater of the
  * sheet's floor in force on its date and its rate figure plus its late charge (worked out on the
  * rate figure alone); a correction, a negative amount, has no floor and no late charge. A settled
  * claim's due stays as it was fixed. Null for n/a (no floor applies to n/a). Every rounding of a
@@ -31,7 +32,7 @@ public final class ClaimFigure {
     /** The claim's amount at its grade's rate on its date, before any floor or late charge. */
     public static BigDecimal live(Claim claim, List<Rate> rates, String grade, Settings settings, LocalDate today) {
         RoundingMode mode = rounding(claim, settings, today);
-        return Rate.inForce(rates, grade, claim.getDate())
+        return Rate.inForce(rates, grade, claim.getDate(), claim.getId())
                 .map((pct) -> times(claim.getAmount(), pct, mode))
                 .orElse(null);
     }

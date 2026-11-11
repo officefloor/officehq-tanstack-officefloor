@@ -370,7 +370,7 @@ function TagTotals({ sheetId }: { sheetId: string }) {
   const dues = people.flatMap((p) =>
     claims
       .filter((c) => c.personId === p.id && (c.tags.length > 0 || p.tags.length > 0) && counts(c, liveHolds(p, today), today))
-      .map((c) => ({ tags: [...new Set([...c.tags, ...p.tags])], due: claimDue(c, rateOn(rates, gradeOn(p.grades, c.date), c.date), floor, late, gradeOn(p.grades, c.date)) })),
+      .map((c) => ({ tags: [...new Set([...c.tags, ...p.tags])], due: claimDue(c, rateOn(rates, gradeOn(p.grades, c.date), c.date, c.id), floor, late, gradeOn(p.grades, c.date)) })),
   );
   if (tags.length === 0) return null;
   return (
@@ -400,7 +400,7 @@ function MonthTotals({ sheetId }: { sheetId: string }) {
   const dues = people.flatMap((p) =>
     claims
       .filter((c) => c.personId === p.id && counts(c, liveHolds(p, today), today))
-      .map((c) => ({ month: c.date.slice(0, 7), due: claimDue(c, rateOn(rates, gradeOn(p.grades, c.date), c.date), floor, late, gradeOn(p.grades, c.date)) })),
+      .map((c) => ({ month: c.date.slice(0, 7), due: claimDue(c, rateOn(rates, gradeOn(p.grades, c.date), c.date, c.id), floor, late, gradeOn(p.grades, c.date)) })),
   );
   if (months.length === 0) return null;
   return (
