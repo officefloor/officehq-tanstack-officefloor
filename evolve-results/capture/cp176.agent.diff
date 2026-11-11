@@ -1,0 +1,336 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 9f230280d..d2a4e5a69 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -34,6 +34,8 @@ export type Claim = {
+   openedBy: string;
+   stated: boolean;
+   statedDue: string;
++  /** The late charge its person's last statement bound it to, with its figure ('' when none is bound: it follows the sheet's today). */
++  statedLate: string;
+   corrects: string;
+   roundDate: string;
+   /** Its due-by (yyyy-MM-dd), fixed when it was made: the terms-th business day after its date (skipping weekends and the sheet's holidays then), its terms its person's own, else its grade's then. */
+diff --git a/src/main/frontend/features/paste/paste.slot.tsx b/src/main/frontend/features/paste/paste.slot.tsx
+index e24057371..16c0e0db1 100644
+--- a/src/main/frontend/features/paste/paste.slot.tsx
++++ b/src/main/frontend/features/paste/paste.slot.tsx
+@@ -27,8 +27,15 @@ function PasteClaims({ sheetId }: { sheetId: string }) {
+ 
+   const once = useOnce();
+   const paste = useMutation({
+-    mutationFn: (body: { text: string }) =>
+-      postJson<Result>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/paste`, body, user),
++    // A re-read already under way could answer after the paste is stored and list its claims
++    // before the count shows: it is cancelled first, and the lists are re-read once the paste is done.
++    mutationFn: async (body: { text: string }) => {
++      await Promise.all([
++        queryClient.cancelQueries({ queryKey: peopleKey(sheetId) }),
++        queryClient.cancelQueries({ queryKey: claimsKey(sheetId) }),
++      ]);
++      return postJson<Result>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/paste`, body, user);
++    },
+     // The count shows once the lists are re-read, so the pasted claims are listed when it appears:
+     // it is kept at once, while the re-read is under way, and held back until that is done, so the
+     // rows and the count show in the same render.
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index aac7cbb98..f16a085c3 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -195,10 +195,12 @@ export function addDays(date: string, days: number): string {
+  * A claim's late charge on its `figure`: for an OPEN or PENDING claim past its due-by (fixed when it was
+  * made) plus its grade's grace ({@link overdueFrom}) on the sheet's today, for every full 30 days it is
+  * overdue the late percent in force on that boundary date (that day plus 30, 60, 90 ... days) of the figure plus the
+- * charges of the boundaries before it (compounding), each rounded as the claim rounds, added up; else nothing (as for a claim deferred on the sheet's today, or one whose late charge a steward waived, whatever its overdue state). A statement never binds it: it follows the sheet's today.
++ * charges of the boundaries before it (compounding), each rounded as the claim rounds, added up; else nothing (as for a claim deferred on the sheet's today, or one whose late charge a steward waived, whatever its overdue state). While a statement binds it with a late charge, that charge, whatever the
++ * sheet's today; else it follows the sheet's today.
+  */
+ function lateCharge(claim: Claim, figure: string, late: Late, grade: string): bigint {
+   if (!isOpen(claim) || isDeferred(claim, late.today) || figure === NA || late.today === '' || isCorrection(claim) || claim.waived) return 0n;
++  if (isBound(claim) && claim.statedLate !== '') return hundredths(claim.statedLate);
+   const from = overdueFrom(claim, grade, late);
+   const overdue = daysBetween(from, late.today);
+   const periods = overdue > 0 ? Math.floor(overdue / 30) : 0;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 8befcbd03..8bef4fece 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -18,6 +18,7 @@ public class Claim {
+     private String editedBy;
+     private boolean stated;
+     private BigDecimal statedDue;
++    private BigDecimal statedLate;
+     private String corrects;
+     private LocalDate correctedDate;
+     private boolean relisted;
+@@ -235,10 +236,23 @@ public class Claim {
+     public boolean isBound() {
+         return stated;
+     }
++    /**
++     * The late charge its person's last statement bound it to, with its figure; null when none is
++     * bound (it is not stated, or its figure is n/a): its late charge then follows the sheet's today.
++     */
++    public BigDecimal getStatedLate() { return statedLate; }
+     /** Bind it to a figure (null: n/a), or leave it unbound (live) when {@code stated} is false. */
+     public void bind(boolean stated, BigDecimal statedDue) {
++        bind(stated, statedDue, null);
++    }
++    /**
++     * Bind it to a figure (null: n/a) and the late charge on it then (null: none bound), or leave it
++     * unbound (live) when {@code stated} is false.
++     */
++    public void bind(boolean stated, BigDecimal statedDue, BigDecimal statedLate) {
+         this.stated = stated;
+         this.statedDue = stated ? statedDue : null;
++        this.statedLate = stated && statedDue != null ? statedLate : null;
+     }
+     /**
+      * Whether it counts toward its person's claimed and due-total, the sheet's totals and a
+@@ -265,9 +279,10 @@ public class Claim {
+      * A copy of it as it stood at the end of a day: with the status, settled due and statement
+      * binding it had then, the rest as it is now.
+      */
+-    public Claim asThen(ClaimStatus statusThen, BigDecimal settledDueThen, boolean statedThen, BigDecimal statedDueThen) {
++    public Claim asThen(ClaimStatus statusThen, BigDecimal settledDueThen, boolean statedThen, BigDecimal statedDueThen,
++            BigDecimal statedLateThen) {
+         Claim then = new Claim(id, sheetId, personId, amount, date, note, statusThen, number, settledDueThen, openedBy);
+-        then.bind(statedThen, statedDueThen);
++        then.bind(statedThen, statedDueThen, statedLateThen);
+         then.corrects = corrects;
+         then.correctedDate = correctedDate;
+         then.dueBy = dueBy;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimFigure.java b/src/main/java/net/officefloor/hq/app/claim/ClaimFigure.java
+index 2fe458e45..64d52fe0c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimFigure.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimFigure.java
+@@ -71,11 +71,12 @@ public final class ClaimFigure {
+      * sheet's late percent in force on that boundary date (that day plus 30, 60, 90 ... days) of the figure plus the
+      * charges of the boundaries before it (compounding), each rounded to two
+      * decimals as the claim rounds, added up; else 0.00 (as for a claim deferred on today, or one whose late charge
+-     * a steward waived, whatever its overdue state). Never bound by a statement:
+-     * it follows the sheet's today until the claim is settled.
++     * a steward waived, whatever its overdue state). While a statement binds it with a late charge, that
++     * charge, whatever the sheet's today; else it follows the sheet's today until the claim is settled.
+      */
+     public static BigDecimal late(Claim claim, BigDecimal figure, String grade, Settings settings, LocalDate today) {
+         if (!claim.isOpen() || claim.isDeferredOn(today)) return BigDecimal.ZERO.setScale(2);
++        if (claim.isBound() && claim.getStatedLate() != null && !claim.isWaived()) return claim.getStatedLate();
+         return lateAsOpen(claim, figure, grade, settings, today);
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 4bbb11c40..ffae1dd79 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -18,7 +18,7 @@ import org.springframework.stereotype.Repository;
+ @Repository
+ public class ClaimRepository {
+ 
+-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, edited_by, stated, stated_due, corrects, due_by, terms, deferred_until, proofs, split_from, late_entry, reminded_on, ext_ref, tags, void_reason, settle_batch, review_on, waived,"
++    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, edited_by, stated, stated_due, stated_late, corrects, due_by, terms, deferred_until, proofs, split_from, late_entry, reminded_on, ext_ref, tags, void_reason, settle_batch, review_on, waived,"
+             + " (SELECT c.claim_date FROM claim c WHERE c.sheet_id = claim.sheet_id AND c.person_id = claim.person_id"
+             + " AND c.claim_number = claim.corrects) AS corrected_date,"
+             + " CASE WHEN locked_on = (SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id) THEN locked_by END AS locked_by_now";
+@@ -31,7 +31,7 @@ public class ClaimRepository {
+             rs.getString("claim_number"), rs.getBigDecimal("settled_due"),
+             rs.getString("opened_by"));
+         claim.setEditedBy(rs.getString("edited_by"));
+-        claim.bind(rs.getBoolean("stated"), rs.getBigDecimal("stated_due"));
++        claim.bind(rs.getBoolean("stated"), rs.getBigDecimal("stated_due"), rs.getBigDecimal("stated_late"));
+         claim.setCorrects(rs.getString("corrects"));
+         claim.setDueBy(rs.getDate("due_by").toLocalDate());
+         claim.setTerms(rs.getInt("terms"));
+@@ -217,8 +217,8 @@ public class ClaimRepository {
+                 Long.class, sheetId);
+     }
+ 
+-    /** A claim's statement binding: bound (to a figure, null: n/a) or not. */
+-    public record Binding(boolean stated, BigDecimal statedDue) {
++    /** A claim's statement binding: bound (to a figure, null: n/a, and a late charge, null: none bound) or not. */
++    public record Binding(boolean stated, BigDecimal statedDue, BigDecimal statedLate) {
+     }
+ 
+     /**
+@@ -226,14 +226,16 @@ public class ClaimRepository {
+      * the one stored.
+      */
+     private void keepBinding(Claim claim) {
+-        List<Binding> stored = jdbc.query("SELECT stated, stated_due FROM claim WHERE id = ? AND sheet_id = ?",
+-                (rs, n) -> new Binding(rs.getBoolean("stated"), rs.getBigDecimal("stated_due")),
++        List<Binding> stored = jdbc.query("SELECT stated, stated_due, stated_late FROM claim WHERE id = ? AND sheet_id = ?",
++                (rs, n) -> new Binding(rs.getBoolean("stated"), rs.getBigDecimal("stated_due"), rs.getBigDecimal("stated_late")),
+                 claim.getId(), claim.getSheetId());
+         if (!stored.isEmpty() && stored.get(0).stated() == claim.isStated()
+-                && same(stored.get(0).statedDue(), claim.getStatedDue())) return;
+-        jdbc.update("INSERT INTO claim_binding (sheet_id, claim_id, stated, stated_due, set_on)"
+-                + " VALUES (?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
+-                claim.getSheetId(), claim.getId(), claim.isStated(), claim.getStatedDue(), claim.getSheetId());
++                && same(stored.get(0).statedDue(), claim.getStatedDue())
++                && same(stored.get(0).statedLate(), claim.getStatedLate())) return;
++        jdbc.update("INSERT INTO claim_binding (sheet_id, claim_id, stated, stated_due, stated_late, set_on)"
++                + " VALUES (?, ?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
++                claim.getSheetId(), claim.getId(), claim.isStated(), claim.getStatedDue(), claim.getStatedLate(),
++                claim.getSheetId());
+     }
+ 
+     private static boolean same(BigDecimal a, BigDecimal b) {
+@@ -246,9 +248,10 @@ public class ClaimRepository {
+      */
+     public Map<Long, Binding> bindingsOn(String sheetId, LocalDate day) {
+         Map<Long, Binding> bindings = new HashMap<>();
+-        jdbc.query("SELECT claim_id, stated, stated_due FROM claim_binding WHERE sheet_id = ? AND set_on <= ? ORDER BY id",
++        jdbc.query("SELECT claim_id, stated, stated_due, stated_late FROM claim_binding WHERE sheet_id = ? AND set_on <= ? ORDER BY id",
+                 (rs) -> {
+-                    bindings.put(rs.getLong("claim_id"), new Binding(rs.getBoolean("stated"), rs.getBigDecimal("stated_due")));
++                    bindings.put(rs.getLong("claim_id"), new Binding(rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
++                            rs.getBigDecimal("stated_late")));
+                 }, sheetId, Date.valueOf(day));
+         return bindings;
+     }
+@@ -298,10 +301,10 @@ public class ClaimRepository {
+                         claim.getPersonId(), nextListed(claim.getSheetId()), claim.getId(), claim.getSheetId());
+             }
+             keepBinding(claim);
+-            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?, edited_by = ?, stated = ?, stated_due = ?, corrects = ?, deferred_until = ?, proofs = ?, ext_ref = ?, tags = ?, void_reason = ?, settle_batch = ? WHERE id = ? AND sheet_id = ?",
++            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?, edited_by = ?, stated = ?, stated_due = ?, stated_late = ?, corrects = ?, deferred_until = ?, proofs = ?, ext_ref = ?, tags = ?, void_reason = ?, settle_batch = ? WHERE id = ? AND sheet_id = ?",
+                     claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(),
+                     claim.getStatus().name(), claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getEditedBy(),
+-                    claim.isStated(), claim.getStatedDue(), claim.getCorrects(),
++                    claim.isStated(), claim.getStatedDue(), claim.getStatedLate(), claim.getCorrects(),
+                     claim.getDeferredUntil() == null ? null : Date.valueOf(claim.getDeferredUntil()), claim.getProofs(), claim.getRef(), claim.getTags(), claim.getVoidReason(), claim.getSettleBatch(), claim.getId(),
+                     claim.getSheetId());
+             keepHistory(claim);
+@@ -362,9 +365,9 @@ public class ClaimRepository {
+         jdbc.update("UPDATE claim_line SET sheet_id = ? WHERE claim_id = ?", toSheet, claim.getId());
+         // The figure a statement bound it to arrives with it, bound there from that sheet's today.
+         if (claim.isStated()) {
+-            jdbc.update("INSERT INTO claim_binding (sheet_id, claim_id, stated, stated_due, set_on)"
+-                    + " VALUES (?, ?, TRUE, ?, (SELECT today FROM sheet WHERE id = ?))",
+-                    toSheet, claim.getId(), claim.getStatedDue(), toSheet);
++            jdbc.update("INSERT INTO claim_binding (sheet_id, claim_id, stated, stated_due, stated_late, set_on)"
++                    + " VALUES (?, ?, TRUE, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
++                    toSheet, claim.getId(), claim.getStatedDue(), claim.getStatedLate(), toSheet);
+         }
+         jdbc.update("INSERT INTO claim_history (sheet_id, claim_id, " + HISTORY_COLUMNS + ", set_on)"
+                 + " SELECT sheet_id, id, " + HISTORY_COLUMNS + ", (SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id)"
+@@ -438,7 +441,7 @@ public class ClaimRepository {
+     }
+ 
+     private static final String HISTORY_COLUMNS = "person_id, amount, claim_date, note, status, claim_number, settled_due,"
+-            + " opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, late_entry, listed, tags, void_reason, settle_batch, ext_ref, reminded_on, review_on, waived";
++            + " opened_by, stated, stated_due, stated_late, corrects, due_by, deferred_until, proofs, split_from, late_entry, listed, tags, void_reason, settle_batch, ext_ref, reminded_on, review_on, waived";
+ 
+     /** Keeps the claim as the store now holds it in its history, with the sheet's today now. */
+     private void keepHistory(Claim claim) {
+@@ -460,7 +463,7 @@ public class ClaimRepository {
+                             rs.getBigDecimal("amount"), rs.getDate("claim_date").toLocalDate(), rs.getString("note"),
+                             ClaimStatus.valueOf(rs.getString("status")), rs.getString("claim_number"),
+                             rs.getBigDecimal("settled_due"), rs.getString("opened_by"));
+-                    claim.bind(rs.getBoolean("stated"), rs.getBigDecimal("stated_due"));
++                    claim.bind(rs.getBoolean("stated"), rs.getBigDecimal("stated_due"), rs.getBigDecimal("stated_late"));
+                     claim.setCorrects(rs.getString("corrects"));
+                     claim.setDueBy(rs.getDate("due_by").toLocalDate());
+                     Date deferred = rs.getDate("deferred_until");
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+index 3b943b161..70e857171 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+@@ -18,13 +18,15 @@ import java.util.List;
+  * as yyyy-MM-dd ("" when never); and its external reference ("" when none); and its tags, sorted (none: empty); and the reason it was voided with ("" when none); and its comments, oldest first, as
+  * {@code <user> on <date>: <text>}; and the number of the bulk settle batch that settled it ("" when none did);
+  * and its lines, oldest first, as {@code <label> <qty> x <unit>}; and its review day, the sheet's today when it
+- * went to REVIEW, as yyyy-MM-dd ("" when it never did); and whether a steward waived its late charge.
++ * went to REVIEW, as yyyy-MM-dd ("" when it never did); and whether a steward waived its late charge; and the
++ * late charge its statement bound it to with its figure ("" when none is bound).
+  */
+ public record ClaimResponse(String id, String personId, String amount, String date, String note,
+         String status, String number, String due, String openedBy, boolean stated,
+         String statedDue, String corrects, String roundDate, String dueBy, List<String> log, String deferredUntil,
+         int proofs, String splitFrom, String lockedBy, boolean lateEntry, String remindedOn, String ref,
+-        List<String> tags, String voidReason, List<String> comments, String batch, List<String> lines, String reviewOn, boolean waived) {
++        List<String> tags, String voidReason, List<String> comments, String batch, List<String> lines, String reviewOn, boolean waived,
++        String statedLate) {
+     public static ClaimResponse from(Claim claim) {
+         return from(claim, List.of(), List.of(), List.of());
+     }
+@@ -53,6 +55,7 @@ public record ClaimResponse(String id, String personId, String amount, String da
+                 claim.getSettleBatch() == null ? "" : String.valueOf(claim.getSettleBatch()),
+                 lines,
+                 claim.getReviewOn() == null ? "" : claim.getReviewOn().toString(),
+-                claim.isWaived());
++                claim.isWaived(),
++                claim.getStatedLate() == null ? "" : claim.getStatedLate().toPlainString());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+index 4dcde1d74..28f9d1dc8 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+@@ -108,16 +108,15 @@ public class RateRepository {
+     /**
+      * The sheet's rates as they stood at the end of {@code day}: for each grade and from-date, the
+      * last rate set for them while the sheet's today was on or before it, its version counting those
+-     * set for them by then; then its parent sheets' (as they are named now) as they are now, each at its
+-     * level: a parent sheet keeps its own today, so this sheet's {@code day} does not tell which of its
+-     * rates were set by then.
++     * set for them by then; then its parent sheets' (as they are named now), each at its level and read
++     * the same way: those set while the parent's own today was on or before {@code day}.
+      */
+     public List<Rate> findAsOf(String sheetId, LocalDate day) {
+         List<Rate> all = new ArrayList<>(findOwnAsOf(sheetId, day));
+         List<String> ancestors = ancestors(sheetId);
+         for (int i = 0; i < ancestors.size(); i++) {
+             int level = i + 1;
+-            findOwn(ancestors.get(i)).forEach((r) -> all.add(r.up(level)));
++            findOwnAsOf(ancestors.get(i), day).forEach((r) -> all.add(r.up(level)));
+         }
+         return all;
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+index e30baa3e5..8dff11284 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+@@ -24,7 +24,8 @@ import net.officefloor.plugin.variable.Val;
+  * up, skipping n/a; n/a when their grade in force today has no rate today and no claim that counts keeps a fixed
+  * figure, has one under another grade in force on its date, or has one dated on or before today (under a
+  * rate that has since ended); held to the sheet's cap; each claim at its date's grade's rate; an overdue claim's late charge on top), as the screen shows it. Every claim of theirs that counts is bound to its rate figure now
+- * (a live one before the floor), never its late charge nor the floor;
++ * (a live one before the floor) and the late charge on it as shown now (a figure and charge an earlier
++ * statement bound stay as they are), never the floor;
+  * every other claim of theirs is left unbound (live). The person's statement count goes up by one,
+  * and the due-total and the sheet's today are kept as the last statement's.
+  * <p>
+@@ -61,7 +62,8 @@ public class TakeStatement {
+                 ClaimRepository.Binding binding = bindings.get(live.getId());
+                 claim = line == null ? null : live.asThen(line.status(),
+                         line.status() == ClaimStatus.SETTLED ? line.due() : null,
+-                        binding != null && binding.stated(), binding == null ? null : binding.statedDue());
++                        binding != null && binding.stated(), binding == null ? null : binding.statedDue(),
++                        binding == null ? null : binding.statedLate());
+             }
+             boolean counts = claim != null && claim.counts(then.heldOn(claim.getDate(), today), today);
+             if (counts) {
+@@ -77,7 +79,10 @@ public class TakeStatement {
+                 // The due-total carries the late charge and the floor; the claim is bound to the rate figure under them.
+                 BigDecimal due = ClaimFigure.withLate(claim, all, grade, sheetSettings, today);
+                 if (due != null) total = total.add(due);
+-                live.bind(true, figure);
++                // Bound with the late charge on it as shown (a bound one stays as it is), never the floor.
++                BigDecimal late = figure == null || claim.getSettledDue() != null ? null
++                        : ClaimFigure.late(claim, figure, grade, sheetSettings, today);
++                live.bind(true, figure, late);
+             } else {
+                 live.bind(false, null);
+             }
+diff --git a/src/main/resources/db/migration/V101__claim_stated_late.sql b/src/main/resources/db/migration/V101__claim_stated_late.sql
+new file mode 100644
+index 000000000..2f7520b7c
+--- /dev/null
++++ b/src/main/resources/db/migration/V101__claim_stated_late.sql
+@@ -0,0 +1,5 @@
++-- The late charge a statement bound the claim to, with its figure (null: none bound, as for a
++-- binding kept before late charges were bound: the charge then follows the sheet's today).
++ALTER TABLE claim ADD COLUMN stated_late DECIMAL(19, 2);
++ALTER TABLE claim_history ADD COLUMN stated_late DECIMAL(19, 2);
++ALTER TABLE claim_binding ADD COLUMN stated_late DECIMAL(19, 2);
