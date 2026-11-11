@@ -1,0 +1,187 @@
+diff --git a/src/main/frontend/features/inlinegrade/inlineGrade.slot.tsx b/src/main/frontend/features/inlinegrade/inlineGrade.slot.tsx
+new file mode 100644
+index 000000000..f5952c9a4
+--- /dev/null
++++ b/src/main/frontend/features/inlinegrade/inlineGrade.slot.tsx
+@@ -0,0 +1,75 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { useOnce } from '../../query/useOnce';
++import { postJson } from '../../api/http';
++import { PersonHead, PersonRow } from '../../slots/defs/personRow';
++import { GRADES } from '../people/people';
++import type { Grade, Person } from '../people/people';
++import { useRowError } from '../people/rowError';
++import { useUser } from '../session/session';
++
++function InlineGradeHead() {
++  return <th>Set grade</th>;
++}
++
++// A grade select on each person's row (showing the grade in force until another is chosen) and a
++// button that records the chosen grade from the sheet's today, exactly as the person form would.
++function PersonInlineGrade({ sheetId, person }: { sheetId: string; person: Person }) {
++  const queryClient = useQueryClient();
++  const [user] = useUser();
++  const [chosen, setChosen] = useState<Grade | null>(null);
++  const [error, setError] = useRowError(person.id, 'inline-grade');
++  const once = useOnce();
++  const save = useMutation({
++    mutationFn: (grade: Grade) =>
++      postJson<Person>(
++        `/api/sheets/${encodeURIComponent(sheetId)}/people/${encodeURIComponent(person.id)}/grade`,
++        { grade },
++        user,
++      ),
++    onSuccess: () => {
++      setChosen(null);
++      return queryClient.invalidateQueries({ queryKey: ['sheet', sheetId] });
++    },
++    onError: () => setError('That person could not be given that grade.'),
++  });
++
++  const grade = chosen ?? person.grade;
++  const submit = () => {
++    setError('');
++    once((done) => save.mutate(grade, { onSettled: done }));
++  };
++
++  return (
++    <td>
++      <select
++        data-testid="person-inline-grade"
++        aria-label="Grade"
++        value={grade}
++        onChange={(e) => {
++          setChosen(e.target.value as Grade);
++          setError('');
++        }}
++      >
++        {GRADES.map((g) => (
++          <option key={g} value={g}>
++            {g}
++          </option>
++        ))}
++      </select>{' '}
++      <button type="button" data-testid="person-inline-grade-save" onClick={submit} disabled={save.isPending}>
++        Save grade
++      </button>
++      {error && (
++        <p role="alert" data-testid="person-error">
++          {error}
++        </p>
++      )}
++    </td>
++  );
++}
++
++export const contributions = [
++  PersonHead.fill({ order: 5, Component: InlineGradeHead }),
++  PersonRow.fill({ order: 5, Component: PersonInlineGrade }),
++];
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyInlineGrade.java b/src/main/java/net/officefloor/hq/app/person/ApplyInlineGrade.java
+new file mode 100644
+index 000000000..dbe437891
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyInlineGrade.java
+@@ -0,0 +1,20 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++/**
++ * Gives the person the row's grade from the sheet's today exactly as the person form would (see
++ * {@link ApplyPerson}) with a blank from-date: the grades already recorded are kept, and a grade left
++ * as the row shows it records nothing. Their name, terms, contact and tags are untouched.
++ */
++public class ApplyInlineGrade {
++    public void apply(@Val InlineGradeRequest request, @Val Person person, @Val Sheet sheet, Out<TermsEdit> termsEdit,
++            Out<ContactEdit> contactEdit) {
++        termsEdit.set(new TermsEdit(false));
++        contactEdit.set(new ContactEdit(false));
++        if (request.grade().equals(person.gradeOn(sheet.today()))) return;
++        person.setGradeFrom(request.grade(), sheet.today());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/InlineGradeRequest.java b/src/main/java/net/officefloor/hq/app/person/InlineGradeRequest.java
+new file mode 100644
+index 000000000..a98dd1680
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/InlineGradeRequest.java
+@@ -0,0 +1,4 @@
++package net.officefloor.hq.app.person;
++
++/** A grade (A, B or C) chosen on a person's row, recorded from the sheet's today. */
++public record InlineGradeRequest(String grade) {}
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateInlineGrade.java b/src/main/java/net/officefloor/hq/app/person/ValidateInlineGrade.java
+new file mode 100644
+index 000000000..a3fc00e5b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateInlineGrade.java
+@@ -0,0 +1,17 @@
++package net.officefloor.hq.app.person;
++
++import java.util.Set;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Refuses a grade other than A, B or C before anything is read. */
++public class ValidateInlineGrade {
++    private static final Set<String> GRADES = Set.of("A", "B", "C");
++
++    public void validate(@RequestBody InlineGradeRequest request, Out<InlineGradeRequest> body)
++            throws InvalidPersonException {
++        String grade = request == null || request.grade() == null ? "" : request.grade().trim();
++        if (!GRADES.contains(grade)) throw new InvalidPersonException("A grade is one of A, B or C");
++        body.set(new InlineGradeRequest(grade));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/grade.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/grade.POST.yml
+new file mode 100644
+index 000000000..b1b9a5358
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/grade.POST.yml
+@@ -0,0 +1,41 @@
++# Give a person the grade chosen on their row, from the sheet's today, exactly as the person form
++# would: its PERSON_EDITED line, then the figures it moved. A bad grade is a 400. A viewer, or anyone
++# on an archived sheet, may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: validate
++validate:
++  class: net.officefloor.hq.app.person.ValidateInlineGrade
++  next: loadSheet
++loadSheet:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ transaction ]
++  next: before
++# The sheet's figures before the change, so the rollup lines tell which moved.
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
++  next: load
++load:
++  class: net.officefloor.hq.app.person.LoadPerson
++  govern: [ transaction ]
++  next: apply
++apply:
++  class: net.officefloor.hq.app.person.ApplyInlineGrade
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.person.SavePerson
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.person.AuditPersonEdited
++  govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPerson
++  govern: [ transaction ]
