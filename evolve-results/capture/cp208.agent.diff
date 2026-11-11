@@ -1,0 +1,346 @@
+diff --git a/src/main/frontend/features/claims/bulkopen.slot.tsx b/src/main/frontend/features/claims/bulkopen.slot.tsx
+index 8b633e0b3..294ea9f27 100644
+--- a/src/main/frontend/features/claims/bulkopen.slot.tsx
++++ b/src/main/frontend/features/claims/bulkopen.slot.tsx
+@@ -9,7 +9,7 @@ import { clearSelectedClaims, useSelectedClaims } from './selection';
+ 
+ type Result = { opened: number; refused: number };
+ 
+-// Opens the ticked claims together. The server opens and numbers each that can be opened in list
++// Opens the ticked claims together. The server opens each that can be opened in list
+ // order (people in list order, each person's claims newest first) and leaves the rest as they are;
+ // the bar shows how many were opened and how many refused. The counts are cleared while it runs.
+ function BulkOpen({ sheetId }: { sheetId: string }) {
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index b1cac9b84..b9ee356f1 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -22,7 +22,7 @@ import { Col } from '../columns/columns';
+ // A clerk's settle above the clerk limit leaves the claim PENDING; a steward approves it or rejects
+ // it with a reason (typed in the row). A steward re-settles a SETTLED claim at its figure today.
+ // A claim is settled as of a date typed beside its settle button (blank: today), its due frozen as it stood then.
+-// A steward reviews a claim in REVIEW (above the review threshold when opened): it is OPEN, numbered then.
++// A steward reviews a claim in REVIEW (above the review threshold when opened): it is OPEN, numbered once settled.
+ // A DRAFT is deleted, and restored to a DRAFT on the sheet's today it was deleted.
+ type Action = 'open' | 'review' | 'settle' | 'void' | 'approve' | 'reject' | 'resettle' | 'delete' | 'restore';
+ type Fields = { amount: string; date: string; note: string; corrects: string; ref: string; tags: string };
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index be7c49d97..bdf9b957c 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -8,14 +8,14 @@ import type { Hold } from '../people/people';
+  * limit makes it PENDING until a steward approves it (SETTLED) or rejects it (OPEN again). A DRAFT,
+  * OPEN or PENDING claim may be VOID; a SETTLED one too, by a steward within 7 days of its settlement.
+  * A claim whose due is above the review threshold in force on its date goes to REVIEW instead of OPEN when
+- * it is opened, unnumbered and counting in no total, until a steward reviews it (OPEN, numbered then); it
++ * it is opened, unnumbered and counting in no total, until a steward reviews it (OPEN); it
+  * may be VOID too. A DRAFT may be DELETED (it counts nowhere), and restored to a DRAFT on the sheet's today it was deleted.
+  */
+ export type ClaimStatus = 'DRAFT' | 'REVIEW' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED';
+ 
+ /**
+  * A claim: its amount with two decimals, its date (yyyy-MM-dd), its note, its status and its
+- * number on the sheet (given when it is opened; '' for a draft or a voided claim), and its due as
++ * number on the sheet (given when it is settled or approved; '' until then), and its due as
+  * fixed when it was settled ('' while its due is live: unsettled, or settled with no rate), and
+  * who opened it ('' until it is opened); whether its person's last statement bound it, and the
+  * figure it was bound to ('' when not stated; n/a when it had none); and, for a correction (a
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java b/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java
+index 0832e2905..3692914df 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java
+@@ -162,7 +162,6 @@ public class AddPastedClaims {
+             claim.moveTo(OpenClaim.opensTo(sheet, claim, people, rates, settings));
+             claim.setOpenedBy(user);
+             if (!claims.markOpened(claim)) throw new InvalidClaimStatusException(ClaimStatus.DRAFT, ClaimStatus.OPEN);
+-            if (claim.getStatus() == ClaimStatus.OPEN) claim.setNumber(ClaimNumbers.next(sheet, claim, terms, periods, claims));
+             claims.save(claim);
+             log.record(claim, user, sheet.today(), LogClaimStatus.due(sheet, claim, people, rates, settings));
+             lines.add(ClaimAudit.line(claim.getStatus().auditEvent(), sheet, user, person, claim));
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimSplit.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimSplit.java
+index f9fa67bc5..c63ec9a6a 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AuditClaimSplit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimSplit.java
+@@ -15,7 +15,7 @@ public class AuditClaimSplit {
+             HttpServletRequest request, Audit audit) {
+         String user = Audit.user(request);
+         audit.record(ClaimAudit.line("CLAIM_SPLIT", sheet, user, people.find(sheet.id(), claim.getPersonId()), claim)
+-                + " into=" + split.made().getNumber());
++                + " into=" + (split.made().getNumber() == null ? "" : split.made().getNumber()));
+         audit.record(AuditClaimStatus.line(sheet, split.made(), user, people));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 08acf450e..37d0dfb11 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -228,7 +228,7 @@ public class Claim {
+     public LocalDate getRoundDate() {
+         return isCorrection() && correctedDate != null ? correctedDate : date;
+     }
+-    /** The claim's number on its sheet, given when it is opened; null for a draft. A voided claim
++    /** The claim's number on its sheet, given when it is settled (or approved); null until then. A voided claim
+      *  keeps the number it had; a number is never reused. */
+     public String getNumber() { return number; }
+     public void setNumber(String number) { this.number = number; }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimNumbers.java b/src/main/java/net/officefloor/hq/app/claim/ClaimNumbers.java
+index be1cd5422..560e4c49e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimNumbers.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimNumbers.java
+@@ -6,7 +6,7 @@ import net.officefloor.hq.app.setting.Settings;
+ import net.officefloor.hq.app.sheet.Sheet;
+ 
+ /**
+- * The number a claim being opened takes: the next within the fiscal year of its due-by, in the
++ * The number a claim takes when it is settled (or approved): the next within the fiscal year of its due-by, in the
+  * sequence the sheet's tree shares (<FY>-<n>), or, while the sheet's period
+  * numbering from is set and its today is on or after it, the next within the claim's period (the one containing its due-by)
+  * (<period name>-<n>), or X-<n> when the claim is in no period.
+@@ -14,6 +14,16 @@ import net.officefloor.hq.app.sheet.Sheet;
+ public final class ClaimNumbers {
+     private ClaimNumbers() {}
+ 
++    /**
++     * Gives a claim just SETTLED that has no number yet the next number in its sequence, by the
++     * due-by that places it now; a claim already numbered keeps its number.
++     */
++    public static void giveOnSettle(Sheet sheet, Claim claim, Settings settings, PeriodRepository periods,
++            ClaimRepository claims) {
++        if (claim.getStatus() != ClaimStatus.SETTLED || claim.getNumber() != null) return;
++        claim.setNumber(next(sheet, claim, settings, periods, claims));
++    }
++
+     public static String next(Sheet sheet, Claim claim, Settings settings, PeriodRepository periods, ClaimRepository claims) {
+         if (!settings.numbersByPeriod(sheet.today())) {
+             String fiscalYear = settings.fiscalYearOf(claim.getDueBy());
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
+index 4b38f0b9b..4fe37477e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
+@@ -4,7 +4,7 @@ package net.officefloor.hq.app.claim;
+  * A claim's status. It starts as DRAFT, is opened (OPEN) and then settled (SETTLED). A clerk's
+  * settle above the clerk limit makes it PENDING instead, until a steward approves it (SETTLED) or
+  * rejects it (back to OPEN). A claim whose due is above the review threshold in force on its date goes
+- * to REVIEW instead of OPEN when it is opened, unnumbered, until a steward reviews it (OPEN, numbered then).
++ * to REVIEW instead of OPEN when it is opened, until a steward reviews it (OPEN). A claim is numbered only when it is SETTLED.
+  * A DRAFT, REVIEW, OPEN or PENDING claim can be voided (VOID); a SETTLED one
+  * too, by a steward within days of its settlement ({@link VoidClaim}). VOID is final. A DRAFT claim can be deleted
+  * (DELETED), and made a DRAFT again by a restore on the sheet's today it was deleted ({@link RestoreClaim}). Only OPEN, PENDING and SETTLED claims count toward any total.
+diff --git a/src/main/java/net/officefloor/hq/app/claim/NumberClaim.java b/src/main/java/net/officefloor/hq/app/claim/NumberClaim.java
+index eee1b3cb3..8fc8b0bc2 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/NumberClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/NumberClaim.java
+@@ -1,19 +1,13 @@
+ package net.officefloor.hq.app.claim;
+ 
+-import net.officefloor.hq.app.period.PeriodRepository;
+-import net.officefloor.hq.app.setting.SettingsRepository;
+-import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+- * Gives a claim being opened its number (the sheet's next, or the next within its period); refused
+- * when another request opened it first. A claim sent to REVIEW has no number yet.
++ * Marks a claim being opened as opened; refused when another request opened it first. An opened claim
++ * has no number yet: it is numbered when it is settled ({@link NumberSettledClaim}).
+  */
+ public class NumberClaim {
+-    public void number(@Val Sheet sheet, @Val Claim claim, ClaimRepository repository, SettingsRepository settings,
+-            PeriodRepository periods) throws InvalidClaimStatusException {
++    public void number(@Val Claim claim, ClaimRepository repository) throws InvalidClaimStatusException {
+         if (!repository.markOpened(claim)) throw new InvalidClaimStatusException(ClaimStatus.DRAFT, ClaimStatus.OPEN);
+-        if (claim.getStatus() == ClaimStatus.REVIEW) return; // numbered once it is reviewed
+-        claim.setNumber(ClaimNumbers.next(sheet, claim, settings.find(sheet.id()), periods, repository));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/NumberReviewedClaim.java b/src/main/java/net/officefloor/hq/app/claim/NumberReviewedClaim.java
+index 1debd723b..8cb087d11 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/NumberReviewedClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/NumberReviewedClaim.java
+@@ -1,18 +1,13 @@
+ package net.officefloor.hq.app.claim;
+ 
+-import net.officefloor.hq.app.period.PeriodRepository;
+-import net.officefloor.hq.app.setting.SettingsRepository;
+-import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+- * Gives a reviewed claim its number (the sheet's next, or the next within its period); refused when
+- * another request reviewed or voided it first.
++ * Marks a reviewed claim as reviewed; refused when another request reviewed or voided it first. It has
++ * no number yet: it is numbered when it is settled ({@link NumberSettledClaim}).
+  */
+ public class NumberReviewedClaim {
+-    public void number(@Val Sheet sheet, @Val Claim claim, ClaimRepository repository, SettingsRepository settings,
+-            PeriodRepository periods) throws InvalidClaimStatusException {
++    public void number(@Val Claim claim, ClaimRepository repository) throws InvalidClaimStatusException {
+         if (!repository.markReviewed(claim)) throw new InvalidClaimStatusException(ClaimStatus.REVIEW, ClaimStatus.OPEN);
+-        claim.setNumber(ClaimNumbers.next(sheet, claim, settings.find(sheet.id()), periods, repository));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/NumberSettledClaim.java b/src/main/java/net/officefloor/hq/app/claim/NumberSettledClaim.java
+new file mode 100644
+index 000000000..e79b1c8c7
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/NumberSettledClaim.java
+@@ -0,0 +1,17 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.setting.SettingsRepository;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++
++/**
++ * Gives a claim just settled or approved its number (the next in its sequence); a claim sent to PENDING
++ * has none yet, and a claim already numbered keeps its number.
++ */
++public class NumberSettledClaim {
++    public void number(@Val Sheet sheet, @Val Claim claim, ClaimRepository repository, SettingsRepository settings,
++            PeriodRepository periods) {
++        ClaimNumbers.giveOnSettle(sheet, claim, settings.find(sheet.id()), periods, repository);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/OpenSelectedClaims.java b/src/main/java/net/officefloor/hq/app/claim/OpenSelectedClaims.java
+index d48a25f0c..7998cbc04 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/OpenSelectedClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/OpenSelectedClaims.java
+@@ -56,9 +56,6 @@ public class OpenSelectedClaims {
+                 if (OpenClaim.needsNote(sheet, claim, people, rates, settings)) continue;
+                 if (!opens(sheet, claim, periods, claims, people, rates, settings)) continue;
+                 claim.setOpenedBy(user);
+-                if (claim.getStatus() == ClaimStatus.OPEN) {
+-                    claim.setNumber(ClaimNumbers.next(sheet, claim, settings.find(sheet.id()), periods, claims));
+-                }
+                 claims.save(claim);
+                 log.record(claim, user, sheet.today(), LogClaimStatus.due(sheet, claim, people, rates, settings));
+                 opened++;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveSplit.java b/src/main/java/net/officefloor/hq/app/claim/SaveSplit.java
+index 429465072..8f5bf955d 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveSplit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveSplit.java
+@@ -10,8 +10,8 @@ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+- * Saves the split: the original with the rest of its amount, and the new claim with the sheet's
+- * next number, its status logged as it was opened.
++ * Saves the split: the original with the rest of its amount, and the new claim, unnumbered until it
++ * is settled, its status logged as it was opened.
+  */
+ public class SaveSplit {
+     public void save(@Val Sheet sheet, @Val Claim claim, @Val Split split, ClaimRepository repository,
+@@ -19,7 +19,6 @@ public class SaveSplit {
+             ClaimLogRepository log, HttpServletRequest request) {
+         repository.save(claim);
+         Claim made = split.made();
+-        made.setNumber(ClaimNumbers.next(sheet, made, settings.find(sheet.id()), periods, repository));
+         repository.save(made);
+         log.record(made, Audit.user(request), sheet.today(), LogClaimStatus.due(sheet, made, people, rates, settings));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SettleSelectedClaims.java b/src/main/java/net/officefloor/hq/app/claim/SettleSelectedClaims.java
+index 65c5a5c73..8f2568b48 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SettleSelectedClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SettleSelectedClaims.java
+@@ -82,6 +82,7 @@ public class SettleSelectedClaims {
+         Rollup before = rollup(sheet, sheets, people, claims, rates, settings);
+         for (Claim claim : toSettle) {
+             claim.setSettleBatch(batch);
++            ClaimNumbers.giveOnSettle(sheet, claim, settings.find(sheet.id()), periods, claims);
+             claims.save(claim);
+             log.record(claim, user, sheet.today(), LogClaimStatus.due(sheet, claim, people, rates, settings));
+             settled++;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SettleSplitClaim.java b/src/main/java/net/officefloor/hq/app/claim/SettleSplitClaim.java
+index f16d79006..f71f2ab43 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SettleSplitClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SettleSplitClaim.java
+@@ -2,6 +2,7 @@ package net.officefloor.hq.app.claim;
+ 
+ import jakarta.servlet.http.HttpServletRequest;
+ import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.rate.RateRepository;
+ import net.officefloor.hq.app.role.RoleRepository;
+@@ -18,7 +19,7 @@ import net.officefloor.plugin.variable.Val;
+  */
+ public class SettleSplitClaim {
+     public void settle(@Val Sheet sheet, @Val Split split, PersonRepository people, RateRepository rates,
+-            RoleRepository roles, SettingsRepository settings, ClaimRepository claims, ClaimLogRepository log,
++            RoleRepository roles, SettingsRepository settings, ClaimRepository claims, PeriodRepository periods, ClaimLogRepository log,
+             HttpServletRequest request, Out<PartSettle> partOut)
+             throws InvalidClaimStatusException, SelfSettleException {
+         partOut.set(new PartSettle(Rollup.of(sheet.id(), sheet.today(), people, claims, rates, settings.find(sheet.id()))));
+@@ -26,6 +27,7 @@ public class SettleSplitClaim {
+         String user = Audit.user(request);
+         SettleClaim.settle(sheet, made, user, people, rates, roles, settings, true);
+         made.setSettleBatch(null);
++        ClaimNumbers.giveOnSettle(sheet, made, settings.find(sheet.id()), periods, claims);
+         claims.save(made);
+         log.record(made, user, sheet.today(), LogClaimStatus.due(sheet, made, people, rates, settings));
+     }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/approve.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/approve.POST.yml
+index 2bfcd46d8..5f193759a 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/approve.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/approve.POST.yml
+@@ -24,6 +24,11 @@ closed:
+ apply:
+   class: net.officefloor.hq.app.claim.ApproveClaim
+   govern: [ transaction ]
++  next: number
++# Settled now (not PENDING): it takes the next number in its sequence.
++number:
++  class: net.officefloor.hq.app.claim.NumberSettledClaim
++  govern: [ transaction ]
+   next: save
+ save:
+   class: net.officefloor.hq.app.claim.SaveClaim
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/open.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/open.POST.yml
+index 27f2c046f..2633a8051 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/open.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/open.POST.yml
+@@ -30,7 +30,7 @@ apply:
+   class: net.officefloor.hq.app.claim.OpenClaim
+   govern: [ transaction ]
+   next: number
+-# Takes the sheet's next number only once the status allows the open.
++# Marks it opened only once the status allows the open (it is numbered when settled).
+ number:
+   class: net.officefloor.hq.app.claim.NumberClaim
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/review.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/review.POST.yml
+index e64b06935..44b047dbc 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/review.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/review.POST.yml
+@@ -1,4 +1,4 @@
+-# Review a claim in REVIEW (a steward): it is OPEN, numbered then. A change its status does not allow
++# Review a claim in REVIEW (a steward): it is OPEN, still unnumbered (numbered when settled). A change its status does not allow
+ # is a 409, and anyone not a steward is refused; both write nothing.
+ # A viewer may change nothing: refused before anything is read or written.
+ viewer:
+@@ -31,7 +31,7 @@ apply:
+   class: net.officefloor.hq.app.claim.ReviewClaim
+   govern: [ transaction ]
+   next: number
+-# Takes the sheet's next number only once the review is allowed.
++# Marks it reviewed only once the review is allowed (it is numbered when settled).
+ number:
+   class: net.officefloor.hq.app.claim.NumberReviewedClaim
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle.POST.yml
+index 91b10fa55..6927445c7 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle.POST.yml
+@@ -29,6 +29,11 @@ closed:
+ apply:
+   class: net.officefloor.hq.app.claim.SettleClaim
+   govern: [ transaction ]
++  next: number
++# Settled now (not PENDING): it takes the next number in its sequence.
++number:
++  class: net.officefloor.hq.app.claim.NumberSettledClaim
++  govern: [ transaction ]
+   next: save
+ save:
+   class: net.officefloor.hq.app.claim.SaveClaim
