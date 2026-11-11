@@ -307,6 +307,48 @@ public class ClaimRepository {
                 + " FROM claim WHERE id = ? AND sheet_id = ?", claim.getId(), toSheet);
     }
 
+    /**
+     * Copy the claim, with its log, to another sheet for {@code toPersonId}, listed there as its newest:
+     * its status, amount, dates, terms, note, frozen figure, proofs and who opened and edited it. It takes
+     * no number (nor correction or split numbers) until {@link #numberCopy}, and leaves behind any figure a
+     * statement bound it to, its reference, tags, settle batch, comments and any lock. Returns its new id.
+     */
+    public long copy(Claim claim, String toSheet, long toPersonId) {
+        GeneratedKeyHolder keys = new GeneratedKeyHolder();
+        long listed = nextListed(toSheet);
+        jdbc.update(con -> {
+            PreparedStatement ps = con.prepareStatement("INSERT INTO claim (sheet_id, person_id, amount, claim_date, note,"
+                    + " status, settled_due, opened_by, edited_by, due_by, terms, deferred_until, proofs, late_entry,"
+                    + " reminded_on, void_reason, listed)"
+                    + " SELECT ?, ?, amount, claim_date, note, status, settled_due, opened_by, edited_by, due_by, terms,"
+                    + " deferred_until, proofs, late_entry, reminded_on, void_reason, ? FROM claim WHERE id = ? AND sheet_id = ?",
+                    Statement.RETURN_GENERATED_KEYS);
+            ps.setString(1, toSheet);
+            ps.setLong(2, toPersonId);
+            ps.setLong(3, listed);
+            ps.setLong(4, claim.getId());
+            ps.setString(5, claim.getSheetId());
+            return ps;
+        }, keys);
+        long id = keys.getKey().longValue();
+        jdbc.update("INSERT INTO claim_log (sheet_id, claim_id, status, by_user, on_date, due)"
+                + " SELECT ?, ?, status, by_user, on_date, due FROM claim_log WHERE claim_id = ? AND sheet_id = ? ORDER BY id",
+                toSheet, id, claim.getId(), claim.getSheetId());
+        return id;
+    }
+
+    /**
+     * Give a claim copied by {@link #copy} its number (null: none) and the numbers it corrects and was
+     * split from, and keep it in its history, with its sheet's today now.
+     */
+    public void numberCopy(String sheetId, long id, String number, String corrects, String splitFrom) {
+        jdbc.update("UPDATE claim SET claim_number = ?, corrects = ?, split_from = ? WHERE id = ? AND sheet_id = ?",
+                number, corrects, splitFrom, id, sheetId);
+        jdbc.update("INSERT INTO claim_history (sheet_id, claim_id, " + HISTORY_COLUMNS + ", set_on)"
+                + " SELECT sheet_id, id, " + HISTORY_COLUMNS + ", (SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id)"
+                + " FROM claim WHERE id = ? AND sheet_id = ?", id, sheetId);
+    }
+
     /** Keep a due-by fixed again (its history kept, with the sheet's today now). */
     public void saveDueBy(Claim claim) {
         jdbc.update("UPDATE claim SET due_by = ? WHERE id = ? AND sheet_id = ?", Date.valueOf(claim.getDueBy()),
