@@ -175,10 +175,10 @@ export const CLAIM_NUMBER = /^(\d+|.+-\d+)$/;
 
 /**
  * The amounts of the claims that count (OPEN, PENDING and SETTLED, but not unbound open ones dated within
- * a hold of their person: `holds` tells by person id, nor ones deferred on `today`) added up, in whole cents so no rounding creeps in, shown with two
+ * a hold of their person: `holds` tells by person id, nor ones deferred on `today`), leaving out corrections, added up, in whole cents so no rounding creeps in, shown with two
  * decimals.
  */
 export function sumAmounts(claims: Claim[], holds: (personId: string) => Hold[], today: string): string {
-  const cents = claims.filter((c) => counts(c, holds(c.personId), today)).reduce((n, c) => n + Math.round(Number(c.amount) * 100), 0);
+  const cents = claims.filter((c) => !isCorrection(c) && counts(c, holds(c.personId), today)).reduce((n, c) => n + Math.round(Number(c.amount) * 100), 0);
   return (cents / 100).toFixed(2);
 }
