@@ -53,6 +53,8 @@ public class SheetCloneRepository {
 
         jdbc.update("INSERT INTO sheet_role (sheet_id, user_name, role) SELECT ?, user_name, role FROM sheet_role"
                 + " WHERE sheet_id = ?", to, from);
+        jdbc.update("INSERT INTO role_history (sheet_id, user_name, role, set_on)"
+                + " SELECT sheet_id, user_name, role, ? FROM sheet_role WHERE sheet_id = ? ORDER BY user_name", today, to);
         jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date, version, added_after)"
                 + " SELECT ?, grade, pct, from_date, to_date, version, added_after FROM rate WHERE sheet_id = ?", to, from);
         jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, pct, to_date, added_after)"

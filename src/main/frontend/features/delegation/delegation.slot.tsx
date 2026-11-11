@@ -25,6 +25,7 @@ function Delegations({ sheetId }: { sheetId: string }) {
       postJson<Delegation>(`/api/sheets/${encodeURIComponent(sheetId)}/delegations`, body, user),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: delegationsKey(sheetId) });
+      void queryClient.invalidateQueries({ queryKey: ['sheet', sheetId, 'my-role'] });
     },
     onError: () => setError('That delegation could not be made.'),
   });

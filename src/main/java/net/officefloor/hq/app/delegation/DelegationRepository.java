@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.delegation;
 
 import java.sql.Date;
+import java.time.LocalDate;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -37,10 +38,22 @@ public class DelegationRepository {
         return found.isEmpty() ? null : found.get(0);
     }
 
+    /**
+     * Whether the steward role was delegated to the user for {@code day}, by a delegation made while the
+     * sheet's today was on or before it.
+     */
+    public boolean delegatedOn(String sheetId, String user, LocalDate day) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM sheet_delegation WHERE sheet_id = ? AND user_name = ?"
+                + " AND ? BETWEEN from_date AND to_date AND (made_on IS NULL OR made_on <= ?)", Integer.class,
+                sheetId, user, Date.valueOf(day), Date.valueOf(day));
+        return n != null && n > 0;
+    }
+
     public Delegation save(Delegation delegation) {
-        jdbc.update("INSERT INTO sheet_delegation (sheet_id, user_name, by_user, from_date, to_date) VALUES (?, ?, ?, ?, ?)",
+        jdbc.update("INSERT INTO sheet_delegation (sheet_id, user_name, by_user, from_date, to_date, made_on)"
+                + " SELECT ?, ?, ?, ?, ?, today FROM sheet WHERE id = ?",
                 delegation.sheetId(), delegation.user(), delegation.by(),
-                Date.valueOf(delegation.from()), Date.valueOf(delegation.to()));
+                Date.valueOf(delegation.from()), Date.valueOf(delegation.to()), delegation.sheetId());
         Long id = jdbc.queryForObject("SELECT MAX(id) FROM sheet_delegation WHERE sheet_id = ?", Long.class,
                 delegation.sheetId());
         return new Delegation(id, delegation.sheetId(), delegation.user(), delegation.by(), delegation.from(),

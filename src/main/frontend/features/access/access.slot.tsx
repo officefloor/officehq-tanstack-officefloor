@@ -764,7 +764,10 @@ function Roles({ sheetId }: { sheetId: string }) {
   const save = useMutation({
     mutationFn: (body: Role) =>
       postJson<Role>(`/api/sheets/${encodeURIComponent(sheetId)}/roles`, body, user),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: rolesKey(sheetId) }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: rolesKey(sheetId) });
+      void queryClient.invalidateQueries({ queryKey: ['sheet', sheetId, 'my-role'] });
+    },
     onError: () => setError('That role could not be set.'),
   });
 
