@@ -25,7 +25,7 @@ public class SheetCloneRepository {
     /**
      * Create sheet {@code to} as a copy of sheet {@code from}: its today and settings (dated and undated,
      * its permissions and parent), roles, rates, holidays, void reasons and templates; its people (not those
-     * merged away) in list order, with their grades, terms, contacts, aliases, holds, retirements and
+     * merged away) in list order, with their grades, terms, contacts, tags, aliases, holds, retirements and
      * patrons, but no statements; its pools and their members; its periods, all open. It is not archived,
      * and its claim numbers, settle batches and period numbers start again. Returns the copy's person id
      * for each person copied, by their id here.
@@ -73,9 +73,9 @@ public class SheetCloneRepository {
             long at = ++pos;
             GeneratedKeyHolder keys = new GeneratedKeyHolder();
             jdbc.update(con -> {
-                PreparedStatement ps = con.prepareStatement("INSERT INTO person (sheet_id, name, grade, terms, contact,"
+                PreparedStatement ps = con.prepareStatement("INSERT INTO person (sheet_id, name, grade, terms, contact, tags,"
                         + " retired_from, added_on, origin_sheet, list_pos)"
-                        + " SELECT ?, name, grade, terms, contact, retired_from, added_on, origin_sheet, ?"
+                        + " SELECT ?, name, grade, terms, contact, tags, retired_from, added_on, origin_sheet, ?"
                         + " FROM person WHERE id = ? AND sheet_id = ?", Statement.RETURN_GENERATED_KEYS);
                 ps.setString(1, to);
                 ps.setLong(2, at);

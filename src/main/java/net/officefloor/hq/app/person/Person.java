@@ -14,6 +14,7 @@ public class Person {
     private String grade;
     private Integer terms;
     private String contact;
+    private String tags;
     private long version;
     private int statementCount;
     private String statedTotal;
@@ -53,6 +54,11 @@ public class Person {
     /** Their contact, trimmed and lower-cased; null when they have none. */
     public String getContact() { return contact; }
     public void setContact(String contact) { this.contact = contact; }
+    /** Their tags: lower-cased, without repeats, sorted and comma separated; null when they have none. */
+    public String getTags() { return tags; }
+    public void setTags(String tags) { this.tags = tags; }
+    /** Their tags, sorted; empty when they have none. */
+    public List<String> tagList() { return tags == null ? List.of() : List.of(tags.split(",")); }
     /** The grades recorded from a date, by from-date: each in force from it until the next. */
     public Map<LocalDate, String> getDatedGrades() { return datedGrades; }
     /** Record the grade from this date, replacing any recorded from the same date. */

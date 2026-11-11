@@ -353,20 +353,22 @@ function SplitTotals({ sheetId }: { sheetId: string }) {
   );
 }
 
-// For every tag ever used on the sheet, its due-total: the due of the claims that count which carry
-// it, added up, skipping n/a (a claim with two tags counts in both).
+// For every tag ever used on the sheet's claims, or carried by one of its people, its due-total: the due
+// of the claims that count which carry it, or whose person carries it, added up, skipping n/a (a claim
+// counts once in each of its tags and its person's tags).
 function TagTotals({ sheetId }: { sheetId: string }) {
   const people = usePeople(sheetId).data ?? [];
   const claims = useClaims(sheetId).data ?? [];
-  const tags = useTagsUsed(sheetId).data ?? [];
+  const used = useTagsUsed(sheetId).data ?? [];
+  const tags = [...new Set([...used, ...people.flatMap((p) => p.tags)])].sort();
   const rates = useRates(sheetId).data ?? [];
   const today = useSheetToday(sheetId);
   const floor = useFloor(sheetId);
   const late = useLate(sheetId);
   const dues = people.flatMap((p) =>
     claims
-      .filter((c) => c.personId === p.id && c.tags.length > 0 && counts(c, liveHolds(p, today), today))
-      .map((c) => ({ tags: c.tags, due: claimDue(c, rateOn(rates, gradeOn(p.grades, c.date), c.date), floor, late, gradeOn(p.grades, c.date)) })),
+      .filter((c) => c.personId === p.id && (c.tags.length > 0 || p.tags.length > 0) && counts(c, liveHolds(p, today), today))
+      .map((c) => ({ tags: [...new Set([...c.tags, ...p.tags])], due: claimDue(c, rateOn(rates, gradeOn(p.grades, c.date), c.date), floor, late, gradeOn(p.grades, c.date)) })),
   );
   if (tags.length === 0) return null;
   return (

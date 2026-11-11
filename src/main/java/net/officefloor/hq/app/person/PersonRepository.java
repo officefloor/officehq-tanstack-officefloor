@@ -17,13 +17,14 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PersonRepository {
 
-    private static final String COLUMNS = "id, sheet_id, name, grade, terms, contact, version, statement_count, stated_total, statement_date, retired_from, added_on, origin_sheet";
+    private static final String COLUMNS = "id, sheet_id, name, grade, terms, contact, tags, version, statement_count, stated_total, statement_date, retired_from, added_on, origin_sheet";
 
     private static final RowMapper<Person> ROW = (rs, n) -> {
         Person person = new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
                 rs.getString("grade"), rs.getLong("version"));
         person.setTerms(rs.getObject("terms", Integer.class));
         person.setContact(rs.getString("contact"));
+        person.setTags(rs.getString("tags"));
         person.setStatements(rs.getInt("statement_count"), rs.getString("stated_total"),
                 rs.getObject("statement_date", LocalDate.class));
         person.setRetiredFrom(rs.getObject("retired_from", LocalDate.class));
@@ -408,9 +409,9 @@ public class PersonRepository {
                     (rs) -> {
                         storedDated.put(rs.getObject("from_date", LocalDate.class), rs.getString("grade"));
                     }, person.getSheetId(), person.getId());
-            int updated = jdbc.update("UPDATE person SET name = ?, grade = ?, terms = ?, contact = ?, version = version + 1"
+            int updated = jdbc.update("UPDATE person SET name = ?, grade = ?, terms = ?, contact = ?, tags = ?, version = version + 1"
                     + " WHERE id = ? AND sheet_id = ? AND version = ?",
-                    person.getName(), person.getGrade(), person.getTerms(), person.getContact(), person.getId(), person.getSheetId(),
+                    person.getName(), person.getGrade(), person.getTerms(), person.getContact(), person.getTags(), person.getId(), person.getSheetId(),
                     person.getVersion());
             if (updated == 0) return false;
             person.setVersion(person.getVersion() + 1);
@@ -427,7 +428,7 @@ public class PersonRepository {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade, terms, contact, added_on, list_pos) VALUES (?, ?, ?, ?, ?,"
+                    "INSERT INTO person (sheet_id, name, grade, terms, contact, tags, added_on, list_pos) VALUES (?, ?, ?, ?, ?, ?,"
                             + " (SELECT today FROM sheet WHERE id = ?), " + END_OF_LIST + ")",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, person.getSheetId());
@@ -435,8 +436,9 @@ public class PersonRepository {
             ps.setString(3, person.getGrade());
             ps.setObject(4, person.getTerms(), java.sql.Types.INTEGER);
             ps.setString(5, person.getContact());
-            ps.setString(6, person.getSheetId());
+            ps.setString(6, person.getTags());
             ps.setString(7, person.getSheetId());
+            ps.setString(8, person.getSheetId());
             return ps;
         }, keys);
         person.setId(keys.getKey().longValue());
@@ -482,6 +484,7 @@ public class PersonRepository {
                 person.getSheetId(), person.getId(), on);
         then.setTerms(terms.isEmpty() ? null : terms.get(0));
         then.setContact(person.getContact());
+        then.setTags(person.getTags());
         then.getAliases().addAll(jdbc.queryForList("SELECT alias FROM person_alias WHERE sheet_id = ? AND person_id = ?"
                 + " AND (added_on IS NULL OR added_on <= ?) ORDER BY id", String.class, person.getSheetId(), person.getId(), on));
         then.setAddedOn(person.getAddedOn());

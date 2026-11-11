@@ -9,6 +9,7 @@ public class BuildPerson {
         Person person = new Person(null, sheet.id(), request.name(), request.grade());
         person.setTerms(request.termsDays());
         person.setContact(request.contactValue());
+        person.setTags(request.tagsValue());
         personOut.set(person);
     }
 }
