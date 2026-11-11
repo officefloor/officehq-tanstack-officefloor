@@ -9,7 +9,7 @@ import { peopleKey } from '../people/people';
 
 type Result = { added: number; updated: number };
 
-// The import box: lines of name,grade,terms,contact (the terms and contact may be absent or blank)
+// The import box: lines of name,grade,terms,contact (the terms and contact may be absent or blank; a blank grade takes the sheet's default grade)
 // each add a person, in order, as the person form would; a line naming a person on the sheet (by name or
 // alias) updates them instead, as the edit form would (terms and contact only when the line gives them). The server checks every line by the form's
 // rules first (a name or contact repeated within the import is refused too): one bad line refuses the

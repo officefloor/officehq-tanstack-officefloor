@@ -275,6 +275,14 @@ public class ValidateSettings {
             }
             proofKinds = String.join(",", kinds);
         }
+        boolean defaultGradeChanged = request != null && request.defaultGrade() != null;
+        String defaultGrade = null;
+        if (defaultGradeChanged && !request.defaultGrade().trim().isEmpty()) {
+            defaultGrade = request.defaultGrade().trim();
+            if (!Settings.GRADES.contains(defaultGrade)) {
+                throw new InvalidSettingException("A default grade is one of A, B or C, or blank");
+            }
+        }
         Map<String, LocalDate> from = new LinkedHashMap<>();
         if (request != null && request.from() != null) {
             for (Map.Entry<String, String> entry : request.from().entrySet()) {
@@ -294,6 +302,6 @@ public class ValidateSettings {
                 entryChanged, entryDate, gradeGrace, gradeProofThreshold, potChanged, pot, parentChanged, parent,
                 fiscalChanged, fiscalStartMonth, alertChanged, alertThreshold, roundingChanged, rounding,
                 reviewThresholdChanged, reviewThreshold, escalateChanged, escalateAfter, reviewSlaChanged, reviewSla,
-                proofKindsChanged, proofKinds));
+                proofKindsChanged, proofKinds, defaultGradeChanged, defaultGrade));
     }
 }

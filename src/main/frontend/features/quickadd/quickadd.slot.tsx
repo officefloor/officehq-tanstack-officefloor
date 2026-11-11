@@ -13,7 +13,7 @@ type Fields = { name: string; amount: string };
 const EMPTY: Fields = { name: '', amount: '' };
 
 // The quick-add bar under the people list: a name and an amount make a DRAFT claim dated the
-// sheet's entry date while set (else its today), with no note, for that person, adding them (grade A) when the name is not on the
+// sheet's entry date while set (else its today), with no note, for that person, adding them (the sheet's default grade, else A) when the name is not on the
 // sheet. The server makes it one change: a refusal adds no one.
 function QuickAdd({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();

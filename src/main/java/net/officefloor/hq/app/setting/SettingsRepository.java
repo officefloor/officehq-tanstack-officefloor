@@ -29,7 +29,7 @@ public class SettingsRepository {
         Map<String, String> perms = new HashMap<>();
         jdbc.query("SELECT action, roles FROM setting_perm WHERE sheet_id = ?",
                 (RowCallbackHandler) (rs) -> perms.put(rs.getString("action"), rs.getString("roles")), sheetId);
-        List<Settings> found = jdbc.query("SELECT today, policy_date, period_numbering_from, grace_days, entry_date, pot, fiscal_start_month, alert_threshold, escalate_after, review_sla, proof_kinds FROM sheet WHERE id = ?",
+        List<Settings> found = jdbc.query("SELECT today, policy_date, period_numbering_from, grace_days, entry_date, pot, fiscal_start_month, alert_threshold, escalate_after, review_sla, proof_kinds, default_grade FROM sheet WHERE id = ?",
                 (rs, n) -> new Settings(sheetId, rs.getDate("today").toLocalDate(), dated,
                         rs.getDate("policy_date") == null ? null : rs.getDate("policy_date").toLocalDate(),
                         rs.getDate("period_numbering_from") == null ? null : rs.getDate("period_numbering_from").toLocalDate(), perms,
@@ -37,9 +37,9 @@ public class SettingsRepository {
                         rs.getDate("entry_date") == null ? null : rs.getDate("entry_date").toLocalDate(),
                         rs.getBigDecimal("pot"), rs.getObject("fiscal_start_month", Integer.class),
                         rs.getBigDecimal("alert_threshold"), rs.getObject("escalate_after", Integer.class),
-                        rs.getObject("review_sla", Integer.class), rs.getString("proof_kinds")),
+                        rs.getObject("review_sla", Integer.class), rs.getString("proof_kinds"), rs.getString("default_grade")),
                 sheetId);
-        return found.isEmpty() ? new Settings(sheetId, null, dated, null, null, perms, null, null, null, null, null, null, null, null) : found.get(0);
+        return found.isEmpty() ? new Settings(sheetId, null, dated, null, null, perms, null, null, null, null, null, null, null, null, null) : found.get(0);
     }
 
     /** Records a dated setting's value from a date, replacing any value already recorded from it. */
@@ -85,7 +85,7 @@ public class SettingsRepository {
                 }, sheetId);
         return new Settings(sheetId, day, dated, policyKept[0] ? policy[0] : now.policyDate(),
                 now.periodNumberingFrom(), now.perms(), now.graceDays(), now.entryDate(), potKept[0] ? pot[0] : now.pot(), now.fiscalStartMonth(),
-                now.alertThreshold(), now.escalateAfter(), now.reviewSla(), now.proofKinds());
+                now.alertThreshold(), now.escalateAfter(), now.reviewSla(), now.proofKinds(), now.defaultGrade());
     }
 
     private static final String POLICY_DATE = "policy-date";
@@ -100,12 +100,12 @@ public class SettingsRepository {
 
     /** Saves the undated settings. */
     public void saveUndated(Settings settings) {
-        jdbc.update("UPDATE sheet SET policy_date = ?, period_numbering_from = ?, grace_days = ?, entry_date = ?, pot = ?, fiscal_start_month = ?, alert_threshold = ?, escalate_after = ?, review_sla = ?, proof_kinds = ? WHERE id = ?",
+        jdbc.update("UPDATE sheet SET policy_date = ?, period_numbering_from = ?, grace_days = ?, entry_date = ?, pot = ?, fiscal_start_month = ?, alert_threshold = ?, escalate_after = ?, review_sla = ?, proof_kinds = ?, default_grade = ? WHERE id = ?",
                 settings.policyDate() == null ? null : java.sql.Date.valueOf(settings.policyDate()),
                 settings.periodNumberingFrom() == null ? null : java.sql.Date.valueOf(settings.periodNumberingFrom()),
                 settings.graceDays(),
                 settings.entryDate() == null ? null : java.sql.Date.valueOf(settings.entryDate()),
-                settings.pot(), settings.fiscalStartMonth(), settings.alertThreshold(), settings.escalateAfter(), settings.reviewSla(), settings.proofKinds(), settings.sheetId());
+                settings.pot(), settings.fiscalStartMonth(), settings.alertThreshold(), settings.escalateAfter(), settings.reviewSla(), settings.proofKinds(), settings.defaultGrade(), settings.sheetId());
         history(settings.sheetId(), POLICY_DATE, null,
                 settings.policyDate() == null ? "" : settings.policyDate().toString());
         history(settings.sheetId(), POT, null, settings.pot() == null ? "" : settings.pot().toPlainString());

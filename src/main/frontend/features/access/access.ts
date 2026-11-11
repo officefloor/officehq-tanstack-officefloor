@@ -55,6 +55,8 @@ export type Settings = {
   reviewSla: string;
   /** The proof kinds, a comma separated list of kinds, receipt or photo ('' for none), not dated: while set, a claim above the proof threshold needs a proof of each. */
   proofKinds: string;
+  /** The default grade, one of the grades ('' for A), not dated: the grade a quick-added person and an imported line with a blank grade take. */
+  defaultGrade: string;
   /**
    * Every value recorded for each figure setting, by key (clerk-limit, floor, terms, late-pct,
    * terms-A, terms-B, terms-C, cap, proof-threshold, note-threshold, grace-A, grace-B, grace-C, proof-threshold-A, proof-threshold-B,

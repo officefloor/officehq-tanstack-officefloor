@@ -59,6 +59,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
     escalateAfter: '',
     reviewSla: '',
     proofKinds: '',
+    defaultGrade: '',
   });
   const [touched, setTouched] = useState<Set<Key>>(new Set());
   const [gradeFields, setGradeFields] = useState<Record<string, string>>({});
@@ -251,6 +252,14 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         return;
       }
       body.proofKinds = proofKinds;
+    }
+    if (touched.has('defaultGrade')) {
+      const defaultGrade = fields.defaultGrade.trim();
+      if (defaultGrade !== '' && !(GRADES as readonly string[]).includes(defaultGrade)) {
+        setError('A default grade is one of A, B or C, or blank.');
+        return;
+      }
+      body.defaultGrade = defaultGrade;
     }
     if (gradesTouched.size > 0) {
       const gradeTerms: Record<string, string> = {};
@@ -721,6 +730,19 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         </label>{' '}
         <span>
           now: <strong data-testid="setting-proof-kinds-current">{settings.data?.proofKinds ?? ''}</strong>
+        </span>{' '}
+        <label>
+          Default grade{' '}
+          <input
+            data-testid="setting-default-grade"
+            placeholder="A"
+            value={fields.defaultGrade}
+            onFocus={() => touch('defaultGrade')}
+            onChange={(e) => change('defaultGrade', e.target.value)}
+          />
+        </label>{' '}
+        <span>
+          now: <strong data-testid="setting-default-grade-current">{settings.data?.defaultGrade ?? ''}</strong>
         </span>{' '}
         {ACTIONS.map((action) => (
           <span key={action}>

@@ -33,12 +33,18 @@ import java.util.NavigableMap;
  * shared out as cuts among a balanced pool's members, and its fiscal year start month (null: 1), and its alert threshold (null: off),
  * and its escalation gap in days (null: off), and its review SLA in days (null: none): a REVIEW claim whose
  * review day plus it is before the sheet's today is late for review, and its proof kinds (null: none), a
- * comma separated list of kinds: while set, a claim that needs a proof needs at least one of each.
+ * comma separated list of kinds: while set, a claim that needs a proof needs at least one of each, and its
+ * default grade (null: A), the grade a quick-added person and an imported line with a blank grade take.
  */
 public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap<LocalDate, String>> dated,
         LocalDate policyDate, LocalDate periodNumberingFrom, Map<String, String> perms, Integer graceDays,
         LocalDate entryDate, BigDecimal pot, Integer fiscalStartMonth, BigDecimal alertThreshold,
-        Integer escalateAfter, Integer reviewSla, String proofKinds) {
+        Integer escalateAfter, Integer reviewSla, String proofKinds, String defaultGrade) {
+    /** The grade a new person takes when none is given: the default grade, else A. */
+    public String newPersonGrade() {
+        return defaultGrade == null || defaultGrade.isBlank() ? "A" : defaultGrade;
+    }
+
     /** The month, 1 to 12, a fiscal year starts in. */
     public int fiscalStart() {
         return fiscalStartMonth == null ? 1 : fiscalStartMonth;
@@ -65,6 +71,7 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
     public static final String ROUNDING = "rounding";
     public static final String REVIEW_THRESHOLD = "review-threshold";
     public static final String PROOF_KINDS = "proof-kinds";
+    public static final String DEFAULT_GRADE = "default-grade";
 
     /** The kinds of proof the proof kinds list (none set: none). */
     public List<String> proofKindList() {

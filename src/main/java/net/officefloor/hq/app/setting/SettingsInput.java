@@ -22,7 +22,8 @@ import java.time.LocalDate;
  * half-even (null: none), dated by its key (rounding), and whether the review threshold is changed and to
  * what (null: none), and whether the escalation gap is changed and to what, in days (null: off), and whether
  * the review SLA is changed and to what, in days (null: none), and whether the proof kinds are changed and
- * to what, a comma separated list of kinds (null: none).
+ * to what, a comma separated list of kinds (null: none), and whether the default grade is changed and to
+ * what, one of the grades (null: A).
  */
 public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, BigDecimal floor, Integer terms, BigDecimal latePct,
         boolean policyDateChanged, LocalDate policyDate,
@@ -40,7 +41,8 @@ public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, Bi
         boolean reviewThresholdChanged, BigDecimal reviewThreshold,
         boolean escalateAfterChanged, Integer escalateAfter,
         boolean reviewSlaChanged, Integer reviewSla,
-        boolean proofKindsChanged, String proofKinds) {
+        boolean proofKindsChanged, String proofKinds,
+        boolean defaultGradeChanged, String defaultGrade) {
 
     /**
      * The figure settings being changed, by key in the order they are audited, each with the value
