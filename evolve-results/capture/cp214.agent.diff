@@ -1,0 +1,459 @@
+diff --git a/src/main/frontend/features/access/access.slot.tsx b/src/main/frontend/features/access/access.slot.tsx
+index 416c59c39..c580bf510 100644
+--- a/src/main/frontend/features/access/access.slot.tsx
++++ b/src/main/frontend/features/access/access.slot.tsx
+@@ -63,6 +63,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
+     scoreMid: '',
+     scoreHigh: '',
+     scoreLog: '',
++    maxOpen: '',
+   });
+   const [touched, setTouched] = useState<Set<Key>>(new Set());
+   const [gradeFields, setGradeFields] = useState<Record<string, string>>({});
+@@ -284,6 +285,14 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
+       }
+       body.scoreLog = scoreLog;
+     }
++    if (touched.has('maxOpen')) {
++      const maxOpen = fields.maxOpen.trim();
++      if (maxOpen !== '' && !TERMS.test(maxOpen)) {
++        setError('A maximum of open claims is a whole number, 0 or more, or blank.');
++        return;
++      }
++      body.maxOpen = maxOpen;
++    }
+     if (gradesTouched.size > 0) {
+       const gradeTerms: Record<string, string> = {};
+       for (const grade of GRADES) {
+@@ -851,6 +860,20 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
+         <span>
+           now: <strong data-testid="setting-score-log-current">{settings.data?.scoreLog ?? ''}</strong>
+         </span>{' '}
++        <label>
++          Max open claims per person{' '}
++          <input
++            data-testid="setting-max-open"
++            inputMode="numeric"
++            placeholder="none"
++            value={fields.maxOpen}
++            onFocus={() => touch('maxOpen')}
++            onChange={(e) => change('maxOpen', e.target.value)}
++          />
++        </label>{' '}
++        <span>
++          now: <strong data-testid="setting-max-open-current">{settings.data?.maxOpen ?? ''}</strong>
++        </span>{' '}
+         {ACTIONS.map((action) => (
+           <span key={action}>
+             <label>
+diff --git a/src/main/frontend/features/access/access.ts b/src/main/frontend/features/access/access.ts
+index 891d69eca..177b029b6 100644
+--- a/src/main/frontend/features/access/access.ts
++++ b/src/main/frontend/features/access/access.ts
+@@ -65,6 +65,8 @@ export type Settings = {
+   scoreHigh: string;
+   /** The score log switch, on ('' for off), not dated: while on, changing the sheet's today writes a SCORE line per person. */
+   scoreLog: string;
++  /** The maximum of open claims per person, a whole number ('' for none), not dated: opening a claim is refused while its person already has that many OPEN or PENDING. */
++  maxOpen: string;
+   /**
+    * Every value recorded for each figure setting, by key (clerk-limit, floor, terms, late-pct,
+    * terms-A, terms-B, terms-C, cap, proof-threshold, note-threshold, grace-A, grace-B, grace-C, proof-threshold-A, proof-threshold-B,
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java b/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java
+index 3692914df..9427e0d7a 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java
+@@ -41,7 +41,7 @@ import net.officefloor.hq.app.paste.PasteResponse;
+  * newest such DRAFT is edited to the line's amount and opened; a line whose matches hold no DRAFT is
+  * refused. Every line is checked first, as the claim form checks a claim (its person on the sheet, its
+  * reference unused on the sheet and in the paste, its due-by outside a closed period and not after its
+- * person's retirement) and as the editor checks an edit (not locked by another user, its lines' total),
++ * person's retirement) and as the editor checks an edit (not locked by another user, its lines' total), and its person under the sheet's maximum of open claims,
+  * then each is opened as the open button opens it (the user's role allowed to open, a note when its due
+  * needs one, its period's cap). One refusal refuses the whole paste: it is a single transaction, and
+  * its audit lines are only written once every line has gone through. Each line writes CLAIM_ADDED (or
+@@ -67,6 +67,8 @@ public class AddPastedClaims {
+         Map<Long, List<Claim>> before = new HashMap<>();
+         Set<Long> taken = new HashSet<>();
+         Set<String> refs = new HashSet<>();
++        // Each person's OPEN or PENDING claims, counting the lines before that open one of theirs.
++        Map<Long, Long> held = new HashMap<>();
+         int number = 0;
+         for (PasteLine line : paste.lines()) {
+             number++;
+@@ -130,6 +132,11 @@ public class AddPastedClaims {
+                 existing.add(false);
+                 edited.add(false);
+             }
++            if (terms.maxOpen() != null) {
++                long now = held.computeIfAbsent(person.getId(), id -> MaxOpen.held(sheet, id, claims));
++                if (now >= terms.maxOpen()) throw MaxOpen.refused(terms);
++                if (OpenClaim.opensTo(sheet, claim, people, rates, settings) == ClaimStatus.OPEN) held.put(person.getId(), now + 1);
++            }
+             persons.add(person);
+             built.add(claim);
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/MaxOpen.java b/src/main/java/net/officefloor/hq/app/claim/MaxOpen.java
+new file mode 100644
+index 000000000..7efe801af
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/MaxOpen.java
+@@ -0,0 +1,44 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.sheet.Sheet;
++
++/**
++ * The sheet's maximum of open claims per person: while it is set, a person may have at most that many
++ * OPEN or PENDING claims, so opening another of theirs is refused.
++ */
++public final class MaxOpen {
++    private MaxOpen() {
++    }
++
++    /** Whether the claim's person already has as many OPEN or PENDING claims as the sheet allows. */
++    public static boolean full(Sheet sheet, Claim claim, Settings settings, ClaimRepository claims) {
++        Integer max = settings.maxOpen();
++        if (max == null) return false;
++        long held = claims.findByPerson(sheet.id(), claim.getPersonId()).stream()
++                .filter(c -> !c.getId().equals(claim.getId()))
++                .filter(MaxOpen::counts)
++                .count();
++        return held >= max;
++    }
++
++    /** How many OPEN or PENDING claims the person has. */
++    public static long held(Sheet sheet, long personId, ClaimRepository claims) {
++        return claims.findByPerson(sheet.id(), personId).stream().filter(MaxOpen::counts).count();
++    }
++
++    private static boolean counts(Claim c) {
++        return c.getStatus() == ClaimStatus.OPEN || c.getStatus() == ClaimStatus.PENDING;
++    }
++
++    /** Refuses opening the claim when its person is already at the maximum. */
++    public static void check(Sheet sheet, Claim claim, Settings settings, ClaimRepository claims)
++            throws InvalidClaimStatusException {
++        if (full(sheet, claim, settings, claims)) throw refused(settings);
++    }
++
++    /** The refusal of opening a claim whose person is at the maximum. */
++    public static InvalidClaimStatusException refused(Settings settings) {
++        return new InvalidClaimStatusException("A person may have at most " + settings.maxOpen() + " open claims");
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/OpenClaim.java b/src/main/java/net/officefloor/hq/app/claim/OpenClaim.java
+index 77ed8bbe6..1bc7244ea 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/OpenClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/OpenClaim.java
+@@ -12,11 +12,12 @@ import net.officefloor.plugin.variable.Val;
+ /**
+  * Opens the claim, recording the signed-in user who opened it. Only a role the permission matrix allows may open. A
+  * claim whose due is above the note threshold in force on its date is refused while its note is empty. A claim
+- * whose due is above the review threshold in force on its date goes to REVIEW instead, still recording who opened it.
++ * whose due is above the review threshold in force on its date goes to REVIEW instead, still recording who opened it. A claim whose person already has the sheet's maximum of OPEN
++ * or PENDING claims is refused.
+  */
+ public class OpenClaim {
+     public void apply(@Val Sheet sheet, @Val Claim claim, RoleRepository roles, SettingsRepository settings,
+-            PersonRepository people, RateRepository rates, HttpServletRequest request) throws InvalidClaimStatusException {
++            PersonRepository people, RateRepository rates, ClaimRepository claims, HttpServletRequest request) throws InvalidClaimStatusException {
+         String user = Audit.user(request);
+         String role = roles.roleOf(sheet.id(), user);
+         if (!settings.find(sheet.id()).allows("open", role)) {
+@@ -26,6 +27,7 @@ public class OpenClaim {
+             throw new InvalidClaimStatusException("Only a steward may open a claim of a flagged person");
+         }
+         if (needsNote(sheet, claim, people, rates, settings)) throw new InvalidClaimStatusException(NoteRequired.MESSAGE);
++        if (claim.getStatus() == ClaimStatus.DRAFT) MaxOpen.check(sheet, claim, settings.find(sheet.id()), claims);
+         claim.moveTo(opensTo(sheet, claim, people, rates, settings));
+         claim.setOpenedBy(user);
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/OpenSelectedClaims.java b/src/main/java/net/officefloor/hq/app/claim/OpenSelectedClaims.java
+index 7998cbc04..6c12102b4 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/OpenSelectedClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/OpenSelectedClaims.java
+@@ -21,7 +21,7 @@ import net.officefloor.plugin.variable.Val;
+ /**
+  * Opens the selected claims in list order (people by their position in the list, each person's
+  * claims newest first), numbering each as it is opened. A claim that cannot be opened (not a
+- * draft, dated inside a closed period, its person at its period's cap, not on the sheet, above the note threshold with an empty note, its person flagged and the user no steward) is refused and left as it is; every one is
++ * draft, dated inside a closed period, its person at its period's cap, not on the sheet, above the note threshold with an empty note, its person flagged and the user no steward, its person at the sheet's maximum of open claims) is refused and left as it is; every one is
+  * refused when the permission matrix does not allow the user's role to open, or the sheet is
+  * archived. A claim sent to REVIEW (above the review threshold) counts as opened. Each claim opened is logged and audited as a single open is: its CLAIM_OPENED line,
+  * then the figures it moved.
+@@ -54,6 +54,7 @@ public class OpenSelectedClaims {
+                 if (!selected.contains(claim.getId())) continue;
+                 if (person.flagRefuses(role, sheet.today())) continue;
+                 if (OpenClaim.needsNote(sheet, claim, people, rates, settings)) continue;
++                if (claim.getStatus() == ClaimStatus.DRAFT && MaxOpen.full(sheet, claim, settings.find(sheet.id()), claims)) continue;
+                 if (!opens(sheet, claim, periods, claims, people, rates, settings)) continue;
+                 claim.setOpenedBy(user);
+                 claims.save(claim);
+diff --git a/src/main/java/net/officefloor/hq/app/setting/AuditSettingChanged.java b/src/main/java/net/officefloor/hq/app/setting/AuditSettingChanged.java
+index 97ef506b1..45e79c97c 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/AuditSettingChanged.java
++++ b/src/main/java/net/officefloor/hq/app/setting/AuditSettingChanged.java
+@@ -13,7 +13,7 @@ import net.officefloor.plugin.variable.Val;
+  * action's entry in the permission matrix (blank for the standing rule, never dated), then the grace
+  * days (blank for off, never dated), then the entry date (blank for off, never dated), then each
+  * grade's grace days (blank for none), then each grade's proof threshold (blank for none), then the pot
+- * (blank for none, never dated), then the parent sheet (blank for none, never dated), then the fiscal start month (never dated), then the alert threshold (blank for off, never dated), then the rounding mode (blank for none), then the review threshold (blank for none), then the escalation gap (blank for off, never dated), then the review SLA (blank for none, never dated), then the proof kinds (blank for none, never dated), then the default grade (blank for A, never dated), then the score thresholds, mid then high (blank for none, never dated); a figure
++ * (blank for none, never dated), then the parent sheet (blank for none, never dated), then the fiscal start month (never dated), then the alert threshold (blank for off, never dated), then the rounding mode (blank for none), then the review threshold (blank for none), then the escalation gap (blank for off, never dated), then the review SLA (blank for none, never dated), then the proof kinds (blank for none, never dated), then the default grade (blank for A, never dated), then the score thresholds, mid then high (blank for none, never dated), then the maximum of open claims (blank for none, never dated); a figure
+  * setting saved from a from-date given ends with it. Runs after every rule has passed, so a refused
+  * change writes nothing.
+  */
+@@ -88,6 +88,9 @@ public class AuditSettingChanged {
+         if (input.scoreLogChanged()) {
+             audit.record(head + " key=" + Settings.SCORE_LOG + " value=" + (input.scoreLog() ? Settings.ON : ""));
+         }
++        if (input.maxOpenChanged()) {
++            audit.record(head + " key=" + Settings.MAX_OPEN + " value=" + (input.maxOpen() == null ? "" : input.maxOpen()));
++        }
+         if (input.parentChanged()) {
+             audit.record(head + " key=parent value=" + (input.parent() == null ? "" : input.parent()));
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SaveSettings.java b/src/main/java/net/officefloor/hq/app/setting/SaveSettings.java
+index 94d6f6cb5..410f63d69 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SaveSettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SaveSettings.java
+@@ -9,7 +9,7 @@ import net.officefloor.plugin.variable.Val;
+  * Saves the settings being changed, leaving the others as they are: a figure setting's value is
+  * recorded from its from-date (the sheet's today when none is given), keeping the values recorded
+  * from other dates and replacing one recorded from the same date. An action's entry in the
+- * permission matrix is not dated: it replaces the one before, nor is the parent sheet, nor the alert threshold, nor the escalation gap, nor the review SLA, nor the proof kinds, nor the default grade, nor the score thresholds, nor the score log switch.
++ * permission matrix is not dated: it replaces the one before, nor is the parent sheet, nor the alert threshold, nor the escalation gap, nor the review SLA, nor the proof kinds, nor the default grade, nor the score thresholds, nor the score log switch, nor the maximum of open claims.
+  */
+ public class SaveSettings {
+     public void save(@Val SettingsInput input, @Val Sheet sheet, SettingsRepository repository,
+@@ -20,7 +20,7 @@ public class SaveSettings {
+                 || input.entryDateChanged() || input.potChanged() || input.fiscalStartMonthChanged()
+                 || input.alertThresholdChanged() || input.escalateAfterChanged() || input.reviewSlaChanged()
+                 || input.proofKindsChanged() || input.defaultGradeChanged() || input.scoreMidChanged()
+-                || input.scoreHighChanged() || input.scoreLogChanged()) {
++                || input.scoreHighChanged() || input.scoreLogChanged() || input.maxOpenChanged()) {
+             repository.saveUndated(new Settings(sheet.id(), now.today(), now.dated(),
+                     input.policyDateChanged() ? input.policyDate() : now.policyDate(),
+                     input.periodNumberingFromChanged() ? input.periodNumberingFrom() : now.periodNumberingFrom(), now.perms(),
+@@ -35,7 +35,8 @@ public class SaveSettings {
+                     input.defaultGradeChanged() ? input.defaultGrade() : now.defaultGrade(),
+                     input.scoreMidChanged() ? input.scoreMid() : now.scoreMid(),
+                     input.scoreHighChanged() ? input.scoreHigh() : now.scoreHigh(),
+-                    input.scoreLogChanged() ? input.scoreLog() : now.scoreLog()));
++                    input.scoreLogChanged() ? input.scoreLog() : now.scoreLog(),
++                    input.maxOpenChanged() ? input.maxOpen() : now.maxOpen()));
+         }
+         input.perms().forEach((action, roles) -> repository.recordPerm(sheet.id(), action, roles));
+         java.util.Map<String, String> values = new java.util.LinkedHashMap<>(input.datedValues());
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Settings.java b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+index 9c0726d81..3aa090dc9 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+@@ -36,13 +36,15 @@ import java.util.NavigableMap;
+  * comma separated list of kinds: while set, a claim that needs a proof needs at least one of each, and its
+  * default grade (null: A), the grade a quick-added person and an imported line with a blank grade take, and
+  * its score thresholds, mid and high (null: none): while both are set, each person shows a band by their score, and
+- * its score log switch (false: off): while it is on, changing the sheet's today writes a SCORE line per person.
++ * its score log switch (false: off): while it is on, changing the sheet's today writes a SCORE line per person, and
++ * its maximum of open claims per person (null: none): opening a claim is refused while its person already has that
++ * many OPEN or PENDING claims.
+  */
+ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap<LocalDate, String>> dated,
+         LocalDate policyDate, LocalDate periodNumberingFrom, Map<String, String> perms, Integer graceDays,
+         LocalDate entryDate, BigDecimal pot, Integer fiscalStartMonth, BigDecimal alertThreshold,
+         Integer escalateAfter, Integer reviewSla, String proofKinds, String defaultGrade, Integer scoreMid,
+-        Integer scoreHigh, boolean scoreLog) {
++        Integer scoreHigh, boolean scoreLog, Integer maxOpen) {
+     /** The grade a new person takes when none is given: the default grade, else A. */
+     public String newPersonGrade() {
+         return defaultGrade == null || defaultGrade.isBlank() ? "A" : defaultGrade;
+@@ -78,6 +80,7 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
+     public static final String SCORE_MID = "score-mid";
+     public static final String SCORE_HIGH = "score-high";
+     public static final String SCORE_LOG = "score-log";
++    public static final String MAX_OPEN = "max-open";
+ 
+     /** The value the score log switch is recorded and shown as while it is on. */
+     public static final String ON = "on";
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsInput.java b/src/main/java/net/officefloor/hq/app/setting/SettingsInput.java
+index 24ba44fba..8efab1de1 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsInput.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsInput.java
+@@ -25,7 +25,7 @@ import java.time.LocalDate;
+  * to what, a comma separated list of kinds (null: none), and whether the default grade is changed and to
+  * what, one of the grades (null: A), and whether each score threshold, mid and high, is changed and to what
+  * (null: none), and whether the score log switch is changed and to what (false: off), and the grades whose clerk limit is changed, in A, B, C order, and to
+- * what (null: none, the sheet's).
++ * what (null: none, the sheet's), and whether the maximum of open claims per person is changed and to what (null: none).
+  */
+ public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, BigDecimal floor, Integer terms, BigDecimal latePct,
+         boolean policyDateChanged, LocalDate policyDate,
+@@ -47,7 +47,7 @@ public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, Bi
+         boolean defaultGradeChanged, String defaultGrade,
+         boolean scoreMidChanged, Integer scoreMid, boolean scoreHighChanged, Integer scoreHigh,
+         boolean scoreLogChanged, boolean scoreLog,
+-        java.util.Map<String, BigDecimal> gradeClerkLimit) {
++        java.util.Map<String, BigDecimal> gradeClerkLimit, boolean maxOpenChanged, Integer maxOpen) {
+ 
+     /**
+      * The figure settings being changed, by key in the order they are audited, each with the value
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsRepository.java b/src/main/java/net/officefloor/hq/app/setting/SettingsRepository.java
+index fe4d58a84..0a19289c5 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsRepository.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsRepository.java
+@@ -29,7 +29,7 @@ public class SettingsRepository {
+         Map<String, String> perms = new HashMap<>();
+         jdbc.query("SELECT action, roles FROM setting_perm WHERE sheet_id = ?",
+                 (RowCallbackHandler) (rs) -> perms.put(rs.getString("action"), rs.getString("roles")), sheetId);
+-        List<Settings> found = jdbc.query("SELECT today, policy_date, period_numbering_from, grace_days, entry_date, pot, fiscal_start_month, alert_threshold, escalate_after, review_sla, proof_kinds, default_grade, score_mid, score_high, score_log FROM sheet WHERE id = ?",
++        List<Settings> found = jdbc.query("SELECT today, policy_date, period_numbering_from, grace_days, entry_date, pot, fiscal_start_month, alert_threshold, escalate_after, review_sla, proof_kinds, default_grade, score_mid, score_high, score_log, max_open FROM sheet WHERE id = ?",
+                 (rs, n) -> new Settings(sheetId, rs.getDate("today").toLocalDate(), dated,
+                         rs.getDate("policy_date") == null ? null : rs.getDate("policy_date").toLocalDate(),
+                         rs.getDate("period_numbering_from") == null ? null : rs.getDate("period_numbering_from").toLocalDate(), perms,
+@@ -38,9 +38,10 @@ public class SettingsRepository {
+                         rs.getBigDecimal("pot"), rs.getObject("fiscal_start_month", Integer.class),
+                         rs.getBigDecimal("alert_threshold"), rs.getObject("escalate_after", Integer.class),
+                         rs.getObject("review_sla", Integer.class), rs.getString("proof_kinds"), rs.getString("default_grade"),
+-                        rs.getObject("score_mid", Integer.class), rs.getObject("score_high", Integer.class), rs.getBoolean("score_log")),
++                        rs.getObject("score_mid", Integer.class), rs.getObject("score_high", Integer.class), rs.getBoolean("score_log"),
++                        rs.getObject("max_open", Integer.class)),
+                 sheetId);
+-        return found.isEmpty() ? new Settings(sheetId, null, dated, null, null, perms, null, null, null, null, null, null, null, null, null, null, null, false) : found.get(0);
++        return found.isEmpty() ? new Settings(sheetId, null, dated, null, null, perms, null, null, null, null, null, null, null, null, null, null, null, false, null) : found.get(0);
+     }
+ 
+     /** Records a dated setting's value from a date, replacing any value already recorded from it. */
+@@ -87,7 +88,7 @@ public class SettingsRepository {
+         return new Settings(sheetId, day, dated, policyKept[0] ? policy[0] : now.policyDate(),
+                 now.periodNumberingFrom(), now.perms(), now.graceDays(), now.entryDate(), potKept[0] ? pot[0] : now.pot(), now.fiscalStartMonth(),
+                 now.alertThreshold(), now.escalateAfter(), now.reviewSla(), now.proofKinds(), now.defaultGrade(),
+-                now.scoreMid(), now.scoreHigh(), now.scoreLog());
++                now.scoreMid(), now.scoreHigh(), now.scoreLog(), now.maxOpen());
+     }
+ 
+     private static final String POLICY_DATE = "policy-date";
+@@ -102,13 +103,13 @@ public class SettingsRepository {
+ 
+     /** Saves the undated settings. */
+     public void saveUndated(Settings settings) {
+-        jdbc.update("UPDATE sheet SET policy_date = ?, period_numbering_from = ?, grace_days = ?, entry_date = ?, pot = ?, fiscal_start_month = ?, alert_threshold = ?, escalate_after = ?, review_sla = ?, proof_kinds = ?, default_grade = ?, score_mid = ?, score_high = ?, score_log = ? WHERE id = ?",
++        jdbc.update("UPDATE sheet SET policy_date = ?, period_numbering_from = ?, grace_days = ?, entry_date = ?, pot = ?, fiscal_start_month = ?, alert_threshold = ?, escalate_after = ?, review_sla = ?, proof_kinds = ?, default_grade = ?, score_mid = ?, score_high = ?, score_log = ?, max_open = ? WHERE id = ?",
+                 settings.policyDate() == null ? null : java.sql.Date.valueOf(settings.policyDate()),
+                 settings.periodNumberingFrom() == null ? null : java.sql.Date.valueOf(settings.periodNumberingFrom()),
+                 settings.graceDays(),
+                 settings.entryDate() == null ? null : java.sql.Date.valueOf(settings.entryDate()),
+                 settings.pot(), settings.fiscalStartMonth(), settings.alertThreshold(), settings.escalateAfter(), settings.reviewSla(), settings.proofKinds(), settings.defaultGrade(),
+-                settings.scoreMid(), settings.scoreHigh(), settings.scoreLog(), settings.sheetId());
++                settings.scoreMid(), settings.scoreHigh(), settings.scoreLog(), settings.maxOpen(), settings.sheetId());
+         history(settings.sheetId(), POLICY_DATE, null,
+                 settings.policyDate() == null ? "" : settings.policyDate().toString());
+         history(settings.sheetId(), POT, null, settings.pot() == null ? "" : settings.pot().toPlainString());
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java b/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
+index 6dc7f35dc..898aabcfc 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
+@@ -24,7 +24,8 @@ package net.officefloor.hq.app.setting;
+  * kinds, receipt or photo (blank: none), not dated, and the default grade, one of the grades (blank: A), not dated, and the score
+  * thresholds, mid and high, whole numbers (blank: none), not dated, and the score log switch, on (blank: off), not dated, and
+  * the clerk limit of each grade being changed, with up to two decimals (blank: none, the sheet's), dated by its key
+- * (clerk-limit-A, clerk-limit-B, clerk-limit-C).
++ * (clerk-limit-A, clerk-limit-B, clerk-limit-C), and the maximum of open claims per person, a whole number (blank:
++ * none), not dated.
+  */
+ public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom,
+         java.util.Map<String, String> gradeTerms, String cap, java.util.Map<String, String> from,
+@@ -34,5 +35,5 @@ public record SettingsRequest(String clerkLimit, String floor, String terms, Str
+         String fiscalStartMonth, String alertThreshold, String rounding, String reviewThreshold,
+         String escalateAfter, String reviewSla, String proofKinds, String defaultGrade,
+         String scoreMid, String scoreHigh, String scoreLog,
+-        java.util.Map<String, String> gradeClerkLimit) {
++        java.util.Map<String, String> gradeClerkLimit, String maxOpen) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+index f328c73d2..09b46e24f 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+@@ -19,7 +19,7 @@ import java.util.Map;
+  * days ('' for none); and each grade's proof threshold with two decimals ('' for none); and the pot
+  * with two decimals ('' for none); and the parent sheet's id ('' for none); and the fiscal year start
+  * month, 1 to 12; and the alert threshold with two decimals ('' for off); and the rounding mode,
+- * half-up or half-even ('' for none); and the review threshold with two decimals ('' for none); and the escalation gap in days ('' for off); and the review SLA in days ('' for none); and the proof kinds, a comma separated list ('' for none); and the default grade ('' for A); and the score thresholds, mid and high ('' for none); and the score log switch (on, '' for off); and each grade's own clerk limit with two decimals ('' for none).
++ * half-up or half-even ('' for none); and the review threshold with two decimals ('' for none); and the escalation gap in days ('' for off); and the review SLA in days ('' for none); and the proof kinds, a comma separated list ('' for none); and the default grade ('' for A); and the score thresholds, mid and high ('' for none); and the score log switch (on, '' for off); and each grade's own clerk limit with two decimals ('' for none); and the maximum of open claims per person ('' for none).
+  */
+ public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
+         String periodNumberingFrom, Map<String, String> gradeTerms, String cap, Map<String, List<Dated>> dated,
+@@ -27,7 +27,7 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
+         String entryDate, Map<String, String> gradeGrace, Map<String, String> gradeProofThreshold,
+         String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding,
+         String reviewThreshold, String escalateAfter, String reviewSla, String proofKinds, String defaultGrade,
+-        String scoreMid, String scoreHigh, String scoreLog, Map<String, String> gradeClerkLimit) {
++        String scoreMid, String scoreHigh, String scoreLog, Map<String, String> gradeClerkLimit, String maxOpen) {
+ 
+     /** A value ('' for none) recorded from a date (yyyy-MM-dd). */
+     public record Dated(String from, String value) {
+@@ -61,7 +61,8 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
+                 settings.scoreMid() == null ? "" : settings.scoreMid().toString(),
+                 settings.scoreHigh() == null ? "" : settings.scoreHigh().toString(),
+                 settings.scoreLog() ? Settings.ON : "",
+-                gradeClerkLimit(settings));
++                gradeClerkLimit(settings),
++                settings.maxOpen() == null ? "" : settings.maxOpen().toString());
+     }
+ 
+     private static String rounding(String value) {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
+index 4a46b2da0..6dfa13711 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
+@@ -314,6 +314,15 @@ public class ValidateSettings {
+             }
+             scoreLog = true;
+         }
++        boolean maxOpenChanged = request != null && request.maxOpen() != null;
++        Integer maxOpen = null;
++        if (maxOpenChanged && !request.maxOpen().trim().isEmpty()) {
++            String value = request.maxOpen().trim();
++            if (!DAYS.matcher(value).matches()) {
++                throw new InvalidSettingException("A maximum of open claims is a whole number, 0 or more, or blank");
++            }
++            maxOpen = Integer.valueOf(value);
++        }
+         Map<String, LocalDate> from = new LinkedHashMap<>();
+         if (request != null && request.from() != null) {
+             for (Map.Entry<String, String> entry : request.from().entrySet()) {
+@@ -334,7 +343,8 @@ public class ValidateSettings {
+                 fiscalChanged, fiscalStartMonth, alertChanged, alertThreshold, roundingChanged, rounding,
+                 reviewThresholdChanged, reviewThreshold, escalateChanged, escalateAfter, reviewSlaChanged, reviewSla,
+                 proofKindsChanged, proofKinds, defaultGradeChanged, defaultGrade,
+-                scoreMidChanged, scoreMid, scoreHighChanged, scoreHigh, scoreLogChanged, scoreLog, gradeClerkLimit));
++                scoreMidChanged, scoreMid, scoreHighChanged, scoreHigh, scoreLogChanged, scoreLog, gradeClerkLimit,
++                maxOpenChanged, maxOpen));
+     }
+ 
+     /** A score threshold: a whole number (null for blank). */
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
+index 5e63de0f8..0481ebb6d 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
+@@ -32,9 +32,9 @@ public class SheetCloneRepository {
+      */
+     public Map<Long, Long> copy(String from, String to) {
+         jdbc.update("INSERT INTO sheet (id, today, clerk_limit, due_floor, terms, late_pct, policy_date,"
+-                + " period_numbering_from, cap, grace_days, entry_date, pot, parent_id, fiscal_start_month, alert_threshold, escalate_after, review_sla, score_mid, score_high, score_log, cloned_from)"
++                + " period_numbering_from, cap, grace_days, entry_date, pot, parent_id, fiscal_start_month, alert_threshold, escalate_after, review_sla, score_mid, score_high, score_log, max_open, cloned_from)"
+                 + " SELECT ?, today, clerk_limit, due_floor, terms, late_pct, policy_date, period_numbering_from, cap,"
+-                + " grace_days, entry_date, pot, parent_id, fiscal_start_month, alert_threshold, escalate_after, review_sla, score_mid, score_high, score_log, id FROM sheet WHERE id = ?", to, from);
++                + " grace_days, entry_date, pot, parent_id, fiscal_start_month, alert_threshold, escalate_after, review_sla, score_mid, score_high, score_log, max_open, id FROM sheet WHERE id = ?", to, from);
+         java.sql.Date today = jdbc.queryForObject("SELECT today FROM sheet WHERE id = ?", java.sql.Date.class, to);
+ 
+         jdbc.update("INSERT INTO setting_value (sheet_id, setting_key, from_date, setting_value)"
+diff --git a/src/main/resources/db/migration/V116__max_open.sql b/src/main/resources/db/migration/V116__max_open.sql
+new file mode 100644
+index 000000000..d00617666
+--- /dev/null
++++ b/src/main/resources/db/migration/V116__max_open.sql
+@@ -0,0 +1,3 @@
++-- A sheet's maximum of open claims per person, not dated (null: none): opening a claim is refused
++-- while its person already has that many OPEN or PENDING claims.
++ALTER TABLE sheet ADD COLUMN max_open INT;
