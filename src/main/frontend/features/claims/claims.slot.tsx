@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOnce } from '../../query/useOnce';
-import { postJson, putJson } from '../../api/http';
+import { getJson, postJson, putJson } from '../../api/http';
 import { PersonHead, PersonRow } from '../../slots/defs/personRow';
 import { gradeOn, liveHolds, peopleKey, usePeople } from '../people/people';
 import type { Person } from '../people/people';
@@ -83,6 +83,8 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   const [splitAmount, setSplitAmount] = useState<Record<string, string>>({});
   const [commentText, setCommentText] = useState<Record<string, string>>({});
   // The line typed to add to each draft (label, quantity, unit amount), by claim id.
+  // Each claim's timeline as last shown: its audit lines, newest first.
+  const [timelines, setTimelines] = useState<Record<string, string[]>>({});
   const [lineFields, setLineFields] = useState<Record<string, { label: string; qty: string; unit: string }>>({});
   // The template picked to add a draft claim from.
   const [template, setTemplate] = useState('');
@@ -382,6 +384,23 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
       return;
     }
     comment.mutate({ id, text });
+  };
+
+  // A claim's timeline: the audit lines about it as the audit file holds them, newest first.
+  const timeline = useMutation({
+    mutationFn: (id: string) =>
+      getJson<{ lines: string[] }>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/claims/${encodeURIComponent(id)}/timeline`,
+        user,
+      ),
+    onSuccess: (data, id) => setTimelines((t) => ({ ...t, [id]: data.lines })),
+    onError: (_e, id) => setRefused({ id, message: 'The timeline could not be read.' }),
+  });
+
+  const showTimeline = (id: string) => {
+    setRefused(null);
+    setTimelines((t) => ({ ...t, [id]: [] }));
+    timeline.mutate(id);
   };
 
   const remindClaim = (id: string) => {
@@ -790,6 +809,16 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
               <ol data-testid="claim-comments">
                 {c.comments.map((line, i) => (
                   <li key={i} data-testid="claim-comments-line">
+                    {line}
+                  </li>
+                ))}
+              </ol>
+              <button type="button" data-testid="claim-timeline" onClick={() => showTimeline(c.id)}>
+                Timeline
+              </button>
+              <ol data-testid="claim-timeline-lines">
+                {(timelines[c.id] ?? []).map((line, i) => (
+                  <li key={i} data-testid="claim-timeline-line">
                     {line}
                   </li>
                 ))}

@@ -101,6 +101,26 @@ public class Audit {
         }).toList();
     }
 
+    /** A field of a record: its key, then its value up to the next field. */
+    private static final Pattern FIELD = Pattern.compile("(?<= )([a-z][a-z-]*)=(.*?)(?= [a-z][a-z-]*=|$)");
+
+    /**
+     * A claim's records as the file holds them, in file order: with a number, the sheet's records
+     * carrying {@code number=} that number; without, those carrying no number that name its
+     * {@code person=}, {@code amount=} and {@code date=} together.
+     */
+    public synchronized List<String> claimLinesFor(String sheetId, String number, String person,
+            String amount, String date) {
+        return linesFor(sheetId, "").stream().filter(line -> {
+            java.util.Map<String, String> fields = new java.util.HashMap<>();
+            Matcher field = FIELD.matcher(line.substring(line.indexOf(" by=") + 1));
+            while (field.find()) fields.putIfAbsent(field.group(1), field.group(2));
+            if (number != null) return number.equals(fields.get("number"));
+            return !fields.containsKey("number") && person.equals(fields.get("person"))
+                    && amount.equals(fields.get("amount")) && date.equals(fields.get("date"));
+        }).toList();
+    }
+
     /** Remove the audit file. */
     public synchronized void clear() {
         try {
