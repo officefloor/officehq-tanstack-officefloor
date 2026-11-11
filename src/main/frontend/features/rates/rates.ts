@@ -197,6 +197,11 @@ export function sumDue(values: string[]): string {
   return showCents(values.filter((v) => v !== NA).reduce((n, v) => n + hundredths(v), 0n));
 }
 
+/** One two-decimal figure minus another, two decimals, a minus sign when negative. */
+export function diffDue(value: string, previous: string): string {
+  return showCents(hundredths(value) - hundredths(previous));
+}
+
 /**
  * People's figures added up as a sheet's total, skipping n/a: with three or more figures, the single
  * highest and the single lowest are left out.
