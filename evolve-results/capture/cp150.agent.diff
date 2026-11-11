@@ -1,0 +1,182 @@
+diff --git a/src/main/frontend/features/treesearch/treeSearch.slot.tsx b/src/main/frontend/features/treesearch/treeSearch.slot.tsx
+new file mode 100644
+index 000000000..6bd36de2e
+--- /dev/null
++++ b/src/main/frontend/features/treesearch/treeSearch.slot.tsx
+@@ -0,0 +1,69 @@
++import { useState } from 'react';
++import type { FormEvent } from 'react';
++import { useMutation } from '@tanstack/react-query';
++import { SheetBody } from '../../slots/defs/sheetBody';
++import { searchTree } from './treeSearch';
++import type { Found } from './treeSearch';
++
++// The tree search: a box and a button list everyone, over this sheet and every other sheet of its
++// tree, whose name or an alias holds the typed text (case ignored; blank: everyone), one line each
++// as <sheet id> <name> <due-total>, this sheet's people first in list order, then the other sheets'
++// by sheet id. Always read fresh; the count is cleared while it runs.
++function TreeSearch({ sheetId }: { sheetId: string }) {
++  const [text, setText] = useState('');
++  const [found, setFound] = useState<Found[] | null>(null);
++  const [error, setError] = useState('');
++
++  const search = useMutation({
++    mutationFn: (t: string) => searchTree(sheetId, t),
++    onSuccess: setFound,
++    onError: () => setError('The search could not be run.'),
++  });
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    setFound(null);
++    setError('');
++    search.mutate(text.trim());
++  };
++
++  return (
++    <section data-testid="tree-search">
++      <form onSubmit={submit}>
++        <label>
++          Search the tree{' '}
++          <input
++            data-testid="search-name"
++            value={text}
++            onChange={(e) => {
++              setText(e.target.value);
++              setError('');
++            }}
++          />
++        </label>{' '}
++        <button type="submit" data-testid="search" disabled={search.isPending}>
++          Search
++        </button>
++        {found !== null && (
++          <>
++            {' '}Found <span data-testid="search-count">{found.length}</span>
++            <ul>
++              {found.map((f, i) => (
++                <li key={i} data-testid="search-line">
++                  {f.sheetId} {f.name} {f.dueTotal}
++                </li>
++              ))}
++            </ul>
++          </>
++        )}
++        {error && (
++          <p role="alert" data-testid="search-error">
++            {error}
++          </p>
++        )}
++      </form>
++    </section>
++  );
++}
++
++export const contribution = SheetBody.fill({ order: 2.5, Component: TreeSearch });
+diff --git a/src/main/frontend/features/treesearch/treeSearch.ts b/src/main/frontend/features/treesearch/treeSearch.ts
+new file mode 100644
+index 000000000..5c0ee2eaf
+--- /dev/null
++++ b/src/main/frontend/features/treesearch/treeSearch.ts
+@@ -0,0 +1,53 @@
++import { getJsonNow } from '../../api/http';
++import type { Claim } from '../claims/claims';
++import { liveHolds } from '../people/people';
++import type { Person } from '../people/people';
++import { personDueTotal } from '../rates/rates';
++import type { Rate } from '../rates/rates';
++import { floorOf, lateOf } from '../access/access';
++import type { Settings } from '../access/access';
++import type { Sheet } from '../sheet/sheet';
++
++/** One person found: their sheet, their name and their due-total as their sheet's list shows it. */
++export type Found = { sheetId: string; name: string; dueTotal: string };
++
++const enc = encodeURIComponent;
++
++/** Whether the person's name or one of their aliases holds the text, case ignored. */
++function matches(p: Person, text: string): boolean {
++  const t = text.toLowerCase();
++  return [p.name, ...p.aliases].some((n) => n.toLowerCase().includes(t));
++}
++
++/** The people on one sheet matching the text, in list order, each read fresh from the store. */
++async function searchSheet(sheetId: string, text: string): Promise<Found[]> {
++  const [sheet, people, claims, rates, settings] = await Promise.all([
++    getJsonNow<Sheet>(`/api/sheets/${enc(sheetId)}`),
++    getJsonNow<{ people: Person[] }>(`/api/sheets/${enc(sheetId)}/people`).then((r) => r.people),
++    getJsonNow<{ claims: Claim[] }>(`/api/sheets/${enc(sheetId)}/claims`).then((r) => r.claims),
++    getJsonNow<{ rates: Rate[] }>(`/api/sheets/${enc(sheetId)}/rates`).then((r) => r.rates),
++    getJsonNow<Settings>(`/api/sheets/${enc(sheetId)}/settings`),
++  ]);
++  const today = sheet.today;
++  const floor = floorOf(settings);
++  const late = lateOf(settings, today);
++  const cap = settings.cap ?? '';
++  return people
++    .filter((p) => matches(p, text))
++    .map((p) => ({
++      sheetId,
++      name: p.name,
++      dueTotal: personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap),
++    }));
++}
++
++/**
++ * Everyone over the sheet and the other sheets of its tree (its ancestors and descendants) whose
++ * name or an alias holds the text, case ignored: the sheet's own people first in list order, then
++ * the other sheets' by sheet id.
++ */
++export async function searchTree(sheetId: string, text: string): Promise<Found[]> {
++  const { sheets } = await getJsonNow<{ sheets: string[] }>(`/api/sheets/${enc(sheetId)}/tree`);
++  const found = await Promise.all([sheetId, ...sheets].map((id) => searchSheet(id, text)));
++  return found.flat();
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RespondWithTree.java b/src/main/java/net/officefloor/hq/app/sheet/RespondWithTree.java
+new file mode 100644
+index 000000000..3ab66c15e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/RespondWithTree.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.sheet;
++
++import java.util.ArrayList;
++import java.util.List;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++/** The other sheets of the sheet's tree (see {@link SheetRepository#tree}), in id order. */
++public class RespondWithTree {
++    public void respond(@Val Sheet sheet, SheetRepository repository, ObjectResponse<TreeResponse> response) {
++        List<String> sheets = new ArrayList<>(repository.tree(sheet.id()));
++        sheets.sort(null);
++        response.send(new TreeResponse(sheets));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/TreeResponse.java b/src/main/java/net/officefloor/hq/app/sheet/TreeResponse.java
+new file mode 100644
+index 000000000..9ecc51dc7
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/TreeResponse.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.sheet;
++
++import java.util.List;
++
++/** The other sheets of a sheet's tree: its ancestors and descendants, each once, in id order. */
++public record TreeResponse(List<String> sheets) {
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/tree.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/tree.GET.yml
+new file mode 100644
+index 000000000..bd2138f81
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/tree.GET.yml
+@@ -0,0 +1,8 @@
++# The other sheets of a sheet's tree: its ancestors and its descendants, by id.
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ readonly-transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.sheet.RespondWithTree
++  govern: [ readonly-transaction ]
