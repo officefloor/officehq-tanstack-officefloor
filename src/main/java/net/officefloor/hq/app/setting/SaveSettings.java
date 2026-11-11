@@ -36,6 +36,7 @@ public class SaveSettings {
         if (input.capValue() != null) values.put(Settings.CAP, input.capValue());
         if (input.proofThresholdValue() != null) values.put(Settings.PROOF_THRESHOLD, input.proofThresholdValue());
         if (input.noteThresholdValue() != null) values.put(Settings.NOTE_THRESHOLD, input.noteThresholdValue());
+        if (input.roundingValue() != null) values.put(Settings.ROUNDING, input.roundingValue());
         values.forEach((key, value) -> {
             LocalDate from = input.from().getOrDefault(key, sheet.today());
             repository.record(sheet.id(), key, from, value);

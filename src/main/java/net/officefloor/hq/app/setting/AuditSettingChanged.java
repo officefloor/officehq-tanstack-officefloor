@@ -13,7 +13,7 @@ import net.officefloor.plugin.variable.Val;
  * action's entry in the permission matrix (blank for the standing rule, never dated), then the grace
  * days (blank for off, never dated), then the entry date (blank for off, never dated), then each
  * grade's grace days (blank for none), then each grade's proof threshold (blank for none), then the pot
- * (blank for none, never dated), then the parent sheet (blank for none, never dated), then the fiscal start month (never dated), then the alert threshold (blank for off, never dated); a figure
+ * (blank for none, never dated), then the parent sheet (blank for none, never dated), then the fiscal start month (never dated), then the alert threshold (blank for off, never dated), then the rounding mode (blank for none); a figure
  * setting saved from a from-date given ends with it. Runs after every rule has passed, so a refused
  * change writes nothing.
  */
@@ -56,6 +56,7 @@ public class AuditSettingChanged {
             audit.record(head + " key=" + Settings.ALERT_THRESHOLD + " value="
                     + (input.alertThreshold() == null ? "" : input.alertThreshold().toPlainString()));
         }
+        if (input.roundingValue() != null) audit.record(line(head, Settings.ROUNDING, input.roundingValue(), input));
         if (input.parentChanged()) {
             audit.record(head + " key=parent value=" + (input.parent() == null ? "" : input.parent()));
         }

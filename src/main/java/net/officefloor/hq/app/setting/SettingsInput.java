@@ -18,7 +18,8 @@ import java.time.LocalDate;
  * and to what (null: none), and the grades whose proof threshold is changed, in A, B, C order, and
  * to what (null: none), and whether the pot is changed and to what (null: none), and whether the parent sheet is changed
  * and to what id (null: none), and whether the fiscal year start month is changed and to what, and whether the alert threshold is
- * changed and to what (null: off).
+ * changed and to what (null: off), and whether the rounding mode is changed and to what, half-up or
+ * half-even (null: none), dated by its key (rounding).
  */
 public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, BigDecimal floor, Integer terms, BigDecimal latePct,
         boolean policyDateChanged, LocalDate policyDate,
@@ -31,7 +32,8 @@ public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, Bi
         java.util.Map<String, BigDecimal> gradeProofThreshold,
         boolean potChanged, BigDecimal pot, boolean parentChanged, String parent,
         boolean fiscalStartMonthChanged, Integer fiscalStartMonth,
-        boolean alertThresholdChanged, BigDecimal alertThreshold) {
+        boolean alertThresholdChanged, BigDecimal alertThreshold,
+        boolean roundingChanged, String rounding) {
 
     /**
      * The figure settings being changed, by key in the order they are audited, each with the value
@@ -76,6 +78,11 @@ public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, Bi
     /** The proof threshold as it is recorded ('' for none), or null when it is not changed. */
     public String proofThresholdValue() {
         return !proofThresholdChanged ? null : proofThreshold == null ? "" : proofThreshold.toPlainString();
+    }
+
+    /** The rounding mode as it is recorded ('' for none), or null when it is not changed. */
+    public String roundingValue() {
+        return !roundingChanged ? null : rounding == null ? "" : rounding;
     }
 
     /** The note threshold as it is recorded ('' for none), or null when it is not changed. */

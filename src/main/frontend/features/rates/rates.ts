@@ -126,9 +126,10 @@ function percentOf(figure: string, pct: string, times: bigint, halfUp: boolean):
  * claim takes the one in force on its date), its
  * today (yyyy-MM-dd; '' until read) and its policy date (yyyy-MM-dd; '' for its
  * today), and each grade's grace days (dated, '' for none: a claim takes those of its grade, the one in
- * force on its date, in force on its date).
+ * force on its date, in force on its date), and its rounding mode (dated, half-up or half-even, '' for
+ * none: a claim rounds by the one in force on its date, else by the policy date).
  */
-export type Late = { pct: Dated; today: string; policyDate: string; grace: Record<string, Dated> };
+export type Late = { pct: Dated; today: string; policyDate: string; grace: Record<string, Dated>; rounding: Dated };
 
 /**
  * The day a claim's overdue count starts from: its due-by plus the grace days of its `grade` (the one
@@ -143,11 +144,14 @@ export function overdueFrom(claim: Claim, grade: string, late: Late): string {
 }
 
 /**
- * Whether a claim's live figures round half up: it rounds by a date (its own, or for a correction
+ * Whether a claim's live figures round half up: by the rounding mode in force on the date it rounds
+ * by when there is one; else it rounds by a date (its own, or for a correction
  * the date of the claim it corrects) before the sheet's policy date (its today when blank); on or
  * after it they round half to even.
  */
 export function roundsHalfUp(claim: Claim, late: Late): boolean {
+  const mode = valueOn(late.rounding, claim.roundDate || claim.date);
+  if (mode !== '') return mode === 'half-up';
   const policy = late.policyDate !== '' ? late.policyDate : late.today;
   return (claim.roundDate || claim.date) < policy;
 }

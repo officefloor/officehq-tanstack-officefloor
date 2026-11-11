@@ -7,7 +7,7 @@ import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/session';
 import { poolsKey } from '../pools/pools';
 import { periodsKey } from '../periods/periods';
-import { ACTIONS, ALERT_THRESHOLD, CAP, DATED_KEYS, FLOOR, GRADES, LATE_PCT, LIMIT, NOTE_THRESHOLD, PERM_ROLES, POLICY_DATE, POT, PROOF_THRESHOLD, STANDING_RULE, TERMS, ROLES, gradeGraceKey, gradeProofThresholdKey, rolesKey, settingsKey, useRoles, useSettings } from './access';
+import { ACTIONS, ALERT_THRESHOLD, CAP, DATED_KEYS, FLOOR, GRADES, LATE_PCT, LIMIT, NOTE_THRESHOLD, PERM_ROLES, POLICY_DATE, POT, PROOF_THRESHOLD, ROUNDING, STANDING_RULE, TERMS, ROLES, gradeGraceKey, gradeProofThresholdKey, rolesKey, settingsKey, useRoles, useSettings } from './access';
 import type { Role, Settings, SettingsChange } from './access';
 
 type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms' | 'gradeGrace' | 'gradeProofThreshold'>;
@@ -28,7 +28,8 @@ type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms' | 'gradeGrace' | 'grad
 // none), not dated, shared out as cuts among a balanced pool's members, and its parent sheet (blank: none), not
 // dated, whose rates a grade takes on a date this sheet has none in force, and its fiscal year start month
 // (1 to 12), not dated, and its alert threshold (blank: off), not dated, above which a person's due-total
-// is alerted. Only the settings typed in (or stepped into)
+// is alerted, and its rounding mode (half-up or half-even; blank: none, by the policy date), dated, by which
+// a claim dated then rounds. Only the settings typed in (or stepped into)
 // since the last save are sent, so saving one leaves the other as it is.
 function SettingsForm({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
@@ -49,6 +50,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
     parent: '',
     fiscalStartMonth: '',
     alertThreshold: '',
+    rounding: '',
   });
   const [touched, setTouched] = useState<Set<Key>>(new Set());
   const [gradeFields, setGradeFields] = useState<Record<string, string>>({});
@@ -200,6 +202,14 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         return;
       }
       body.noteThreshold = threshold;
+    }
+    if (touched.has('rounding')) {
+      const rounding = fields.rounding.trim();
+      if (rounding !== '' && !ROUNDING.test(rounding)) {
+        setError('A rounding mode is half-up or half-even, or blank.');
+        return;
+      }
+      body.rounding = rounding;
     }
     if (gradesTouched.size > 0) {
       const gradeTerms: Record<string, string> = {};
@@ -600,6 +610,20 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         {fromInput('note-threshold')}{' '}
         <span>
           now: <strong data-testid="setting-note-threshold-current">{settings.data?.noteThreshold ?? ''}</strong>
+        </span>{' '}
+        <label>
+          Rounding{' '}
+          <input
+            data-testid="setting-rounding"
+            placeholder="none"
+            value={fields.rounding}
+            onFocus={() => touch('rounding')}
+            onChange={(e) => change('rounding', e.target.value)}
+          />
+        </label>{' '}
+        {fromInput('rounding')}{' '}
+        <span>
+          now: <strong data-testid="setting-rounding-current">{settings.data?.rounding ?? ''}</strong>
         </span>{' '}
         {ACTIONS.map((action) => (
           <span key={action}>

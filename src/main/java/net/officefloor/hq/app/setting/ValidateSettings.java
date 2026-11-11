@@ -16,7 +16,7 @@ public class ValidateSettings {
     private static final Pattern MONTH = Pattern.compile("0?[1-9]|1[0-2]");
     private static final java.util.Set<String> DATED = java.util.Set.of(Settings.CLERK_LIMIT, Settings.FLOOR,
             Settings.TERMS, Settings.LATE_PCT, Settings.CAP, Settings.gradeTermsKey("A"), Settings.gradeTermsKey("B"),
-            Settings.gradeTermsKey("C"), Settings.PROOF_THRESHOLD, Settings.NOTE_THRESHOLD,
+            Settings.gradeTermsKey("C"), Settings.PROOF_THRESHOLD, Settings.NOTE_THRESHOLD, Settings.ROUNDING,
             Settings.gradeGraceKey("A"), Settings.gradeGraceKey("B"), Settings.gradeGraceKey("C"),
             Settings.gradeProofThresholdKey("A"), Settings.gradeProofThresholdKey("B"),
             Settings.gradeProofThresholdKey("C"));
@@ -155,6 +155,15 @@ public class ValidateSettings {
             }
             noteThreshold = new BigDecimal(value).setScale(2);
         }
+        boolean roundingChanged = request != null && request.rounding() != null;
+        String rounding = null;
+        if (roundingChanged && !request.rounding().trim().isEmpty()) {
+            String value = request.rounding().trim();
+            if (!Settings.HALF_UP.equals(value) && !Settings.HALF_EVEN.equals(value)) {
+                throw new InvalidSettingException("A rounding mode is half-up or half-even, or blank");
+            }
+            rounding = value;
+        }
         Map<String, String> perms = new LinkedHashMap<>();
         if (request != null && request.perms() != null) {
             for (String action : request.perms().keySet()) {
@@ -243,6 +252,6 @@ public class ValidateSettings {
                 numberingChanged, numberingFrom, gradeTerms, capChanged, cap, from,
                 thresholdChanged, threshold, perms, graceChanged, graceDays, noteThresholdChanged, noteThreshold,
                 entryChanged, entryDate, gradeGrace, gradeProofThreshold, potChanged, pot, parentChanged, parent,
-                fiscalChanged, fiscalStartMonth, alertChanged, alertThreshold));
+                fiscalChanged, fiscalStartMonth, alertChanged, alertThreshold, roundingChanged, rounding));
     }
 }

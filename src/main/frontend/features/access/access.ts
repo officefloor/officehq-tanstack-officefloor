@@ -45,6 +45,8 @@ export type Settings = {
   fiscalStartMonth: string;
   /** The alert threshold, with two decimals ('' for off), not dated: a person whose due-total crosses above it is alerted. */
   alertThreshold: string;
+  /** The rounding mode, half-up or half-even ('' for none: by the policy date), dated: a claim rounds by the one in force on its date. */
+  rounding: string;
   /**
    * Every value recorded for each figure setting, by key (clerk-limit, floor, terms, late-pct,
    * terms-A, terms-B, terms-C, cap, proof-threshold, note-threshold, grace-A, grace-B, grace-C, proof-threshold-A, proof-threshold-B,
@@ -63,6 +65,7 @@ export const DATED_KEYS = {
   cap: 'cap',
   proofThreshold: 'proof-threshold',
   noteThreshold: 'note-threshold',
+  rounding: 'rounding',
 } as const;
 
 /** The grades that may have their own terms. */
@@ -136,7 +139,8 @@ export function lateOf(settings: Settings | undefined, today: string): Late {
   const grace = Object.fromEntries(
     GRADES.map((g) => [g, { start: '', values: settings?.dated?.[gradeGraceKey(g)] ?? [] }]),
   );
-  return { pct, today, policyDate: settings?.policyDate ?? '', grace };
+  const rounding: Dated = { start: '', values: settings?.dated?.rounding ?? [] };
+  return { pct, today, policyDate: settings?.policyDate ?? '', grace, rounding };
 }
 
 /** The sheet's cap on a person's due-total ('' for none, until the settings are read). */
@@ -168,6 +172,9 @@ export const PROOF_THRESHOLD = /^\d+(\.\d{1,2})?$/;
 
 /** A note threshold as the screen takes it: blank, or 0.00 or more with up to two decimals. */
 export const NOTE_THRESHOLD = /^\d+(\.\d{1,2})?$/;
+
+/** A rounding mode as the screen takes it: blank, half-up or half-even. */
+export const ROUNDING = /^(half-up|half-even)$/;
 
 /** A floor as the screen takes it: 0.00 or more with up to two decimals. */
 export const FLOOR = /^\d+(\.\d{1,2})?$/;

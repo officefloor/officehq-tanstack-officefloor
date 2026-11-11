@@ -16,6 +16,7 @@ import java.util.NavigableMap;
  * no cap), the most a person's due-total may be, and its proof threshold (none: none), above which a
  * claim's due, on the claim's date, needs a proof before it is settled or approved, and its note
  * threshold (none: none), above which a claim's due, on the claim's date, needs a note before it is opened, and
+ * its rounding mode (half-up or half-even; none: by the policy date), how a claim dated then rounds, and
  * its proof threshold per grade (none: the sheet's proof threshold). The value in force on a date is the one with the
  * latest from-date on or before it; before every from-date the starting value (floor 1.00, late
  * percent 0.00, terms 14; none for the others). A claim takes its floor, late percent and terms on
@@ -54,6 +55,11 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
     public static final String PROOF_THRESHOLD = "proof-threshold";
     public static final String NOTE_THRESHOLD = "note-threshold";
     public static final String ALERT_THRESHOLD = "alert-threshold";
+    public static final String ROUNDING = "rounding";
+
+    /** The rounding modes a sheet may set, as they are recorded. */
+    public static final String HALF_UP = "half-up";
+    public static final String HALF_EVEN = "half-even";
 
     /** The actions of the permission matrix, in the order they are shown and audited. */
     public static final List<String> ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
@@ -225,11 +231,22 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
         return figureOn(CAP, date);
     }
 
+    /** The rounding mode in force on a date (null: none). */
+    public RoundingMode roundingOn(LocalDate date) {
+        String value = valueOn(ROUNDING, date);
+        if (HALF_UP.equals(value)) return RoundingMode.HALF_UP;
+        if (HALF_EVEN.equals(value)) return RoundingMode.HALF_EVEN;
+        return null;
+    }
+
     /**
-     * How every figure of a claim that rounds by {@code date} is rounded: half up before the policy
-     * date ({@code today} when it is blank), half to even on or after it.
+     * How every figure of a claim that rounds by {@code date} is rounded: by the rounding mode in
+     * force on that date when there is one, else half up before the policy date ({@code today} when
+     * it is blank), half to even on or after it.
      */
     public RoundingMode rounding(LocalDate date, LocalDate today) {
+        RoundingMode mode = roundingOn(date);
+        if (mode != null) return mode;
         LocalDate policy = policyDate != null ? policyDate : today;
         return date.isBefore(policy) ? RoundingMode.HALF_UP : RoundingMode.HALF_EVEN;
     }
