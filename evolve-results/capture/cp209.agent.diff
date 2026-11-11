@@ -1,0 +1,89 @@
+diff --git a/src/main/frontend/features/score/score.slot.tsx b/src/main/frontend/features/score/score.slot.tsx
+new file mode 100644
+index 000000000..621b99b08
+--- /dev/null
++++ b/src/main/frontend/features/score/score.slot.tsx
+@@ -0,0 +1,27 @@
++import { PersonHead, PersonRow } from '../../slots/defs/personRow';
++import { liveHolds } from '../people/people';
++import type { Person } from '../people/people';
++import { useClaims } from '../claims/claims';
++import { useRates } from '../rates/rates';
++import { useSheetToday } from '../sheet/sheet';
++import { useFloor, useLate } from '../access/access';
++import { personScore } from './score';
++
++function ScoreHead() {
++  return <th>Score</th>;
++}
++
++// A person's score: their settled due / 100, minus 5 per overdue claim that counts, rounded half to even.
++function PersonScore({ sheetId, person }: { sheetId: string; person: Person }) {
++  const claims = (useClaims(sheetId).data ?? []).filter((c) => c.personId === person.id);
++  const rates = useRates(sheetId).data ?? [];
++  const today = useSheetToday(sheetId);
++  const floor = useFloor(sheetId);
++  const late = useLate(sheetId);
++  return <td data-testid="person-score">{personScore(rates, person.grades, today, claims, liveHolds(person, today), floor, late)}</td>;
++}
++
++export const contributions = [
++  PersonHead.fill({ order: 25.5, Component: ScoreHead }),
++  PersonRow.fill({ order: 25.5, Component: PersonScore }),
++];
+diff --git a/src/main/frontend/features/score/score.ts b/src/main/frontend/features/score/score.ts
+new file mode 100644
+index 000000000..ec3842ced
+--- /dev/null
++++ b/src/main/frontend/features/score/score.ts
+@@ -0,0 +1,50 @@
++import { gradeOn } from '../people/people';
++import type { GradeFrom, Hold } from '../people/people';
++import { counts } from '../claims/claims';
++import type { Claim } from '../claims/claims';
++import { claimDue, NA, rateOn } from '../rates/rates';
++import type { Dated, Late, Rate } from '../rates/rates';
++import { personOverdue } from '../overdue/overdue';
++
++/** A two-decimal figure as a whole count of hundredths. */
++function hundredths(value: string): bigint {
++  const negative = value.startsWith('-');
++  const [whole, frac = ''] = (negative ? value.slice(1) : value).split('.');
++  const cents = BigInt(whole || '0') * 100n + BigInt((frac + '00').slice(0, 2));
++  return negative ? -cents : cents;
++}
++
++/** `n / d` (d > 0) rounded half to even. */
++function divHalfEven(n: bigint, d: bigint): bigint {
++  let q = n / d;
++  let r = n % d;
++  if (r < 0n) {
++    q -= 1n;
++    r += d;
++  }
++  if (2n * r > d || (2n * r === d && q % 2n !== 0n)) q += 1n;
++  return q;
++}
++
++/**
++ * A person's score: the due of their SETTLED claims that count (skipping n/a) divided by 100, minus 5
++ * for every overdue claim of theirs that counts, rounded half to even to a whole number.
++ */
++export function personScore(
++  rates: Rate[],
++  grades: GradeFrom[],
++  today: string,
++  claims: Claim[],
++  holds: Hold[],
++  floor: Dated,
++  late: Late,
++): string {
++  const settled = claims
++    .filter((c) => c.status === 'SETTLED' && counts(c, holds, today))
++    .map((c) => claimDue(c, rateOn(rates, gradeOn(grades, c.date), c.date, c.id), floor, late, gradeOn(grades, c.date)))
++    .filter((d) => d !== NA)
++    .reduce((n, d) => n + hundredths(d), 0n);
++  const { count } = personOverdue(rates, grades, today, claims, holds, floor, late);
++  // In ten-thousandths: settled cents / 100 is settled / 10000 units of 1, and each overdue claim is 5.
++  return divHalfEven(settled - 50000n * BigInt(count), 10000n).toString();
++}
