@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOnce } from '../../query/useOnce';
 import { getJson, postJson, putJson } from '../../api/http';
 import { PersonHead, PersonRow } from '../../slots/defs/personRow';
-import { gradeOn, liveHolds, peopleKey, usePeople } from '../people/people';
+import { gradeOn, retiredHolds, peopleKey, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { useUser } from '../session/session';
 import { AMOUNT, CLAIM_AMOUNT, CLAIM_NUMBER, claimsKey, isReviewLate, showsDeferred, sumAmounts, useClaims } from './claims';
@@ -575,7 +575,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
 
   return (
     <>
-      <Col name="claimed"><td data-testid="person-claimed">{sumAmounts(claims, () => liveHolds(person, today), today)}</td></Col>
+      <Col name="claimed"><td data-testid="person-claimed">{sumAmounts(claims, () => retiredHolds(person, today), today)}</td></Col>
       <td>
         <form onSubmit={submit} data-testid="claim-form">
           <input

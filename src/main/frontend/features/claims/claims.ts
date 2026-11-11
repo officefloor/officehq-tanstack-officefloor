@@ -128,6 +128,13 @@ export const counts = (c: Claim, holds: Hold[], today: string) =>
   !isDeferred(c, today) && (c.status === 'SETTLED' || (isOpen(c) && (isBound(c) || !(c.held || heldOn(holds, c.date)))));
 
 /**
+ * Whether a claim's amount counts toward claimed and the claimed-total: as `counts`, but a hold
+ * (its own or its person's) does not take it out; only `holds` given (a retired person's) do.
+ */
+export const countsClaimed = (c: Claim, holds: Hold[], today: string) =>
+  !isDeferred(c, today) && (c.status === 'SETTLED' || (isOpen(c) && (isBound(c) || !heldOn(holds, c.date))));
+
+/**
  * A claim's status at the end of `day` (yyyy-MM-dd), as its log records it: the status of its last
  * line dated on or before it; null when it had none then (it was added after).
  */
@@ -199,11 +206,11 @@ export const CLAIM_AMOUNT = /^-?\d+(\.\d{1,2})?$/;
 export const CLAIM_NUMBER = /^(\d+|.+-\d+)$/;
 
 /**
- * The amounts of the claims that count (OPEN, PENDING and SETTLED, but not unbound open ones dated within
- * a hold of their person: `holds` tells by person id, nor ones deferred on `today`), leaving out corrections, added up, in whole cents so no rounding creeps in, shown with two
+ * The amounts of the claims that count (OPEN, PENDING and SETTLED, held or not, but not unbound open ones of a
+ * retired person: `holds` tells by person id (see `retiredHolds`), nor ones deferred on `today`), leaving out corrections, added up, in whole cents so no rounding creeps in, shown with two
  * decimals.
  */
 export function sumAmounts(claims: Claim[], holds: (personId: string) => Hold[], today: string): string {
-  const cents = claims.filter((c) => !isCorrection(c) && counts(c, holds(c.personId), today)).reduce((n, c) => n + Math.round(Number(c.amount) * 100), 0);
+  const cents = claims.filter((c) => !isCorrection(c) && countsClaimed(c, holds(c.personId), today)).reduce((n, c) => n + Math.round(Number(c.amount) * 100), 0);
   return (cents / 100).toFixed(2);
 }

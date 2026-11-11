@@ -1,5 +1,5 @@
 import { SheetBody } from '../../slots/defs/sheetBody';
-import { liveHolds, usePeople } from '../people/people';
+import { retiredHolds, usePeople } from '../people/people';
 import { useSheetToday } from '../sheet/sheet';
 import { sumAmounts, useClaims } from './claims';
 
@@ -7,7 +7,7 @@ import { sumAmounts, useClaims } from './claims';
 function ClaimedTotal({ sheetId }: { sheetId: string }) {
   const claims = useClaims(sheetId);
   const today = useSheetToday(sheetId);
-  const holds = new Map((usePeople(sheetId).data ?? []).map((p) => [p.id, liveHolds(p, today)]));
+  const holds = new Map((usePeople(sheetId).data ?? []).map((p) => [p.id, retiredHolds(p, today)]));
   return (
     <p>
       Claimed in all: <strong data-testid="rollup-claimed-total">{sumAmounts(claims.data ?? [], (id) => holds.get(id) ?? [], today)}</strong>

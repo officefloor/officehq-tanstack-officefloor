@@ -82,6 +82,13 @@ export const heldOn = (holds: Hold[], date: string) =>
 export const liveHolds = (p: Pick<Person, 'holds' | 'retiredFrom'>, today: string): Hold[] =>
   p.retiredFrom !== '' && today !== '' && p.retiredFrom <= today ? [...p.holds, { from: '', to: '' }] : p.holds;
 
+/**
+ * The holds a person's claimed counts against on the sheet's `today`: none of their own holds, only
+ * from the day their retirement date is reached one covering every date.
+ */
+export const retiredHolds = (p: Pick<Person, 'holds' | 'retiredFrom'>, today: string): Hold[] =>
+  liveHolds({ holds: [], retiredFrom: p.retiredFrom }, today);
+
 export const peopleKey = (sheetId: string) => ['sheet', sheetId, 'people'] as const;
 
 export const peopleQuery = (sheetId: string) => ({

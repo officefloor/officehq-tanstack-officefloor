@@ -151,7 +151,7 @@ public class Claim {
         if (waived) throw new InvalidClaimStatusException("The claim's late charge was already waived");
         waived = true;
     }
-    /** Whether it is held: while OPEN or PENDING it counts toward no total, unless a statement binds it. */
+    /** Whether it is held: while OPEN or PENDING it counts toward no due total, unless a statement binds it (it still counts in claimed). */
     public boolean isHeld() { return held; }
     public void setHeld(boolean held) { this.held = held; }
     /** Hold it, or release it when held: only an OPEN or PENDING claim. */
@@ -284,6 +284,15 @@ public class Claim {
     public boolean counts(boolean heldOnDate, LocalDate today) {
         if (isDeferredOn(today)) return false;
         return status == ClaimStatus.SETTLED || (isOpen() && (isBound() || !(held || heldOnDate)));
+    }
+    /**
+     * Whether its amount counts toward its person's claimed and the sheet's claimed-total: as
+     * {@link #counts}, but a hold (its person's or its own) does not take it out; only their
+     * retirement date being reached ({@code retired}) does, unless a statement binds it.
+     */
+    public boolean countsClaimed(boolean retired, LocalDate today) {
+        if (isDeferredOn(today)) return false;
+        return status == ClaimStatus.SETTLED || (isOpen() && (isBound() || !retired));
     }
     /**
      * Whether it counts toward a period's total as it was at the period's end, when its status then
