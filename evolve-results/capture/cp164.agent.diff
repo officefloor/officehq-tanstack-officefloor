@@ -1,0 +1,68 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/CheckCorrection.java b/src/main/java/net/officefloor/hq/app/claim/CheckCorrection.java
+index c7e9d2520..50a52ebb9 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/CheckCorrection.java
++++ b/src/main/java/net/officefloor/hq/app/claim/CheckCorrection.java
+@@ -1,21 +1,38 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.math.BigDecimal;
++import java.util.List;
++import java.util.Objects;
++
+ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+  * A correction must name, by number, a SETTLED claim of the same person; any other claim names
+- * none.
++ * none. Nor may it exceed what remains of that claim: its amount less the corrections already made
++ * against it (VOID or DELETED ones left out).
+  */
+ public class CheckCorrection {
+     public void check(@Val Claim claim, ClaimRepository repository) throws InvalidClaimException {
+         String corrects = claim.getCorrects();
+         if (corrects == null) return;
+-        Claim corrected = repository.findByPerson(claim.getSheetId(), claim.getPersonId()).stream()
++        List<Claim> claims = repository.findByPerson(claim.getSheetId(), claim.getPersonId());
++        Claim corrected = claims.stream()
+                 .filter((c) -> corrects.equals(c.getNumber()) && c.getStatus() == ClaimStatus.SETTLED)
+                 .findFirst().orElse(null);
+         if (corrected == null) {
+             throw new InvalidClaimException("A correction names a settled claim of the same person");
+         }
++        // What remains: the target's amount plus the (negative) corrections already made against it.
++        BigDecimal remaining = corrected.getAmount();
++        for (Claim other : claims) {
++            if (claim.getId() != null && Objects.equals(claim.getId(), other.getId())) continue;
++            if (!corrects.equals(other.getCorrects())) continue;
++            if (other.getStatus() == ClaimStatus.VOID || other.getStatus() == ClaimStatus.DELETED) continue;
++            remaining = remaining.add(other.getAmount());
++        }
++        if (claim.getAmount().negate().compareTo(remaining) > 0) {
++            throw new InvalidClaimException("A correction may not exceed what remains of the claim it corrects");
++        }
+         // A correction rounds by the date of the claim it corrects.
+         claim.setCorrectedDate(corrected.getDate());
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+index bac987d77..781f41241 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+@@ -108,15 +108,15 @@ public class RateRepository {
+     /**
+      * The sheet's rates as they stood at the end of {@code day}: for each grade and from-date, the
+      * last rate set for them while the sheet's today was on or before it, its version counting those
+-     * set for them by then; then its parent sheets' (as they are named now) as they are now, each at
+-     * its level: a parent's rates are dated by its own today, not this sheet's, so are not rewound.
++     * set for them by then; then its parent sheets' (as they are named now) as they stood at the end of
++     * {@code day} too, each at its level: a rate set after it is not yet in force then.
+      */
+     public List<Rate> findAsOf(String sheetId, LocalDate day) {
+         List<Rate> all = new ArrayList<>(findOwnAsOf(sheetId, day));
+         List<String> ancestors = ancestors(sheetId);
+         for (int i = 0; i < ancestors.size(); i++) {
+             int level = i + 1;
+-            findOwn(ancestors.get(i)).forEach((r) -> all.add(r.up(level)));
++            findOwnAsOf(ancestors.get(i), day).forEach((r) -> all.add(r.up(level)));
+         }
+         return all;
+     }
