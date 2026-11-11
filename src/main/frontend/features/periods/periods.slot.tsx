@@ -224,6 +224,23 @@ function Periods({ sheetId }: { sheetId: string }) {
     once((done) => rollover.mutate({ year }, { onSettled: done }));
   };
 
+  // Undo the last rollover (the steward who made it, on the same sheet-today): its generated periods
+  // are removed and its opening balances taken back. Shares the rollover's error.
+  const rolloverUndo = useMutation({
+    mutationFn: () =>
+      postJson<{ made: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/periods/rollover-undo`, {}, user),
+    onSuccess: () => {
+      void queryClient.invalidateQueries();
+    },
+    onError: () => setRolloverError('The last rollover could not be undone.'),
+  });
+
+  const undoRollover = () => {
+    setRolloverMade(null);
+    setRolloverError('');
+    once((done) => rolloverUndo.mutate(undefined, { onSettled: done }));
+  };
+
   // Generate a calendar year's four quarters, yyyy-Q1 to yyyy-Q4, each left out when its name exists
   // or its days overlap a period. Shares the made count and error with the generators above.
   const [quarterYear, setQuarterYear] = useState('');
@@ -385,6 +402,9 @@ function Periods({ sheetId }: { sheetId: string }) {
         </label>{' '}
         <button type="submit" data-testid="rollover" disabled={rollover.isPending}>
           Roll year over
+        </button>
+        <button type="button" data-testid="rollover-undo" disabled={rolloverUndo.isPending} onClick={undoRollover}>
+          Undo last rollover
         </button>
         {rolloverMade !== null && (
           <>

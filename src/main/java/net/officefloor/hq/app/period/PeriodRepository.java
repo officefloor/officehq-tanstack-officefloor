@@ -198,6 +198,23 @@ public class PeriodRepository {
         }
     }
 
+    /** Take {@code amount} back from the person's opening balance for the period, removing it at 0.00. */
+    public void subtractOpening(String sheetId, String periodName, long personId, BigDecimal amount) {
+        jdbc.update("UPDATE period_person_opening SET amount = amount - ? WHERE sheet_id = ? AND period_name = ?"
+                + " AND person_id = ?", amount, sheetId, periodName, personId);
+        jdbc.update("DELETE FROM period_person_opening WHERE sheet_id = ? AND period_name = ? AND person_id = ?"
+                + " AND amount = 0", sheetId, periodName, personId);
+    }
+
+    /** Remove the period from the sheet, with everything kept for it. */
+    public void delete(String sheetId, String name) {
+        for (String table : List.of("period_person_opening", "period_person_total", "period_person_carried", "period_pool_cut")) {
+            jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND period_name = ?", sheetId, name);
+        }
+        jdbc.update("DELETE FROM period_history WHERE sheet_id = ? AND name = ?", sheetId, name);
+        jdbc.update("DELETE FROM period WHERE sheet_id = ? AND name = ?", sheetId, name);
+    }
+
     /** The people's opening balances for the sheet's periods: by period name, then person id. */
     public Map<String, Map<Long, BigDecimal>> personOpenings(String sheetId) {
         Map<String, Map<Long, BigDecimal>> found = new HashMap<>();
