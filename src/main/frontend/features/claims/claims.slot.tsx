@@ -135,11 +135,17 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
       reset();
       void queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
     },
-    onError: (_e, { id }) => {
+    onError: (_e, { id, body }) => {
       // Only a draft can be edited: an edit of an open (or later) claim is refused on the claim.
       const claim = id === null ? undefined : claims.find((c) => c.id === id);
       if (claim !== undefined && claim.status !== 'DRAFT') {
         setRefused({ id: claim.id, message: 'Only a draft claim can be edited.' });
+      } else if (claim !== undefined && claim.lines.length > 0 && body.amount !== claim.amount) {
+        // A claim with lines takes their total as its amount: no save of this editor could change
+        // it, so the editor is closed (its lock released) and the form is back to adding.
+        unlock.mutate(claim.id);
+        reset();
+        setError('A claim with lines takes their total as its amount.');
       } else {
         setError('That claim could not be saved (is its reference already used on the sheet?).');
       }
