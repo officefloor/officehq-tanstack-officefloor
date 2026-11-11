@@ -111,11 +111,13 @@ public class Claim {
     public LocalDate getDeferredUntil() { return deferredUntil; }
     public void setDeferredUntil(LocalDate deferredUntil) { this.deferredUntil = deferredUntil; }
     /**
-     * Whether it is deferred on {@code today}: OPEN, and deferred until a date after today. From
-     * that date on it is an OPEN claim like any other.
+     * Whether it is deferred on {@code today}: not bound by a statement, and deferred until a date
+     * after today. From that date on it is a claim like any other. While a statement binds it, its
+     * deferral waits until the binding ends, and then takes effect whatever its status since (one
+     * settled while bound drops out of the totals until that date too).
      */
     public boolean isDeferredOn(LocalDate today) {
-        return status == ClaimStatus.OPEN && deferredUntil != null && today != null && today.isBefore(deferredUntil);
+        return !isBound() && deferredUntil != null && today != null && today.isBefore(deferredUntil);
     }
     /**
      * Defer it until a date after {@code today}: only an OPEN claim may be deferred.

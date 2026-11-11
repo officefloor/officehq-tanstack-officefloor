@@ -214,6 +214,26 @@ public class PeriodRepository {
                 + " AND amount = 0", sheetId, periodName, personId);
     }
 
+    /**
+     * Move a merged person's fixed due-totals, carried figures and opening balances for every period
+     * to the person they are merged into, added to theirs.
+     */
+    public void mergePeople(String sheetId, long fromId, long intoId) {
+        for (String[] t : List.of(new String[] { "period_person_total", "total" },
+                new String[] { "period_person_carried", "carried" }, new String[] { "period_person_opening", "amount" })) {
+            String table = t[0], column = t[1];
+            jdbc.update("UPDATE " + table + " i SET " + column + " = " + column + " + (SELECT f." + column + " FROM " + table
+                    + " f WHERE f.sheet_id = i.sheet_id AND f.period_name = i.period_name AND f.person_id = ?)"
+                    + " WHERE i.sheet_id = ? AND i.person_id = ? AND EXISTS (SELECT 1 FROM " + table
+                    + " f WHERE f.sheet_id = i.sheet_id AND f.period_name = i.period_name AND f.person_id = ?)",
+                    fromId, sheetId, intoId, fromId);
+            jdbc.update("UPDATE " + table + " f SET person_id = ? WHERE f.sheet_id = ? AND f.person_id = ? AND NOT EXISTS"
+                    + " (SELECT 1 FROM " + table + " i WHERE i.sheet_id = f.sheet_id AND i.period_name = f.period_name"
+                    + " AND i.person_id = ?)", intoId, sheetId, fromId, intoId);
+            jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
+        }
+    }
+
     /** Remove the period from the sheet, with everything kept for it. */
     public void delete(String sheetId, String name) {
         for (String table : List.of("period_person_opening", "period_person_total", "period_person_carried", "period_pool_cut")) {

@@ -132,6 +132,10 @@ public class AddPastedClaims {
                 existing.add(false);
                 edited.add(false);
             }
+            // A note it needs to open is checked before anything is written.
+            if (OpenClaim.needsNote(sheet, claim, people, rates, settings)) {
+                throw new InvalidClaimStatusException(NoteRequired.MESSAGE);
+            }
             if (terms.maxOpen() != null) {
                 long now = held.computeIfAbsent(person.getId(), id -> MaxOpen.held(sheet, id, claims));
                 if (now >= terms.maxOpen()) throw MaxOpen.refused(terms);
@@ -157,9 +161,6 @@ public class AddPastedClaims {
             } else if (edited.get(i)) {
                 claims.save(claim);
                 lines.add(ClaimAudit.line("CLAIM_EDITED", sheet, user, person, claim));
-            }
-            if (OpenClaim.needsNote(sheet, claim, people, rates, settings)) {
-                throw new InvalidClaimStatusException(NoteRequired.MESSAGE);
             }
             Period full = PeriodCaps.full(sheet, claim, periods, claims);
             if (full != null) {

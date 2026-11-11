@@ -129,19 +129,21 @@ export function isReviewLate(c: Claim, today: string, reviewSla: string): boolea
 export const isBound = (c: Claim) => c.stated;
 
 /**
- * Whether a claim is deferred on the sheet's `today`: OPEN and deferred until a date after today.
- * From that date on it is an OPEN claim like any other.
+ * Whether a claim is deferred on the sheet's `today`: not bound by a statement, and deferred until a
+ * date after today. From that date on it is a claim like any other. While a statement binds it, its
+ * deferral waits until the binding ends, and then takes effect whatever its status since (one settled
+ * while bound drops out of the totals until that date too).
  */
 export const isDeferred = (c: Claim, today: string) =>
-  c.status === 'OPEN' && c.deferredUntil !== '' && today !== '' && today < c.deferredUntil;
+  !isBound(c) && c.deferredUntil !== '' && today !== '' && today < c.deferredUntil;
 
 /**
  * Whether the claim's row shows it deferred: it was deferred until a date after the sheet's
- * `today`, whatever its status since (a deferred claim voided stays shown deferred). Only
- * `isDeferred` decides what counts.
+ * `today`, whatever its status since (a deferred claim voided stays shown deferred), and no
+ * statement binds it. Only `isDeferred` decides what counts.
  */
 export const showsDeferred = (c: Claim, today: string) =>
-  c.deferredUntil !== '' && today !== '' && today < c.deferredUntil;
+  !isBound(c) && c.deferredUntil !== '' && today !== '' && today < c.deferredUntil;
 
 /**
  * Whether a claim counts toward claimed, due-total and every total: only OPEN, PENDING and SETTLED
