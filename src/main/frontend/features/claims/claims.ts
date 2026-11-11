@@ -63,6 +63,8 @@ export type Claim = {
   remindedOn: string;
   /** Whether a steward waived its late charge: it bears none from then on. */
   waived: boolean;
+  /** Whether it is held: while OPEN or PENDING it counts toward no total, unless a statement binds it. */
+  held: boolean;
   /** Its external reference, unique on the sheet regardless of case; '' when it has none. */
   ref: string;
   /** Its tags: trimmed, lower-cased, without repeats, sorted; empty when it has none. */
@@ -119,11 +121,11 @@ export const showsDeferred = (c: Claim, today: string) =>
 
 /**
  * Whether a claim counts toward claimed, due-total and every total: only OPEN, PENDING and SETTLED
- * do, and an OPEN or PENDING one not when it is dated within one of its person's `holds`, unless a
- * statement binds it; never one deferred on `today`.
+ * do, and an OPEN or PENDING one not when it is held itself or dated within one of its person's
+ * `holds`, unless a statement binds it; never one deferred on `today`.
  */
 export const counts = (c: Claim, holds: Hold[], today: string) =>
-  !isDeferred(c, today) && (c.status === 'SETTLED' || (isOpen(c) && (isBound(c) || !heldOn(holds, c.date))));
+  !isDeferred(c, today) && (c.status === 'SETTLED' || (isOpen(c) && (isBound(c) || !(c.held || heldOn(holds, c.date)))));
 
 /**
  * A claim's status at the end of `day` (yyyy-MM-dd), as its log records it: the status of its last
@@ -145,7 +147,7 @@ export function statusOn(c: Claim, day: string): ClaimStatus | null {
 export const countedOn = (c: Claim, day: string, holds: Hold[], today: string) => {
   const status = statusOn(c, day);
   if (status === null || isDeferred(c, today)) return false;
-  return status === 'SETTLED' || ((status === 'OPEN' || status === 'PENDING') && (isBound(c) || !heldOn(holds, c.date)));
+  return status === 'SETTLED' || ((status === 'OPEN' || status === 'PENDING') && (isBound(c) || !(c.held || heldOn(holds, c.date))));
 };
 
 export const claimsKey = (sheetId: string) => ['sheet', sheetId, 'claims'] as const;

@@ -32,6 +32,7 @@ public class Claim {
     private boolean lateEntry;
     private LocalDate remindedOn;
     private boolean waived;
+    private boolean held;
     private LocalDate reviewOn;
     private String ref;
     private String tags;
@@ -149,6 +150,14 @@ public class Claim {
         if (!isOpen()) throw new InvalidClaimStatusException("A " + status + " claim cannot have its late charge waived");
         if (waived) throw new InvalidClaimStatusException("The claim's late charge was already waived");
         waived = true;
+    }
+    /** Whether it is held: while OPEN or PENDING it counts toward no total, unless a statement binds it. */
+    public boolean isHeld() { return held; }
+    public void setHeld(boolean held) { this.held = held; }
+    /** Hold it, or release it when held: only an OPEN or PENDING claim. */
+    public void toggleHold() throws InvalidClaimStatusException {
+        if (!isOpen()) throw new InvalidClaimStatusException("A " + status + " claim cannot be held or released");
+        held = !held;
     }
     /** The sheet's today when it went to REVIEW (null: it never did). */
     public LocalDate getReviewOn() { return reviewOn; }
@@ -268,13 +277,13 @@ public class Claim {
     /**
      * Whether it counts toward its person's claimed and due-total, the sheet's totals and a
      * period's total: OPEN, PENDING and SETTLED do, except an OPEN or PENDING one dated within one
-     * of its person's holds, or once their retirement date is reached ({@code heldOnDate}), unless
+     * of its person's holds or held itself, or once their retirement date is reached ({@code heldOnDate}), unless
      * a statement binds it; and never one
      * deferred on {@code today}.
      */
     public boolean counts(boolean heldOnDate, LocalDate today) {
         if (isDeferredOn(today)) return false;
-        return status == ClaimStatus.SETTLED || (isOpen() && (isBound() || !heldOnDate));
+        return status == ClaimStatus.SETTLED || (isOpen() && (isBound() || !(held || heldOnDate)));
     }
     /**
      * Whether it counts toward a period's total as it was at the period's end, when its status then
@@ -284,7 +293,7 @@ public class Claim {
     public boolean countsAsOf(ClaimStatus statusThen, boolean heldOnDate, LocalDate today) {
         if (statusThen == null || isDeferredOn(today)) return false;
         boolean openThen = statusThen == ClaimStatus.OPEN || statusThen == ClaimStatus.PENDING;
-        return statusThen == ClaimStatus.SETTLED || (openThen && (isBound() || !heldOnDate));
+        return statusThen == ClaimStatus.SETTLED || (openThen && (isBound() || !(held || heldOnDate)));
     }
     /**
      * A copy of it as it stood at the end of a day: with the status, settled due and statement
@@ -305,6 +314,7 @@ public class Claim {
         then.lateEntry = lateEntry;
         then.remindedOn = remindedOn;
         then.waived = waived;
+        then.held = held;
         then.reviewOn = reviewOn;
         then.ref = ref;
         then.tags = tags;

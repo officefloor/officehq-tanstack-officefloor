@@ -314,6 +314,19 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
       setRefused({ id, message: 'Only a steward can waive the late charge of an OPEN or PENDING claim, once.' }),
   });
 
+  // An OPEN or PENDING claim is held, or released when held.
+  const hold = useMutation({
+    mutationFn: (id: string) =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/claims/${encodeURIComponent(id)}/hold`,
+        {},
+        user,
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+    onError: (_e, id) =>
+      setRefused({ id, message: 'Only an OPEN or PENDING claim can be held or released.' }),
+  });
+
   // A comment is kept on a claim in any status, with who wrote it and the sheet's today.
   const comment = useMutation({
     mutationFn: ({ id, text }: { id: string; text: string }) =>
@@ -430,6 +443,11 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   const waiveClaim = (id: string) => {
     setRefused(null);
     waive.mutate(id);
+  };
+
+  const holdClaim = (id: string) => {
+    setRefused(null);
+    hold.mutate(id);
   };
 
   const addProof = (id: string) => {
@@ -675,6 +693,10 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
               <span data-testid="claim-waived">{c.waived ? 'yes' : 'no'}</span>{' '}
               <button type="button" data-testid="claim-waive" onClick={() => waiveClaim(c.id)}>
                 Waive late charge
+              </button>{' '}
+              <span data-testid="claim-held">{c.held ? 'yes' : 'no'}</span>{' '}
+              <button type="button" data-testid="claim-hold" onClick={() => holdClaim(c.id)}>
+                {c.held ? 'Release' : 'Hold'}
               </button>{' '}
               <select
                 data-testid="claim-proof-kind"

@@ -20,14 +20,14 @@ import java.util.List;
  * and its lines, oldest first, as {@code <label> <qty> x <unit>}; and its review day, the sheet's today when it
  * went to REVIEW, as yyyy-MM-dd ("" when it never did); and whether a steward waived its late charge; and the
  * late charge its statement bound it to with its figure ("" when none is bound); and how many of its proofs are
- * receipts and how many photos.
+ * receipts and how many photos; and whether it is held.
  */
 public record ClaimResponse(String id, String personId, String amount, String date, String note,
         String status, String number, String due, String openedBy, boolean stated,
         String statedDue, String corrects, String roundDate, String dueBy, List<String> log, String deferredUntil,
         int proofs, String splitFrom, String lockedBy, boolean lateEntry, String remindedOn, String ref,
         List<String> tags, String voidReason, List<String> comments, String batch, List<String> lines, String reviewOn, boolean waived,
-        String statedLate, int proofReceipts, int proofPhotos) {
+        String statedLate, int proofReceipts, int proofPhotos, boolean held) {
     public static ClaimResponse from(Claim claim) {
         return from(claim, List.of(), List.of(), List.of());
     }
@@ -58,6 +58,6 @@ public record ClaimResponse(String id, String personId, String amount, String da
                 claim.getReviewOn() == null ? "" : claim.getReviewOn().toString(),
                 claim.isWaived(),
                 claim.getStatedLate() == null ? "" : claim.getStatedLate().toPlainString(),
-                claim.getProofReceipts(), claim.getProofPhotos());
+                claim.getProofReceipts(), claim.getProofPhotos(), claim.isHeld());
     }
 }

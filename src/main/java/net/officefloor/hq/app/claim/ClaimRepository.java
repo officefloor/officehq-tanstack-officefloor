@@ -18,7 +18,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, edited_by, stated, stated_due, stated_late, corrects, due_by, terms, deferred_until, proofs, proof_photos, split_from, late_entry, reminded_on, ext_ref, tags, void_reason, settle_batch, review_on, waived,"
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, edited_by, stated, stated_due, stated_late, corrects, due_by, terms, deferred_until, proofs, proof_photos, split_from, late_entry, reminded_on, ext_ref, tags, void_reason, settle_batch, review_on, waived, held,"
             + " (SELECT c.claim_date FROM claim c WHERE c.sheet_id = claim.sheet_id AND c.person_id = claim.person_id"
             + " AND c.claim_number = claim.corrects) AS corrected_date,"
             + " CASE WHEN locked_on = (SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id) THEN locked_by END AS locked_by_now";
@@ -44,6 +44,7 @@ public class ClaimRepository {
         java.sql.Date reminded = rs.getDate("reminded_on");
         claim.setRemindedOn(reminded == null ? null : reminded.toLocalDate());
         claim.setWaived(rs.getBoolean("waived"));
+        claim.setHeld(rs.getBoolean("held"));
         java.sql.Date review = rs.getDate("review_on");
         claim.setReviewOn(review == null ? null : review.toLocalDate());
         claim.setRef(rs.getString("ext_ref"));
@@ -269,6 +270,18 @@ public class ClaimRepository {
     }
 
     /**
+     * Hold the claim, or release it, as {@link Claim#isHeld} now says: only while it is still OPEN or
+     * PENDING and not already so, so of two toggles at once only one is written.
+     */
+    public boolean hold(Claim claim) {
+        boolean held = jdbc.update("UPDATE claim SET held = ? WHERE id = ? AND sheet_id = ?"
+                + " AND status IN ('OPEN', 'PENDING') AND held <> ?", claim.isHeld(), claim.getId(), claim.getSheetId(),
+                claim.isHeld()) == 1;
+        if (held) keepHistory(claim);
+        return held;
+    }
+
+    /**
      * Record the claim's reminder on its reminded date: only while it is still OPEN or PENDING and
      * not already reminded that day, so of two reminders at once only one is written.
      */
@@ -387,9 +400,9 @@ public class ClaimRepository {
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement("INSERT INTO claim (sheet_id, person_id, amount, claim_date, note,"
                     + " status, settled_due, opened_by, edited_by, due_by, terms, deferred_until, proofs, proof_photos, late_entry,"
-                    + " reminded_on, review_on, void_reason, waived, listed)"
+                    + " reminded_on, review_on, void_reason, waived, held, listed)"
                     + " SELECT ?, ?, amount, claim_date, note, status, settled_due, opened_by, edited_by, due_by, terms,"
-                    + " deferred_until, proofs, proof_photos, late_entry, reminded_on, review_on, void_reason, waived, ? FROM claim WHERE id = ? AND sheet_id = ?",
+                    + " deferred_until, proofs, proof_photos, late_entry, reminded_on, review_on, void_reason, waived, held, ? FROM claim WHERE id = ? AND sheet_id = ?",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, toSheet);
             ps.setLong(2, toPersonId);
@@ -442,7 +455,7 @@ public class ClaimRepository {
     }
 
     private static final String HISTORY_COLUMNS = "person_id, amount, claim_date, note, status, claim_number, settled_due,"
-            + " opened_by, stated, stated_due, stated_late, corrects, due_by, deferred_until, proofs, proof_photos, split_from, late_entry, listed, tags, void_reason, settle_batch, ext_ref, reminded_on, review_on, waived";
+            + " opened_by, stated, stated_due, stated_late, corrects, due_by, deferred_until, proofs, proof_photos, split_from, late_entry, listed, tags, void_reason, settle_batch, ext_ref, reminded_on, review_on, waived, held";
 
     /** Keeps the claim as the store now holds it in its history, with the sheet's today now. */
     private void keepHistory(Claim claim) {
@@ -480,6 +493,7 @@ public class ClaimRepository {
                     Date reminded = rs.getDate("reminded_on");
                     claim.setRemindedOn(reminded == null ? null : reminded.toLocalDate());
                     claim.setWaived(rs.getBoolean("waived"));
+                    claim.setHeld(rs.getBoolean("held"));
                     Date review = rs.getDate("review_on");
                     claim.setReviewOn(review == null ? null : review.toLocalDate());
                     latest.put(claim.getId(), claim);
