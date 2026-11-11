@@ -31,6 +31,8 @@ export function gradeOn(grades: GradeFrom[], date: string): Grade {
 // (they clashed before the rule): every edit of them is refused until it renames them out of it.
 // `origin` is the sheet they were transferred from ('' when they never were). `retirements` are the
 // retirements they were unretired from, oldest first, each as '<from> to <the day unretired>'.
+// `snapshots` are their snapshot lines, one per SNAPSHOT written for them when the sheet's today
+// changed, oldest first, each as '<the day being left> <due-total>'.
 export type Person = {
   id: string;
   name: string;
@@ -53,6 +55,7 @@ export type Person = {
   clashing: boolean;
   origin: string;
   retirements: string[];
+  snapshots: string[];
 };
 
 /**

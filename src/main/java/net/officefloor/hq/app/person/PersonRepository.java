@@ -85,7 +85,18 @@ public class PersonRepository {
                     Person person = byId.get(rs.getLong("person_id"));
                     if (person != null) person.getPastRetirements().add(pastRetirement(rs));
                 }, sheetId);
+        jdbc.query("SELECT person_id, snapshot_day, due_total FROM person_snapshot WHERE sheet_id = ? ORDER BY id",
+                (rs) -> {
+                    Person person = byId.get(rs.getLong("person_id"));
+                    if (person != null) person.getSnapshots().add(rs.getObject("snapshot_day", LocalDate.class) + " " + rs.getString("due_total"));
+                }, sheetId);
         return people;
+    }
+
+    /** Record a SNAPSHOT written for the person: the day being left and their due-total on it. */
+    public void addSnapshot(String sheetId, long personId, LocalDate day, String dueTotal) {
+        jdbc.update("INSERT INTO person_snapshot (sheet_id, person_id, snapshot_day, due_total) VALUES (?, ?, ?, ?)",
+                sheetId, personId, Date.valueOf(day), dueTotal);
     }
 
     /** The person with this id on the sheet, or null when there is none. */
@@ -102,6 +113,9 @@ public class PersonRepository {
                 Long.class, sheetId, id));
         loadAliases(person);
         loadPastRetirements(person);
+        person.getSnapshots().addAll(jdbc.query(
+                "SELECT snapshot_day, due_total FROM person_snapshot WHERE sheet_id = ? AND person_id = ? ORDER BY id",
+                (rs, n) -> rs.getObject("snapshot_day", LocalDate.class) + " " + rs.getString("due_total"), sheetId, id));
         return person;
     }
 
@@ -220,6 +234,7 @@ public class PersonRepository {
         jdbc.update("DELETE FROM person_statement_history WHERE person_id = ?", id);
         jdbc.update("DELETE FROM person_retirement WHERE person_id = ?", id);
         jdbc.update("DELETE FROM person_past_retirement WHERE person_id = ?", id);
+        jdbc.update("DELETE FROM person_snapshot WHERE person_id = ?", id);
         jdbc.update("DELETE FROM person_grade_history WHERE person_id = ?", id);
         jdbc.update("DELETE FROM person_terms_history WHERE person_id = ?", id);
         jdbc.update("UPDATE person_grade SET sheet_id = ? WHERE person_id = ?", toSheet, id);

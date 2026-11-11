@@ -102,6 +102,9 @@ public class SheetCloneRepository {
             jdbc.update("INSERT INTO person_past_retirement (sheet_id, person_id, from_date, to_date)"
                     + " SELECT ?, ?, from_date, to_date FROM person_past_retirement WHERE person_id = ? ORDER BY id",
                     to, copy, id);
+            jdbc.update("INSERT INTO person_snapshot (sheet_id, person_id, snapshot_day, due_total)"
+                    + " SELECT ?, ?, snapshot_day, due_total FROM person_snapshot WHERE person_id = ? ORDER BY id",
+                    to, copy, id);
             jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias, added_on)"
                     + " SELECT ?, ?, alias, added_on FROM person_alias WHERE person_id = ? ORDER BY id", to, copy, id);
             jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date, made_on)"
