@@ -13,6 +13,6 @@ public class SavePlan {
         LocalDate start = input.start() == null ? sheet.today() : input.start();
         if (input.end().isBefore(start)) throw new InvalidPlanException("A plan's end is not before its start");
         planOut.set(repository.save(new Plan(null, sheet.id(), person.getId(), input.amount(), start, input.every(),
-                input.end(), 0)));
+                input.day(), input.end(), 0)));
     }
 }

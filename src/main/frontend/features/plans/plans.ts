@@ -2,13 +2,15 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 
 /** A person's plan: a DRAFT claim of its amount (two decimals) on its start date, then every `every`
- *  days, up to its end. `generated` is how many claims it has made so far. */
+ *  days — or, monthly, on day `day` of every month from the start's month (a day beyond the month's
+ *  length on its last day, dates before the start left out) — up to its end. `generated` is how many claims it has made so far. */
 export type Plan = {
   id: string;
   personId: string;
   amount: string;
   start: string;
-  every: number;
+  every: number | null;
+  day: number | null;
   end: string;
   generated: number;
 };

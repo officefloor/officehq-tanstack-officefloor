@@ -24,7 +24,7 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * For every plan on the sheet, in the order they were added, a DRAFT claim with the plan's amount for
- * every plan date (its start, then every N days) up to its end and the sheet's today that has none yet,
+ * every plan date (its start, then every N days; or monthly on its day of the month) up to its end and the sheet's today that has none yet,
  * dated that day with an empty note. Each is checked as the claim form checks a claim (its due-by outside
  * a closed period, its date not after its person's retirement): a date refused is skipped, and tried again
  * next time. Each claim made is saved, logged and audited as one added by the form.
@@ -42,7 +42,7 @@ public class AddPlanClaims {
             if (person == null) continue;
             Set<LocalDate> done = plans.made(plan.id());
             LocalDate last = plan.end().isBefore(sheet.today()) ? plan.end() : sheet.today();
-            for (LocalDate date = plan.start(); !date.isAfter(last); date = date.plusDays(plan.every())) {
+            for (LocalDate date : plan.datesUpTo(last)) {
                 if (done.contains(date)) continue;
                 Claim claim = new Claim(null, sheet.id(), person.getId(), plan.amount(), date, "",
                         ClaimStatus.DRAFT, null, null, null);

@@ -15,7 +15,7 @@ function PlansHead() {
 }
 
 // A person's plans, each with how many claims it has made, and a form adding one: an amount, a
-// start (blank: the sheet's today), every N days (a whole number, at least 1) and an end not
+// start (blank: the sheet's today), every N days (a whole number, at least 1) or a day of the month (1 to 31), and an end not
 // before the start. A refused plan shows the error on the row and adds nothing.
 function PersonPlans({ sheetId, person }: { sheetId: string; person: Person }) {
   const queryClient = useQueryClient();
@@ -24,11 +24,12 @@ function PersonPlans({ sheetId, person }: { sheetId: string; person: Person }) {
   const [amount, setAmount] = useState('');
   const [start, setStart] = useState('');
   const [every, setEvery] = useState('');
+  const [day, setDay] = useState('');
   const [end, setEnd] = useState('');
   const [error, setError] = useRowError(person.id, 'plan');
   const once = useOnce();
   const add = useMutation({
-    mutationFn: (body: { amount: string; start: string; every: string; end: string }) =>
+    mutationFn: (body: { amount: string; start: string; every: string; day: string; end: string }) =>
       postJson<Plan>(
         `/api/sheets/${encodeURIComponent(sheetId)}/people/${encodeURIComponent(person.id)}/plans`,
         body,
@@ -38,6 +39,7 @@ function PersonPlans({ sheetId, person }: { sheetId: string; person: Person }) {
       setAmount('');
       setStart('');
       setEvery('');
+      setDay('');
       setEnd('');
       return queryClient.invalidateQueries({ queryKey: plansKey(sheetId) });
     },
@@ -48,7 +50,7 @@ function PersonPlans({ sheetId, person }: { sheetId: string; person: Person }) {
     setError('');
     once((done) =>
       add.mutate(
-        { amount: amount.trim(), start: start.trim(), every: every.trim(), end: end.trim() },
+        { amount: amount.trim(), start: start.trim(), every: every.trim(), day: day.trim(), end: end.trim() },
         { onSettled: done },
       ),
     );
@@ -65,13 +67,14 @@ function PersonPlans({ sheetId, person }: { sheetId: string; person: Person }) {
         .filter((p) => p.personId === person.id)
         .map((p) => (
           <div key={p.id} data-testid={`plan-row-${p.id}`}>
-            <span data-testid="plan-amount-shown">{p.amount}</span> from {p.start} every {p.every} days to {p.end},
+            <span data-testid="plan-amount-shown">{p.amount}</span> from {p.start} {p.day !== null ? `monthly on day ${p.day}` : `every ${p.every} days`} to {p.end},
             made <span data-testid="plan-generated">{p.generated}</span>
           </div>
         ))}
       <input data-testid="plan-form-amount" aria-label="Plan amount" value={amount} onChange={changed(setAmount)} />{' '}
       <input type="date" data-testid="plan-form-start" aria-label="Plan start" value={start} onChange={changed(setStart)} />{' '}
       <input data-testid="plan-form-every" aria-label="Plan every N days" value={every} onChange={changed(setEvery)} />{' '}
+      <input data-testid="plan-form-day" aria-label="Plan day of the month" value={day} onChange={changed(setDay)} />{' '}
       <input type="date" data-testid="plan-form-end" aria-label="Plan end" value={end} onChange={changed(setEnd)} />{' '}
       <button type="button" data-testid="plan-form-submit" onClick={submit} disabled={add.isPending}>
         Add plan

@@ -9,7 +9,7 @@ import net.officefloor.plugin.variable.Val;
 public class AuditPlanAdded {
     public void audit(@Val Plan plan, @Val Person person, HttpServletRequest request, Audit audit) {
         audit.record("PLAN_ADDED sheet=" + plan.sheetId() + " by=" + Audit.user(request) + " name=" + person.getName()
-                + " amount=" + plan.amount().toPlainString() + " start=" + plan.start() + " every=" + plan.every()
+                + " amount=" + plan.amount().toPlainString() + " start=" + plan.start() + (plan.day() != null ? " day=" + plan.day() : " every=" + plan.every())
                 + " end=" + plan.end());
     }
 }
