@@ -1,0 +1,73 @@
+diff --git a/src/main/frontend/features/dups/dups.slot.tsx b/src/main/frontend/features/dups/dups.slot.tsx
+new file mode 100644
+index 000000000..934a6be98
+--- /dev/null
++++ b/src/main/frontend/features/dups/dups.slot.tsx
+@@ -0,0 +1,34 @@
++import { useState } from 'react';
++import { SheetBody } from '../../slots/defs/sheetBody';
++import { usePeople } from '../people/people';
++import { useClaims } from '../claims/claims';
++import { duplicates } from './dups';
++
++// The duplicate claims: a button shows, one line each as <name> <date> <amount> x<count>, every
++// person, date and amount with two or more claims (VOID and DELETED left out), people in list
++// order, then by date, then by amount. Kept current with the sheet once shown.
++function Duplicates({ sheetId }: { sheetId: string }) {
++  const [shown, setShown] = useState(false);
++  const people = usePeople(sheetId).data ?? [];
++  const claims = useClaims(sheetId).data ?? [];
++  const dups = shown ? duplicates(people, claims) : [];
++
++  return (
++    <section data-testid="dups">
++      <button type="button" data-testid="dups-show" onClick={() => setShown(true)}>
++        Show duplicate claims
++      </button>
++      {shown && (
++        <ul>
++          {dups.map((d, i) => (
++            <li key={i} data-testid="dup-line">
++              {d.name} {d.date} {d.amount} x{d.count}
++            </li>
++          ))}
++        </ul>
++      )}
++    </section>
++  );
++}
++
++export const contribution = SheetBody.fill({ order: 2.6, Component: Duplicates });
+diff --git a/src/main/frontend/features/dups/dups.ts b/src/main/frontend/features/dups/dups.ts
+new file mode 100644
+index 000000000..d12e44024
+--- /dev/null
++++ b/src/main/frontend/features/dups/dups.ts
+@@ -0,0 +1,27 @@
++import type { Claim } from '../claims/claims';
++import type { Person } from '../people/people';
++
++/** One set of duplicate claims: a person's claims of one date and amount, how many. */
++export type Dup = { name: string; date: string; amount: string; count: number };
++
++/**
++ * The duplicate claims: for each person, date and amount with two or more claims (VOID and
++ * DELETED ones left out), people in list order, then by date, then by amount (as a number).
++ */
++export function duplicates(people: Person[], claims: Claim[]): Dup[] {
++  const out: Dup[] = [];
++  for (const p of people) {
++    const groups = new Map<string, Dup>();
++    for (const c of claims) {
++      if (c.personId !== p.id || c.status === 'VOID' || c.status === 'DELETED') continue;
++      const key = `${c.date} ${c.amount}`;
++      const g = groups.get(key);
++      if (g) g.count++;
++      else groups.set(key, { name: p.name, date: c.date, amount: c.amount, count: 1 });
++    }
++    const dups = [...groups.values()].filter((g) => g.count >= 2);
++    dups.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : Number(a.amount) - Number(b.amount)));
++    out.push(...dups);
++  }
++  return out;
++}
