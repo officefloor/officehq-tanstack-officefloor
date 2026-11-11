@@ -24,6 +24,7 @@ public class Claim {
     private boolean relisted;
     private LocalDate dueBy;
     private int terms;
+    private boolean dueBySet;
     private LocalDate deferredUntil;
     private int proofs;
     private int proofPhotos;
@@ -95,6 +96,9 @@ public class Claim {
     /** Its due-by, fixed when it was made: the terms-th business day after its date (skipping weekends and the sheet's holidays then), its terms those in force on the day it was made (the sheet's today then): its person's own, else those of the grade they had that day, else the sheet's. Kept when its date changes; fixed again with the same terms when a holiday on or before it is added while it is not SETTLED or VOID. */
     public LocalDate getDueBy() { return dueBy; }
     public void setDueBy(LocalDate dueBy) { this.dueBy = dueBy; }
+    /** Whether a steward set its due-by directly: it stays as set, a holiday added later does not move it. */
+    public boolean isDueBySet() { return dueBySet; }
+    public void setDueBySet(boolean dueBySet) { this.dueBySet = dueBySet; }
     /** The terms (business days) its due-by was fixed with. */
     public int getTerms() { return terms; }
     public void setTerms(int terms) { this.terms = terms; }
@@ -328,6 +332,7 @@ public class Claim {
         then.correctedDate = correctedDate;
         then.dueBy = dueBy;
         then.terms = terms;
+        then.dueBySet = dueBySet;
         then.deferredUntil = deferredUntil;
         then.proofs = proofs;
         then.proofPhotos = proofPhotos;

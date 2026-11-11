@@ -18,7 +18,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, edited_by, stated, stated_due, stated_late, corrects, due_by, terms, deferred_until, proofs, proof_photos, split_from, late_entry, reminded_on, ext_ref, tags, void_reason, settle_batch, review_on, pending_on, waived, held, review_user,"
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, edited_by, stated, stated_due, stated_late, corrects, due_by, due_by_set, terms, deferred_until, proofs, proof_photos, split_from, late_entry, reminded_on, ext_ref, tags, void_reason, settle_batch, review_on, pending_on, waived, held, review_user,"
             + " (SELECT c.claim_date FROM claim c WHERE c.sheet_id = claim.sheet_id AND c.person_id = claim.person_id"
             + " AND c.claim_number = claim.corrects) AS corrected_date,"
             + " CASE WHEN locked_on = (SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id) THEN locked_by END AS locked_by_now";
@@ -35,6 +35,7 @@ public class ClaimRepository {
         claim.setCorrects(rs.getString("corrects"));
         claim.setDueBy(rs.getDate("due_by").toLocalDate());
         claim.setTerms(rs.getInt("terms"));
+        claim.setDueBySet(rs.getBoolean("due_by_set"));
         java.sql.Date deferred = rs.getDate("deferred_until");
         claim.setDeferredUntil(deferred == null ? null : deferred.toLocalDate());
         claim.setProofs(rs.getInt("proofs"));
@@ -443,9 +444,9 @@ public class ClaimRepository {
         long listed = nextListed(toSheet);
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement("INSERT INTO claim (sheet_id, person_id, amount, claim_date, note,"
-                    + " status, settled_due, opened_by, edited_by, due_by, terms, deferred_until, proofs, proof_photos, late_entry,"
+                    + " status, settled_due, opened_by, edited_by, due_by, due_by_set, terms, deferred_until, proofs, proof_photos, late_entry,"
                     + " reminded_on, review_on, pending_on, void_reason, waived, held, listed)"
-                    + " SELECT ?, ?, amount, claim_date, note, status, settled_due, opened_by, edited_by, due_by, terms,"
+                    + " SELECT ?, ?, amount, claim_date, note, status, settled_due, opened_by, edited_by, due_by, due_by_set, terms,"
                     + " deferred_until, proofs, proof_photos, late_entry, reminded_on, review_on, pending_on, void_reason, waived, held, ? FROM claim WHERE id = ? AND sheet_id = ?",
                     Statement.RETURN_GENERATED_KEYS);
             ps.setString(1, toSheet);
@@ -482,6 +483,13 @@ public class ClaimRepository {
     public void saveDueBy(Claim claim) {
         jdbc.update("UPDATE claim SET due_by = ? WHERE id = ? AND sheet_id = ?", Date.valueOf(claim.getDueBy()),
                 claim.getId(), claim.getSheetId());
+        keepHistory(claim);
+    }
+
+    /** Keep a due-by a steward set directly, so it stays as set (its history kept, with the sheet's today now). */
+    public void saveSetDueBy(Claim claim) {
+        jdbc.update("UPDATE claim SET due_by = ?, due_by_set = TRUE WHERE id = ? AND sheet_id = ?",
+                Date.valueOf(claim.getDueBy()), claim.getId(), claim.getSheetId());
         keepHistory(claim);
     }
 

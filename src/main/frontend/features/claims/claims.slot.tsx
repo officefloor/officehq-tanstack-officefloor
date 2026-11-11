@@ -82,6 +82,8 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   const [proofKind, setProofKind] = useState<Record<string, string>>({});
   // The new date typed to re-date each claim to, by claim id.
   const [newDate, setNewDate] = useState<Record<string, string>>({});
+  // The due-by typed beside each claim's set-due-by button.
+  const [newDueBy, setNewDueBy] = useState<Record<string, string>>({});
   // The amount typed in each draft's own row, to save as its new amount, by claim id.
   const [inlineAmount, setInlineAmount] = useState<Record<string, string>>({});
   // The amount typed to split off each claim, by claim id.
@@ -226,6 +228,36 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
       return;
     }
     redate.mutate({ id, date });
+  };
+
+  // A steward sets a DRAFT, OPEN or PENDING claim's due-by directly; a holiday added later does not move it.
+  const setDueBy = useMutation({
+    mutationFn: ({ id, dueBy }: { id: string; dueBy: string }) =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/claims/${encodeURIComponent(id)}/due-by`,
+        { dueBy },
+        user,
+      ),
+    onSuccess: (_c, { id }) => {
+      setNewDueBy((d) => ({ ...d, [id]: '' }));
+      void queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+    onError: (_e, { id }) =>
+      setRefused({
+        id,
+        message: "That claim's due-by cannot be set: a steward sets it on a DRAFT, OPEN or PENDING claim, not in a closed period.",
+      }),
+  });
+
+  const setClaimDueBy = (id: string) => {
+    setRefused(null);
+    const dueBy = (newDueBy[id] ?? '').trim();
+    if (dueBy === '') {
+      setRefused({ id, message: 'Choose the new due-by for the claim.' });
+      return;
+    }
+    setDueBy.mutate({ id, dueBy });
   };
 
   // An amount is split off an OPEN claim into a new OPEN claim, listed newest.
@@ -928,6 +960,19 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
               />{' '}
               <button type="button" data-testid="claim-redate" onClick={() => redateClaim(c.id)}>
                 Re-date
+              </button>{' '}
+              <input
+                type="date"
+                data-testid="claim-due-by-new"
+                aria-label="New due-by"
+                value={newDueBy[c.id] ?? ''}
+                onChange={(e) => {
+                  setNewDueBy((d) => ({ ...d, [c.id]: e.target.value }));
+                  setRefused((r) => (r !== null && r.id === c.id ? null : r));
+                }}
+              />{' '}
+              <button type="button" data-testid="claim-set-due-by" onClick={() => setClaimDueBy(c.id)}>
+                Set due-by
               </button>{' '}
               <input
                 data-testid="claim-split-amount"
