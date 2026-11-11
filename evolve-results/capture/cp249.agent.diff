@@ -1,0 +1,193 @@
+diff --git a/src/main/frontend/features/policy/policy.slot.tsx b/src/main/frontend/features/policy/policy.slot.tsx
+new file mode 100644
+index 000000000..996e36458
+--- /dev/null
++++ b/src/main/frontend/features/policy/policy.slot.tsx
+@@ -0,0 +1,43 @@
++import { useState } from 'react';
++import { useQuery } from '@tanstack/react-query';
++import { SheetBody } from '../../slots/defs/sheetBody';
++import { useSettings } from '../access/access';
++import { claimsQuery } from '../claims/claims';
++import { policyLine, usePolicyVersions } from './policy';
++
++// The policy viewer: a show button, and once pressed one line per policy version, oldest first, each its
++// number, its from-date (start for none), the setting it changed with its value, and the count of claims
++// whose policy version it is. The lines are read again whenever the claims or the settings are.
++function PolicyViewer({ sheetId }: { sheetId: string }) {
++  const [shown, setShown] = useState(false);
++  const settings = useSettings(sheetId);
++  const claims = useQuery(claimsQuery(sheetId));
++  const versions = usePolicyVersions(sheetId, Math.max(settings.dataUpdatedAt, claims.dataUpdatedAt));
++
++  return (
++    <section data-testid="policy">
++      <h2>Policy versions</h2>
++      <button
++        type="button"
++        data-testid="policy-show"
++        onClick={() => {
++          setShown(true);
++          void versions.refetch();
++        }}
++      >
++        Show policy versions
++      </button>
++      {shown && (
++        <ul data-testid="policy-list">
++          {(versions.data ?? []).map((v) => (
++            <li key={v.version} data-testid="policy-line">
++              {policyLine(v)}
++            </li>
++          ))}
++        </ul>
++      )}
++    </section>
++  );
++}
++
++export const contribution = SheetBody.fill({ order: -8.5, Component: PolicyViewer });
+diff --git a/src/main/frontend/features/policy/policy.ts b/src/main/frontend/features/policy/policy.ts
+new file mode 100644
+index 000000000..b4ab6ece7
+--- /dev/null
++++ b/src/main/frontend/features/policy/policy.ts
+@@ -0,0 +1,24 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++
++/**
++ * A policy version, oldest first: its number (from 1), its from-date (yyyy-MM-dd; '' for none, counting
++ * always), the policy setting it changed and the value it set, and the count of claims whose policy
++ * version it is.
++ */
++export type PolicyVersion = { version: number; from: string; key: string; value: string; claims: number };
++
++export const policyKey = (sheetId: string, stamp: number) => ['sheet', sheetId, 'policy', stamp] as const;
++
++/** The sheet's policy versions, read again whenever `stamp` (the time its claims or settings were last read) moves. */
++export function usePolicyVersions(sheetId: string, stamp: number) {
++  return useQuery({
++    queryKey: policyKey(sheetId, stamp),
++    queryFn: async () =>
++      (await getJson<{ versions: PolicyVersion[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/policy`)).versions,
++    placeholderData: (previous) => previous,
++  });
++}
++
++/** A policy version as one line: <version> <from or start> <key>=<value> <count of claims>. */
++export const policyLine = (v: PolicyVersion) => `${v.version} ${v.from || 'start'} ${v.key}=${v.value} ${v.claims}`;
+diff --git a/src/main/java/net/officefloor/hq/app/setting/PolicyResponse.java b/src/main/java/net/officefloor/hq/app/setting/PolicyResponse.java
+new file mode 100644
+index 000000000..be10bd7e6
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/setting/PolicyResponse.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.setting;
++
++import java.util.List;
++
++/**
++ * The sheet's policy versions, oldest first: each its number (from 1), its from-date (yyyy-MM-dd; '' for
++ * none, counting always), the policy setting it changed and the value it set ('' for none), and the count of
++ * the sheet's claims whose policy version it is (the last version in force on the claim's date).
++ */
++public record PolicyResponse(List<Line> versions) {
++
++    /** One policy version. */
++    public record Line(int version, String from, String key, String value, int claims) {
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/setting/RespondWithPolicy.java b/src/main/java/net/officefloor/hq/app/setting/RespondWithPolicy.java
+new file mode 100644
+index 000000000..f9fb6bb27
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/setting/RespondWithPolicy.java
+@@ -0,0 +1,45 @@
++package net.officefloor.hq.app.setting;
++
++import jakarta.servlet.http.HttpServletRequest;
++import java.time.LocalDate;
++import java.util.ArrayList;
++import java.util.List;
++import net.officefloor.hq.app.AsOf;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.claim.ClaimStatus;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++/**
++ * The sheet's policy versions, each with the count of claims whose policy version it is: a claim's policy
++ * version is the number of versions whose from-date is on or before its date (a version with none counting
++ * always), as the screen numbers it. A DELETED claim counts nowhere.
++ */
++public class RespondWithPolicy {
++    public void respond(@Val Sheet sheet, SettingsRepository repository, ClaimRepository claims,
++            HttpServletRequest request, ObjectResponse<PolicyResponse> response) {
++        List<SettingsRepository.Version> versions = repository.versionChanges(sheet.id(), AsOf.of(request));
++        int[] counts = new int[versions.size() + 1];
++        for (Claim claim : claims.findAll(sheet.id())) {
++            if (claim.getStatus() == ClaimStatus.DELETED) continue;
++            counts[versionOn(versions, claim.getDate())]++;
++        }
++        List<PolicyResponse.Line> lines = new ArrayList<>();
++        for (int i = 0; i < versions.size(); i++) {
++            SettingsRepository.Version v = versions.get(i);
++            lines.add(new PolicyResponse.Line(i + 1, v.from() == null ? "" : v.from().toString(), v.key(),
++                    v.value() == null ? "" : v.value(), counts[i + 1]));
++        }
++        response.send(new PolicyResponse(lines));
++    }
++
++    private static int versionOn(List<SettingsRepository.Version> versions, LocalDate date) {
++        int n = 0;
++        for (SettingsRepository.Version v : versions) {
++            if (v.from() == null || (date != null && !v.from().isAfter(date))) n++;
++        }
++        return n;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsRepository.java b/src/main/java/net/officefloor/hq/app/setting/SettingsRepository.java
+index 5f0fd3ed2..ea8e1bf3d 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsRepository.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsRepository.java
+@@ -107,6 +107,23 @@ public class SettingsRepository {
+         return versions;
+     }
+ 
++    /** A policy version: the policy setting changed, its new value ('' for none) and its from-date (null: none). */
++    public record Version(String key, String value, LocalDate from) {
++    }
++
++    /** The policy versions, in the order made, with the change each made; as of a date as {@link #versions}. */
++    public List<Version> versionChanges(String sheetId, LocalDate asOf) {
++        List<Version> versions = new java.util.ArrayList<>();
++        jdbc.query("SELECT setting_key, setting_value, from_date, set_on FROM setting_history WHERE sheet_id = ? ORDER BY id",
++                (RowCallbackHandler) (rs) -> {
++                    if (!Settings.POLICY_KEYS.contains(rs.getString("setting_key"))) return;
++                    if (asOf != null && rs.getDate("set_on").toLocalDate().isAfter(asOf)) return;
++                    versions.add(new Version(rs.getString("setting_key"), rs.getString("setting_value"),
++                            rs.getDate("from_date") == null ? null : rs.getDate("from_date").toLocalDate()));
++                }, sheetId);
++        return versions;
++    }
++
+     private static final String POLICY_DATE = "policy-date";
+ 
+     private static final String POT = "pot";
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/policy.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/policy.GET.yml
+new file mode 100644
+index 000000000..d07e80b33
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/policy.GET.yml
+@@ -0,0 +1,8 @@
++# A sheet's policy versions, oldest first, each with the count of claims whose policy version it is.
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ readonly-transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.setting.RespondWithPolicy
++  govern: [ readonly-transaction ]
