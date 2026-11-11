@@ -1,0 +1,157 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index dbbe54781..621f5a199 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -129,19 +129,21 @@ export function isReviewLate(c: Claim, today: string, reviewSla: string): boolea
+ export const isBound = (c: Claim) => c.stated;
+ 
+ /**
+- * Whether a claim is deferred on the sheet's `today`: OPEN and deferred until a date after today.
+- * From that date on it is an OPEN claim like any other.
++ * Whether a claim is deferred on the sheet's `today`: not bound by a statement, and deferred until a
++ * date after today. From that date on it is a claim like any other. While a statement binds it, its
++ * deferral waits until the binding ends, and then takes effect whatever its status since (one settled
++ * while bound drops out of the totals until that date too).
+  */
+ export const isDeferred = (c: Claim, today: string) =>
+-  c.status === 'OPEN' && c.deferredUntil !== '' && today !== '' && today < c.deferredUntil;
++  !isBound(c) && c.deferredUntil !== '' && today !== '' && today < c.deferredUntil;
+ 
+ /**
+  * Whether the claim's row shows it deferred: it was deferred until a date after the sheet's
+- * `today`, whatever its status since (a deferred claim voided stays shown deferred). Only
+- * `isDeferred` decides what counts.
++ * `today`, whatever its status since (a deferred claim voided stays shown deferred), and no
++ * statement binds it. Only `isDeferred` decides what counts.
+  */
+ export const showsDeferred = (c: Claim, today: string) =>
+-  c.deferredUntil !== '' && today !== '' && today < c.deferredUntil;
++  !isBound(c) && c.deferredUntil !== '' && today !== '' && today < c.deferredUntil;
+ 
+ /**
+  * Whether a claim counts toward claimed, due-total and every total: only OPEN, PENDING and SETTLED
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java b/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java
+index 9427e0d7a..0ea5bc6e0 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java
+@@ -132,6 +132,10 @@ public class AddPastedClaims {
+                 existing.add(false);
+                 edited.add(false);
+             }
++            // A note it needs to open is checked before anything is written.
++            if (OpenClaim.needsNote(sheet, claim, people, rates, settings)) {
++                throw new InvalidClaimStatusException(NoteRequired.MESSAGE);
++            }
+             if (terms.maxOpen() != null) {
+                 long now = held.computeIfAbsent(person.getId(), id -> MaxOpen.held(sheet, id, claims));
+                 if (now >= terms.maxOpen()) throw MaxOpen.refused(terms);
+@@ -158,9 +162,6 @@ public class AddPastedClaims {
+                 claims.save(claim);
+                 lines.add(ClaimAudit.line("CLAIM_EDITED", sheet, user, person, claim));
+             }
+-            if (OpenClaim.needsNote(sheet, claim, people, rates, settings)) {
+-                throw new InvalidClaimStatusException(NoteRequired.MESSAGE);
+-            }
+             Period full = PeriodCaps.full(sheet, claim, periods, claims);
+             if (full != null) {
+                 throw new InvalidClaimStatusException("Period " + full.name() + " allows at most " + full.cap()
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 9efc3dd79..f40e70fd7 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -111,11 +111,13 @@ public class Claim {
+     public LocalDate getDeferredUntil() { return deferredUntil; }
+     public void setDeferredUntil(LocalDate deferredUntil) { this.deferredUntil = deferredUntil; }
+     /**
+-     * Whether it is deferred on {@code today}: OPEN, and deferred until a date after today. From
+-     * that date on it is an OPEN claim like any other.
++     * Whether it is deferred on {@code today}: not bound by a statement, and deferred until a date
++     * after today. From that date on it is a claim like any other. While a statement binds it, its
++     * deferral waits until the binding ends, and then takes effect whatever its status since (one
++     * settled while bound drops out of the totals until that date too).
+      */
+     public boolean isDeferredOn(LocalDate today) {
+-        return status == ClaimStatus.OPEN && deferredUntil != null && today != null && today.isBefore(deferredUntil);
++        return !isBound() && deferredUntil != null && today != null && today.isBefore(deferredUntil);
+     }
+     /**
+      * Defer it until a date after {@code today}: only an OPEN claim may be deferred.
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+index 1f3e6d43e..2f97d34fd 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+@@ -11,7 +11,7 @@ import java.util.List;
+  * round by (a correction's is the date of the claim it corrects); and its due-by as yyyy-MM-dd, fixed
+  * when it was made; and its status log, oldest first, one line per status it has had as
+  * {@code <STATUS> by <user> on <date> due=<due>}; and the date it is deferred until as yyyy-MM-dd
+- * ("" when it was never deferred; it is deferred only while OPEN and the sheet's today is before it);
++ * ("" when it was never deferred; it is deferred only while unbound by a statement and the sheet's today is before it);
+  * and how many proofs it has had added; and the number of the claim it was split off ("" when none);
+  * and the user whose open editor locks it on the sheet's today ("" when no one's does);
+  * and whether it was added while its period was soft-closed; and the last sheet's today it was reminded
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java b/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java
+index 83e969e84..e6f134e23 100644
+--- a/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodRepository.java
+@@ -214,6 +214,26 @@ public class PeriodRepository {
+                 + " AND amount = 0", sheetId, periodName, personId);
+     }
+ 
++    /**
++     * Move a merged person's fixed due-totals, carried figures and opening balances for every period
++     * to the person they are merged into, added to theirs.
++     */
++    public void mergePeople(String sheetId, long fromId, long intoId) {
++        for (String[] t : List.of(new String[] { "period_person_total", "total" },
++                new String[] { "period_person_carried", "carried" }, new String[] { "period_person_opening", "amount" })) {
++            String table = t[0], column = t[1];
++            jdbc.update("UPDATE " + table + " i SET " + column + " = " + column + " + (SELECT f." + column + " FROM " + table
++                    + " f WHERE f.sheet_id = i.sheet_id AND f.period_name = i.period_name AND f.person_id = ?)"
++                    + " WHERE i.sheet_id = ? AND i.person_id = ? AND EXISTS (SELECT 1 FROM " + table
++                    + " f WHERE f.sheet_id = i.sheet_id AND f.period_name = i.period_name AND f.person_id = ?)",
++                    fromId, sheetId, intoId, fromId);
++            jdbc.update("UPDATE " + table + " f SET person_id = ? WHERE f.sheet_id = ? AND f.person_id = ? AND NOT EXISTS"
++                    + " (SELECT 1 FROM " + table + " i WHERE i.sheet_id = f.sheet_id AND i.period_name = f.period_name"
++                    + " AND i.person_id = ?)", intoId, sheetId, fromId, intoId);
++            jdbc.update("DELETE FROM " + table + " WHERE sheet_id = ? AND person_id = ?", sheetId, fromId);
++        }
++    }
++
+     /** Remove the period from the sheet, with everything kept for it. */
+     public void delete(String sheetId, String name) {
+         for (String table : List.of("period_person_opening", "period_person_total", "period_person_carried", "period_pool_cut")) {
+diff --git a/src/main/java/net/officefloor/hq/app/person/MergePerson.java b/src/main/java/net/officefloor/hq/app/person/MergePerson.java
+index ba908cb7b..03ec9cd85 100644
+--- a/src/main/java/net/officefloor/hq/app/person/MergePerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/MergePerson.java
+@@ -8,6 +8,7 @@ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.claim.Claim;
+ import net.officefloor.hq.app.claim.ClaimRepository;
+ import net.officefloor.hq.app.crew.CrewRepository;
++import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.hq.app.pool.PoolRepository;
+ import net.officefloor.hq.app.role.Role;
+ import net.officefloor.hq.app.role.RoleRepository;
+@@ -22,11 +23,12 @@ import net.officefloor.plugin.variable.Val;
+  * added, each keeping any figure a statement bound it to); their statement count is added to the other's
+  * (whose last statement stays theirs, or, having none, becomes this person's); their name and aliases become the other's
+  * aliases; their patrons, pool and crew memberships (and a crew they lead) go to the other, and anyone naming them as patron names
+- * the other instead. Their holds, watchers and contact are dropped, and they leave the list.
++ * the other instead. Their figures fixed for closed periods (due-totals, carried figures) and their opening
++ * balances are added to the other's. Their holds, watchers and contact are dropped, and they leave the list.
+  */
+ public class MergePerson {
+     public void merge(@Val MergeInput input, @Val Sheet sheet, @Val Person person, PersonRepository people,
+-            ClaimRepository claims, PoolRepository pools, CrewRepository crews, RoleRepository roles, HttpServletRequest request,
++            ClaimRepository claims, PoolRepository pools, CrewRepository crews, PeriodRepository periods, RoleRepository roles, HttpServletRequest request,
+             Out<Merge> mergeOut) throws StewardOnlyException, InvalidPersonException {
+         if (!Role.STEWARD.equals(roles.roleOf(sheet.id(), Audit.user(request)))) {
+             throw new StewardOnlyException("Only a steward may merge people");
+@@ -45,6 +47,7 @@ public class MergePerson {
+         }
+         pools.mergeMembers(person.getId(), into.getId());
+         crews.mergeMembers(person.getId(), into.getId());
++        periods.mergePeople(sheet.id(), person.getId(), into.getId());
+         people.merge(person, into);
+         mergeOut.set(new Merge(person, into));
+     }
