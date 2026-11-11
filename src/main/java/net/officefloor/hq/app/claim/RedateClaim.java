@@ -22,18 +22,23 @@ public class RedateClaim {
     public void apply(@Val Sheet sheet, @Val Claim claim, @Val Redate redate, PersonRepository people,
             RoleRepository roles, HttpServletRequest request, Out<Redating> redatingOut)
             throws StewardOnlyException, InvalidClaimStatusException, RetiredPersonException {
-        if (!Role.STEWARD.equals(roles.roleOf(sheet.id(), Audit.user(request)))) {
+        redatingOut.set(redate(sheet, claim, redate.date(), people, roles, Audit.user(request)));
+    }
+
+    /** Re-dates the claim by the rules above as the user, or refuses and leaves it as it is. */
+    static Redating redate(Sheet sheet, Claim claim, LocalDate to, PersonRepository people, RoleRepository roles,
+            String user) throws StewardOnlyException, InvalidClaimStatusException, RetiredPersonException {
+        if (!Role.STEWARD.equals(roles.roleOf(sheet.id(), user))) {
             throw new StewardOnlyException("Only a steward may re-date a claim");
         }
         if (!claim.isOpen()) {
             throw new InvalidClaimStatusException("A " + claim.getStatus() + " claim cannot be re-dated");
         }
-        LocalDate to = redate.date();
         Person person = people.find(sheet.id(), claim.getPersonId());
         if (person != null && person.retiredBefore(to)) throw new RetiredPersonException(person.getName());
 
         LocalDate from = claim.getDate();
         claim.setDate(to);
-        redatingOut.set(new Redating(from, to));
+        return new Redating(from, to);
     }
 }
