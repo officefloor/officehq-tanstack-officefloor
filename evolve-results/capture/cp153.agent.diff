@@ -1,0 +1,229 @@
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index b1eaadbcc..a78f0dad3 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -152,6 +152,7 @@ function Rates({ sheetId }: { sheetId: string }) {
+             <th>From</th>
+             <th>To</th>
+             <th>Rate %</th>
++            <th>Version</th>
+           </tr>
+         </thead>
+         <tbody>
+@@ -161,6 +162,7 @@ function Rates({ sheetId }: { sheetId: string }) {
+               <td data-testid="rate-from">{r.from || 'start'}</td>
+               <td data-testid="rate-to">{r.to}</td>
+               <td data-testid="rate-pct">{r.pct}</td>
++              <td data-testid="rate-version">{r.version}</td>
+             </tr>
+           ))}
+         </tbody>
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 4071a60bc..4df92e797 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -8,9 +8,10 @@ import type { Claim } from '../claims/claims';
+ /**
+  * A grade's rate: a percent with two decimals, from a date (yyyy-MM-dd; '' when it applies from the
+  * beginning of time) through a date (yyyy-MM-dd; '' when it has no end), and its level: 0 when set
+- * on the sheet itself, 1 on its parent sheet, and so on up to MAX_LEVEL.
++ * on the sheet itself, 1 on its parent sheet, and so on up to MAX_LEVEL; and its version: how many
++ * times a rate has been set for its grade and from-date (it is the newest of them).
+  */
+-export type Rate = { grade: Grade; pct: string; from: string; to: string; level: number };
++export type Rate = { grade: Grade; pct: string; from: string; to: string; level: number; version: number };
+ 
+ /** How many parent sheets up a rate is looked for. */
+ export const MAX_LEVEL = 3;
+diff --git a/src/main/java/net/officefloor/hq/app/rate/Rate.java b/src/main/java/net/officefloor/hq/app/rate/Rate.java
+index ff83d44b6..cd1cd0724 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/Rate.java
++++ b/src/main/java/net/officefloor/hq/app/rate/Rate.java
+@@ -9,21 +9,33 @@ import java.util.Optional;
+ /**
+  * A grade's rate on a sheet: a percent with two decimals, from a date (null: from the beginning of
+  * time) through a date (null: with no end). Its level is how far up the sheet's parent chain it is
+- * set: 0 on the sheet itself, 1 on its parent, up to {@link #MAX_LEVEL}.
++ * set: 0 on the sheet itself, 1 on its parent, up to {@link #MAX_LEVEL}. Its version counts how many
++ * times a rate has been set for its grade and from-date (1 for the first); it is the newest of them.
+  */
+-public record Rate(String sheetId, String grade, BigDecimal pct, LocalDate from, LocalDate to, int level) {
++public record Rate(String sheetId, String grade, BigDecimal pct, LocalDate from, LocalDate to, int level,
++        int version) {
+ 
+     /** How many parent sheets up a rate is looked for. */
+     public static final int MAX_LEVEL = 3;
+ 
+     /** A rate set on the sheet itself. */
+     public Rate(String sheetId, String grade, BigDecimal pct, LocalDate from, LocalDate to) {
+-        this(sheetId, grade, pct, from, to, 0);
++        this(sheetId, grade, pct, from, to, 0, 1);
++    }
++
++    /** A rate set on the sheet itself, at its version. */
++    public Rate(String sheetId, String grade, BigDecimal pct, LocalDate from, LocalDate to, int level) {
++        this(sheetId, grade, pct, from, to, level, 1);
++    }
++
++    /** The same rate at a version. */
++    public Rate withVersion(int version) {
++        return new Rate(sheetId, grade, pct, from, to, level, version);
+     }
+ 
+     /** The same rate seen from a sheet {@code levels} below the one it is set on. */
+     public Rate up(int levels) {
+-        return new Rate(sheetId, grade, pct, from, to, level + levels);
++        return new Rate(sheetId, grade, pct, from, to, level + levels, version);
+     }
+ 
+     /**
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+index 64720079c..4582f1727 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+@@ -9,13 +9,16 @@ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.jdbc.core.RowMapper;
+ import org.springframework.stereotype.Repository;
+ 
+-/** The rates store: at most one rate per grade and from-date, kept per sheet. */
++/**
++ * The rates store: per grade and from-date, the newest version of its rate (the one in force) and the
++ * older versions it replaced, kept per sheet.
++ */
+ @Repository
+ public class RateRepository {
+ 
+     private static final RowMapper<Rate> ROW = (rs, n) -> new Rate(rs.getString("sheet_id"),
+             rs.getString("grade"), rs.getBigDecimal("pct"), rs.getObject("from_date", LocalDate.class),
+-            rs.getObject("to_date", LocalDate.class));
++            rs.getObject("to_date", LocalDate.class), 0, rs.getInt("version"));
+ 
+     private final JdbcTemplate jdbc;
+ 
+@@ -53,24 +56,35 @@ public class RateRepository {
+ 
+     /** The rates set on the sheet itself, by grade then from-date (none first). */
+     private List<Rate> findOwn(String sheetId) {
+-        return jdbc.query("SELECT sheet_id, grade, pct, from_date, to_date FROM rate WHERE sheet_id = ?"
++        return jdbc.query("SELECT sheet_id, grade, pct, from_date, to_date, version FROM rate WHERE sheet_id = ?"
+                 + " ORDER BY grade, from_date NULLS FIRST", ROW, sheetId);
+     }
+ 
+-    /** Set the grade's rate from its from-date, replacing any it had for that from-date. */
+-    public void save(Rate rate) {
+-        jdbc.update("DELETE FROM rate WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?",
++    /**
++     * Set the grade's rate from its from-date as a new version: any it had for that from-date is kept
++     * as an older version. Returns the rate at its version.
++     */
++    public Rate save(Rate rate) {
++        String where = " WHERE sheet_id = ? AND grade = ? AND from_date IS NOT DISTINCT FROM ?";
++        jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, pct, to_date)"
++                + " SELECT sheet_id, grade, from_date, version, pct, to_date FROM rate" + where,
++                rate.sheetId(), rate.grade(), rate.from());
++        Integer last = jdbc.queryForObject("SELECT MAX(version) FROM rate" + where, Integer.class,
+                 rate.sheetId(), rate.grade(), rate.from());
+-        jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date) VALUES (?, ?, ?, ?, ?)",
+-                rate.sheetId(), rate.grade(), rate.pct(), rate.from(), rate.to());
++        Rate saved = rate.withVersion(last == null ? 1 : last + 1);
++        jdbc.update("DELETE FROM rate" + where, rate.sheetId(), rate.grade(), rate.from());
++        jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date, version) VALUES (?, ?, ?, ?, ?, ?)",
++                saved.sheetId(), saved.grade(), saved.pct(), saved.from(), saved.to(), saved.version());
+         jdbc.update("INSERT INTO rate_history (sheet_id, grade, pct, from_date, to_date, set_on)"
+                 + " VALUES (?, ?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
+                 rate.sheetId(), rate.grade(), rate.pct(), rate.from(), rate.to(), rate.sheetId());
++        return saved;
+     }
+ 
+     /**
+      * The sheet's rates as they stood at the end of {@code day}: for each grade and from-date, the
+-     * last rate set for them while the sheet's today was on or before it; then its parent sheets'
++     * last rate set for them while the sheet's today was on or before it, its version counting those
++     * set for them by then; then its parent sheets'
+      * (as they are named now) as they stood at the end of that day, each at its level.
+      */
+     public List<Rate> findAsOf(String sheetId, LocalDate day) {
+@@ -85,10 +99,12 @@ public class RateRepository {
+ 
+     private List<Rate> findOwnAsOf(String sheetId, LocalDate day) {
+         Map<String, Rate> latest = new LinkedHashMap<>();
+-        jdbc.query("SELECT sheet_id, grade, pct, from_date, to_date FROM rate_history WHERE sheet_id = ?"
++        jdbc.query("SELECT sheet_id, grade, pct, from_date, to_date, 1 AS version FROM rate_history WHERE sheet_id = ?"
+                 + " AND set_on <= ? ORDER BY id", (rs) -> {
+                     Rate rate = ROW.mapRow(rs, 0);
+-                    latest.put(rate.grade() + "|" + rate.from(), rate);
++                    String key = rate.grade() + "|" + rate.from();
++                    Rate before = latest.get(key);
++                    latest.put(key, before == null ? rate : rate.withVersion(before.version() + 1));
+                 }, sheetId, java.sql.Date.valueOf(day));
+         return new ArrayList<>(latest.values());
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateResponse.java b/src/main/java/net/officefloor/hq/app/rate/RateResponse.java
+index e473775cc..0e503b449 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateResponse.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateResponse.java
+@@ -1,10 +1,10 @@
+ package net.officefloor.hq.app.rate;
+ 
+-/** A rate, as the screen reads it: its grade, its percent with two decimals, its from-date and its to-date ('' for none), and its level: 0 when set on the sheet itself, 1 on its parent and so on up. */
+-public record RateResponse(String grade, String pct, String from, String to, int level) {
++/** A rate, as the screen reads it: its grade, its percent with two decimals, its from-date and its to-date ('' for none), its level: 0 when set on the sheet itself, 1 on its parent and so on up, and its version: how many times a rate has been set for its grade and from-date. */
++public record RateResponse(String grade, String pct, String from, String to, int level, int version) {
+     public static RateResponse from(Rate rate) {
+         return new RateResponse(rate.grade(), rate.pct().toPlainString(),
+                 rate.from() == null ? "" : rate.from().toString(),
+-                rate.to() == null ? "" : rate.to().toString(), rate.level());
++                rate.to() == null ? "" : rate.to().toString(), rate.level(), rate.version());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/SaveRate.java b/src/main/java/net/officefloor/hq/app/rate/SaveRate.java
+index a3c507301..727e26f9f 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/SaveRate.java
++++ b/src/main/java/net/officefloor/hq/app/rate/SaveRate.java
+@@ -8,7 +8,6 @@ public class SaveRate {
+     public void save(@Val RateInput input, @Val Sheet sheet, RateRepository repository,
+             Out<Rate> rateOut) {
+         Rate rate = new Rate(sheet.id(), input.grade(), input.pct(), input.from(), input.to());
+-        repository.save(rate);
+-        rateOut.set(rate);
++        rateOut.set(repository.save(rate));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
+index 6595cf091..5b3589088 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
+@@ -51,8 +51,11 @@ public class SheetCloneRepository {
+ 
+         jdbc.update("INSERT INTO sheet_role (sheet_id, user_name, role) SELECT ?, user_name, role FROM sheet_role"
+                 + " WHERE sheet_id = ?", to, from);
+-        jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date) SELECT ?, grade, pct, from_date, to_date"
+-                + " FROM rate WHERE sheet_id = ?", to, from);
++        jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date, version)"
++                + " SELECT ?, grade, pct, from_date, to_date, version FROM rate WHERE sheet_id = ?", to, from);
++        jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, pct, to_date)"
++                + " SELECT ?, grade, from_date, version, pct, to_date FROM rate_version WHERE sheet_id = ? ORDER BY id",
++                to, from);
+         jdbc.update("INSERT INTO rate_history (sheet_id, grade, pct, from_date, to_date, set_on)"
+                 + " SELECT sheet_id, grade, pct, from_date, to_date, ?"
+                 + " FROM rate WHERE sheet_id = ? ORDER BY grade, from_date NULLS FIRST", today, to);
+diff --git a/src/main/resources/db/migration/V86__rate_version.sql b/src/main/resources/db/migration/V86__rate_version.sql
+new file mode 100644
+index 000000000..5762a2c41
+--- /dev/null
++++ b/src/main/resources/db/migration/V86__rate_version.sql
+@@ -0,0 +1,14 @@
++-- A rate is kept as versions: setting a rate for a grade and from-date that already have one keeps
++-- the value it replaces as an older version and adds a new one. The rate row holds the newest
++-- version (the one in force) and its number, counted from 1; rate_version holds the older ones.
++ALTER TABLE rate ADD COLUMN version INT NOT NULL DEFAULT 1;
++CREATE TABLE rate_version (
++    id BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id VARCHAR(200) NOT NULL REFERENCES sheet(id),
++    grade CHAR(1) NOT NULL,
++    from_date DATE,
++    version INT NOT NULL,
++    pct DECIMAL(19, 2) NOT NULL,
++    to_date DATE
++);
++CREATE INDEX rate_version_sheet ON rate_version(sheet_id, grade);
