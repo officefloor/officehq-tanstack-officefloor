@@ -195,6 +195,35 @@ function Periods({ sheetId }: { sheetId: string }) {
     once((done) => generateFy.mutate({ year }, { onSettled: done }));
   };
 
+  // Roll a fiscal year over (a steward only): the next fiscal year's twelve periods are generated as
+  // above, and each person's open figure at the old year's end is carried into the new year's first
+  // period as an opening balance. Its own made count and error.
+  const [rolloverYear, setRolloverYear] = useState('');
+  const [rolloverMade, setRolloverMade] = useState<number | null>(null);
+  const [rolloverError, setRolloverError] = useState('');
+
+  const rollover = useMutation({
+    mutationFn: (body: { year: string }) =>
+      postJson<{ made: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/periods/rollover`, body, user),
+    onSuccess: (r) => {
+      setRolloverMade(r.made);
+      void queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
+    },
+    onError: () => setRolloverError('That fiscal year could not be rolled over.'),
+  });
+
+  const submitRollover = (e: FormEvent) => {
+    e.preventDefault();
+    setRolloverMade(null);
+    setRolloverError('');
+    const year = rolloverYear.trim();
+    if (!/^\d{4}$/.test(year)) {
+      setRolloverError('A fiscal year is a year, yyyy.');
+      return;
+    }
+    once((done) => rollover.mutate({ year }, { onSettled: done }));
+  };
+
   // Generate a calendar year's four quarters, yyyy-Q1 to yyyy-Q4, each left out when its name exists
   // or its days overlap a period. Shares the made count and error with the generators above.
   const [quarterYear, setQuarterYear] = useState('');
@@ -337,6 +366,34 @@ function Periods({ sheetId }: { sheetId: string }) {
         {genError && (
           <p role="alert" data-testid="period-generate-error">
             {genError}
+          </p>
+        )}
+      </form>
+      <form onSubmit={submitRollover} data-testid="rollover-form">
+        <label>
+          Roll over FY{' '}
+          <input
+            data-testid="rollover-year"
+            inputMode="numeric"
+            placeholder="yyyy"
+            value={rolloverYear}
+            onChange={(e) => {
+              setRolloverYear(e.target.value);
+              setRolloverError('');
+            }}
+          />
+        </label>{' '}
+        <button type="submit" data-testid="rollover" disabled={rollover.isPending}>
+          Roll year over
+        </button>
+        {rolloverMade !== null && (
+          <>
+            {' '}Made <span data-testid="rollover-made">{rolloverMade}</span>
+          </>
+        )}
+        {rolloverError && (
+          <p role="alert" data-testid="rollover-error">
+            {rolloverError}
           </p>
         )}
       </form>
