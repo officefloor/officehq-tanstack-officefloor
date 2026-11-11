@@ -21,7 +21,7 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Opens the selected claims in list order (people by their position in the list, each person's
  * claims newest first), numbering each as it is opened. A claim that cannot be opened (not a
- * draft, dated inside a closed period, its person at its period's cap, not on the sheet, above the note threshold with an empty note) is refused and left as it is; every one is
+ * draft, dated inside a closed period, its person at its period's cap, not on the sheet, above the note threshold with an empty note, its person flagged and the user no steward) is refused and left as it is; every one is
  * refused when the permission matrix does not allow the user's role to open, or the sheet is
  * archived. A claim sent to REVIEW (above the review threshold) counts as opened. Each claim opened is logged and audited as a single open is: its CLAIM_OPENED line,
  * then the figures it moved.
@@ -46,11 +46,13 @@ public class OpenSelectedClaims {
             result.set(new BulkOpenResponse(0, requested));
             return;
         }
+        String role = roles.roleOf(sheet.id(), user);
         Rollup before = rollup(sheet, sheets, people, claims, rates, settings);
         for (Person person : people.findAll(sheet.id())) {
             List<Claim> theirs = claims.findByPerson(sheet.id(), person.getId());
             for (Claim claim : theirs) {
                 if (!selected.contains(claim.getId())) continue;
+                if (person.flagRefuses(role, sheet.today())) continue;
                 if (OpenClaim.needsNote(sheet, claim, people, rates, settings)) continue;
                 if (!opens(sheet, claim, periods, claims, people, rates, settings)) continue;
                 claim.setOpenedBy(user);

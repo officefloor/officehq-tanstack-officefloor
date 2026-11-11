@@ -35,6 +35,8 @@ export function gradeOn(grades: GradeFrom[], date: string): Grade {
 // changed, oldest first, each as '<the day being left> <due-total>'. `statementLines` are their
 // statements still standing (a cancelled one is gone), oldest first by date, each as
 // '<statement date> <due-total>' — those a merge or a transfer brought over among them.
+// `flag` is the reason a steward flagged them with while the flag is in force on the sheet's today
+// ('' otherwise): while it is, only a steward may open a claim of theirs.
 export type Person = {
   id: string;
   name: string;
@@ -59,6 +61,7 @@ export type Person = {
   retirements: string[];
   snapshots: string[];
   statementLines: string[];
+  flag: string;
 };
 
 /**

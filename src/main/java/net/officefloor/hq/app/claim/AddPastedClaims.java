@@ -72,6 +72,9 @@ public class AddPastedClaims {
             number++;
             Person person = people.findByName(sheet.id(), line.name());
             if (person == null) throw new InvalidClaimException("No one named " + line.name() + " is on the sheet");
+            if (person.flagRefuses(role, sheet.today())) {
+                throw new InvalidClaimStatusException("Only a steward may open a claim of " + person.getName() + ": they are flagged");
+            }
             LocalDate date = line.claim().date() == null ? terms.entryDay(sheet.today()) : line.claim().date();
             String note = line.claim().note() == null ? "" : line.claim().note();
             List<Claim> theirs = before.computeIfAbsent(person.getId(),

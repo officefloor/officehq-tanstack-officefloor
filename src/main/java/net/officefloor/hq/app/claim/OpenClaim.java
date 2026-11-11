@@ -22,6 +22,9 @@ public class OpenClaim {
         if (!settings.find(sheet.id()).allows("open", role)) {
             throw new InvalidClaimStatusException("A " + role + " may not open a claim");
         }
+        if (flagRefuses(sheet, claim, people, role)) {
+            throw new InvalidClaimStatusException("Only a steward may open a claim of a flagged person");
+        }
         if (needsNote(sheet, claim, people, rates, settings)) throw new InvalidClaimStatusException(NoteRequired.MESSAGE);
         claim.moveTo(opensTo(sheet, claim, people, rates, settings));
         claim.setOpenedBy(user);
@@ -36,6 +39,12 @@ public class OpenClaim {
         if (claim.getStatus() != ClaimStatus.DRAFT) throw new InvalidClaimStatusException(claim.getStatus(), ClaimStatus.OPEN);
         return settings.find(sheet.id()).needsReview(LogClaimStatus.due(sheet, claim, people, rates, settings),
                 claim.getDate()) ? ClaimStatus.REVIEW : ClaimStatus.OPEN;
+    }
+
+    /** Whether the claim's person is flagged on the sheet's today and {@code role} is not a steward's. */
+    static boolean flagRefuses(Sheet sheet, Claim claim, PersonRepository people, String role) {
+        var person = people.find(sheet.id(), claim.getPersonId());
+        return person != null && person.flagRefuses(role, sheet.today());
     }
 
     /** Whether the claim's due, as it stands before it is opened, needs a note it does not have. */

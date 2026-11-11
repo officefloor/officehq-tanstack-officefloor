@@ -17,7 +17,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PersonRepository {
 
-    private static final String COLUMNS = "id, sheet_id, name, grade, terms, contact, tags, version, statement_count, stated_total, statement_date, retired_from, added_on, origin_sheet";
+    private static final String COLUMNS = "id, sheet_id, name, grade, terms, contact, tags, version, statement_count, stated_total, statement_date, retired_from, added_on, origin_sheet, flag_reason, flag_until";
 
     private static final RowMapper<Person> ROW = (rs, n) -> {
         Person person = new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
@@ -30,6 +30,7 @@ public class PersonRepository {
         person.setRetiredFrom(rs.getObject("retired_from", LocalDate.class));
         person.setAddedOn(rs.getObject("added_on", LocalDate.class));
         person.setOriginSheet(rs.getString("origin_sheet"));
+        person.setFlag(rs.getString("flag_reason"), rs.getObject("flag_until", LocalDate.class));
         return person;
     };
 
@@ -435,6 +436,13 @@ public class PersonRepository {
                 (rs, n) -> new StatedFigure(rs.getString("stated_total"), rs.getObject("statement_date", LocalDate.class)),
                 person.getSheetId(), person.getId(), seq);
         return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** Record the person's flag, leaving the rest as stored. */
+    public void saveFlag(Person person) {
+        jdbc.update("UPDATE person SET flag_reason = ?, flag_until = ? WHERE id = ? AND sheet_id = ?",
+                person.getFlagReason(), person.getFlagUntil() == null ? null : Date.valueOf(person.getFlagUntil()),
+                person.getId(), person.getSheetId());
     }
 
     /** Record the date the person is retired from, leaving the rest as stored. */

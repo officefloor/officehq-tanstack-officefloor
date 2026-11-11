@@ -22,6 +22,8 @@ public class Person {
     private LocalDate retiredFrom;
     private LocalDate addedOn;
     private String originSheet;
+    private String flagReason;
+    private LocalDate flagUntil;
     private final List<Hold> holds = new ArrayList<>();
     private final List<Long> patronIds = new ArrayList<>();
     private final List<String> aliases = new ArrayList<>();
@@ -103,6 +105,22 @@ public class Person {
     /** The sheet they were transferred from (their latest transfer); null when never transferred. */
     public String getOriginSheet() { return originSheet; }
     public void setOriginSheet(String originSheet) { this.originSheet = originSheet; }
+    /** Their flag's reason; null when never flagged. */
+    public String getFlagReason() { return flagReason; }
+    /** The date their flag is in force until, inclusive; null when never flagged. */
+    public LocalDate getFlagUntil() { return flagUntil; }
+    public void setFlag(String reason, LocalDate until) {
+        this.flagReason = reason;
+        this.flagUntil = until;
+    }
+    /** Whether their flag is in force on {@code today}: only a steward may open a claim of theirs. */
+    public boolean flaggedOn(LocalDate today) {
+        return flagReason != null && flagUntil != null && today != null && !today.isAfter(flagUntil);
+    }
+    /** Whether their flag stops {@code role} opening a claim of theirs on {@code today}. */
+    public boolean flagRefuses(String role, LocalDate today) {
+        return flaggedOn(today) && !net.officefloor.hq.app.role.Role.STEWARD.equals(role);
+    }
     /** Whether they had been added by the end of {@code day}. */
     public boolean addedBy(LocalDate day) { return addedOn == null || !addedOn.isAfter(day); }
     /** The date they are retired from; null when not retired. Set at all, they count as retired. */
