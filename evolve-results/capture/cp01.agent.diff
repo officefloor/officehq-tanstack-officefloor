@@ -1,0 +1,186 @@
+diff --git a/src/main/frontend/features/session/signin.slot.tsx b/src/main/frontend/features/session/signin.slot.tsx
+new file mode 100644
+index 000000000..db0eb0b65
+--- /dev/null
++++ b/src/main/frontend/features/session/signin.slot.tsx
+@@ -0,0 +1,32 @@
++import { useState } from 'react';
++import { AppHeader } from '../../slots/defs/appHeader';
++import { useCurrentUser } from '../../session/session';
++
++function SignIn() {
++  const [user, setUser] = useCurrentUser();
++  const [name, setName] = useState('');
++
++  if (user) {
++    return (
++      <div data-testid="session">
++        Signed in as <strong data-testid="current-user">{user}</strong>
++      </div>
++    );
++  }
++  return (
++    <form
++      data-testid="signin-form"
++      onSubmit={(e) => {
++        e.preventDefault();
++        if (name.trim()) setUser(name.trim());
++      }}
++    >
++      <input data-testid="signin-name" placeholder="Your name" value={name} onChange={(e) => setName(e.target.value)} />
++      <button type="submit" data-testid="signin-submit">
++        Sign in
++      </button>
++    </form>
++  );
++}
++
++export const contribution = AppHeader.fill({ order: 0, Component: SignIn });
+diff --git a/src/main/frontend/features/sheet/picker.slot.tsx b/src/main/frontend/features/sheet/picker.slot.tsx
+new file mode 100644
+index 000000000..a5edaf3d2
+--- /dev/null
++++ b/src/main/frontend/features/sheet/picker.slot.tsx
+@@ -0,0 +1,40 @@
++import { useState } from 'react';
++import { useQueryClient } from '@tanstack/react-query';
++import { AppHeader } from '../../slots/defs/appHeader';
++import { useCurrentSheet, useCurrentUser } from '../../session/session';
++import { sheetKey, useSheet } from './sheet';
++
++function SheetPicker() {
++  const [user] = useCurrentUser();
++  const [sheet, setSheet] = useCurrentSheet();
++  const [input, setInput] = useState('');
++  const queryClient = useQueryClient();
++  const loaded = useSheet(sheet);
++
++  if (!user) return null;
++  return (
++    <form
++      data-testid="sheet-form"
++      onSubmit={(e) => {
++        e.preventDefault();
++        const id = input.trim();
++        if (!id) return;
++        // Loading an id again re-reads it from the store.
++        void queryClient.invalidateQueries({ queryKey: sheetKey(id) });
++        setSheet(id);
++      }}
++    >
++      <input data-testid="sheet-id-input" placeholder="Sheet id" value={input} onChange={(e) => setInput(e.target.value)} />
++      <button type="submit" data-testid="sheet-load">
++        Load
++      </button>
++      {loaded.data && (
++        <span>
++          {' '}Sheet <strong data-testid="sheet-current-id">{loaded.data.id}</strong>
++        </span>
++      )}
++    </form>
++  );
++}
++
++export const contribution = AppHeader.fill({ order: 10, Component: SheetPicker });
+diff --git a/src/main/frontend/features/sheet/sheet.ts b/src/main/frontend/features/sheet/sheet.ts
+new file mode 100644
+index 000000000..7556c6542
+--- /dev/null
++++ b/src/main/frontend/features/sheet/sheet.ts
+@@ -0,0 +1,15 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++
++export type Sheet = { id: string };
++
++/** Every per-sheet query key starts with ['sheet', id], so loading a sheet re-reads all of it. */
++export const sheetKey = (id: string) => ['sheet', id] as const;
++
++export function useSheet(id: string) {
++  return useQuery({
++    queryKey: sheetKey(id),
++    queryFn: () => getJson<Sheet>(`/api/sheets/${encodeURIComponent(id)}`),
++    enabled: id !== '',
++  });
++}
+diff --git a/src/main/frontend/routes/__root.tsx b/src/main/frontend/routes/__root.tsx
+index f1bac6342..570d2042b 100644
+--- a/src/main/frontend/routes/__root.tsx
++++ b/src/main/frontend/routes/__root.tsx
+@@ -1,6 +1,7 @@
+ import { Outlet, createRootRouteWithContext } from '@tanstack/react-router';
+ import type { QueryClient } from '@tanstack/react-query';
+ import { AppNav } from '../slots/defs/appNav';
++import { AppHeader } from '../slots/defs/appHeader';
+ 
+ // The shell. It renders the nav region (filled from app.nav) and the matched route's component
+ // (from routes/); it reads no page list and holds no view state — URL search params carry what is
+@@ -15,6 +16,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
+ function AppShell() {
+   return (
+     <div data-testid="app-root">
++      <header data-testid="app-header">
++        <AppHeader.Slot />
++      </header>
+       <nav data-testid="app-nav">
+         <AppNav.Slot />
+       </nav>
+diff --git a/src/main/frontend/session/session.ts b/src/main/frontend/session/session.ts
+new file mode 100644
+index 000000000..dcb995107
+--- /dev/null
++++ b/src/main/frontend/session/session.ts
+@@ -0,0 +1,6 @@
++import { asString, useSearchParam } from '../url/useSearchParam';
++
++// The signed-in name and the active sheet id live in the URL (`user`, `sheet`), so every feature
++// reads them directly and each browser tab is its own session.
++export const useCurrentUser = () => useSearchParam('user', asString);
++export const useCurrentSheet = () => useSearchParam('sheet', asString);
+diff --git a/src/main/frontend/slots/defs/appHeader.ts b/src/main/frontend/slots/defs/appHeader.ts
+new file mode 100644
+index 000000000..276fd92bc
+--- /dev/null
++++ b/src/main/frontend/slots/defs/appHeader.ts
+@@ -0,0 +1,4 @@
++import { defineSlot } from '../Slot';
++
++/** The shell's header: who is signed in and which sheet is active. */
++export const AppHeader = defineSlot('app.header');
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+new file mode 100644
+index 000000000..014d57e2d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++public class RespondWithSheet {
++    public void respond(@PathVariable("sheetId") String sheetId, ObjectResponse<SheetResponse> response) {
++        response.send(new SheetResponse(sheetId.trim()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java b/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java
+new file mode 100644
+index 000000000..7c80f290e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.sheet;
++
++/** A sheet as the front end reads it. */
++public record SheetResponse(String id) {
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}.GET.yml
+new file mode 100644
+index 000000000..8385cebcd
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}.GET.yml
+@@ -0,0 +1,4 @@
++# GET /api/sheets/{sheetId} — the sheet as the store holds it now. A sheet never loaded before is
++# empty: there is nothing to create, everything else in the app is kept per sheet id.
++respond:
++  class: net.officefloor.hq.app.sheet.RespondWithSheet
