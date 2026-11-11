@@ -20,8 +20,8 @@ function HoldHead() {
 }
 
 // Whether a person has any hold, their holds, and a from-date (blank: the sheet's today) and an
-// optional to-date with a button that adds a hold over them. An OPEN or PENDING claim of theirs
-// dated within a hold counts in no total, unless a statement binds it; a hold ends on its to-date.
+// optional to-date with a button that adds a hold over them. Their claims still count in every
+// total; a hold in force only takes away their pool cut; a hold ends on its to-date.
 function PersonHold({ sheetId, person }: { sheetId: string; person: Person }) {
   const queryClient = useQueryClient();
   const [user] = useUser();

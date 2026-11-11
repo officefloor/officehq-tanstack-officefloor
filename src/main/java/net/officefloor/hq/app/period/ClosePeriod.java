@@ -25,7 +25,7 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Closes the period, fixing its due-total at this moment: the figures of the claims that counted at
  * the end of its last day, by the status their log records then (OPEN, PENDING and SETTLED, but not an
- * unbound open one dated within a hold of its person, nor one deferred now), due by a date inside it (an overdue one with its late charge), added up, skipping n/a. Each person's own figure for the period is fixed
+ * unbound open one of a person whose retirement date is reached, nor one deferred now), due by a date inside it (an overdue one with its late charge), added up, skipping n/a. Each person's own figure for the period is fixed
  * too, and the period's due-total is the sum of them; and so is each person's carried figure for it. A soft-closed period closes too, its figures
  * fixed afresh. A period already closed is refused, and so is a role the permission matrix does not allow to close.
  */

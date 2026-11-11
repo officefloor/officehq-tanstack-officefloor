@@ -80,19 +80,17 @@ export const heldOn = (holds: Hold[], date: string) =>
   holds.some((h) => h.from <= date && (h.to === '' || date <= h.to));
 
 /**
- * The holds a person's claims count against on the sheet's `today`: their own, and from the day
- * their retirement date is reached (`today` on or after it) one covering every date — their OPEN
- * and PENDING claims, unless a statement binds them, then count in no total.
+ * The holds a person's claims count against on the sheet's `today`: none of their own holds (a hold
+ * only takes away their pool cut), only from the day their retirement date is reached (`today` on or
+ * after it) one covering every date — their OPEN and PENDING claims, unless a statement binds them,
+ * then count in no total.
  */
 export const liveHolds = (p: Pick<Person, 'holds' | 'retiredFrom'>, today: string): Hold[] =>
-  p.retiredFrom !== '' && today !== '' && p.retiredFrom <= today ? [...p.holds, { from: '', to: '' }] : p.holds;
+  p.retiredFrom !== '' && today !== '' && p.retiredFrom <= today ? [{ from: '', to: '' }] : [];
 
-/**
- * The holds a person's claimed counts against on the sheet's `today`: none of their own holds, only
- * from the day their retirement date is reached one covering every date.
- */
+/** The holds a person's claimed counts against on the sheet's `today`: as `liveHolds`. */
 export const retiredHolds = (p: Pick<Person, 'holds' | 'retiredFrom'>, today: string): Hold[] =>
-  liveHolds({ holds: [], retiredFrom: p.retiredFrom }, today);
+  liveHolds(p, today);
 
 export const peopleKey = (sheetId: string) => ['sheet', sheetId, 'people'] as const;
 

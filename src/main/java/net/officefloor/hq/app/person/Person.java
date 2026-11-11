@@ -143,15 +143,16 @@ public class Person {
     public List<Hold> getHolds() { return holds; }
     /** Whether they have any hold at all. */
     public boolean isHeld() { return !holds.isEmpty(); }
-    /** Whether the date is within one of their holds: an OPEN claim on it, not bound by a statement, counts in no total. */
+    /** Whether the date is within one of their holds (their claims still count in every total). */
     public boolean heldOn(LocalDate date) { return holds.stream().anyMatch((h) -> h.covers(date)); }
     /** Whether their retirement date is reached on {@code today}: retired from it or an earlier date. */
     public boolean retiredOn(LocalDate today) { return retiredFrom != null && today != null && !today.isBefore(retiredFrom); }
     /**
      * Whether an OPEN or PENDING claim of theirs on the date, not bound by a statement, counts in no
-     * total on {@code today}: the date is within one of their holds, or their retirement date is reached.
+     * total on {@code today}: their retirement date is reached. A hold does not take it out; it only
+     * takes away their pool cut.
      */
-    public boolean heldOn(LocalDate date, LocalDate today) { return heldOn(date) || retiredOn(today); }
+    public boolean heldOn(LocalDate date, LocalDate today) { return retiredOn(today); }
     /** The ids of the people they name as patrons, in the order named. */
     public List<Long> getPatronIds() { return patronIds; }
     /** Their aliases, trimmed, in the order given: like names, none equal (ignoring case) any name or alias on the sheet. */

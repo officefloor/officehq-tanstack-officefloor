@@ -257,7 +257,7 @@ export function claimDue(claim: Claim, pct: string | null, floor: Dated, late: L
 }
 
 /**
- * A person's due-total: the figures of their claims that count (an unbound OPEN one not when dated within one of their `holds`) (each at the rate in force on its
+ * A person's due-total: the figures of their claims that count (an unbound OPEN one not when dated within one of `holds`: a retired person's, see `liveHolds`) (each at the rate in force on its
  * date for their grade in force on its date), added up, skipping n/a. With no rate for their grade
  * today it is n/a, unless a claim that counts keeps a fixed figure (settled, or bound by a
  * statement), has a figure under another grade in force on its date, or has a figure dated on or

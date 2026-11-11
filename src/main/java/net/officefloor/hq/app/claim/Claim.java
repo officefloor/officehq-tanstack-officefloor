@@ -152,7 +152,7 @@ public class Claim {
         if (waived) throw new InvalidClaimStatusException("The claim's late charge was already waived");
         waived = true;
     }
-    /** Whether it is held: while OPEN or PENDING it counts toward no due total, unless a statement binds it (it still counts in claimed). */
+    /** Whether it is held: it still counts in every total. */
     public boolean isHeld() { return held; }
     public void setHeld(boolean held) { this.held = held; }
     /** Hold it, or release it when held: only an OPEN or PENDING claim. */
@@ -280,14 +280,14 @@ public class Claim {
     }
     /**
      * Whether it counts toward its person's claimed and due-total, the sheet's totals and a
-     * period's total: OPEN, PENDING and SETTLED do, except an OPEN or PENDING one dated within one
-     * of its person's holds or held itself, or once their retirement date is reached ({@code heldOnDate}), unless
+     * period's total: OPEN, PENDING and SETTLED do, held or not, except an OPEN or PENDING one once
+     * their person's retirement date is reached ({@code heldOnDate}), unless
      * a statement binds it; and never one
      * deferred on {@code today}.
      */
     public boolean counts(boolean heldOnDate, LocalDate today) {
         if (isDeferredOn(today)) return false;
-        return status == ClaimStatus.SETTLED || (isOpen() && (isBound() || !(held || heldOnDate)));
+        return status == ClaimStatus.SETTLED || (isOpen() && (isBound() || !heldOnDate));
     }
     /**
      * Whether its amount counts toward its person's claimed and the sheet's claimed-total: as
@@ -306,7 +306,7 @@ public class Claim {
     public boolean countsAsOf(ClaimStatus statusThen, boolean heldOnDate, LocalDate today) {
         if (statusThen == null || isDeferredOn(today)) return false;
         boolean openThen = statusThen == ClaimStatus.OPEN || statusThen == ClaimStatus.PENDING;
-        return statusThen == ClaimStatus.SETTLED || (openThen && (isBound() || !(held || heldOnDate)));
+        return statusThen == ClaimStatus.SETTLED || (openThen && (isBound() || !heldOnDate));
     }
     /**
      * A copy of it as it stood at the end of a day: with the status, settled due and statement
