@@ -17,6 +17,14 @@ public class CrewRepository {
     private static final RowMapper<Crew> CREW = (rs, n) -> new Crew(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getString("name"), rs.getObject("lead_id", Long.class), rs.getString("lead"));
 
+    /**
+     * The crew members as they stood at the end of the date bound twice (null: now): the members now, and
+     * those a merge took away after that date. The row's added_on still limits it to members added by then.
+     */
+    public static final String MEMBERS_AS_OF = "SELECT id, crew_id, person_id, added_on FROM crew_member"
+            + " UNION ALL SELECT id, crew_id, person_id, added_on FROM crew_member_removed"
+            + " WHERE CAST(? AS DATE) IS NOT NULL AND removed_on > ?";
+
     private final JdbcTemplate jdbc;
 
     public CrewRepository(JdbcTemplate jdbc) {
@@ -46,11 +54,11 @@ public class CrewRepository {
     /** The members of every crew on the sheet, each crew's in the order they were added, as they stood at the end of {@code asOf} (null: now). */
     public List<CrewMember> members(String sheetId, LocalDate asOf) {
         Date on = sqlDate(asOf);
-        return jdbc.query("SELECT c.name AS crew, m.person_id, p.name FROM crew_member m"
+        return jdbc.query("SELECT c.name AS crew, m.person_id, p.name FROM (" + MEMBERS_AS_OF + ") m"
                 + " JOIN crew c ON c.id = m.crew_id JOIN person p ON p.id = m.person_id WHERE c.sheet_id = ?"
                 + " AND (CAST(? AS DATE) IS NULL OR m.added_on IS NULL OR m.added_on <= ?) ORDER BY c.name, m.id",
                 (rs, n) -> new CrewMember(sheetId, rs.getString("crew"), rs.getLong("person_id"), rs.getString("name")),
-                sheetId, on, on);
+                on, on, sheetId, on, on);
     }
 
     public boolean isMember(Crew crew, long personId) {
@@ -73,11 +81,17 @@ public class CrewRepository {
      * to the other's lead: dropped from a crew the other is already in or leads.
      */
     public void mergeMembers(long fromId, long intoId) {
+        // Every membership the merge takes away is kept, so the crews still read as they stood before it.
+        jdbc.update("INSERT INTO crew_member_removed (id, crew_id, person_id, added_on, removed_on)"
+                + " SELECT m.id, m.crew_id, m.person_id, m.added_on, s.today FROM crew_member m"
+                + " JOIN crew c ON c.id = m.crew_id JOIN sheet s ON s.id = c.sheet_id"
+                + " WHERE m.person_id = ? OR (m.person_id = ? AND c.lead_id = ?)", fromId, intoId, fromId);
         jdbc.update("UPDATE crew SET lead_id = ? WHERE lead_id = ?", intoId, fromId);
         jdbc.update("DELETE FROM crew_member WHERE person_id IN (?, ?) AND crew_id IN"
                 + " (SELECT id FROM crew WHERE lead_id = ?)", fromId, intoId, intoId);
         jdbc.update("DELETE FROM crew_member WHERE person_id = ? AND crew_id IN"
                 + " (SELECT crew_id FROM crew_member WHERE person_id = ?)", fromId, intoId);
-        jdbc.update("UPDATE crew_member SET person_id = ? WHERE person_id = ?", intoId, fromId);
+        jdbc.update("UPDATE crew_member SET person_id = ?, added_on = (SELECT s.today FROM sheet s JOIN crew c"
+                + " ON c.sheet_id = s.id WHERE c.id = crew_member.crew_id) WHERE person_id = ?", intoId, fromId);
     }
 }

@@ -15,6 +15,7 @@ import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
+import net.officefloor.hq.app.pool.FrozenCuts;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.role.Role;
@@ -35,12 +36,14 @@ import net.officefloor.plugin.variable.Val;
  * their opening balance for the new year's first period (OPENING_SET; none for a figure of 0.00).
  * A year rolled over again while an earlier rollover of it stands carries no openings a second time. Last,
  * ROLLOVER with the old year and how many periods were made. The rollover is kept, with the periods it
- * made and the openings it added, so it can be undone (see {@link UndoRollover}).
+ * made and the openings it added, so it can be undone (see {@link UndoRollover}). After ROLLOVER, every
+ * period of the old year still open is soft-closed, in order of their from-dates, exactly as a soft close
+ * by hand would, each recording PERIOD_SOFT_CLOSED.
  */
 public class RolloverFiscalYear {
     public void rollover(@Val FiscalYear fiscalYear, @Val Sheet sheet, SettingsRepository settings,
             PeriodRepository periods, PersonRepository people, ClaimRepository claims, ClaimLogRepository log,
-            RateRepository rates, RoleRepository roles, RolloverRepository rollovers, HttpServletRequest request, Audit audit,
+            RateRepository rates, RoleRepository roles, RolloverRepository rollovers, FrozenCuts frozen, HttpServletRequest request, Audit audit,
             Out<GeneratePeriodsResponse> result) throws StewardOnlyException, InvalidPeriodException {
         String user = Audit.user(request);
         if (!Role.STEWARD.equals(roles.roleOf(sheet.id(), user))) {
@@ -88,6 +91,15 @@ public class RolloverFiscalYear {
         }
         rollovers.insert(sheet.id(), oldFy, user, sheet.today(), generated, openings);
         audit.record("ROLLOVER sheet=" + sheet.id() + " by=" + user + " fy=" + oldFy + " periods=" + made);
+        List<Period> stillOpen = periods.findAll(sheet.id()).stream()
+                .filter((p) -> !p.closed() && oldFy.equals(sheetSettings.fiscalYearOf(p.from())))
+                .sorted(Comparator.comparing(Period::from)).toList();
+        for (Period period : stillOpen) {
+            Period closed = ClosePeriod.fix(sheet, period, true, periods, people, claims, log, rates, settings, frozen);
+            if (closed == null) continue; // another request closed it first
+            audit.record("PERIOD_SOFT_CLOSED sheet=" + sheet.id() + " by=" + user + " period=" + closed.name()
+                    + " total=" + closed.closedTotal().setScale(2).toPlainString());
+        }
         result.set(new GeneratePeriodsResponse(made));
     }
 }

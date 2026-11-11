@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import net.officefloor.hq.app.crew.CrewRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -108,13 +109,13 @@ public class PoolRepository {
                 + "SELECT c.name AS pool, 0 AS ord, p.id AS person_id, p.name AS name," + flags
                 + " FROM crew c JOIN person p ON p.id = c.lead_id WHERE c.sheet_id = ? AND " + added.formatted("c")
                 + " UNION ALL SELECT c.name AS pool, m.id AS ord, p.id AS person_id, p.name AS name," + flags
-                + " FROM crew_member m JOIN crew c ON c.id = m.crew_id JOIN person p ON p.id = m.person_id"
+                + " FROM (" + CrewRepository.MEMBERS_AS_OF + ") m JOIN crew c ON c.id = m.crew_id JOIN person p ON p.id = m.person_id"
                 + " WHERE c.sheet_id = ? AND " + added.formatted("c") + " AND " + added.formatted("m")
                 + ") x ORDER BY pool, ord",
                 (rs, n) -> new Object[] { rs.getString("pool"), rs.getLong("person_id"), rs.getString("name"),
                         rs.getDate("retired_from") != null, rs.getBoolean("held") },
                 on, on, day, day, on, on, sheetId, on, on,
-                on, on, day, day, on, on, sheetId, on, on, on, on);
+                on, on, day, day, on, on, on, on, sheetId, on, on, on, on);
         Map<String, List<Object[]>> byCrew = new LinkedHashMap<>();
         for (Object[] row : rows) byCrew.computeIfAbsent((String) row[0], k -> new ArrayList<>()).add(row);
         List<PoolMember> members = new ArrayList<>();
