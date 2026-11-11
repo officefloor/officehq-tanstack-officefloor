@@ -1,0 +1,650 @@
+diff --git a/src/main/frontend/features/access/access.slot.tsx b/src/main/frontend/features/access/access.slot.tsx
+index e634e743d..8c585a374 100644
+--- a/src/main/frontend/features/access/access.slot.tsx
++++ b/src/main/frontend/features/access/access.slot.tsx
+@@ -6,6 +6,7 @@ import { postJson } from '../../api/http';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+ import { useUser } from '../session/session';
+ import { poolsKey } from '../pools/pools';
++import { periodsKey } from '../periods/periods';
+ import { ACTIONS, CAP, DATED_KEYS, FLOOR, GRADES, LATE_PCT, LIMIT, NOTE_THRESHOLD, PERM_ROLES, POLICY_DATE, POT, PROOF_THRESHOLD, STANDING_RULE, TERMS, ROLES, gradeGraceKey, gradeProofThresholdKey, rolesKey, settingsKey, useRoles, useSettings } from './access';
+ import type { Role, Settings, SettingsChange } from './access';
+ 
+@@ -25,7 +26,8 @@ type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms' | 'gradeGrace' | 'grad
+ // grace days (blank: none), dated, past a claim's due-by before it is overdue, and each grade's proof threshold
+ // (blank: none, the sheet's), dated, in place of the sheet's for a claim of the grade, and its pot (blank:
+ // none), not dated, shared out as cuts among a balanced pool's members, and its parent sheet (blank: none), not
+-// dated, whose rates a grade takes on a date this sheet has none in force. Only the settings typed in (or stepped into)
++// dated, whose rates a grade takes on a date this sheet has none in force, and its fiscal year start month
++// (1 to 12), not dated. Only the settings typed in (or stepped into)
+ // since the last save are sent, so saving one leaves the other as it is.
+ function SettingsForm({ sheetId }: { sheetId: string }) {
+   const queryClient = useQueryClient();
+@@ -44,6 +46,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
+     entryDate: '',
+     pot: '',
+     parent: '',
++    fiscalStartMonth: '',
+   });
+   const [touched, setTouched] = useState<Set<Key>>(new Set());
+   const [gradeFields, setGradeFields] = useState<Record<string, string>>({});
+@@ -73,6 +76,8 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
+       queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
+       // A new parent changes the rates in force, and every figure taken from them.
+       if (body.parent !== undefined) void queryClient.invalidateQueries({ queryKey: ['sheet', sheetId] });
++      // A new fiscal start month changes the fiscal year each period falls in.
++      if (body.fiscalStartMonth !== undefined) void queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
+     },
+     onError: () => setError('Those settings could not be saved.'),
+   });
+@@ -154,6 +159,14 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
+       body.pot = pot;
+     }
+     if (touched.has('parent')) body.parent = fields.parent.trim();
++    if (touched.has('fiscalStartMonth')) {
++      const month = fields.fiscalStartMonth.trim();
++      if (!/^(0?[1-9]|1[0-2])$/.test(month)) {
++        setError('A fiscal start month is a month, 1 to 12.');
++        return;
++      }
++      body.fiscalStartMonth = month;
++    }
+     if (touched.has('cap')) {
+       const cap = fields.cap.trim();
+       if (cap !== '' && !CAP.test(cap)) {
+@@ -470,6 +483,20 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
+         <span>
+           now: <strong data-testid="setting-pot-current">{settings.data?.pot ?? ''}</strong>
+         </span>{' '}
++        <label>
++          Fiscal year starts in month{' '}
++          <input
++            data-testid="setting-fiscal-start-month"
++            inputMode="numeric"
++            placeholder="1"
++            value={fields.fiscalStartMonth}
++            onFocus={() => touch('fiscalStartMonth')}
++            onChange={(e) => change('fiscalStartMonth', e.target.value)}
++          />
++        </label>{' '}
++        <span>
++          now: <strong data-testid="setting-fiscal-start-month-current">{settings.data?.fiscalStartMonth ?? ''}</strong>
++        </span>{' '}
+         <label>
+           Parent sheet{' '}
+           <input
+diff --git a/src/main/frontend/features/access/access.ts b/src/main/frontend/features/access/access.ts
+index 31c9e8f06..a0714e092 100644
+--- a/src/main/frontend/features/access/access.ts
++++ b/src/main/frontend/features/access/access.ts
+@@ -41,6 +41,8 @@ export type Settings = {
+   pot: string;
+   /** The parent sheet's id ('' for none), not dated: a grade with no rate in force on a date takes the parent's, up to three levels up. */
+   parent: string;
++  /** The fiscal year start month, 1 to 12 (1 unless set), not dated: a fiscal year FY<yyyy> starts on its first day in year yyyy. */
++  fiscalStartMonth: string;
+   /**
+    * Every value recorded for each figure setting, by key (clerk-limit, floor, terms, late-pct,
+    * terms-A, terms-B, terms-C, cap, proof-threshold, note-threshold, grace-A, grace-B, grace-C, proof-threshold-A, proof-threshold-B,
+diff --git a/src/main/frontend/features/periods/periods.slot.tsx b/src/main/frontend/features/periods/periods.slot.tsx
+index 10cd063c1..0d000fb8b 100644
+--- a/src/main/frontend/features/periods/periods.slot.tsx
++++ b/src/main/frontend/features/periods/periods.slot.tsx
+@@ -144,6 +144,32 @@ function Periods({ sheetId }: { sheetId: string }) {
+     once((done) => generate.mutate(body, { onSettled: done }));
+   };
+ 
++  // Generate a fiscal year's twelve monthly periods, as above, from the first day of the sheet's
++  // fiscal start month in the year typed. Shares the made count and error with the generator above.
++  const [fyYear, setFyYear] = useState('');
++
++  const generateFy = useMutation({
++    mutationFn: (body: { year: string }) =>
++      postJson<{ made: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/periods/generate-fy`, body, user),
++    onSuccess: (r) => {
++      setMade(r.made);
++      void queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
++    },
++    onError: () => setGenError('That fiscal year could not be generated.'),
++  });
++
++  const submitGenerateFy = (e: FormEvent) => {
++    e.preventDefault();
++    setMade(null);
++    setGenError('');
++    const year = fyYear.trim();
++    if (!/^\d{4}$/.test(year)) {
++      setGenError('A fiscal year is a year, yyyy.');
++      return;
++    }
++    once((done) => generateFy.mutate({ year }, { onSettled: done }));
++  };
++
+   const changeGenerate = (next: Partial<{ from: string; to: string }>) => {
+     setGen((g) => ({ ...g, ...next }));
+     setGenError('');
+@@ -212,6 +238,24 @@ function Periods({ sheetId }: { sheetId: string }) {
+         <button type="submit" data-testid="period-generate" disabled={generate.isPending}>
+           Generate monthly periods
+         </button>
++      </form>
++      <form onSubmit={submitGenerateFy} data-testid="period-generate-fy-form">
++        <label>
++          Fiscal year FY{' '}
++          <input
++            data-testid="period-generate-fy-year"
++            inputMode="numeric"
++            placeholder="yyyy"
++            value={fyYear}
++            onChange={(e) => {
++              setFyYear(e.target.value);
++              setGenError('');
++            }}
++          />
++        </label>{' '}
++        <button type="submit" data-testid="period-generate-fy" disabled={generateFy.isPending}>
++          Generate fiscal year
++        </button>{' '}
+         {made !== null && (
+           <>
+             {' '}Made <span data-testid="period-generated">{made}</span>
+@@ -236,6 +280,7 @@ function Periods({ sheetId }: { sheetId: string }) {
+             <th>To</th>
+             <th>Due</th>
+             <th>Closed</th>
++            <th>Fiscal year</th>
+             <th></th>
+           </tr>
+         </thead>
+@@ -247,6 +292,7 @@ function Periods({ sheetId }: { sheetId: string }) {
+               <td data-testid="period-to">{p.to}</td>
+               <td data-testid="period-due-total">{periodDueTotal(p, people, claims, rates, floor, late)}</td>
+               <td data-testid="period-closed">{p.closed ? (p.soft ? 'soft' : 'yes') : 'no'}</td>
++              <td data-testid="period-fy">{p.fy}</td>
+               <td>
+                 <button
+                   type="button"
+diff --git a/src/main/frontend/features/periods/periods.ts b/src/main/frontend/features/periods/periods.ts
+index 101235abe..461ac2e6a 100644
+--- a/src/main/frontend/features/periods/periods.ts
++++ b/src/main/frontend/features/periods/periods.ts
+@@ -11,7 +11,7 @@ import type { Dated, Late, Rate } from '../rates/rates';
+  * A period: its name (unique on the sheet), its from and to dates (yyyy-MM-dd), inclusive, whether
+  * it is closed, the due-total fixed when it was closed ('' while open), and each person's due-total
+  * fixed when it was closed, by person id (empty while open), and whether it is soft-closed: closed
+- * with its figures fixed, but its claims can still be changed.
++ * with its figures fixed, but its claims can still be changed; and the fiscal year its from-date falls in.
+  */
+ export type Period = {
+   name: string;
+@@ -21,6 +21,8 @@ export type Period = {
+   closedTotal: string;
+   personTotals: Record<string, string>;
+   soft: boolean;
++  /** The fiscal year its from-date falls in, FY<yyyy>. */
++  fy: string;
+ };
+ 
+ export const periodsKey = (sheetId: string) => ['sheet', sheetId, 'periods'] as const;
+diff --git a/src/main/java/net/officefloor/hq/app/period/FiscalYear.java b/src/main/java/net/officefloor/hq/app/period/FiscalYear.java
+new file mode 100644
+index 000000000..ce1e1a744
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/FiscalYear.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.period;
++
++/** A validated fiscal year to generate: the year of its name, FY<yyyy>. */
++public record FiscalYear(int year) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/GenerateFiscalYear.java b/src/main/java/net/officefloor/hq/app/period/GenerateFiscalYear.java
+new file mode 100644
+index 000000000..3f296ba7f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/GenerateFiscalYear.java
+@@ -0,0 +1,23 @@
++package net.officefloor.hq.app.period;
++
++import jakarta.servlet.http.HttpServletRequest;
++import java.time.LocalDate;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.setting.SettingsRepository;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++/**
++ * Makes the twelve monthly periods of fiscal year FY<yyyy>, from the first day of the sheet's fiscal
++ * start month in that year, exactly as the period generator does: a month whose name is already a
++ * period, or whose days overlap a period on the sheet, is left out; each made is saved and audited.
++ */
++public class GenerateFiscalYear {
++    public void generate(@Val FiscalYear fiscalYear, @Val Sheet sheet, SettingsRepository settings,
++            PeriodRepository repository, HttpServletRequest request, Audit audit, Out<GeneratePeriodsResponse> result) {
++        LocalDate from = LocalDate.of(fiscalYear.year(), settings.find(sheet.id()).fiscalStart(), 1);
++        result.set(new GeneratePeriodsResponse(
++                GeneratePeriods.months(from, from.plusMonths(12).minusDays(1), sheet, repository, request, audit)));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/GenerateFiscalYearRequest.java b/src/main/java/net/officefloor/hq/app/period/GenerateFiscalYearRequest.java
+new file mode 100644
+index 000000000..08a224e27
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/GenerateFiscalYearRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.period;
++
++/** A fiscal year to generate monthly periods for, as the screen sends it: its name's year (yyyy). */
++public record GenerateFiscalYearRequest(String year) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/period/GeneratePeriods.java b/src/main/java/net/officefloor/hq/app/period/GeneratePeriods.java
+index cf604ad46..47a83b6cc 100644
+--- a/src/main/java/net/officefloor/hq/app/period/GeneratePeriods.java
++++ b/src/main/java/net/officefloor/hq/app/period/GeneratePeriods.java
+@@ -23,9 +23,15 @@ public class GeneratePeriods {
+         if (input.to().isBefore(from)) {
+             throw new InvalidPeriodException("A to-date is on or after the from-date");
+         }
++        result.set(new GeneratePeriodsResponse(months(from, input.to(), sheet, repository, request, audit)));
++    }
++
++    /** Makes and audits the monthly periods from the from-date's month to the to-date's month, as above: how many were made. */
++    static int months(LocalDate from, LocalDate to, Sheet sheet, PeriodRepository repository,
++            HttpServletRequest request, Audit audit) {
+         List<Period> existing = repository.findAll(sheet.id());
+         int made = 0;
+-        for (YearMonth month = YearMonth.from(from); !month.isAfter(YearMonth.from(input.to())); month = month.plusMonths(1)) {
++        for (YearMonth month = YearMonth.from(from); !month.isAfter(YearMonth.from(to)); month = month.plusMonths(1)) {
+             Period period = new Period(sheet.id(), month.toString(), month.atDay(1), month.atEndOfMonth());
+             if (existing.stream().anyMatch(o -> o.name().equals(period.name()) || o.overlaps(period))) continue;
+             repository.insert(period);
+@@ -33,6 +39,6 @@ public class GeneratePeriods {
+                     + " period=" + period.name() + " from=" + period.from() + " to=" + period.to());
+             made++;
+         }
+-        result.set(new GeneratePeriodsResponse(made));
++        return made;
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java b/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java
+index f5ab34c8b..6cf9fe41d 100644
+--- a/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java
+@@ -3,20 +3,21 @@ package net.officefloor.hq.app.period;
+ import java.math.BigDecimal;
+ import java.util.LinkedHashMap;
+ import java.util.Map;
++import net.officefloor.hq.app.setting.Settings;
+ 
+ /**
+  * A period, as the screen reads it: its name, its from and to dates (yyyy-MM-dd), whether it is
+  * closed, the due-total fixed when it was closed ("" while open), and each person's due-total fixed
+  * when it was closed, by person id (empty while open), and whether it is soft-closed (closed, its
+- * claims still open to change).
++ * claims still open to change), and the fiscal year its from-date falls in (FY<yyyy>).
+  */
+ public record PeriodResponse(String name, String from, String to, boolean closed, String closedTotal,
+-        Map<String, String> personTotals, boolean soft) {
+-    public static PeriodResponse from(Period period, Map<Long, BigDecimal> personTotals) {
++        Map<String, String> personTotals, boolean soft, String fy) {
++    public static PeriodResponse from(Period period, Map<Long, BigDecimal> personTotals, Settings settings) {
+         Map<String, String> totals = new LinkedHashMap<>();
+         personTotals.forEach((id, total) -> totals.put(String.valueOf(id), total.setScale(2).toPlainString()));
+         return new PeriodResponse(period.name(), period.from().toString(), period.to().toString(),
+                 period.closed(), period.closedTotal() == null ? "" : period.closedTotal().setScale(2).toPlainString(),
+-                totals, period.soft());
++                totals, period.soft(), settings.fiscalYearOf(period.from()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/RespondWithPeriod.java b/src/main/java/net/officefloor/hq/app/period/RespondWithPeriod.java
+index eb0903430..3a9c8061f 100644
+--- a/src/main/java/net/officefloor/hq/app/period/RespondWithPeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/RespondWithPeriod.java
+@@ -1,10 +1,12 @@
+ package net.officefloor.hq.app.period;
+ 
++import net.officefloor.hq.app.setting.SettingsRepository;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
+ 
+ public class RespondWithPeriod {
+-    public void respond(@Val Period period, PeriodRepository repository, ObjectResponse<PeriodResponse> response) {
+-        response.send(PeriodResponse.from(period, repository.personTotals(period)));
++    public void respond(@Val Period period, PeriodRepository repository, SettingsRepository settings,
++            ObjectResponse<PeriodResponse> response) {
++        response.send(PeriodResponse.from(period, repository.personTotals(period), settings.find(period.sheetId())));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java b/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java
+index d090cd0ee..1269e5283 100644
+--- a/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java
++++ b/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java
+@@ -7,6 +7,8 @@ import java.util.HashMap;
+ import java.util.List;
+ import java.util.Map;
+ import net.officefloor.hq.app.AsOf;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.setting.SettingsRepository;
+ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
+@@ -17,7 +19,7 @@ import net.officefloor.web.ObjectResponse;
+  * reopened or closed again with another due-total).
+  */
+ public class RespondWithPeriods {
+-    public void respond(@Val Sheet sheet, PeriodRepository repository, HttpServletRequest request,
++    public void respond(@Val Sheet sheet, PeriodRepository repository, SettingsRepository settingsRepository, HttpServletRequest request,
+             ObjectResponse<PeriodsResponse> response) {
+         LocalDate asOf = AsOf.of(request);
+         Map<String, Map<Long, BigDecimal>> personTotals = repository.personTotals(sheet.id());
+@@ -36,8 +38,9 @@ public class RespondWithPeriods {
+             personTotals = thenTotals;
+         }
+         Map<String, Map<Long, BigDecimal>> totals = personTotals;
++        Settings settings = settingsRepository.find(sheet.id());
+         response.send(new PeriodsResponse(periods.stream()
+-                .map(p -> PeriodResponse.from(p, totals.getOrDefault(p.name(), Map.of()))).toList()));
++                .map(p -> PeriodResponse.from(p, totals.getOrDefault(p.name(), Map.of()), settings)).toList()));
+     }
+ 
+     private static boolean same(BigDecimal a, BigDecimal b) {
+diff --git a/src/main/java/net/officefloor/hq/app/period/ValidateGenerateFiscalYear.java b/src/main/java/net/officefloor/hq/app/period/ValidateGenerateFiscalYear.java
+new file mode 100644
+index 000000000..e47595a85
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/ValidateGenerateFiscalYear.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.period;
++
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ValidateGenerateFiscalYear {
++    public void validate(@RequestBody GenerateFiscalYearRequest request, Out<FiscalYear> fiscalYear)
++            throws InvalidPeriodException {
++        String value = request == null || request.year() == null ? "" : request.year().trim();
++        if (!value.matches("\\d{4}")) throw new InvalidPeriodException("A fiscal year is a year, yyyy");
++        fiscalYear.set(new FiscalYear(Integer.parseInt(value)));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/setting/AuditSettingChanged.java b/src/main/java/net/officefloor/hq/app/setting/AuditSettingChanged.java
+index 75840f435..fa0e25462 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/AuditSettingChanged.java
++++ b/src/main/java/net/officefloor/hq/app/setting/AuditSettingChanged.java
+@@ -13,7 +13,7 @@ import net.officefloor.plugin.variable.Val;
+  * action's entry in the permission matrix (blank for the standing rule, never dated), then the grace
+  * days (blank for off, never dated), then the entry date (blank for off, never dated), then each
+  * grade's grace days (blank for none), then each grade's proof threshold (blank for none), then the pot
+- * (blank for none, never dated), then the parent sheet (blank for none, never dated); a figure
++ * (blank for none, never dated), then the parent sheet (blank for none, never dated), then the fiscal start month (never dated); a figure
+  * setting saved from a from-date given ends with it. Runs after every rule has passed, so a refused
+  * change writes nothing.
+  */
+@@ -49,6 +49,9 @@ public class AuditSettingChanged {
+         if (input.potChanged()) {
+             audit.record(head + " key=pot value=" + (input.pot() == null ? "" : input.pot().toPlainString()));
+         }
++        if (input.fiscalStartMonthChanged()) {
++            audit.record(head + " key=fiscal-start-month value=" + input.fiscalStartMonth());
++        }
+         if (input.parentChanged()) {
+             audit.record(head + " key=parent value=" + (input.parent() == null ? "" : input.parent()));
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SaveSettings.java b/src/main/java/net/officefloor/hq/app/setting/SaveSettings.java
+index 368c2da07..3ebaf176b 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SaveSettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SaveSettings.java
+@@ -17,13 +17,14 @@ public class SaveSettings {
+         if (input.parentChanged()) sheets.saveParent(sheet.id(), input.parent());
+         Settings now = repository.find(sheet.id());
+         if (input.policyDateChanged() || input.periodNumberingFromChanged() || input.graceDaysChanged()
+-                || input.entryDateChanged() || input.potChanged()) {
++                || input.entryDateChanged() || input.potChanged() || input.fiscalStartMonthChanged()) {
+             repository.saveUndated(new Settings(sheet.id(), now.today(), now.dated(),
+                     input.policyDateChanged() ? input.policyDate() : now.policyDate(),
+                     input.periodNumberingFromChanged() ? input.periodNumberingFrom() : now.periodNumberingFrom(), now.perms(),
+                     input.graceDaysChanged() ? input.graceDays() : now.graceDays(),
+                     input.entryDateChanged() ? input.entryDate() : now.entryDate(),
+-                    input.potChanged() ? input.pot() : now.pot()));
++                    input.potChanged() ? input.pot() : now.pot(),
++                    input.fiscalStartMonthChanged() ? input.fiscalStartMonth() : now.fiscalStartMonth()));
+         }
+         input.perms().forEach((action, roles) -> repository.recordPerm(sheet.id(), action, roles));
+         java.util.Map<String, String> values = new java.util.LinkedHashMap<>(input.datedValues());
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Settings.java b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+index c5d397bbf..4718d14c3 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+@@ -28,11 +28,21 @@ import java.util.NavigableMap;
+  * and its grace days (null: off): when the sheet's today is changed, every open period whose to-date
+  * plus the grace days is before the new today is closed, and its entry date (null: off): while it is
+  * set, the date of a new claim left undated instead of the sheet's today, and its pot (null: none),
+- * shared out as cuts among a balanced pool's members.
++ * shared out as cuts among a balanced pool's members, and its fiscal year start month (null: 1).
+  */
+ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap<LocalDate, String>> dated,
+         LocalDate policyDate, LocalDate periodNumberingFrom, Map<String, String> perms, Integer graceDays,
+-        LocalDate entryDate, BigDecimal pot) {
++        LocalDate entryDate, BigDecimal pot, Integer fiscalStartMonth) {
++    /** The month, 1 to 12, a fiscal year starts in. */
++    public int fiscalStart() {
++        return fiscalStartMonth == null ? 1 : fiscalStartMonth;
++    }
++
++    /** The name, FY<yyyy>, of the fiscal year a date falls in: by the calendar year of its first day. */
++    public String fiscalYearOf(LocalDate date) {
++        return "FY" + (date.getMonthValue() >= fiscalStart() ? date.getYear() : date.getYear() - 1);
++    }
++
+     /** The grades that may have their own terms. */
+     public static final List<String> GRADES = List.of("A", "B", "C");
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsInput.java b/src/main/java/net/officefloor/hq/app/setting/SettingsInput.java
+index ebbbaa397..a811bef8b 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsInput.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsInput.java
+@@ -17,7 +17,7 @@ import java.time.LocalDate;
+  * changed and to what (null: off), and the grades whose grace days are changed, in A, B, C order,
+  * and to what (null: none), and the grades whose proof threshold is changed, in A, B, C order, and
+  * to what (null: none), and whether the pot is changed and to what (null: none), and whether the parent sheet is changed
+- * and to what id (null: none).
++ * and to what id (null: none), and whether the fiscal year start month is changed and to what.
+  */
+ public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, BigDecimal floor, Integer terms, BigDecimal latePct,
+         boolean policyDateChanged, LocalDate policyDate,
+@@ -28,7 +28,8 @@ public record SettingsInput(boolean clerkLimitChanged, BigDecimal clerkLimit, Bi
+         boolean noteThresholdChanged, BigDecimal noteThreshold,
+         boolean entryDateChanged, LocalDate entryDate, java.util.Map<String, Integer> gradeGrace,
+         java.util.Map<String, BigDecimal> gradeProofThreshold,
+-        boolean potChanged, BigDecimal pot, boolean parentChanged, String parent) {
++        boolean potChanged, BigDecimal pot, boolean parentChanged, String parent,
++        boolean fiscalStartMonthChanged, Integer fiscalStartMonth) {
+ 
+     /**
+      * The figure settings being changed, by key in the order they are audited, each with the value
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsRepository.java b/src/main/java/net/officefloor/hq/app/setting/SettingsRepository.java
+index 33cd0d796..3da0c4193 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsRepository.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsRepository.java
+@@ -28,15 +28,15 @@ public class SettingsRepository {
+         Map<String, String> perms = new HashMap<>();
+         jdbc.query("SELECT action, roles FROM setting_perm WHERE sheet_id = ?",
+                 (RowCallbackHandler) (rs) -> perms.put(rs.getString("action"), rs.getString("roles")), sheetId);
+-        List<Settings> found = jdbc.query("SELECT today, policy_date, period_numbering_from, grace_days, entry_date, pot FROM sheet WHERE id = ?",
++        List<Settings> found = jdbc.query("SELECT today, policy_date, period_numbering_from, grace_days, entry_date, pot, fiscal_start_month FROM sheet WHERE id = ?",
+                 (rs, n) -> new Settings(sheetId, rs.getDate("today").toLocalDate(), dated,
+                         rs.getDate("policy_date") == null ? null : rs.getDate("policy_date").toLocalDate(),
+                         rs.getDate("period_numbering_from") == null ? null : rs.getDate("period_numbering_from").toLocalDate(), perms,
+                         rs.getObject("grace_days", Integer.class),
+                         rs.getDate("entry_date") == null ? null : rs.getDate("entry_date").toLocalDate(),
+-                        rs.getBigDecimal("pot")),
++                        rs.getBigDecimal("pot"), rs.getObject("fiscal_start_month", Integer.class)),
+                 sheetId);
+-        return found.isEmpty() ? new Settings(sheetId, null, dated, null, null, perms, null, null, null) : found.get(0);
++        return found.isEmpty() ? new Settings(sheetId, null, dated, null, null, perms, null, null, null, null) : found.get(0);
+     }
+ 
+     /** Records a dated setting's value from a date, replacing any value already recorded from it. */
+@@ -76,7 +76,7 @@ public class SettingsRepository {
+                     }
+                 }, sheetId);
+         return new Settings(sheetId, day, dated, policyKept[0] ? policy[0] : now.policyDate(),
+-                now.periodNumberingFrom(), now.perms(), now.graceDays(), now.entryDate(), now.pot());
++                now.periodNumberingFrom(), now.perms(), now.graceDays(), now.entryDate(), now.pot(), now.fiscalStartMonth());
+     }
+ 
+     private static final String POLICY_DATE = "policy-date";
+@@ -89,12 +89,12 @@ public class SettingsRepository {
+ 
+     /** Saves the undated settings. */
+     public void saveUndated(Settings settings) {
+-        jdbc.update("UPDATE sheet SET policy_date = ?, period_numbering_from = ?, grace_days = ?, entry_date = ?, pot = ? WHERE id = ?",
++        jdbc.update("UPDATE sheet SET policy_date = ?, period_numbering_from = ?, grace_days = ?, entry_date = ?, pot = ?, fiscal_start_month = ? WHERE id = ?",
+                 settings.policyDate() == null ? null : java.sql.Date.valueOf(settings.policyDate()),
+                 settings.periodNumberingFrom() == null ? null : java.sql.Date.valueOf(settings.periodNumberingFrom()),
+                 settings.graceDays(),
+                 settings.entryDate() == null ? null : java.sql.Date.valueOf(settings.entryDate()),
+-                settings.pot(), settings.sheetId());
++                settings.pot(), settings.fiscalStartMonth(), settings.sheetId());
+         history(settings.sheetId(), POLICY_DATE, null,
+                 settings.policyDate() == null ? "" : settings.policyDate().toString());
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java b/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
+index 25fe54c35..f921d002e 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
+@@ -16,11 +16,13 @@ package net.officefloor.hq.app.setting;
+  * (blank: off), and the grace days of each grade being changed, a whole number of days (blank:
+  * none), dated by its key (grace-A, grace-B, grace-C), and the proof threshold of each grade being
+  * changed, with up to two decimals (blank: none, the sheet's), dated by its key (proof-threshold-A,
+- * proof-threshold-B, proof-threshold-C), and the pot, with up to two decimals (blank: none), not dated, and the parent sheet's id (blank: none), not dated.
++ * proof-threshold-B, proof-threshold-C), and the pot, with up to two decimals (blank: none), not dated, and the parent sheet's id (blank: none), not dated,
++ * and the fiscal year start month, 1 to 12, not dated.
+  */
+ public record SettingsRequest(String clerkLimit, String floor, String terms, String latePct, String policyDate, String periodNumberingFrom,
+         java.util.Map<String, String> gradeTerms, String cap, java.util.Map<String, String> from,
+         String proofThreshold, java.util.Map<String, String> perms, String graceDays, String noteThreshold,
+         String entryDate, java.util.Map<String, String> gradeGrace,
+-        java.util.Map<String, String> gradeProofThreshold, String pot, String parent) {
++        java.util.Map<String, String> gradeProofThreshold, String pot, String parent,
++        String fiscalStartMonth) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+index 2d8a23b04..ae2891040 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+@@ -17,13 +17,14 @@ import java.util.Map;
+  * saved ('' for the standing rule); and the grace days ('' for off); and the note threshold with two
+  * decimals ('' for none); and the entry date as yyyy-MM-dd ('' for off); and each grade's grace
+  * days ('' for none); and each grade's proof threshold with two decimals ('' for none); and the pot
+- * with two decimals ('' for none); and the parent sheet's id ('' for none).
++ * with two decimals ('' for none); and the parent sheet's id ('' for none); and the fiscal year start
++ * month, 1 to 12.
+  */
+ public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
+         String periodNumberingFrom, Map<String, String> gradeTerms, String cap, Map<String, List<Dated>> dated,
+         String proofThreshold, Map<String, String> perms, String graceDays, String noteThreshold,
+         String entryDate, Map<String, String> gradeGrace, Map<String, String> gradeProofThreshold,
+-        String pot, String parent) {
++        String pot, String parent, String fiscalStartMonth) {
+ 
+     /** A value ('' for none) recorded from a date (yyyy-MM-dd). */
+     public record Dated(String from, String value) {
+@@ -46,7 +47,8 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
+                 settings.entryDate() == null ? "" : settings.entryDate().toString(),
+                 gradeGrace(settings),
+                 gradeProofThreshold(settings),
+-                show(settings.pot()), parent == null ? "" : parent);
++                show(settings.pot()), parent == null ? "" : parent,
++                Integer.toString(settings.fiscalStart()));
+     }
+ 
+     private static String show(java.math.BigDecimal figure) {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
+index 4ca0da70a..b6971f91a 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSettings.java
+@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+ public class ValidateSettings {
+     private static final Pattern FIGURE = Pattern.compile("\\d{1,15}(\\.\\d{1,2})?");
+     private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
++    private static final Pattern MONTH = Pattern.compile("0?[1-9]|1[0-2]");
+     private static final java.util.Set<String> DATED = java.util.Set.of(Settings.CLERK_LIMIT, Settings.FLOOR,
+             Settings.TERMS, Settings.LATE_PCT, Settings.CAP, Settings.gradeTermsKey("A"), Settings.gradeTermsKey("B"),
+             Settings.gradeTermsKey("C"), Settings.PROOF_THRESHOLD, Settings.NOTE_THRESHOLD,
+@@ -207,6 +208,15 @@ public class ValidateSettings {
+         }
+         boolean parentChanged = request != null && request.parent() != null;
+         String parent = parentChanged && !request.parent().trim().isEmpty() ? request.parent().trim() : null;
++        boolean fiscalChanged = request != null && request.fiscalStartMonth() != null;
++        Integer fiscalStartMonth = null;
++        if (fiscalChanged) {
++            String value = request.fiscalStartMonth().trim();
++            if (!MONTH.matcher(value).matches()) {
++                throw new InvalidSettingException("A fiscal start month is a month, 1 to 12");
++            }
++            fiscalStartMonth = Integer.valueOf(value);
++        }
+         Map<String, LocalDate> from = new LinkedHashMap<>();
+         if (request != null && request.from() != null) {
+             for (Map.Entry<String, String> entry : request.from().entrySet()) {
+@@ -223,6 +233,7 @@ public class ValidateSettings {
+         body.set(new SettingsInput(limitChanged, limit, floor, terms, latePct, policyChanged, policyDate,
+                 numberingChanged, numberingFrom, gradeTerms, capChanged, cap, from,
+                 thresholdChanged, threshold, perms, graceChanged, graceDays, noteThresholdChanged, noteThreshold,
+-                entryChanged, entryDate, gradeGrace, gradeProofThreshold, potChanged, pot, parentChanged, parent));
++                entryChanged, entryDate, gradeGrace, gradeProofThreshold, potChanged, pot, parentChanged, parent,
++                fiscalChanged, fiscalStartMonth));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
+index 549f30288..4db3bce4f 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloneRepository.java
+@@ -32,9 +32,9 @@ public class SheetCloneRepository {
+      */
+     public Map<Long, Long> copy(String from, String to) {
+         jdbc.update("INSERT INTO sheet (id, today, clerk_limit, due_floor, terms, late_pct, policy_date,"
+-                + " period_numbering_from, cap, grace_days, entry_date, pot, parent_id)"
++                + " period_numbering_from, cap, grace_days, entry_date, pot, parent_id, fiscal_start_month)"
+                 + " SELECT ?, today, clerk_limit, due_floor, terms, late_pct, policy_date, period_numbering_from, cap,"
+-                + " grace_days, entry_date, pot, parent_id FROM sheet WHERE id = ?", to, from);
++                + " grace_days, entry_date, pot, parent_id, fiscal_start_month FROM sheet WHERE id = ?", to, from);
+         java.sql.Date today = jdbc.queryForObject("SELECT today FROM sheet WHERE id = ?", java.sql.Date.class, to);
+ 
+         jdbc.update("INSERT INTO setting_value (sheet_id, setting_key, from_date, setting_value)"
+diff --git a/src/main/resources/db/migration/V81__fiscal_start_month.sql b/src/main/resources/db/migration/V81__fiscal_start_month.sql
+new file mode 100644
+index 000000000..7e38c8649
+--- /dev/null
++++ b/src/main/resources/db/migration/V81__fiscal_start_month.sql
+@@ -0,0 +1,3 @@
++-- A sheet's fiscal year start month, 1 to 12, not dated: a fiscal year runs twelve months from its
++-- first day in that month, and is named FY<yyyy> by the calendar year that day falls in. Null: 1.
++ALTER TABLE sheet ADD COLUMN fiscal_start_month INT;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/generate-fy.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/generate-fy.POST.yml
+new file mode 100644
+index 000000000..72f6a5ac4
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/generate-fy.POST.yml
+@@ -0,0 +1,20 @@
++# Generate a fiscal year's twelve monthly periods. Validate first so a bad year is a 400, not a 404.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: validate
++validate:
++  class: net.officefloor.hq.app.period.ValidateGenerateFiscalYear
++  next: load
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ transaction ]
++  next: generate
++# From the first day of the sheet's fiscal start month in the year, as the period generator does.
++generate:
++  class: net.officefloor.hq.app.period.GenerateFiscalYear
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.period.RespondWithGeneratedPeriods
++  govern: [ transaction ]
