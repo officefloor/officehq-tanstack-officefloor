@@ -18,6 +18,7 @@ public class Claim {
     private String editedBy;
     private boolean stated;
     private BigDecimal statedDue;
+    private BigDecimal statedLate;
     private String corrects;
     private LocalDate correctedDate;
     private boolean relisted;
@@ -235,10 +236,23 @@ public class Claim {
     public boolean isBound() {
         return stated;
     }
+    /**
+     * The late charge its person's last statement bound it to, with its figure; null when none is
+     * bound (it is not stated, or its figure is n/a): its late charge then follows the sheet's today.
+     */
+    public BigDecimal getStatedLate() { return statedLate; }
     /** Bind it to a figure (null: n/a), or leave it unbound (live) when {@code stated} is false. */
     public void bind(boolean stated, BigDecimal statedDue) {
+        bind(stated, statedDue, null);
+    }
+    /**
+     * Bind it to a figure (null: n/a) and the late charge on it then (null: none bound), or leave it
+     * unbound (live) when {@code stated} is false.
+     */
+    public void bind(boolean stated, BigDecimal statedDue, BigDecimal statedLate) {
         this.stated = stated;
         this.statedDue = stated ? statedDue : null;
+        this.statedLate = stated && statedDue != null ? statedLate : null;
     }
     /**
      * Whether it counts toward its person's claimed and due-total, the sheet's totals and a
@@ -265,9 +279,10 @@ public class Claim {
      * A copy of it as it stood at the end of a day: with the status, settled due and statement
      * binding it had then, the rest as it is now.
      */
-    public Claim asThen(ClaimStatus statusThen, BigDecimal settledDueThen, boolean statedThen, BigDecimal statedDueThen) {
+    public Claim asThen(ClaimStatus statusThen, BigDecimal settledDueThen, boolean statedThen, BigDecimal statedDueThen,
+            BigDecimal statedLateThen) {
         Claim then = new Claim(id, sheetId, personId, amount, date, note, statusThen, number, settledDueThen, openedBy);
-        then.bind(statedThen, statedDueThen);
+        then.bind(statedThen, statedDueThen, statedLateThen);
         then.corrects = corrects;
         then.correctedDate = correctedDate;
         then.dueBy = dueBy;

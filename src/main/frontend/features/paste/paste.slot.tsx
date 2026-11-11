@@ -27,8 +27,15 @@ function PasteClaims({ sheetId }: { sheetId: string }) {
 
   const once = useOnce();
   const paste = useMutation({
-    mutationFn: (body: { text: string }) =>
-      postJson<Result>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/paste`, body, user),
+    // A re-read already under way could answer after the paste is stored and list its claims
+    // before the count shows: it is cancelled first, and the lists are re-read once the paste is done.
+    mutationFn: async (body: { text: string }) => {
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: peopleKey(sheetId) }),
+        queryClient.cancelQueries({ queryKey: claimsKey(sheetId) }),
+      ]);
+      return postJson<Result>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/paste`, body, user);
+    },
     // The count shows once the lists are re-read, so the pasted claims are listed when it appears:
     // it is kept at once, while the re-read is under way, and held back until that is done, so the
     // rows and the count show in the same render.

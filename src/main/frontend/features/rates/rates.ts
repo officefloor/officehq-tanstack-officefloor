@@ -195,10 +195,12 @@ export function addDays(date: string, days: number): string {
  * A claim's late charge on its `figure`: for an OPEN or PENDING claim past its due-by (fixed when it was
  * made) plus its grade's grace ({@link overdueFrom}) on the sheet's today, for every full 30 days it is
  * overdue the late percent in force on that boundary date (that day plus 30, 60, 90 ... days) of the figure plus the
- * charges of the boundaries before it (compounding), each rounded as the claim rounds, added up; else nothing (as for a claim deferred on the sheet's today, or one whose late charge a steward waived, whatever its overdue state). A statement never binds it: it follows the sheet's today.
+ * charges of the boundaries before it (compounding), each rounded as the claim rounds, added up; else nothing (as for a claim deferred on the sheet's today, or one whose late charge a steward waived, whatever its overdue state). While a statement binds it with a late charge, that charge, whatever the
+ * sheet's today; else it follows the sheet's today.
  */
 function lateCharge(claim: Claim, figure: string, late: Late, grade: string): bigint {
   if (!isOpen(claim) || isDeferred(claim, late.today) || figure === NA || late.today === '' || isCorrection(claim) || claim.waived) return 0n;
+  if (isBound(claim) && claim.statedLate !== '') return hundredths(claim.statedLate);
   const from = overdueFrom(claim, grade, late);
   const overdue = daysBetween(from, late.today);
   const periods = overdue > 0 ? Math.floor(overdue / 30) : 0;

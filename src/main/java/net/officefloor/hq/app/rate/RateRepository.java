@@ -108,16 +108,15 @@ public class RateRepository {
     /**
      * The sheet's rates as they stood at the end of {@code day}: for each grade and from-date, the
      * last rate set for them while the sheet's today was on or before it, its version counting those
-     * set for them by then; then its parent sheets' (as they are named now) as they are now, each at its
-     * level: a parent sheet keeps its own today, so this sheet's {@code day} does not tell which of its
-     * rates were set by then.
+     * set for them by then; then its parent sheets' (as they are named now), each at its level and read
+     * the same way: those set while the parent's own today was on or before {@code day}.
      */
     public List<Rate> findAsOf(String sheetId, LocalDate day) {
         List<Rate> all = new ArrayList<>(findOwnAsOf(sheetId, day));
         List<String> ancestors = ancestors(sheetId);
         for (int i = 0; i < ancestors.size(); i++) {
             int level = i + 1;
-            findOwn(ancestors.get(i)).forEach((r) -> all.add(r.up(level)));
+            findOwnAsOf(ancestors.get(i), day).forEach((r) -> all.add(r.up(level)));
         }
         return all;
     }

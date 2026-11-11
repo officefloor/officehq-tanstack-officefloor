@@ -34,6 +34,8 @@ export type Claim = {
   openedBy: string;
   stated: boolean;
   statedDue: string;
+  /** The late charge its person's last statement bound it to, with its figure ('' when none is bound: it follows the sheet's today). */
+  statedLate: string;
   corrects: string;
   roundDate: string;
   /** Its due-by (yyyy-MM-dd), fixed when it was made: the terms-th business day after its date (skipping weekends and the sheet's holidays then), its terms its person's own, else its grade's then. */

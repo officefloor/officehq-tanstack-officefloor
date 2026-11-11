@@ -18,7 +18,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, edited_by, stated, stated_due, corrects, due_by, terms, deferred_until, proofs, split_from, late_entry, reminded_on, ext_ref, tags, void_reason, settle_batch, review_on, waived,"
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, settled_due, opened_by, edited_by, stated, stated_due, stated_late, corrects, due_by, terms, deferred_until, proofs, split_from, late_entry, reminded_on, ext_ref, tags, void_reason, settle_batch, review_on, waived,"
             + " (SELECT c.claim_date FROM claim c WHERE c.sheet_id = claim.sheet_id AND c.person_id = claim.person_id"
             + " AND c.claim_number = claim.corrects) AS corrected_date,"
             + " CASE WHEN locked_on = (SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id) THEN locked_by END AS locked_by_now";
@@ -31,7 +31,7 @@ public class ClaimRepository {
             rs.getString("claim_number"), rs.getBigDecimal("settled_due"),
             rs.getString("opened_by"));
         claim.setEditedBy(rs.getString("edited_by"));
-        claim.bind(rs.getBoolean("stated"), rs.getBigDecimal("stated_due"));
+        claim.bind(rs.getBoolean("stated"), rs.getBigDecimal("stated_due"), rs.getBigDecimal("stated_late"));
         claim.setCorrects(rs.getString("corrects"));
         claim.setDueBy(rs.getDate("due_by").toLocalDate());
         claim.setTerms(rs.getInt("terms"));
@@ -217,8 +217,8 @@ public class ClaimRepository {
                 Long.class, sheetId);
     }
 
-    /** A claim's statement binding: bound (to a figure, null: n/a) or not. */
-    public record Binding(boolean stated, BigDecimal statedDue) {
+    /** A claim's statement binding: bound (to a figure, null: n/a, and a late charge, null: none bound) or not. */
+    public record Binding(boolean stated, BigDecimal statedDue, BigDecimal statedLate) {
     }
 
     /**
@@ -226,14 +226,16 @@ public class ClaimRepository {
      * the one stored.
      */
     private void keepBinding(Claim claim) {
-        List<Binding> stored = jdbc.query("SELECT stated, stated_due FROM claim WHERE id = ? AND sheet_id = ?",
-                (rs, n) -> new Binding(rs.getBoolean("stated"), rs.getBigDecimal("stated_due")),
+        List<Binding> stored = jdbc.query("SELECT stated, stated_due, stated_late FROM claim WHERE id = ? AND sheet_id = ?",
+                (rs, n) -> new Binding(rs.getBoolean("stated"), rs.getBigDecimal("stated_due"), rs.getBigDecimal("stated_late")),
                 claim.getId(), claim.getSheetId());
         if (!stored.isEmpty() && stored.get(0).stated() == claim.isStated()
-                && same(stored.get(0).statedDue(), claim.getStatedDue())) return;
-        jdbc.update("INSERT INTO claim_binding (sheet_id, claim_id, stated, stated_due, set_on)"
-                + " VALUES (?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
-                claim.getSheetId(), claim.getId(), claim.isStated(), claim.getStatedDue(), claim.getSheetId());
+                && same(stored.get(0).statedDue(), claim.getStatedDue())
+                && same(stored.get(0).statedLate(), claim.getStatedLate())) return;
+        jdbc.update("INSERT INTO claim_binding (sheet_id, claim_id, stated, stated_due, stated_late, set_on)"
+                + " VALUES (?, ?, ?, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
+                claim.getSheetId(), claim.getId(), claim.isStated(), claim.getStatedDue(), claim.getStatedLate(),
+                claim.getSheetId());
     }
 
     private static boolean same(BigDecimal a, BigDecimal b) {
@@ -246,9 +248,10 @@ public class ClaimRepository {
      */
     public Map<Long, Binding> bindingsOn(String sheetId, LocalDate day) {
         Map<Long, Binding> bindings = new HashMap<>();
-        jdbc.query("SELECT claim_id, stated, stated_due FROM claim_binding WHERE sheet_id = ? AND set_on <= ? ORDER BY id",
+        jdbc.query("SELECT claim_id, stated, stated_due, stated_late FROM claim_binding WHERE sheet_id = ? AND set_on <= ? ORDER BY id",
                 (rs) -> {
-                    bindings.put(rs.getLong("claim_id"), new Binding(rs.getBoolean("stated"), rs.getBigDecimal("stated_due")));
+                    bindings.put(rs.getLong("claim_id"), new Binding(rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
+                            rs.getBigDecimal("stated_late")));
                 }, sheetId, Date.valueOf(day));
         return bindings;
     }
@@ -298,10 +301,10 @@ public class ClaimRepository {
                         claim.getPersonId(), nextListed(claim.getSheetId()), claim.getId(), claim.getSheetId());
             }
             keepBinding(claim);
-            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?, edited_by = ?, stated = ?, stated_due = ?, corrects = ?, deferred_until = ?, proofs = ?, ext_ref = ?, tags = ?, void_reason = ?, settle_batch = ? WHERE id = ? AND sheet_id = ?",
+            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, settled_due = ?, opened_by = ?, edited_by = ?, stated = ?, stated_due = ?, stated_late = ?, corrects = ?, deferred_until = ?, proofs = ?, ext_ref = ?, tags = ?, void_reason = ?, settle_batch = ? WHERE id = ? AND sheet_id = ?",
                     claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(),
                     claim.getStatus().name(), claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getEditedBy(),
-                    claim.isStated(), claim.getStatedDue(), claim.getCorrects(),
+                    claim.isStated(), claim.getStatedDue(), claim.getStatedLate(), claim.getCorrects(),
                     claim.getDeferredUntil() == null ? null : Date.valueOf(claim.getDeferredUntil()), claim.getProofs(), claim.getRef(), claim.getTags(), claim.getVoidReason(), claim.getSettleBatch(), claim.getId(),
                     claim.getSheetId());
             keepHistory(claim);
@@ -362,9 +365,9 @@ public class ClaimRepository {
         jdbc.update("UPDATE claim_line SET sheet_id = ? WHERE claim_id = ?", toSheet, claim.getId());
         // The figure a statement bound it to arrives with it, bound there from that sheet's today.
         if (claim.isStated()) {
-            jdbc.update("INSERT INTO claim_binding (sheet_id, claim_id, stated, stated_due, set_on)"
-                    + " VALUES (?, ?, TRUE, ?, (SELECT today FROM sheet WHERE id = ?))",
-                    toSheet, claim.getId(), claim.getStatedDue(), toSheet);
+            jdbc.update("INSERT INTO claim_binding (sheet_id, claim_id, stated, stated_due, stated_late, set_on)"
+                    + " VALUES (?, ?, TRUE, ?, ?, (SELECT today FROM sheet WHERE id = ?))",
+                    toSheet, claim.getId(), claim.getStatedDue(), claim.getStatedLate(), toSheet);
         }
         jdbc.update("INSERT INTO claim_history (sheet_id, claim_id, " + HISTORY_COLUMNS + ", set_on)"
                 + " SELECT sheet_id, id, " + HISTORY_COLUMNS + ", (SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id)"
@@ -438,7 +441,7 @@ public class ClaimRepository {
     }
 
     private static final String HISTORY_COLUMNS = "person_id, amount, claim_date, note, status, claim_number, settled_due,"
-            + " opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, late_entry, listed, tags, void_reason, settle_batch, ext_ref, reminded_on, review_on, waived";
+            + " opened_by, stated, stated_due, stated_late, corrects, due_by, deferred_until, proofs, split_from, late_entry, listed, tags, void_reason, settle_batch, ext_ref, reminded_on, review_on, waived";
 
     /** Keeps the claim as the store now holds it in its history, with the sheet's today now. */
     private void keepHistory(Claim claim) {
@@ -460,7 +463,7 @@ public class ClaimRepository {
                             rs.getBigDecimal("amount"), rs.getDate("claim_date").toLocalDate(), rs.getString("note"),
                             ClaimStatus.valueOf(rs.getString("status")), rs.getString("claim_number"),
                             rs.getBigDecimal("settled_due"), rs.getString("opened_by"));
-                    claim.bind(rs.getBoolean("stated"), rs.getBigDecimal("stated_due"));
+                    claim.bind(rs.getBoolean("stated"), rs.getBigDecimal("stated_due"), rs.getBigDecimal("stated_late"));
                     claim.setCorrects(rs.getString("corrects"));
                     claim.setDueBy(rs.getDate("due_by").toLocalDate());
                     Date deferred = rs.getDate("deferred_until");

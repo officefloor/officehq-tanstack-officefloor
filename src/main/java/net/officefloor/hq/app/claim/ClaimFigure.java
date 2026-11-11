@@ -71,11 +71,12 @@ public final class ClaimFigure {
      * sheet's late percent in force on that boundary date (that day plus 30, 60, 90 ... days) of the figure plus the
      * charges of the boundaries before it (compounding), each rounded to two
      * decimals as the claim rounds, added up; else 0.00 (as for a claim deferred on today, or one whose late charge
-     * a steward waived, whatever its overdue state). Never bound by a statement:
-     * it follows the sheet's today until the claim is settled.
+     * a steward waived, whatever its overdue state). While a statement binds it with a late charge, that
+     * charge, whatever the sheet's today; else it follows the sheet's today until the claim is settled.
      */
     public static BigDecimal late(Claim claim, BigDecimal figure, String grade, Settings settings, LocalDate today) {
         if (!claim.isOpen() || claim.isDeferredOn(today)) return BigDecimal.ZERO.setScale(2);
+        if (claim.isBound() && claim.getStatedLate() != null && !claim.isWaived()) return claim.getStatedLate();
         return lateAsOpen(claim, figure, grade, settings, today);
     }
 
