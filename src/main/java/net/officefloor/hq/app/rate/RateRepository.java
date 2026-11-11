@@ -29,7 +29,8 @@ public class RateRepository {
 
     /**
      * The sheet's rates, by grade then from-date (none first), then those of its parent sheet and on
-     * up to {@link Rate#MAX_LEVEL} levels, each at its level.
+     * up to {@link Rate#MAX_LEVEL} levels, then those of the sheet it was cloned from and on up its
+     * own (see {@link #ancestors}), each at its level.
      */
     public List<Rate> findAll(String sheetId) {
         List<Rate> all = new ArrayList<>(findOwn(sheetId));
@@ -41,18 +42,33 @@ public class RateRepository {
         return all;
     }
 
-    /** The sheet's parent, its parent's parent and so on, up to {@link Rate#MAX_LEVEL} of them. */
+    /**
+     * The sheets a rate is looked for on after the sheet itself, in order: its parent, its parent's
+     * parent and so on, up to {@link Rate#MAX_LEVEL} of them; then, when it was cloned, the sheet it
+     * was cloned from and that sheet's own (its parents, then the sheet it was cloned from, and so on).
+     */
     private List<String> ancestors(String sheetId) {
         List<String> ancestors = new ArrayList<>();
-        String at = sheetId;
-        while (ancestors.size() < Rate.MAX_LEVEL) {
-            List<String> parent = jdbc.query("SELECT parent_id FROM sheet WHERE id = ?",
-                    (rs, n) -> rs.getString("parent_id"), at);
-            if (parent.isEmpty() || parent.get(0) == null) break;
-            at = parent.get(0);
-            ancestors.add(at);
+        java.util.Set<String> seen = new java.util.HashSet<>(List.of(sheetId));
+        String sheet = sheetId;
+        while (sheet != null) {
+            String at = sheet;
+            for (int up = 0; up < Rate.MAX_LEVEL; up++) {
+                at = column("parent_id", at);
+                if (at == null || !seen.add(at)) break;
+                ancestors.add(at);
+            }
+            sheet = column("cloned_from", sheet);
+            if (sheet == null || !seen.add(sheet)) break;
+            ancestors.add(sheet);
         }
         return ancestors;
+    }
+
+    private String column(String column, String sheetId) {
+        List<String> found = jdbc.query("SELECT " + column + " FROM sheet WHERE id = ?",
+                (rs, n) -> rs.getString(column), sheetId);
+        return found.isEmpty() ? null : found.get(0);
     }
 
     /**

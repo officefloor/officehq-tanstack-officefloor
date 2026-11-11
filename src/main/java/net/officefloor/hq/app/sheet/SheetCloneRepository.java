@@ -24,7 +24,7 @@ public class SheetCloneRepository {
 
     /**
      * Create sheet {@code to} as a copy of sheet {@code from}: its today and settings (dated and undated,
-     * its permissions and parent), roles, rates, holidays, void reasons and templates; its people (not those
+     * its permissions and parent; it names this sheet as the one it was cloned from), roles, rates, holidays, void reasons and templates; its people (not those
      * merged away) in list order, with their grades, terms, contacts, tags, aliases, holds, retirements and
      * patrons, but no statements; its pools and their members; its periods, all open. It is not archived,
      * and its claim numbers, settle batches and period numbers start again. Returns the copy's person id
@@ -32,9 +32,9 @@ public class SheetCloneRepository {
      */
     public Map<Long, Long> copy(String from, String to) {
         jdbc.update("INSERT INTO sheet (id, today, clerk_limit, due_floor, terms, late_pct, policy_date,"
-                + " period_numbering_from, cap, grace_days, entry_date, pot, parent_id, fiscal_start_month, alert_threshold, escalate_after, review_sla)"
+                + " period_numbering_from, cap, grace_days, entry_date, pot, parent_id, fiscal_start_month, alert_threshold, escalate_after, review_sla, cloned_from)"
                 + " SELECT ?, today, clerk_limit, due_floor, terms, late_pct, policy_date, period_numbering_from, cap,"
-                + " grace_days, entry_date, pot, parent_id, fiscal_start_month, alert_threshold, escalate_after, review_sla FROM sheet WHERE id = ?", to, from);
+                + " grace_days, entry_date, pot, parent_id, fiscal_start_month, alert_threshold, escalate_after, review_sla, id FROM sheet WHERE id = ?", to, from);
         java.sql.Date today = jdbc.queryForObject("SELECT today FROM sheet WHERE id = ?", java.sql.Date.class, to);
 
         jdbc.update("INSERT INTO setting_value (sheet_id, setting_key, from_date, setting_value)"

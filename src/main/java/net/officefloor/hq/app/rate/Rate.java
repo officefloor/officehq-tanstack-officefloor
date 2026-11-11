@@ -10,7 +10,8 @@ import java.util.Optional;
 /**
  * A grade's rate on a sheet: a percent with two decimals, from a date (null: from the beginning of
  * time) through a date (null: with no end). Its level is how far up the sheet's parent chain it is
- * set: 0 on the sheet itself, 1 on its parent, up to {@link #MAX_LEVEL}. Its version counts how many
+ * set: 0 on the sheet itself, 1 on its parent, up to {@link #MAX_LEVEL}, then on past them
+ * the sheet it was cloned from and its own. Its version counts how many
  * times a rate has been set for its grade and from-date (1 for the first); it is the newest of them.
  * A forward-only rate (saved with a from-date on or after the sheet's today) applies only to claims
  * added after it was saved: those with an id above {@code addedAfter} (null: it applies to every
@@ -68,10 +69,12 @@ public record Rate(String sheetId, String grade, BigDecimal pct, LocalDate from,
 
     /**
      * The grade's rate in force on the date: on the sheet itself, else on its parent, and so on up
-     * the levels. Empty when no level has one in force.
+     * the levels (past the parents, those of the sheet it was cloned from). Empty when no level has
+     * one in force.
      */
     public static Optional<BigDecimal> inForce(List<Rate> rates, String grade, LocalDate date) {
-        for (int level = 0; level <= MAX_LEVEL; level++) {
+        int top = rates.stream().mapToInt(Rate::level).max().orElse(0);
+        for (int level = 0; level <= top; level++) {
             Optional<BigDecimal> found = inForce(rates, grade, date, level);
             if (found.isPresent()) return found;
         }
