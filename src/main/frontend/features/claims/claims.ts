@@ -85,6 +85,8 @@ export type Claim = {
    * to even; its own person keeps the rest.
    */
   shares: ClaimShare[];
+  /** The user a steward assigned it to review while in REVIEW; '' when none. Kept once it leaves REVIEW. */
+  reviewUser: string;
 };
 
 /** A holder's share of a claim: their person id and their percent, two decimals. */

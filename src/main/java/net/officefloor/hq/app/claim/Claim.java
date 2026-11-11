@@ -33,6 +33,7 @@ public class Claim {
     private LocalDate remindedOn;
     private boolean waived;
     private boolean held;
+    private String reviewUser;
     private LocalDate reviewOn;
     private String ref;
     private String tags;
@@ -155,6 +156,9 @@ public class Claim {
     /** Whether it is held: it still counts in every total. */
     public boolean isHeld() { return held; }
     public void setHeld(boolean held) { this.held = held; }
+    /** The user a steward assigned it to review while in REVIEW; null when none. Kept once it leaves REVIEW. */
+    public String getReviewUser() { return reviewUser; }
+    public void setReviewUser(String reviewUser) { this.reviewUser = reviewUser; }
     /** Hold it, or release it when held: only an OPEN or PENDING claim. */
     public void toggleHold() throws InvalidClaimStatusException {
         if (!isOpen()) throw new InvalidClaimStatusException("A " + status + " claim cannot be held or released");
@@ -328,6 +332,7 @@ public class Claim {
         then.remindedOn = remindedOn;
         then.waived = waived;
         then.held = held;
+        then.reviewUser = reviewUser;
         then.reviewOn = reviewOn;
         then.ref = ref;
         then.tags = tags;

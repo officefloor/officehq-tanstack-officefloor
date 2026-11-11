@@ -90,6 +90,8 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   const [partAmount, setPartAmount] = useState<Record<string, string>>({});
   // The person picked to share each claim with and the percent typed for them, by claim id.
   const [shareWith, setShareWith] = useState<Record<string, { personId: string; share: string }>>({});
+  // The user typed to assign each REVIEW claim to review, by claim id.
+  const [reviewUser, setReviewUser] = useState<Record<string, string>>({});
   const [commentText, setCommentText] = useState<Record<string, string>>({});
   // The line typed to add to each draft (label, quantity, unit amount), by claim id.
   // Each claim's timeline as last shown: its audit lines, newest first.
@@ -386,6 +388,19 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
       }),
   });
 
+  // A steward assigns a REVIEW claim to a user to review: refused for a blank user or any other status.
+  const assignReview = useMutation({
+    mutationFn: ({ id, reviewer }: { id: string; reviewer: string }) =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/claims/${encodeURIComponent(id)}/review-assign`,
+        { user: reviewer },
+        user,
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+    onError: (_e, { id }) =>
+      setRefused({ id, message: 'Only a steward can assign a REVIEW claim, to a named user.' }),
+  });
+
   // A comment is kept on a claim in any status, with who wrote it and the sheet's today.
   const comment = useMutation({
     mutationFn: ({ id, text }: { id: string; text: string }) =>
@@ -521,6 +536,16 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
       return;
     }
     share.mutate({ id, personId, share: pct.trim() });
+  };
+
+  const assignReviewClaim = (id: string) => {
+    setRefused(null);
+    const reviewer = (reviewUser[id] ?? '').trim();
+    if (reviewer === '') {
+      setRefused({ id, message: 'Name the user to assign the review to.' });
+      return;
+    }
+    assignReview.mutate({ id, reviewer });
   };
 
   const setShareField = (id: string, field: 'personId' | 'share', value: string) => {
@@ -775,6 +800,19 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
               <span data-testid="claim-held">{c.held ? 'yes' : 'no'}</span>{' '}
               <button type="button" data-testid="claim-hold" onClick={() => holdClaim(c.id)}>
                 {c.held ? 'Release' : 'Hold'}
+              </button>{' '}
+              <span data-testid="claim-review-assigned">{c.reviewUser}</span>{' '}
+              <input
+                data-testid="claim-review-user"
+                placeholder="Reviewer"
+                value={reviewUser[c.id] ?? ''}
+                onChange={(e) => {
+                  setReviewUser((u) => ({ ...u, [c.id]: e.target.value }));
+                  setRefused((r) => (r !== null && r.id === c.id ? null : r));
+                }}
+              />{' '}
+              <button type="button" data-testid="claim-review-assign" onClick={() => assignReviewClaim(c.id)}>
+                Assign review
               </button>{' '}
               <span data-testid="claim-shares">{c.shares.map((h) => `${nameOf(h.personId)} ${h.share}`).join(', ')}</span>{' '}
               <select

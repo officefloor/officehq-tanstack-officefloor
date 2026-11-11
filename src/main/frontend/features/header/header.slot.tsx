@@ -20,7 +20,8 @@ const STATUSES: ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID', 
 // figures as the summary and the sheet's totals, so each always equals the figure it repeats.
 // Beside them, the signed-in user's own figures: the due-total and overdue-total of the person whose
 // name or alias is the user's name — blank when there is no such person — and their crew total: the
-// due-totals of the crews led by a person with the user's name, added up — blank when they lead none.
+// due-totals of the crews led by a person with the user's name, added up — blank when they lead none —
+// and the count of REVIEW claims assigned to them to review.
 function Header({ sheetId }: { sheetId: string }) {
   const people = usePeople(sheetId).data ?? [];
   const claims = useClaims(sheetId).data ?? [];
@@ -40,6 +41,7 @@ function Header({ sheetId }: { sheetId: string }) {
     user ? people.filter((p) => [p.name, ...p.aliases].some((n) => asName(n) === asName(user))).map((p) => p.id) : [],
   );
   const led = crews.filter((c) => myIds.has(c.leadId));
+  const myReviews = user ? claims.filter((c) => c.status === 'REVIEW' && c.reviewUser === user.trim()).length : 0;
   const myCrewDue = led.length > 0 ? sumDue(led.map((c) => crewDueTotal(c, dues))) : '';
 
   return (
@@ -67,6 +69,9 @@ function Header({ sheetId }: { sheetId: string }) {
       </span>{' '}
       <span>
         My crews due: <strong data-testid="my-crew-due-total">{myCrewDue}</strong>
+      </span>{' '}
+      <span>
+        My reviews: <strong data-testid="my-reviews-count">{myReviews}</strong>
       </span>
     </header>
   );
