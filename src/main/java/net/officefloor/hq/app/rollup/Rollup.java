@@ -52,8 +52,8 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
      * has one dated on or before today (under a rate that has since ended), held to the sheet's cap less their cut
      * total (see {@link Settings#capped}). Each claim
      * takes the rate of the grade in force on its date. A shared claim's figure counts less its holders' parts
-     * for its own person, and each holder's part (its figure times their share / 100, rounded half to even)
-     * for the holder, which keeps the holder's due-total from n/a. The
+     * for its own person, and each holder's part (see {@link ClaimShare#partOf(Claim, BigDecimal, Person, List,
+     * Settings, LocalDate)}; none when their grade has no rate) for the holder, which keeps the holder's due-total from n/a. The
      * sheet's totals add these up, skipping n/a; with three or more figures, the due-total and
      * overdue-total leave out the single highest and the single lowest.
      */
@@ -85,7 +85,9 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
                 if (claim.getSettledDue() != null || claim.boundDue() != null) fixed = true;
                 String grade = person.gradeOn(claim.getDate());
                 BigDecimal figure = ClaimFigure.withLate(claim, all, grade, settings, today);
-                if (figure != null) due = due.add(ownPart(figure, shares.get(claim.getId())));
+                if (figure != null) {
+                    due = due.add(ownPart(claim, figure, shares.get(claim.getId()), everyone, all, settings, today));
+                }
                 if (figure != null && overdue(claim, grade, settings, today)) overdue = overdue.add(figure);
                 if (figure != null && claim.getStatus() == net.officefloor.hq.app.claim.ClaimStatus.SETTLED
                         && !claim.isCorrection()) {
@@ -115,9 +117,9 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
     }
 
     /**
-     * Each holder's parts (by person id) of the claims shared with them that count for their own person:
-     * the claim's figure times their share divided by 100, rounded half to even, added up. A holder of
-     * no part of a figure is absent.
+     * Each holder's parts (by person id) of the claims shared with them that count for their own person
+     * (see {@link ClaimShare#partOf(Claim, BigDecimal, Person, List, Settings, LocalDate)}), added up. A
+     * holder of no part of a figure (or whose grade has no rate for it) is absent.
      */
     public static Map<Long, BigDecimal> heldParts(List<Person> everyone, List<Claim> sheetClaims,
             Map<Long, List<ClaimShare>> shares, List<Rate> all, Settings settings, LocalDate today) {
@@ -129,18 +131,29 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
                 if (!claim.counts(owner.heldOn(claim.getDate(), today), today)) continue;
                 BigDecimal figure = ClaimFigure.withLate(claim, all, owner.gradeOn(claim.getDate()), settings, today);
                 if (figure == null) continue;
-                for (ClaimShare share : of) held.merge(share.personId(), share.partOf(figure), BigDecimal::add);
+                for (ClaimShare share : of) {
+                    BigDecimal part = share.partOf(claim, figure, holder(everyone, share), all, settings, today);
+                    if (part != null) held.merge(share.personId(), part, BigDecimal::add);
+                }
             }
         }
         return held;
     }
 
-    /** A claim's figure less its holders' parts (the whole figure when it has no shares). */
-    public static BigDecimal ownPart(BigDecimal figure, List<ClaimShare> shares) {
+    /** A claim's figure less its holders' parts (the whole figure when it has no shares; a part with no rate is 0.00). */
+    public static BigDecimal ownPart(Claim claim, BigDecimal figure, List<ClaimShare> shares, List<Person> everyone,
+            List<Rate> all, Settings settings, LocalDate today) {
         if (shares == null) return figure;
         BigDecimal own = figure;
-        for (ClaimShare share : shares) own = own.subtract(share.partOf(figure));
+        for (ClaimShare share : shares) {
+            BigDecimal part = share.partOf(claim, figure, holder(everyone, share), all, settings, today);
+            if (part != null) own = own.subtract(part);
+        }
         return own;
+    }
+
+    private static Person holder(List<Person> everyone, ClaimShare share) {
+        return everyone.stream().filter((p) -> p.getId() == share.personId()).findFirst().orElse(null);
     }
 
     /** A score: settled due / 100, minus 5 per overdue claim, rounded half to even to a whole number. */

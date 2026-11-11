@@ -80,27 +80,31 @@ public class PeriodRepository {
 
     /** Keeps the period's closed state, as now stored, in its history with the sheet's today now. */
     private void keepHistory(Period period) {
-        jdbc.update("INSERT INTO period_history (sheet_id, name, closed, soft, closed_total, set_on)"
-                + " SELECT sheet_id, name, closed, soft, closed_total, (SELECT s.today FROM sheet s WHERE s.id = period.sheet_id)"
+        jdbc.update("INSERT INTO period_history (sheet_id, name, closed, soft, closed_total, locked, set_on)"
+                + " SELECT sheet_id, name, closed, soft, closed_total, locked, (SELECT s.today FROM sheet s WHERE s.id = period.sheet_id)"
                 + " FROM period WHERE sheet_id = ? AND name = ?", period.sheetId(), period.name());
     }
 
     /**
      * The sheet's periods as they stood at the end of {@code day}, by from-date: those added by then,
-     * each closed (or soft-closed, or open) as last changed while the sheet's today was on or before it.
+     * each closed (or soft-closed, or open) and locked or not as last changed while the sheet's today was on or
+     * before it.
      */
     public List<Period> findAllAsOf(String sheetId, LocalDate day) {
         Map<String, Period> then = new HashMap<>();
-        jdbc.query("SELECT sheet_id, name, closed, soft, closed_total FROM period_history WHERE sheet_id = ?"
+        Map<String, Boolean> lockedThen = new HashMap<>();
+        jdbc.query("SELECT sheet_id, name, closed, soft, closed_total, locked FROM period_history WHERE sheet_id = ?"
                 + " AND set_on <= ? ORDER BY id", rs -> {
                     then.put(rs.getString("name"), new Period(rs.getString("sheet_id"), rs.getString("name"), null, null,
                             rs.getBoolean("closed"), rs.getBigDecimal("closed_total"), rs.getBoolean("soft")));
+                    lockedThen.put(rs.getString("name"), rs.getObject("locked", Boolean.class));
                 }, sheetId, java.sql.Date.valueOf(day));
         return jdbc.query("SELECT " + COLUMNS + " FROM period WHERE sheet_id = ? AND (added_on IS NULL OR added_on <= ?)"
                 + " ORDER BY from_date", ROW, sheetId, java.sql.Date.valueOf(day)).stream().map((p) -> {
                     Period state = then.get(p.name());
                     return state == null ? new Period(p.sheetId(), p.name(), p.from(), p.to(), p.cap())
-                            : new Period(p.sheetId(), p.name(), p.from(), p.to(), state.closed(), state.closedTotal(), state.soft(), p.cap(), p.locked());
+                            : new Period(p.sheetId(), p.name(), p.from(), p.to(), state.closed(), state.closedTotal(), state.soft(), p.cap(),
+                                    lockedThen.get(p.name()) == null ? p.locked() : lockedThen.get(p.name()));
                 }).toList();
     }
 
@@ -132,8 +136,10 @@ public class PeriodRepository {
      * Lock or unlock the period: false when it is already so, as when another request changed it first.
      */
     public boolean markLocked(Period period, boolean locked) {
-        return jdbc.update("UPDATE period SET locked = ? WHERE sheet_id = ? AND name = ? AND locked = ?",
+        boolean marked = jdbc.update("UPDATE period SET locked = ? WHERE sheet_id = ? AND name = ? AND locked = ?",
                 locked, period.sheetId(), period.name(), !locked) == 1;
+        if (marked) keepHistory(period);
+        return marked;
     }
 
     /** Fix each person's due-total for the closed period. */

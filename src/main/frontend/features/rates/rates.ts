@@ -3,7 +3,7 @@ import { getJson } from '../../api/http';
 import { gradeOn, liveHolds } from '../people/people';
 import type { Grade, GradeFrom, Hold, Person } from '../people/people';
 import { counts, isBound, isCorrection, isDeferred, isOpen } from '../claims/claims';
-import type { Claim, ClaimStatus } from '../claims/claims';
+import type { Claim, ClaimShare, ClaimStatus } from '../claims/claims';
 
 /**
  * A grade's rate: a percent with two decimals, from a date (yyyy-MM-dd; '' when it applies from the
@@ -135,11 +135,16 @@ export function due(amount: string, pct: string | null, floor: string | null, ha
  */
 function percentOf(figure: string, pct: string, times: bigint, halfUp: boolean): bigint {
   // cents × basis points is the due in millionths of a unit: 10000 of them to the cent.
-  const signed = hundredths(figure) * hundredths(pct) * times;
+  return roundCents(hundredths(figure) * hundredths(pct) * times, 10000n, halfUp);
+}
+
+/** A whole count of `per`ths of a cent as cents, rounded half up when `halfUp`, else half to even (symmetric about 0). */
+function roundCents(signed: bigint, per: bigint, halfUp: boolean): bigint {
   const x = signed < 0n ? -signed : signed;
-  const cents = x / 10000n;
-  const rest = x % 10000n;
-  const rounded = rest > 5000n || (rest === 5000n && (halfUp || cents % 2n === 1n)) ? cents + 1n : cents;
+  const cents = x / per;
+  const rest = x % per;
+  const half = per / 2n;
+  const rounded = rest > half || (rest === half && (halfUp || cents % 2n === 1n)) ? cents + 1n : cents;
   return signed < 0n ? -rounded : rounded;
 }
 
@@ -262,7 +267,8 @@ export function claimDue(claim: Claim, pct: string | null, floor: Dated, late: L
  * today it is n/a, unless a claim that counts keeps a fixed figure (settled, or bound by a
  * statement), has a figure under another grade in force on its date, or has a figure dated on or
  * before today (under a rate that has since ended). A shared claim counts its due less its holders'
- * parts; the parts `held` of others' claims shared with them count too (and keep it from n/a). Held to
+ * parts, and the parts of others' claims shared with them count too (and keep it from n/a): both come in
+ * `held` (see `heldParts`). Held to
  * the sheet's `cap` ('' for none) less their `cut` total (not below 0.00); n/a is not capped.
  */
 export function personDueTotal(
@@ -321,23 +327,36 @@ function uncappedDueTotal(
   const kept = (c: Claim) => c.due !== '' || (isBound(c) && c.statedDue !== NA)
     || (gradeOn(grades, c.date) !== grade && rateOn(rates, gradeOn(grades, c.date), c.date, c.id) !== null)
     || (c.date <= today && rateOn(rates, gradeOn(grades, c.date), c.date, c.id) !== null);
-  if (rateOn(rates, grade, today) === null && !counted.some(kept) && held.length === 0) return NA;
-  const own = counted.map((c) => ownPart(c, claimDue(c, rateOn(rates, gradeOn(grades, c.date), c.date, c.id), floor, late, gradeOn(grades, c.date))));
+  if (rateOn(rates, grade, today) === null && !counted.some(kept) && held.every((h) => h.given)) return NA;
+  const own = counted.map((c) => claimDue(c, rateOn(rates, gradeOn(grades, c.date), c.date, c.id), floor, late, gradeOn(grades, c.date)));
   return sumDue([...own, ...held.map((h) => h.due)]);
 }
 
-/** A holder's part of a claim shared with them: its due times their share / 100, and the claim's status. */
-export type HeldPart = { due: string; status: ClaimStatus };
+/**
+ * A part of a shared claim and the claim's status: a holder's part of a claim shared with them, or,
+ * `given`, minus the parts its holders take of one of the person's own claims (so their own claim counts
+ * its due less those parts).
+ */
+export type HeldPart = { due: string; status: ClaimStatus; given?: boolean };
 
-/** A claim's due less its holders' parts (each its due times their share / 100, rounded half to even); n/a stays n/a. */
-export function ownPart(claim: Claim, due: string): string {
-  if (due === NA || claim.shares.length === 0) return due;
-  return showCents(claim.shares.reduce((n, s) => n - hundredths(shareOf(due, s.share)), hundredths(due)));
+/**
+ * A holder's part of a claim whose due is `due`: a settled claim keeps its parts as frozen (its due times
+ * their share / 100, rounded half to even); else the claim's amount times their share / 100, times the
+ * rate of the holder's own grade in force on the claim's date / 100, rounded like the claim. Null when
+ * their grade has no rate then (a part of 0.00 to the claim's own person).
+ */
+export function holderPart(claim: Claim, due: string, share: string, holder: Person | undefined, rates: Rate[], late: Late): string | null {
+  if (claim.due !== '') return shareOf(due, share);
+  if (!holder) return null;
+  const pct = rateOn(rates, gradeOn(holder.grades, claim.date), claim.date, claim.id);
+  if (pct === null) return null;
+  return showCents(roundCents(hundredths(claim.amount) * hundredths(share) * hundredths(pct), 100000000n, roundsHalfUp(claim, late)));
 }
 
 /**
- * The parts a person holds of others' claims shared with them, each claim counting as it does for its
- * own person (at its rate, by its own person's grade and holds), skipping n/a.
+ * The parts a person holds of others' claims shared with them, and, given, minus the parts others hold
+ * of their own shared claims, each claim counting as it does for its own person (at its rate, by its own
+ * person's grade and holds), skipping n/a and holders whose grade has no rate.
  */
 export function heldParts(
   personId: string,
@@ -350,12 +369,22 @@ export function heldParts(
 ): HeldPart[] {
   const parts: HeldPart[] = [];
   for (const c of claims) {
+    if (c.shares.length === 0) continue;
     const share = c.shares.find((s) => s.personId === personId);
-    const owner = share && people.find((p) => p.id === c.personId);
-    if (!share || !owner || !counts(c, liveHolds(owner, today), today)) continue;
+    if (!share && c.personId !== personId) continue;
+    const owner = people.find((p) => p.id === c.personId);
+    if (!owner || !counts(c, liveHolds(owner, today), today)) continue;
     const grade = gradeOn(owner.grades, c.date);
     const due = claimDue(c, rateOn(rates, grade, c.date, c.id), floor, late, grade);
-    if (due !== NA) parts.push({ due: shareOf(due, share.share), status: c.status });
+    if (due === NA) continue;
+    const partOf = (s: ClaimShare) => holderPart(c, due, s.share, people.find((p) => p.id === s.personId), rates, late);
+    if (c.personId === personId) {
+      const given = c.shares.reduce((n, s) => n + hundredths(partOf(s) ?? '0.00'), 0n);
+      parts.push({ due: showCents(-given), status: c.status, given: true });
+    } else if (share) {
+      const part = partOf(share);
+      if (part !== null) parts.push({ due: part, status: c.status });
+    }
   }
   return parts;
 }
@@ -365,7 +394,8 @@ export function heldParts(
  * A person's due-total split by status, before the sheet's cap: their settled-total (the dues of
  * their SETTLED claims that count, at their frozen figures, corrections included) and their
  * open-total (the dues of their OPEN and PENDING claims that count), each added up, skipping n/a. A
- * shared claim counts its due less its holders' parts; the parts `held` of others' claims count too.
+ * shared claim counts its due less its holders' parts, and the parts of others' claims count too: both
+ * come in `held` (see `heldParts`).
  */
 export function personSplitTotals(
   rates: Rate[],
@@ -378,7 +408,7 @@ export function personSplitTotals(
   held: HeldPart[] = [],
 ): { settled: string; open: string } {
   const counted = claims.filter((c) => counts(c, holds, today));
-  const dueOf = (c: Claim) => ownPart(c, claimDue(c, rateOn(rates, gradeOn(grades, c.date), c.date, c.id), floor, late, gradeOn(grades, c.date)));
+  const dueOf = (c: Claim) => claimDue(c, rateOn(rates, gradeOn(grades, c.date), c.date, c.id), floor, late, gradeOn(grades, c.date));
   const heldIn = (statuses: ClaimStatus[]) => held.filter((h) => statuses.includes(h.status)).map((h) => h.due);
   return {
     settled: sumDue([...counted.filter((c) => c.status === 'SETTLED').map(dueOf), ...heldIn(['SETTLED'])]),

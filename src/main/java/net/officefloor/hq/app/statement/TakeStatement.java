@@ -60,8 +60,9 @@ public class TakeStatement {
         int counted = 0;
         // Taken now, a shared claim counts less its holders' parts, and the parts of others' claims shared with them count.
         Map<Long, List<ClaimShare>> shares = asOf == null ? claims.shares(sheet.id()) : Map.of();
+        List<Person> everyone = people.findAll(sheet.id());
         if (asOf == null) {
-            BigDecimal held = Rollup.heldParts(people.findAll(sheet.id()), claims.findAll(sheet.id()), shares, all,
+            BigDecimal held = Rollup.heldParts(everyone, claims.findAll(sheet.id()), shares, all,
                     sheetSettings, today).get(person.getId());
             if (held != null) {
                 total = total.add(held);
@@ -91,7 +92,8 @@ public class TakeStatement {
                 if (figure != null && !claim.getDate().isAfter(today)) fixed = true;
                 // The due-total carries the late charge; the claim is bound to the floored rate figure under it.
                 BigDecimal due = ClaimFigure.withLate(claim, all, grade, sheetSettings, today);
-                if (due != null) total = total.add(Rollup.ownPart(due, shares.get(claim.getId())));
+                if (due != null) total = total.add(Rollup.ownPart(claim, due, shares.get(claim.getId()), everyone, all,
+                        sheetSettings, today));
                 // Bound with the late charge on it as shown (a bound one stays as it is).
                 BigDecimal late = figure == null || claim.getSettledDue() != null ? null
                         : ClaimFigure.late(claim, figure, grade, sheetSettings, today);

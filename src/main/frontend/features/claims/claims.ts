@@ -81,8 +81,9 @@ export type Claim = {
   reviewOn: string;
   /**
    * Its shares with other people on the sheet, oldest first: each holder's person id and their percent
-   * (two decimals). A holder's part of its due is the due times their share divided by 100, rounded half
-   * to even; its own person keeps the rest.
+   * (two decimals). A holder's part is its amount times their share / 100 times the rate of the holder's
+   * own grade in force on its date / 100, rounded like the claim (none with no rate); a settled claim's parts
+   * stay frozen at its due times their share / 100, rounded half to even. Its own person keeps the rest.
    */
   shares: ClaimShare[];
   /** The user a steward assigned it to review while in REVIEW; '' when none. Kept once it leaves REVIEW. */
