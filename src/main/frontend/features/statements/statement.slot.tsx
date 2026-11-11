@@ -16,6 +16,7 @@ function StatementHead() {
       <Col name="statement-count"><th>Statements</th></Col>
       <Col name="stated-total"><th>Stated</th></Col>
       <Col name="statement-date"><th>Stated on</th></Col>
+      <th>Statement lines</th>
       <th />
     </>
   );
@@ -79,6 +80,13 @@ function PersonStatement({ sheetId, person }: { sheetId: string; person: Person 
       <Col name="statement-count"><td data-testid="person-statement-count">{person.statementCount}</td></Col>
       <Col name="stated-total"><td data-testid="person-stated-total">{person.statedTotal}</td></Col>
       <Col name="statement-date"><td data-testid="person-statement-date">{person.statementDate}</td></Col>
+      <td>
+        {person.statementLines.map((line, i) => (
+          <div key={i} data-testid="person-statement-line-line">
+            {line}
+          </div>
+        ))}
+      </td>
       <td>
         <input
           type="date"

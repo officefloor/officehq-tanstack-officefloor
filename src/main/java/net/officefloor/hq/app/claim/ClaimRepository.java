@@ -254,9 +254,11 @@ public class ClaimRepository {
      */
     public boolean remind(Claim claim) {
         Date on = Date.valueOf(claim.getRemindedOn());
-        return jdbc.update("UPDATE claim SET reminded_on = ? WHERE id = ? AND sheet_id = ?"
+        boolean reminded = jdbc.update("UPDATE claim SET reminded_on = ? WHERE id = ? AND sheet_id = ?"
                 + " AND status IN ('OPEN', 'PENDING') AND (reminded_on IS NULL OR reminded_on <> ?)",
                 on, claim.getId(), claim.getSheetId(), on) == 1;
+        if (reminded) keepHistory(claim);
+        return reminded;
     }
 
     /** Whether another claim on the sheet than {@code exceptId} (null: any) has this reference, regardless of case. */
@@ -414,7 +416,7 @@ public class ClaimRepository {
     }
 
     private static final String HISTORY_COLUMNS = "person_id, amount, claim_date, note, status, claim_number, settled_due,"
-            + " opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, late_entry, listed, tags, void_reason, settle_batch, ext_ref";
+            + " opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, late_entry, listed, tags, void_reason, settle_batch, ext_ref, reminded_on";
 
     /** Keeps the claim as the store now holds it in its history, with the sheet's today now. */
     private void keepHistory(Claim claim) {
@@ -448,6 +450,8 @@ public class ClaimRepository {
                     claim.setRef(rs.getString("ext_ref"));
                     claim.setVoidReason(rs.getString("void_reason"));
                     claim.setSettleBatch((Integer) rs.getObject("settle_batch", Integer.class));
+                    Date reminded = rs.getDate("reminded_on");
+                    claim.setRemindedOn(reminded == null ? null : reminded.toLocalDate());
                     latest.put(claim.getId(), claim);
                     listed.put(claim.getId(), rs.getLong("listed"));
                 }, sheetId, Date.valueOf(day));

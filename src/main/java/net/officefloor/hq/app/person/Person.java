@@ -27,6 +27,7 @@ public class Person {
     private final List<String> aliases = new ArrayList<>();
     private final List<PastRetirement> pastRetirements = new ArrayList<>();
     private final List<String> snapshots = new ArrayList<>();
+    private final List<String> statementLines = new ArrayList<>();
     private final TreeMap<LocalDate, String> datedGrades = new TreeMap<>();
 
     public Person(Long id, String sheetId, String name, String grade) {
@@ -99,6 +100,8 @@ public class Person {
     public List<PastRetirement> getPastRetirements() { return pastRetirements; }
     /** Their snapshot lines, oldest first, each as "<the day being left> <due-total>". */
     public List<String> getSnapshots() { return snapshots; }
+    /** Their statements still standing, oldest first (by date), each as "<statement date> <due-total>". */
+    public List<String> getStatementLines() { return statementLines; }
     /** Their holds, in the order added: each from a date to an optional to-date. */
     public List<Hold> getHolds() { return holds; }
     /** Whether they have any hold at all. */

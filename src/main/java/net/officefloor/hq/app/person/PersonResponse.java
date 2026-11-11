@@ -16,13 +16,14 @@ import java.util.List;
  * (in the order given), and whether they clash: their name or an alias is a name or alias on another
  * sheet of the sheet's tree, the sheet they were transferred from ("" when never transferred), and
  * the retirements they were unretired from, oldest first, each as "<from> to <to>", and their snapshot lines, oldest first, each as
- * "<the day being left> <due-total>".
+ * "<the day being left> <due-total>", and their statements still standing, oldest first (by date), each as
+ * "<statement date> <due-total>".
  */
 public record PersonResponse(String id, String name, String grade, long version, int statementCount,
         String statedTotal, String statementDate, boolean retired, String retiredFrom,
         boolean held, List<HoldFrom> holds, java.util.List<String> patronIds, List<String> patronShares, List<GradeFrom> grades, String terms,
         String contact, List<String> tags, List<String> aliases, boolean clashing, String origin, List<String> retirements,
-        List<String> snapshots) {
+        List<String> snapshots, List<String> statementLines) {
 
     /** A hold from a date to a date (yyyy-MM-dd; to "" when open-ended), both inclusive. */
     public record HoldFrom(String from, String to) {}
@@ -61,6 +62,6 @@ public record PersonResponse(String id, String name, String grade, long version,
                 person.getContact() == null ? "" : person.getContact(), person.tagList(), List.copyOf(person.getAliases()), clashing,
                 person.getOriginSheet() == null ? "" : person.getOriginSheet(),
                 person.getPastRetirements().stream().map((r) -> r.from() + " to " + r.to()).toList(),
-                List.copyOf(person.getSnapshots()));
+                List.copyOf(person.getSnapshots()), List.copyOf(person.getStatementLines()));
     }
 }

@@ -90,6 +90,11 @@ public class PersonRepository {
                     Person person = byId.get(rs.getLong("person_id"));
                     if (person != null) person.getSnapshots().add(rs.getObject("snapshot_day", LocalDate.class) + " " + rs.getString("due_total"));
                 }, sheetId);
+        jdbc.query("SELECT person_id, stated_total, statement_date FROM person_statement WHERE sheet_id = ? ORDER BY " + STATEMENT_ORDER,
+                (rs) -> {
+                    Person person = byId.get(rs.getLong("person_id"));
+                    if (person != null) person.getStatementLines().add(statementLine(rs));
+                }, sheetId);
         return people;
     }
 
@@ -116,7 +121,17 @@ public class PersonRepository {
         person.getSnapshots().addAll(jdbc.query(
                 "SELECT snapshot_day, due_total FROM person_snapshot WHERE sheet_id = ? AND person_id = ? ORDER BY id",
                 (rs, n) -> rs.getObject("snapshot_day", LocalDate.class) + " " + rs.getString("due_total"), sheetId, id));
+        person.getStatementLines().addAll(jdbc.query(
+                "SELECT stated_total, statement_date FROM person_statement WHERE sheet_id = ? AND person_id = ? ORDER BY " + STATEMENT_ORDER,
+                (rs, n) -> statementLine(rs), sheetId, id));
         return person;
+    }
+
+    /** Statements oldest first: by date (one not kept first), then in the order taken. */
+    private static final String STATEMENT_ORDER = "statement_date NULLS FIRST, seq";
+
+    private static String statementLine(java.sql.ResultSet rs) throws java.sql.SQLException {
+        return rs.getObject("statement_date", LocalDate.class) + " " + rs.getString("stated_total");
     }
 
     private void loadPastRetirements(Person person) {

@@ -32,7 +32,9 @@ export function gradeOn(grades: GradeFrom[], date: string): Grade {
 // `origin` is the sheet they were transferred from ('' when they never were). `retirements` are the
 // retirements they were unretired from, oldest first, each as '<from> to <the day unretired>'.
 // `snapshots` are their snapshot lines, one per SNAPSHOT written for them when the sheet's today
-// changed, oldest first, each as '<the day being left> <due-total>'.
+// changed, oldest first, each as '<the day being left> <due-total>'. `statementLines` are their
+// statements still standing (a cancelled one is gone), oldest first by date, each as
+// '<statement date> <due-total>' — those a merge or a transfer brought over among them.
 export type Person = {
   id: string;
   name: string;
@@ -56,6 +58,7 @@ export type Person = {
   origin: string;
   retirements: string[];
   snapshots: string[];
+  statementLines: string[];
 };
 
 /**
