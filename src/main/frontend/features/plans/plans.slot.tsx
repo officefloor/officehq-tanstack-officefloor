@@ -61,6 +61,30 @@ function PersonPlans({ sheetId, person }: { sheetId: string; person: Person }) {
 
   const [pauseError, setPauseError] = useState<{ planId: string; message: string } | null>(null);
 
+  // Changes a plan's amount on the sheet's today: claims generated from then on take it, claims already
+  // generated keep theirs. An amount the claim form would refuse shows the error on the plan.
+  const [newAmounts, setNewAmounts] = useState<Record<string, string>>({});
+  const changeAmount = useMutation({
+    mutationFn: ({ planId, amount }: { planId: string; amount: string }) =>
+      postJson<Plan>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/plans/${encodeURIComponent(planId)}/amount`,
+        { amount },
+        user,
+      ),
+    onSuccess: (_r, { planId }) => {
+      setNewAmounts((m) => ({ ...m, [planId]: '' }));
+      return queryClient.invalidateQueries({ queryKey: plansKey(sheetId) });
+    },
+    onError: (_e, { planId }) => setPauseError({ planId, message: 'That amount could not be saved.' }),
+  });
+
+  const pressChangeAmount = (planId: string) => {
+    setError('');
+    setPauseError(null);
+    const amount = (newAmounts[planId] ?? '').trim();
+    once((done) => changeAmount.mutate({ planId, amount }, { onSettled: done }));
+  };
+
   const pressPause = (planId: string, on: boolean) => {
     setError('');
     setPauseError(null);
@@ -99,7 +123,33 @@ function PersonPlans({ sheetId, person }: { sheetId: string; person: Person }) {
             </button>{' '}
             <button type="button" data-testid="plan-resume" onClick={() => pressPause(p.id, false)} disabled={pause.isPending}>
               Resume
+            </button>{' '}
+            <input
+              data-testid="plan-amount"
+              aria-label="New plan amount"
+              value={newAmounts[p.id] ?? ''}
+              onChange={(e) => {
+                const value = e.target.value;
+                setNewAmounts((m) => ({ ...m, [p.id]: value }));
+                setError('');
+                setPauseError(null);
+              }}
+            />{' '}
+            <button
+              type="button"
+              data-testid="plan-amount-save"
+              onClick={() => pressChangeAmount(p.id)}
+              disabled={changeAmount.isPending}
+            >
+              Save amount
             </button>
+            <ul>
+              {p.changes.map((c, i) => (
+                <li key={i} data-testid="plan-change-line">
+                  {c}
+                </li>
+              ))}
+            </ul>
             {pauseError?.planId === p.id && (
               <p role="alert" data-testid="plan-error">
                 {pauseError.message}

@@ -8,10 +8,12 @@ import java.util.List;
 /**
  * A person's plan on a sheet: an amount with two decimals, made a DRAFT claim on its start date, then
  * every {@code every} days or monthly on day {@code day} of the month (the other null), up to its end date. {@code generated} is how many claims it has made so far.
- * {@code pauses} are its pauses, in order: a plan date in one is skipped, not postponed.
+ * {@code pauses} are its pauses, in order: a plan date in one is skipped, not postponed. {@code changes} are
+ * its amount's changes, oldest first; {@code amount} is the amount now.
  */
 public record Plan(Long id, String sheetId, long personId, BigDecimal amount, LocalDate start, Integer every,
-        Integer day, LocalDate end, int generated, List<PlanPause> pauses) {
+        Integer day, LocalDate end, int generated, List<PlanPause> pauses,
+        List<PlanChange> changes) {
 
     /** Whether the plan is paused now: its last pause not yet resumed. */
     public boolean paused() {

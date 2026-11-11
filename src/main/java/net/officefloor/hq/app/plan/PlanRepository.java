@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.plan;
 
+import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.Statement;
@@ -24,7 +25,7 @@ public class PlanRepository {
             rs.getLong("person_id"), rs.getBigDecimal("amount").setScale(2),
             rs.getDate("start_date").toLocalDate(), rs.getObject("every_days", Integer.class),
             rs.getObject("day_of_month", Integer.class), rs.getDate("end_date").toLocalDate(),
-            rs.getInt("generated"), List.of());
+            rs.getInt("generated"), List.of(), List.of());
 
     private final JdbcTemplate jdbc;
 
@@ -50,8 +51,11 @@ public class PlanRepository {
                 (rs, n) -> new PlanPause(rs.getDate("paused_on").toLocalDate(),
                         rs.getDate("resumed_on") == null ? null : rs.getDate("resumed_on").toLocalDate()),
                 p.id());
+        List<PlanChange> changes = jdbc.query("SELECT changed_on, amount FROM plan_change WHERE plan_id = ? ORDER BY id",
+                (rs, n) -> new PlanChange(rs.getDate("changed_on").toLocalDate(), rs.getBigDecimal("amount").setScale(2)),
+                p.id());
         return new Plan(p.id(), p.sheetId(), p.personId(), p.amount(), p.start(), p.every(), p.day(), p.end(),
-                p.generated(), pauses);
+                p.generated(), pauses, changes);
     }
 
     /** Pauses the plan from that day. */
@@ -63,6 +67,13 @@ public class PlanRepository {
     public void resume(long planId, LocalDate on) {
         jdbc.update("UPDATE plan_pause SET resumed_on = ? WHERE plan_id = ? AND resumed_on IS NULL", Date.valueOf(on),
                 planId);
+    }
+
+    /** Changes the plan's amount on that day, recording the change. */
+    public void changeAmount(long planId, LocalDate on, BigDecimal amount) {
+        jdbc.update("UPDATE plan SET amount = ? WHERE id = ?", amount, planId);
+        jdbc.update("INSERT INTO plan_change (plan_id, changed_on, amount) VALUES (?, ?, ?)", planId, Date.valueOf(on),
+                amount);
     }
 
     /** Inserts a new plan, returning it with its id. */
@@ -83,7 +94,7 @@ public class PlanRepository {
         }, keys);
         long id = ((Number) keys.getKeys().get("ID")).longValue();
         return new Plan(id, plan.sheetId(), plan.personId(), plan.amount(), plan.start(), plan.every(), plan.day(),
-                plan.end(), 0, List.of());
+                plan.end(), 0, List.of(), List.of());
     }
 
     /** The dates the plan has made its claim for. */

@@ -5,7 +5,8 @@ import { getJson } from '../../api/http';
  *  days — or, monthly, on day `day` of every month from the start's month (a day beyond the month's
  *  length on its last day, dates before the start left out) — up to its end. `generated` is how many claims it has made so far; `nextDates` its first five
  *  dates after the sheet's today and on or before its end, comma and space separated, dates in a pause
- *  (on or after the day it was paused, before the day it was resumed) left out; `paused` whether it is paused now. */
+ *  (on or after the day it was paused, before the day it was resumed) left out; `paused` whether it is paused now;
+ *  `changes` its amount's changes, oldest first, each `<date> amount=<amount>` (`amount` is the amount now). */
 export type Plan = {
   id: string;
   personId: string;
@@ -17,6 +18,7 @@ export type Plan = {
   generated: number;
   nextDates: string;
   paused: boolean;
+  changes: string[];
 };
 
 export const plansKey = (sheetId: string) => ['sheet', sheetId, 'plans'] as const;
