@@ -30,6 +30,17 @@ public class RoleRepository {
     }
 
     /**
+     * The sheet's roles as they stood at the end of {@code day}, by user name: for each user, the last role
+     * assigned to them on or before it. A user first assigned a role after it is left out.
+     */
+    public List<Role> findAsOf(String sheetId, LocalDate day) {
+        return jdbc.query("SELECT h.sheet_id, h.user_name, h.role FROM role_history h WHERE h.sheet_id = ?"
+                + " AND h.id = (SELECT MAX(l.id) FROM role_history l WHERE l.sheet_id = h.sheet_id"
+                + " AND l.user_name = h.user_name AND l.set_on <= ?) ORDER BY h.user_name", ROW,
+                sheetId, Date.valueOf(day));
+    }
+
+    /**
      * The role the user acts in on the sheet, in every rule: steward while the steward role is delegated to
      * them for the sheet's today, otherwise the role assigned.
      */
