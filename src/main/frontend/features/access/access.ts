@@ -76,6 +76,11 @@ export type Settings = {
    * in force on the sheet's today.
    */
   dated?: Record<string, { from: string; value: string }[]>;
+  /**
+   * The policy versions, in the order made: every change to a policy setting (the rounding mode, the floor, the cap,
+   * the terms, the late percent or the clerk limit) is one, with its from-date (yyyy-MM-dd; '' for none).
+   */
+  versions?: string[];
 };
 
 /** The figure settings, which are saved from a from-date, by the key the screen and the store use. */
@@ -135,11 +140,13 @@ export const PERM_ROLES = ['clerk', 'steward'] as const;
 export const settingsKey = (sheetId: string) => ['sheet', sheetId, 'settings'] as const;
 export const rolesKey = (sheetId: string) => ['sheet', sheetId, 'roles'] as const;
 
+export const settingsQuery = (sheetId: string) => ({
+  queryKey: settingsKey(sheetId),
+  queryFn: () => getJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`),
+});
+
 export function useSettings(sheetId: string) {
-  return useQuery({
-    queryKey: settingsKey(sheetId),
-    queryFn: () => getJson<Settings>(`/api/sheets/${encodeURIComponent(sheetId)}/settings`),
-  });
+  return useQuery(settingsQuery(sheetId));
 }
 
 /**
@@ -174,9 +181,23 @@ export function lateOf(settings: Settings | undefined, today: string): Late {
   return { pct, today, policyDate: settings?.policyDate ?? '', grace, rounding };
 }
 
-/** The sheet's cap on a person's due-total ('' for none, until the settings are read). */
-export function useCap(sheetId: string): string {
-  return useSettings(sheetId).data?.cap ?? '';
+/** The sheet's cap on a person's due-total, dated: none before every value recorded (none until the settings are read). */
+export function useCap(sheetId: string): Dated {
+  return capOf(useSettings(sheetId).data);
+}
+
+/** The cap of settings as read (undefined until they are): as `useCap`. */
+export function capOf(settings: Settings | undefined): Dated {
+  return { start: '', values: settings?.dated?.cap ?? [] };
+}
+
+/**
+ * The number of the policy version in force on a date (yyyy-MM-dd): the policy versions whose from-date is
+ * on or before it, a version with none counting always; with no date, the current version number.
+ */
+export function policyVersionOn(settings: Settings | undefined, date?: string): number {
+  const versions = settings?.versions ?? [];
+  return date === undefined ? versions.length : versions.filter((from) => from === '' || from <= date).length;
 }
 
 /** The sheet's review SLA in days ('' for none, until the settings are read). */

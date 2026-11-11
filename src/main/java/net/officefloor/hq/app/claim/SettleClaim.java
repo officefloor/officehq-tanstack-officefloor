@@ -109,7 +109,7 @@ public class SettleClaim {
         }
         BigDecimal due = fixed != null ? fixed[0] : ClaimFigure.due(figure, late);
         if (!judged) judge(claim, user, due, grade, settings);
-        if (!settings.withinClerkLimit(due, grade, sheet.today()) && (Role.CLERK.equals(role) || Role.RESTRICTED.equals(role))) {
+        if (!settings.withinClerkLimit(due, grade, claim.getDate()) && (Role.CLERK.equals(role) || Role.RESTRICTED.equals(role))) {
             claim.moveTo(ClaimStatus.PENDING);
             return;
         }

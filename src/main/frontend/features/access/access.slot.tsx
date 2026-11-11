@@ -7,7 +7,7 @@ import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/session';
 import { poolsKey } from '../pools/pools';
 import { periodsKey } from '../periods/periods';
-import { ACTIONS, ALERT_THRESHOLD, CAP, DATED_KEYS, FLOOR, GRADES, LATE_PCT, LIMIT, NOTE_THRESHOLD, PERM_ROLES, REVIEW_THRESHOLD, POLICY_DATE, POT, PROOF_KINDS, PROOF_THRESHOLD, ROUNDING, STANDING_RULE, TERMS, ROLES, gradeClerkLimitKey, gradeGraceKey, gradeProofThresholdKey, rolesKey, settingsKey, useRoles, useSettings } from './access';
+import { ACTIONS, ALERT_THRESHOLD, CAP, DATED_KEYS, FLOOR, GRADES, LATE_PCT, LIMIT, NOTE_THRESHOLD, PERM_ROLES, REVIEW_THRESHOLD, POLICY_DATE, POT, PROOF_KINDS, PROOF_THRESHOLD, ROUNDING, STANDING_RULE, TERMS, ROLES, gradeClerkLimitKey, gradeGraceKey, gradeProofThresholdKey, policyVersionOn, rolesKey, settingsKey, useRoles, useSettings } from './access';
 import type { Role, Settings, SettingsChange } from './access';
 import { useGradeCodes } from '../grades/grades';
 
@@ -920,6 +920,9 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
             </span>{' '}
           </span>
         ))}
+        <span>
+          Policy version <strong data-testid="policy-version">{settings.data ? policyVersionOn(settings.data) : ''}</strong>
+        </span>{' '}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>

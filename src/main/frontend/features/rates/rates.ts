@@ -25,13 +25,15 @@ export const MAX_LEVEL = 3;
 
 export const ratesKey = (sheetId: string) => ['sheet', sheetId, 'rates'] as const;
 
+export const ratesQuery = (sheetId: string) => ({
+  queryKey: ratesKey(sheetId),
+  queryFn: async () =>
+    (await getJson<{ rates: Rate[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/rates`)).rates,
+});
+
 /** The sheet's rates, by grade then from-date (none first), then its parent sheets', each at its level. */
 export function useRates(sheetId: string) {
-  return useQuery({
-    queryKey: ratesKey(sheetId),
-    queryFn: async () =>
-      (await getJson<{ rates: Rate[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/rates`)).rates,
-  });
+  return useQuery(ratesQuery(sheetId));
 }
 
 /**
@@ -269,7 +271,8 @@ export function claimDue(claim: Claim, pct: string | null, floor: Dated, late: L
  * before today (under a rate that has since ended). A shared claim counts its due less its holders'
  * parts, and the parts of others' claims shared with them count too (and keep it from n/a): both come in
  * `held` (see `heldParts`). Held to
- * the sheet's `cap` ('' for none) less their `cut` total (not below 0.00); n/a is not capped.
+ * the `cap` in force on the date of their latest claim that counts (see `capFor`) less their `cut` total (not below 0.00);
+ * n/a is not capped.
  */
 export function personDueTotal(
   rates: Rate[],
@@ -279,11 +282,12 @@ export function personDueTotal(
   holds: Hold[],
   floor: Dated,
   late: Late,
-  cap: string,
+  dated: Dated,
   held: HeldPart[] = [],
   cut = '0.00',
 ): string {
   const total = uncappedDueTotal(rates, grades, today, claims, holds, floor, late, held);
+  const cap = capFor(dated, claims, holds, today);
   if (total === NA || cap === '') return total;
   const left = hundredths(cap) - hundredths(cut);
   const room = left > 0n ? left : 0n;
@@ -291,7 +295,16 @@ export function personDueTotal(
 }
 
 /**
- * How far a person's due-total, before the sheet's `cap` ('' for none), plus their `cut` total goes above
+ * A person's cap ('' for none): the sheet's cap in force on the date of their latest claim that counts;
+ * none while no claim of theirs counts.
+ */
+export function capFor(cap: Dated, claims: Claim[], holds: Hold[], today: string): string {
+  const latest = claims.filter((c) => counts(c, holds, today)).reduce((d, c) => (c.date > d ? c.date : d), '');
+  return latest === '' ? '' : valueOn(cap, latest);
+}
+
+/**
+ * How far a person's due-total, before their cap ('' for none, see `capFor`), plus their `cut` total goes above
  * the cap: 0.00 when it does not.
  */
 export function personExcess(
@@ -302,11 +315,12 @@ export function personExcess(
   holds: Hold[],
   floor: Dated,
   late: Late,
-  cap: string,
+  dated: Dated,
   held: HeldPart[] = [],
   cut = '0.00',
 ): string {
   const total = uncappedDueTotal(rates, grades, today, claims, holds, floor, late, held);
+  const cap = capFor(dated, claims, holds, today);
   if (total === NA || cap === '') return '0.00';
   const figures = hundredths(total) + hundredths(cut);
   return figures <= hundredths(cap) ? '0.00' : showCents(figures - hundredths(cap));

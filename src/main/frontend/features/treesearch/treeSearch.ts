@@ -4,7 +4,7 @@ import { liveHolds, nameWithGrade } from '../people/people';
 import type { Person } from '../people/people';
 import { heldParts, personDueTotal } from '../rates/rates';
 import type { Rate } from '../rates/rates';
-import { floorOf, lateOf } from '../access/access';
+import { capOf, floorOf, lateOf } from '../access/access';
 import type { Settings } from '../access/access';
 import type { Sheet } from '../sheet/sheet';
 import { cutTotal } from '../pools/pools';
@@ -37,7 +37,7 @@ async function sheetPeople(sheetId: string): Promise<TreePerson[]> {
   const today = sheet.today;
   const floor = floorOf(settings);
   const late = lateOf(settings, today);
-  const cap = settings.cap ?? '';
+  const cap = capOf(settings);
   return people.map((p) => ({
     sheetId,
     person: p,

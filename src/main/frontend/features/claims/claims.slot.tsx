@@ -12,7 +12,7 @@ import type { Claim } from './claims';
 import { selectClaim, useSelectedClaims } from './selection';
 import { PCT, claimDue, rateOn, useRates } from '../rates/rates';
 import { periodOf, usePeriods } from '../periods/periods';
-import { PROOF_KINDS, useFloor, useLate, usePendingSla, useReviewSla } from '../access/access';
+import { PROOF_KINDS, policyVersionOn, useFloor, useLate, usePendingSla, useReviewSla, useSettings } from '../access/access';
 import { useSheetToday } from '../sheet/sheet';
 import { dueBy, isOverdue } from '../overdue/overdue';
 import { useVoidReasons } from '../voidreasons/voidReasons';
@@ -109,6 +109,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   const rates = useRates(sheetId).data ?? [];
   const periods = usePeriods(sheetId).data ?? [];
   const floor = useFloor(sheetId);
+  const policy = useSettings(sheetId).data;
   const today = useSheetToday(sheetId);
   const late = useLate(sheetId);
   const reviewSla = useReviewSla(sheetId);
@@ -810,6 +811,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
               <span data-testid="claim-date">{c.date}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}
               <span data-testid="claim-due">{claimDue(c, rateOn(rates, gradeOn(person.grades, c.date), c.date, c.id), floor, late, gradeOn(person.grades, c.date))}</span>{' '}
+              <span data-testid="claim-policy">{policyVersionOn(policy, c.date)}</span>{' '}
               <span data-testid="claim-status">{c.status}</span>{' '}
               <span data-testid="claim-corrects">{c.corrects}</span>{' '}
               <span data-testid="claim-ref">{c.ref}</span>{' '}

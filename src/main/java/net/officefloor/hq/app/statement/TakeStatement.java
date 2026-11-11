@@ -58,6 +58,7 @@ public class TakeStatement {
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         boolean fixed = false;
         int counted = 0;
+        LocalDate latest = null;
         // Taken now, a shared claim counts less its holders' parts, and the parts of others' claims shared with them count.
         Map<Long, List<ClaimShare>> shares = asOf == null ? claims.shares(sheet.id()) : Map.of();
         List<Person> everyone = people.findAll(sheet.id());
@@ -82,6 +83,7 @@ public class TakeStatement {
             boolean counts = claim != null && claim.counts(then.heldOn(claim.getDate(), today), today);
             if (counts) {
                 counted++;
+                if (latest == null || claim.getDate().isAfter(latest)) latest = claim.getDate();
                 if (claim.getSettledDue() != null || claim.boundDue() != null) fixed = true;
                 String grade = then.gradeOn(claim.getDate());
                 BigDecimal figure = claim.getSettledDue() != null ? claim.getSettledDue()
@@ -105,7 +107,7 @@ public class TakeStatement {
         }
         String dueTotal = Rate.inForce(all, then.gradeOn(today), today).isEmpty() && !fixed
                 ? "n/a" : sheetSettings.capped(total,
-                        CutTotals.of(sheet.id(), today, asOf).getOrDefault(person.getId(), BigDecimal.ZERO), today).toPlainString();
+                        CutTotals.of(sheet.id(), today, asOf).getOrDefault(person.getId(), BigDecimal.ZERO), latest).toPlainString();
         person.setStatements(person.getStatementCount() + 1, dueTotal, today);
         people.saveStatements(person);
         statementOut.set(new Statement(dueTotal, counted, asOf));

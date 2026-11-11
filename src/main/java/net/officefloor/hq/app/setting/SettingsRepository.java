@@ -91,6 +91,22 @@ public class SettingsRepository {
                 now.scoreMid(), now.scoreHigh(), now.scoreLog(), now.maxOpen(), now.pendingSla());
     }
 
+    /**
+     * The policy versions, in the order made: the from-date of each change to a policy setting (null:
+     * none, counting always). As of a date ({@code asOf}, null: now), only those made while the sheet's
+     * today was on or before it.
+     */
+    public List<LocalDate> versions(String sheetId, LocalDate asOf) {
+        List<LocalDate> versions = new java.util.ArrayList<>();
+        jdbc.query("SELECT setting_key, from_date, set_on FROM setting_history WHERE sheet_id = ? ORDER BY id",
+                (RowCallbackHandler) (rs) -> {
+                    if (!Settings.POLICY_KEYS.contains(rs.getString("setting_key"))) return;
+                    if (asOf != null && rs.getDate("set_on").toLocalDate().isAfter(asOf)) return;
+                    versions.add(rs.getDate("from_date") == null ? null : rs.getDate("from_date").toLocalDate());
+                }, sheetId);
+        return versions;
+    }
+
     private static final String POLICY_DATE = "policy-date";
 
     private static final String POT = "pot";

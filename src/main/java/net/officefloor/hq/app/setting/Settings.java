@@ -21,7 +21,10 @@ import java.util.NavigableMap;
  * above which a claim's due, on the claim's date, sends it to REVIEW when it is opened. The value in force on a date is the one with the
  * latest from-date on or before it; before every from-date the starting value (floor 1.00, late
  * percent 0.00, terms 14; none for the others). A claim takes its floor and late percent on
- * its date, and its terms on the day it was made; the clerk limit and the cap are those in force on the sheet's today ({@code today}).
+ * its date, and its terms on the day it was made, and its clerk limit on its date; a person's cap is the one in force on the date of
+ * their latest claim that counts. The policy settings (the rounding mode, the floor, the cap, the terms, the late percent
+ * and the clerk limit) are versioned together: every change to one of them is a new policy version ({@code versions},
+ * the from-date of each in the order made; null: none, counting always).
  * Not dated: its policy date (null: the sheet's today): a claim dated before it rounds half up, one
  * on or after it half to even, and its period numbering from (null: off): while the sheet's today
  * is on or after it, a claim opened is numbered within its period, and its permission matrix
@@ -88,6 +91,9 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
     public static final String SCORE_LOG = "score-log";
     public static final String MAX_OPEN = "max-open";
     public static final String PENDING_SLA = "pending-sla";
+
+    /** The policy settings, versioned together: every change to one of them is a new policy version. */
+    public static final java.util.Set<String> POLICY_KEYS = java.util.Set.of(ROUNDING, FLOOR, CAP, TERMS, LATE_PCT, CLERK_LIMIT);
 
     /** The value the score log switch is recorded and shown as while it is on. */
     public static final String ON = "on";
@@ -345,22 +351,23 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
     }
 
     /**
-     * A person's due-total (null: n/a) held to the cap in force on {@code today} less their cut total (not below
-     * 0.00): the cap covers their due-total and their cut total together. A due-total of n/a is not capped.
+     * A person's due-total (null: n/a) held to the cap in force on {@code date}, the date of their latest claim
+     * that counts (null: none, no cap), less their cut total (not below 0.00): the cap covers their due-total and
+     * their cut total together. A due-total of n/a is not capped.
      */
-    public BigDecimal capped(BigDecimal dueTotal, BigDecimal cutTotal, LocalDate today) {
-        BigDecimal cap = capOn(today);
+    public BigDecimal capped(BigDecimal dueTotal, BigDecimal cutTotal, LocalDate date) {
+        BigDecimal cap = capOn(date);
         if (cap == null || dueTotal == null) return dueTotal;
         BigDecimal room = cap.subtract(cutTotal).max(BigDecimal.ZERO).setScale(2);
         return dueTotal.compareTo(room) <= 0 ? dueTotal : room;
     }
 
     /**
-     * Whether a due (null: n/a) of a claim of a grade is within the clerk limit in force on {@code today}:
-     * the grade's own when it has one, else the sheet's. A due of n/a is within any limit.
+     * Whether a due (null: n/a) of a claim of a grade is within the clerk limit in force on the claim's
+     * {@code date}: the grade's own when it has one, else the sheet's. A due of n/a is within any limit.
      */
-    public boolean withinClerkLimit(BigDecimal due, String grade, LocalDate today) {
-        BigDecimal clerkLimit = clerkLimitFor(grade, today);
+    public boolean withinClerkLimit(BigDecimal due, String grade, LocalDate date) {
+        BigDecimal clerkLimit = clerkLimitFor(grade, date);
         return clerkLimit == null || due == null || due.compareTo(clerkLimit) <= 0;
     }
 }

@@ -6,7 +6,7 @@ import type { Grade, Person } from '../people/people';
 import { heldParts, personDueTotal, personSplitTotals, sumDue, trimmedSumDue } from '../rates/rates';
 import type { Dated, Late, Rate } from '../rates/rates';
 import { personOverdue } from '../overdue/overdue';
-import { floorOf, lateOf } from '../access/access';
+import { capOf, floorOf, lateOf } from '../access/access';
 import type { Settings } from '../access/access';
 import type { Sheet } from '../sheet/sheet';
 import { cutTotal } from '../pools/pools';
@@ -52,7 +52,7 @@ export function sheetFigures(
   today: string,
   floor: Dated,
   late: Late,
-  cap: string,
+  cap: Dated,
   pools: Pool[] = [],
 ): Figures {
   const claimsOf = (id: string) => claims.filter((c) => c.personId === id);
@@ -134,7 +134,7 @@ export async function readFigures(sheetId: string): Promise<Figures> {
     getJson<Settings>(`/api/sheets/${enc(sheetId)}/settings`),
     getJson<{ pools: Pool[] }>(`/api/sheets/${enc(sheetId)}/pools`).then((r) => r.pools),
   ]);
-  return sheetFigures(people, claims, rates, sheet.today, floorOf(settings), lateOf(settings, sheet.today), settings.cap ?? '', pools);
+  return sheetFigures(people, claims, rates, sheet.today, floorOf(settings), lateOf(settings, sheet.today), capOf(settings), pools);
 }
 
 /**

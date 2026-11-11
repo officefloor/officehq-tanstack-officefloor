@@ -9,13 +9,15 @@ import { claimsQuery } from '../claims/claims';
 import { notesQuery } from '../notes/notes';
 import { myRoleQuery } from '../dashboard/dashboard';
 import { crewsQuery } from '../crews/crews';
+import { ratesQuery } from '../rates/rates';
+import { settingsQuery } from '../access/access';
 
 type Sheet = { id: string };
 
 // Choose a sheet by typing its id and loading it. An id never used before starts an empty sheet;
 // loading an id again drops what was cached for it, so the sheet is re-read from the store. The
 // sheet becomes the active one only once its people, claims and notes are read, and the user's role
-// and the crews that decide which rows they see, so its rows are on screen as soon as its id is.
+// and the crews that decide which rows they see, and the rates and settings its figures are worked by, so its rows are on screen as soon as its id is.
 export function SheetLoader({ onLoaded }: { onLoaded: () => void }) {
   const queryClient = useQueryClient();
   const [sheetId, setSheetId] = useSheetId();
@@ -34,6 +36,8 @@ export function SheetLoader({ onLoaded }: { onLoaded: () => void }) {
         queryClient.fetchQuery(notesQuery(sheet.id)),
         queryClient.fetchQuery(myRoleQuery(sheet.id, user)),
         queryClient.fetchQuery(crewsQuery(sheet.id)),
+        queryClient.fetchQuery(ratesQuery(sheet.id)),
+        queryClient.fetchQuery(settingsQuery(sheet.id)),
       ]);
       return sheet;
     },

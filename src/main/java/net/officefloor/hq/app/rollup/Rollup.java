@@ -49,7 +49,7 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
      * charge it gains on {@code today}), and
      * n/a when their grade in force today has no rate today and no claim that counts keeps a fixed
      * figure or has one under the grade in force on its date when that is another grade, or
-     * has one dated on or before today (under a rate that has since ended), held to the sheet's cap less their cut
+     * has one dated on or before today (under a rate that has since ended), held to the cap in force on the date of their latest claim that counts less their cut
      * total (see {@link Settings#capped}). Each claim
      * takes the rate of the grade in force on its date. A shared claim's figure counts less its holders' parts
      * for its own person, and each holder's part (see {@link ClaimShare#partOf(Claim, BigDecimal, Person, List,
@@ -76,12 +76,14 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
             boolean fixed = false;
             BigDecimal settled = BigDecimal.ZERO.setScale(2);
             int overdueCount = 0;
+            LocalDate latest = null;
             for (Claim claim : sheetClaims) {
                 if (claim.getPersonId() != person.getId()) continue;
                 if (!claim.isCorrection() && claim.countsClaimed(person.retiredOn(today), today)) {
                     claimed = claimed.add(claim.getAmount());
                 }
                 if (!claim.counts(person.heldOn(claim.getDate(), today), today)) continue;
+                if (latest == null || claim.getDate().isAfter(latest)) latest = claim.getDate();
                 if (claim.getSettledDue() != null || claim.boundDue() != null) fixed = true;
                 String grade = person.gradeOn(claim.getDate());
                 BigDecimal figure = ClaimFigure.withLate(claim, all, grade, settings, today);
@@ -107,7 +109,7 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
             boolean none = Rate.inForce(all, person.gradeOn(today), today).isEmpty() && !fixed;
             claimedTotal = claimedTotal.add(claimed);
             overdues.add(overdue);
-            due = settings.capped(due, cuts.getOrDefault(person.getId(), BigDecimal.ZERO), today);
+            due = settings.capped(due, cuts.getOrDefault(person.getId(), BigDecimal.ZERO), latest);
             if (!none) dues.add(due);
             figures.put(person.getId(), new Figures(person.getName(), show(claimed), none ? "n/a" : show(due),
                     show(overdue), score(settled, overdueCount)));
