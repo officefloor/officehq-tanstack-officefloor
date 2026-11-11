@@ -11,9 +11,14 @@ final class ClaimAudit {
     private ClaimAudit() {}
 
     static String line(String event, Sheet sheet, String user, Person person, Claim claim) {
+        return unnumbered(event, sheet, user, person, claim)
+                + (claim.getNumber() == null ? "" : " number=" + claim.getNumber());
+    }
+
+    /** The claim's audit record without its number. */
+    static String unnumbered(String event, Sheet sheet, String user, Person person, Claim claim) {
         ClaimResponse shown = ClaimResponse.from(claim);
         return event + " sheet=" + sheet.id() + " by=" + user + " person=" + person.getName()
-                + " amount=" + shown.amount() + " date=" + shown.date()
-                + (claim.getNumber() == null ? "" : " number=" + claim.getNumber());
+                + " amount=" + shown.amount() + " date=" + shown.date();
     }
 }

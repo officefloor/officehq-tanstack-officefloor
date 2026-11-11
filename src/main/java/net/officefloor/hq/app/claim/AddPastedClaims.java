@@ -156,10 +156,10 @@ public class AddPastedClaims {
                 throw new InvalidClaimStatusException("Period " + full.name() + " allows at most " + full.cap()
                         + " open claims per person");
             }
-            claim.moveTo(ClaimStatus.OPEN);
+            claim.moveTo(OpenClaim.opensTo(sheet, claim, people, rates, settings));
             claim.setOpenedBy(user);
             if (!claims.markOpened(claim)) throw new InvalidClaimStatusException(ClaimStatus.DRAFT, ClaimStatus.OPEN);
-            claim.setNumber(ClaimNumbers.next(sheet, claim, terms, periods, claims));
+            if (claim.getStatus() == ClaimStatus.OPEN) claim.setNumber(ClaimNumbers.next(sheet, claim, terms, periods, claims));
             claims.save(claim);
             log.record(claim, user, sheet.today(), LogClaimStatus.due(sheet, claim, people, rates, settings));
             lines.add(ClaimAudit.line(claim.getStatus().auditEvent(), sheet, user, person, claim));

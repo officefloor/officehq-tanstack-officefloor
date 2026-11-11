@@ -12,7 +12,7 @@ import { useUser } from '../session/session';
 const asName = (s: string) => s.trim().toLowerCase();
 
 // Every status the header counts — the same as the summary's.
-const STATUSES: ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'];
+const STATUSES: ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID', 'REVIEW'];
 
 // The sheet's header counters, at the top of the sheet: everyone on it (retired people included),
 // the claims in each status, and the sheet's due-total and overdue-total — worked from the same

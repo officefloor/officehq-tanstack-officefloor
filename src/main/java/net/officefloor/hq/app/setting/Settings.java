@@ -17,7 +17,8 @@ import java.util.NavigableMap;
  * claim's due, on the claim's date, needs a proof before it is settled or approved, and its note
  * threshold (none: none), above which a claim's due, on the claim's date, needs a note before it is opened, and
  * its rounding mode (half-up or half-even; none: by the policy date), how a claim dated then rounds, and
- * its proof threshold per grade (none: the sheet's proof threshold). The value in force on a date is the one with the
+ * its proof threshold per grade (none: the sheet's proof threshold), and its review threshold (none: none),
+ * above which a claim's due, on the claim's date, sends it to REVIEW when it is opened. The value in force on a date is the one with the
  * latest from-date on or before it; before every from-date the starting value (floor 1.00, late
  * percent 0.00, terms 14; none for the others). A claim takes its floor, late percent and terms on
  * its date; the clerk limit and the cap are those in force on the sheet's today ({@code today}).
@@ -56,6 +57,7 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
     public static final String NOTE_THRESHOLD = "note-threshold";
     public static final String ALERT_THRESHOLD = "alert-threshold";
     public static final String ROUNDING = "rounding";
+    public static final String REVIEW_THRESHOLD = "review-threshold";
 
     /** The rounding modes a sheet may set, as they are recorded. */
     public static final String HALF_UP = "half-up";
@@ -224,6 +226,21 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
     public boolean needsNote(BigDecimal due, LocalDate date, String note) {
         BigDecimal threshold = noteThresholdOn(date);
         return (note == null || note.isBlank()) && threshold != null && due != null && due.compareTo(threshold) > 0;
+    }
+
+    /** The review threshold in force on a date (null: none). */
+    public BigDecimal reviewThresholdOn(LocalDate date) {
+        return figureOn(REVIEW_THRESHOLD, date);
+    }
+
+    /**
+     * Whether a claim dated {@code date} with a due (null: n/a) goes to REVIEW when it is opened:
+     * its due is above the review threshold in force on its date. A due of n/a, or no threshold,
+     * goes straight to OPEN.
+     */
+    public boolean needsReview(BigDecimal due, LocalDate date) {
+        BigDecimal threshold = reviewThresholdOn(date);
+        return threshold != null && due != null && due.compareTo(threshold) > 0;
     }
 
     /** The cap in force on a date (null: none). */

@@ -81,15 +81,27 @@ public class ClaimRepository {
     }
 
     /**
-     * Mark the claim OPEN in the store when it is still DRAFT there, holding its row until the
+     * Mark the claim with its new status, OPEN or REVIEW, in the store when it is still DRAFT there, holding its row until the
      * request commits so two opens of the same claim cannot both go through; false when another
      * request changed it first.
      */
     public boolean markOpened(Claim claim) {
-        boolean opened = jdbc.update("UPDATE claim SET status = 'OPEN' WHERE id = ? AND sheet_id = ? AND status = 'DRAFT'",
-                claim.getId(), claim.getSheetId()) == 1;
+        boolean opened = jdbc.update("UPDATE claim SET status = ? WHERE id = ? AND sheet_id = ? AND status = 'DRAFT'",
+                claim.getStatus().name(), claim.getId(), claim.getSheetId()) == 1;
         if (opened) keepHistory(claim);
         return opened;
+    }
+
+    /**
+     * Mark the claim OPEN in the store when it is still in REVIEW there, holding its row until the
+     * request commits so two reviews of the same claim cannot both go through; false when another
+     * request changed it first.
+     */
+    public boolean markReviewed(Claim claim) {
+        boolean reviewed = jdbc.update("UPDATE claim SET status = 'OPEN' WHERE id = ? AND sheet_id = ? AND status = 'REVIEW'",
+                claim.getId(), claim.getSheetId()) == 1;
+        if (reviewed) keepHistory(claim);
+        return reviewed;
     }
 
     /**

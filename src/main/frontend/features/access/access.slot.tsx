@@ -7,7 +7,7 @@ import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/session';
 import { poolsKey } from '../pools/pools';
 import { periodsKey } from '../periods/periods';
-import { ACTIONS, ALERT_THRESHOLD, CAP, DATED_KEYS, FLOOR, GRADES, LATE_PCT, LIMIT, NOTE_THRESHOLD, PERM_ROLES, POLICY_DATE, POT, PROOF_THRESHOLD, ROUNDING, STANDING_RULE, TERMS, ROLES, gradeGraceKey, gradeProofThresholdKey, rolesKey, settingsKey, useRoles, useSettings } from './access';
+import { ACTIONS, ALERT_THRESHOLD, CAP, DATED_KEYS, FLOOR, GRADES, LATE_PCT, LIMIT, NOTE_THRESHOLD, PERM_ROLES, REVIEW_THRESHOLD, POLICY_DATE, POT, PROOF_THRESHOLD, ROUNDING, STANDING_RULE, TERMS, ROLES, gradeGraceKey, gradeProofThresholdKey, rolesKey, settingsKey, useRoles, useSettings } from './access';
 import type { Role, Settings, SettingsChange } from './access';
 
 type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms' | 'gradeGrace' | 'gradeProofThreshold'>;
@@ -29,7 +29,8 @@ type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms' | 'gradeGrace' | 'grad
 // dated, whose rates a grade takes on a date this sheet has none in force, and its fiscal year start month
 // (1 to 12), not dated, and its alert threshold (blank: off), not dated, above which a person's due-total
 // is alerted, and its rounding mode (half-up or half-even; blank: none, by the policy date), dated, by which
-// a claim dated then rounds. Only the settings typed in (or stepped into)
+// a claim dated then rounds, and its review threshold (blank: none), dated, above which a claim's due on its
+// date sends it to REVIEW instead of OPEN when it is opened. Only the settings typed in (or stepped into)
 // since the last save are sent, so saving one leaves the other as it is.
 function SettingsForm({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
@@ -51,6 +52,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
     fiscalStartMonth: '',
     alertThreshold: '',
     rounding: '',
+    reviewThreshold: '',
   });
   const [touched, setTouched] = useState<Set<Key>>(new Set());
   const [gradeFields, setGradeFields] = useState<Record<string, string>>({});
@@ -210,6 +212,14 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         return;
       }
       body.rounding = rounding;
+    }
+    if (touched.has('reviewThreshold')) {
+      const threshold = fields.reviewThreshold.trim();
+      if (threshold !== '' && !REVIEW_THRESHOLD.test(threshold)) {
+        setError('A review threshold is 0.00 or more, with up to two decimals, or blank.');
+        return;
+      }
+      body.reviewThreshold = threshold;
     }
     if (gradesTouched.size > 0) {
       const gradeTerms: Record<string, string> = {};
@@ -624,6 +634,21 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         {fromInput('rounding')}{' '}
         <span>
           now: <strong data-testid="setting-rounding-current">{settings.data?.rounding ?? ''}</strong>
+        </span>{' '}
+        <label>
+          Review threshold{' '}
+          <input
+            data-testid="setting-review-threshold"
+            inputMode="decimal"
+            placeholder="none"
+            value={fields.reviewThreshold}
+            onFocus={() => touch('reviewThreshold')}
+            onChange={(e) => change('reviewThreshold', e.target.value)}
+          />
+        </label>{' '}
+        {fromInput('review-threshold')}{' '}
+        <span>
+          now: <strong data-testid="setting-review-threshold-current">{settings.data?.reviewThreshold ?? ''}</strong>
         </span>{' '}
         {ACTIONS.map((action) => (
           <span key={action}>

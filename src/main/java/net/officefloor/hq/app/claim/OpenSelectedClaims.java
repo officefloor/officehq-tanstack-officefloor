@@ -23,7 +23,7 @@ import net.officefloor.plugin.variable.Val;
  * claims newest first), numbering each as it is opened. A claim that cannot be opened (not a
  * draft, dated inside a closed period, its person at its period's cap, not on the sheet, above the note threshold with an empty note) is refused and left as it is; every one is
  * refused when the permission matrix does not allow the user's role to open, or the sheet is
- * archived. Each claim opened is logged and audited as a single open is: its CLAIM_OPENED line,
+ * archived. A claim sent to REVIEW (above the review threshold) counts as opened. Each claim opened is logged and audited as a single open is: its CLAIM_OPENED line,
  * then the figures it moved.
  */
 public class OpenSelectedClaims {
@@ -52,9 +52,11 @@ public class OpenSelectedClaims {
             for (Claim claim : theirs) {
                 if (!selected.contains(claim.getId())) continue;
                 if (OpenClaim.needsNote(sheet, claim, people, rates, settings)) continue;
-                if (!opens(sheet, claim, periods, claims)) continue;
+                if (!opens(sheet, claim, periods, claims, people, rates, settings)) continue;
                 claim.setOpenedBy(user);
-                claim.setNumber(ClaimNumbers.next(sheet, claim, settings.find(sheet.id()), periods, claims));
+                if (claim.getStatus() == ClaimStatus.OPEN) {
+                    claim.setNumber(ClaimNumbers.next(sheet, claim, settings.find(sheet.id()), periods, claims));
+                }
                 claims.save(claim);
                 log.record(claim, user, sheet.today(), LogClaimStatus.due(sheet, claim, people, rates, settings));
                 opened++;
@@ -67,12 +69,16 @@ public class OpenSelectedClaims {
         result.set(new BulkOpenResponse(opened, requested - opened));
     }
 
-    /** Moves the claim to OPEN when its status, period and period's cap allow it and no one opened it first. */
-    private static boolean opens(Sheet sheet, Claim claim, PeriodRepository periods, ClaimRepository claims) {
+    /**
+     * Moves the claim to OPEN (or REVIEW, above the review threshold) when its status, period and period's cap
+     * allow it and no one opened it first.
+     */
+    private static boolean opens(Sheet sheet, Claim claim, PeriodRepository periods, ClaimRepository claims,
+            PersonRepository people, RateRepository rates, SettingsRepository settings) {
         if (periods.closedOn(sheet.id(), claim.getDueBy()) != null) return false;
         if (PeriodCaps.full(sheet, claim, periods, claims) != null) return false;
         try {
-            claim.moveTo(ClaimStatus.OPEN);
+            claim.moveTo(OpenClaim.opensTo(sheet, claim, people, rates, settings));
         } catch (InvalidClaimStatusException e) {
             return false;
         }

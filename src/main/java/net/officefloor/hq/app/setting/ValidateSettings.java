@@ -19,7 +19,7 @@ public class ValidateSettings {
             Settings.gradeTermsKey("C"), Settings.PROOF_THRESHOLD, Settings.NOTE_THRESHOLD, Settings.ROUNDING,
             Settings.gradeGraceKey("A"), Settings.gradeGraceKey("B"), Settings.gradeGraceKey("C"),
             Settings.gradeProofThresholdKey("A"), Settings.gradeProofThresholdKey("B"),
-            Settings.gradeProofThresholdKey("C"));
+            Settings.gradeProofThresholdKey("C"), Settings.REVIEW_THRESHOLD);
 
     public void validate(@RequestBody SettingsRequest request, Out<SettingsInput> body)
             throws InvalidSettingException {
@@ -164,6 +164,15 @@ public class ValidateSettings {
             }
             rounding = value;
         }
+        boolean reviewThresholdChanged = request != null && request.reviewThreshold() != null;
+        BigDecimal reviewThreshold = null;
+        if (reviewThresholdChanged && !request.reviewThreshold().trim().isEmpty()) {
+            String value = request.reviewThreshold().trim();
+            if (!FIGURE.matcher(value).matches()) {
+                throw new InvalidSettingException("A review threshold is 0.00 or more, with up to two decimals, or blank");
+            }
+            reviewThreshold = new BigDecimal(value).setScale(2);
+        }
         Map<String, String> perms = new LinkedHashMap<>();
         if (request != null && request.perms() != null) {
             for (String action : request.perms().keySet()) {
@@ -252,6 +261,7 @@ public class ValidateSettings {
                 numberingChanged, numberingFrom, gradeTerms, capChanged, cap, from,
                 thresholdChanged, threshold, perms, graceChanged, graceDays, noteThresholdChanged, noteThreshold,
                 entryChanged, entryDate, gradeGrace, gradeProofThreshold, potChanged, pot, parentChanged, parent,
-                fiscalChanged, fiscalStartMonth, alertChanged, alertThreshold, roundingChanged, rounding));
+                fiscalChanged, fiscalStartMonth, alertChanged, alertThreshold, roundingChanged, rounding,
+                reviewThresholdChanged, reviewThreshold));
     }
 }

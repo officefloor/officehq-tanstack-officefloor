@@ -47,10 +47,12 @@ export type Settings = {
   alertThreshold: string;
   /** The rounding mode, half-up or half-even ('' for none: by the policy date), dated: a claim rounds by the one in force on its date. */
   rounding: string;
+  /** The due above which a claim, on its date, goes to REVIEW instead of OPEN when it is opened ('' for none), dated. */
+  reviewThreshold: string;
   /**
    * Every value recorded for each figure setting, by key (clerk-limit, floor, terms, late-pct,
    * terms-A, terms-B, terms-C, cap, proof-threshold, note-threshold, grace-A, grace-B, grace-C, proof-threshold-A, proof-threshold-B,
-   * proof-threshold-C), in from-date order ('' for none). The values above are those
+   * proof-threshold-C, rounding, review-threshold), in from-date order ('' for none). The values above are those
    * in force on the sheet's today.
    */
   dated?: Record<string, { from: string; value: string }[]>;
@@ -66,6 +68,7 @@ export const DATED_KEYS = {
   proofThreshold: 'proof-threshold',
   noteThreshold: 'note-threshold',
   rounding: 'rounding',
+  reviewThreshold: 'review-threshold',
 } as const;
 
 /** The grades that may have their own terms. */
@@ -172,6 +175,9 @@ export const PROOF_THRESHOLD = /^\d+(\.\d{1,2})?$/;
 
 /** A note threshold as the screen takes it: blank, or 0.00 or more with up to two decimals. */
 export const NOTE_THRESHOLD = /^\d+(\.\d{1,2})?$/;
+
+/** A review threshold as the screen takes it: blank, or 0.00 or more with up to two decimals. */
+export const REVIEW_THRESHOLD = /^\d+(\.\d{1,2})?$/;
 
 /** A rounding mode as the screen takes it: blank, half-up or half-even. */
 export const ROUNDING = /^(half-up|half-even)$/;

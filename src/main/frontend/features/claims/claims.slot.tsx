@@ -20,13 +20,15 @@ import { useTemplates } from '../templates/templates';
 
 // A clerk's settle above the clerk limit leaves the claim PENDING; a steward approves it or rejects
 // it with a reason (typed in the row). A steward re-settles a SETTLED claim at its figure today.
+// A steward reviews a claim in REVIEW (above the review threshold when opened): it is OPEN, numbered then.
 // A DRAFT is deleted, and restored to a DRAFT on the sheet's today it was deleted.
-type Action = 'open' | 'settle' | 'void' | 'approve' | 'reject' | 'resettle' | 'delete' | 'restore';
+type Action = 'open' | 'review' | 'settle' | 'void' | 'approve' | 'reject' | 'resettle' | 'delete' | 'restore';
 type Fields = { amount: string; date: string; note: string; corrects: string; ref: string; tags: string };
 const EMPTY: Fields = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
 
 const ACTIONS: { action: Action; label: string }[] = [
   { action: 'open', label: 'Open' },
+  { action: 'review', label: 'Review' },
   { action: 'settle', label: 'Settle' },
   { action: 'void', label: 'Void' },
   { action: 'approve', label: 'Approve' },

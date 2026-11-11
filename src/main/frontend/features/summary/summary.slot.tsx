@@ -11,7 +11,7 @@ import { isActive } from '../active/active';
 import { useVoidReasons } from '../voidreasons/voidReasons';
 
 // Every status the summary counts.
-const STATUSES: ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'];
+const STATUSES: ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID', 'REVIEW'];
 
 // The sheet's summary, worked from the same figures as the lists: per grade, the people on it today
 // (retired people left out), their due-totals added up and how many of them are active; per

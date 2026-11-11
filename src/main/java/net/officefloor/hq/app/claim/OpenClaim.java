@@ -11,7 +11,8 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * Opens the claim, recording the signed-in user who opened it. Only a role the permission matrix allows may open. A
- * claim whose due is above the note threshold in force on its date is refused while its note is empty.
+ * claim whose due is above the note threshold in force on its date is refused while its note is empty. A claim
+ * whose due is above the review threshold in force on its date goes to REVIEW instead, still recording who opened it.
  */
 public class OpenClaim {
     public void apply(@Val Sheet sheet, @Val Claim claim, RoleRepository roles, SettingsRepository settings,
@@ -22,8 +23,19 @@ public class OpenClaim {
             throw new InvalidClaimStatusException("A " + role + " may not open a claim");
         }
         if (needsNote(sheet, claim, people, rates, settings)) throw new InvalidClaimStatusException(NoteRequired.MESSAGE);
-        claim.moveTo(ClaimStatus.OPEN);
+        claim.moveTo(opensTo(sheet, claim, people, rates, settings));
         claim.setOpenedBy(user);
+    }
+
+    /**
+     * The status a DRAFT claim moves to when it is opened: REVIEW when its due, as it stands before it is
+     * opened, is above the review threshold in force on its date, else OPEN. Any other claim cannot be opened.
+     */
+    static ClaimStatus opensTo(Sheet sheet, Claim claim, PersonRepository people, RateRepository rates,
+            SettingsRepository settings) throws InvalidClaimStatusException {
+        if (claim.getStatus() != ClaimStatus.DRAFT) throw new InvalidClaimStatusException(claim.getStatus(), ClaimStatus.OPEN);
+        return settings.find(sheet.id()).needsReview(LogClaimStatus.due(sheet, claim, people, rates, settings),
+                claim.getDate()) ? ClaimStatus.REVIEW : ClaimStatus.OPEN;
     }
 
     /** Whether the claim's due, as it stands before it is opened, needs a note it does not have. */

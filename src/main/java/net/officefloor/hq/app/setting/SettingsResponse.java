@@ -19,13 +19,14 @@ import java.util.Map;
  * days ('' for none); and each grade's proof threshold with two decimals ('' for none); and the pot
  * with two decimals ('' for none); and the parent sheet's id ('' for none); and the fiscal year start
  * month, 1 to 12; and the alert threshold with two decimals ('' for off); and the rounding mode,
- * half-up or half-even ('' for none).
+ * half-up or half-even ('' for none); and the review threshold with two decimals ('' for none).
  */
 public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
         String periodNumberingFrom, Map<String, String> gradeTerms, String cap, Map<String, List<Dated>> dated,
         String proofThreshold, Map<String, String> perms, String graceDays, String noteThreshold,
         String entryDate, Map<String, String> gradeGrace, Map<String, String> gradeProofThreshold,
-        String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding) {
+        String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding,
+        String reviewThreshold) {
 
     /** A value ('' for none) recorded from a date (yyyy-MM-dd). */
     public record Dated(String from, String value) {
@@ -50,7 +51,8 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
                 gradeProofThreshold(settings),
                 show(settings.pot()), parent == null ? "" : parent,
                 Integer.toString(settings.fiscalStart()), show(settings.alertThreshold()),
-                rounding(settings.valueOn(Settings.ROUNDING, today)));
+                rounding(settings.valueOn(Settings.ROUNDING, today)),
+                show(settings.reviewThresholdOn(today)));
     }
 
     private static String rounding(String value) {
