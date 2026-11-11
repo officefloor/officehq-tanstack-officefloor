@@ -25,7 +25,7 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
 
     /**
      * A person's figures: their name, claimed, due-total (n/a when none) and overdue-total, and their score:
-     * the due of their SETTLED claims that count (skipping n/a) divided by 100, minus 5 for every overdue
+     * the due of their SETTLED claims that count and correct nothing (skipping n/a) divided by 100, minus 5 for every overdue
      * claim of theirs that counts, rounded half to even to a whole number.
      */
     public record Figures(String name, String claimed, String dueTotal, String overdueTotal, String score) {
@@ -77,7 +77,8 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
                 BigDecimal figure = ClaimFigure.withLate(claim, all, grade, settings, today);
                 if (figure != null) due = due.add(figure);
                 if (figure != null && overdue(claim, grade, settings, today)) overdue = overdue.add(figure);
-                if (figure != null && claim.getStatus() == net.officefloor.hq.app.claim.ClaimStatus.SETTLED) {
+                if (figure != null && claim.getStatus() == net.officefloor.hq.app.claim.ClaimStatus.SETTLED
+                        && !claim.isCorrection()) {
                     settled = settled.add(figure);
                 }
                 if (overdue(claim, grade, settings, today)) overdueCount++;

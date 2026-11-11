@@ -1,6 +1,6 @@
 import { gradeOn } from '../people/people';
 import type { GradeFrom, Hold } from '../people/people';
-import { counts } from '../claims/claims';
+import { counts, isCorrection } from '../claims/claims';
 import type { Claim } from '../claims/claims';
 import { claimDue, NA, rateOn } from '../rates/rates';
 import type { Dated, Late, Rate } from '../rates/rates';
@@ -39,7 +39,7 @@ function divHalfEven(n: bigint, d: bigint): bigint {
 }
 
 /**
- * A person's score: the due of their SETTLED claims that count (skipping n/a) divided by 100, minus 5
+ * A person's score: the due of their SETTLED claims that count and correct nothing (skipping n/a) divided by 100, minus 5
  * for every overdue claim of theirs that counts, rounded half to even to a whole number.
  */
 export function personScore(
@@ -52,7 +52,7 @@ export function personScore(
   late: Late,
 ): string {
   const settled = claims
-    .filter((c) => c.status === 'SETTLED' && counts(c, holds, today))
+    .filter((c) => c.status === 'SETTLED' && !isCorrection(c) && counts(c, holds, today))
     .map((c) => claimDue(c, rateOn(rates, gradeOn(grades, c.date), c.date, c.id), floor, late, gradeOn(grades, c.date)))
     .filter((d) => d !== NA)
     .reduce((n, d) => n + hundredths(d), 0n);
