@@ -1,0 +1,120 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java b/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java
+index cb33da5d5..0832e2905 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AddPastedClaims.java
+@@ -123,7 +123,7 @@ public class AddPastedClaims {
+                     throw new InvalidClaimException("The reference " + claim.getRef() + " is pasted more than once");
+                 }
+                 new CheckClaimRef().check(claim, claims);
+-                claim.fixDueBy(terms.termsFor(person, date), holidays.dates(sheet.id()));
++                claim.fixDueBy(terms.termsFor(person, sheet.today()), holidays.dates(sheet.id()));
+                 new CheckClaimPeriod().check(sheet, claim, periods);
+                 claim.setLateEntry(periods.softClosedOn(sheet.id(), claim.getDueBy()) != null);
+                 new CheckClaimRetired().check(sheet, claim, people);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AddPlanClaims.java b/src/main/java/net/officefloor/hq/app/claim/AddPlanClaims.java
+index 95ddd8dfd..62889df27 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AddPlanClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AddPlanClaims.java
+@@ -53,7 +53,7 @@ public class AddPlanClaims {
+                 if (done.contains(date)) continue;
+                 Claim claim = new Claim(null, sheet.id(), person.getId(), plan.amount(), date, "",
+                         ClaimStatus.DRAFT, null, null, null);
+-                claim.fixDueBy(terms.termsFor(person, date), holidayDates);
++                claim.fixDueBy(terms.termsFor(person, sheet.today()), holidayDates);
+                 try {
+                     new CheckClaimPeriod().check(sheet, claim, periods);
+                     new CheckClaimRetired().check(sheet, claim, people);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java b/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
+index 5fade2fcf..97b9420cf 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/BuildClaim.java
+@@ -12,7 +12,7 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+  * A new DRAFT claim, dated (when left undated) the sheet's entry date while it is set, else its today, its due-by fixed now: the terms-th business day after its date
+- * (skipping Saturdays, Sundays and the holidays on the sheet now), its terms its person's own, else those of their grade on that date, else the sheet's.
++ * (skipping Saturdays, Sundays and the holidays on the sheet now), its terms those in force on the sheet's today: its person's own, else those of the grade they have that day, else the sheet's.
+  * Due by a date inside a soft-closed period (its period is the one containing its due-by), it is a late entry.
+  */
+ public class BuildClaim {
+@@ -26,7 +26,7 @@ public class BuildClaim {
+         claim.setCorrects(input.corrects());
+         claim.setRef(input.ref());
+         claim.setTags(input.tags());
+-        claim.fixDueBy(terms.termsFor(person, date), holidays.dates(sheet.id()));
++        claim.fixDueBy(terms.termsFor(person, sheet.today()), holidays.dates(sheet.id()));
+         claim.setLateEntry(periods.softClosedOn(sheet.id(), claim.getDueBy()) != null);
+         claimOut.set(claim);
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 382c9864e..76e7883e5 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -87,7 +87,7 @@ public class Claim {
+     public void setAmount(BigDecimal amount) { this.amount = amount; }
+     public LocalDate getDate() { return date; }
+     public void setDate(LocalDate date) { this.date = date; }
+-    /** Its due-by, fixed when it was made: the terms-th business day after its date (skipping weekends and the sheet's holidays then), its terms its person's own, else its grade's then. Kept when its date changes; fixed again with the same terms when a holiday on or before it is added while it is not SETTLED or VOID. */
++    /** Its due-by, fixed when it was made: the terms-th business day after its date (skipping weekends and the sheet's holidays then), its terms those in force on the day it was made (the sheet's today then): its person's own, else those of the grade they had that day, else the sheet's. Kept when its date changes; fixed again with the same terms when a holiday on or before it is added while it is not SETTLED or VOID. */
+     public LocalDate getDueBy() { return dueBy; }
+     public void setDueBy(LocalDate dueBy) { this.dueBy = dueBy; }
+     /** The terms (business days) its due-by was fixed with. */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java b/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java
+index f8e886e11..0560ca0a9 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java
+@@ -36,7 +36,7 @@ public class SplitClaim {
+                 claim.getNote(), ClaimStatus.OPEN, null, null, user);
+         made.setSplitFrom(claim.getNumber());
+         made.setTags(claim.getTags());
+-        made.fixDueBy(settings.termsFor(person, claim.getDate()), holidays.dates(sheet.id()));
++        made.fixDueBy(settings.termsFor(person, sheet.today()), holidays.dates(sheet.id()));
+         made.setLateEntry(periods.softClosedOn(sheet.id(), made.getDueBy()) != null);
+         splitOut.set(new Split(made));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/quick/CheckQuickAddPeriod.java b/src/main/java/net/officefloor/hq/app/quick/CheckQuickAddPeriod.java
+index ac39fe9e4..d0f7275ee 100644
+--- a/src/main/java/net/officefloor/hq/app/quick/CheckQuickAddPeriod.java
++++ b/src/main/java/net/officefloor/hq/app/quick/CheckQuickAddPeriod.java
+@@ -13,7 +13,7 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+  * Refuses a quick-add while the due-by the claim would be fixed with (its date, the sheet's entry date
+- * while it is set, else its today, its person's terms in business days on, skipping weekends and holidays) is inside a closed period, before anything is written.
++ * while it is set, else its today, its person's terms in force on the sheet's today in business days on, skipping weekends and holidays) is inside a closed period, before anything is written.
+  */
+ public class CheckQuickAddPeriod {
+     public void check(@Val Sheet sheet, @Val Person person, PeriodRepository periods, SettingsRepository settings,
+@@ -22,7 +22,7 @@ public class CheckQuickAddPeriod {
+         Settings terms = settings.find(sheet.id());
+         LocalDate date = terms.entryDay(sheet.today());
+         Period closed = periods.closedOn(sheet.id(),
+-                holidays.dueBy(sheet.id(), date, terms.termsFor(person, date)));
++                holidays.dueBy(sheet.id(), date, terms.termsFor(person, sheet.today())));
+         if (closed != null) throw new ClosedPeriodException(closed.name());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Settings.java b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+index 9251df208..bc4092d7c 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+@@ -20,8 +20,8 @@ import java.util.NavigableMap;
+  * its proof threshold per grade (none: the sheet's proof threshold), and its review threshold (none: none),
+  * above which a claim's due, on the claim's date, sends it to REVIEW when it is opened. The value in force on a date is the one with the
+  * latest from-date on or before it; before every from-date the starting value (floor 1.00, late
+- * percent 0.00, terms 14; none for the others). A claim takes its floor, late percent and terms on
+- * its date; the clerk limit and the cap are those in force on the sheet's today ({@code today}).
++ * percent 0.00, terms 14; none for the others). A claim takes its floor and late percent on
++ * its date, and its terms on the day it was made; the clerk limit and the cap are those in force on the sheet's today ({@code today}).
+  * Not dated: its policy date (null: the sheet's today): a claim dated before it rounds half up, one
+  * on or after it half to even, and its period numbering from (null: off): while the sheet's today
+  * is on or after it, a claim opened is numbered within its period, and its permission matrix
+@@ -185,7 +185,7 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
+         return value == null || value.isEmpty() ? null : Integer.valueOf(value);
+     }
+ 
+-    /** The terms of a person's claim on a date: their own in force then, else their grade's then, else the sheet's. */
++    /** The terms of a person's claim made on a date (the sheet's today then): their own in force then, else their grade's then, else the sheet's. */
+     public int termsFor(net.officefloor.hq.app.person.Person person, LocalDate date) {
+         Integer own = person.termsOn(date);
+         return own != null ? own : termsFor(person.gradeOn(date), date);
