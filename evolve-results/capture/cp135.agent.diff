@@ -1,0 +1,90 @@
+diff --git a/src/main/frontend/features/export/export.slot.tsx b/src/main/frontend/features/export/export.slot.tsx
+index 1d8b23b67..e1a8d6537 100644
+--- a/src/main/frontend/features/export/export.slot.tsx
++++ b/src/main/frontend/features/export/export.slot.tsx
+@@ -5,6 +5,8 @@ import { claimDue, personDueTotal, rateOn, useRates } from '../rates/rates';
+ import { periodOf, usePeriods } from '../periods/periods';
+ import { useCap, useFloor, useLate } from '../access/access';
+ import { useSheetToday } from '../sheet/sheet';
++import { getJson } from '../../api/http';
++import type { Pool } from '../pools/pools';
+ 
+ // A CSV value: wrapped in double quotes (any quote inside doubled) when it holds a comma, a quote
+ // or a line break.
+@@ -87,8 +89,33 @@ function ExportClaims({ sheetId }: { sheetId: string }) {
+   );
+ }
+ 
++// Downloads the pools as a CSV file: a header line, then one line per member, pools in the order
++// added and each pool's members in the order added, a member pool as pool:<name> and the cut as
++// the pool's row shows it ('' when none). Quoted and ended as the people export. The pools are read
++// afresh when pressed, so a change just made is always in the file.
++function ExportPools({ sheetId }: { sheetId: string }) {
++  const download = async () => {
++    const { pools } = await getJson<{ pools: Pool[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/pools`);
++    const lines = [['pool', 'member', 'share', 'cut']];
++    for (const p of [...pools].sort((a, b) => a.added - b.added)) {
++      for (const m of p.members) {
++        lines.push([p.name, m.memberPool ? `pool:${m.memberPool}` : m.name, m.share, m.cut]);
++      }
++    }
++    downloadCsv(`pools-${sheetId}.csv`, lines);
++  };
++
++  return (
++    <p>
++      <button type="button" data-testid="export-pools" onClick={() => void download()}>
++        Export pools (CSV)
++      </button>
++    </p>
++  );
++}
+ 
+ export const contributions = [
+   SheetBody.fill({ order: 2, Component: ExportPeople }),
+   SheetBody.fill({ order: 2.1, Component: ExportClaims }),
++  SheetBody.fill({ order: 2.2, Component: ExportPools }),
+ ];
+diff --git a/src/main/frontend/features/pools/pools.ts b/src/main/frontend/features/pools/pools.ts
+index 777b1ee68..715b877a4 100644
+--- a/src/main/frontend/features/pools/pools.ts
++++ b/src/main/frontend/features/pools/pools.ts
+@@ -22,8 +22,9 @@ export type PoolMember = {
+   active: boolean;
+ };
+ 
+-/** A pool on the sheet: its members in the order added, their total share, and balanced when it is exactly 100.00. */
+-export type Pool = { name: string; members: PoolMember[]; totalShare: string; balanced: boolean };
++/** A pool on the sheet: its members in the order added, their total share, and balanced when it is exactly 100.00.
++ *  `added` orders the pools as they were added (a larger one added later). */
++export type Pool = { name: string; members: PoolMember[]; totalShare: string; balanced: boolean; added: number };
+ 
+ // Under the people's key: a change to a person (a retirement, a new name) reads the pools again too.
+ export const poolsKey = (sheetId: string) => [...peopleKey(sheetId), 'pools'] as const;
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java b/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
+index af075427a..8a26841a6 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
+@@ -15,9 +15,11 @@ import java.util.List;
+  * member has a cut). A pool whose every member is retired has no cuts. A hold or a retirement changes neither the total nor whether the pool is balanced. An
+  * unbalanced pool, or no pot, has no cuts. A member whose dates do not include the sheet's today is
+  * left out entirely: not in the total, not in the balance, and no cut (not even 0.00). A pool that is a member of another has no pot of its own: its
+- * pot is its cut in the pool above (none when that pool has no cuts).
++ * pot is its cut in the pool above (none when that pool has no cuts). {@code added} orders the pools as they
++ * were added (a larger one added later).
+  */
+-public record PoolResponse(String name, List<PoolMemberResponse> members, String totalShare, boolean balanced) {
++public record PoolResponse(String name, List<PoolMemberResponse> members, String totalShare, boolean balanced,
++        long added) {
+     private static final BigDecimal HUNDRED = new BigDecimal("100.00");
+ 
+     public static PoolResponse from(Pool pool, List<PoolMember> members, BigDecimal pot) {
+@@ -28,7 +30,7 @@ public record PoolResponse(String name, List<PoolMemberResponse> members, String
+         for (int i = 0; i < members.size(); i++) {
+             shown.add(PoolMemberResponse.from(members.get(i), cuts == null ? null : cuts.get(i)));
+         }
+-        return new PoolResponse(pool.name(), shown, total.toPlainString(), balanced);
++        return new PoolResponse(pool.name(), shown, total.toPlainString(), balanced, pool.id());
+     }
+ 
+     /** The active members' shares added up, a retired member's counting as given. */
