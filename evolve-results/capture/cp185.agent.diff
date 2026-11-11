@@ -1,0 +1,323 @@
+diff --git a/src/main/frontend/features/claims/claims.slot.tsx b/src/main/frontend/features/claims/claims.slot.tsx
+index 851e2ce50..c08a42ec1 100644
+--- a/src/main/frontend/features/claims/claims.slot.tsx
++++ b/src/main/frontend/features/claims/claims.slot.tsx
+@@ -83,6 +83,8 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person })
+   const [inlineAmount, setInlineAmount] = useState<Record<string, string>>({});
+   // The amount typed to split off each claim, by claim id.
+   const [splitAmount, setSplitAmount] = useState<Record<string, string>>({});
++  // The amount typed to part-settle off each claim, by claim id.
++  const [partAmount, setPartAmount] = useState<Record<string, string>>({});
+   const [commentText, setCommentText] = useState<Record<string, string>>({});
+   // The line typed to add to each draft (label, quantity, unit amount), by claim id.
+   // Each claim's timeline as last shown: its audit lines, newest first.
+@@ -239,6 +241,36 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person })
+     split.mutate({ id, amount });
+   };
+ 
++  // Part-settle: an amount is split off an OPEN claim and the new claim settled at once, or nothing.
++  const settlePart = useMutation({
++    mutationFn: ({ id, amount }: { id: string; amount: string }) =>
++      postJson<Claim>(
++        `/api/sheets/${encodeURIComponent(sheetId)}/claims/${encodeURIComponent(id)}/settle-part`,
++        { amount },
++        user,
++      ),
++    onSuccess: (_c, { id }) => {
++      setPartAmount((a) => ({ ...a, [id]: '' }));
++      void queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
++      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
++    },
++    onError: (_e, { id }) =>
++      setRefused({
++        id,
++        message: 'That part cannot be settled: the claim must be OPEN, the part less than its amount, and you may settle it.',
++      }),
++  });
++
++  const settlePartClaim = (id: string) => {
++    setRefused(null);
++    const amount = (partAmount[id] ?? '').trim();
++    if (!AMOUNT.test(amount)) {
++      setRefused({ id, message: 'A part-settle needs an amount with up to two decimals.' });
++      return;
++    }
++    settlePart.mutate({ id, amount });
++  };
++
+   // A draft's amount changed in its row: the claim editor's save with only the amount changed, so
+   // the same rules (editable draft, not locked by another, no closed period, no viewer) hold.
+   const inline = useMutation({
+@@ -791,6 +823,19 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person })
+               <button type="button" data-testid="claim-split" onClick={() => splitClaim(c.id)}>
+                 Split
+               </button>{' '}
++              <input
++                data-testid="claim-settle-part-amount"
++                placeholder="Part to settle"
++                inputMode="decimal"
++                value={partAmount[c.id] ?? ''}
++                onChange={(e) => {
++                  setPartAmount((a) => ({ ...a, [c.id]: e.target.value }));
++                  setRefused((r) => (r !== null && r.id === c.id ? null : r));
++                }}
++              />{' '}
++              <button type="button" data-testid="claim-settle-part" onClick={() => settlePartClaim(c.id)}>
++                Settle part
++              </button>{' '}
+               <select
+                 data-testid="claim-reassign-to"
+                 aria-label="Move to"
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditSplitSettled.java b/src/main/java/net/officefloor/hq/app/claim/AuditSplitSettled.java
+new file mode 100644
+index 000000000..203b1285b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditSplitSettled.java
+@@ -0,0 +1,30 @@
++package net.officefloor.hq.app.claim;
++
++import jakarta.servlet.http.HttpServletRequest;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.setting.SettingsRepository;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.hq.app.watch.WatchNotices;
++import net.officefloor.hq.app.watch.WatchRepository;
++import net.officefloor.plugin.variable.Val;
++
++/**
++ * Records the settle of the claim a part-settle split off, after the split's own lines: its status
++ * line, a line per watcher of its person once it is settled, then the figures the settle moved.
++ */
++public class AuditSplitSettled {
++    public void audit(@Val Sheet sheet, @Val Split split, @Val PartSettle part, PersonRepository people,
++            WatchRepository watches, SheetRepository sheets, ClaimRepository claims, RateRepository rates,
++            SettingsRepository settings, HttpServletRequest request, Audit audit) {
++        String user = Audit.user(request);
++        Claim made = split.made();
++        audit.record(AuditClaimStatus.line(sheet, made, user, people));
++        WatchNotices.lines(sheet, made, user, people, watches).forEach(audit::record);
++        Rollup after = Rollup.of(sheet.id(), sheets.today(sheet.id()), people, claims, rates, settings.find(sheet.id()));
++        after.changesSince(part.split(), sheet.id(), user).forEach(audit::record);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/JudgePartSettle.java b/src/main/java/net/officefloor/hq/app/claim/JudgePartSettle.java
+new file mode 100644
+index 000000000..b8e8dd442
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/JudgePartSettle.java
+@@ -0,0 +1,31 @@
++package net.officefloor.hq.app.claim;
++
++import jakarta.servlet.http.HttpServletRequest;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.role.RoleRepository;
++import net.officefloor.hq.app.setting.Settings;
++import net.officefloor.hq.app.setting.SettingsRepository;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++
++/**
++ * Judges a part-settle on the original claim, before it is split: only a role the permission matrix
++ * allows to settle may, not the user who opened the claim or last edited it, and not while its due
++ * now is above the proof threshold without the proofs it needs. Refuses before anything is written.
++ */
++public class JudgePartSettle {
++    public void judge(@Val Sheet sheet, @Val Claim claim, PersonRepository people, RateRepository rates,
++            RoleRepository roles, SettingsRepository settingsStore, HttpServletRequest request)
++            throws InvalidClaimStatusException, SelfSettleException {
++        String user = Audit.user(request);
++        Settings settings = settingsStore.find(sheet.id());
++        String role = roles.roleOf(sheet.id(), user);
++        if (!settings.allows("settle", role)) {
++            throw new InvalidClaimStatusException("A " + role + " may not settle a claim");
++        }
++        String grade = people.find(sheet.id(), claim.getPersonId()).gradeOn(claim.getDate());
++        SettleClaim.judge(claim, user, SettleClaim.dueNow(sheet, claim, grade, rates, settings), grade, settings);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/PartSettle.java b/src/main/java/net/officefloor/hq/app/claim/PartSettle.java
+new file mode 100644
+index 000000000..c81f4fe40
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/PartSettle.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.rollup.Rollup;
++
++/** A part-settle's settling of the claim split off: the sheet's figures once split, before it was settled. */
++public record PartSettle(Rollup split) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java b/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
+index 10ead24bd..17fafc6c7 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
+@@ -37,6 +37,16 @@ public class SettleClaim {
+     static void settle(Sheet sheet, Claim claim, String user, PersonRepository people, RateRepository rates,
+             RoleRepository roles, SettingsRepository settingsStore)
+             throws InvalidClaimStatusException, SelfSettleException {
++        settle(sheet, claim, user, people, rates, roles, settingsStore, false);
++    }
++
++    /**
++     * Settles the claim as the given user would; when {@code judged} the four-eyes rules and the
++     * proof rule were already judged on another claim (a part-settle's original) and are skipped.
++     */
++    static void settle(Sheet sheet, Claim claim, String user, PersonRepository people, RateRepository rates,
++            RoleRepository roles, SettingsRepository settingsStore, boolean judged)
++            throws InvalidClaimStatusException, SelfSettleException {
+         Person person = people.find(sheet.id(), claim.getPersonId());
+         Settings settings = settingsStore.find(sheet.id());
+         String role = roles.roleOf(sheet.id(), user);
+@@ -54,10 +64,8 @@ public class SettleClaim {
+         if (!claim.getStatus().canMoveTo(ClaimStatus.SETTLED)) {
+             throw new InvalidClaimStatusException(claim.getStatus(), ClaimStatus.SETTLED);
+         }
+-        if (user.equals(claim.getOpenedBy())) throw new SelfSettleException(user);
+-        if (claim.isOwnedBy(user)) throw new SelfSettleException(user, "last edited");
+         BigDecimal due = ClaimFigure.floored(claim, figure, late, settings);
+-        if (settings.needsProof(due, grade, claim.getDate(), claim)) throw new InvalidClaimStatusException(ProofRequired.MESSAGE);
++        if (!judged) judge(claim, user, due, grade, settings);
+         if (!settings.withinClerkLimit(due, sheet.today()) && Role.CLERK.equals(role)) {
+             claim.moveTo(ClaimStatus.PENDING);
+             return;
+@@ -65,4 +73,22 @@ public class SettleClaim {
+         claim.moveTo(ClaimStatus.SETTLED);
+         claim.setSettledDue(due);
+     }
++
++    /**
++     * The four-eyes rules and the proof rule: refuses the user who opened the claim or last edited it,
++     * and a claim whose due is above the proof threshold without the proofs it needs.
++     */
++    static void judge(Claim claim, String user, BigDecimal due, String grade, Settings settings)
++            throws InvalidClaimStatusException, SelfSettleException {
++        if (user.equals(claim.getOpenedBy())) throw new SelfSettleException(user);
++        if (claim.isOwnedBy(user)) throw new SelfSettleException(user, "last edited");
++        if (settings.needsProof(due, grade, claim.getDate(), claim)) throw new InvalidClaimStatusException(ProofRequired.MESSAGE);
++    }
++
++    /** The due the claim would be settled at now, by the rules above; null for n/a. */
++    static BigDecimal dueNow(Sheet sheet, Claim claim, String grade, RateRepository rates, Settings settings) {
++        BigDecimal figure = claim.isStated() ? claim.getStatedDue()
++                : ClaimFigure.live(claim, rates.findAll(sheet.id()), grade, settings, sheet.today());
++        return ClaimFigure.floored(claim, figure, ClaimFigure.late(claim, figure, grade, settings, sheet.today()), settings);
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SettleSplitClaim.java b/src/main/java/net/officefloor/hq/app/claim/SettleSplitClaim.java
+new file mode 100644
+index 000000000..f16d79006
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/SettleSplitClaim.java
+@@ -0,0 +1,32 @@
++package net.officefloor.hq.app.claim;
++
++import jakarta.servlet.http.HttpServletRequest;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.role.RoleRepository;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.setting.SettingsRepository;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++/**
++ * Settles the claim a part-settle split off, as the settle button would (to PENDING when the clerk
++ * limit says so), the four-eyes and proof rules having been judged on the original; saves it and
++ * logs its status. Keeps the sheet's figures as split, so the rollup lines tell what the settle moved.
++ */
++public class SettleSplitClaim {
++    public void settle(@Val Sheet sheet, @Val Split split, PersonRepository people, RateRepository rates,
++            RoleRepository roles, SettingsRepository settings, ClaimRepository claims, ClaimLogRepository log,
++            HttpServletRequest request, Out<PartSettle> partOut)
++            throws InvalidClaimStatusException, SelfSettleException {
++        partOut.set(new PartSettle(Rollup.of(sheet.id(), sheet.today(), people, claims, rates, settings.find(sheet.id()))));
++        Claim made = split.made();
++        String user = Audit.user(request);
++        SettleClaim.settle(sheet, made, user, people, rates, roles, settings, true);
++        made.setSettleBatch(null);
++        claims.save(made);
++        log.record(made, user, sheet.today(), LogClaimStatus.due(sheet, made, people, rates, settings));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle-part.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle-part.POST.yml
+new file mode 100644
+index 000000000..540d12cfd
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle-part.POST.yml
+@@ -0,0 +1,67 @@
++# Part-settle an OPEN claim: split an amount off it as the split does, and settle the new claim at
++# once as the settle does (to PENDING when the clerk limit says so). The four-eyes rules and the
++# proof rule are judged on the original claim. Whatever the split or the settle would refuse
++# refuses the whole action (a 400 or 409) and writes nothing.
++# A viewer may change nothing: refused before anything is read or written.
++viewer:
++  class: net.officefloor.hq.app.role.CheckCanChange
++  next: validate
++validate:
++  class: net.officefloor.hq.app.claim.ValidateSplit
++  govern: [ transaction ]
++  next: loadSheet
++loadSheet:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ transaction ]
++  next: before
++# The sheet's figures before the change, so the rollup lines tell which moved.
++before:
++  class: net.officefloor.hq.app.rollup.TakeRollup
++  govern: [ transaction ]
++  next: load
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ transaction ]
++  next: closed
++# A claim due by a date inside a closed period is a 409 and writes nothing.
++closed:
++  class: net.officefloor.hq.app.period.CheckClaimPeriod
++  govern: [ transaction ]
++  next: judge
++# The settle's role, four-eyes and proof rules, on the original claim before it is split.
++judge:
++  class: net.officefloor.hq.app.claim.JudgePartSettle
++  govern: [ transaction ]
++  next: apply
++apply:
++  class: net.officefloor.hq.app.claim.SplitClaim
++  govern: [ transaction ]
++  next: save
++# Saves both claims; the new one takes the sheet's next number and logs its opening.
++save:
++  class: net.officefloor.hq.app.claim.SaveSplit
++  govern: [ transaction ]
++  next: audit
++# Every rule has passed and the split is saved.
++audit:
++  class: net.officefloor.hq.app.claim.AuditClaimSplit
++  govern: [ transaction ]
++  next: rollup
++# After the split's own lines: the figures it moved.
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
++  next: settle
++# Settles the new claim, saves it and logs its status.
++settle:
++  class: net.officefloor.hq.app.claim.SettleSplitClaim
++  govern: [ transaction ]
++  next: settled
++# The settle's own line, its watchers' lines, then the figures it moved.
++settled:
++  class: net.officefloor.hq.app.claim.AuditSplitSettled
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithSplit
++  govern: [ transaction ]
