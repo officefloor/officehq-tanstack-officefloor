@@ -41,14 +41,16 @@ public class MergePerson {
         }
         List<Claim> moving = new ArrayList<>(claims.findByPerson(sheet.id(), person.getId()));
         Collections.reverse(moving);
+        long mergeId = people.recordMerge(person, into);
         for (Claim claim : moving) {
             claim.mergeTo(into.getId());
             claims.save(claim);
+            people.recordMergedClaim(mergeId, claim.getId());
         }
         pools.mergeMembers(person.getId(), into.getId());
         crews.mergeMembers(person.getId(), into.getId());
         periods.mergePeople(sheet.id(), person.getId(), into.getId());
-        people.merge(person, into);
+        people.merge(person, into, mergeId);
         mergeOut.set(new Merge(person, into));
     }
 }

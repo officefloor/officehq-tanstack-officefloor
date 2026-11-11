@@ -201,7 +201,7 @@ public class PersonRepository {
      * becomes their own plus {@code from}'s, {@code from}'s statements numbered before {@code into}'s own;
      * {@code into}'s last statement stays theirs (or, having none, becomes {@code from}'s).
      */
-    public void merge(Person from, Person into) {
+    public void merge(Person from, Person into, long mergeId) {
         String sheetId = from.getSheetId();
         int moved = from.getStatementCount();
         if (moved > 0) {
@@ -219,9 +219,13 @@ public class PersonRepository {
             }
             saveStatements(into);
         }
+        // Their own aliases are kept with the merge, so undoing it gives them back as they were.
+        jdbc.update("INSERT INTO person_merge_alias (merge_id, alias, added_on, alias_merge_id)"
+                + " SELECT ?, alias, added_on, merge_id FROM person_alias WHERE sheet_id = ? AND person_id = ? ORDER BY id",
+                mergeId, sheetId, from.getId());
         jdbc.update("DELETE FROM person_alias WHERE sheet_id = ? AND person_id = ?", sheetId, from.getId());
-        addAlias(into, from.getName());
-        for (String alias : from.getAliases()) addAlias(into, alias);
+        mergedAlias(into, from.getName(), mergeId);
+        for (String alias : from.getAliases()) mergedAlias(into, alias, mergeId);
         // Their own patrons go to the other, not the other themselves, nor one the other already names.
         jdbc.update("DELETE FROM person_patron WHERE sheet_id = ? AND person_id = ? AND (patron_id = ?"
                 + " OR patron_id IN (SELECT p.patron_id FROM person_patron p WHERE p.person_id = ?))",
@@ -239,6 +243,69 @@ public class PersonRepository {
         jdbc.update("UPDATE person SET contact = NULL, merged_into = ?, merged_on = (SELECT today FROM sheet WHERE id = ?),"
                 + " version = version + 1 WHERE id = ? AND sheet_id = ?", into.getId(), sheetId, from.getId(), sheetId);
         jdbc.update("UPDATE person SET version = version + 1 WHERE id = ? AND sheet_id = ?", into.getId(), sheetId);
+    }
+
+    private void mergedAlias(Person into, String alias, long mergeId) {
+        jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias, added_on, merge_id)"
+                + " VALUES (?, ?, ?, (SELECT today FROM sheet WHERE id = ?), ?)",
+                into.getSheetId(), into.getId(), alias, into.getSheetId(), mergeId);
+        into.getAliases().add(alias);
+    }
+
+    /** Record that {@code from} is being merged into {@code into} on the sheet's today: the merge's id. */
+    public long recordMerge(Person from, Person into) {
+        GeneratedKeyHolder keys = new GeneratedKeyHolder();
+        jdbc.update((con) -> {
+            PreparedStatement ps = con.prepareStatement("INSERT INTO person_merge (sheet_id, from_id, into_id, merged_on)"
+                    + " VALUES (?, ?, ?, (SELECT today FROM sheet WHERE id = ?))", new String[] { "id" });
+            ps.setString(1, from.getSheetId());
+            ps.setLong(2, from.getId());
+            ps.setLong(3, into.getId());
+            ps.setString(4, from.getSheetId());
+            return ps;
+        }, keys);
+        return keys.getKey().longValue();
+    }
+
+    /** Record that the merge moved this claim to the person merged into. */
+    public void recordMergedClaim(long mergeId, long claimId) {
+        jdbc.update("INSERT INTO person_merge_claim (merge_id, claim_id) VALUES (?, ?)", mergeId, claimId);
+    }
+
+    /** The last merge into the person not yet undone, or null when there is none. */
+    public LastMerge lastMergeInto(Person into) {
+        List<LastMerge> found = jdbc.query("SELECT id, from_id, merged_on FROM person_merge WHERE sheet_id = ? AND into_id = ?"
+                + " ORDER BY id DESC FETCH FIRST 1 ROWS ONLY",
+                (rs, n) -> new LastMerge(rs.getLong("id"), rs.getLong("from_id"), rs.getObject("merged_on", LocalDate.class)),
+                into.getSheetId(), into.getId());
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** The ids of the claims the merge moved to the person merged into. */
+    public List<Long> mergedClaims(long mergeId) {
+        return jdbc.queryForList("SELECT claim_id FROM person_merge_claim WHERE merge_id = ?", Long.class, mergeId);
+    }
+
+    /**
+     * Undo the merge of {@code from} into {@code into}: the aliases it gave {@code into} are taken away,
+     * {@code from}'s own aliases are given back as they were, and {@code from} is back on the list, at its
+     * end. The merge is forgotten. Their claims are moved back by the caller; everything else stays.
+     */
+    public void undoMerge(LastMerge merge, Person into) {
+        String sheetId = into.getSheetId();
+        jdbc.update("DELETE FROM person_alias WHERE sheet_id = ? AND person_id = ? AND merge_id = ?",
+                sheetId, into.getId(), merge.id());
+        jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias, added_on, merge_id)"
+                + " SELECT ?, ?, alias, added_on, alias_merge_id FROM person_merge_alias WHERE merge_id = ? ORDER BY id",
+                sheetId, merge.fromId(), merge.id());
+        // Their statements stayed with the person they were merged into.
+        jdbc.update("UPDATE person SET merged_into = NULL, merged_on = NULL, list_pos = " + END_OF_LIST + ","
+                + " statement_count = 0, stated_total = NULL, statement_date = NULL, version = version + 1"
+                + " WHERE id = ? AND sheet_id = ?", sheetId, merge.fromId(), sheetId);
+        jdbc.update("UPDATE person SET version = version + 1 WHERE id = ? AND sheet_id = ?", into.getId(), sheetId);
+        jdbc.update("DELETE FROM person_merge_alias WHERE merge_id = ?", merge.id());
+        jdbc.update("DELETE FROM person_merge_claim WHERE merge_id = ?", merge.id());
+        jdbc.update("DELETE FROM person_merge WHERE id = ?", merge.id());
     }
 
     /** The sheet's today when the person arrived on their sheet by transfer; null when they never did. */

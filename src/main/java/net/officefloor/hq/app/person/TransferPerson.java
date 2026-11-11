@@ -112,11 +112,13 @@ public class TransferPerson {
             Person arrived = people.find(to.id(), person.getId());
             List<Claim> merging = new ArrayList<>(claims.findByPerson(to.id(), arrived.getId()));
             Collections.reverse(merging);
+            long mergeId = people.recordMerge(arrived, into);
             for (Claim claim : merging) {
                 claim.mergeTo(into.getId());
                 claims.save(claim);
+                people.recordMergedClaim(mergeId, claim.getId());
             }
-            people.merge(arrived, into);
+            people.merge(arrived, into, mergeId);
         }
         transferOut.set(new Transfer(person, to, toBefore, into));
     }

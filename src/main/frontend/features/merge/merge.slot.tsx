@@ -71,7 +71,54 @@ function PersonMerge({ sheetId, person }: { sheetId: string; person: Person }) {
   );
 }
 
+function MergeUndoHead() {
+  return <th>Undo merge</th>;
+}
+
+// A button that undoes the last merge into this person (a steward, on the sheet's today it was made):
+// the merged person is back at the end of the list with the claims that came from them and their own aliases.
+function PersonMergeUndo({ sheetId, person }: { sheetId: string; person: Person }) {
+  const queryClient = useQueryClient();
+  const [user] = useUser();
+  const [error, setError] = useRowError(person.id, 'merge-undo');
+  const once = useOnce();
+  const undo = useMutation({
+    mutationFn: () =>
+      postJson<Person>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/people/${encodeURIComponent(person.id)}/merge-undo`,
+        {},
+        user,
+      ),
+    // The moved-back claims are read before the restored person's row shows.
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+      await queryClient.invalidateQueries({ queryKey: ['sheet', sheetId] });
+    },
+    onError: () => setError('That merge could not be undone.'),
+  });
+
+  const submit = () => {
+    setError('');
+    once((done) => undo.mutate(undefined, { onSettled: done }));
+  };
+
+  return (
+    <td>
+      <button type="button" data-testid="person-merge-undo" onClick={submit} disabled={undo.isPending}>
+        Undo merge
+      </button>
+      {error && (
+        <p role="alert" data-testid="person-error">
+          {error}
+        </p>
+      )}
+    </td>
+  );
+}
+
 export const contributions = [
   PersonHead.fill({ order: 65, Component: MergeHead }),
   PersonRow.fill({ order: 65, Component: PersonMerge }),
+  PersonHead.fill({ order: 65.5, Component: MergeUndoHead }),
+  PersonRow.fill({ order: 65.5, Component: PersonMergeUndo }),
 ];
