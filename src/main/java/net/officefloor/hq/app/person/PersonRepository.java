@@ -239,6 +239,11 @@ public class PersonRepository {
         jdbc.update("UPDATE person SET version = version + 1 WHERE id = ? AND sheet_id = ?", into.getId(), sheetId);
     }
 
+    /** The sheet's today when the person arrived on their sheet by transfer; null when they never did. */
+    public LocalDate arrivedOn(Person person) {
+        return jdbc.queryForObject("SELECT arrived_on FROM person WHERE id = ?", LocalDate.class, person.getId());
+    }
+
     /**
      * Move the person to another sheet, with their grades (and from-dates), terms, contact and aliases,
      * as added there on that sheet's today, and with their statements: they are not retired. Patron links either way, pool and crew memberships (a crew they lead is left without a lead), watches and holds are dropped. Their claims
@@ -265,7 +270,8 @@ public class PersonRepository {
                 + " WHERE person_id = ?", toSheet, toSheet, id);
         jdbc.update("UPDATE person SET sheet_id = ?,"
                 + " retired_from = NULL, added_on = (SELECT today FROM sheet WHERE id = ?), list_pos = " + END_OF_LIST + ","
-                + " origin_sheet = ?, version = version + 1 WHERE id = ?", toSheet, toSheet, toSheet, person.getSheetId(), id);
+                + " origin_sheet = ?, arrived_on = (SELECT today FROM sheet WHERE id = ?), version = version + 1 WHERE id = ?",
+                toSheet, toSheet, toSheet, person.getSheetId(), toSheet, id);
         Person moved = find(toSheet, id);
         if (moved.getStatementCount() > 0) saveStatements(moved);
         gradeHistory(moved, null, moved.getGrade());
