@@ -6,13 +6,14 @@ import { postJson } from '../../api/http';
 import { useSheetId } from './session';
 import { peopleQuery } from '../people/people';
 import { claimsQuery } from '../claims/claims';
+import { notesQuery } from '../notes/notes';
 
 type Sheet = { id: string };
 
 // Choose a sheet by typing its id and loading it. An id never used before starts an empty sheet;
 // loading an id again drops what was cached for it, so the sheet is re-read from the store. The
-// sheet becomes the active one only once its people and claims are read, so its rows are on screen
-// as soon as its id is.
+// sheet becomes the active one only once its people, claims and notes are read, so its rows are on
+// screen as soon as its id is.
 export function SheetLoader({ onLoaded }: { onLoaded: () => void }) {
   const queryClient = useQueryClient();
   const [sheetId, setSheetId] = useSheetId();
@@ -24,7 +25,11 @@ export function SheetLoader({ onLoaded }: { onLoaded: () => void }) {
     mutationFn: async (id: string) => {
       const sheet = await postJson<Sheet>(`/api/sheets/${encodeURIComponent(id)}/load`, {});
       queryClient.removeQueries({ queryKey: ['sheet', sheet.id] });
-      await Promise.all([queryClient.fetchQuery(peopleQuery(sheet.id)), queryClient.fetchQuery(claimsQuery(sheet.id))]);
+      await Promise.all([
+        queryClient.fetchQuery(peopleQuery(sheet.id)),
+        queryClient.fetchQuery(claimsQuery(sheet.id)),
+        queryClient.fetchQuery(notesQuery(sheet.id)),
+      ]);
       return sheet;
     },
     onSuccess: (sheet) => {
