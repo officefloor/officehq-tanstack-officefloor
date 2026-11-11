@@ -8,9 +8,10 @@ import type { Claim } from '../claims/claims';
 /**
  * A grade's rate: a percent with two decimals, from a date (yyyy-MM-dd; '' when it applies from the
  * beginning of time) through a date (yyyy-MM-dd; '' when it has no end), and its level: 0 when set
- * on the sheet itself, 1 on its parent sheet, and so on up to MAX_LEVEL.
+ * on the sheet itself, 1 on its parent sheet, and so on up to MAX_LEVEL; and its version: how many
+ * times a rate has been set for its grade and from-date (it is the newest of them).
  */
-export type Rate = { grade: Grade; pct: string; from: string; to: string; level: number };
+export type Rate = { grade: Grade; pct: string; from: string; to: string; level: number; version: number };
 
 /** How many parent sheets up a rate is looked for. */
 export const MAX_LEVEL = 3;

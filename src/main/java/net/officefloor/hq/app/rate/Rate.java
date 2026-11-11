@@ -9,21 +9,33 @@ import java.util.Optional;
 /**
  * A grade's rate on a sheet: a percent with two decimals, from a date (null: from the beginning of
  * time) through a date (null: with no end). Its level is how far up the sheet's parent chain it is
- * set: 0 on the sheet itself, 1 on its parent, up to {@link #MAX_LEVEL}.
+ * set: 0 on the sheet itself, 1 on its parent, up to {@link #MAX_LEVEL}. Its version counts how many
+ * times a rate has been set for its grade and from-date (1 for the first); it is the newest of them.
  */
-public record Rate(String sheetId, String grade, BigDecimal pct, LocalDate from, LocalDate to, int level) {
+public record Rate(String sheetId, String grade, BigDecimal pct, LocalDate from, LocalDate to, int level,
+        int version) {
 
     /** How many parent sheets up a rate is looked for. */
     public static final int MAX_LEVEL = 3;
 
     /** A rate set on the sheet itself. */
     public Rate(String sheetId, String grade, BigDecimal pct, LocalDate from, LocalDate to) {
-        this(sheetId, grade, pct, from, to, 0);
+        this(sheetId, grade, pct, from, to, 0, 1);
+    }
+
+    /** A rate set on the sheet itself, at its version. */
+    public Rate(String sheetId, String grade, BigDecimal pct, LocalDate from, LocalDate to, int level) {
+        this(sheetId, grade, pct, from, to, level, 1);
+    }
+
+    /** The same rate at a version. */
+    public Rate withVersion(int version) {
+        return new Rate(sheetId, grade, pct, from, to, level, version);
     }
 
     /** The same rate seen from a sheet {@code levels} below the one it is set on. */
     public Rate up(int levels) {
-        return new Rate(sheetId, grade, pct, from, to, level + levels);
+        return new Rate(sheetId, grade, pct, from, to, level + levels, version);
     }
 
     /**

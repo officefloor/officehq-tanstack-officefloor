@@ -152,6 +152,7 @@ function Rates({ sheetId }: { sheetId: string }) {
             <th>From</th>
             <th>To</th>
             <th>Rate %</th>
+            <th>Version</th>
           </tr>
         </thead>
         <tbody>
@@ -161,6 +162,7 @@ function Rates({ sheetId }: { sheetId: string }) {
               <td data-testid="rate-from">{r.from || 'start'}</td>
               <td data-testid="rate-to">{r.to}</td>
               <td data-testid="rate-pct">{r.pct}</td>
+              <td data-testid="rate-version">{r.version}</td>
             </tr>
           ))}
         </tbody>

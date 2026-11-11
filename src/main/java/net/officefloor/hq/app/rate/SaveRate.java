@@ -8,7 +8,6 @@ public class SaveRate {
     public void save(@Val RateInput input, @Val Sheet sheet, RateRepository repository,
             Out<Rate> rateOut) {
         Rate rate = new Rate(sheet.id(), input.grade(), input.pct(), input.from(), input.to());
-        repository.save(rate);
-        rateOut.set(rate);
+        rateOut.set(repository.save(rate));
     }
 }
