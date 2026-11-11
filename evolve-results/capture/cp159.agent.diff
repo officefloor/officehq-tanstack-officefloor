@@ -1,0 +1,100 @@
+diff --git a/src/main/frontend/features/periods/periods.ts b/src/main/frontend/features/periods/periods.ts
+index 61c010e30..a3c2b8e60 100644
+--- a/src/main/frontend/features/periods/periods.ts
++++ b/src/main/frontend/features/periods/periods.ts
+@@ -1,6 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+-import { counts, countedOn } from '../claims/claims';
++import { counts, countedOn, statusOn } from '../claims/claims';
+ import type { Claim } from '../claims/claims';
+ import { gradeOn, liveHolds } from '../people/people';
+ import type { Person } from '../people/people';
+@@ -65,6 +65,34 @@ export function personPeriodDueTotal(
+   );
+ }
+ 
++/**
++ * A person's carried figure for a period: the due as shown now of their claims that count and belong
++ * to a period (by due-by) ending before this one starts, and were still OPEN or PENDING at the end of
++ * this period's last day by the status their log records then, added up.
++ */
++export function personPeriodCarried(
++  period: Period,
++  periods: Period[],
++  person: Person,
++  claims: Claim[],
++  rates: Rate[],
++  floor: Dated,
++  late: Late,
++): string {
++  const holds = liveHolds(person, late.today);
++  return sumDue(
++    claims
++      .filter((c) => {
++        if (c.personId !== person.id) return false;
++        const own = periodOf(periods, c.dueBy);
++        if (own === null || own.to >= period.from) return false;
++        const status = statusOn(c, period.to);
++        return (status === 'OPEN' || status === 'PENDING') && countedOn(c, period.to, holds, late.today);
++      })
++      .map((c) => claimDue(c, rateOn(rates, gradeOn(person.grades, c.date), c.date, c.id), floor, late, gradeOn(person.grades, c.date))),
++  );
++}
++
+ /** A period's due-total: the people's due-totals for it, added up. */
+ export function periodDueTotal(
+   period: Period,
+diff --git a/src/main/frontend/features/periods/personPeriods.slot.tsx b/src/main/frontend/features/periods/personPeriods.slot.tsx
+index ef46f78b9..b1be64781 100644
+--- a/src/main/frontend/features/periods/personPeriods.slot.tsx
++++ b/src/main/frontend/features/periods/personPeriods.slot.tsx
+@@ -1,23 +1,27 @@
++import { Fragment } from 'react';
+ import { PersonHead, PersonRow } from '../../slots/defs/personRow';
+ import type { Person } from '../people/people';
+ import { useClaims } from '../claims/claims';
+ import { useRates } from '../rates/rates';
+ import { useFloor, useLate } from '../access/access';
+-import { personPeriodDueTotal, usePeriods } from './periods';
++import { personPeriodCarried, personPeriodDueTotal, usePeriods } from './periods';
+ 
+ function PersonPeriodsHead({ sheetId }: { sheetId: string }) {
+   const periods = usePeriods(sheetId).data ?? [];
+   return (
+     <>
+       {periods.map((p) => (
+-        <th key={p.name}>{p.name}</th>
++        <Fragment key={p.name}>
++          <th>{p.name}</th>
++          <th>{p.name} carried</th>
++        </Fragment>
+       ))}
+     </>
+   );
+ }
+ 
+ // A person's due-total for each period on the sheet: live while the period is open, fixed when it
+-// was closed.
++// was closed; and the figure carried into it from earlier periods.
+ function PersonPeriods({ sheetId, person }: { sheetId: string; person: Person }) {
+   const periods = usePeriods(sheetId).data ?? [];
+   const claims = useClaims(sheetId).data ?? [];
+@@ -27,9 +31,14 @@ function PersonPeriods({ sheetId, person }: { sheetId: string; person: Person })
+   return (
+     <>
+       {periods.map((p) => (
+-        <td key={p.name} data-testid={`person-period-${p.name}-due-total`}>
+-          {personPeriodDueTotal(p, person, claims, rates, floor, late)}
+-        </td>
++        <Fragment key={p.name}>
++          <td data-testid={`person-period-${p.name}-due-total`}>
++            {personPeriodDueTotal(p, person, claims, rates, floor, late)}
++          </td>
++          <td data-testid={`person-period-${p.name}-carried`}>
++            {personPeriodCarried(p, periods, person, claims, rates, floor, late)}
++          </td>
++        </Fragment>
+       ))}
+     </>
+   );
