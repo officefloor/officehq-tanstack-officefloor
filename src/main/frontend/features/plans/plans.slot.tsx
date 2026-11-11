@@ -46,8 +46,30 @@ function PersonPlans({ sheetId, person }: { sheetId: string; person: Person }) {
     onError: () => setError('That plan could not be added.'),
   });
 
+  // Pauses or resumes a plan on the sheet's today; pausing a paused plan or resuming a running one is refused.
+  const pause = useMutation({
+    mutationFn: ({ planId, on }: { planId: string; on: boolean }) =>
+      postJson<Plan>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/plans/${encodeURIComponent(planId)}/${on ? 'pause' : 'resume'}`,
+        {},
+        user,
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: plansKey(sheetId) }),
+    onError: (_e, { planId, on }) =>
+      setPauseError({ planId, message: on ? 'That plan could not be paused.' : 'That plan could not be resumed.' }),
+  });
+
+  const [pauseError, setPauseError] = useState<{ planId: string; message: string } | null>(null);
+
+  const pressPause = (planId: string, on: boolean) => {
+    setError('');
+    setPauseError(null);
+    once((done) => pause.mutate({ planId, on }, { onSettled: done }));
+  };
+
   const submit = () => {
     setError('');
+    setPauseError(null);
     once((done) =>
       add.mutate(
         { amount: amount.trim(), start: start.trim(), every: every.trim(), day: day.trim(), end: end.trim() },
@@ -59,6 +81,7 @@ function PersonPlans({ sheetId, person }: { sheetId: string; person: Person }) {
   const changed = (set: (v: string) => void) => (e: { target: { value: string } }) => {
     set(e.target.value);
     setError('');
+    setPauseError(null);
   };
 
   return (
@@ -69,7 +92,19 @@ function PersonPlans({ sheetId, person }: { sheetId: string; person: Person }) {
           <div key={p.id} data-testid={`plan-row-${p.id}`}>
             <span data-testid="plan-amount-shown">{p.amount}</span> from {p.start} {p.day !== null ? `monthly on day ${p.day}` : `every ${p.every} days`} to {p.end},
             made <span data-testid="plan-generated">{p.generated}</span>,
-            next <span data-testid="plan-next-dates">{p.nextDates}</span>
+            next <span data-testid="plan-next-dates">{p.nextDates}</span>,
+            paused <span data-testid="plan-paused">{p.paused ? 'yes' : 'no'}</span>{' '}
+            <button type="button" data-testid="plan-pause" onClick={() => pressPause(p.id, true)} disabled={pause.isPending}>
+              Pause
+            </button>{' '}
+            <button type="button" data-testid="plan-resume" onClick={() => pressPause(p.id, false)} disabled={pause.isPending}>
+              Resume
+            </button>
+            {pauseError?.planId === p.id && (
+              <p role="alert" data-testid="plan-error">
+                {pauseError.message}
+              </p>
+            )}
           </div>
         ))}
       <input data-testid="plan-form-amount" aria-label="Plan amount" value={amount} onChange={changed(setAmount)} />{' '}
