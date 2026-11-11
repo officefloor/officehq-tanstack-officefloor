@@ -12,10 +12,10 @@ import org.springframework.stereotype.Repository;
 public class CrewRepository {
 
     private static final String SELECT = "SELECT c.id, c.sheet_id, c.name, c.lead_id, p.name AS lead FROM crew c"
-            + " JOIN person p ON p.id = c.lead_id";
+            + " LEFT JOIN person p ON p.id = c.lead_id";
 
     private static final RowMapper<Crew> CREW = (rs, n) -> new Crew(rs.getLong("id"), rs.getString("sheet_id"),
-            rs.getString("name"), rs.getLong("lead_id"), rs.getString("lead"));
+            rs.getString("name"), rs.getObject("lead_id", Long.class), rs.getString("lead"));
 
     private final JdbcTemplate jdbc;
 

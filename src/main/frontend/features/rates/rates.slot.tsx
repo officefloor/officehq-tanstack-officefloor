@@ -146,6 +146,7 @@ function Rates({ sheetId }: { sheetId: string }) {
           ))}
         </tbody>
       </table>
+      <RateCalendar rates={all} today={today} />
       <table data-testid="rate-list">
         <thead>
           <tr>
@@ -169,6 +170,38 @@ function Rates({ sheetId }: { sheetId: string }) {
         </tbody>
       </table>
     </section>
+  );
+}
+
+// For each grade and each month of the sheet's today's calendar year, the rate in force on the
+// first day of that month (n/a when none).
+function RateCalendar({ rates, today }: { rates: Rate[]; today: string }) {
+  if (today === '') return null;
+  const year = today.slice(0, 4);
+  const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
+  return (
+    <table data-testid="rate-calendar">
+      <thead>
+        <tr>
+          <th>Grade</th>
+          {months.map((m) => (
+            <th key={m}>{m}</th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {GRADES.map((g) => (
+          <tr key={g}>
+            <td>{g}</td>
+            {months.map((m) => (
+              <td key={m} data-testid={`rate-month-${g}-${m}`}>
+                {rateOn(rates, g, `${m}-01`) ?? NA}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
