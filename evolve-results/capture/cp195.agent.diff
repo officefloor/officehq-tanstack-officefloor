@@ -1,0 +1,111 @@
+diff --git a/src/main/frontend/features/export/csv.ts b/src/main/frontend/features/export/csv.ts
+new file mode 100644
+index 000000000..5816bc7c0
+--- /dev/null
++++ b/src/main/frontend/features/export/csv.ts
+@@ -0,0 +1,16 @@
++// A CSV value: wrapped in double quotes (any quote inside doubled) when it holds a comma, a quote
++// or a line break.
++const csvValue = (v: string) => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
++
++// Downloads `lines` as a CSV file named `name`, each line ending with a line feed.
++export function downloadCsv(name: string, lines: string[][]) {
++  const csv = lines.map((l) => l.map(csvValue).join(',') + '\n').join('');
++  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
++  const a = document.createElement('a');
++  a.href = url;
++  a.download = name;
++  document.body.appendChild(a);
++  a.click();
++  a.remove();
++  setTimeout(() => URL.revokeObjectURL(url), 1000);
++}
+diff --git a/src/main/frontend/features/export/export.slot.tsx b/src/main/frontend/features/export/export.slot.tsx
+index ad86eb21c..9969aba88 100644
+--- a/src/main/frontend/features/export/export.slot.tsx
++++ b/src/main/frontend/features/export/export.slot.tsx
+@@ -7,23 +7,7 @@ import { useCap, useFloor, useLate } from '../access/access';
+ import { useSheetToday } from '../sheet/sheet';
+ import { getJson } from '../../api/http';
+ import type { Pool } from '../pools/pools';
+-
+-// A CSV value: wrapped in double quotes (any quote inside doubled) when it holds a comma, a quote
+-// or a line break.
+-const csvValue = (v: string) => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+-
+-// Downloads `lines` as a CSV file named `name`, each line ending with a line feed.
+-function downloadCsv(name: string, lines: string[][]) {
+-  const csv = lines.map((l) => l.map(csvValue).join(',') + '\n').join('');
+-  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+-  const a = document.createElement('a');
+-  a.href = url;
+-  a.download = name;
+-  document.body.appendChild(a);
+-  a.click();
+-  a.remove();
+-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+-}
++import { downloadCsv } from './csv';
+ 
+ // Downloads the people as a CSV file: a header line, then one line per person in list order,
+ // retired people included, with the grade in force today, the retired-from date ('' when not
+diff --git a/src/main/frontend/features/statements/statement.slot.tsx b/src/main/frontend/features/statements/statement.slot.tsx
+index 77b634445..fa5c98ddb 100644
+--- a/src/main/frontend/features/statements/statement.slot.tsx
++++ b/src/main/frontend/features/statements/statement.slot.tsx
+@@ -5,12 +5,25 @@ import { postJson } from '../../api/http';
+ import { PersonHead, PersonRow } from '../../slots/defs/personRow';
+ import { peopleKey } from '../people/people';
+ import type { Person } from '../people/people';
+-import { claimsKey } from '../claims/claims';
++import { claimsKey, claimsQuery } from '../claims/claims';
++import { downloadCsv } from '../export/csv';
+ import { useUser } from '../session/session';
+ import { useRowError } from '../people/rowError';
+ import { Col } from '../columns/columns';
+ 
+ function StatementHead() {
++  // Downloads their statement as a CSV file: a header line, then one line per claim of theirs their
++  // last statement bound, oldest first, with the bound figure as the claim shows it (n/a when it had
++  // none) and its status now. The claims are read afresh when pressed, so a change just made is in it.
++  const exportStatement = async () => {
++    const all = await queryClient.fetchQuery({ ...claimsQuery(sheetId), staleTime: 0 });
++    // The sheet's claims come newest first.
++    const own = all.filter((c) => c.personId === person.id && c.stated).reverse();
++    const lines = [['number', 'date', 'amount', 'figure', 'status']];
++    for (const c of own) lines.push([c.number, c.date, c.amount, c.statedDue, c.status]);
++    downloadCsv(`statement-${sheetId}-${person.id}.csv`, lines);
++  };
++
+   return (
+     <>
+       <Col name="statement-count"><th>Statements</th></Col>
+@@ -75,6 +88,18 @@ function PersonStatement({ sheetId, person }: { sheetId: string; person: Person
+     once((done) => cancel.mutate(undefined, { onSettled: done }));
+   };
+ 
++  // Downloads their statement as a CSV file: a header line, then one line per claim of theirs their
++  // last statement bound, oldest first, with the bound figure as the claim shows it (n/a when it had
++  // none) and its status now. The claims are read afresh when pressed, so a change just made is in it.
++  const exportStatement = async () => {
++    const all = await queryClient.fetchQuery({ ...claimsQuery(sheetId), staleTime: 0 });
++    // The sheet's claims come newest first.
++    const own = all.filter((c) => c.personId === person.id && c.stated).reverse();
++    const lines = [['number', 'date', 'amount', 'figure', 'status']];
++    for (const c of own) lines.push([c.number, c.date, c.amount, c.statedDue, c.status]);
++    downloadCsv(`statement-${sheetId}-${person.id}.csv`, lines);
++  };
++
+   return (
+     <>
+       <Col name="statement-count"><td data-testid="person-statement-count">{person.statementCount}</td></Col>
+@@ -103,6 +128,9 @@ function PersonStatement({ sheetId, person }: { sheetId: string; person: Person
+         <button type="button" data-testid="person-unstate" onClick={unstate} disabled={cancel.isPending}>
+           Cancel statement
+         </button>
++        <button type="button" data-testid="person-export-statement" onClick={() => void exportStatement()}>
++          Export statement (CSV)
++        </button>
+         {error && (
+           <p role="alert" data-testid="person-error">
+             {error}
