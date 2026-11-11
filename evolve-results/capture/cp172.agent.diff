@@ -1,0 +1,208 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index ec6a6b0e7..5d404cb73 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -89,10 +89,10 @@ export function isReviewLate(c: Claim, today: string, reviewSla: string): boolea
+ }
+ 
+ /**
+- * Whether a claim's stated figure is in force: its person's last statement bound it and it is not
+- * PENDING (a PENDING claim shows its live figure).
++ * Whether a claim's stated figure is in force: its person's last statement bound it (OPEN or
++ * PENDING alike).
+  */
+-export const isBound = (c: Claim) => c.stated && c.status !== 'PENDING';
++export const isBound = (c: Claim) => c.stated;
+ 
+ /**
+  * Whether a claim is deferred on the sheet's `today`: OPEN and deferred until a date after today.
+diff --git a/src/main/frontend/features/paste/paste.slot.tsx b/src/main/frontend/features/paste/paste.slot.tsx
+index 5c5992677..e24057371 100644
+--- a/src/main/frontend/features/paste/paste.slot.tsx
++++ b/src/main/frontend/features/paste/paste.slot.tsx
+@@ -1,6 +1,6 @@
+ import { useState } from 'react';
+ import type { FormEvent } from 'react';
+-import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { useIsFetching, useMutation, useQueryClient } from '@tanstack/react-query';
+ import { useOnce } from '../../query/useOnce';
+ import { postJson } from '../../api/http';
+ import { SheetBody } from '../../slots/defs/sheetBody';
+@@ -22,19 +22,24 @@ function PasteClaims({ sheetId }: { sheetId: string }) {
+   const [result, setResult] = useState<Result | null>(null);
+   const [error, setError] = useState('');
+   const [user] = useUser();
++  const rereading =
++    useIsFetching({ queryKey: peopleKey(sheetId) }) + useIsFetching({ queryKey: claimsKey(sheetId) }) > 0;
+ 
+   const once = useOnce();
+   const paste = useMutation({
+     mutationFn: (body: { text: string }) =>
+       postJson<Result>(`/api/sheets/${encodeURIComponent(sheetId)}/claims/paste`, body, user),
+-    // The count shows once the lists are re-read, so the pasted claims are listed when it appears.
++    // The count shows once the lists are re-read, so the pasted claims are listed when it appears:
++    // it is kept at once, while the re-read is under way, and held back until that is done, so the
++    // rows and the count show in the same render.
+     onSuccess: async (r) => {
+       setText('');
+-      await Promise.all([
++      const reread = Promise.all([
+         queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+         queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+       ]);
+       setResult(r);
++      await reread;
+     },
+     onError: () => setError('Those claims could not be added and opened: check every line.'),
+   });
+@@ -68,7 +73,7 @@ function PasteClaims({ sheetId }: { sheetId: string }) {
+         <button type="submit" data-testid="paste-submit" disabled={paste.isPending}>
+           Add and open pasted claims
+         </button>
+-        {result !== null && (
++        {result !== null && !rereading && (
+           <>
+             {' '}Went through <span data-testid="paste-added">{result.added}</span>
+           </>
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 03b66ff28..8d77886dc 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -239,7 +239,7 @@ export function trimmedSumDue(values: string[]): string {
+ /**
+  * A claim's due: the one fixed when it was settled (its late charge frozen in), else its live due:
+  * the greater of the sheet's `floor` in force on its date and its figure (the one its person's last
+- * statement bound it to, never while it is PENDING, else its amount at the rate in force on its date)
++ * statement bound it to (OPEN or PENDING alike), else its amount at the rate in force on its date)
+  * plus the late charge an overdue claim gains on that figure (by the grace of its `grade`, the one in
+  * force on its date). A correction takes no floor; n/a stays n/a.
+  */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApproveClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApproveClaim.java
+index 12fbac4ce..fc5bc271d 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApproveClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApproveClaim.java
+@@ -13,8 +13,8 @@ import net.officefloor.hq.app.setting.SettingsRepository;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+- * Approves a PENDING claim: it is settled, its due fixed at this moment at its live figure (a
+- * PENDING claim is bound by no statement) with the late charge it has gained by the sheet's today.
++ * Approves a PENDING claim: it is settled, its due fixed at this moment at its rate figure (the
++ * figure a statement bound it to, else its live figure) with the late charge it has gained by the sheet's today.
+  * Only a steward may approve it, and not the user who opened it or last edited it; and not while it has no proofs
+  * when its due is above the proof threshold in force on its date.
+  */
+@@ -37,7 +37,7 @@ public class ApproveClaim {
+         }
+         Person person = people.find(sheet.id(), claim.getPersonId());
+         Settings sheetSettings = settings.find(sheet.id());
+-        // Read while the claim is still PENDING: its live figure and its late charge.
++        // Read while the claim is still PENDING: its rate figure and its late charge.
+         java.math.BigDecimal due = ClaimFigure.withLate(claim, rates.findAll(sheet.id()), person.gradeOn(claim.getDate()),
+                 sheetSettings, sheet.today());
+         if (sheetSettings.needsProof(due, person.gradeOn(claim.getDate()), claim.getDate(), claim.getProofs())) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 1e62df184..be8b50b48 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -216,14 +216,14 @@ public class Claim {
+     public BigDecimal getStatedDue() { return statedDue; }
+     /**
+      * The figure a statement binds it to now: its stated figure (null for n/a), but null when it
+-     * is not stated or is PENDING (a PENDING claim shows its live figure; a rejection binds it again).
++     * is not stated.
+      */
+     public BigDecimal boundDue() {
+         return isBound() ? statedDue : null;
+     }
+-    /** Whether its stated figure is in force: it is stated and not PENDING. */
++    /** Whether its stated figure is in force: it is stated (whether OPEN or PENDING). */
+     public boolean isBound() {
+-        return stated && status != ClaimStatus.PENDING;
++        return stated;
+     }
+     /** Bind it to a figure (null: n/a), or leave it unbound (live) when {@code stated} is false. */
+     public void bind(boolean stated, BigDecimal statedDue) {
+@@ -290,7 +290,7 @@ public class Claim {
+         status = ClaimStatus.SETTLED;
+         settledDue = due;
+     }
+-    /** A steward's rejection of a PENDING claim: it is OPEN again, bound again by its statement. */
++    /** A steward's rejection of a PENDING claim: it is OPEN again, still bound by its statement. */
+     public void reject() throws InvalidClaimStatusException {
+         if (status != ClaimStatus.PENDING) throw new InvalidClaimStatusException(status, ClaimStatus.OPEN);
+         status = ClaimStatus.OPEN;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimFigure.java b/src/main/java/net/officefloor/hq/app/claim/ClaimFigure.java
+index ece070505..5aa79d7fc 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimFigure.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimFigure.java
+@@ -10,7 +10,7 @@ import net.officefloor.hq.app.setting.Settings;
+ 
+ /**
+  * A claim's figures, as the screen shows them. Its rate figure: the figure its person's last
+- * statement bound it to (never while it is PENDING), else its amount times its grade's rate in
++ * statement bound it to (OPEN or PENDING alike), else its amount times its grade's rate in
+  * force on its date (of the rates that apply to it: a forward-only rate only to claims added after it
+  * was saved), divided by 100 and rounded to two decimals. Its live due: the greater of the
+  * sheet's floor in force on its date and its rate figure plus its late charge (worked out on the
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RejectClaim.java b/src/main/java/net/officefloor/hq/app/claim/RejectClaim.java
+index 44b4d6aaf..970288a26 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RejectClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RejectClaim.java
+@@ -8,7 +8,7 @@ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+- * Rejects a PENDING claim: it is OPEN again, bound again by its person's last statement when that
++ * Rejects a PENDING claim: it is OPEN again, still bound by its person's last statement when that
+  * statement included it. Only a steward may reject it.
+  */
+ public class RejectClaim {
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 950efe5d5..67da97201 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -575,6 +575,19 @@ public class PersonRepository {
+                     then.setStatements(rs.getInt("statement_count"), rs.getString("stated_total"),
+                             rs.getObject("statement_date", LocalDate.class));
+                 }, person.getSheetId(), person.getId(), on);
++        // Each statement as it stood then (the last kept for its number), up to the count then.
++        Map<Integer, Object[]> stated = new HashMap<>();
++        jdbc.query("SELECT statement_count, stated_total, statement_date FROM person_statement_history"
++                + " WHERE sheet_id = ? AND person_id = ? AND set_on <= ? AND statement_count > 0 ORDER BY id", (rs) -> {
++                    stated.put(rs.getInt("statement_count"), new Object[] {
++                            rs.getObject("statement_date", LocalDate.class), rs.getString("stated_total") });
++                }, person.getSheetId(), person.getId(), on);
++        stated.entrySet().stream()
++                .filter((e) -> e.getKey() <= then.getStatementCount())
++                .sorted(java.util.Comparator.comparing((Map.Entry<Integer, Object[]> e) -> (LocalDate) e.getValue()[0],
++                        java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder()))
++                        .thenComparing(Map.Entry::getKey))
++                .forEach((e) -> then.getStatementLines().add(e.getValue()[0] + " " + e.getValue()[1]));
+         dated.forEach((from, grade) -> then.setGradeFrom(grade, from));
+         jdbc.query("SELECT from_date, to_date FROM person_hold WHERE sheet_id = ? AND person_id = ?"
+                 + " AND (made_on IS NULL OR made_on <= ?) ORDER BY id", (rs) -> {
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+index 781f41241..4dcde1d74 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateRepository.java
+@@ -108,15 +108,16 @@ public class RateRepository {
+     /**
+      * The sheet's rates as they stood at the end of {@code day}: for each grade and from-date, the
+      * last rate set for them while the sheet's today was on or before it, its version counting those
+-     * set for them by then; then its parent sheets' (as they are named now) as they stood at the end of
+-     * {@code day} too, each at its level: a rate set after it is not yet in force then.
++     * set for them by then; then its parent sheets' (as they are named now) as they are now, each at its
++     * level: a parent sheet keeps its own today, so this sheet's {@code day} does not tell which of its
++     * rates were set by then.
+      */
+     public List<Rate> findAsOf(String sheetId, LocalDate day) {
+         List<Rate> all = new ArrayList<>(findOwnAsOf(sheetId, day));
+         List<String> ancestors = ancestors(sheetId);
+         for (int i = 0; i < ancestors.size(); i++) {
+             int level = i + 1;
+-            findOwnAsOf(ancestors.get(i), day).forEach((r) -> all.add(r.up(level)));
++            findOwn(ancestors.get(i)).forEach((r) -> all.add(r.up(level)));
+         }
+         return all;
+     }
