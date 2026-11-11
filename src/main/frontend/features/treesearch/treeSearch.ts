@@ -21,8 +21,11 @@ function matches(p: Person, text: string): boolean {
   return [p.name, ...p.aliases].some((n) => n.toLowerCase().includes(t));
 }
 
-/** The people on one sheet matching the text, in list order, each read fresh from the store. */
-async function searchSheet(sheetId: string, text: string): Promise<Found[]> {
+/** One person of the tree: their sheet, the person and their due-total as their sheet's list shows it. */
+export type TreePerson = { sheetId: string; person: Person; dueTotal: string };
+
+/** The people on one sheet, in list order, each read fresh from the store. */
+async function sheetPeople(sheetId: string): Promise<TreePerson[]> {
   const [sheet, people, claims, rates, settings, pools] = await Promise.all([
     getJsonNow<Sheet>(`/api/sheets/${enc(sheetId)}`),
     getJsonNow<{ people: Person[] }>(`/api/sheets/${enc(sheetId)}/people`).then((r) => r.people),
@@ -35,13 +38,11 @@ async function searchSheet(sheetId: string, text: string): Promise<Found[]> {
   const floor = floorOf(settings);
   const late = lateOf(settings, today);
   const cap = settings.cap ?? '';
-  return people
-    .filter((p) => matches(p, text))
-    .map((p) => ({
-      sheetId,
-      name: nameWithGrade(p),
-      dueTotal: personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap, heldParts(p.id, people, claims, rates, today, floor, late), cutTotal(pools, p.id)),
-    }));
+  return people.map((p) => ({
+    sheetId,
+    person: p,
+    dueTotal: personDueTotal(rates, p.grades, today, claims.filter((c) => c.personId === p.id), liveHolds(p, today), floor, late, cap, heldParts(p.id, people, claims, rates, today, floor, late), cutTotal(pools, p.id)),
+  }));
 }
 
 /**
@@ -50,7 +51,18 @@ async function searchSheet(sheetId: string, text: string): Promise<Found[]> {
  * the other sheets' by sheet id.
  */
 export async function searchTree(sheetId: string, text: string): Promise<Found[]> {
+  const people = await treePeople(sheetId);
+  return people
+    .filter((t) => matches(t.person, text))
+    .map((t) => ({ sheetId: t.sheetId, name: nameWithGrade(t.person), dueTotal: t.dueTotal }));
+}
+
+/**
+ * Everyone over the sheet and the other sheets of its tree (its ancestors and descendants), read
+ * fresh: the sheet's own people first in list order, then the other sheets' by sheet id.
+ */
+export async function treePeople(sheetId: string): Promise<TreePerson[]> {
   const { sheets } = await getJsonNow<{ sheets: string[] }>(`/api/sheets/${enc(sheetId)}/tree`);
-  const found = await Promise.all([sheetId, ...sheets].map((id) => searchSheet(id, text)));
+  const found = await Promise.all([sheetId, ...sheets].map(sheetPeople));
   return found.flat();
 }

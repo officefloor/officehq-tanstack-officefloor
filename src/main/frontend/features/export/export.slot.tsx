@@ -9,6 +9,7 @@ import { getJson } from '../../api/http';
 import type { Pool } from '../pools/pools';
 import { downloadCsv } from './csv';
 import { useCutTotals } from '../pools/pools';
+import { treePeople } from '../treesearch/treeSearch';
 
 // Downloads the people as a CSV file: a header line, then one line per person in list order,
 // retired people included, with the grade in force today, the retired-from date ('' when not
@@ -141,9 +142,30 @@ function ExportPeriods({ sheetId }: { sheetId: string }) {
   );
 }
 
+// Downloads the people of the whole tree as a CSV file: a header line, then one line per person,
+// this sheet's people first in list order, then the other sheets' of its tree by sheet id, with the
+// grade in force today and the due-total as their sheet's list shows it. Every sheet is read afresh
+// when pressed. Quoted and ended as the people export.
+function ExportTree({ sheetId }: { sheetId: string }) {
+  const download = async () => {
+    const lines = [['sheet', 'name', 'grade', 'due-total']];
+    for (const t of await treePeople(sheetId)) lines.push([t.sheetId, t.person.name, t.person.grade, t.dueTotal]);
+    downloadCsv(`tree-${sheetId}.csv`, lines);
+  };
+
+  return (
+    <p>
+      <button type="button" data-testid="export-tree" onClick={() => void download()}>
+        Export tree people (CSV)
+      </button>
+    </p>
+  );
+}
+
 export const contributions = [
   SheetBody.fill({ order: 2, Component: ExportPeople }),
   SheetBody.fill({ order: 2.1, Component: ExportClaims }),
   SheetBody.fill({ order: 2.2, Component: ExportPools }),
   SheetBody.fill({ order: 2.3, Component: ExportPeriods }),
+  SheetBody.fill({ order: 2.4, Component: ExportTree }),
 ];
