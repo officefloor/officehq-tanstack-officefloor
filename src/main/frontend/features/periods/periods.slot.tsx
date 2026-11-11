@@ -195,6 +195,32 @@ function Periods({ sheetId }: { sheetId: string }) {
     once((done) => generateFy.mutate({ year }, { onSettled: done }));
   };
 
+  // Generate a calendar year's four quarters, yyyy-Q1 to yyyy-Q4, each left out when its name exists
+  // or its days overlap a period. Shares the made count and error with the generators above.
+  const [quarterYear, setQuarterYear] = useState('');
+
+  const generateQuarters = useMutation({
+    mutationFn: (body: { year: string }) =>
+      postJson<{ made: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/periods/generate-quarters`, body, user),
+    onSuccess: (r) => {
+      setMade(r.made);
+      void queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
+    },
+    onError: () => setGenError('Those quarters could not be generated.'),
+  });
+
+  const submitGenerateQuarters = (e: FormEvent) => {
+    e.preventDefault();
+    setMade(null);
+    setGenError('');
+    const year = quarterYear.trim();
+    if (!/^\d{4}$/.test(year)) {
+      setGenError('A year is yyyy.');
+      return;
+    }
+    once((done) => generateQuarters.mutate({ year }, { onSettled: done }));
+  };
+
   const changeGenerate = (next: Partial<{ from: string; to: string }>) => {
     setGen((g) => ({ ...g, ...next }));
     setGenError('');
@@ -284,6 +310,24 @@ function Periods({ sheetId }: { sheetId: string }) {
         </label>{' '}
         <button type="submit" data-testid="period-generate-fy" disabled={generateFy.isPending}>
           Generate fiscal year
+        </button>{' '}
+      </form>
+      <form onSubmit={submitGenerateQuarters} data-testid="period-generate-quarters-form">
+        <label>
+          Year{' '}
+          <input
+            data-testid="period-generate-quarters-year"
+            inputMode="numeric"
+            placeholder="yyyy"
+            value={quarterYear}
+            onChange={(e) => {
+              setQuarterYear(e.target.value);
+              setGenError('');
+            }}
+          />
+        </label>{' '}
+        <button type="submit" data-testid="period-generate-quarters" disabled={generateQuarters.isPending}>
+          Generate quarters
         </button>{' '}
         {made !== null && (
           <>
