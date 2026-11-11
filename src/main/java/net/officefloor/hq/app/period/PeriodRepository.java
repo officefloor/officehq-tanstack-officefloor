@@ -14,12 +14,12 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PeriodRepository {
 
-    private static final String COLUMNS = "sheet_id, name, from_date, to_date, closed, closed_total, soft, cap";
+    private static final String COLUMNS = "sheet_id, name, from_date, to_date, closed, closed_total, soft, cap, locked";
 
     private static final RowMapper<Period> ROW = (rs, n) -> new Period(rs.getString("sheet_id"),
             rs.getString("name"), rs.getObject("from_date", LocalDate.class),
             rs.getObject("to_date", LocalDate.class), rs.getBoolean("closed"), rs.getBigDecimal("closed_total"),
-            rs.getBoolean("soft"), rs.getObject("cap", Integer.class));
+            rs.getBoolean("soft"), rs.getObject("cap", Integer.class), rs.getBoolean("locked"));
 
     private final JdbcTemplate jdbc;
 
@@ -92,7 +92,7 @@ public class PeriodRepository {
                 + " ORDER BY from_date", ROW, sheetId, java.sql.Date.valueOf(day)).stream().map((p) -> {
                     Period state = then.get(p.name());
                     return state == null ? new Period(p.sheetId(), p.name(), p.from(), p.to(), p.cap())
-                            : new Period(p.sheetId(), p.name(), p.from(), p.to(), state.closed(), state.closedTotal(), state.soft(), p.cap());
+                            : new Period(p.sheetId(), p.name(), p.from(), p.to(), state.closed(), state.closedTotal(), state.soft(), p.cap(), p.locked());
                 }).toList();
     }
 
@@ -114,10 +114,18 @@ public class PeriodRepository {
      * request reopened it first.
      */
     public boolean markReopened(Period period) {
-        boolean reopened = jdbc.update("UPDATE period SET closed = FALSE, soft = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ? AND closed",
+        boolean reopened = jdbc.update("UPDATE period SET closed = FALSE, soft = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ? AND closed AND NOT locked",
                 period.sheetId(), period.name()) == 1;
         if (reopened) keepHistory(period);
         return reopened;
+    }
+
+    /**
+     * Lock or unlock the period: false when it is already so, as when another request changed it first.
+     */
+    public boolean markLocked(Period period, boolean locked) {
+        return jdbc.update("UPDATE period SET locked = ? WHERE sheet_id = ? AND name = ? AND locked = ?",
+                locked, period.sheetId(), period.name(), !locked) == 1;
     }
 
     /** Fix each person's due-total for the closed period. */

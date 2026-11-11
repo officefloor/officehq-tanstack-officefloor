@@ -20,7 +20,8 @@ const EMPTY: Fields = { name: '', from: '', to: '', cap: '' };
 // period with its due-total: the due of the claims dated in it that counted at its end (by their status log), fixed when the
 // period is closed. A closed period's claims cannot be changed. A soft-closed period's figures are
 // fixed as a close fixes them, but its claims can still be changed; it can be closed (its figures
-// fixed afresh) or reopened. A steward may reopen a closed or soft-closed period.
+// fixed afresh) or reopened. A steward may reopen a closed or soft-closed period, and may lock a period
+// (it cannot then be reopened) and unlock it.
 function Periods({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
   const periods = usePeriods(sheetId);
@@ -33,7 +34,7 @@ function Periods({ sheetId }: { sheetId: string }) {
   const [error, setError] = useState('');
   const [user] = useUser();
 
-  const [refused, setRefused] = useState<{ name: string; action: 'close' | 'soft-close' | 'reopen' } | null>(null);
+  const [refused, setRefused] = useState<{ name: string; action: 'close' | 'soft-close' | 'reopen' | 'lock' | 'unlock' } | null>(null);
 
   const once = useOnce();
   const close = useMutation({
@@ -89,6 +90,25 @@ function Periods({ sheetId }: { sheetId: string }) {
   const reopenPeriod = (name: string) => {
     setRefused(null);
     once((done) => reopen.mutate(name, { onSettled: done }));
+  };
+
+  // Only a steward may lock or unlock a period; a locked period cannot be reopened.
+  const lock = useMutation({
+    mutationFn: ({ name, action }: { name: string; action: 'lock' | 'unlock' }) =>
+      postJson<Period>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/periods/${encodeURIComponent(name)}/${action}`,
+        {},
+        user,
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
+    },
+    onError: (_e, { name, action }) => setRefused({ name, action }),
+  });
+
+  const lockPeriod = (name: string, action: 'lock' | 'unlock') => {
+    setRefused(null);
+    once((done) => lock.mutate({ name, action }, { onSettled: done }));
   };
 
   const save = useMutation({
@@ -291,6 +311,7 @@ function Periods({ sheetId }: { sheetId: string }) {
             <th>Closed</th>
             <th>Fiscal year</th>
             <th>Cap</th>
+            <th>Locked</th>
             <th></th>
           </tr>
         </thead>
@@ -304,6 +325,7 @@ function Periods({ sheetId }: { sheetId: string }) {
               <td data-testid="period-closed">{p.closed ? (p.soft ? 'soft' : 'yes') : 'no'}</td>
               <td data-testid="period-fy">{p.fy}</td>
               <td data-testid="period-cap">{p.cap}</td>
+              <td data-testid="period-locked">{p.locked ? 'yes' : 'no'}</td>
               <td>
                 <button
                   type="button"
@@ -328,6 +350,22 @@ function Periods({ sheetId }: { sheetId: string }) {
                   onClick={() => reopenPeriod(p.name)}
                 >
                   Reopen
+                </button>{' '}
+                <button
+                  type="button"
+                  data-testid="period-lock"
+                  disabled={lock.isPending}
+                  onClick={() => lockPeriod(p.name, 'lock')}
+                >
+                  Lock
+                </button>{' '}
+                <button
+                  type="button"
+                  data-testid="period-unlock"
+                  disabled={lock.isPending}
+                  onClick={() => lockPeriod(p.name, 'unlock')}
+                >
+                  Unlock
                 </button>
                 {refused?.name === p.name && (
                   <p role="alert" data-testid="period-error">
@@ -335,7 +373,11 @@ function Periods({ sheetId }: { sheetId: string }) {
                       ? 'That period could not be closed.'
                       : refused.action === 'soft-close'
                         ? 'That period could not be soft-closed.'
-                        : 'That period could not be reopened.'}
+                        : refused.action === 'reopen'
+                          ? 'That period could not be reopened.'
+                          : refused.action === 'lock'
+                            ? 'That period could not be locked.'
+                            : 'That period could not be unlocked.'}
                   </p>
                 )}
               </td>

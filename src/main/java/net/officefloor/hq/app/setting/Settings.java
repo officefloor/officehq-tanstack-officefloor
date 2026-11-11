@@ -86,7 +86,7 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
 
     /** The roles that may take an action by the standing rule. */
     public static List<String> standingRoles(String action) {
-        return "reassign".equals(action) || "reopen".equals(action) ? List.of("steward") : List.of("clerk", "steward");
+        return "reassign".equals(action) || "reopen".equals(action) || "lock".equals(action) ? List.of("steward") : List.of("clerk", "steward");
     }
 
     /** The roles that may take an action: its entry in the permission matrix, else the standing rule. */
