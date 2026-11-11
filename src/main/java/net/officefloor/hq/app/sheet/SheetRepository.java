@@ -89,6 +89,21 @@ public class SheetRepository {
         return seen;
     }
 
+    /**
+     * The sheet's descendants (the sheets naming it as their parent, those naming them and so on),
+     * each once and never the sheet itself, in id order.
+     */
+    public List<String> descendants(String id) {
+        java.util.Set<String> seen = new java.util.TreeSet<>();
+        java.util.Deque<String> pending = new java.util.ArrayDeque<>(List.of(id));
+        while (!pending.isEmpty()) {
+            for (String child : children(pending.removeFirst())) {
+                if (!child.equals(id) && seen.add(child)) pending.addLast(child);
+            }
+        }
+        return new java.util.ArrayList<>(seen);
+    }
+
     /** Names the sheet's parent sheet (null: none). */
     public void saveParent(String id, String parent) {
         jdbc.update("UPDATE sheet SET parent_id = ? WHERE id = ?", parent, id);
