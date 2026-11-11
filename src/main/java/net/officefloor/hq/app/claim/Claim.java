@@ -29,6 +29,7 @@ public class Claim {
     private String lockedBy;
     private boolean lateEntry;
     private LocalDate remindedOn;
+    private boolean waived;
     private LocalDate reviewOn;
     private String ref;
     private String tags;
@@ -128,6 +129,15 @@ public class Claim {
     /** The last sheet's today a reminder was written for it; null when it was never reminded. */
     public LocalDate getRemindedOn() { return remindedOn; }
     public void setRemindedOn(LocalDate remindedOn) { this.remindedOn = remindedOn; }
+    /** Whether a steward waived its late charge: it bears none from then on. */
+    public boolean isWaived() { return waived; }
+    public void setWaived(boolean waived) { this.waived = waived; }
+    /** Waive its late charge: only an OPEN or PENDING claim, and only once. */
+    public void waive() throws InvalidClaimStatusException {
+        if (!isOpen()) throw new InvalidClaimStatusException("A " + status + " claim cannot have its late charge waived");
+        if (waived) throw new InvalidClaimStatusException("The claim's late charge was already waived");
+        waived = true;
+    }
     /** The sheet's today when it went to REVIEW (null: it never did). */
     public LocalDate getReviewOn() { return reviewOn; }
     public void setReviewOn(LocalDate reviewOn) { this.reviewOn = reviewOn; }
@@ -267,6 +277,7 @@ public class Claim {
         then.splitFrom = splitFrom;
         then.lateEntry = lateEntry;
         then.remindedOn = remindedOn;
+        then.waived = waived;
         then.reviewOn = reviewOn;
         then.ref = ref;
         then.tags = tags;

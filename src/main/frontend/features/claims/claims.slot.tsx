@@ -296,6 +296,19 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
       setRefused({ id, message: 'Only an OPEN or PENDING claim can be reminded, once a day.' }),
   });
 
+  // A steward waives an OPEN or PENDING claim's late charge, once.
+  const waive = useMutation({
+    mutationFn: (id: string) =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/claims/${encodeURIComponent(id)}/waive`,
+        {},
+        user,
+      ),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+    onError: (_e, id) =>
+      setRefused({ id, message: 'Only a steward can waive the late charge of an OPEN or PENDING claim, once.' }),
+  });
+
   // A comment is kept on a claim in any status, with who wrote it and the sheet's today.
   const comment = useMutation({
     mutationFn: ({ id, text }: { id: string; text: string }) =>
@@ -407,6 +420,11 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   const remindClaim = (id: string) => {
     setRefused(null);
     remind.mutate(id);
+  };
+
+  const waiveClaim = (id: string) => {
+    setRefused(null);
+    waive.mutate(id);
   };
 
   const addProof = (id: string) => {
@@ -646,6 +664,10 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
               <span data-testid="claim-batch">{c.batch}</span>{' '}
               <button type="button" data-testid="claim-remind" onClick={() => remindClaim(c.id)}>
                 Remind
+              </button>{' '}
+              <span data-testid="claim-waived">{c.waived ? 'yes' : 'no'}</span>{' '}
+              <button type="button" data-testid="claim-waive" onClick={() => waiveClaim(c.id)}>
+                Waive late charge
               </button>{' '}
               <button type="button" data-testid="claim-proof" onClick={() => addProof(c.id)}>
                 Add proof

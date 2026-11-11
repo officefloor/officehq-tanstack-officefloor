@@ -55,6 +55,8 @@ export type Claim = {
   lateEntry: boolean;
   /** The last sheet's today (yyyy-MM-dd) a reminder was written for it; '' when it was never reminded. */
   remindedOn: string;
+  /** Whether a steward waived its late charge: it bears none from then on. */
+  waived: boolean;
   /** Its external reference, unique on the sheet regardless of case; '' when it has none. */
   ref: string;
   /** Its tags: trimmed, lower-cased, without repeats, sorted; empty when it has none. */

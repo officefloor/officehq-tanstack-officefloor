@@ -70,7 +70,8 @@ public final class ClaimFigure {
      * ({@link Settings#overdueFrom}) on {@code today}, for every full 30 days it is overdue the
      * sheet's late percent in force on that boundary date (that day plus 30, 60, 90 ... days) of the figure plus the
      * charges of the boundaries before it (compounding), each rounded to two
-     * decimals as the claim rounds, added up; else 0.00 (as for a claim deferred on today). Never bound by a statement:
+     * decimals as the claim rounds, added up; else 0.00 (as for a claim deferred on today, or one whose late charge
+     * a steward waived, whatever its overdue state). Never bound by a statement:
      * it follows the sheet's today until the claim is settled.
      */
     public static BigDecimal late(Claim claim, BigDecimal figure, String grade, Settings settings, LocalDate today) {
@@ -82,7 +83,7 @@ public final class ClaimFigure {
     public static BigDecimal lateAsOpen(Claim claim, BigDecimal figure, String grade, Settings settings,
             LocalDate today) {
         BigDecimal none = BigDecimal.ZERO.setScale(2);
-        if (figure == null || claim.isCorrection()) return none;
+        if (figure == null || claim.isCorrection() || claim.isWaived()) return none;
         LocalDate from = settings.overdueFrom(claim.getDueBy(), grade, claim.getDate());
         long overdue = ChronoUnit.DAYS.between(from, today);
         long periods = overdue > 0 ? overdue / 30 : 0;
