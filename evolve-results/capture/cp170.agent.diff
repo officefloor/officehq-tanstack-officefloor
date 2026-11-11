@@ -1,0 +1,126 @@
+diff --git a/src/main/frontend/features/rates/rates.slot.tsx b/src/main/frontend/features/rates/rates.slot.tsx
+index 21c1fdbaf..11052cc45 100644
+--- a/src/main/frontend/features/rates/rates.slot.tsx
++++ b/src/main/frontend/features/rates/rates.slot.tsx
+@@ -146,6 +146,7 @@ function Rates({ sheetId }: { sheetId: string }) {
+           ))}
+         </tbody>
+       </table>
++      <RateCalendar rates={all} today={today} />
+       <table data-testid="rate-list">
+         <thead>
+           <tr>
+@@ -172,6 +173,38 @@ function Rates({ sheetId }: { sheetId: string }) {
+   );
+ }
+ 
++// For each grade and each month of the sheet's today's calendar year, the rate in force on the
++// first day of that month (n/a when none).
++function RateCalendar({ rates, today }: { rates: Rate[]; today: string }) {
++  if (today === '') return null;
++  const year = today.slice(0, 4);
++  const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
++  return (
++    <table data-testid="rate-calendar">
++      <thead>
++        <tr>
++          <th>Grade</th>
++          {months.map((m) => (
++            <th key={m}>{m}</th>
++          ))}
++        </tr>
++      </thead>
++      <tbody>
++        {GRADES.map((g) => (
++          <tr key={g}>
++            <td>{g}</td>
++            {months.map((m) => (
++              <td key={m} data-testid={`rate-month-${g}-${m}`}>
++                {rateOn(rates, g, `${m}-01`) ?? NA}
++              </td>
++            ))}
++          </tr>
++        ))}
++      </tbody>
++    </table>
++  );
++}
++
+ type Preview = { count: number; diff: string };
+ 
+ // A preview of a candidate rate for a grade: how many OPEN and PENDING claims on that grade would
+diff --git a/src/main/java/net/officefloor/hq/app/crew/Crew.java b/src/main/java/net/officefloor/hq/app/crew/Crew.java
+index 296097407..4672c2120 100644
+--- a/src/main/java/net/officefloor/hq/app/crew/Crew.java
++++ b/src/main/java/net/officefloor/hq/app/crew/Crew.java
+@@ -1,5 +1,5 @@
+ package net.officefloor.hq.app.crew;
+ 
+-/** A crew on a sheet: a trimmed name, at most once per sheet, and its lead (a person on the sheet). */
++/** A crew on a sheet: a trimmed name, at most once per sheet, and its lead (a person on the sheet), or none once its lead moved to another sheet. */
+ public record Crew(Long id, String sheetId, String name, Long leadId, String lead) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/crew/CrewRepository.java b/src/main/java/net/officefloor/hq/app/crew/CrewRepository.java
+index 8db34639f..6a9b41d24 100644
+--- a/src/main/java/net/officefloor/hq/app/crew/CrewRepository.java
++++ b/src/main/java/net/officefloor/hq/app/crew/CrewRepository.java
+@@ -12,10 +12,10 @@ import org.springframework.stereotype.Repository;
+ public class CrewRepository {
+ 
+     private static final String SELECT = "SELECT c.id, c.sheet_id, c.name, c.lead_id, p.name AS lead FROM crew c"
+-            + " JOIN person p ON p.id = c.lead_id";
++            + " LEFT JOIN person p ON p.id = c.lead_id";
+ 
+     private static final RowMapper<Crew> CREW = (rs, n) -> new Crew(rs.getLong("id"), rs.getString("sheet_id"),
+-            rs.getString("name"), rs.getLong("lead_id"), rs.getString("lead"));
++            rs.getString("name"), rs.getObject("lead_id", Long.class), rs.getString("lead"));
+ 
+     private final JdbcTemplate jdbc;
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/crew/CrewResponse.java b/src/main/java/net/officefloor/hq/app/crew/CrewResponse.java
+index 31649738f..68aa4c54a 100644
+--- a/src/main/java/net/officefloor/hq/app/crew/CrewResponse.java
++++ b/src/main/java/net/officefloor/hq/app/crew/CrewResponse.java
+@@ -2,10 +2,11 @@ package net.officefloor.hq.app.crew;
+ 
+ import java.util.List;
+ 
+-/** A crew, as the screen reads it: its name, its lead's id and name, and its members in the order added. */
++/** A crew, as the screen reads it: its name, its lead's id and name (both blank when it has none), and its members in the order added. */
+ public record CrewResponse(String name, String leadId, String lead, List<CrewMemberResponse> members) {
+     public static CrewResponse from(Crew crew, List<CrewMember> members) {
+-        return new CrewResponse(crew.name(), String.valueOf(crew.leadId()), crew.lead(),
++        return new CrewResponse(crew.name(), crew.leadId() == null ? "" : String.valueOf(crew.leadId()),
++                crew.lead() == null ? "" : crew.lead(),
+                 members.stream().map(CrewMemberResponse::from).toList());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 53defb7af..950efe5d5 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -241,7 +241,7 @@ public class PersonRepository {
+ 
+     /**
+      * Move the person to another sheet, with their grades (and from-dates), terms, contact and aliases,
+-     * as added there on that sheet's today, and with their statements: they are not retired. Patron links either way, pool and crew memberships, watches and holds are dropped. Their claims
++     * as added there on that sheet's today, and with their statements: they are not retired. Patron links either way, pool and crew memberships (a crew they lead is left without a lead), watches and holds are dropped. Their claims
+      * are moved by the caller.
+      */
+     public void transfer(Person person, String toSheet) {
+@@ -249,6 +249,7 @@ public class PersonRepository {
+         jdbc.update("DELETE FROM person_patron WHERE person_id = ? OR patron_id = ?", id, id);
+         jdbc.update("DELETE FROM pool_member WHERE person_id = ?", id);
+         jdbc.update("DELETE FROM crew_member WHERE person_id = ?", id);
++        jdbc.update("UPDATE crew SET lead_id = NULL WHERE lead_id = ?", id);
+         jdbc.update("DELETE FROM person_watch WHERE person_id = ?", id);
+         jdbc.update("DELETE FROM person_hold WHERE person_id = ?", id);
+         jdbc.update("UPDATE person_statement SET sheet_id = ? WHERE person_id = ?", toSheet, id);
+diff --git a/src/main/resources/db/migration/V96__crew_lead_optional.sql b/src/main/resources/db/migration/V96__crew_lead_optional.sql
+new file mode 100644
+index 000000000..077e3b78a
+--- /dev/null
++++ b/src/main/resources/db/migration/V96__crew_lead_optional.sql
+@@ -0,0 +1,2 @@
++-- A crew's lead may be none: a lead moved to another sheet leaves the crew without a lead.
++ALTER TABLE crew ALTER COLUMN lead_id SET NULL;
