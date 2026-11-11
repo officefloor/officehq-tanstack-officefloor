@@ -55,6 +55,7 @@ public class ClosePeriod {
         List<Claim> sheetClaims = claims.findAll(sheet.id());
         Map<Long, ClaimStatus> statusesThen = log.statusesOn(sheet.id(), period.to());
         List<Period> sheetPeriods = periods.findAll(sheet.id());
+        Map<Long, BigDecimal> openings = periods.personOpenings(period);
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         Map<Long, BigDecimal> personTotals = new LinkedHashMap<>();
         Map<Long, BigDecimal> personCarried = new LinkedHashMap<>();
@@ -67,7 +68,8 @@ public class ClosePeriod {
                 if (figure != null) personTotal = personTotal.add(figure);
             }
             personTotals.put(person.getId(), personTotal);
-            personCarried.put(person.getId(), carried(sheet, period, sheetPeriods, person, sheetClaims, statusesThen, all, sheetSettings));
+            personCarried.put(person.getId(), carried(sheet, period, sheetPeriods, person, sheetClaims, statusesThen, all, sheetSettings)
+                    .add(openings.getOrDefault(person.getId(), BigDecimal.ZERO)).setScale(2));
             total = total.add(personTotal);
         }
         Period closed = soft ? period.softClose(total) : period.close(total);
@@ -83,7 +85,7 @@ public class ClosePeriod {
      * The person's carried figure for the period, as the screen works it while the period is open:
      * the figures of their claims that count and belong to a period (by due-by) ending before this one
      * starts, and were still OPEN or PENDING at the end of this period's last day by the status their
-     * log records then, added up, skipping n/a.
+     * log records then, added up, skipping n/a. (Its opening balance is added by the caller.)
      */
     private static BigDecimal carried(Sheet sheet, Period period, List<Period> sheetPeriods, Person person,
             List<Claim> sheetClaims, Map<Long, ClaimStatus> statusesThen, List<Rate> all, Settings sheetSettings) {

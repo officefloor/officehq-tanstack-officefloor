@@ -27,6 +27,8 @@ export type Period = {
   cap: string;
   /** Each person's carried figure fixed when it was closed, by person id (empty while open). */
   personCarried: Record<string, string>;
+  /** Each person's opening balance for it, by person id (none for a person without one). */
+  personOpenings: Record<string, string>;
 };
 
 export const periodsKey = (sheetId: string) => ['sheet', sheetId, 'periods'] as const;
@@ -71,7 +73,8 @@ export function personPeriodDueTotal(
  * A person's carried figure for a period: the one fixed when it was closed (0.00 for a person added
  * after), else the due as shown now of their claims that count and belong
  * to a period (by due-by) ending before this one starts, and were still OPEN or PENDING at the end of
- * this period's last day by the status their log records then, added up.
+ * this period's last day by the status their log records then, added up, with their opening balance
+ * for it.
  */
 export function personPeriodCarried(
   period: Period,
@@ -84,8 +87,9 @@ export function personPeriodCarried(
 ): string {
   if (period.closed) return period.personCarried?.[person.id] ?? '0.00';
   const holds = liveHolds(person, late.today);
-  return sumDue(
-    claims
+  return sumDue([
+    period.personOpenings?.[person.id] ?? '0.00',
+    ...claims
       .filter((c) => {
         if (c.personId !== person.id) return false;
         const own = periodOf(periods, c.dueBy);
@@ -94,7 +98,7 @@ export function personPeriodCarried(
         return (status === 'OPEN' || status === 'PENDING') && countedOn(c, period.to, holds, late.today);
       })
       .map((c) => claimDue(c, rateOn(rates, gradeOn(person.grades, c.date), c.date, c.id), floor, late, gradeOn(person.grades, c.date))),
-  );
+  ]);
 }
 
 /** A period's due-total: the people's due-totals for it, added up. */

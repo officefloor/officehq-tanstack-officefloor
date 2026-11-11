@@ -179,4 +179,30 @@ public class PeriodRepository {
     public Map<Long, BigDecimal> personCarried(Period period) {
         return personCarried(period.sheetId()).getOrDefault(period.name(), Map.of());
     }
+
+    /** Add {@code amount} to the person's opening balance for the period. */
+    public void addOpening(String sheetId, String periodName, long personId, BigDecimal amount) {
+        int updated = jdbc.update("UPDATE period_person_opening SET amount = amount + ? WHERE sheet_id = ? AND period_name = ?"
+                + " AND person_id = ?", amount, sheetId, periodName, personId);
+        if (updated == 0) {
+            jdbc.update("INSERT INTO period_person_opening (sheet_id, period_name, person_id, amount) VALUES (?, ?, ?, ?)",
+                    sheetId, periodName, personId, amount);
+        }
+    }
+
+    /** The people's opening balances for the sheet's periods: by period name, then person id. */
+    public Map<String, Map<Long, BigDecimal>> personOpenings(String sheetId) {
+        Map<String, Map<Long, BigDecimal>> found = new HashMap<>();
+        jdbc.query("SELECT period_name, person_id, amount FROM period_person_opening WHERE sheet_id = ? ORDER BY person_id",
+                rs -> {
+                    found.computeIfAbsent(rs.getString("period_name"), n -> new LinkedHashMap<>())
+                            .put(rs.getLong("person_id"), rs.getBigDecimal("amount"));
+                }, sheetId);
+        return found;
+    }
+
+    /** The people's opening balances for the period, by person id. */
+    public Map<Long, BigDecimal> personOpenings(Period period) {
+        return personOpenings(period.sheetId()).getOrDefault(period.name(), Map.of());
+    }
 }
