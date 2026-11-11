@@ -301,19 +301,25 @@ public class ClaimRepository {
 
     /**
      * Move the claim, with its log and comments, to another sheet, listed there as its newest: it takes
-     * {@code number} (null: none) and names {@code corrects} and {@code splitFrom}; it loses any figure a
-     * statement bound it to, its reference, its settle batch and any lock. Its history here is dropped
+     * {@code number} (null: none) and names {@code corrects} and {@code splitFrom}; it keeps any figure a
+     * statement bound it to, and loses its reference, its settle batch and any lock. Its history here is dropped
      * and kept again on the other sheet, with that sheet's today now.
      */
     public void transfer(Claim claim, String toSheet, String number, String corrects, String splitFrom) {
         jdbc.update("DELETE FROM claim_binding WHERE claim_id = ?", claim.getId());
         jdbc.update("DELETE FROM claim_history WHERE claim_id = ?", claim.getId());
         jdbc.update("UPDATE claim SET sheet_id = ?, listed = ?, claim_number = ?, corrects = ?, split_from = ?,"
-                + " stated = FALSE, stated_due = NULL, ext_ref = NULL, settle_batch = NULL, locked_by = NULL,"
+                + " ext_ref = NULL, settle_batch = NULL, locked_by = NULL,"
                 + " locked_on = NULL WHERE id = ? AND sheet_id = ?", toSheet, nextListed(toSheet), number, corrects,
                 splitFrom, claim.getId(), claim.getSheetId());
         jdbc.update("UPDATE claim_log SET sheet_id = ? WHERE claim_id = ?", toSheet, claim.getId());
         jdbc.update("UPDATE claim_comment SET sheet_id = ? WHERE claim_id = ?", toSheet, claim.getId());
+        // The figure a statement bound it to arrives with it, bound there from that sheet's today.
+        if (claim.isStated()) {
+            jdbc.update("INSERT INTO claim_binding (sheet_id, claim_id, stated, stated_due, set_on)"
+                    + " VALUES (?, ?, TRUE, ?, (SELECT today FROM sheet WHERE id = ?))",
+                    toSheet, claim.getId(), claim.getStatedDue(), toSheet);
+        }
         jdbc.update("INSERT INTO claim_history (sheet_id, claim_id, " + HISTORY_COLUMNS + ", set_on)"
                 + " SELECT sheet_id, id, " + HISTORY_COLUMNS + ", (SELECT s.today FROM sheet s WHERE s.id = claim.sheet_id)"
                 + " FROM claim WHERE id = ? AND sheet_id = ?", claim.getId(), toSheet);

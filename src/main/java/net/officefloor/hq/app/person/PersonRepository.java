@@ -161,10 +161,28 @@ public class PersonRepository {
      * Merge {@code from} into {@code into}: {@code from}'s name and aliases become {@code into}'s aliases;
      * their patrons are added to {@code into}'s (not {@code into} themselves, no repeats); anyone naming
      * {@code from} as patron names {@code into} instead (no repeats). {@code from}'s holds, watchers and
-     * contact are dropped, and they are marked merged, leaving the list.
+     * contact are dropped, and they are marked merged, leaving the list. {@code into}'s statement count
+     * becomes their own plus {@code from}'s, {@code from}'s statements numbered before {@code into}'s own;
+     * {@code into}'s last statement stays theirs (or, having none, becomes {@code from}'s).
      */
     public void merge(Person from, Person into) {
         String sheetId = from.getSheetId();
+        int moved = from.getStatementCount();
+        if (moved > 0) {
+            // Through negatives, so no two of theirs share a number on the way.
+            jdbc.update("UPDATE person_statement SET seq = -(seq + ?) WHERE sheet_id = ? AND person_id = ?",
+                    moved, sheetId, into.getId());
+            jdbc.update("UPDATE person_statement SET seq = -seq WHERE sheet_id = ? AND person_id = ? AND seq < 0",
+                    sheetId, into.getId());
+            jdbc.update("UPDATE person_statement SET person_id = ? WHERE sheet_id = ? AND person_id = ?",
+                    into.getId(), sheetId, from.getId());
+            if (into.getStatementCount() > 0) {
+                into.setStatements(into.getStatementCount() + moved, into.getStatedTotal(), into.getStatementDate());
+            } else {
+                into.setStatements(moved, from.getStatedTotal(), from.getStatementDate());
+            }
+            saveStatements(into);
+        }
         jdbc.update("DELETE FROM person_alias WHERE sheet_id = ? AND person_id = ?", sheetId, from.getId());
         addAlias(into, from.getName());
         for (String alias : from.getAliases()) addAlias(into, alias);
@@ -189,8 +207,7 @@ public class PersonRepository {
 
     /**
      * Move the person to another sheet, with their grades (and from-dates), terms, contact and aliases,
-     * as added there on that sheet's today: their statements start again at none and they are not
-     * retired. Patron links either way, pool memberships, watches and holds are dropped. Their claims
+     * as added there on that sheet's today, and with their statements: they are not retired. Patron links either way, pool memberships, watches and holds are dropped. Their claims
      * are moved by the caller.
      */
     public void transfer(Person person, String toSheet) {
@@ -199,7 +216,7 @@ public class PersonRepository {
         jdbc.update("DELETE FROM pool_member WHERE person_id = ?", id);
         jdbc.update("DELETE FROM person_watch WHERE person_id = ?", id);
         jdbc.update("DELETE FROM person_hold WHERE person_id = ?", id);
-        jdbc.update("DELETE FROM person_statement WHERE person_id = ?", id);
+        jdbc.update("UPDATE person_statement SET sheet_id = ? WHERE person_id = ?", toSheet, id);
         jdbc.update("DELETE FROM person_statement_history WHERE person_id = ?", id);
         jdbc.update("DELETE FROM person_retirement WHERE person_id = ?", id);
         jdbc.update("DELETE FROM person_past_retirement WHERE person_id = ?", id);
@@ -208,10 +225,11 @@ public class PersonRepository {
         jdbc.update("UPDATE person_grade SET sheet_id = ? WHERE person_id = ?", toSheet, id);
         jdbc.update("UPDATE person_alias SET sheet_id = ?, added_on = (SELECT today FROM sheet WHERE id = ?)"
                 + " WHERE person_id = ?", toSheet, toSheet, id);
-        jdbc.update("UPDATE person SET sheet_id = ?, statement_count = 0, stated_total = NULL, statement_date = NULL,"
+        jdbc.update("UPDATE person SET sheet_id = ?,"
                 + " retired_from = NULL, added_on = (SELECT today FROM sheet WHERE id = ?), list_pos = " + END_OF_LIST + ","
                 + " origin_sheet = ?, version = version + 1 WHERE id = ?", toSheet, toSheet, toSheet, person.getSheetId(), id);
         Person moved = find(toSheet, id);
+        if (moved.getStatementCount() > 0) saveStatements(moved);
         gradeHistory(moved, null, moved.getGrade());
         termsHistory(moved);
         moved.getDatedGrades().forEach((from, grade) -> gradeHistory(moved, from, grade));

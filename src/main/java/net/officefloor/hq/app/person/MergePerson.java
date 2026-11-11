@@ -18,9 +18,10 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Merges the person into another on the sheet (a steward): not themselves, and neither retired. Their
  * claims move to the other (numbers and dates kept, listed after the other's in the order they were
- * added, each losing any figure a statement bound it to); their name and aliases become the other's
+ * added, each keeping any figure a statement bound it to); their statement count is added to the other's
+ * (whose last statement stays theirs, or, having none, becomes this person's); their name and aliases become the other's
  * aliases; their patrons and pool memberships go to the other, and anyone naming them as patron names
- * the other instead. Their statements, holds, watchers and contact are dropped, and they leave the list.
+ * the other instead. Their holds, watchers and contact are dropped, and they leave the list.
  */
 public class MergePerson {
     public void merge(@Val MergeInput input, @Val Sheet sheet, @Val Person person, PersonRepository people,

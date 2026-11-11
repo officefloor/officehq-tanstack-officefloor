@@ -33,8 +33,8 @@ import net.officefloor.plugin.variable.Val;
  * aliases, and their claims with their status, dates, notes, tags, frozen figures, logs and comments,
  * listed in the order they were. Each claim that had a number takes the other sheet's next, in the
  * order the claims were opened (by the sheet's today then, then the order added); a correction or
- * split names the new numbers. Figures a statement bound are lost, the statement count starts at 0,
- * and references and settle batches are not carried. They leave this sheet entirely: patron links
+ * split names the new numbers. Figures a statement bound are kept, as are their statements (a
+ * merge on arrival adds their count to the other's), and references and settle batches are not carried. They leave this sheet entirely: patron links
  * either way, pool memberships, watches and holds are dropped. When one person on the other sheet
  * already has their name or an alias (as names are compared, and not retired), they are then merged into
  * that person there, as a merge does (their contact dropped, so it need not be free there).
