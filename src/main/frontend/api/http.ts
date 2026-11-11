@@ -61,6 +61,15 @@ export async function postJson<T>(path: string, body: unknown, user?: string): P
   });
 }
 
+// A change to the signed-in user's own preferences, not to any sheet: open while viewing as of a date.
+export async function postOwnJson<T>(path: string, body: unknown, user: string): Promise<T> {
+  return send<T>(path, {
+    method: 'POST',
+    headers: jsonHeaders(user),
+    body: JSON.stringify(body),
+  });
+}
+
 export async function putJson<T>(path: string, body: unknown, user?: string): Promise<T> {
   refuseWhileAsOf('PUT', path);
   return send<T>(path, {
