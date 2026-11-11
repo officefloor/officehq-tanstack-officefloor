@@ -144,6 +144,32 @@ function Periods({ sheetId }: { sheetId: string }) {
     once((done) => generate.mutate(body, { onSettled: done }));
   };
 
+  // Generate a fiscal year's twelve monthly periods, as above, from the first day of the sheet's
+  // fiscal start month in the year typed. Shares the made count and error with the generator above.
+  const [fyYear, setFyYear] = useState('');
+
+  const generateFy = useMutation({
+    mutationFn: (body: { year: string }) =>
+      postJson<{ made: number }>(`/api/sheets/${encodeURIComponent(sheetId)}/periods/generate-fy`, body, user),
+    onSuccess: (r) => {
+      setMade(r.made);
+      void queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
+    },
+    onError: () => setGenError('That fiscal year could not be generated.'),
+  });
+
+  const submitGenerateFy = (e: FormEvent) => {
+    e.preventDefault();
+    setMade(null);
+    setGenError('');
+    const year = fyYear.trim();
+    if (!/^\d{4}$/.test(year)) {
+      setGenError('A fiscal year is a year, yyyy.');
+      return;
+    }
+    once((done) => generateFy.mutate({ year }, { onSettled: done }));
+  };
+
   const changeGenerate = (next: Partial<{ from: string; to: string }>) => {
     setGen((g) => ({ ...g, ...next }));
     setGenError('');
@@ -212,6 +238,24 @@ function Periods({ sheetId }: { sheetId: string }) {
         <button type="submit" data-testid="period-generate" disabled={generate.isPending}>
           Generate monthly periods
         </button>
+      </form>
+      <form onSubmit={submitGenerateFy} data-testid="period-generate-fy-form">
+        <label>
+          Fiscal year FY{' '}
+          <input
+            data-testid="period-generate-fy-year"
+            inputMode="numeric"
+            placeholder="yyyy"
+            value={fyYear}
+            onChange={(e) => {
+              setFyYear(e.target.value);
+              setGenError('');
+            }}
+          />
+        </label>{' '}
+        <button type="submit" data-testid="period-generate-fy" disabled={generateFy.isPending}>
+          Generate fiscal year
+        </button>{' '}
         {made !== null && (
           <>
             {' '}Made <span data-testid="period-generated">{made}</span>
@@ -236,6 +280,7 @@ function Periods({ sheetId }: { sheetId: string }) {
             <th>To</th>
             <th>Due</th>
             <th>Closed</th>
+            <th>Fiscal year</th>
             <th></th>
           </tr>
         </thead>
@@ -247,6 +292,7 @@ function Periods({ sheetId }: { sheetId: string }) {
               <td data-testid="period-to">{p.to}</td>
               <td data-testid="period-due-total">{periodDueTotal(p, people, claims, rates, floor, late)}</td>
               <td data-testid="period-closed">{p.closed ? (p.soft ? 'soft' : 'yes') : 'no'}</td>
+              <td data-testid="period-fy">{p.fy}</td>
               <td>
                 <button
                   type="button"

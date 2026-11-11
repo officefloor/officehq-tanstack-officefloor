@@ -11,7 +11,7 @@ import type { Dated, Late, Rate } from '../rates/rates';
  * A period: its name (unique on the sheet), its from and to dates (yyyy-MM-dd), inclusive, whether
  * it is closed, the due-total fixed when it was closed ('' while open), and each person's due-total
  * fixed when it was closed, by person id (empty while open), and whether it is soft-closed: closed
- * with its figures fixed, but its claims can still be changed.
+ * with its figures fixed, but its claims can still be changed; and the fiscal year its from-date falls in.
  */
 export type Period = {
   name: string;
@@ -21,6 +21,8 @@ export type Period = {
   closedTotal: string;
   personTotals: Record<string, string>;
   soft: boolean;
+  /** The fiscal year its from-date falls in, FY<yyyy>. */
+  fy: string;
 };
 
 export const periodsKey = (sheetId: string) => ['sheet', sheetId, 'periods'] as const;

@@ -13,7 +13,7 @@ import net.officefloor.plugin.variable.Val;
  * action's entry in the permission matrix (blank for the standing rule, never dated), then the grace
  * days (blank for off, never dated), then the entry date (blank for off, never dated), then each
  * grade's grace days (blank for none), then each grade's proof threshold (blank for none), then the pot
- * (blank for none, never dated), then the parent sheet (blank for none, never dated); a figure
+ * (blank for none, never dated), then the parent sheet (blank for none, never dated), then the fiscal start month (never dated); a figure
  * setting saved from a from-date given ends with it. Runs after every rule has passed, so a refused
  * change writes nothing.
  */
@@ -48,6 +48,9 @@ public class AuditSettingChanged {
         input.gradeProofThresholdValues().forEach((key, value) -> audit.record(line(head, key, value, input)));
         if (input.potChanged()) {
             audit.record(head + " key=pot value=" + (input.pot() == null ? "" : input.pot().toPlainString()));
+        }
+        if (input.fiscalStartMonthChanged()) {
+            audit.record(head + " key=fiscal-start-month value=" + input.fiscalStartMonth());
         }
         if (input.parentChanged()) {
             audit.record(head + " key=parent value=" + (input.parent() == null ? "" : input.parent()));

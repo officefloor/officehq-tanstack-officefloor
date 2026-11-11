@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 public class ValidateSettings {
     private static final Pattern FIGURE = Pattern.compile("\\d{1,15}(\\.\\d{1,2})?");
     private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
+    private static final Pattern MONTH = Pattern.compile("0?[1-9]|1[0-2]");
     private static final java.util.Set<String> DATED = java.util.Set.of(Settings.CLERK_LIMIT, Settings.FLOOR,
             Settings.TERMS, Settings.LATE_PCT, Settings.CAP, Settings.gradeTermsKey("A"), Settings.gradeTermsKey("B"),
             Settings.gradeTermsKey("C"), Settings.PROOF_THRESHOLD, Settings.NOTE_THRESHOLD,
@@ -207,6 +208,15 @@ public class ValidateSettings {
         }
         boolean parentChanged = request != null && request.parent() != null;
         String parent = parentChanged && !request.parent().trim().isEmpty() ? request.parent().trim() : null;
+        boolean fiscalChanged = request != null && request.fiscalStartMonth() != null;
+        Integer fiscalStartMonth = null;
+        if (fiscalChanged) {
+            String value = request.fiscalStartMonth().trim();
+            if (!MONTH.matcher(value).matches()) {
+                throw new InvalidSettingException("A fiscal start month is a month, 1 to 12");
+            }
+            fiscalStartMonth = Integer.valueOf(value);
+        }
         Map<String, LocalDate> from = new LinkedHashMap<>();
         if (request != null && request.from() != null) {
             for (Map.Entry<String, String> entry : request.from().entrySet()) {
@@ -223,6 +233,7 @@ public class ValidateSettings {
         body.set(new SettingsInput(limitChanged, limit, floor, terms, latePct, policyChanged, policyDate,
                 numberingChanged, numberingFrom, gradeTerms, capChanged, cap, from,
                 thresholdChanged, threshold, perms, graceChanged, graceDays, noteThresholdChanged, noteThreshold,
-                entryChanged, entryDate, gradeGrace, gradeProofThreshold, potChanged, pot, parentChanged, parent));
+                entryChanged, entryDate, gradeGrace, gradeProofThreshold, potChanged, pot, parentChanged, parent,
+                fiscalChanged, fiscalStartMonth));
     }
 }

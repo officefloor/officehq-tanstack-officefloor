@@ -28,11 +28,21 @@ import java.util.NavigableMap;
  * and its grace days (null: off): when the sheet's today is changed, every open period whose to-date
  * plus the grace days is before the new today is closed, and its entry date (null: off): while it is
  * set, the date of a new claim left undated instead of the sheet's today, and its pot (null: none),
- * shared out as cuts among a balanced pool's members.
+ * shared out as cuts among a balanced pool's members, and its fiscal year start month (null: 1).
  */
 public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap<LocalDate, String>> dated,
         LocalDate policyDate, LocalDate periodNumberingFrom, Map<String, String> perms, Integer graceDays,
-        LocalDate entryDate, BigDecimal pot) {
+        LocalDate entryDate, BigDecimal pot, Integer fiscalStartMonth) {
+    /** The month, 1 to 12, a fiscal year starts in. */
+    public int fiscalStart() {
+        return fiscalStartMonth == null ? 1 : fiscalStartMonth;
+    }
+
+    /** The name, FY<yyyy>, of the fiscal year a date falls in: by the calendar year of its first day. */
+    public String fiscalYearOf(LocalDate date) {
+        return "FY" + (date.getMonthValue() >= fiscalStart() ? date.getYear() : date.getYear() - 1);
+    }
+
     /** The grades that may have their own terms. */
     public static final List<String> GRADES = List.of("A", "B", "C");
 

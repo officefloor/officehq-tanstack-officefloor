@@ -7,6 +7,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import net.officefloor.hq.app.AsOf;
+import net.officefloor.hq.app.setting.Settings;
+import net.officefloor.hq.app.setting.SettingsRepository;
 import net.officefloor.hq.app.sheet.Sheet;
 import net.officefloor.plugin.variable.Val;
 import net.officefloor.web.ObjectResponse;
@@ -17,7 +19,7 @@ import net.officefloor.web.ObjectResponse;
  * reopened or closed again with another due-total).
  */
 public class RespondWithPeriods {
-    public void respond(@Val Sheet sheet, PeriodRepository repository, HttpServletRequest request,
+    public void respond(@Val Sheet sheet, PeriodRepository repository, SettingsRepository settingsRepository, HttpServletRequest request,
             ObjectResponse<PeriodsResponse> response) {
         LocalDate asOf = AsOf.of(request);
         Map<String, Map<Long, BigDecimal>> personTotals = repository.personTotals(sheet.id());
@@ -36,8 +38,9 @@ public class RespondWithPeriods {
             personTotals = thenTotals;
         }
         Map<String, Map<Long, BigDecimal>> totals = personTotals;
+        Settings settings = settingsRepository.find(sheet.id());
         response.send(new PeriodsResponse(periods.stream()
-                .map(p -> PeriodResponse.from(p, totals.getOrDefault(p.name(), Map.of()))).toList()));
+                .map(p -> PeriodResponse.from(p, totals.getOrDefault(p.name(), Map.of()), settings)).toList()));
     }
 
     private static boolean same(BigDecimal a, BigDecimal b) {

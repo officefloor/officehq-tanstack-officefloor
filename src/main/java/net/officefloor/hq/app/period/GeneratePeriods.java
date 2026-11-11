@@ -23,9 +23,15 @@ public class GeneratePeriods {
         if (input.to().isBefore(from)) {
             throw new InvalidPeriodException("A to-date is on or after the from-date");
         }
+        result.set(new GeneratePeriodsResponse(months(from, input.to(), sheet, repository, request, audit)));
+    }
+
+    /** Makes and audits the monthly periods from the from-date's month to the to-date's month, as above: how many were made. */
+    static int months(LocalDate from, LocalDate to, Sheet sheet, PeriodRepository repository,
+            HttpServletRequest request, Audit audit) {
         List<Period> existing = repository.findAll(sheet.id());
         int made = 0;
-        for (YearMonth month = YearMonth.from(from); !month.isAfter(YearMonth.from(input.to())); month = month.plusMonths(1)) {
+        for (YearMonth month = YearMonth.from(from); !month.isAfter(YearMonth.from(to)); month = month.plusMonths(1)) {
             Period period = new Period(sheet.id(), month.toString(), month.atDay(1), month.atEndOfMonth());
             if (existing.stream().anyMatch(o -> o.name().equals(period.name()) || o.overlaps(period))) continue;
             repository.insert(period);
@@ -33,6 +39,6 @@ public class GeneratePeriods {
                     + " period=" + period.name() + " from=" + period.from() + " to=" + period.to());
             made++;
         }
-        result.set(new GeneratePeriodsResponse(made));
+        return made;
     }
 }

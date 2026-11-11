@@ -6,6 +6,7 @@ import { postJson } from '../../api/http';
 import { SheetBody } from '../../slots/defs/sheetBody';
 import { useUser } from '../session/session';
 import { poolsKey } from '../pools/pools';
+import { periodsKey } from '../periods/periods';
 import { ACTIONS, CAP, DATED_KEYS, FLOOR, GRADES, LATE_PCT, LIMIT, NOTE_THRESHOLD, PERM_ROLES, POLICY_DATE, POT, PROOF_THRESHOLD, STANDING_RULE, TERMS, ROLES, gradeGraceKey, gradeProofThresholdKey, rolesKey, settingsKey, useRoles, useSettings } from './access';
 import type { Role, Settings, SettingsChange } from './access';
 
@@ -25,7 +26,8 @@ type Key = Exclude<keyof Settings, 'gradeTerms' | 'perms' | 'gradeGrace' | 'grad
 // grace days (blank: none), dated, past a claim's due-by before it is overdue, and each grade's proof threshold
 // (blank: none, the sheet's), dated, in place of the sheet's for a claim of the grade, and its pot (blank:
 // none), not dated, shared out as cuts among a balanced pool's members, and its parent sheet (blank: none), not
-// dated, whose rates a grade takes on a date this sheet has none in force. Only the settings typed in (or stepped into)
+// dated, whose rates a grade takes on a date this sheet has none in force, and its fiscal year start month
+// (1 to 12), not dated. Only the settings typed in (or stepped into)
 // since the last save are sent, so saving one leaves the other as it is.
 function SettingsForm({ sheetId }: { sheetId: string }) {
   const queryClient = useQueryClient();
@@ -44,6 +46,7 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
     entryDate: '',
     pot: '',
     parent: '',
+    fiscalStartMonth: '',
   });
   const [touched, setTouched] = useState<Set<Key>>(new Set());
   const [gradeFields, setGradeFields] = useState<Record<string, string>>({});
@@ -73,6 +76,8 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
       queryClient.invalidateQueries({ queryKey: poolsKey(sheetId) });
       // A new parent changes the rates in force, and every figure taken from them.
       if (body.parent !== undefined) void queryClient.invalidateQueries({ queryKey: ['sheet', sheetId] });
+      // A new fiscal start month changes the fiscal year each period falls in.
+      if (body.fiscalStartMonth !== undefined) void queryClient.invalidateQueries({ queryKey: periodsKey(sheetId) });
     },
     onError: () => setError('Those settings could not be saved.'),
   });
@@ -154,6 +159,14 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
       body.pot = pot;
     }
     if (touched.has('parent')) body.parent = fields.parent.trim();
+    if (touched.has('fiscalStartMonth')) {
+      const month = fields.fiscalStartMonth.trim();
+      if (!/^(0?[1-9]|1[0-2])$/.test(month)) {
+        setError('A fiscal start month is a month, 1 to 12.');
+        return;
+      }
+      body.fiscalStartMonth = month;
+    }
     if (touched.has('cap')) {
       const cap = fields.cap.trim();
       if (cap !== '' && !CAP.test(cap)) {
@@ -469,6 +482,20 @@ function SettingsForm({ sheetId }: { sheetId: string }) {
         </label>{' '}
         <span>
           now: <strong data-testid="setting-pot-current">{settings.data?.pot ?? ''}</strong>
+        </span>{' '}
+        <label>
+          Fiscal year starts in month{' '}
+          <input
+            data-testid="setting-fiscal-start-month"
+            inputMode="numeric"
+            placeholder="1"
+            value={fields.fiscalStartMonth}
+            onFocus={() => touch('fiscalStartMonth')}
+            onChange={(e) => change('fiscalStartMonth', e.target.value)}
+          />
+        </label>{' '}
+        <span>
+          now: <strong data-testid="setting-fiscal-start-month-current">{settings.data?.fiscalStartMonth ?? ''}</strong>
         </span>{' '}
         <label>
           Parent sheet{' '}
