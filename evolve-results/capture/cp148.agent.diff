@@ -1,0 +1,39 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index b2feabfd7..57fd5e545 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -175,10 +175,10 @@ export const CLAIM_NUMBER = /^(\d+|.+-\d+)$/;
+ 
+ /**
+  * The amounts of the claims that count (OPEN, PENDING and SETTLED, but not unbound open ones dated within
+- * a hold of their person: `holds` tells by person id, nor ones deferred on `today`) added up, in whole cents so no rounding creeps in, shown with two
++ * a hold of their person: `holds` tells by person id, nor ones deferred on `today`), leaving out corrections, added up, in whole cents so no rounding creeps in, shown with two
+  * decimals.
+  */
+ export function sumAmounts(claims: Claim[], holds: (personId: string) => Hold[], today: string): string {
+-  const cents = claims.filter((c) => counts(c, holds(c.personId), today)).reduce((n, c) => n + Math.round(Number(c.amount) * 100), 0);
++  const cents = claims.filter((c) => !isCorrection(c) && counts(c, holds(c.personId), today)).reduce((n, c) => n + Math.round(Number(c.amount) * 100), 0);
+   return (cents / 100).toFixed(2);
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index a42b747b0..6d43eafcb 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -38,7 +38,7 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
+ 
+     /**
+      * The sheet's figures now. A person's claimed is the amounts of their claims that count (OPEN
+-     * and SETTLED, but not an unbound OPEN one dated within one of their holds) added up; their due-total the figures of those claims added up, skipping n/a (a live due is the greater of the floor on its date and its rate figure plus the late
++     * and SETTLED, but not an unbound OPEN one dated within one of their holds, nor a correction) added up; their due-total the figures of those claims added up, skipping n/a (a live due is the greater of the floor on its date and its rate figure plus the late
+      * charge it gains on {@code today}), and
+      * n/a when their grade in force today has no rate today and no claim that counts keeps a fixed
+      * figure or has one under the grade in force on its date when that is another grade, or
+@@ -63,7 +63,7 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
+             for (Claim claim : sheetClaims) {
+                 if (claim.getPersonId() != person.getId()) continue;
+                 if (!claim.counts(person.heldOn(claim.getDate(), today), today)) continue;
+-                claimed = claimed.add(claim.getAmount());
++                if (!claim.isCorrection()) claimed = claimed.add(claim.getAmount());
+                 if (claim.getSettledDue() != null || claim.boundDue() != null) fixed = true;
+                 String grade = person.gradeOn(claim.getDate());
+                 BigDecimal figure = ClaimFigure.withLate(claim, all, grade, settings, today);
