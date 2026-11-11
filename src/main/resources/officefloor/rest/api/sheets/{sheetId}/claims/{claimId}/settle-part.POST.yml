@@ -1,0 +1,67 @@
+# Part-settle an OPEN claim: split an amount off it as the split does, and settle the new claim at
+# once as the settle does (to PENDING when the clerk limit says so). The four-eyes rules and the
+# proof rule are judged on the original claim. Whatever the split or the settle would refuse
+# refuses the whole action (a 400 or 409) and writes nothing.
+# A viewer may change nothing: refused before anything is read or written.
+viewer:
+  class: net.officefloor.hq.app.role.CheckCanChange
+  next: validate
+validate:
+  class: net.officefloor.hq.app.claim.ValidateSplit
+  govern: [ transaction ]
+  next: loadSheet
+loadSheet:
+  class: net.officefloor.hq.app.sheet.LoadSheet
+  govern: [ transaction ]
+  next: before
+# The sheet's figures before the change, so the rollup lines tell which moved.
+before:
+  class: net.officefloor.hq.app.rollup.TakeRollup
+  govern: [ transaction ]
+  next: load
+load:
+  class: net.officefloor.hq.app.claim.LoadClaim
+  govern: [ transaction ]
+  next: closed
+# A claim due by a date inside a closed period is a 409 and writes nothing.
+closed:
+  class: net.officefloor.hq.app.period.CheckClaimPeriod
+  govern: [ transaction ]
+  next: judge
+# The settle's role, four-eyes and proof rules, on the original claim before it is split.
+judge:
+  class: net.officefloor.hq.app.claim.JudgePartSettle
+  govern: [ transaction ]
+  next: apply
+apply:
+  class: net.officefloor.hq.app.claim.SplitClaim
+  govern: [ transaction ]
+  next: save
+# Saves both claims; the new one takes the sheet's next number and logs its opening.
+save:
+  class: net.officefloor.hq.app.claim.SaveSplit
+  govern: [ transaction ]
+  next: audit
+# Every rule has passed and the split is saved.
+audit:
+  class: net.officefloor.hq.app.claim.AuditClaimSplit
+  govern: [ transaction ]
+  next: rollup
+# After the split's own lines: the figures it moved.
+rollup:
+  class: net.officefloor.hq.app.rollup.AuditRollup
+  govern: [ transaction ]
+  next: settle
+# Settles the new claim, saves it and logs its status.
+settle:
+  class: net.officefloor.hq.app.claim.SettleSplitClaim
+  govern: [ transaction ]
+  next: settled
+# The settle's own line, its watchers' lines, then the figures it moved.
+settled:
+  class: net.officefloor.hq.app.claim.AuditSplitSettled
+  govern: [ transaction ]
+  next: respond
+respond:
+  class: net.officefloor.hq.app.claim.RespondWithSplit
+  govern: [ transaction ]

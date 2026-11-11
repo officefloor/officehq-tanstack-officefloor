@@ -83,6 +83,8 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
   const [inlineAmount, setInlineAmount] = useState<Record<string, string>>({});
   // The amount typed to split off each claim, by claim id.
   const [splitAmount, setSplitAmount] = useState<Record<string, string>>({});
+  // The amount typed to part-settle off each claim, by claim id.
+  const [partAmount, setPartAmount] = useState<Record<string, string>>({});
   const [commentText, setCommentText] = useState<Record<string, string>>({});
   // The line typed to add to each draft (label, quantity, unit amount), by claim id.
   // Each claim's timeline as last shown: its audit lines, newest first.
@@ -237,6 +239,36 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
       return;
     }
     split.mutate({ id, amount });
+  };
+
+  // Part-settle: an amount is split off an OPEN claim and the new claim settled at once, or nothing.
+  const settlePart = useMutation({
+    mutationFn: ({ id, amount }: { id: string; amount: string }) =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheetId)}/claims/${encodeURIComponent(id)}/settle-part`,
+        { amount },
+        user,
+      ),
+    onSuccess: (_c, { id }) => {
+      setPartAmount((a) => ({ ...a, [id]: '' }));
+      void queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) });
+      return queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) });
+    },
+    onError: (_e, { id }) =>
+      setRefused({
+        id,
+        message: 'That part cannot be settled: the claim must be OPEN, the part less than its amount, and you may settle it.',
+      }),
+  });
+
+  const settlePartClaim = (id: string) => {
+    setRefused(null);
+    const amount = (partAmount[id] ?? '').trim();
+    if (!AMOUNT.test(amount)) {
+      setRefused({ id, message: 'A part-settle needs an amount with up to two decimals.' });
+      return;
+    }
+    settlePart.mutate({ id, amount });
   };
 
   // A draft's amount changed in its row: the claim editor's save with only the amount changed, so
@@ -790,6 +822,19 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
               />{' '}
               <button type="button" data-testid="claim-split" onClick={() => splitClaim(c.id)}>
                 Split
+              </button>{' '}
+              <input
+                data-testid="claim-settle-part-amount"
+                placeholder="Part to settle"
+                inputMode="decimal"
+                value={partAmount[c.id] ?? ''}
+                onChange={(e) => {
+                  setPartAmount((a) => ({ ...a, [c.id]: e.target.value }));
+                  setRefused((r) => (r !== null && r.id === c.id ? null : r));
+                }}
+              />{' '}
+              <button type="button" data-testid="claim-settle-part" onClick={() => settlePartClaim(c.id)}>
+                Settle part
               </button>{' '}
               <select
                 data-testid="claim-reassign-to"

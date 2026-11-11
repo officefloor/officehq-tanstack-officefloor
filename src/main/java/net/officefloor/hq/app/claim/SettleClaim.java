@@ -37,6 +37,16 @@ public class SettleClaim {
     static void settle(Sheet sheet, Claim claim, String user, PersonRepository people, RateRepository rates,
             RoleRepository roles, SettingsRepository settingsStore)
             throws InvalidClaimStatusException, SelfSettleException {
+        settle(sheet, claim, user, people, rates, roles, settingsStore, false);
+    }
+
+    /**
+     * Settles the claim as the given user would; when {@code judged} the four-eyes rules and the
+     * proof rule were already judged on another claim (a part-settle's original) and are skipped.
+     */
+    static void settle(Sheet sheet, Claim claim, String user, PersonRepository people, RateRepository rates,
+            RoleRepository roles, SettingsRepository settingsStore, boolean judged)
+            throws InvalidClaimStatusException, SelfSettleException {
         Person person = people.find(sheet.id(), claim.getPersonId());
         Settings settings = settingsStore.find(sheet.id());
         String role = roles.roleOf(sheet.id(), user);
@@ -54,15 +64,31 @@ public class SettleClaim {
         if (!claim.getStatus().canMoveTo(ClaimStatus.SETTLED)) {
             throw new InvalidClaimStatusException(claim.getStatus(), ClaimStatus.SETTLED);
         }
-        if (user.equals(claim.getOpenedBy())) throw new SelfSettleException(user);
-        if (claim.isOwnedBy(user)) throw new SelfSettleException(user, "last edited");
         BigDecimal due = ClaimFigure.floored(claim, figure, late, settings);
-        if (settings.needsProof(due, grade, claim.getDate(), claim)) throw new InvalidClaimStatusException(ProofRequired.MESSAGE);
+        if (!judged) judge(claim, user, due, grade, settings);
         if (!settings.withinClerkLimit(due, sheet.today()) && Role.CLERK.equals(role)) {
             claim.moveTo(ClaimStatus.PENDING);
             return;
         }
         claim.moveTo(ClaimStatus.SETTLED);
         claim.setSettledDue(due);
+    }
+
+    /**
+     * The four-eyes rules and the proof rule: refuses the user who opened the claim or last edited it,
+     * and a claim whose due is above the proof threshold without the proofs it needs.
+     */
+    static void judge(Claim claim, String user, BigDecimal due, String grade, Settings settings)
+            throws InvalidClaimStatusException, SelfSettleException {
+        if (user.equals(claim.getOpenedBy())) throw new SelfSettleException(user);
+        if (claim.isOwnedBy(user)) throw new SelfSettleException(user, "last edited");
+        if (settings.needsProof(due, grade, claim.getDate(), claim)) throw new InvalidClaimStatusException(ProofRequired.MESSAGE);
+    }
+
+    /** The due the claim would be settled at now, by the rules above; null for n/a. */
+    static BigDecimal dueNow(Sheet sheet, Claim claim, String grade, RateRepository rates, Settings settings) {
+        BigDecimal figure = claim.isStated() ? claim.getStatedDue()
+                : ClaimFigure.live(claim, rates.findAll(sheet.id()), grade, settings, sheet.today());
+        return ClaimFigure.floored(claim, figure, ClaimFigure.late(claim, figure, grade, settings, sheet.today()), settings);
     }
 }
