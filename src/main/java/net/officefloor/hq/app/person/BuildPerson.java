@@ -7,7 +7,8 @@ import net.officefloor.plugin.variable.Val;
 public class BuildPerson {
     public void build(@Val PersonRequest request, @Val Sheet sheet, Out<Person> personOut) {
         Person person = new Person(null, sheet.id(), request.name(), request.grade());
-        person.setTerms(request.termsDays());
+        if (request.termsFrom().isEmpty()) person.setTerms(request.termsDays());
+        else person.setTermsFrom(request.termsDays(), java.time.LocalDate.parse(request.termsFrom()));
         person.setContact(request.contactValue());
         person.setTags(request.tagsValue());
         personOut.set(person);

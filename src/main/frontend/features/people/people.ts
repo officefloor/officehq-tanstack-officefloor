@@ -22,7 +22,7 @@ export function gradeOn(grades: GradeFrom[], date: string): Grade {
 // `patronIds` are the ids of the people they name as their patrons, in the order named, and
 // `patronShares` their shares (two decimals, adding up to 100.00), in the same order. `grade` is the grade in force on
 // the sheet's today; `grades` every grade they have been given, by from-date, the first from ''.
-// `terms` are their own terms in days, ahead of their grade's and the sheet's ('' for none).
+// `terms` are their own terms in days in force on the sheet's today, ahead of their grade's and the sheet's ('' for none).
 // `contact` is their contact, trimmed and lower-cased ('' for none); no two people on a sheet share one.
 // `tags` are their tags: trimmed, lower-cased, without repeats, sorted; empty when they have none.
 // `aliases` are their aliases, trimmed, in the order given; like names (ignoring case), none equals

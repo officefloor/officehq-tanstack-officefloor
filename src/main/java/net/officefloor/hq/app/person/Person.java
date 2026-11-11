@@ -29,6 +29,7 @@ public class Person {
     private final List<String> snapshots = new ArrayList<>();
     private final List<String> statementLines = new ArrayList<>();
     private final TreeMap<LocalDate, String> datedGrades = new TreeMap<>();
+    private final TreeMap<LocalDate, Integer> datedTerms = new TreeMap<>();
 
     public Person(Long id, String sheetId, String name, String grade) {
         this(id, sheetId, name, grade, 0);
@@ -50,9 +51,21 @@ public class Person {
     /** The first grade they were given: in force from the beginning of time, until their first dated grade. */
     public String getGrade() { return grade; }
     public void setGrade(String grade) { this.grade = grade; }
-    /** Their own terms in days, ahead of their grade's and the sheet's; null when they have none. */
+    /** Their own terms in days from the beginning of time, until their first dated terms; null when they have none. */
     public Integer getTerms() { return terms; }
     public void setTerms(Integer terms) { this.terms = terms; }
+    /** The terms recorded from a date, by from-date (null: none): each in force from it until the next. */
+    public Map<LocalDate, Integer> getDatedTerms() { return datedTerms; }
+    /** Record the terms (null: none) from this date, replacing any recorded from the same date. */
+    public void setTermsFrom(Integer terms, LocalDate from) { datedTerms.put(from, terms); }
+    /**
+     * Their own terms in force on the date, ahead of their grade's and the sheet's: the latest dated
+     * ones on or before it, else those from the beginning of time; null when they have none.
+     */
+    public Integer termsOn(LocalDate date) {
+        Map.Entry<LocalDate, Integer> dated = datedTerms.floorEntry(date);
+        return dated == null ? terms : dated.getValue();
+    }
     /** Their contact, trimmed and lower-cased; null when they have none. */
     public String getContact() { return contact; }
     public void setContact(String contact) { this.contact = contact; }

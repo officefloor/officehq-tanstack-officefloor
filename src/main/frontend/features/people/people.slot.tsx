@@ -15,9 +15,10 @@ import { Col } from '../columns/columns';
 // `gradeFrom` is the date the grade is from ('' for the sheet's today). A person's first grade
 // applies from the beginning of time; an edit records the grade from its date, keeping the others,
 // but records nothing when it leaves the grade as the row shows it with no from-date. `terms` are
-// their own terms in days ('' for none). `contact` is their contact ('' for none). `tags` are their tags, comma separated ('' for none).
-type Fields = { name: string; grade: Grade; gradeFrom: string; terms: string; contact: string; tags: string };
-const EMPTY: Fields = { name: '', grade: 'A', gradeFrom: '', terms: '', contact: '', tags: '' };
+// their own terms in days ('' for none); `termsFrom` the date they are from ('' for the beginning of
+// time): dated terms are kept alongside those already recorded. `contact` is their contact ('' for none). `tags` are their tags, comma separated ('' for none).
+type Fields = { name: string; grade: Grade; gradeFrom: string; terms: string; termsFrom: string; contact: string; tags: string };
+const EMPTY: Fields = { name: '', grade: 'A', gradeFrom: '', terms: '', termsFrom: '', contact: '', tags: '' };
 
 // The people on the sheet: a form that adds a person, or edits the one whose editor is open, and
 // the list of everyone in list order (new people at the end; up and down buttons move them) (retired people only when "show retired" is on). The editor remembers the version of the person
@@ -61,7 +62,7 @@ function People({ sheetId }: { sheetId: string }) {
           (p) => p.id === id,
         );
         if (current) {
-          setFields({ name: current.name, grade: current.grade, gradeFrom: '', terms: current.terms, contact: current.contact, tags: current.tags.join(', ') });
+          setFields({ name: current.name, grade: current.grade, gradeFrom: '', terms: current.terms, termsFrom: '', contact: current.contact, tags: current.tags.join(', ') });
           setVersion(current.version);
         }
         return;
@@ -97,7 +98,7 @@ function People({ sheetId }: { sheetId: string }) {
 
   const open = (p: Person) => {
     setEditing(p.id);
-    setFields({ name: p.name, grade: p.grade, gradeFrom: '', terms: p.terms, contact: p.contact, tags: p.tags.join(', ') });
+    setFields({ name: p.name, grade: p.grade, gradeFrom: '', terms: p.terms, termsFrom: '', contact: p.contact, tags: p.tags.join(', ') });
     setVersion(p.version);
     setError('');
   };
@@ -145,6 +146,15 @@ function People({ sheetId }: { sheetId: string }) {
             size={4}
             value={fields.terms}
             onChange={(e) => change({ terms: e.target.value })}
+          />
+        </label>{' '}
+        <label>
+          From{' '}
+          <input
+            type="date"
+            data-testid="person-form-terms-from"
+            value={fields.termsFrom}
+            onChange={(e) => change({ termsFrom: e.target.value })}
           />
         </label>{' '}
         <label>

@@ -175,9 +175,9 @@ public record Settings(String sheetId, LocalDate today, Map<String, NavigableMap
         return value == null || value.isEmpty() ? null : Integer.valueOf(value);
     }
 
-    /** The terms of a person's claim on a date: their own, else their grade's then, else the sheet's. */
+    /** The terms of a person's claim on a date: their own in force then, else their grade's then, else the sheet's. */
     public int termsFor(net.officefloor.hq.app.person.Person person, LocalDate date) {
-        Integer own = person.getTerms();
+        Integer own = person.termsOn(date);
         return own != null ? own : termsFor(person.gradeOn(date), date);
     }
 

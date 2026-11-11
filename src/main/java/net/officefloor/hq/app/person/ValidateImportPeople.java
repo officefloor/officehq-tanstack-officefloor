@@ -23,7 +23,7 @@ public class ValidateImportPeople {
             String terms = fields.length > 2 ? fields[2] : "";
             String contact = fields.length > 3 ? fields[3] : "";
             try {
-                lines.add(PersonRequest.checked(new PersonRequest(fields[0], fields[1], null, "", terms, contact, null)));
+                lines.add(PersonRequest.checked(new PersonRequest(fields[0], fields[1], null, "", terms, contact, null, "")));
             } catch (InvalidPersonException e) {
                 throw new InvalidPersonException("Line " + number + ": " + e.getMessage());
             }

@@ -52,8 +52,8 @@ public class AddImportedPeople {
             } else {
                 if (!updatedIds.add(person.getId())) throw new DuplicatePersonNameException(line.name());
                 Integer terms = line.termsDays();
-                termsEdit = new TermsEdit(terms != null && !terms.equals(person.getTerms()));
-                if (terms != null) person.setTerms(terms);
+                termsEdit = new TermsEdit(terms != null && !terms.equals(person.termsOn(sheet.today())));
+                if (termsEdit.changed()) person.setTerms(terms);
                 String contact = line.contactValue();
                 contactEdit = new ContactEdit(contact != null && !contact.equals(person.getContact()));
                 if (contact != null) person.setContact(contact);

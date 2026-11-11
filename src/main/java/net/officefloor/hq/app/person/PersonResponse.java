@@ -12,7 +12,7 @@ import java.util.List;
  * ("" when not), whether they have any hold, their holds (in the order added), the ids of the people they name as patrons (in the order named) with their
  * shares (see {@link #shares}), and every
  * grade they have been given with the date it is from (the first "", from the beginning of time),
- * by from-date, their own terms in days ("" for none), their contact ("" for none), their tags (sorted; none: empty), their aliases
+ * by from-date, their own terms in days in force on the sheet's today ("" for none), their contact ("" for none), their tags (sorted; none: empty), their aliases
  * (in the order given), and whether they clash: their name or an alias is a name or alias on another
  * sheet of the sheet's tree, the sheet they were transferred from ("" when never transferred), and
  * the retirements they were unretired from, oldest first, each as "<from> to <to>", and their snapshot lines, oldest first, each as
@@ -58,7 +58,7 @@ public record PersonResponse(String id, String name, String grade, long version,
                 person.isHeld(),
                 person.getHolds().stream().map((h) -> new HoldFrom(h.from().toString(), h.to() == null ? "" : h.to().toString())).toList(),
                 person.getPatronIds().stream().map(String::valueOf).toList(), shares(person.getPatronIds().size()), grades,
-                person.getTerms() == null ? "" : person.getTerms().toString(),
+                person.termsOn(today) == null ? "" : person.termsOn(today).toString(),
                 person.getContact() == null ? "" : person.getContact(), person.tagList(), List.copyOf(person.getAliases()), clashing,
                 person.getOriginSheet() == null ? "" : person.getOriginSheet(),
                 person.getPastRetirements().stream().map((r) -> r.from() + " to " + r.to()).toList(),
