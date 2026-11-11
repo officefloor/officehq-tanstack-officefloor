@@ -1,4 +1,5 @@
 import { HomeMain } from '../../slots/defs/homeMain';
+import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
 import { useCurrentSheet } from '../../session/session';
 import { useEditingPerson, usePeople } from './people';
 
@@ -14,6 +15,7 @@ function PeopleList() {
         <tr>
           <th>Name</th>
           <th>Grade</th>
+          <PersonColumnHeads.Slot />
           <th />
         </tr>
       </thead>
@@ -22,6 +24,7 @@ function PeopleList() {
           <tr key={p.id} data-testid={`person-row-${p.id}`}>
             <td data-testid="person-name" style={{ whiteSpace: 'pre' }}>{p.name}</td>
             <td data-testid="person-grade">{p.grade}</td>
+            <PersonColumns.Slot person={p} />
             <td>
               <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => setEditing(String(p.id))}>
                 Edit
