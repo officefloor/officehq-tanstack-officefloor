@@ -5,11 +5,13 @@ import { sumDue, useRates } from '../rates/rates';
 import { useSheetToday } from '../sheet/sheet';
 import { useCap, useFloor, useLate } from '../access/access';
 import { useAsOf } from '../sheet/asof.slot';
-import { sheetFigures, useDescendantFigures } from './consolidated';
+import { GRADES } from '../people/people';
+import { STATUSES, sheetFigures, useDescendantFigures } from './consolidated';
 
 // The consolidated figures, over the sheet and all its descendants: everyone on them, and each
 // sheet's due-total and overdue-total as that sheet shows them, added up. The sheet's own figures
-// are the header's; with no children these are just those. While the screen shows an as-of date,
+// are the header's; with no children these are just those. Per grade, the due-totals of the people
+// on it (retired people left out), and per status the count of claims in it, added up over the tree. While the screen shows an as-of date,
 // every sheet of the tree is shown as it stood at the end of that date, with that date as its today.
 function Consolidated({ sheetId }: { sheetId: string }) {
   const people = usePeople(sheetId).data ?? [];
@@ -31,6 +33,22 @@ function Consolidated({ sheetId }: { sheetId: string }) {
       Consolidated — People: <strong data-testid="consolidated-people-count">{count}</strong>{' '}
       Due: <strong data-testid="consolidated-due-total">{sumDue(all.map((f) => f.dueTotal))}</strong>{' '}
       Overdue: <strong data-testid="consolidated-overdue-total">{sumDue(all.map((f) => f.overdueTotal))}</strong>
+      <table>
+        <tbody>
+          {GRADES.map((g) => (
+            <tr key={g}>
+              <td>Grade {g}</td>
+              <td data-testid={`consolidated-grade-${g}-due-total`}>{sumDue(all.map((f) => f.gradeDueTotals[g]))}</td>
+            </tr>
+          ))}
+          {STATUSES.map((s) => (
+            <tr key={s}>
+              <td>{s}</td>
+              <td data-testid={`consolidated-status-${s}-count`}>{all.reduce((n, f) => n + f.statusCounts[s], 0)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </section>
   );
 }

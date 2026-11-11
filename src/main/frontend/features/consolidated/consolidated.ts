@@ -1,17 +1,30 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import type { Claim } from '../claims/claims';
-import { liveHolds } from '../people/people';
-import type { Person } from '../people/people';
-import { personDueTotal, trimmedSumDue } from '../rates/rates';
+import type { Claim, ClaimStatus } from '../claims/claims';
+import { GRADES, liveHolds } from '../people/people';
+import type { Grade, Person } from '../people/people';
+import { personDueTotal, sumDue, trimmedSumDue } from '../rates/rates';
 import type { Dated, Late, Rate } from '../rates/rates';
 import { personOverdue } from '../overdue/overdue';
 import { floorOf, lateOf } from '../access/access';
 import type { Settings } from '../access/access';
 import type { Sheet } from '../sheet/sheet';
 
-/** A sheet's own figures, as its header shows them: its people, its due-total and its overdue-total. */
-export type Figures = { people: number; dueTotal: string; overdueTotal: string };
+/** Every status the consolidated figures count. */
+export const STATUSES: ClaimStatus[] = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID', 'REVIEW'];
+
+/**
+ * A sheet's own figures, as its header shows them: its people, its due-total and its overdue-total;
+ * and, as its summary shows them, per grade the due-totals of the people on it (retired people left
+ * out) added up, and per status how many claims have it.
+ */
+export type Figures = {
+  people: number;
+  dueTotal: string;
+  overdueTotal: string;
+  gradeDueTotals: Record<Grade, string>;
+  statusCounts: Record<string, number>;
+};
 
 /** A sheet's figures from what it holds — the one working the header and the consolidated figures share. */
 export function sheetFigures(
@@ -24,10 +37,16 @@ export function sheetFigures(
   cap: string,
 ): Figures {
   const claimsOf = (id: string) => claims.filter((c) => c.personId === id);
+  const dueOf = (p: Person) => personDueTotal(rates, p.grades, today, claimsOf(p.id), liveHolds(p, today), floor, late, cap);
+  const active = people.filter((p) => !p.retired);
   return {
+    gradeDueTotals: Object.fromEntries(
+      GRADES.map((g) => [g, sumDue(active.filter((p) => p.grade === g).map(dueOf))]),
+    ) as Record<Grade, string>,
+    statusCounts: Object.fromEntries(STATUSES.map((s) => [s, claims.filter((c) => c.status === s).length])),
     people: people.length,
     dueTotal: trimmedSumDue(
-      people.map((p) => personDueTotal(rates, p.grades, today, claimsOf(p.id), liveHolds(p, today), floor, late, cap)),
+      people.map(dueOf),
     ),
     overdueTotal: trimmedSumDue(
       people.map((p) => personOverdue(rates, p.grades, today, claimsOf(p.id), liveHolds(p, today), floor, late).total),
