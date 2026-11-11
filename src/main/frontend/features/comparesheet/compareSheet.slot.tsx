@@ -17,7 +17,7 @@ function CompareSheet({ sheetId }: { sheetId: string }) {
     mutationFn: async (otherId: string) => {
       const [own, theirs] = await Promise.all([readFigures(sheetId), readFigures(otherId).catch(() => null)]);
       if (theirs === null) return [];
-      return GRADES.map((g) => `${g} ${own.gradeDueTotals[g]} ${theirs.gradeDueTotals[g] || '0.00'}`);
+      return GRADES.map((g) => `${g} ${own.gradeDueTotals[g] ?? '0.00'} ${theirs.gradeDueTotals[g] || '0.00'}`);
     },
     onSuccess: setLines,
     onError: () => setLines([]),

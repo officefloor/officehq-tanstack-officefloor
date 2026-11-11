@@ -1,6 +1,8 @@
 package net.officefloor.hq.app.grade;
 
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.ArrayList;
+import java.util.List;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.person.Person;
@@ -19,7 +21,10 @@ import net.officefloor.plugin.variable.Val;
  * Merges a grade into another (a steward): everyone whose grade in force on the sheet's today is the
  * merged grade is given the other from the sheet's today, in list order, exactly as the person form
  * would. A retired grade cannot be merged into. Recorded as GRADE_MERGED, then each person graded as a
- * single edit is: its PERSON_EDITED line, then the figures it moved.
+ * single edit is: its PERSON_EDITED line, then the figures it moved. The merge is then made retroactive:
+ * every grade record of each person moved that is on the merged grade (their first grade and each dated
+ * one) becomes the other, so all their claims, whatever their date, take the other grade's rates, terms
+ * and thresholds. Frozen figures and figures bound by a statement are kept as they are.
  */
 public class MergeGrade {
     public void merge(@Val GradeMergeRequest request, @Val Sheet sheet, PersonRepository people,
@@ -39,20 +44,25 @@ public class MergeGrade {
         audit.record("GRADE_MERGED sheet=" + sheet.id() + " by=" + user + " from=" + request.from()
                 + " into=" + request.into());
         Rollup before = rollup(sheet, people, claims, rates, settings);
-        int merged = 0;
+        List<Person> moved = new ArrayList<>();
         for (Person person : people.findAll(sheet.id())) {
             if (!request.from().equals(person.gradeOn(sheet.today()))) continue;
             person.setGradeFrom(request.into(), sheet.today());
             // Saved over by someone else since it was read: left as it is.
             if (!people.save(person)) continue;
-            merged++;
+            moved.add(person);
             audit.record("PERSON_EDITED sheet=" + sheet.id() + " by=" + user + " name=" + person.getName()
                     + " grade=" + person.gradeOn(sheet.today()));
             Rollup after = rollup(sheet, people, claims, rates, settings);
             after.changesSince(before, sheet.id(), user).forEach(audit::record);
             before = after;
         }
-        result.set(new GradeMergeResponse(merged));
+        for (Person person : moved) {
+            if (request.from().equals(person.getGrade())) person.setGrade(request.into());
+            person.getDatedGrades().replaceAll((from, grade) -> request.from().equals(grade) ? request.into() : grade);
+            people.save(person);
+        }
+        result.set(new GradeMergeResponse(moved.size()));
     }
 
     private static Rollup rollup(Sheet sheet, PersonRepository people, ClaimRepository claims, RateRepository rates,
