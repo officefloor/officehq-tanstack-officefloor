@@ -7,7 +7,7 @@ import { PersonHead, PersonRow } from '../../slots/defs/personRow';
 import { gradeOn, liveHolds, peopleKey, usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { useUser } from '../session/session';
-import { AMOUNT, CLAIM_AMOUNT, CLAIM_NUMBER, claimsKey, isDeferred, sumAmounts, useClaims } from './claims';
+import { AMOUNT, CLAIM_AMOUNT, CLAIM_NUMBER, claimsKey, showsDeferred, sumAmounts, useClaims } from './claims';
 import type { Claim } from './claims';
 import { selectClaim, useSelectedClaims } from './selection';
 import { claimDue, rateOn, useRates } from '../rates/rates';
@@ -568,7 +568,7 @@ function PersonClaims({ sheetId, person }: { sheetId: string; person: Person }) 
               <span data-testid="claim-period">{periodOf(periods, c.dueBy)?.name ?? ''}</span>{' '}
               <span data-testid="claim-due-by">{dueBy(c)}</span>{' '}
               <span data-testid="claim-overdue">{isOverdue(c, today, late, gradeOn(person.grades, c.date)) ? 'yes' : 'no'}</span>{' '}
-              <span data-testid="claim-deferred">{isDeferred(c, today) ? 'yes' : 'no'}</span>{' '}
+              <span data-testid="claim-deferred">{showsDeferred(c, today) ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-deferred-until">{c.deferredUntil}</span>{' '}
               <span data-testid="claim-proofs">{c.proofs}</span>{' '}
               <span data-testid="claim-split-from">{c.splitFrom}</span>{' '}

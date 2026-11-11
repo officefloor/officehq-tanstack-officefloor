@@ -85,6 +85,14 @@ export const isDeferred = (c: Claim, today: string) =>
   c.status === 'OPEN' && c.deferredUntil !== '' && today !== '' && today < c.deferredUntil;
 
 /**
+ * Whether the claim's row shows it deferred: it was deferred until a date after the sheet's
+ * `today`, whatever its status since (a deferred claim voided stays shown deferred). Only
+ * `isDeferred` decides what counts.
+ */
+export const showsDeferred = (c: Claim, today: string) =>
+  c.deferredUntil !== '' && today !== '' && today < c.deferredUntil;
+
+/**
  * Whether a claim counts toward claimed, due-total and every total: only OPEN, PENDING and SETTLED
  * do, and an OPEN or PENDING one not when it is dated within one of its person's `holds`, unless a
  * statement binds it; never one deferred on `today`.

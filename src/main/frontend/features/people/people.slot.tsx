@@ -8,6 +8,8 @@ import { PersonHead, PersonRow } from '../../slots/defs/personRow';
 import { useUser } from '../session/session';
 import { GRADES, peopleKey, peopleQuery, usePeople, useShowRetired } from './people';
 import type { Grade, Person } from './people';
+import { SORT_KEYS, useSorted, useSortBy } from './sort';
+import type { SortKey } from './sort';
 
 // `gradeFrom` is the date the grade is from ('' for the sheet's today). A person's first grade
 // applies from the beginning of time; an edit records the grade from its date, keeping the others,
@@ -29,6 +31,8 @@ function People({ sheetId }: { sheetId: string }) {
   const [error, setError] = useState('');
   const [user] = useUser();
   const [showRetired, setShowRetired] = useShowRetired();
+  const [sortBy, setSortBy] = useSortBy();
+  const shown = useSorted(sheetId, (people.data ?? []).filter((p) => showRetired || !p.retired));
 
   const reset = () => {
     setFields(EMPTY);
@@ -189,6 +193,16 @@ function People({ sheetId }: { sheetId: string }) {
           onChange={(e) => setShowRetired(e.target.checked ? true : undefined)}
         />{' '}
         Show retired
+      </label>{' '}
+      <label>
+        Sort by{' '}
+        <select data-testid="sort-by" value={sortBy} onChange={(e) => setSortBy(e.target.value as SortKey)}>
+          {SORT_KEYS.map((k) => (
+            <option key={k} value={k}>
+              {k}
+            </option>
+          ))}
+        </select>
       </label>
       <table data-testid="people-list">
         <thead>
@@ -204,7 +218,7 @@ function People({ sheetId }: { sheetId: string }) {
           </tr>
         </thead>
         <tbody>
-          {(people.data ?? []).filter((p) => showRetired || !p.retired).map((p) => (
+          {shown.map((p) => (
             <tr key={p.id} data-testid={`person-row-${p.id}`}>
               <td data-testid="person-name">{p.name}</td>
               <td data-testid="person-grade">{p.grade}</td>
