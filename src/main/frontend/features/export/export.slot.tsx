@@ -5,6 +5,8 @@ import { claimDue, personDueTotal, rateOn, useRates } from '../rates/rates';
 import { periodOf, usePeriods } from '../periods/periods';
 import { useCap, useFloor, useLate } from '../access/access';
 import { useSheetToday } from '../sheet/sheet';
+import { getJson } from '../../api/http';
+import type { Pool } from '../pools/pools';
 
 // A CSV value: wrapped in double quotes (any quote inside doubled) when it holds a comma, a quote
 // or a line break.
@@ -87,8 +89,33 @@ function ExportClaims({ sheetId }: { sheetId: string }) {
   );
 }
 
+// Downloads the pools as a CSV file: a header line, then one line per member, pools in the order
+// added and each pool's members in the order added, a member pool as pool:<name> and the cut as
+// the pool's row shows it ('' when none). Quoted and ended as the people export. The pools are read
+// afresh when pressed, so a change just made is always in the file.
+function ExportPools({ sheetId }: { sheetId: string }) {
+  const download = async () => {
+    const { pools } = await getJson<{ pools: Pool[] }>(`/api/sheets/${encodeURIComponent(sheetId)}/pools`);
+    const lines = [['pool', 'member', 'share', 'cut']];
+    for (const p of [...pools].sort((a, b) => a.added - b.added)) {
+      for (const m of p.members) {
+        lines.push([p.name, m.memberPool ? `pool:${m.memberPool}` : m.name, m.share, m.cut]);
+      }
+    }
+    downloadCsv(`pools-${sheetId}.csv`, lines);
+  };
+
+  return (
+    <p>
+      <button type="button" data-testid="export-pools" onClick={() => void download()}>
+        Export pools (CSV)
+      </button>
+    </p>
+  );
+}
 
 export const contributions = [
   SheetBody.fill({ order: 2, Component: ExportPeople }),
   SheetBody.fill({ order: 2.1, Component: ExportClaims }),
+  SheetBody.fill({ order: 2.2, Component: ExportPools }),
 ];

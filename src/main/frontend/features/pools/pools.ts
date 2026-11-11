@@ -22,8 +22,9 @@ export type PoolMember = {
   active: boolean;
 };
 
-/** A pool on the sheet: its members in the order added, their total share, and balanced when it is exactly 100.00. */
-export type Pool = { name: string; members: PoolMember[]; totalShare: string; balanced: boolean };
+/** A pool on the sheet: its members in the order added, their total share, and balanced when it is exactly 100.00.
+ *  `added` orders the pools as they were added (a larger one added later). */
+export type Pool = { name: string; members: PoolMember[]; totalShare: string; balanced: boolean; added: number };
 
 // Under the people's key: a change to a person (a retirement, a new name) reads the pools again too.
 export const poolsKey = (sheetId: string) => [...peopleKey(sheetId), 'pools'] as const;

@@ -15,9 +15,11 @@ import java.util.List;
  * member has a cut). A pool whose every member is retired has no cuts. A hold or a retirement changes neither the total nor whether the pool is balanced. An
  * unbalanced pool, or no pot, has no cuts. A member whose dates do not include the sheet's today is
  * left out entirely: not in the total, not in the balance, and no cut (not even 0.00). A pool that is a member of another has no pot of its own: its
- * pot is its cut in the pool above (none when that pool has no cuts).
+ * pot is its cut in the pool above (none when that pool has no cuts). {@code added} orders the pools as they
+ * were added (a larger one added later).
  */
-public record PoolResponse(String name, List<PoolMemberResponse> members, String totalShare, boolean balanced) {
+public record PoolResponse(String name, List<PoolMemberResponse> members, String totalShare, boolean balanced,
+        long added) {
     private static final BigDecimal HUNDRED = new BigDecimal("100.00");
 
     public static PoolResponse from(Pool pool, List<PoolMember> members, BigDecimal pot) {
@@ -28,7 +30,7 @@ public record PoolResponse(String name, List<PoolMemberResponse> members, String
         for (int i = 0; i < members.size(); i++) {
             shown.add(PoolMemberResponse.from(members.get(i), cuts == null ? null : cuts.get(i)));
         }
-        return new PoolResponse(pool.name(), shown, total.toPlainString(), balanced);
+        return new PoolResponse(pool.name(), shown, total.toPlainString(), balanced, pool.id());
     }
 
     /** The active members' shares added up, a retired member's counting as given. */
