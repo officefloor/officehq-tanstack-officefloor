@@ -33,6 +33,11 @@ public class OpenClaims {
         String sheet = sheetId.trim();
         Map<Long, Integer> personOrder = new HashMap<>();
         Map<Long, Person> persons = new HashMap<>();
+        // A person's claims newest first, as listed: a claim moved to them is listed as their newest.
+        Map<Long, Integer> listed = new HashMap<>();
+        for (Claim claim : store.list(sheet)) {
+            listed.put(claim.getId(), listed.size());
+        }
         for (Person person : people.list(sheet)) {
             personOrder.put(person.getId(), personOrder.size());
             persons.put(person.getId(), person);
@@ -48,7 +53,7 @@ public class OpenClaims {
             }
         }
         selected.sort(Comparator.<Claim>comparingInt(c -> personOrder.getOrDefault(c.getPersonId(), Integer.MAX_VALUE))
-                .thenComparing(Comparator.comparingLong(Claim::getId).reversed()));
+                .thenComparing(c -> listed.getOrDefault(c.getId(), Integer.MAX_VALUE)));
         boolean permitted = !sheets.archived(sheet) && settings.allows(sheet, "open", roles.find(sheet, input.user()));
         int opened = 0;
         for (Claim claim : selected) {

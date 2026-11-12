@@ -16,6 +16,12 @@ import net.officefloor.plugin.variable.Val;
 public class CheckReassign {
     public void check(@Val ReassignInput input, @Val Claim claim, RoleStore roles, PersonStore people,
             SettingStore settings, Out<Reassignment> reassignment) throws InvalidSheetException {
+        reassignment.set(refuse(input, claim, roles, people, settings, false));
+    }
+
+    /** The move, or refused as a single move is; a bulk move lets a claim "move" to the person it is with. */
+    static Reassignment refuse(ReassignInput input, Claim claim, RoleStore roles, PersonStore people,
+            SettingStore settings, boolean bulk) throws InvalidSheetException {
         Role role = roles.find(claim.getSheetId(), input.user());
         if (!settings.allows(claim.getSheetId(), "reassign", role)) {
             throw new InvalidSheetException("A " + role.shown() + " may not move a claim");
@@ -31,10 +37,10 @@ public class CheckReassign {
         if (to == null) {
             throw new InvalidSheetException("No such person: " + input.to());
         }
-        if (to.getId() == claim.getPersonId()) {
+        if (!bulk && to.getId() == claim.getPersonId()) {
             throw new InvalidSheetException("The claim is already " + to.getName() + "'s");
         }
         Retirement.refuseClaimDate(to, claim.getDate());
-        reassignment.set(new Reassignment(from, to));
+        return new Reassignment(from, to);
     }
 }

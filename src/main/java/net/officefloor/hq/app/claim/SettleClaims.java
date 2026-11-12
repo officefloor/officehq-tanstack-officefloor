@@ -35,6 +35,11 @@ public class SettleClaims {
             Out<BulkSettleResult> result) {
         String sheet = sheetId.trim();
         Map<Long, Integer> personOrder = new HashMap<>();
+        // A person's claims newest first, as listed: a claim moved to them is listed as their newest.
+        Map<Long, Integer> listed = new HashMap<>();
+        for (Claim claim : store.list(sheet)) {
+            listed.put(claim.getId(), listed.size());
+        }
         for (Person person : people.list(sheet)) {
             personOrder.put(person.getId(), personOrder.size());
         }
@@ -49,7 +54,7 @@ public class SettleClaims {
             }
         }
         selected.sort(Comparator.<Claim>comparingInt(c -> personOrder.getOrDefault(c.getPersonId(), Integer.MAX_VALUE))
-                .thenComparing(Comparator.comparingLong(Claim::getId).reversed()));
+                .thenComparing(c -> listed.getOrDefault(c.getId(), Integer.MAX_VALUE)));
         StatusInput status = new StatusInput(ClaimStatus.SETTLED, input.user(), false, "");
         int settled = 0;
         for (Claim claim : selected) {
