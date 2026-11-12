@@ -2,19 +2,19 @@ package net.officefloor.hq.app.person;
 
 import java.sql.PreparedStatement;
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.NavigableMap;
+import java.util.TreeMap;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
 
-/** The people kept per sheet, in the order they were added. */
+/** The people kept per sheet, in the order they were added, each with their dated grades. */
 @Repository
 public class PersonStore {
-
-    private static final RowMapper<Person> ROW = (rs, i) -> new Person(rs.getLong("id"),
-            rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getLong("version"),
-            rs.getObject("retired_from", LocalDate.class), rs.getBoolean("held"));
 
     private final JdbcTemplate jdbc;
 
@@ -22,18 +22,37 @@ public class PersonStore {
         this.jdbc = jdbc;
     }
 
+    /** The people's grades on the sheet (only the one person when {@code personId} is given), by person. */
+    private Map<Long, NavigableMap<LocalDate, String>> grades(String sheetId, Long personId) {
+        Map<Long, NavigableMap<LocalDate, String>> grades = new HashMap<>();
+        jdbc.query("SELECT person_id, from_date, grade FROM person_grade WHERE sheet_id = ?"
+                + (personId == null ? "" : " AND person_id = " + personId), rs -> {
+                    grades.computeIfAbsent(rs.getLong("person_id"), k -> new TreeMap<>())
+                            .put(rs.getObject("from_date", LocalDate.class), rs.getString("grade"));
+                }, sheetId);
+        return grades;
+    }
+
+    private List<Person> query(String sheetId, Long personId, String sql, Object... args) {
+        Map<Long, NavigableMap<LocalDate, String>> grades = grades(sheetId, personId);
+        RowMapper<Person> row = (rs, i) -> new Person(rs.getLong("id"), rs.getString("sheet_id"),
+                rs.getString("name"), grades.getOrDefault(rs.getLong("id"), new TreeMap<>()), rs.getLong("version"),
+                rs.getObject("retired_from", LocalDate.class), rs.getBoolean("held"));
+        return jdbc.query(sql, row, args);
+    }
+
     public List<Person> list(String sheetId) {
-        return jdbc.query("SELECT * FROM person WHERE sheet_id = ? ORDER BY id", ROW, sheetId);
+        return query(sheetId, null, "SELECT * FROM person WHERE sheet_id = ? ORDER BY id", sheetId);
     }
 
     public Person find(String sheetId, long id) {
-        List<Person> found = jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND id = ?", ROW, sheetId, id);
+        List<Person> found = query(sheetId, id, "SELECT * FROM person WHERE sheet_id = ? AND id = ?", sheetId, id);
         return found.isEmpty() ? null : found.get(0);
     }
 
     /** The person on the sheet with this name, ignoring case and the spaces around it; null when none. */
     public Person findByName(String sheetId, String name) {
-        List<Person> found = jdbc.query("SELECT * FROM person WHERE sheet_id = ? AND name_key = LOWER(?)", ROW,
+        List<Person> found = query(sheetId, null, "SELECT * FROM person WHERE sheet_id = ? AND name_key = LOWER(?)",
                 sheetId, name.trim());
         return found.isEmpty() ? null : found.get(0);
     }
@@ -46,29 +65,38 @@ public class PersonStore {
         return n != null && n > 0;
     }
 
+    /** Adds the person with their first grade, which applies from the beginning of time. */
     public Person add(String sheetId, String name, String grade) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade) VALUES (?, ?, ?)", new String[] { "ID" });
+                    "INSERT INTO person (sheet_id, name) VALUES (?, ?)", new String[] { "ID" });
             ps.setString(1, sheetId);
             ps.setString(2, name);
-            ps.setString(3, grade);
             return ps;
         }, keys);
-        return new Person(keys.getKey().longValue(), sheetId, name, grade, 0);
+        long id = keys.getKey().longValue();
+        jdbc.update("INSERT INTO person_grade (sheet_id, person_id, from_date, grade) VALUES (?, ?, ?, ?)", sheetId,
+                id, Person.START, grade);
+        return new Person(id, sheetId, name, new TreeMap<>(Map.of(Person.START, grade)), 0);
     }
 
     /**
      * Stores the person over the version it was loaded at, moving the version on; false (nothing
-     * stored) when someone else has stored another version since.
+     * stored) when someone else has stored another version since. The grade the edit records (if any)
+     * is kept with the ones already recorded, replacing one from the same date.
      */
     public boolean save(Person person) {
         int n = jdbc.update(
-                "UPDATE person SET name = ?, grade = ?, version = version + 1 WHERE sheet_id = ? AND id = ? AND version = ?",
-                person.getName(), person.getGrade(), person.getSheetId(), person.getId(), person.getVersion());
+                "UPDATE person SET name = ?, version = version + 1 WHERE sheet_id = ? AND id = ? AND version = ?",
+                person.getName(), person.getSheetId(), person.getId(), person.getVersion());
         if (n == 1) {
             person.setVersion(person.getVersion() + 1);
+            LocalDate from = person.getRecordFrom();
+            if (from != null) {
+                jdbc.update("MERGE INTO person_grade (sheet_id, person_id, from_date, grade) KEY (person_id, from_date)"
+                        + " VALUES (?, ?, ?, ?)", person.getSheetId(), person.getId(), from, person.getGrades().get(from));
+            }
         }
         return n == 1;
     }

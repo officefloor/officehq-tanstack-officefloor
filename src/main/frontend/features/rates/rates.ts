@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { sheetKey } from '../sheet/sheet';
 import { type Claim, counts } from '../claims/claims';
+import { type Grades, gradeOn } from '../people/people';
 
 /** A grade's rate: `pct` is a percent with two decimals; `from` (yyyy-MM-dd) is the date it applies
  *  from, null for from the beginning of time. A grade may have several; one with no rate has none. */
@@ -86,35 +87,38 @@ function lateCharge(claim: Claim, figure: string, late: Late | undefined): strin
 const fixed = (claim: Claim) => claim.due !== null || (claim.stated && claim.statedDue !== null);
 
 /** A claim's due: the due fixed when it was settled (its late charge frozen in), else its figure — the
- *  figure its person's last statement bound it to, else its live due: its amount at its person's grade
- *  rate in force on the claim's date, at least the sheet's floor — plus its late charge when overdue.
+ *  figure its person's last statement bound it to, else its live due: its amount at the rate in force
+ *  on the claim's date of its person's grade in force on that date, at least the sheet's floor — plus its late charge when overdue.
  *  A statement never binds the charge: it keeps following the sheet's today. */
 export function claimDue(
   claim: Claim,
   rates: Rate[] | undefined,
-  grade: string,
+  grades: Grades,
   floor: string | undefined,
   late?: Late,
 ): string {
   if (claim.due !== null) return claim.due;
-  const figure = (claim.stated ? claim.statedDue : null) ?? liveDue(claim.amount, rateOf(rates, grade, claim.date), floor);
+  const figure = (claim.stated ? claim.statedDue : null) ?? liveDue(claim.amount, rateOf(rates, gradeOn(grades, claim.date), claim.date), floor);
   const charge = lateCharge(claim, figure, late);
   return charge === undefined ? figure : format(hundredths(figure) + hundredths(charge));
 }
 
-/** A person's due-total: the sum of the figures of their claims that count. n/a when their grade has
- *  no rate on the sheet's today, unless a claim that counts keeps a fixed (settled or stated) figure. */
+/** A person's due-total: the sum of the figures of their claims that count. n/a when their grade
+ *  in force on the sheet's today has no rate then, unless a claim that counts keeps a fixed (settled or
+ *  stated) figure, or a figure at another grade (the one in force on its date). */
 export function personDue(
   claims: Claim[],
   rates: Rate[] | undefined,
-  grade: string,
+  grades: Grades,
   today: string | undefined,
   floor: string | undefined,
   late?: Late,
 ): string {
   const mine = claims.filter(counts);
-  if (rateOf(rates, grade, today) === undefined && !mine.some(fixed)) {
+  const now = gradeOn(grades, today);
+  const elsewhere = (c: Claim) => gradeOn(grades, c.date) !== now && rateOf(rates, gradeOn(grades, c.date), c.date) !== undefined;
+  if (rateOf(rates, now, today) === undefined && !mine.some((c) => fixed(c) || elsewhere(c))) {
     return NA;
   }
-  return dueTotal(mine.map((c) => claimDue(c, rates, grade, floor, late)));
+  return dueTotal(mine.map((c) => claimDue(c, rates, grades, floor, late)));
 }

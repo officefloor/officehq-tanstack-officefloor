@@ -24,7 +24,7 @@ public class CheckClerkLimit {
             return;
         }
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
-        BigDecimal pct = person == null ? null : rates.find(claim.getSheetId(), person.getGrade(), claim.getDate());
+        BigDecimal pct = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
         BigDecimal due = Lateness.of(claim.getSheetId(), settings, sheets).due(claim, pct, settings.floor(claim.getSheetId()));
         if (due != null && due.compareTo(limit) > 0) {
             throw new InvalidSheetException("A clerk can settle a claim only when its due is at or below "

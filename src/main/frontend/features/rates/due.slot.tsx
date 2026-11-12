@@ -21,7 +21,7 @@ function PersonDue({ person }: { person: Person }) {
   const settings = useSettings(sheet).data;
   const floor = settings?.floor;
   const mine = live((claims.data ?? []).filter((c) => c.personId === person.id), [person]);
-  return <td data-testid="person-due-total">{personDue(mine, rates.data, person.grade, today, floor, lateOf(settings, today))}</td>;
+  return <td data-testid="person-due-total">{personDue(mine, rates.data, person.grades, today, floor, lateOf(settings, today))}</td>;
 }
 
 function DueTotal() {
@@ -33,7 +33,7 @@ function DueTotal() {
   const settings = useSettings(sheet).data;
   const floor = settings?.floor;
   const dues = (people.data ?? []).map((p) =>
-    personDue(live((claims.data ?? []).filter((c) => c.personId === p.id), [p]), rates.data, p.grade, today, floor, lateOf(settings, today)),
+    personDue(live((claims.data ?? []).filter((c) => c.personId === p.id), [p]), rates.data, p.grades, today, floor, lateOf(settings, today)),
   );
   return (
     <p>

@@ -1,6 +1,7 @@
 import type { Claim } from '../claims/claims';
 import { type Late, type Rate, claimDue, dueTotal } from '../rates/rates';
 import type { Settings } from '../settings/settings';
+import type { Grades } from '../people/people';
 
 /** The terms a sheet has until they are set: 14 days. */
 export const DEFAULT_TERMS = '14';
@@ -32,16 +33,16 @@ export function lateOf(settings: Settings | undefined, today: string | undefined
 }
 
 /** A person's overdue claims among these (their claims that count): how many, and the sum of their
- *  dues (late charge included) at the person's grade, skipping n/a. */
+ *  dues (late charge included) at the person's grade in force on each claim's date, skipping n/a. */
 export function overdueFigures(
   claims: Claim[],
   rates: Rate[] | undefined,
-  grade: string,
+  grades: Grades,
   floor: string | undefined,
   terms: string | undefined,
   today: string | undefined,
   lateCharge?: Late,
 ): { count: number; total: string } {
   const late = claims.filter((c) => overdue(c, terms, today));
-  return { count: late.length, total: dueTotal(late.map((c) => claimDue(c, rates, grade, floor, lateCharge))) };
+  return { count: late.length, total: dueTotal(late.map((c) => claimDue(c, rates, grades, floor, lateCharge))) };
 }

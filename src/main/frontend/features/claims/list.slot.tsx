@@ -89,7 +89,7 @@ function PersonClaims({ person }: { person: Person }) {
               <span data-testid="claim-date">{c.date}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}
               <span data-testid="claim-period">{periodOf(periods.data, c.date)?.name ?? ''}</span>{' '}
-              <span data-testid="claim-due">{claimDue(c, rates.data, person.grade, floor, lateOf(settings, today))}</span>{' '}
+              <span data-testid="claim-due">{claimDue(c, rates.data, person.grades, floor, lateOf(settings, today))}</span>{' '}
               <span data-testid="claim-due-by">{dueBy(c, terms)}</span>{' '}
               <span data-testid="claim-overdue">{overdue(c, terms, today) ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-status">{c.status}</span>{' '}

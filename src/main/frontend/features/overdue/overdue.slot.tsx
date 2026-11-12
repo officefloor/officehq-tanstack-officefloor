@@ -28,7 +28,7 @@ function useOverdue() {
     overdueFigures(
       live((claims.data ?? []).filter((c) => c.personId === person.id), [person]).filter(counts),
       rates.data,
-      person.grade,
+      person.grades,
       settings?.floor,
       settings?.terms,
       today,

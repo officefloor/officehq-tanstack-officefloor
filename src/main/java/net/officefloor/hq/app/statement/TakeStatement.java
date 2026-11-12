@@ -15,8 +15,8 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /** Takes a statement of the person on the sheet's today: their due-total (the sum of the figures of
- *  their claims that count; n/a when their grade has no rate today and no counting claim keeps a
- *  fixed figure), binding each counting claim to its figure now (its floored live due when not fixed) and unbinding the rest. A settled
+ *  their claims that count; n/a when their grade in force today has no rate today and no counting claim
+ *  keeps a fixed figure or a figure at another grade, the one in force on its date), binding each counting claim to its figure now (its floored live due when not fixed) and unbinding the rest. A settled
  *  claim keeps its fixed figure. The due-total includes the late charges of overdue claims, but a
  *  claim is bound to its figure without its charge, which keeps following the sheet's today. */
 public class TakeStatement {
@@ -36,18 +36,20 @@ public class TakeStatement {
                     || (claim.getStatus() == ClaimStatus.OPEN && !person.isHeld());
             BigDecimal figure = null;
             if (counts) {
-                figure = ClaimFigure.of(claim, rates.find(sheetId, person.getGrade(), claim.getDate()), floor);
+                figure = ClaimFigure.of(claim, rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()), floor);
                 counted++;
                 if (figure != null) {
                     total = total.add(claim.getSettledDue() != null ? figure : figure.add(lateness.charge(claim, figure)));
                 }
-                fixed |= claim.getSettledDue() != null || (claim.isStated() && claim.getStatedDue() != null);
+                // A figure at a grade other than the one in force today does not hang on today's grade's rate.
+                fixed |= claim.getSettledDue() != null || (claim.isStated() && claim.getStatedDue() != null)
+                        || (figure != null && !person.gradeOn(claim.getDate()).equals(person.gradeOn(today)));
             }
             claim.setStated(counts);
             claim.setStatedDue(figure);
             claims.bind(claim);
         }
-        boolean na = rates.find(sheetId, person.getGrade(), today) == null && !fixed;
+        boolean na = rates.find(sheetId, person.gradeOn(today), today) == null && !fixed;
         Statement statement = new Statement(person.getId(), today, na ? null : total, counted);
         statements.add(sheetId, statement, request.user());
         statementOut.set(statement);

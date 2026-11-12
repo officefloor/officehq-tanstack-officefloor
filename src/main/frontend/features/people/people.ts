@@ -8,11 +8,13 @@ import { sheetKey } from '../sheet/sheet';
  *  and `statementDate` (yyyy-MM-dd) are the last one's, null when none was taken. `retired` is set
  *  as soon as a `retiredFrom` date (yyyy-MM-dd, null when not retired) is, whatever the date.
  *  While `held`, their OPEN claims count in no live total; their SETTLED ones still do.
- *  `patronIds` are the ids of the other people on the sheet they named as their patrons. */
+ *  `patronIds` are the ids of the other people on the sheet they named as their patrons.
+ *  `grade` is the grade in force on the sheet's today; `grades` every grade with the date it applies from. */
 export type Person = {
   id: number;
   name: string;
   grade: string;
+  grades: Grades;
   version: number;
   statementCount: number;
   statedTotal: string | null;
@@ -24,6 +26,21 @@ export type Person = {
 };
 
 export const GRADES = ['A', 'B', 'C'] as const;
+
+/** A person's grades, each with the date (yyyy-MM-dd) it applies from; the first has none (null),
+ *  applying from the beginning of time. */
+export type Grades = { grade: string; from: string | null }[];
+
+/** The grade in force on the date (yyyy-MM-dd): the one with the latest from-date on or before it. */
+export function gradeOn(grades: Grades, on: string | undefined): string {
+  let best = grades[0];
+  for (const g of grades) {
+    if (g.from === null || (on !== undefined && g.from <= on)) {
+      if ((best.from ?? '') <= (g.from ?? '')) best = g;
+    }
+  }
+  return best?.grade ?? 'A';
+}
 
 /** Under the sheet's key, so loading the sheet again re-reads its people. */
 export const peopleKey = (sheet: string) => [...sheetKey(sheet), 'people'] as const;

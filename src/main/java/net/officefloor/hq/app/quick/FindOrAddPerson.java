@@ -30,7 +30,7 @@ public class FindOrAddPerson {
             Rollup before = rollups.snapshot(sheet);
             person = store.add(sheet, request.name(), request.grade());
             audit.record("PERSON_ADDED sheet=" + sheet + " by=" + request.user() + " name=" + person.getName()
-                    + " grade=" + person.getGrade());
+                    + " grade=" + request.grade());
             rollups.record(sheet, request.user(), before);
         }
         personOut.set(person);

@@ -56,12 +56,12 @@ function Periods() {
     save.reset();
   };
 
-  const gradeOf = new Map((people.data ?? []).map((p) => [p.id, p.grade]));
+  const gradesOf = new Map((people.data ?? []).map((p) => [p.id, p.grades]));
   const periodDue = (period: Period) =>
     dueTotal(
       live(claims.data ?? [], people.data)
-        .filter((c) => counts(c) && contains(period, c.date) && gradeOf.has(c.personId))
-        .map((c) => claimDue(c, rates.data, gradeOf.get(c.personId)!, floor, lateOf(settings, today))),
+        .filter((c) => counts(c) && contains(period, c.date) && gradesOf.has(c.personId))
+        .map((c) => claimDue(c, rates.data, gradesOf.get(c.personId)!, floor, lateOf(settings, today))),
     );
 
   return (

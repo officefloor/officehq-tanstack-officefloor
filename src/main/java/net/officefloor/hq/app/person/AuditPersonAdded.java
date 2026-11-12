@@ -10,7 +10,7 @@ public class AuditPersonAdded {
     public void audit(@Val PersonRequest request, @Val Person person, @Val Rollup before, Audit audit,
             RollupService rollups) {
         audit.record("PERSON_ADDED sheet=" + person.getSheetId() + " by=" + request.user() + " name="
-                + person.getName() + " grade=" + person.getGrade());
+                + person.getName() + " grade=" + request.grade());
         rollups.record(person.getSheetId(), request.user(), before);
     }
 }

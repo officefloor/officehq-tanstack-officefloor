@@ -1,5 +1,7 @@
 package net.officefloor.hq.app.person;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.Set;
 import net.officefloor.hq.app.sheet.InvalidSheetException;
 import net.officefloor.plugin.variable.Out;
@@ -15,8 +17,16 @@ public class ValidatePerson {
         if (request.grade() == null || !GRADES.contains(request.grade())) {
             throw new InvalidSheetException("The grade must be A, B or C");
         }
-        // Stored and compared without the spaces around the name.
-        body.set(new PersonRequest(request.name().trim(), request.grade(), request.user(),
-                request.version()));
+        String from = request.gradeFrom() == null ? "" : request.gradeFrom().trim();
+        try {
+            if (!from.isEmpty()) {
+                LocalDate.parse(from);
+            }
+        } catch (DateTimeParseException e) {
+            throw new InvalidSheetException("Not a date: " + from);
+        }
+        // Stored and compared without the spaces around the name; a blank from-date as none.
+        body.set(new PersonRequest(request.name().trim(), request.grade(), from.isEmpty() ? null : from,
+                request.user(), request.version()));
     }
 }

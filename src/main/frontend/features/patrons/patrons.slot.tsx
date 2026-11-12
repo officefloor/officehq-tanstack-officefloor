@@ -44,7 +44,7 @@ function PersonPatrons({ person }: { person: Person }) {
       personDue(
         live((claims.data ?? []).filter((c) => c.personId === p.id), [p]),
         rates.data,
-        p.grade,
+        p.grades,
         today,
         settings?.floor,
         lateOf(settings, today),
