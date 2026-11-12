@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { AppHeader } from '../../slots/defs/appHeader';
-import { LiveView, useCurrentSheet } from '../../session/session';
-import { sheetKey } from '../sheet/sheet';
+import { useAsOf, useCurrentSheet } from '../../session/session';
+import { asOfKey, asOfPath, sheetKey } from '../sheet/sheet';
 import { usePeople } from '../people/people';
 import { dueTotal } from '../rates/rates';
 import { useSheetDueTotal } from '../rates/due.slot';
@@ -12,11 +12,13 @@ import { useFigure } from '../locale/locale';
 /** Under the sheet's key, so loading the sheet again re-reads its descendants. */
 const descendantsKey = (sheet: string) => [...sheetKey(sheet), 'descendants'] as const;
 
-/** The ids of the sheets naming the sheet as their parent, their children, and so on. */
+/** The ids of the sheets naming the sheet as their parent, their children, and so on (as of the screen's
+ *  as-of date, when one is set). */
 function useDescendants(sheet: string) {
+  const [asOf] = useAsOf();
   return useQuery({
-    queryKey: descendantsKey(sheet),
-    queryFn: () => getJson<string[]>(`/api/sheets/${encodeURIComponent(sheet)}/descendants`),
+    queryKey: asOfKey(descendantsKey(sheet), asOf),
+    queryFn: () => getJson<string[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/descendants`, asOf)),
     enabled: sheet !== '',
   });
 }
@@ -47,8 +49,8 @@ function Consolidate({ sheets, sofar }: { sheets: string[]; sofar: Figures }) {
 }
 
 // The consolidated figures over the sheet and all its descendants: their people, and each sheet's due- and
-// overdue-totals (the header's) added up, as they are now whatever the screen's as-of date. A sheet with no
-// children shows its own.
+// overdue-totals (the header's) added up. While the screen has an as-of date, every sheet of the tree is read
+// as it stood at the end of that day, with that date as its today. A sheet with no children shows its own.
 function ConsolidatedFigures() {
   const [sheet] = useCurrentSheet();
   const descendants = useDescendants(sheet);
@@ -56,9 +58,7 @@ function ConsolidatedFigures() {
   return (
     <p data-testid="consolidated-figures">
       Consolidated{' '}
-      <LiveView.Provider value={true}>
-        <Consolidate key={descendants.data.join(',')} sheets={[sheet, ...descendants.data]} sofar={{ people: 0, due: [], overdue: [] }} />
-      </LiveView.Provider>
+      <Consolidate key={descendants.data.join(',')} sheets={[sheet, ...descendants.data]} sofar={{ people: 0, due: [], overdue: [] }} />
     </p>
   );
 }

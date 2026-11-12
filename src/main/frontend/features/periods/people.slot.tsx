@@ -11,7 +11,8 @@ import { personPeriodCarried, personPeriodDue, usePeriods } from './periods';
 import { useFigure } from '../locale/locale';
 
 // For every period on the sheet, a person's due-total for it: live while the period is open, fixed
-// when it was closed; and the figure carried into it from earlier periods' claims still open at its end.
+// when it was closed; and the figure carried into it from earlier periods' claims still open at its end, likewise
+// live while it is open and fixed when it was closed.
 function PeriodHeads() {
   const [sheet] = useCurrentSheet();
   const periods = usePeriods(sheet);

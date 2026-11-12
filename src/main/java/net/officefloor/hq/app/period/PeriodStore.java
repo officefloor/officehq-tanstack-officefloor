@@ -19,7 +19,9 @@ public class PeriodStore {
             rs.getBoolean("closed"), rs.getBigDecimal("closed_total"),
             rs.getBoolean("closed") || rs.getBoolean("soft") ? personTotals(rs.getString("sheet_id"), rs.getString("name"))
                     : Map.of(),
-            rs.getBoolean("soft"), cap(rs));
+            rs.getBoolean("soft"), cap(rs),
+            rs.getBoolean("closed") || rs.getBoolean("soft") ? personCarried(rs.getString("sheet_id"), rs.getString("name"),
+                    "period_person_total") : Map.of());
 
     private final JdbcTemplate jdbc;
 
@@ -43,7 +45,10 @@ public class PeriodStore {
                         rs.getBoolean("closed") || rs.getBoolean("soft")
                                 ? personTotals(rs.getString("sheet_id"), rs.getString("name"), totals)
                                 : Map.of(),
-                        rs.getBoolean("soft"), cap(rs)),
+                        rs.getBoolean("soft"), cap(rs),
+                        rs.getBoolean("closed") || rs.getBoolean("soft")
+                                ? personCarried(rs.getString("sheet_id"), rs.getString("name"), totals)
+                                : Map.of()),
                 sheetId);
     }
 
@@ -116,11 +121,21 @@ public class PeriodStore {
         return totals;
     }
 
-    /** Fixes each person's due-total in the period as it is when it is closed. */
-    public void fixPersonTotals(String sheetId, String name, Map<Long, BigDecimal> totals) {
+    /** Each person's carried figure fixed with their due-total when the period was closed, by person id. */
+    private Map<Long, BigDecimal> personCarried(String sheetId, String name, String table) {
+        Map<Long, BigDecimal> carried = new LinkedHashMap<>();
+        jdbc.query("SELECT person_id, carried FROM " + table + " WHERE sheet_id = ? AND period_name = ? ORDER BY person_id",
+                rs -> {
+                    carried.put(rs.getLong("person_id"), rs.getBigDecimal("carried"));
+                }, sheetId, name);
+        return carried;
+    }
+
+    /** Fixes each person's due-total and carried figure in the period as they are when it is closed. */
+    public void fixPersonTotals(String sheetId, String name, Map<Long, BigDecimal> totals, Map<Long, BigDecimal> carried) {
         totals.forEach((personId, total) -> jdbc.update(
-                "INSERT INTO period_person_total (sheet_id, period_name, person_id, total) VALUES (?, ?, ?, ?)",
-                sheetId, name, personId, total));
+                "INSERT INTO period_person_total (sheet_id, period_name, person_id, total, carried) VALUES (?, ?, ?, ?, ?)",
+                sheetId, name, personId, total, carried.getOrDefault(personId, BigDecimal.ZERO.setScale(2))));
     }
 
     /** Drops each person's due-total fixed in the period (as a soft close fixed them, before they are fixed afresh). */

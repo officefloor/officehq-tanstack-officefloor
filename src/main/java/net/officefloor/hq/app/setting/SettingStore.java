@@ -124,14 +124,14 @@ public class SettingStore {
     }
 
     /** The sheet's descendants: the sheets naming it as their parent (its children), then their children, and so
-     *  on, each once, by id within each level. The parents are those named now. */
+     *  on, each once, by id within each level. The parents are those named now (or, as of a date, then). */
     public List<String> descendants(String sheetId) {
         java.util.Set<String> seen = new java.util.LinkedHashSet<>(List.of(sheetId));
         List<String> level = List.of(sheetId);
         while (!level.isEmpty()) {
             List<String> next = new java.util.ArrayList<>();
             for (String parent : level) {
-                for (String child : jdbc.queryForList("SELECT sheet_id FROM sheet_setting WHERE setting_key = '"
+                for (String child : jdbc.queryForList("SELECT sheet_id FROM " + undated + " WHERE setting_key = '"
                         + PARENT + "' AND setting_value = ? ORDER BY sheet_id", String.class, parent)) {
                     if (seen.add(child)) {
                         next.add(child);

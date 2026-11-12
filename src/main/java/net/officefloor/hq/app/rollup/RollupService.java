@@ -145,6 +145,35 @@ public class RollupService {
         return totals;
     }
 
+    /** Each person's figure carried into a period ending on {@code to}, by person id in the order they were added:
+     *  the sum of the figures (as shown now, skipping n/a) of their claims due by a date in one of the
+     *  {@code earlier} periods (each from..to, inclusive) that were OPEN or PENDING at the end of {@code to} and
+     *  count then (see {@link #countsAt}), as the screen shows a person's carried figure for an open period. */
+    public Map<Long, BigDecimal> carriedByPerson(String sheetId, LocalDate to, List<LocalDate[]> earlier) {
+        LocalDate today = sheets.today(sheetId);
+        List<Claim> all = claims.list(sheetId);
+        Lateness lateness = lateness(sheetId, today, all);
+        Map<Long, ClaimStatus> atEnd = log.statusesAt(sheetId, to);
+        Map<Long, BigDecimal> totals = new LinkedHashMap<>();
+        for (Person person : people.list(sheetId)) {
+            BigDecimal total = BigDecimal.ZERO.setScale(2);
+            for (Claim claim : all) {
+                ClaimStatus status = atEnd.get(claim.getId());
+                if (claim.getPersonId() != person.getId() || status == null || !status.isOpen()
+                        || !countsAt(claim, status, person, today)
+                        || earlier.stream().noneMatch(p -> !claim.getDueBy().isBefore(p[0]) && !claim.getDueBy().isAfter(p[1]))) {
+                    continue;
+                }
+                BigDecimal figure = lateness.due(claim, rates.forClaim(claim).find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()));
+                if (figure != null) {
+                    total = total.add(figure);
+                }
+            }
+            totals.put(person.getId(), total);
+        }
+        return totals;
+    }
+
     /** Records how the sheet's figures moved since {@code before}, the change made by {@code user}. */
     public void record(String sheetId, String user, Rollup before) {
         Rollup after = snapshot(sheetId);

@@ -11,7 +11,8 @@ import { type Floor, type Late, type Rate, claimDue, dueTotal } from '../rates/r
  *  it is closed and, once closed, the due-total fixed on closing (null while open) and each person's
  *  due-total fixed on closing, by person id (empty while open), and whether it is soft-closed: not closed,
  *  but with those figures fixed as when it was soft-closed, and the most OPEN or PENDING claims a person may
- *  have in it (null for no cap). No two periods on a sheet overlap. */
+ *  have in it (null for no cap), and each person's carried figure fixed with their due-total, by person id
+ *  (empty while open). No two periods on a sheet overlap. */
 export type Period = {
   name: string;
   from: string;
@@ -21,6 +22,7 @@ export type Period = {
   people: Record<string, string>;
   soft: boolean;
   cap: number | null;
+  carried: Record<string, string>;
 };
 
 /** Whether the period's figures are fixed: it is closed or soft-closed. */
@@ -88,7 +90,8 @@ export function personPeriodDue(
   );
 }
 
-/** A person's carried figure for a period: the sum of the figures (as shown now) of their claims that count
+/** A person's carried figure for a period: once closed or soft-closed, the figure fixed then (0.00 for a person
+ *  added since); else the sum of the figures (as shown now) of their claims that count
  *  in it, whose due-by falls in a period ending before it starts, and that were still OPEN or PENDING at
  *  its end by their status log, skipping n/a; 0.00 when nothing is carried. */
 export function personPeriodCarried(
@@ -100,6 +103,7 @@ export function personPeriodCarried(
   floor: Floor,
   late: Late,
 ): string {
+  if (isFixed(period)) return period.carried?.[String(person.id)] ?? '0.00';
   const earlier = (periods ?? []).filter((p) => p.to < period.from);
   return dueTotal(
     (claims ?? [])

@@ -2,6 +2,7 @@ package net.officefloor.hq.app.period;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Map;
 import net.officefloor.hq.app.rollup.RollupService;
 import net.officefloor.hq.app.sheet.InvalidSheetException;
@@ -12,8 +13,8 @@ public final class PeriodClosing {
     private PeriodClosing() {
     }
 
-    /** Closes the open (or soft-closed) period, fixing its due-total and each person's due-total in it as
-     *  they are now; refused when it was closed meanwhile. Shared by a close by hand and the auto close of a new today. */
+    /** Closes the open (or soft-closed) period, fixing its due-total and each person's due-total and carried figure in it
+     *  as they are now; refused when it was closed meanwhile. Shared by a close by hand and the auto close of a new today. */
     public static PeriodResponse fix(String sheet, PeriodResponse period, PeriodStore store, RollupService rollups)
             throws InvalidSheetException {
         return fix(sheet, period, store, rollups, false);
@@ -31,12 +32,15 @@ public final class PeriodClosing {
         LocalDate from = LocalDate.parse(period.from());
         LocalDate to = LocalDate.parse(period.to());
         Map<Long, BigDecimal> people = rollups.dueBetweenByPerson(sheet, from, to);
+        List<LocalDate[]> earlier = store.list(sheet).stream().filter(p -> LocalDate.parse(p.to()).isBefore(from))
+                .map(p -> new LocalDate[] { LocalDate.parse(p.from()), LocalDate.parse(p.to()) }).toList();
+        Map<Long, BigDecimal> carried = rollups.carriedByPerson(sheet, to, earlier);
         BigDecimal total = people.values().stream().reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
         if (!(soft ? store.softClose(sheet, period.name(), total) : store.close(sheet, period.name(), total))) {
             throw new InvalidSheetException("The period " + period.name() + " is already closed");
         }
         store.dropPersonTotals(sheet, period.name());
-        store.fixPersonTotals(sheet, period.name(), people);
-        return PeriodResponse.of(period.name(), from, to, !soft, total, people, soft, period.cap());
+        store.fixPersonTotals(sheet, period.name(), people, carried);
+        return PeriodResponse.of(period.name(), from, to, !soft, total, people, soft, period.cap(), carried);
     }
 }
