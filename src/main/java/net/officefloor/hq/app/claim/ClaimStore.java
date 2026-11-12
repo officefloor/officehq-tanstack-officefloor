@@ -32,6 +32,7 @@ public class ClaimStore {
         claim.setRef(rs.getString("ref"));
         claim.setTags(rs.getString("tags"));
         claim.setVoidReason(rs.getString("void_reason"));
+        claim.setEditedBy(rs.getString("edited_by"));
         return claim;
     };
 
@@ -132,10 +133,10 @@ public class ClaimStore {
                 claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getVoidReason(), claim.getSheetId(), claim.getId());
     }
 
-    /** Stores a draft's amount, date, note, the claim it corrects and its reference and its tags, releasing its lock; false when the stored claim is no longer a draft. */
+    /** Stores a draft's amount, date, note, the claim it corrects, its reference, its tags and who edited it, releasing its lock; false when the stored claim is no longer a draft. */
     public boolean edit(Claim claim) {
-        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ?, tags = ?, locked_by = NULL WHERE sheet_id = ? AND id = ? AND status = ?",
-                claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getCorrects(), claim.getRef(), claim.getTags(), claim.getSheetId(), claim.getId(),
+        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ?, tags = ?, edited_by = ?, locked_by = NULL WHERE sheet_id = ? AND id = ? AND status = ?",
+                claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getCorrects(), claim.getRef(), claim.getTags(), claim.getEditedBy(), claim.getSheetId(), claim.getId(),
                 ClaimStatus.DRAFT.name()) == 1;
     }
 

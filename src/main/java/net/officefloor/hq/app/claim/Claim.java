@@ -30,6 +30,7 @@ public class Claim {
     private String ref;
     private String tags;
     private String voidReason;
+    private String editedBy;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue, String openedBy, boolean stated,
@@ -113,6 +114,9 @@ public class Claim {
     /** The reason it was voided with, from the sheet's list then; null when not voided, or voided while the list was empty. */
     public String getVoidReason() { return voidReason; }
     public void setVoidReason(String voidReason) { this.voidReason = voidReason; }
+    /** The user who last edited the claim (claim form or amount entry); null when it was never edited. */
+    public String getEditedBy() { return editedBy; }
+    public void setEditedBy(String editedBy) { this.editedBy = editedBy; }
     public void setDeferredUntil(LocalDate deferredUntil) { this.deferredUntil = deferredUntil; }
     public void setPersonId(long personId) { this.personId = personId; }
     public void setCorrects(String corrects) { this.corrects = corrects; }

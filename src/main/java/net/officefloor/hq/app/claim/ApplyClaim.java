@@ -10,5 +10,6 @@ public class ApplyClaim {
         claim.setCorrects(input.corrects());
         claim.setRef(input.ref());
         claim.setTags(input.tags());
+        claim.setEditedBy(input.user());
     }
 }

@@ -20,7 +20,7 @@ import net.officefloor.plugin.variable.Val;
  *  A clerk's settle above the clerk limit makes it PENDING instead (see {@link CheckClerkLimit}); a steward's
  *  approval settles a PENDING claim, frozen then at its live figure (a statement does not bind it while
  *  PENDING), and a rejection moves it back to OPEN, bound again by its person's last statement if that included it.
- *  The user who opened a claim may not settle or approve it, and a claim deferred on the sheet's today may not be settled.
+ *  The user who opened a claim, or who last edited it, may not settle or approve it, and a claim deferred on the sheet's today may not be settled.
  *  While the sheet has void reasons, a void needs one of them (the input's reason), kept on the claim. */
 public class ApplyStatus {
     public void apply(@Val StatusInput input, @Val StatusMove move, @Val Claim claim, ClaimStore store, PersonStore people,
@@ -32,6 +32,11 @@ public class ApplyStatus {
         if (input.status() == ClaimStatus.SETTLED && claim.getOpenedBy() != null
                 && claim.getOpenedBy().equals(input.user())) {
             throw new InvalidSheetException("The user who opened a claim cannot "
+                    + (input.review() ? "approve" : "settle") + " it");
+        }
+        if (input.status() == ClaimStatus.SETTLED && claim.getEditedBy() != null
+                && claim.getEditedBy().equals(input.user())) {
+            throw new InvalidSheetException("The user who last edited a claim cannot "
                     + (input.review() ? "approve" : "settle") + " it");
         }
         if (input.status() == ClaimStatus.SETTLED && claim.isDeferredOn(sheets.today(claim.getSheetId()))) {
