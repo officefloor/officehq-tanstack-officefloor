@@ -1,0 +1,46 @@
+import { useState } from 'react';
+import { HomeMain } from '../../slots/defs/homeMain';
+import { useCurrentSheet } from '../../session/session';
+import { usePersonDue } from '../rates/due.slot';
+import { type Person, usePeople } from './people';
+
+/** The due-total of the person's snapshot for the day (the last one written when the sheet's today was changed
+ *  away from it), or '' when there is none. */
+const snapshotOn = (p: Person, day: string): string =>
+  p.snapshots.filter((n) => n.day === day).at(-1)?.dueTotal ?? '';
+
+// Compares two snapshot dates: a line per person in list order, <name> <then> <now>, `then` being their
+// snapshot for the from-date and `now` their snapshot for the to-date (their due-total now when the to-date is
+// blank); a figure with no snapshot is empty, and each line is trimmed.
+function SnapshotCompare() {
+  const [sheet] = useCurrentSheet();
+  const people = usePeople(sheet);
+  const dueOf = usePersonDue(sheet);
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
+  const [compared, setCompared] = useState<{ from: string; to: string } | null>(null);
+
+  const lines = compared
+    ? (people.data ?? []).map((p) =>
+        [p.name, snapshotOn(p, compared.from), compared.to ? snapshotOn(p, compared.to) : dueOf(p)].join(' ').trim(),
+      )
+    : [];
+
+  return (
+    <section>
+      <h3>Compare snapshots</h3>
+      <input type="date" data-testid="snapshot-from" value={from} onChange={(e) => setFrom(e.target.value)} />{' '}
+      <input type="date" data-testid="snapshot-to" value={to} onChange={(e) => setTo(e.target.value)} />{' '}
+      <button type="button" data-testid="snapshot-compare" onClick={() => setCompared({ from, to })}>
+        Compare
+      </button>
+      {lines.map((line, i) => (
+        <div key={i} data-testid="snapshot-line">
+          {line}
+        </div>
+      ))}
+    </section>
+  );
+}
+
+export const contribution = HomeMain.fill({ order: 20.5, Component: SnapshotCompare });
