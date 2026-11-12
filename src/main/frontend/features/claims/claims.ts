@@ -18,6 +18,10 @@ export type Claim = {
   due: string | null;
   /** The user who opened the claim; null until it is opened. */
   openedBy: string | null;
+  /** Whether the person's last statement bound the claim to its figure then. */
+  stated: boolean;
+  /** The figure the claim was bound to; null when not bound, or bound while it had none. */
+  statedDue: string | null;
 };
 
 /** Only OPEN and SETTLED claims count toward claimed and the totals. */

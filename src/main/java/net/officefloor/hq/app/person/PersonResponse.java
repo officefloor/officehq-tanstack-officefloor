@@ -1,8 +1,13 @@
 package net.officefloor.hq.app.person;
 
-/** A person as the front end reads it. */
-public record PersonResponse(long id, String name, String grade, long version) {
-    public static PersonResponse from(Person p) {
-        return new PersonResponse(p.getId(), p.getName(), p.getGrade(), p.getVersion());
+import net.officefloor.hq.app.statement.StatementSummary;
+
+/** A person as the front end reads it, with their statement count and the last statement's
+ *  due-total and date (null when none was taken). */
+public record PersonResponse(long id, String name, String grade, long version, int statementCount,
+        String statedTotal, String statementDate) {
+    public static PersonResponse from(Person p, StatementSummary s) {
+        return new PersonResponse(p.getId(), p.getName(), p.getGrade(), p.getVersion(), s.count(), s.lastDueTotal(),
+                s.lastDate());
     }
 }

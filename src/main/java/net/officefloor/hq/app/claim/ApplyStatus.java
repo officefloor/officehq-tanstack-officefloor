@@ -1,7 +1,6 @@
 package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonStore;
 import net.officefloor.hq.app.rate.RateStore;
@@ -11,7 +10,8 @@ import net.officefloor.plugin.variable.Val;
 
 /** Moves the claim to the new status, refusing a change its current status does not allow. Opening
  *  gives the claim the sheet's next number and records who opened it; voiding clears it. Settling fixes its due at its person's
- *  grade rate in force on the claim's date, rounded half to even (none when no rate of the grade applies then).
+ *  grade rate in force on the claim's date, rounded half to even (none when no rate of the grade applies then),
+ *  or at the figure its person's last statement bound it to.
  *  The user who opened a claim may not settle it. */
 public class ApplyStatus {
     public void apply(@Val StatusInput input, @Val Claim claim, ClaimStore store, PersonStore people,
@@ -33,8 +33,7 @@ public class ApplyStatus {
         if (input.status() == ClaimStatus.SETTLED) {
             Person person = people.find(claim.getSheetId(), claim.getPersonId());
             BigDecimal pct = person == null ? null : rates.find(claim.getSheetId(), person.getGrade(), claim.getDate());
-            claim.setSettledDue(pct == null ? null
-                    : claim.getAmount().multiply(pct).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_EVEN));
+            claim.setSettledDue(ClaimFigure.of(claim, pct));
         }
         change.set(new StatusChange(claim.getNumber()));
         if (input.status() == ClaimStatus.VOID) {

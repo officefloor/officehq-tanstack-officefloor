@@ -19,7 +19,7 @@ public class ClaimStore {
             rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getObject("claim_date", LocalDate.class),
             rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
             rs.getObject("number", Long.class), rs.getBigDecimal("settled_due"),
-            rs.getString("opened_by"));
+            rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"));
 
     private final JdbcTemplate jdbc;
 
@@ -49,7 +49,7 @@ public class ClaimStore {
             ps.setString(5, note);
             return ps;
         }, keys);
-        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null);
+        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null);
     }
 
     public void save(Claim claim) {
@@ -57,6 +57,18 @@ public class ClaimStore {
                 + "WHERE sheet_id = ? AND id = ?",
                 claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getStatus().name(),
                 claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getSheetId(), claim.getId());
+    }
+
+    /** The person's claims, newest first, their rows locked until the transaction ends. */
+    public List<Claim> listForUpdate(String sheetId, long personId) {
+        return jdbc.query("SELECT * FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY id DESC FOR UPDATE",
+                ROW, sheetId, personId);
+    }
+
+    /** Binds the claim to the figure (null for n/a), or unbinds it when not {@code stated}. */
+    public void bind(Claim claim) {
+        jdbc.update("UPDATE claim SET stated = ?, stated_due = ? WHERE sheet_id = ? AND id = ?", claim.isStated(),
+                claim.getStatedDue(), claim.getSheetId(), claim.getId());
     }
 
     /** Moves the stored claim from {@code from} to {@code to}, locking its row until the transaction

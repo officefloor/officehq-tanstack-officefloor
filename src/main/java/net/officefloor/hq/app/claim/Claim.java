@@ -16,9 +16,12 @@ public class Claim {
     private Long number;
     private BigDecimal settledDue;
     private String openedBy;
+    private boolean stated;
+    private BigDecimal statedDue;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
-            ClaimStatus status, Long number, BigDecimal settledDue, String openedBy) {
+            ClaimStatus status, Long number, BigDecimal settledDue, String openedBy, boolean stated,
+            BigDecimal statedDue) {
         this.id = id;
         this.sheetId = sheetId;
         this.personId = personId;
@@ -29,6 +32,8 @@ public class Claim {
         this.number = number;
         this.settledDue = settledDue;
         this.openedBy = openedBy;
+        this.stated = stated;
+        this.statedDue = statedDue;
     }
 
     public long getId() { return id; }
@@ -44,6 +49,11 @@ public class Claim {
     public BigDecimal getSettledDue() { return settledDue; }
     /** The user who opened the claim; null until it is opened. */
     public String getOpenedBy() { return openedBy; }
+    /** Whether the person's last statement bound the claim to its figure then. */
+    public boolean isStated() { return stated; }
+    /** The figure the claim was bound to by the person's last statement; null when it had none (n/a)
+     *  or is not bound. */
+    public BigDecimal getStatedDue() { return statedDue; }
     public void setAmount(BigDecimal amount) { this.amount = amount; }
     public void setDate(LocalDate date) { this.date = date; }
     public void setNote(String note) { this.note = note; }
@@ -51,4 +61,6 @@ public class Claim {
     public void setNumber(Long number) { this.number = number; }
     public void setSettledDue(BigDecimal settledDue) { this.settledDue = settledDue; }
     public void setOpenedBy(String openedBy) { this.openedBy = openedBy; }
+    public void setStated(boolean stated) { this.stated = stated; }
+    public void setStatedDue(BigDecimal statedDue) { this.statedDue = statedDue; }
 }

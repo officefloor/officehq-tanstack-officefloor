@@ -63,17 +63,20 @@ export function dueTotal(dues: string[]): string {
   return format(dues.filter((d) => d !== NA).reduce((sum, d) => sum + hundredths(d), 0n));
 }
 
-/** A claim's figure: the due fixed when it was settled, else its amount at its person's grade rate in
- *  force on the claim's date. */
+/** Whether the claim keeps a figure whatever the rates: fixed when settled, or bound by a statement. */
+const fixed = (claim: Claim) => claim.due !== null || (claim.stated && claim.statedDue !== null);
+
+/** A claim's figure: the due fixed when it was settled, else the figure its person's last statement
+ *  bound it to, else its amount at its person's grade rate in force on the claim's date. */
 export function claimDue(claim: Claim, rates: Rate[] | undefined, grade: string): string {
-  return claim.due ?? due(claim.amount, rateOf(rates, grade, claim.date));
+  return claim.due ?? (claim.stated ? claim.statedDue : null) ?? due(claim.amount, rateOf(rates, grade, claim.date));
 }
 
 /** A person's due-total: the sum of the figures of their claims that count. n/a when their grade has
- *  no rate on the sheet's today, unless a settled claim that counts keeps a fixed figure. */
+ *  no rate on the sheet's today, unless a claim that counts keeps a fixed (settled or stated) figure. */
 export function personDue(claims: Claim[], rates: Rate[] | undefined, grade: string, today: string | undefined): string {
   const mine = claims.filter(counts);
-  if (rateOf(rates, grade, today) === undefined && !mine.some((c) => c.status === 'SETTLED' && c.due !== null)) {
+  if (rateOf(rates, grade, today) === undefined && !mine.some(fixed)) {
     return NA;
   }
   return dueTotal(mine.map((c) => claimDue(c, rates, grade)));
