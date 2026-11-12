@@ -1,0 +1,167 @@
+diff --git a/src/main/frontend/features/header/counters.slot.tsx b/src/main/frontend/features/header/counters.slot.tsx
+index 6b47b09e3..c4ede3757 100644
+--- a/src/main/frontend/features/header/counters.slot.tsx
++++ b/src/main/frontend/features/header/counters.slot.tsx
+@@ -1,18 +1,33 @@
+ import { AppHeader } from '../../slots/defs/appHeader';
+-import { useCurrentSheet } from '../../session/session';
++import { useCurrentSheet, useCurrentUser } from '../../session/session';
+ import { STATUSES, statusCount, useClaims } from '../claims/claims';
+-import { usePeople } from '../people/people';
+-import { useSheetDueTotal } from '../rates/due.slot';
+-import { useSheetOverdue } from '../overdue/overdue.slot';
++import { type Person, usePeople } from '../people/people';
++import { usePersonDue, useSheetDueTotal } from '../rates/due.slot';
++import { useOverdue, useSheetOverdue } from '../overdue/overdue.slot';
++
++/** Names are compared ignoring case and the spaces around them. */
++const nameKey = (name: string) => name.trim().toLowerCase();
++
++/** The person on the sheet with the user's name, by name or alias (undefined when none). */
++function personNamed(people: Person[] | undefined, user: string): Person | undefined {
++  const key = nameKey(user);
++  if (key === '') return undefined;
++  return (people ?? []).find((p) => nameKey(p.name) === key || p.aliases.some((a) => nameKey(a) === key));
++}
+ 
+ // The sheet's counters, always in the header: its people (retired people included), its claims per
+-// status (the summary's counts) and its due- and overdue-totals (the rollup's), from the same figures.
++// status (the summary's counts) and its due- and overdue-totals (the rollup's), from the same figures;
++// then the signed-in user's own due- and overdue-totals (their person's, blank when no person has their name).
+ function HeaderCounters() {
+   const [sheet] = useCurrentSheet();
+   const people = usePeople(sheet);
+   const claims = useClaims(sheet);
+   const due = useSheetDueTotal();
+   const overdue = useSheetOverdue();
++  const [user] = useCurrentUser();
++  const me = personNamed(people.data, user);
++  const myDue = usePersonDue();
++  const myOverdue = useOverdue();
+ 
+   return (
+     <p data-testid="header-counters">
+@@ -23,7 +38,9 @@ function HeaderCounters() {
+         </span>
+       ))}
+       Due total <strong data-testid="header-due-total">{due}</strong>{' '}
+-      Overdue total <strong data-testid="header-overdue-total">{overdue.total}</strong>
++      Overdue total <strong data-testid="header-overdue-total">{overdue.total}</strong>{' '}
++      My due total <strong data-testid="my-due-total">{me ? myDue(me) : ''}</strong>{' '}
++      My overdue total <strong data-testid="my-overdue-total">{me ? myOverdue(me).total : ''}</strong>
+     </p>
+   );
+ }
+diff --git a/src/main/frontend/features/overdue/overdue.slot.tsx b/src/main/frontend/features/overdue/overdue.slot.tsx
+index d269e18bf..4bc234530 100644
+--- a/src/main/frontend/features/overdue/overdue.slot.tsx
++++ b/src/main/frontend/features/overdue/overdue.slot.tsx
+@@ -18,7 +18,8 @@ function OverdueHead() {
+   );
+ }
+ 
+-function useOverdue(of?: string) {
++/** A person's overdue figures on the sheet (the current sheet's unless another is named). */
++export function useOverdue(of?: string) {
+   const [current] = useCurrentSheet();
+   const sheet = of ?? current;
+   const claims = useClaims(sheet);
+diff --git a/src/main/frontend/features/rates/due.slot.tsx b/src/main/frontend/features/rates/due.slot.tsx
+index e29d63fe4..6fec4d664 100644
+--- a/src/main/frontend/features/rates/due.slot.tsx
++++ b/src/main/frontend/features/rates/due.slot.tsx
+@@ -49,15 +49,20 @@ export function useSheetDueTotal(of?: string): string {
+   const [current] = useCurrentSheet();
+   const sheet = of ?? current;
+   const people = usePeople(sheet);
++  return trimmedTotal((people.data ?? []).map(usePersonDue(sheet)));
++}
++
++/** A person's due-total on the sheet (the current sheet's unless another is named), as their row shows it. */
++export function usePersonDue(of?: string): (person: Person) => string {
++  const [current] = useCurrentSheet();
++  const sheet = of ?? current;
+   const claims = useClaims(sheet);
+   const rates = useRates(sheet);
+   const today = useSheetToday(sheet);
+   const settings = useSettings(sheet).data;
+   const floor = floorOf(settings);
+-  const dues = (people.data ?? []).map((p) =>
+-    personDue(live((claims.data ?? []).filter((c) => c.personId === p.id), [p]), rates.data, p.grades, today, floor, lateOf(settings, today, [p]), settings?.cap),
+-  );
+-  return trimmedTotal(dues);
++  return (p: Person) =>
++    personDue(live((claims.data ?? []).filter((c) => c.personId === p.id), [p]), rates.data, p.grades, today, floor, lateOf(settings, today, [p]), settings?.cap);
+ }
+ 
+ function DueTotal() {
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonStore.java b/src/main/java/net/officefloor/hq/app/person/PersonStore.java
+index 55f8bf8ef..bad023432 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonStore.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonStore.java
+@@ -60,9 +60,9 @@ public class PersonStore {
+ 
+     /** The people's past retirements on the sheet (only the one person's when {@code personId} is given), by
+      *  person, oldest first. */
+-    private Map<Long, List<PastRetirement>> pastRetirements(String sheetId, Long personId) {
++    private Map<Long, List<PastRetirement>> pastRetirements(String sheetId, Long personId, String table) {
+         Map<Long, List<PastRetirement>> past = new HashMap<>();
+-        jdbc.query("SELECT person_id, from_date, to_date FROM person_retirement WHERE sheet_id = ?"
++        jdbc.query("SELECT person_id, from_date, to_date FROM " + table + " WHERE sheet_id = ?"
+                 + (personId == null ? "" : " AND person_id = " + personId) + " ORDER BY id", rs -> {
+                     past.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(new PastRetirement(
+                             rs.getObject("from_date", LocalDate.class), rs.getObject("to_date", LocalDate.class)));
+@@ -71,15 +71,16 @@ public class PersonStore {
+     }
+ 
+     private List<Person> query(String sheetId, Long personId, String sql, Object... args) {
+-        return queryFrom(sheetId, personId, "person_grade", "person_hold", "person_alias", sql, args);
++        return queryFrom(sheetId, personId, "person_grade", "person_hold", "person_alias", "person_retirement", sql,
++                args);
+     }
+ 
+     private List<Person> queryFrom(String sheetId, Long personId, String gradeTable, String holdTable,
+-            String aliasTable, String sql, Object... args) {
++            String aliasTable, String retirementTable, String sql, Object... args) {
+         Map<Long, NavigableMap<LocalDate, String>> grades = grades(sheetId, personId, gradeTable);
+         Map<Long, List<Hold>> holds = holds(sheetId, personId, holdTable);
+         Map<Long, List<String>> aliases = aliases(sheetId, personId, aliasTable);
+-        Map<Long, List<PastRetirement>> past = pastRetirements(sheetId, personId);
++        Map<Long, List<PastRetirement>> past = pastRetirements(sheetId, personId, retirementTable);
+         RowMapper<Person> row = (rs, i) -> {
+             Person p = new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
+                     grades.getOrDefault(rs.getLong("id"), new TreeMap<>()), rs.getLong("version"),
+@@ -103,6 +104,7 @@ public class PersonStore {
+     public List<Person> listAsOf(String sheetId, LocalDate date) {
+         return queryFrom(sheetId, null, History.asOf("person_grade", "person_id, from_date", date),
+                 History.asOf("person_hold", "id", date), History.asOf("person_alias", "id", date),
++                History.asOf("person_retirement", "id", date),
+                 "SELECT * FROM " + History.asOf("person", "id", date) + " WHERE sheet_id = ? ORDER BY list_position, id", sheetId);
+     }
+ 
+@@ -116,6 +118,7 @@ public class PersonStore {
+     public Person findAsOf(String sheetId, long id, LocalDate date) {
+         List<Person> found = queryFrom(sheetId, id, History.asOf("person_grade", "person_id, from_date", date),
+                 History.asOf("person_hold", "id", date), History.asOf("person_alias", "id", date),
++                History.asOf("person_retirement", "id", date),
+                 "SELECT * FROM " + History.asOf("person", "id", date) + " WHERE sheet_id = ? AND id = ?", sheetId, id);
+         return found.isEmpty() ? null : found.get(0);
+     }
+diff --git a/src/main/resources/db/migration/V62__person_retirement_history.sql b/src/main/resources/db/migration/V62__person_retirement_history.sql
+new file mode 100644
+index 000000000..973cce2b8
+--- /dev/null
++++ b/src/main/resources/db/migration/V62__person_retirement_history.sql
+@@ -0,0 +1,12 @@
++-- A person's past retirements kept in person_retirement_hist, as person_hold is, so a sheet read as of a
++-- date shows only the retirements they had been unretired from by then. A retirement already recorded is
++-- kept as made on its to-date (the sheet's today when they were unretired).
++CREATE TABLE person_retirement_hist AS SELECT * FROM person_retirement WITH NO DATA;
++ALTER TABLE person_retirement_hist ADD COLUMN hist_seq BIGINT NOT NULL;
++ALTER TABLE person_retirement_hist ADD COLUMN hist_made_on DATE NOT NULL;
++ALTER TABLE person_retirement_hist ADD COLUMN hist_gone BOOLEAN DEFAULT FALSE NOT NULL;
++CREATE INDEX person_retirement_hist_key ON person_retirement_hist (id, hist_seq);
++INSERT INTO person_retirement_hist (id, sheet_id, person_id, from_date, to_date, hist_seq, hist_made_on)
++    SELECT id, sheet_id, person_id, from_date, to_date, NEXT VALUE FOR hist_seq, to_date FROM person_retirement ORDER BY id;
++CREATE TRIGGER person_retirement_history AFTER INSERT, UPDATE, DELETE ON person_retirement FOR EACH ROW
++    CALL 'net.officefloor.hq.app.history.HistoryTrigger';
