@@ -10,7 +10,8 @@ import java.util.TreeMap;
 /** A person on a sheet. {@code grades} are their grades (each one of A, B or C) by the date each applies
  *  from, the first from {@link #START} (the beginning of time); {@code version} moves on with each stored edit;
  *  {@code retiredFrom} is the date they are retired from (null while not retired); {@code holds} their holds,
- *  oldest first: their OPEN claims dated within one count in no live total unless a statement bound them. */
+ *  oldest first: their OPEN claims dated within one count in no live total unless a statement bound them, nor do
+ *  any of their OPEN claims once the sheet's today reaches their retirement date. */
 public class Person {
     /** The from-date of a person's first grade: the beginning of time. */
     public static final LocalDate START = LocalDate.of(1, 1, 1);
@@ -57,6 +58,9 @@ public class Person {
     public LocalDate getRetiredFrom() { return retiredFrom; }
     /** Retired as soon as a date is set, whatever the date. */
     public boolean isRetired() { return retiredFrom != null; }
+    /** Whether their retirement date is reached on the date: from then their OPEN (and PENDING) claims count
+     *  in no live total unless a statement bound them, as a hold's would. */
+    public boolean retiredOn(LocalDate date) { return retiredFrom != null && date != null && !date.isBefore(retiredFrom); }
     /** Whether the person has any hold, whatever its dates. */
     public boolean isHeld() { return !holds.isEmpty(); }
     /** Their holds, oldest first. */

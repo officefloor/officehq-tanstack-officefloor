@@ -68,11 +68,15 @@ export const counts = (c: Claim) => (isOpen(c) && !c.deferred) || c.status === '
 /** Whether the claim keeps the figure (or n/a) its person's last statement bound it to: not while PENDING. */
 export const isBound = (c: Claim) => c.stated && (c.statedDue !== null || c.statedNa) && c.status !== 'PENDING';
 
-/** These claims less the OPEN (or PENDING) claims dated within one of their person's holds, which
- *  count in no live total, unless a statement bound them. */
-export const live = (claims: Claim[], people: { id: number; holds: Hold[] }[] | undefined) => {
-  const holds = new Map((people ?? []).map((p) => [p.id, p.holds]));
-  return claims.filter((c) => !(isOpen(c) && !c.stated && (holds.get(c.personId) ?? []).some((h) => covers(h, c.date))));
+/** These claims less the OPEN (or PENDING) claims dated within one of their person's holds, or of a
+ *  person whose retirement date the sheet's today has reached, which count in no live total, unless a
+ *  statement bound them. */
+export const live = (claims: Claim[], people: { id: number; holds: Hold[]; retiredNow: boolean }[] | undefined) => {
+  const byId = new Map((people ?? []).map((p) => [p.id, p]));
+  return claims.filter((c) => {
+    const p = byId.get(c.personId);
+    return !(isOpen(c) && !c.stated && p !== undefined && (p.retiredNow || p.holds.some((h) => covers(h, c.date))));
+  });
 };
 
 /** The date (yyyy-MM-dd) the given number of days before this one. */

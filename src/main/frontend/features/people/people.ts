@@ -6,7 +6,9 @@ import { sheetKey } from '../sheet/sheet';
 /** `version` moves on with each stored edit; an edit is saved only over the version its editor loaded.
  *  `statementCount` is how many statements were taken of them; `statedTotal` (two decimals, or n/a)
  *  and `statementDate` (yyyy-MM-dd) are the last one's, null when none was taken. `retired` is set
- *  as soon as a `retiredFrom` date (yyyy-MM-dd, null when not retired) is, whatever the date.
+ *  as soon as a `retiredFrom` date (yyyy-MM-dd, null when not retired) is, whatever the date;
+ *  `retiredNow` once the sheet's today reaches it: from then their OPEN claims count in no live total
+ *  unless a statement bound them, as a hold's would.
  *  `holds` are their holds, oldest first; `held` whether they have any. Their OPEN claims dated within
  *  a hold count in no live total unless a statement bound them; their SETTLED ones still do.
  *  `patronIds` are the ids of the other people on the sheet they named as their patrons.
@@ -23,6 +25,7 @@ export type Person = {
   statementDate: string | null;
   retired: boolean;
   retiredFrom: string | null;
+  retiredNow: boolean;
   held: boolean;
   holds: Hold[];
   patronIds: number[];

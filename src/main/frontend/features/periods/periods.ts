@@ -56,12 +56,13 @@ export function statusAt(claim: Claim, date: string): ClaimStatus | null {
 
 /** Whether the claim counts toward a period: by the status it had at the end of the period's last
  *  day it was OPEN, PENDING or SETTLED; and, as the live rules say, it is not deferred on the sheet's
- *  today, nor (while open then and still open now, and unbound by a statement) dated within one of its person's holds. */
+ *  today, nor (while open then and still open now, and unbound by a statement) dated within one of its person's holds
+ *  or of a person whose retirement date the sheet's today has reached. */
 export function countsInPeriod(claim: Claim, period: Period, person: Person): boolean {
   const status = statusAt(claim, period.to);
   if (status === 'SETTLED') return true;
   if (status !== 'OPEN' && status !== 'PENDING') return false;
-  return !claim.deferred && (claim.stated || !isOpen(claim) || !person.holds.some((h) => covers(h, claim.date)));
+  return !claim.deferred && (claim.stated || !isOpen(claim) || !(person.retiredNow || person.holds.some((h) => covers(h, claim.date))));
 }
 
 /** A person's due-total for a period: once closed or soft-closed, the figure fixed then (0.00 for a person
