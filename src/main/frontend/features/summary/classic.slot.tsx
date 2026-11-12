@@ -2,7 +2,7 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet } from '../../session/session';
 import { counts, live, useClaims } from '../claims/claims';
 import { usePeople } from '../people/people';
-import { contains, usePeriods } from '../periods/periods';
+import { contains, isFixed, usePeriods } from '../periods/periods';
 import { claimDue, dueTotal, useRates } from '../rates/rates';
 import { floorOf, useSettings } from '../settings/settings';
 import { useSheetToday } from '../sheet/sheet';
@@ -11,8 +11,8 @@ import { usePersonDue } from '../rates/due.slot';
 import { useFigure } from '../locale/locale';
 
 // The classic summary, shown beside the summary: per period, its due-total counting each claim by its
-// status now (OPEN, SETTLED and PENDING count, by the live rules), a closed period showing the figure fixed
-// when it closed; and the sheet's due-total untrimmed, everyone's due-totals added up (skipping n/a).
+// status now (OPEN, SETTLED and PENDING count, by the live rules), a closed or soft-closed period showing the figure fixed
+// when it (soft-)closed; and the sheet's due-total untrimmed, everyone's due-totals added up (skipping n/a).
 function ClassicSummary() {
   const fig = useFigure();
   const [sheet] = useCurrentSheet();
@@ -26,7 +26,7 @@ function ClassicSummary() {
   const personDue = usePersonDue(sheet);
 
   const periodTotal = (period: NonNullable<typeof periods.data>[number]) => {
-    if (period.closed) return period.total ?? '0.00';
+    if (isFixed(period)) return period.total ?? '0.00';
     return dueTotal(
       (people.data ?? []).flatMap((p) =>
         live((claims.data ?? []).filter((c) => c.personId === p.id), [p])

@@ -98,13 +98,22 @@ export const counts = (c: Claim) => (isOpen(c) && !c.deferred) || c.status === '
 export const isBound = (c: Claim) => c.stated && (c.statedDue !== null || c.statedNa);
 
 /** These claims less the OPEN (or PENDING) claims held, or dated within one of their person's holds, or of a
- *  person whose retirement date the sheet's today has reached, which count in no live total, unless a
+ *  person whose retirement date the sheet's today has reached, which count in no live due total, unless a
  *  statement bound them. */
-export const live = (claims: Claim[], people: { id: number; holds: Hold[]; retiredNow: boolean }[] | undefined) => {
+export const live = (claims: Claim[], people: { id: number; holds: Hold[]; retiredNow: boolean }[] | undefined) =>
+  liveOf(claims, people, false);
+
+/** These claims less the OPEN (or PENDING) claims of a person whose retirement date the sheet's today has
+ *  reached, unless a statement bound them: a hold leaves a claim in claimed and the claimed-total. */
+export const liveClaimed = (claims: Claim[], people: { id: number; holds: Hold[]; retiredNow: boolean }[] | undefined) =>
+  liveOf(claims, people, true);
+
+const liveOf = (claims: Claim[], people: { id: number; holds: Hold[]; retiredNow: boolean }[] | undefined, keepHeld: boolean) => {
   const byId = new Map((people ?? []).map((p) => [p.id, p]));
   return claims.filter((c) => {
     const p = byId.get(c.personId);
-    return !(isOpen(c) && !c.stated && (c.held || (p !== undefined && (p.retiredNow || p.holds.some((h) => covers(h, c.date))))));
+    const held = !keepHeld && (c.held || (p !== undefined && p.holds.some((h) => covers(h, c.date))));
+    return !(isOpen(c) && !c.stated && (held || (p !== undefined && p.retiredNow)));
   });
 };
 

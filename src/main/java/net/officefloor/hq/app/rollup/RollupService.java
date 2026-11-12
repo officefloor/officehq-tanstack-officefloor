@@ -73,12 +73,16 @@ public class RollupService {
             boolean fixed = false;
             for (Claim claim : all) {
                 if (claim.getPersonId() != person.getId()
-                        || !counts(claim, person, today)) {
+                        || !countsClaimed(claim, person, today)) {
                     continue;
                 }
                 // A claim that corrects another counts toward due but not toward claimed.
                 if (claim.getCorrects() == null || claim.getCorrects().isBlank()) {
                     claimed = claimed.add(claim.getAmount());
+                }
+                // A held claim stays in claimed, but leaves the due figures while held.
+                if (!counts(claim, person, today)) {
+                    continue;
                 }
                 BigDecimal figure = lateness.due(claim, rates.forClaim(claim).find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()));
                 if (figure != null) {
@@ -245,6 +249,14 @@ public class RollupService {
         return claim.getStatus() == ClaimStatus.SETTLED
                 || (claim.getStatus().isOpen() && !claim.isDeferredOn(today)
                         && (claim.isStated() || !(claim.isHeld() || person.heldOn(claim.getDate()) || person.retiredOn(today))));
+    }
+
+    /** Whether the claim counts toward claimed: as {@link #counts}, except that a hold (the claim's or its
+     *  person's) does not take it out. */
+    public static boolean countsClaimed(Claim claim, Person person, LocalDate today) {
+        return claim.getStatus() == ClaimStatus.SETTLED
+                || (claim.getStatus().isOpen() && !claim.isDeferredOn(today)
+                        && (claim.isStated() || !person.retiredOn(today)));
     }
 
     /** Whether the claim counts by {@code status}, the status it had at a period's end (null when it

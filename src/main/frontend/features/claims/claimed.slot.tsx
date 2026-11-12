@@ -2,7 +2,7 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
 import { type Person, usePeople } from '../people/people';
 import { useCurrentSheet } from '../../session/session';
-import { claimed, live, useClaims } from './claims';
+import { claimed, liveClaimed, useClaims } from './claims';
 import { useFigure } from '../locale/locale';
 import { useColumnShown } from '../columns/columns';
 
@@ -18,7 +18,7 @@ function PersonClaimed({ person }: { person: Person }) {
   const [sheet] = useCurrentSheet();
   const claims = useClaims(sheet);
   if (!shown('claimed')) return null;
-  return <td data-testid="person-claimed">{fig(claimed(live((claims.data ?? []).filter((c) => c.personId === person.id), [person])))}</td>;
+  return <td data-testid="person-claimed">{fig(claimed(liveClaimed((claims.data ?? []).filter((c) => c.personId === person.id), [person])))}</td>;
 }
 
 function ClaimedTotal() {
@@ -28,7 +28,7 @@ function ClaimedTotal() {
   const claims = useClaims(sheet);
   return (
     <p>
-      Claimed total <strong data-testid="rollup-claimed-total">{fig(claimed(live(claims.data ?? [], people.data)))}</strong>
+      Claimed total <strong data-testid="rollup-claimed-total">{fig(claimed(liveClaimed(claims.data ?? [], people.data)))}</strong>
     </p>
   );
 }
