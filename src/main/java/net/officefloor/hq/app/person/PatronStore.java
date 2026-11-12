@@ -19,7 +19,7 @@ public class PatronStore {
         this.jdbc = jdbc;
     }
 
-    /** The ids of each person's patrons on the sheet, keyed by the person's id. */
+    /** The ids of each person's patrons on the sheet, in the order they were named, keyed by the person's id. */
     public Map<Long, List<Long>> all(String sheetId) {
         return allFrom(sheetId, "patron");
     }
@@ -31,7 +31,7 @@ public class PatronStore {
 
     private Map<Long, List<Long>> allFrom(String sheetId, String table) {
         Map<Long, List<Long>> found = new HashMap<>();
-        jdbc.query("SELECT person_id, patron_id FROM " + table + " WHERE sheet_id = ? ORDER BY patron_id",
+        jdbc.query("SELECT person_id, patron_id FROM " + table + " WHERE sheet_id = ? ORDER BY named",
                 rs -> {
                     found.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(rs.getLong("patron_id"));
                 }, sheetId);
@@ -39,7 +39,7 @@ public class PatronStore {
     }
 
     public List<Long> of(String sheetId, long personId) {
-        return jdbc.queryForList("SELECT patron_id FROM patron WHERE sheet_id = ? AND person_id = ? ORDER BY patron_id",
+        return jdbc.queryForList("SELECT patron_id FROM patron WHERE sheet_id = ? AND person_id = ? ORDER BY named",
                 Long.class, sheetId, personId);
     }
 

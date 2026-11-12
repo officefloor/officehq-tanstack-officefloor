@@ -6,14 +6,16 @@ import { type Person, peopleKey, usePeople } from '../people/people';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { useSheetToday } from '../sheet/sheet';
 import { isRecentSettled, useClaims } from '../claims/claims';
-import { NA, dueTotal } from '../rates/rates';
+import { NA, dueTotal, patronShares, sharedTotal } from '../rates/rates';
 
 function PatronsHead() {
   return <th>Patrons</th>;
 }
 
-// The person's patrons (names, sorted) and their backing: the frozen figures of the patrons' SETTLED
-// claims dated within the 90 days up to and including the sheet's today, added up (0.00 with none).
+// The person's patrons (each as name and share, sorted by name) and their backing. Shares split 100.00
+// equally in the order the patrons were named (see patronShares). A patron's figure is the frozen figures of
+// their SETTLED claims dated within the 90 days up to and including the sheet's today, added up; the backing
+// is each patron's figure times their share ÷ 100, added up and rounded half to even (0.00 with none).
 // Another person on the sheet is named as a patron one at a time; a refusal shows its error until the
 // next is tried.
 function PersonPatrons({ person }: { person: Person }) {
@@ -34,18 +36,30 @@ function PersonPatrons({ person }: { person: Person }) {
     },
   });
 
-  const patrons = people.filter((p) => person.patronIds.includes(p.id));
-  const names = patrons.map((p) => p.name).sort((a, b) => a.localeCompare(b));
-  const backing = dueTotal(
-    (claims.data ?? [])
-      .filter((c) => person.patronIds.includes(c.personId) && isRecentSettled(c, today))
-      .map((c) => c.due ?? NA),
+  const shares = patronShares(person.patronIds.length);
+  const patrons = person.patronIds.flatMap((id, i) => {
+    const p = people.find((q) => q.id === id);
+    return p ? [{ person: p, share: shares[i] }] : [];
+  });
+  const shown = patrons
+    .map((p) => ({ name: p.person.name, share: p.share }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((p) => `${p.name} ${p.share}`);
+  const backing = sharedTotal(
+    patrons.map((p) => ({
+      figure: dueTotal(
+        (claims.data ?? [])
+          .filter((c) => c.personId === p.person.id && isRecentSettled(c, today))
+          .map((c) => c.due ?? NA),
+      ),
+      share: p.share,
+    })),
   );
   const candidates = people.filter((p) => p.id !== person.id && !person.patronIds.includes(p.id));
 
   return (
     <td>
-      <span data-testid="person-patrons">{names.join(', ')}</span>{' '}
+      <span data-testid="person-patrons">{shown.join(', ')}</span>{' '}
       <span data-testid="person-backing">{backing}</span>{' '}
       <select
         data-testid="person-patron-select"

@@ -8,7 +8,7 @@ import net.officefloor.hq.app.statement.StatementSummary;
  *  date (yyyy-MM-dd) it applies from (null for the first, from the beginning of time), with their
  *  statement count and the last statement's due-total and date (null when none was taken), whether they
  *  are retired and from when (null when not) and whether the sheet's today has reached that date, whether they have any hold
- *  and each hold's from-date and to-date (null for no end), the ids of their patrons, and their own terms
+ *  and each hold's from-date and to-date (null for no end), the ids of their patrons (in the order named), and their own terms
  *  (whole days, null when none), their contact (null when none) and their aliases, sorted as names are compared. */
 public record PersonResponse(long id, String name, String grade, List<GradeFrom> grades, long version,
         int statementCount, String statedTotal, String statementDate, boolean retired, String retiredFrom,

@@ -90,6 +90,32 @@ export function dueTotal(dues: string[]): string {
   return format(dues.filter((d) => d !== NA).reduce((sum, d) => sum + hundredths(d), 0n));
 }
 
+/** Shares of 100.00 split equally among `count` patrons in the order they were named: each rounded half to
+ *  even to two decimals, with the remainder (100.00 less the shares added up) given to the first. */
+export function patronShares(count: number): string[] {
+  if (count === 0) return [];
+  const n = BigInt(count);
+  const rest = 10000n % n;
+  let each = 10000n / n;
+  if (rest * 2n > n || (rest * 2n === n && each % 2n === 1n)) each += 1n;
+  const shares = Array.from({ length: count }, () => each);
+  shares[0] += 10000n - each * n;
+  return shares.map(format);
+}
+
+/** The sum of each figure (n/a counted as none) times its share ÷ 100, rounded half to even to two decimals. */
+export function sharedTotal(parts: { figure: string; share: string }[]): string {
+  // figure (hundredths) × share (hundredths) is in units of 1/10000 cent-percent: ÷ 10000 gives cents.
+  const product = parts
+    .filter((p) => p.figure !== NA)
+    .reduce((sum, p) => sum + hundredths(p.figure) * hundredths(p.share), 0n);
+  const abs = product < 0n ? -product : product;
+  const rest = abs % 10000n;
+  let cents = abs / 10000n;
+  if (rest > 5000n || (rest === 5000n && cents % 2n === 1n)) cents += 1n;
+  return format(product < 0n ? -cents : cents);
+}
+
 /** A sheet total of people's figures: their sum, skipping n/a, leaving out the single highest and the
  *  single lowest when three or more people have a figure. */
 export function trimmedTotal(dues: string[]): string {

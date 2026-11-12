@@ -12,7 +12,7 @@ import { useAsOf } from '../../session/session';
  *  unless a statement bound them, as a hold's would.
  *  `holds` are their holds, oldest first; `held` whether they have any. Their OPEN claims dated within
  *  a hold count in no live total unless a statement bound them; their SETTLED ones still do.
- *  `patronIds` are the ids of the other people on the sheet they named as their patrons.
+ *  `patronIds` are the ids of the other people on the sheet they named as their patrons, in the order they named them.
  *  `grade` is the grade in force on the sheet's today; `grades` every grade with the date it applies from.
  *  `terms` are their own terms in whole days (null when none), ahead of their grade's and the sheet's.
  *  `contact` is their contact (trimmed, lower-cased; null when none), no other person's on the sheet.
