@@ -72,6 +72,7 @@ function PersonClaims({ person }: { person: Person }) {
           .filter((c) => c.personId === person.id)
           .map((c) => (
             <li key={c.id} data-testid={`claim-row-${c.id}`}>
+              <span data-testid="claim-number">{c.number ?? ''}</span>{' '}
               <span data-testid="claim-amount">{c.amount}</span>{' '}
               <span data-testid="claim-date">{c.date}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}

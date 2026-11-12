@@ -5,6 +5,7 @@ import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.time.LocalDate;
 import java.util.List;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -16,7 +17,8 @@ public class ClaimStore {
 
     private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getObject("claim_date", LocalDate.class),
-            rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")));
+            rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
+            rs.getObject("number", Long.class));
 
     private final JdbcTemplate jdbc;
 
@@ -46,12 +48,34 @@ public class ClaimStore {
             ps.setString(5, note);
             return ps;
         }, keys);
-        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT);
+        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null);
     }
 
     public void save(Claim claim) {
-        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ? WHERE sheet_id = ? AND id = ?",
+        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, number = ? "
+                + "WHERE sheet_id = ? AND id = ?",
                 claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getStatus().name(),
-                claim.getSheetId(), claim.getId());
+                claim.getNumber(), claim.getSheetId(), claim.getId());
+    }
+
+    /** Moves the stored claim from {@code from} to {@code to}, locking its row until the transaction
+     *  ends; false when it is no longer {@code from} (another user moved it first). */
+    public boolean move(Claim claim, ClaimStatus from, ClaimStatus to) {
+        return jdbc.update("UPDATE claim SET status = ? WHERE sheet_id = ? AND id = ? AND status = ?", to.name(),
+                claim.getSheetId(), claim.getId(), from.name()) == 1;
+    }
+
+    /** Takes the next claim number on the sheet: 1, then 2, and so on. The sheet's counter row stays
+     *  locked until the transaction ends, so a number is never given twice, and is not used up if
+     *  the transaction rolls back. */
+    public long nextNumber(String sheetId) {
+        try {
+            jdbc.update("INSERT INTO claim_number (sheet_id, last_number) SELECT ?, 0 FROM DUAL "
+                    + "WHERE NOT EXISTS (SELECT 1 FROM claim_number WHERE sheet_id = ?)", sheetId, sheetId);
+        } catch (DataAccessException e) {
+            // another transaction added the sheet's counter first
+        }
+        jdbc.update("UPDATE claim_number SET last_number = last_number + 1 WHERE sheet_id = ?", sheetId);
+        return jdbc.queryForObject("SELECT last_number FROM claim_number WHERE sheet_id = ?", Long.class, sheetId);
     }
 }

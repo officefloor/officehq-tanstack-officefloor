@@ -4,8 +4,17 @@ import { sheetKey } from '../sheet/sheet';
 
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 
-/** `amount` has two decimals; `date` is yyyy-MM-dd. */
-export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus };
+/** `amount` has two decimals; `date` is yyyy-MM-dd; `number` is given when the claim is opened
+ *  (null for a draft or a voided claim). */
+export type Claim = {
+  id: number;
+  personId: number;
+  amount: string;
+  date: string;
+  note: string;
+  status: ClaimStatus;
+  number: number | null;
+};
 
 /** Only OPEN and SETTLED claims count toward claimed and the totals. */
 export const counts = (c: Claim) => c.status === 'OPEN' || c.status === 'SETTLED';
