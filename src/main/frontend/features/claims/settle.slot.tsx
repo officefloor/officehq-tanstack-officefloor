@@ -8,8 +8,8 @@ import { claimsKey, useClaims, useSelectedClaims } from './claims';
 type BulkSettleResult = { settled: number; refused: number };
 
 // Settles the selected claims together: the server settles each in list order by the rules of a
-// single settle (a clerk's above the clerk limit goes to PENDING, counted as settled) and refuses
-// the rest, and the counts show once it answers (gone while it runs). One that settles any is a batch,
+// single settle (a clerk's above the clerk limit goes to PENDING, counted as settled), or, when any
+// would be refused, settles none and counts them all refused; and the counts show once it answers (gone while it runs). One that settles any is a batch,
 // numbered on the sheet; the last batch's number shows beside the button (nothing when there is none).
 function BulkSettle() {
   const [user] = useCurrentUser();

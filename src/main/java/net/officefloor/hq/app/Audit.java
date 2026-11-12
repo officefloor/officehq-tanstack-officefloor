@@ -6,6 +6,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import net.officefloor.hq.app.role.DelegationStore;
 import org.springframework.beans.factory.annotation.Value;
@@ -28,6 +30,8 @@ public class Audit {
 
     private final Path file;
     private final DelegationStore delegations;
+    /** The records held back on this thread while a change that may yet be refused as a whole runs. */
+    private final ThreadLocal<List<String>> held = new ThreadLocal<>();
 
     public Audit(@Value("${app.audit.file:.run/audit.log}") String path, DelegationStore delegations) {
         this.file = Path.of(path);
@@ -41,6 +45,37 @@ public class Audit {
         if (delegator != null) {
             entry = entry + " for=" + delegator;
         }
+        List<String> holding = held.get();
+        if (holding != null) {
+            holding.add(entry);
+            return;
+        }
+        append(entry);
+    }
+
+    /** Holds back the records this thread makes from now on, until {@link #release()} writes them or
+     *  {@link #discard()} drops them: a change refused as a whole writes nothing. */
+    public void hold() {
+        held.set(new ArrayList<>());
+    }
+
+    /** Writes the records held back on this thread, in the order they were made, and stops holding. */
+    public synchronized void release() {
+        List<String> holding = held.get();
+        held.remove();
+        if (holding != null) {
+            for (String entry : holding) {
+                append(entry);
+            }
+        }
+    }
+
+    /** Drops the records held back on this thread, and stops holding. */
+    public void discard() {
+        held.remove();
+    }
+
+    private void append(String entry) {
         try {
             Path parent = file.toAbsolutePath().getParent();
             if (parent != null) {
