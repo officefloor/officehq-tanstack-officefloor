@@ -1,0 +1,83 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java
+index 8acb01f78..c54d0c4b7 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java
+@@ -337,6 +337,29 @@ public class ClaimStore {
+         return jdbc.queryForObject("SELECT last_number FROM claim_number WHERE sheet_id = ?", Long.class, sheetId);
+     }
+ 
++    /** Takes the next claim number in the sheet-wide sequence the sheets of a tree share: one after the last number
++     *  given on any of them (the sheet is among {@code tree}). Each sheet keeps its own counter, so the last number
++     *  given is the largest of theirs; the counters are locked, in id order, until the transaction ends, as
++     *  {@link #nextNumber(String)} does. */
++    public long nextNumber(String sheetId, java.util.Collection<String> tree) {
++        java.util.SortedSet<String> ids = new java.util.TreeSet<>(tree);
++        ids.add(sheetId);
++        long last = 0;
++        for (String id : ids) {
++            try {
++                jdbc.update("INSERT INTO claim_number (sheet_id, last_number) SELECT ?, 0 FROM DUAL "
++                        + "WHERE NOT EXISTS (SELECT 1 FROM claim_number WHERE sheet_id = ?)", id, id);
++            } catch (DataAccessException e) {
++                // another transaction added the sheet's counter first
++            }
++            jdbc.update("UPDATE claim_number SET last_number = last_number WHERE sheet_id = ?", id);
++            last = Math.max(last, jdbc.queryForObject("SELECT last_number FROM claim_number WHERE sheet_id = ?",
++                    Long.class, id));
++        }
++        jdbc.update("UPDATE claim_number SET last_number = ? WHERE sheet_id = ?", last + 1, sheetId);
++        return last + 1;
++    }
++
+     /** Takes the next number in one of the sheet's per-period sequences: 1, then 2, and so on, locked
+      *  as {@link #nextNumber(String)} is. */
+     public long nextNumber(String sheetId, String sequence) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Numbering.java b/src/main/java/net/officefloor/hq/app/claim/Numbering.java
+index 379fecc2b..3bb134d11 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Numbering.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Numbering.java
+@@ -9,8 +9,8 @@ import net.officefloor.hq.app.sheet.SheetStore;
+ /** The number a claim receives when opened. While the sheet's period-numbering-from is set and the
+  *  sheet's today is on or after it, the claim is numbered within the period its due-by falls in,
+  *  <period name>-<n> counting from 1 in each period, or X-<n> in its own sequence when it falls in
+- *  none. Otherwise it takes the sheet's next sheet-wide number (1, 2, ...), which carries on from
+- *  where it left off. */
++ *  none. Otherwise it takes the next sheet-wide number (1, 2, ...) of the sequence all the sheets of
++ *  its tree share: one after the last number given on any of them. */
+ public final class Numbering {
+ 
+     /** The sequence of claims due by a date in no period. */
+@@ -23,7 +23,7 @@ public final class Numbering {
+             SheetStore sheets, PeriodStore periods) {
+         LocalDate from = settings.periodNumberingFrom(sheetId);
+         if (from == null || sheets.today(sheetId).isBefore(from)) {
+-            return String.valueOf(claims.nextNumber(sheetId));
++            return String.valueOf(claims.nextNumber(sheetId, settings.wholeTree(sheetId)));
+         }
+         PeriodResponse period = periods.on(sheetId, dueBy);
+         if (period == null) {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingStore.java b/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
+index d571b5d04..a3cdf8973 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
+@@ -124,6 +124,20 @@ public class SettingStore {
+         return seen.stream().filter(sheets::exists).toList();
+     }
+ 
++    /** Every sheet of the sheet's tree, the sheet among them: the topmost ancestor and all its descendants. The
++     *  parents are those named now. */
++    public List<String> wholeTree(String sheetId) {
++        java.util.Set<String> seen = new java.util.HashSet<>(List.of(sheetId));
++        String root = sheetId;
++        for (String at = parent(sheetId); at != null && seen.add(at); at = parent(at)) {
++            root = at;
++        }
++        java.util.Set<String> all = new java.util.LinkedHashSet<>(List.of(root));
++        all.addAll(descendants(root));
++        all.add(sheetId);
++        return List.copyOf(all);
++    }
++
+     /** Whether naming the parent for the sheet would make the sheet its own ancestor: the parent is the sheet,
+      *  or has it among its ancestors. */
+     public boolean cyclic(String sheetId, String parent) {
