@@ -1,4 +1,4 @@
-import { type ChangeEvent, useState } from 'react';
+import { type ChangeEvent, useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
@@ -10,7 +10,7 @@ import { floorOf, useSettings } from '../settings/settings';
 import { periodOf, usePeriods } from '../periods/periods';
 import { useSheetToday } from '../sheet/sheet';
 import { dueBy, lateOf, overdue } from '../overdue/overdue';
-import { type Claim, type ClaimStatus, claimsKey, useClaims, useSelectedClaims } from './claims';
+import { type Claim, type ClaimStatus, claimsKey, useClaims, useEditingClaim, useSelectedClaims } from './claims';
 
 type Fields = { amount: string; date: string; note: string; corrects: string };
 /** `review` for a steward approving (SETTLED) or rejecting (OPEN, with a reason) a PENDING claim. */
@@ -35,7 +35,11 @@ function PersonClaims({ person }: { person: Person }) {
   const today = useSheetToday(sheet);
   const periods = usePeriods(sheet);
   const [fields, setFields] = useState<Fields>(EMPTY);
-  const [editing, setEditing] = useState<number | undefined>();
+  // The claim whose editor is open (and locked by this user), kept in the URL so it outlives a re-load
+  // of the sheet; this person's form edits it when it is one of theirs.
+  const [editingId, setEditing] = useEditingClaim();
+  const editingClaim = (claims.data ?? []).find((c) => c.id === editingId && c.personId === person.id);
+  const editing = editingClaim?.id;
   const [reasons, setReasons] = useState<Record<number, string>>({});
   const [targets, setTargets] = useState<Record<number, string>>({});
   const [deferDates, setDeferDates] = useState<Record<number, string>>({});
@@ -60,6 +64,21 @@ function PersonClaims({ person }: { person: Person }) {
 
   const submit = useSubmitOnce(save);
 
+  // Opening a claim's editor locks it for every other user; the server refuses a claim that cannot be
+  // edited or that another user has locked, and the error shows on that claim.
+  const lock = useMutation({
+    mutationFn: (c: Claim) => postJson<Claim>(`${base}/claims/${c.id}/lock`, { user }),
+    onSuccess: (_, c) => {
+      if (editingId !== undefined && editingId !== c.id) release(editingId);
+      setEditing(c.id);
+      setFields({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects ?? '' });
+    },
+  });
+  // Cancelling an editor releases its lock.
+  const release = (id: number) => {
+    void postJson<Claim>(`${base}/claims/${id}/unlock`, { user }).catch(() => undefined);
+  };
+
   // The server refuses a change the claim's status does not allow; the error shows on that claim.
   const move = useMutation({
     mutationFn: (m: StatusChange) =>
@@ -71,6 +90,7 @@ function PersonClaims({ person }: { person: Person }) {
   });
   const moveTo = (id: number, status: ClaimStatus, review?: { reason: string }) => {
     move.reset();
+    lock.reset();
     reassign.reset();
     resettle.reset();
     defer.reset();
@@ -93,6 +113,7 @@ function PersonClaims({ person }: { person: Person }) {
   });
   const reassignTo = (id: number) => {
     move.reset();
+    lock.reset();
     reassign.reset();
     resettle.reset();
     defer.reset();
@@ -113,6 +134,7 @@ function PersonClaims({ person }: { person: Person }) {
   });
   const resettleClaim = (id: number) => {
     move.reset();
+    lock.reset();
     reassign.reset();
     resettle.reset();
     defer.reset();
@@ -134,6 +156,7 @@ function PersonClaims({ person }: { person: Person }) {
   });
   const deferClaim = (id: number) => {
     move.reset();
+    lock.reset();
     reassign.reset();
     resettle.reset();
     defer.reset();
@@ -151,6 +174,7 @@ function PersonClaims({ person }: { person: Person }) {
   });
   const addProof = (id: number) => {
     move.reset();
+    lock.reset();
     reassign.reset();
     resettle.reset();
     defer.reset();
@@ -173,6 +197,7 @@ function PersonClaims({ person }: { person: Person }) {
   });
   const splitClaim = (id: number) => {
     move.reset();
+    lock.reset();
     reassign.reset();
     resettle.reset();
     defer.reset();
@@ -195,6 +220,7 @@ function PersonClaims({ person }: { person: Person }) {
   });
   const redateClaim = (id: number) => {
     move.reset();
+    lock.reset();
     reassign.reset();
     resettle.reset();
     defer.reset();
@@ -219,7 +245,9 @@ function PersonClaims({ person }: { person: Person }) {
                   ? split.error
                   : redate.isError && redate.variables?.id === id
                     ? redate.error
-                    : null;
+                    : lock.isError && lock.variables?.id === id
+                      ? lock.error
+                      : null;
     if (error === null) return null;
     return error instanceof HttpError && error.reason ? `${error.reason}.` : 'The change was refused.';
   };
@@ -231,20 +259,29 @@ function PersonClaims({ person }: { person: Person }) {
   const open = (c: Claim) => {
     save.reset();
     move.reset();
+    lock.reset();
     reassign.reset();
     resettle.reset();
     defer.reset();
     proof.reset();
     split.reset();
     redate.reset();
-    setEditing(c.id);
-    setFields({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects ?? '' });
+    lock.mutate(c);
   };
   const cancel = () => {
     save.reset();
+    lock.reset();
+    if (editing !== undefined) release(editing);
     setEditing(undefined);
     setFields(EMPTY);
   };
+
+  // An editor still open when the sheet is shown again fills the form with its claim.
+  useEffect(() => {
+    if (editingClaim) {
+      setFields({ amount: editingClaim.amount, date: editingClaim.date, note: editingClaim.note, corrects: editingClaim.corrects ?? '' });
+    }
+  }, [editing]);
 
   return (
     <td>
@@ -388,7 +425,7 @@ function PersonClaims({ person }: { person: Person }) {
               <button type="button" data-testid="claim-split" disabled={split.isPending} onClick={() => splitClaim(c.id)}>
                 Split
               </button>{' '}
-              <button type="button" data-testid="claim-edit" onClick={() => open(c)}>
+              <button type="button" data-testid="claim-edit" disabled={lock.isPending} onClick={() => open(c)}>
                 Edit
               </button>
               {editing === c.id && (

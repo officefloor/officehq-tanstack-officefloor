@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { sheetKey } from '../sheet/sheet';
-import { asString, useSearchParam } from '../../url/useSearchParam';
+import { asNumber, asString, useSearchParam } from '../../url/useSearchParam';
 import { type Hold, covers } from '../people/people';
 
 /** PENDING: settled by a clerk above the clerk limit, awaiting a steward's approval; handled as OPEN,
@@ -116,3 +116,6 @@ export function useSelectedClaims(): [number[], (ids: number[]) => void] {
   const ids = raw.split(',').filter((s) => s !== '').map(Number).filter((n) => !Number.isNaN(n));
   return [ids, (next) => setRaw(next.join(','))];
 }
+
+/** The id of the claim whose editor is open, and locked by this user, kept in the URL (`editClaim`). */
+export const useEditingClaim = () => useSearchParam('editClaim', asNumber);

@@ -79,11 +79,36 @@ public class ClaimStore {
                 claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getSheetId(), claim.getId());
     }
 
-    /** Stores a draft's amount, date, note and the claim it corrects; false when the stored claim is no longer a draft. */
+    /** Stores a draft's amount, date, note and the claim it corrects, releasing its lock; false when the stored claim is no longer a draft. */
     public boolean edit(Claim claim) {
-        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ? WHERE sheet_id = ? AND id = ? AND status = ?",
+        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, locked_by = NULL WHERE sheet_id = ? AND id = ? AND status = ?",
                 claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getCorrects(), claim.getSheetId(), claim.getId(),
                 ClaimStatus.DRAFT.name()) == 1;
+    }
+
+    /** Locks the claim for the user opening its editor (again, when they hold it already); false while
+     *  another user holds its lock. */
+    public boolean lock(Claim claim, String user) {
+        return jdbc.update("UPDATE claim SET locked_by = ? WHERE sheet_id = ? AND id = ? AND (locked_by IS NULL OR locked_by = ?)",
+                user, claim.getSheetId(), claim.getId(), user) == 1;
+    }
+
+    /** Releases the user's lock on the claim; another user's lock stays. */
+    public void unlock(Claim claim, String user) {
+        jdbc.update("UPDATE claim SET locked_by = NULL WHERE sheet_id = ? AND id = ? AND locked_by = ?",
+                claim.getSheetId(), claim.getId(), user);
+    }
+
+    /** Whether a user other than this one holds the claim's lock. */
+    public boolean lockedByOther(Claim claim, String user) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND id = ? AND locked_by IS NOT NULL AND locked_by <> ?",
+                Integer.class, claim.getSheetId(), claim.getId(), user);
+        return n != null && n > 0;
+    }
+
+    /** Releases every lock on the sheet's claims, as its today changes. */
+    public void unlockAll(String sheetId) {
+        jdbc.update("UPDATE claim SET locked_by = NULL WHERE sheet_id = ? AND locked_by IS NOT NULL", sheetId);
     }
 
     /** The person's claims, newest first, their rows locked until the transaction ends. */
