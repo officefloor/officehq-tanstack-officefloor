@@ -28,7 +28,8 @@ public class ValidateSetting {
                 && SettingStore.GRADES.contains(key.substring(SettingStore.TERMS_PREFIX.length()));
         boolean late = SettingStore.LATE_PCT.equals(key);
         boolean numbering = SettingStore.PERIOD_NUMBERING_FROM.equals(key);
-        boolean dated = SettingStore.POLICY_DATE.equals(key) || numbering;
+        boolean entry = SettingStore.ENTRY_DATE.equals(key);
+        boolean dated = SettingStore.POLICY_DATE.equals(key) || numbering || entry;
         boolean cap = SettingStore.CAP.equals(key);
         boolean proof = SettingStore.PROOF_THRESHOLD.equals(key);
         boolean note = SettingStore.NOTE_THRESHOLD.equals(key);
@@ -67,7 +68,7 @@ public class ValidateSetting {
             try {
                 body.set(new SettingInput(key, LocalDate.parse(value).toString(), from, request.user()));
             } catch (DateTimeParseException e) {
-                throw new InvalidSheetException((numbering ? "The period numbering from" : "The policy date")
+                throw new InvalidSheetException((numbering ? "The period numbering from" : entry ? "The entry date" : "The policy date")
                         + " must be a date (YYYY-MM-DD), or blank");
             }
             return;

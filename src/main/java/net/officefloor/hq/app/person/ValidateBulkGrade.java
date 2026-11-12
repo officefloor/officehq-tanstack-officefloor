@@ -6,8 +6,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-import net.officefloor.hq.app.role.RoleStore;
 import net.officefloor.hq.app.sheet.InvalidSheetException;
+import net.officefloor.hq.app.sheet.SheetStore;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -16,8 +16,8 @@ public class ValidateBulkGrade {
     private static final Set<String> GRADES = Set.of("A", "B", "C");
 
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody BulkGradeRequest request,
-            Out<BulkGradeInput> body, RoleStore roles) throws InvalidSheetException {
-        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
+            Out<BulkGradeInput> body, SheetStore sheets) throws InvalidSheetException {
+        sheets.refuseArchived(sheetId.trim());
         if (request == null || request.personIds() == null || request.personIds().isEmpty()) {
             throw new InvalidSheetException("Select the people to grade");
         }

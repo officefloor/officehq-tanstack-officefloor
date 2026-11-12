@@ -20,7 +20,7 @@ import org.springframework.stereotype.Repository;
  *  that carry a figure (the clerk limit, the floor, the cap, the proof threshold, the note threshold, the terms, a grade's terms and the late
  *  percent) are dated: each value is recorded from a from-date, and the value in force on a date is the
  *  one with the latest from-date on or before it (none before every from-date, then the sheet's starting
- *  value). The policy date, the period numbering date, the grace days and the permission matrix are not dated. */
+ *  value). The policy date, the period numbering date, the entry date, the grace days and the permission matrix are not dated. */
 @Repository
 public class SettingStore {
 
@@ -49,6 +49,21 @@ public class SettingStore {
     public static final String POLICY_DATE = "policy-date";
 
     public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
+
+    /** The default date of a new claim in place of the sheet's today; blank for off. */
+    public static final String ENTRY_DATE = "entry-date";
+
+    /** The entry date, or null when blank (off). */
+    public LocalDate entryDate(String sheetId) {
+        String value = find(sheetId, ENTRY_DATE);
+        return value == null ? null : LocalDate.parse(value);
+    }
+
+    /** The date a new claim takes when none is typed: the entry date while it is set, else the sheet's today. */
+    public LocalDate claimDate(String sheetId) {
+        LocalDate entry = entryDate(sheetId);
+        return entry != null ? entry : today(sheetId);
+    }
 
     /** The whole days after its to-date an open period is closed by a new today; blank for off. */
     public static final String GRACE_DAYS = "grace-days";
@@ -114,6 +129,7 @@ public class SettingStore {
     /** Whether the key's values are recorded from a from-date. */
     public static boolean isDated(String key) {
         return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key)
+                && !ENTRY_DATE.equals(key)
                 && !key.startsWith(PERM_PREFIX);
     }
 

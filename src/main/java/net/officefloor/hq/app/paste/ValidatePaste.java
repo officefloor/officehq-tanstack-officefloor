@@ -11,7 +11,7 @@ import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonStore;
 import net.officefloor.hq.app.role.RoleStore;
 import net.officefloor.hq.app.sheet.InvalidSheetException;
-import net.officefloor.hq.app.sheet.SheetStore;
+import net.officefloor.hq.app.setting.SettingStore;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -20,12 +20,12 @@ import org.springframework.web.bind.annotation.RequestBody;
  * Checks every pasted line with exactly the claim form's rules before anything is stored: the name
  * must be on the sheet (ignoring case and the spaces around it), the amount a number with up to two
  * decimals (a negative one names no claim it corrects, so is refused), the date (blank for the
- * sheet's today) in no closed period and not after the person is retired from. The note is the rest
+ * entry date while it is set, else the sheet's today) in no closed period and not after the person is retired from. The note is the rest
  * of the line, commas and all. Blank lines are skipped; a paste with no line is refused.
  */
 public class ValidatePaste {
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PasteRequest request,
-            SheetStore sheets, PersonStore people, PeriodStore periods, ClaimStore claims, Out<PasteInput> pasted, RoleStore roles) throws InvalidSheetException {
+            SettingStore settings, PersonStore people, PeriodStore periods, ClaimStore claims, Out<PasteInput> pasted, RoleStore roles) throws InvalidSheetException {
         roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
         String sheet = sheetId.trim();
         String text = request == null || request.text() == null ? "" : request.text();
@@ -47,7 +47,7 @@ public class ValidatePaste {
                 }
                 ClaimInput claim = ClaimAdding.check(sheet, person, new ClaimRequest(fields[1],
                         fields.length > 2 ? fields[2] : "", fields.length > 3 ? fields[3] : "", request.user(), ""),
-                        sheets, periods, claims);
+                        settings, periods, claims);
                 pastedClaims.add(new PastedClaim(person, claim));
             } catch (InvalidSheetException e) {
                 throw new InvalidSheetException("Line " + (i + 1) + ": " + e.getMessage());

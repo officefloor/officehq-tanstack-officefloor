@@ -7,7 +7,6 @@ import net.officefloor.hq.app.rollup.RollupService;
 import net.officefloor.hq.app.setting.SettingStore;
 import net.officefloor.hq.app.period.PeriodStore;
 import net.officefloor.hq.app.sheet.InvalidSheetException;
-import net.officefloor.hq.app.sheet.SheetStore;
 
 /** The claim form's add, step by step, for a change that adds several claims at once (a paste). */
 public final class ClaimAdding {
@@ -16,9 +15,9 @@ public final class ClaimAdding {
 
     /** The claim form's rules on a claim typed for the person, before anything is stored: the claim as
      *  it would be stored. */
-    public static ClaimInput check(String sheetId, Person person, ClaimRequest request, SheetStore sheets,
+    public static ClaimInput check(String sheetId, Person person, ClaimRequest request, SettingStore settings,
             PeriodStore periods, ClaimStore claims) throws InvalidSheetException {
-        ClaimInput input = ValidateClaim.check(sheetId, request, sheets);
+        ClaimInput input = ValidateClaim.check(sheetId, request, settings);
         CheckClaimPeriod.refuseClosed(periods, sheetId, input.date());
         Retirement.refuseClaimDate(person, input.date());
         CheckCorrection.refuseUnsettled(claims, sheetId, person.getId(), input);

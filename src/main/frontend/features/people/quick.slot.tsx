@@ -7,8 +7,8 @@ import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { type Claim, claimsKey } from '../claims/claims';
 import { peopleKey } from './people';
 
-// The quick-add bar over the people list: a name and an amount add a DRAFT claim dated the sheet's
-// today for that person, adding them first (grade A) when the name is not on the sheet. The server
+// The quick-add bar over the people list: a name and an amount add a DRAFT claim dated the entry date
+// (while it is set, else the sheet's today) for that person, adding them first (grade A) when the name is not on the sheet. The server
 // applies the person and claim forms' rules and refuses the whole quick add, storing nothing.
 function QuickAdd() {
   const [user] = useCurrentUser();
