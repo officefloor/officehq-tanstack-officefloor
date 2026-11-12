@@ -40,7 +40,7 @@ export type Claim = {
   corrects: string | null;
   /** The date (yyyy-MM-dd) its live figures round by: its own, or for a correction that of the claim it corrects. */
   roundsBy: string;
-  /** The date (yyyy-MM-dd) it is due by, fixed when it was added from the terms of its person's grade then. */
+  /** The date (yyyy-MM-dd) it is due by, fixed when it was added as the terms-th business day after its date. */
   dueBy: string;
   /** Its status log, oldest first: `<STATUS> by <user> on <date> due=<due>`, one line per status it has had. */
   log: string[];

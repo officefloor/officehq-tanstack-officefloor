@@ -8,8 +8,8 @@ import net.officefloor.hq.app.setting.SettingStore;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
-/** Adds the claim (a late entry when the period its due-by falls in is soft-closed), due by its date plus its person's own terms (else the terms of their grade in force on
- *  that date, else the sheet's terms in force then) moved past the sheet's holidays, fixed now, and logs it as DRAFT by the user at its due then. */
+/** Adds the claim (a late entry when the period its due-by falls in is soft-closed), due by the business day its person's own terms (else the terms of their grade in force on
+ *  that date, else the sheet's terms in force then) after its date, skipping weekends and the sheet's holidays, fixed now, and logs it as DRAFT by the user at its due then. */
 public class SaveClaimAdded {
     public void save(@Val ClaimInput input, @Val Person person, ClaimStore store, SettingStore settings,
             ClaimLogStore log, PeriodStore periods, HolidayStore holidays, Out<Claim> claim) {

@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.holiday;
 
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.HashSet;
 import java.util.List;
@@ -8,8 +9,8 @@ import net.officefloor.hq.app.history.History;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-/** The holidays per sheet. A claim's due-by, fixed when it is added, is moved past those on the sheet then
- *  (see {@link #nextWorkingDay}); a holiday added later leaves existing due-by dates as they are. */
+/** The holidays per sheet. A claim's due-by, fixed when it is added, counts business days past those on the
+ *  sheet then (see {@link #businessDaysAfter}); a holiday added later leaves existing due-by dates as they are. */
 @Repository
 public class HolidayStore {
 
@@ -41,13 +42,26 @@ public class HolidayStore {
         jdbc.update("INSERT INTO holiday (sheet_id, holiday_date) VALUES (?, ?)", sheetId, date);
     }
 
-    /** The date itself when it is not a holiday on the sheet now, else the next day that is not. */
-    public LocalDate nextWorkingDay(String sheetId, LocalDate date) {
-        Set<LocalDate> holidays = new HashSet<>(list(sheetId));
+    /** The {@code days}-th business day after the date: counting forward from the day after it, skipping every
+     *  Saturday, Sunday and holiday on the sheet now. The date itself when {@code days} is 0. */
+    public LocalDate businessDaysAfter(String sheetId, LocalDate date, int days) {
+        return businessDaysAfter(new HashSet<>(list(sheetId)), date, days);
+    }
+
+    /** The {@code days}-th business day after the date, skipping weekends and the given holidays. */
+    public static LocalDate businessDaysAfter(Set<LocalDate> holidays, LocalDate date, int days) {
         LocalDate d = date;
-        while (holidays.contains(d)) {
+        for (int n = 0; n < days; ) {
             d = d.plusDays(1);
+            if (isBusinessDay(holidays, d)) {
+                n++;
+            }
         }
         return d;
+    }
+
+    private static boolean isBusinessDay(Set<LocalDate> holidays, LocalDate d) {
+        DayOfWeek day = d.getDayOfWeek();
+        return day != DayOfWeek.SATURDAY && day != DayOfWeek.SUNDAY && !holidays.contains(d);
     }
 }
