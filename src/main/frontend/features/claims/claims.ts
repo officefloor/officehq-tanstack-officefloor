@@ -55,6 +55,8 @@ export type Claim = {
   splitFrom: string | null;
   /** Whether it was added while the period its due-by falls in was soft-closed. */
   lateEntry: boolean;
+  /** The date (yyyy-MM-dd) a reminder was last written for it; null when it was never reminded. */
+  remindedOn: string | null;
 };
 
 /** A correction: a claim with a negative amount, which has no floor and no late charge. */

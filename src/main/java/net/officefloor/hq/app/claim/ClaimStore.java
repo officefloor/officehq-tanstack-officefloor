@@ -28,6 +28,7 @@ public class ClaimStore {
         claim.setProofs(rs.getInt("proofs"));
         claim.setSplitFrom(rs.getString("split_from"));
         claim.setLateEntry(rs.getBoolean("late_entry"));
+        claim.setRemindedOn(rs.getObject("reminded_on", LocalDate.class));
         return claim;
     };
 
@@ -145,6 +146,18 @@ public class ClaimStore {
             claim.setDeferredUntil(until);
         }
         return deferred;
+    }
+
+    /** Reminds the stored OPEN or PENDING claim on {@code today}; false when it is no longer one of those or was
+     *  already reminded that day (another user got there first). */
+    public boolean remind(Claim claim, LocalDate today) {
+        boolean reminded = jdbc.update("UPDATE claim SET reminded_on = ? WHERE sheet_id = ? AND id = ? AND status IN (?, ?)"
+                + " AND (reminded_on IS NULL OR reminded_on <> ?)", Date.valueOf(today), claim.getSheetId(), claim.getId(),
+                ClaimStatus.OPEN.name(), ClaimStatus.PENDING.name(), Date.valueOf(today)) == 1;
+        if (reminded) {
+            claim.setRemindedOn(today);
+        }
+        return reminded;
     }
 
     /** Re-dates the stored OPEN or PENDING claim, under {@code number}; false when it is no longer one of

@@ -94,6 +94,7 @@ function PersonClaims({ person }: { person: Person }) {
     reassign.reset();
     resettle.reset();
     defer.reset();
+    remind.reset();
     proof.reset();
     split.reset();
     redate.reset();
@@ -117,6 +118,7 @@ function PersonClaims({ person }: { person: Person }) {
     reassign.reset();
     resettle.reset();
     defer.reset();
+    remind.reset();
     proof.reset();
     split.reset();
     redate.reset();
@@ -138,6 +140,7 @@ function PersonClaims({ person }: { person: Person }) {
     reassign.reset();
     resettle.reset();
     defer.reset();
+    remind.reset();
     proof.reset();
     split.reset();
     redate.reset();
@@ -160,10 +163,30 @@ function PersonClaims({ person }: { person: Person }) {
     reassign.reset();
     resettle.reset();
     defer.reset();
+    remind.reset();
     proof.reset();
     split.reset();
     redate.reset();
     defer.mutate({ id, until: (deferDates[id] ?? '').trim() });
+  };
+  // Reminding an OPEN or PENDING claim marks it reminded on the sheet's today; once per day.
+  const remind = useMutation({
+    mutationFn: (id: number) => postJson<Claim>(`${base}/claims/${id}/remind`, { user }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+    },
+  });
+  const remindClaim = (id: number) => {
+    move.reset();
+    lock.reset();
+    reassign.reset();
+    resettle.reset();
+    defer.reset();
+    remind.reset();
+    proof.reset();
+    split.reset();
+    redate.reset();
+    remind.mutate(id);
   };
   // A proof raises the claim's proofs count by one; not on a SETTLED or VOID claim.
   const proof = useMutation({
@@ -178,6 +201,7 @@ function PersonClaims({ person }: { person: Person }) {
     reassign.reset();
     resettle.reset();
     defer.reset();
+    remind.reset();
     proof.reset();
     split.reset();
     redate.reset();
@@ -201,6 +225,7 @@ function PersonClaims({ person }: { person: Person }) {
     reassign.reset();
     resettle.reset();
     defer.reset();
+    remind.reset();
     proof.reset();
     split.reset();
     redate.reset();
@@ -224,11 +249,12 @@ function PersonClaims({ person }: { person: Person }) {
     reassign.reset();
     resettle.reset();
     defer.reset();
+    remind.reset();
     proof.reset();
     split.reset();
     redate.mutate({ id, date: (redates[id] ?? '').trim() });
   };
-  // The refusal of the last status change, move, re-settle, deferral, proof, split or re-dating of the claim, as the server gave it; null when none.
+  // The refusal of the last status change, move, re-settle, deferral, reminder, proof, split or re-dating of the claim, as the server gave it; null when none.
   const refusal = (id: number) => {
     const error =
       move.isError && move.variables?.id === id
@@ -239,15 +265,17 @@ function PersonClaims({ person }: { person: Person }) {
             ? resettle.error
             : defer.isError && defer.variables?.id === id
               ? defer.error
-              : proof.isError && proof.variables === id
-                ? proof.error
-                : split.isError && split.variables?.id === id
-                  ? split.error
-                  : redate.isError && redate.variables?.id === id
-                    ? redate.error
-                    : lock.isError && lock.variables?.id === id
-                      ? lock.error
-                      : null;
+              : remind.isError && remind.variables === id
+                ? remind.error
+                : proof.isError && proof.variables === id
+                  ? proof.error
+                  : split.isError && split.variables?.id === id
+                    ? split.error
+                    : redate.isError && redate.variables?.id === id
+                      ? redate.error
+                      : lock.isError && lock.variables?.id === id
+                        ? lock.error
+                        : null;
     if (error === null) return null;
     return error instanceof HttpError && error.reason ? `${error.reason}.` : 'The change was refused.';
   };
@@ -263,6 +291,7 @@ function PersonClaims({ person }: { person: Person }) {
     reassign.reset();
     resettle.reset();
     defer.reset();
+    remind.reset();
     proof.reset();
     split.reset();
     redate.reset();
@@ -311,6 +340,7 @@ function PersonClaims({ person }: { person: Person }) {
               <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-deferred">{c.deferred ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
+              <span data-testid="claim-reminded">{c.remindedOn ?? ''}</span>{' '}
               <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}
               <span data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</span>{' '}
               <button type="button" data-testid="claim-open" disabled={move.isPending} onClick={() => moveTo(c.id, 'OPEN')}>
@@ -394,6 +424,9 @@ function PersonClaims({ person }: { person: Person }) {
               />{' '}
               <button type="button" data-testid="claim-defer" disabled={defer.isPending} onClick={() => deferClaim(c.id)}>
                 Defer
+              </button>{' '}
+              <button type="button" data-testid="claim-remind" disabled={remind.isPending} onClick={() => remindClaim(c.id)}>
+                Remind
               </button>{' '}
               <input
                 data-testid="claim-date-new"

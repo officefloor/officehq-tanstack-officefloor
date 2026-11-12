@@ -26,6 +26,7 @@ public class Claim {
     private int proofs;
     private String splitFrom;
     private boolean lateEntry;
+    private LocalDate remindedOn;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue, String openedBy, boolean stated,
@@ -97,6 +98,9 @@ public class Claim {
     /** Whether the claim was added while the period its due-by falls in was soft-closed. */
     public boolean isLateEntry() { return lateEntry; }
     public void setLateEntry(boolean lateEntry) { this.lateEntry = lateEntry; }
+    /** The last sheet's today a reminder was written for the claim; null when it was never reminded. */
+    public LocalDate getRemindedOn() { return remindedOn; }
+    public void setRemindedOn(LocalDate remindedOn) { this.remindedOn = remindedOn; }
     public void setDeferredUntil(LocalDate deferredUntil) { this.deferredUntil = deferredUntil; }
     public void setPersonId(long personId) { this.personId = personId; }
     public void setCorrects(String corrects) { this.corrects = corrects; }
