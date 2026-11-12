@@ -18,8 +18,9 @@ function PlansHead() {
 }
 
 // A plan, with how many claims it has made so far, its next five dates, whether it is paused and the buttons that pause
-// and resume it (on the sheet's today). A refused pause or resume shows its error on the plan until the next action on the
-// person's row is taken.
+// and resume it (on the sheet's today), the entry that changes its amount (from the sheet's today on) and its amount
+// changes, oldest first. A refused pause, resume or amount change shows its error on the plan until the amount is edited
+// or the next action on the person's row is taken.
 function PlanRow({ plan: p, latest }: { plan: Plan; latest: number }) {
   const fig = useFigure();
   const [user] = useCurrentUser();
@@ -35,6 +36,21 @@ function PlanRow({ plan: p, latest }: { plan: Plan; latest: number }) {
     },
   });
   const submit = useSubmitOnce(pause);
+
+  const [amount, setAmount] = useState('');
+  const change = useMutation({
+    mutationKey: personActionKey(sheet, p.personId),
+    mutationFn: (a: string) =>
+      postJson<Plan>(`/api/sheets/${encodeURIComponent(sheet)}/plans/${p.id}/amount`, { amount: a, user }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: plansKey(sheet) });
+      setAmount('');
+    },
+  });
+  const submitChange = useSubmitOnce(change);
+
+  // Both share the person's action key, so at most one of them is the latest action.
+  const refused = [pause, change].find((m) => m.isError && m.submittedAt >= latest);
 
   return (
     <li data-testid={`plan-row-${p.id}`}>
@@ -52,12 +68,32 @@ function PlanRow({ plan: p, latest }: { plan: Plan; latest: number }) {
       <button type="button" data-testid="plan-resume" disabled={pause.isPending} onClick={() => submit(false)}>
         Resume
       </button>
-      {pause.isError && pause.submittedAt >= latest && (
+      <input
+        data-testid="plan-amount"
+        placeholder="New amount"
+        inputMode="decimal"
+        value={amount}
+        onChange={(e) => {
+          setAmount(e.target.value);
+          change.reset();
+        }}
+      />
+      <button type="button" data-testid="plan-amount-save" disabled={change.isPending} onClick={() => submitChange(amount)}>
+        Save amount
+      </button>
+      {refused && (
         <span data-testid="plan-error" role="alert">
           {' '}
-          {pause.error instanceof HttpError && pause.error.reason ? `${pause.error.reason}.` : 'The plan change was refused.'}
+          {refused.error instanceof HttpError && refused.error.reason ? `${refused.error.reason}.` : 'The plan change was refused.'}
         </span>
       )}
+      <ul>
+        {p.changes.map((c, i) => (
+          <li key={i} data-testid="plan-change-line">
+            {c}
+          </li>
+        ))}
+      </ul>
     </li>
   );
 }

@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.plan;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -7,7 +8,7 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
 
-/** The plans per sheet, in the order they were added, the plan dates each has made a claim for, and their pauses. */
+/** The plans per sheet, in the order they were added, the plan dates each has made a claim for, their pauses and their amount changes. */
 @Repository
 public class PlanStore {
 
@@ -17,7 +18,7 @@ public class PlanStore {
     private static final RowMapper<Plan> ROW = (rs, n) -> new Plan(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getLong("person_id"), rs.getBigDecimal("amount").setScale(2), rs.getObject("start_date", LocalDate.class),
             rs.getObject("every_days", Integer.class), rs.getObject("month_day", Integer.class),
-            rs.getObject("end_date", LocalDate.class), rs.getInt("generated"), List.of());
+            rs.getObject("end_date", LocalDate.class), rs.getInt("generated"), List.of(), List.of());
 
     private final JdbcTemplate jdbc;
 
@@ -27,20 +28,29 @@ public class PlanStore {
 
     /** The sheet's plans, in the order they were added. */
     public List<Plan> list(String sheetId) {
-        return jdbc.query(SELECT + " WHERE p.sheet_id = ? ORDER BY p.id", ROW, sheetId).stream().map(this::withPauses).toList();
+        return jdbc.query(SELECT + " WHERE p.sheet_id = ? ORDER BY p.id", ROW, sheetId).stream().map(this::withDetail).toList();
     }
 
     public Plan find(long id) {
         List<Plan> found = jdbc.query(SELECT + " WHERE p.id = ?", ROW, id);
-        return found.isEmpty() ? null : withPauses(found.get(0));
+        return found.isEmpty() ? null : withDetail(found.get(0));
     }
 
-    private Plan withPauses(Plan p) {
+    private Plan withDetail(Plan p) {
         List<PlanPause> pauses = jdbc.query("SELECT paused_on, resumed_on FROM plan_pause WHERE plan_id = ? ORDER BY paused_on",
                 (rs, n) -> new PlanPause(rs.getObject("paused_on", LocalDate.class), rs.getObject("resumed_on", LocalDate.class)),
                 p.id());
+        List<PlanChange> changes = jdbc.query("SELECT changed_on, amount FROM plan_change WHERE plan_id = ? ORDER BY id",
+                (rs, n) -> new PlanChange(rs.getObject("changed_on", LocalDate.class), rs.getBigDecimal("amount").setScale(2)),
+                p.id());
         return new Plan(p.id(), p.sheetId(), p.personId(), p.amount(), p.start(), p.every(), p.day(), p.end(),
-                p.generated(), pauses);
+                p.generated(), pauses, changes);
+    }
+
+    /** Changes the plan's amount from the date on, keeping the change. */
+    public void changeAmount(long planId, LocalDate date, BigDecimal amount) {
+        jdbc.update("UPDATE plan SET amount = ? WHERE id = ?", amount, planId);
+        jdbc.update("INSERT INTO plan_change (plan_id, changed_on, amount) VALUES (?, ?, ?)", planId, date, amount);
     }
 
     /** Pauses the plan from the date. */

@@ -9,9 +9,10 @@ import java.util.List;
 /** A person's plan: a DRAFT claim of the amount on every plan date up to the end; {@code generated} how many
  *  claims it has made so far. The plan dates are the start then every {@code every} days, or, for a monthly plan
  *  ({@code day} set, {@code every} null), {@link #dates(LocalDate)}. A date one of its {@code pauses} skips is
- *  left out of them. */
+ *  left out of them. {@code amount} is the latest of its {@code changes}, oldest first, if any. */
 public record Plan(long id, String sheetId, long personId, BigDecimal amount, LocalDate start, Integer every,
-        Integer day, LocalDate end, int generated, List<PlanPause> pauses) {
+        Integer day, LocalDate end, int generated, List<PlanPause> pauses,
+        List<PlanChange> changes) {
 
     /** Whether the plan is paused now: a pause not yet resumed. */
     public boolean paused() {

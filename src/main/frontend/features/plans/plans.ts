@@ -18,6 +18,8 @@ export type Plan = {
   generated: number;
   nextDates: string;
   paused: boolean;
+  /** Its amount changes, oldest first, each `<date> amount=<amount>`. */
+  changes: string[];
 };
 
 /** Under the sheet's key, so loading the sheet again re-reads its plans. */

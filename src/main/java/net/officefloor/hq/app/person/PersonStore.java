@@ -94,9 +94,9 @@ public class PersonStore {
     }
 
     /** The people's flags on the sheet (only the one person's when {@code personId} is given), by person. */
-    private Map<Long, Flag> flags(String sheetId, Long personId) {
+    private Map<Long, Flag> flags(String sheetId, Long personId, String table) {
         Map<Long, Flag> flags = new HashMap<>();
-        jdbc.query("SELECT person_id, reason, until_date FROM person_flag WHERE sheet_id = ?"
+        jdbc.query("SELECT person_id, reason, until_date FROM " + table + " WHERE sheet_id = ?"
                 + (personId == null ? "" : " AND person_id = " + personId), rs -> {
                     flags.put(rs.getLong("person_id"),
                             new Flag(rs.getString("reason"), rs.getObject("until_date", LocalDate.class)));
@@ -116,11 +116,11 @@ public class PersonStore {
 
     private List<Person> query(String sheetId, Long personId, String sql, Object... args) {
         return queryFrom(sheetId, personId, "person_grade", "person_hold", "person_alias", "person_retirement",
-                "person_snapshot", "person_terms", sql, args);
+                "person_snapshot", "person_terms", "person_flag", sql, args);
     }
 
     private List<Person> queryFrom(String sheetId, Long personId, String gradeTable, String holdTable,
-            String aliasTable, String retirementTable, String snapshotTable, String termsTable, String sql,
+            String aliasTable, String retirementTable, String snapshotTable, String termsTable, String flagTable, String sql,
             Object... args) {
         Map<Long, NavigableMap<LocalDate, Integer>> dated = datedTerms(sheetId, personId, termsTable);
         Map<Long, NavigableMap<LocalDate, String>> grades = grades(sheetId, personId, gradeTable);
@@ -128,7 +128,7 @@ public class PersonStore {
         Map<Long, List<String>> aliases = aliases(sheetId, personId, aliasTable);
         Map<Long, List<PastRetirement>> past = pastRetirements(sheetId, personId, retirementTable);
         Map<Long, List<Snapshot>> snapshots = snapshots(sheetId, personId, snapshotTable);
-        Map<Long, Flag> flags = flags(sheetId, personId);
+        Map<Long, Flag> flags = flags(sheetId, personId, flagTable);
         Map<Long, String> approvers = approvers(sheetId, personId);
         RowMapper<Person> row = (rs, i) -> {
             Person p = new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
@@ -161,6 +161,7 @@ public class PersonStore {
                 History.asOf("person_hold", "id", date), History.asOf("person_alias", "id", date),
                 History.asOf("person_retirement", "id", date), History.asOf("person_snapshot", "id", date),
                 History.asOf("person_terms", "person_id, from_date", date),
+                History.asOf("person_flag", "sheet_id, person_id", date),
                 "SELECT * FROM " + History.asOf("person", "id", date) + " WHERE sheet_id = ? ORDER BY list_position, id", sheetId);
     }
 
@@ -176,6 +177,7 @@ public class PersonStore {
                 History.asOf("person_hold", "id", date), History.asOf("person_alias", "id", date),
                 History.asOf("person_retirement", "id", date), History.asOf("person_snapshot", "id", date),
                 History.asOf("person_terms", "person_id, from_date", date),
+                History.asOf("person_flag", "sheet_id, person_id", date),
                 "SELECT * FROM " + History.asOf("person", "id", date) + " WHERE sheet_id = ? AND id = ?", sheetId, id);
         return found.isEmpty() ? null : found.get(0);
     }
