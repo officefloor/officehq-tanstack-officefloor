@@ -1,0 +1,135 @@
+diff --git a/src/main/frontend/features/roles/dashboard.slot.tsx b/src/main/frontend/features/roles/dashboard.slot.tsx
+new file mode 100644
+index 000000000..01a862b02
+--- /dev/null
++++ b/src/main/frontend/features/roles/dashboard.slot.tsx
+@@ -0,0 +1,38 @@
++import { HomeMain } from '../../slots/defs/homeMain';
++import { useCurrentSheet, useCurrentUser } from '../../session/session';
++import { statusCount, useClaims } from '../claims/claims';
++import { useSheetOverdue } from '../overdue/overdue.slot';
++import { useSheetToday } from '../sheet/sheet';
++import { useDelegations, useRoles } from './roles';
++
++/** Whether the user acts as a steward on the sheet's today (the as-of date under one): steward by role
++ *  as it stood then, or by a delegation then in force. */
++function useIsSteward(sheet: string, user: string): boolean {
++  const roles = useRoles(sheet).data;
++  const delegations = useDelegations(sheet).data;
++  const today = useSheetToday(sheet);
++  const name = user.trim();
++  if (name === '' || roles === undefined || delegations === undefined || today === undefined) return false;
++  if (roles.some((r) => r.user === name && r.role === 'steward')) return true;
++  return delegations.some((d) => d.user === name && d.from <= today && today <= d.to);
++}
++
++// A steward's dashboard: the sheet's PENDING and REVIEW claims, and its overdue claims that count. A user
++// who is not a steward (as the screen's as-of date had them) sees the cells empty.
++function StewardDashboard() {
++  const [sheet] = useCurrentSheet();
++  const [user] = useCurrentUser();
++  const steward = useIsSteward(sheet, user);
++  const claims = useClaims(sheet);
++  const overdue = useSheetOverdue();
++
++  return (
++    <p data-testid="steward-dashboard">
++      Pending <strong data-testid="dash-pending-count">{steward ? statusCount(claims.data, 'PENDING') : ''}</strong>{' '}
++      Review <strong data-testid="dash-review-count">{steward ? statusCount(claims.data, 'REVIEW') : ''}</strong>{' '}
++      Overdue <strong data-testid="dash-overdue-count">{steward ? overdue.count : ''}</strong>
++    </p>
++  );
++}
++
++export const contribution = HomeMain.fill({ order: 37, Component: StewardDashboard });
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateStore.java b/src/main/java/net/officefloor/hq/app/rate/RateStore.java
+index 72cc2b828..dbd54a883 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateStore.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateStore.java
+@@ -33,36 +33,52 @@ public class RateStore {
+     /** Where the rates are read from: the rate table, or the rates as they stood at the end of a date. */
+     private final String rates;
+ 
++    /** Where each sheet's parent is read from: the setting table, or the settings as they stood at the end of a date. */
++    private final String settings;
++
+     @Autowired
+     public RateStore(JdbcTemplate jdbc) {
+-        this(jdbc, "rate");
++        this(jdbc, "rate", "sheet_setting");
+     }
+ 
+-    private RateStore(JdbcTemplate jdbc, String rates) {
++    private RateStore(JdbcTemplate jdbc, String rates, String settings) {
+         this.jdbc = jdbc;
+         this.rates = rates;
++        this.settings = settings;
+     }
+ 
+     /** The rates that apply to the claim (to read only): those that are not forward-only, and those saved
+      *  before the claim was added. */
+     public RateStore forClaim(Claim claim) {
+         return new RateStore(jdbc, "(SELECT * FROM " + rates + " WHERE forward_seq IS NULL OR forward_seq < "
+-                + claim.getAddedSeq() + ") rate");
++                + claim.getAddedSeq() + ") rate", settings);
+     }
+ 
+-    /** The rates as they stood at the end of the date (see {@link History}), to read only. */
++    /** The rates, and the parents the sheets name, as they stood at the end of the date (see {@link History}), to
++     *  read only. A sheet that has no today of its own has kept no dated history (its changes are dated by the
++     *  real date), so its rates and its parent are read as they are now. */
+     public RateStore asOf(LocalDate date) {
+-        return new RateStore(jdbc, History.asOf("rate", "sheet_id, grade, from_date", date));
++        return new RateStore(jdbc,
++                datedOrNow("rate", "sheet_id, grade, from_date", "sheet_id, grade, from_date, to_date, pct, version, forward_seq", date),
++                datedOrNow("sheet_setting", "sheet_id, setting_key", "sheet_id, setting_key, setting_value", date));
++    }
++
++    /** The table's rows (these columns) as they stood at the end of the date for the sheets with a today of their
++     *  own, and as they are now for the others. */
++    private static String datedOrNow(String table, String keys, String columns, LocalDate date) {
++        String dated = "SELECT id FROM sheet WHERE today IS NOT NULL";
++        return "(SELECT " + columns + " FROM " + History.asOf(table, keys, date) + " WHERE sheet_id IN (" + dated + ")"
++                + " UNION ALL SELECT " + columns + " FROM " + table + " WHERE sheet_id NOT IN (" + dated + ")) " + table;
+     }
+ 
+     /** The sheet, then its parent, its parent's parent, up to {@link #LEVELS} levels up (stopping at a sheet
+-     *  with no parent, or one already in the chain). The parents are those named now, also when the rates are
+-     *  read as of a date. */
++     *  with no parent, or one already in the chain). The parents are those named now, or when the rates are
++     *  read as of a date, then. */
+     public List<String> chain(String sheetId) {
+         List<String> chain = new ArrayList<>();
+         chain.add(sheetId);
+         for (int level = 0; level < LEVELS; level++) {
+-            List<String> found = jdbc.queryForList("SELECT setting_value FROM sheet_setting"
++            List<String> found = jdbc.queryForList("SELECT setting_value FROM " + settings
+                     + " WHERE sheet_id = ? AND setting_key = 'parent'", String.class, chain.get(chain.size() - 1));
+             String parent = found.isEmpty() ? null : found.get(0);
+             if (parent == null || chain.contains(parent)) {
+diff --git a/src/main/java/net/officefloor/hq/app/statement/StatementStore.java b/src/main/java/net/officefloor/hq/app/statement/StatementStore.java
+index e04a810bd..a0de55e16 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/StatementStore.java
++++ b/src/main/java/net/officefloor/hq/app/statement/StatementStore.java
+@@ -73,7 +73,7 @@ public class StatementStore {
+ 
+     private Map<Long, StatementSummary> summariesFrom(String sheetId, String table) {
+         Map<Long, List<StatementSummary.Line>> lines = new HashMap<>();
+-        jdbc.query("SELECT person_id, taken_on, due_total FROM " + table + " WHERE sheet_id = ? ORDER BY taken_on, id",
++        jdbc.query("SELECT person_id, taken_on, due_total FROM " + table + " WHERE sheet_id = ? ORDER BY id",
+                 rs -> {
+                     lines.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(new StatementSummary.Line(
+                             rs.getObject("taken_on", LocalDate.class).toString(), figure(rs.getBigDecimal("due_total"))));
+diff --git a/src/main/java/net/officefloor/hq/app/statement/StatementSummary.java b/src/main/java/net/officefloor/hq/app/statement/StatementSummary.java
+index 2ab646930..883e6513a 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/StatementSummary.java
++++ b/src/main/java/net/officefloor/hq/app/statement/StatementSummary.java
+@@ -4,7 +4,7 @@ import java.util.List;
+ 
+ /** A person's statements as the front end reads them: how many were taken, and the last one's
+  *  due-total (two decimals, or n/a) and date (yyyy-MM-dd); both null when none was taken; and every
+- *  statement still standing, oldest first (by date, then as taken). */
++ *  statement still standing, in the order they were taken. */
+ public record StatementSummary(int count, String lastDueTotal, String lastDate, List<Line> lines) {
+     public static final StatementSummary NONE = new StatementSummary(0, null, null, List.of());
+ 
