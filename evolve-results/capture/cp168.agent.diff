@@ -1,0 +1,400 @@
+diff --git a/src/main/frontend/features/crews/crews.slot.tsx b/src/main/frontend/features/crews/crews.slot.tsx
+index 55c9f0ba5..3b1344428 100644
+--- a/src/main/frontend/features/crews/crews.slot.tsx
++++ b/src/main/frontend/features/crews/crews.slot.tsx
+@@ -7,6 +7,7 @@ import { useCurrentSheet, useCurrentUser } from '../../session/session';
+ import { type Person, usePeople } from '../people/people';
+ import { usePersonDue } from '../rates/due.slot';
+ import { type Crew, crewDue, crewsKey, useCrews } from './crews';
++import { poolsKey } from '../pools/pools';
+ import { useFigure } from '../locale/locale';
+ 
+ const refusal = (e: unknown, fallback: string) =>
+@@ -27,6 +28,7 @@ function CrewRow({ crew, people, due }: { crew: Crew; people: Person[]; due: (p:
+       postJson(`/api/sheets/${encodeURIComponent(sheet)}/crews/${crew.id}/members`, { personId: id, user }),
+     onSuccess: async () => {
+       await queryClient.invalidateQueries({ queryKey: crewsKey(sheet) });
++      await queryClient.invalidateQueries({ queryKey: poolsKey(sheet) });
+       setPersonId('');
+     },
+   });
+@@ -97,6 +99,7 @@ function Crews() {
+       postJson(`/api/sheets/${encodeURIComponent(sheet)}/crews`, { ...c, user }),
+     onSuccess: async () => {
+       await queryClient.invalidateQueries({ queryKey: crewsKey(sheet) });
++      await queryClient.invalidateQueries({ queryKey: poolsKey(sheet) });
+       setName('');
+       setLeadId('');
+     },
+diff --git a/src/main/frontend/features/pools/pools.slot.tsx b/src/main/frontend/features/pools/pools.slot.tsx
+index 8797bcaf2..8d0c59640 100644
+--- a/src/main/frontend/features/pools/pools.slot.tsx
++++ b/src/main/frontend/features/pools/pools.slot.tsx
+@@ -56,82 +56,85 @@ function PoolRow({ pool, pools }: { pool: Pool; pools: Pool[] }) {
+           </li>
+         ))}
+       </ul>
+-      <form
+-        onSubmit={(e) => {
+-          e.preventDefault();
+-          submit({
+-            personId: personId === '' || personId.startsWith('pool:') ? null : Number(personId),
+-            memberPoolId: personId.startsWith('pool:') ? Number(personId.slice(5)) : null,
+-            share,
+-            from,
+-            to,
+-          });
+-        }}
+-      >
+-        <select
+-          data-testid="pool-member-select"
+-          value={personId}
+-          onChange={(e) => {
+-            setPersonId(e.target.value);
+-            add.reset();
++      {!pool.crew && (
++        <form
++          onSubmit={(e) => {
++            e.preventDefault();
++            submit({
++              personId: personId === '' || personId.startsWith('pool:') ? null : Number(personId),
++              memberPoolId: personId.startsWith('pool:') ? Number(personId.slice(5)) : null,
++              share,
++              from,
++              to,
++            });
+           }}
+         >
+-          <option value="">Person…</option>
+-          {people.map((p) => (
+-            <option key={p.id} value={String(p.id)}>
+-              {p.name}
+-            </option>
+-          ))}
+-          {pools.map((p) => (
+-            <option key={`pool:${p.id}`} value={`pool:${p.id}`}>
+-              pool:{p.name}
+-            </option>
+-          ))}
+-        </select>
+-        <input
+-          data-testid="pool-member-share"
+-          placeholder="Share %"
+-          value={share}
+-          onChange={(e) => {
+-            setShare(e.target.value);
+-            add.reset();
+-          }}
+-        />
+-        <input
+-          type="date"
+-          data-testid="pool-member-from"
+-          aria-label="Member from"
+-          value={from}
+-          onChange={(e) => {
+-            setFrom(e.target.value);
+-            add.reset();
+-          }}
+-        />
+-        <input
+-          type="date"
+-          data-testid="pool-member-to"
+-          aria-label="Member to"
+-          value={to}
+-          onChange={(e) => {
+-            setTo(e.target.value);
+-            add.reset();
+-          }}
+-        />
+-        <button type="submit" data-testid="pool-member-add" disabled={add.isPending}>
+-          Add member
+-        </button>
+-        {add.isError && (
+-          <span data-testid="pool-error" role="alert">
+-            {' '}
+-            {refusal(add.error, 'The member was refused.')}
+-          </span>
+-        )}
+-      </form>
++          <select
++            data-testid="pool-member-select"
++            value={personId}
++            onChange={(e) => {
++              setPersonId(e.target.value);
++              add.reset();
++            }}
++          >
++            <option value="">Person…</option>
++            {people.map((p) => (
++              <option key={p.id} value={String(p.id)}>
++                {p.name}
++              </option>
++            ))}
++            {pools.filter((p) => !p.crew).map((p) => (
++              <option key={`pool:${p.id}`} value={`pool:${p.id}`}>
++                pool:{p.name}
++              </option>
++            ))}
++          </select>
++          <input
++            data-testid="pool-member-share"
++            placeholder="Share %"
++            value={share}
++            onChange={(e) => {
++              setShare(e.target.value);
++              add.reset();
++            }}
++          />
++          <input
++            type="date"
++            data-testid="pool-member-from"
++            aria-label="Member from"
++            value={from}
++            onChange={(e) => {
++              setFrom(e.target.value);
++              add.reset();
++            }}
++          />
++          <input
++            type="date"
++            data-testid="pool-member-to"
++            aria-label="Member to"
++            value={to}
++            onChange={(e) => {
++              setTo(e.target.value);
++              add.reset();
++            }}
++          />
++          <button type="submit" data-testid="pool-member-add" disabled={add.isPending}>
++            Add member
++          </button>
++          {add.isError && (
++            <span data-testid="pool-error" role="alert">
++              {' '}
++              {refusal(add.error, 'The member was refused.')}
++            </span>
++          )}
++        </form>
++      )}
+     </li>
+   );
+ }
+ 
+-// The sheet's pools, and the form a pool is added with. A blank name, or one already a pool, is refused.
++// The sheet's pools (each crew among them, after the others), and the form a pool is added with. A blank name, or
++// one already a pool or a crew, is refused.
+ function Pools() {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+diff --git a/src/main/frontend/features/pools/pools.ts b/src/main/frontend/features/pools/pools.ts
+index 530cfc4a2..fdd25c24f 100644
+--- a/src/main/frontend/features/pools/pools.ts
++++ b/src/main/frontend/features/pools/pools.ts
+@@ -22,8 +22,10 @@ export type PoolMember = {
+   to: string | null;
+ };
+ 
+-/** A pool on the sheet: its members, the total of their shares (two decimals) and whether it is exactly 100.00. */
+-export type Pool = { id: number; name: string; members: PoolMember[]; totalShare: string; balanced: boolean };
++/** A pool on the sheet: its members, the total of their shares (two decimals) and whether it is exactly 100.00.
++ *  `crew` for a crew shown as a pool (its id the negated crew id): its members are the crew's lead and members at
++ *  equal shares, and no member is added to it here. */
++export type Pool = { id: number; name: string; members: PoolMember[]; totalShare: string; balanced: boolean; crew: boolean };
+ 
+ /** Under the sheet's key, so loading the sheet again re-reads its pools. */
+ export const poolsKey = (sheet: string) => [...sheetKey(sheet), 'pools'] as const;
+diff --git a/src/main/java/net/officefloor/hq/app/crew/ValidateCrew.java b/src/main/java/net/officefloor/hq/app/crew/ValidateCrew.java
+index 2dc411ad9..fe3feb448 100644
+--- a/src/main/java/net/officefloor/hq/app/crew/ValidateCrew.java
++++ b/src/main/java/net/officefloor/hq/app/crew/ValidateCrew.java
+@@ -2,16 +2,18 @@ package net.officefloor.hq.app.crew;
+ 
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonStore;
++import net.officefloor.hq.app.pool.PoolStore;
+ import net.officefloor.hq.app.role.RoleStore;
+ import net.officefloor.hq.app.sheet.InvalidSheetException;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+-/** Refuses a crew by a viewer, a blank name, a name already a crew on the sheet, or a lead not on the sheet. */
++/** Refuses a crew by a viewer, a blank name, a name already a crew or a pool on the sheet, or a lead not on the sheet. */
+ public class ValidateCrew {
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody CrewRequest request,
+-            Out<CrewInput> body, RoleStore roles, CrewStore crews, PersonStore people) throws InvalidSheetException {
++            Out<CrewInput> body, RoleStore roles, CrewStore crews, PersonStore people,
++            PoolStore pools) throws InvalidSheetException {
+         String sheet = sheetId.trim();
+         String user = request == null || request.user() == null ? "" : request.user().trim();
+         roles.refuseChange(sheet, user);
+@@ -22,6 +24,9 @@ public class ValidateCrew {
+         if (crews.has(sheet, name)) {
+             throw new InvalidSheetException(name + " is already a crew");
+         }
++        if (pools.has(sheet, name)) {
++            throw new InvalidSheetException(name + " is already a pool");
++        }
+         Person lead = request.leadId() == null ? null : people.find(sheet, request.leadId());
+         if (lead == null) {
+             throw new InvalidSheetException("A lead is required");
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java b/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
+index 7f42f928c..38c28cccf 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
+@@ -3,8 +3,10 @@ package net.officefloor.hq.app.pool;
+ import java.util.List;
+ 
+ /** A pool as the front end reads it: its members, the total of their shares (a retired member's counts as
+- *  given) and whether that total is exactly 100.00. Shares and the total have two decimals. */
+-public record PoolResponse(long id, String name, List<MemberResponse> members, String totalShare, boolean balanced) {
++ *  given) and whether that total is exactly 100.00. Shares and the total have two decimals. {@code crew} for a
++ *  crew shown as a pool (its id the negated crew id): its members are the crew's, and none is added to it here. */
++public record PoolResponse(long id, String name, List<MemberResponse> members, String totalShare, boolean balanced,
++        boolean crew) {
+ 
+     /** A member of a pool: the person or the member pool (the other null), its name, its share, and its cut of
+      *  the pool's pot (two decimals), null when the pool is not balanced, has no pot or every member is retired. A pool that is a member
+diff --git a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+index dbadfefee..bfb33e840 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+@@ -9,6 +9,7 @@ import java.util.List;
+ import java.util.Map;
+ import java.util.Set;
+ import java.util.stream.Collectors;
++import net.officefloor.hq.app.crew.CrewStore;
+ import net.officefloor.hq.app.history.History;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonStore;
+@@ -21,20 +22,25 @@ import org.springframework.web.bind.annotation.RequestParam;
+ /** The sheet's pools with their members, total share and whether they are balanced, and each member's cut
+  *  of the pool's pot: the sheet's pot for a pool that is a member of none, else its cut in the pool above. A
+  *  person with a hold in force on the sheet's today (the as-of date when one is given) gets no cut. A member
+- *  whose dates do not include that day is left out entirely: not in the total share, not in the balance, no cut. */
++ *  whose dates do not include that day is left out entirely: not in the total share, not in the balance, no cut.
++ *  Each crew is a pool too, after the stored pools in the order the crews were added: under the crew's name (and
++ *  the negated crew id), its lead then its members each with an equal share of 100.00 (split as patrons' shares
++ *  are, the remainder on the lead), and no dates. */
+ public class RespondWithPools {
+     private static final BigDecimal HUNDRED = new BigDecimal("100.00");
+ 
+     public void respond(@PathVariable("sheetId") String sheetId,
+             @RequestParam(name = "asOf", required = false) String asOf, PoolStore store, SettingStore settings,
+-            PersonStore people, SheetStore sheets, ObjectResponse<List<PoolResponse>> response) {
++            PersonStore people, SheetStore sheets, CrewStore crews, ObjectResponse<List<PoolResponse>> response) {
+         String sheet = sheetId.trim();
+         LocalDate on = History.date(asOf);
+         BigDecimal sheetPot = (on == null ? settings : settings.asOf(on)).pot(sheet);
+         Map<Long, List<PoolStore.Member>> members = store.members(sheet, on);
+-        List<PoolStore.Pool> pools = store.list(sheet, on);
++        List<PoolStore.Pool> pools = new ArrayList<>(store.list(sheet, on));
+         LocalDate today = on == null ? sheets.today(sheet) : on;
+-        Set<Long> held = (on == null ? people.list(sheet) : people.listAsOf(sheet, on)).stream()
++        List<Person> everyone = on == null ? people.list(sheet) : people.listAsOf(sheet, on);
++        Set<Long> crewPools = addCrews(sheet, on, crews, everyone, pools, members);
++        Set<Long> held = everyone.stream()
+                 .filter(p -> p.getHolds().stream().anyMatch(h -> h.covers(today))).map(Person::getId)
+                 .collect(Collectors.toSet());
+         // each member pool to the pool it is a member of, and its share there
+@@ -57,10 +63,54 @@ public class RespondWithPools {
+                         m.from() == null ? null : m.from().toString(), m.to() == null ? null : m.to().toString()));
+             }
+             BigDecimal total = total(ms, today);
+-            return new PoolResponse(p.id(), p.name(), shown, total.toPlainString(), total.compareTo(HUNDRED) == 0);
++            return new PoolResponse(p.id(), p.name(), shown, total.toPlainString(), total.compareTo(HUNDRED) == 0,
++                    crewPools.contains(p.id()));
+         }).toList());
+     }
+ 
++    /** Adds each crew as a pool (id the negated crew id) with its lead and members still on the sheet at equal
++     *  shares; the ids of the pools added. */
++    private static Set<Long> addCrews(String sheet, LocalDate on, CrewStore crews, List<Person> everyone,
++            List<PoolStore.Pool> pools, Map<Long, List<PoolStore.Member>> members) {
++        Map<Long, Person> byId = new HashMap<>();
++        everyone.forEach(p -> byId.put(p.getId(), p));
++        Map<Long, List<CrewStore.Member>> crewMembers = crews.members(sheet, on);
++        Set<Long> added = new java.util.HashSet<>();
++        for (CrewStore.Crew c : crews.list(sheet, on)) {
++            long id = -c.id();
++            List<Long> ids = new ArrayList<>();
++            ids.add(c.leadId());
++            crewMembers.getOrDefault(c.id(), List.of()).forEach(m -> ids.add(m.personId()));
++            List<Person> in = ids.stream().map(byId::get).filter(java.util.Objects::nonNull).toList();
++            List<BigDecimal> shares = equalShares(in.size());
++            List<PoolStore.Member> ms = new ArrayList<>();
++            for (int i = 0; i < in.size(); i++) {
++                Person p = in.get(i);
++                ms.add(new PoolStore.Member(id, p.getId(), null, p.getName(), shares.get(i), p.isRetired(), null,
++                        null));
++            }
++            pools.add(new PoolStore.Pool(id, c.name()));
++            members.put(id, ms);
++            added.add(id);
++        }
++        return added;
++    }
++
++    /** 100.00 split equally over {@code count}, as patrons' shares are: each the even split rounded half to even
++     *  to two decimals, the remainder on the first. */
++    private static List<BigDecimal> equalShares(int count) {
++        List<BigDecimal> shares = new ArrayList<>();
++        if (count == 0) {
++            return shares;
++        }
++        BigDecimal each = HUNDRED.divide(BigDecimal.valueOf(count), 2, RoundingMode.HALF_EVEN);
++        for (int i = 0; i < count; i++) {
++            shares.add(each);
++        }
++        shares.set(0, HUNDRED.subtract(each.multiply(BigDecimal.valueOf(count - 1))).setScale(2));
++        return shares;
++    }
++
+     /** The total of the members' shares, a retired member's counting as given, one whose dates do not include
+      *  today as 0.00. */
+     private static BigDecimal total(List<PoolStore.Member> ms, LocalDate today) {
+diff --git a/src/main/java/net/officefloor/hq/app/pool/ValidatePool.java b/src/main/java/net/officefloor/hq/app/pool/ValidatePool.java
+index 7912cc8f1..038fb08f7 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/ValidatePool.java
++++ b/src/main/java/net/officefloor/hq/app/pool/ValidatePool.java
+@@ -1,15 +1,17 @@
+ package net.officefloor.hq.app.pool;
+ 
++import net.officefloor.hq.app.crew.CrewStore;
+ import net.officefloor.hq.app.role.RoleStore;
+ import net.officefloor.hq.app.sheet.InvalidSheetException;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+-/** Refuses a pool by a viewer, a blank name, or a name already a pool on the sheet. */
++/** Refuses a pool by a viewer, a blank name, or a name already a pool or a crew on the sheet. */
+ public class ValidatePool {
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PoolRequest request,
+-            Out<PoolInput> body, RoleStore roles, PoolStore pools) throws InvalidSheetException {
++            Out<PoolInput> body, RoleStore roles, PoolStore pools,
++            CrewStore crews) throws InvalidSheetException {
+         String sheet = sheetId.trim();
+         String user = request == null || request.user() == null ? "" : request.user().trim();
+         roles.refuseChange(sheet, user);
+@@ -20,6 +22,9 @@ public class ValidatePool {
+         if (pools.has(sheet, name)) {
+             throw new InvalidSheetException(name + " is already a pool");
+         }
++        if (crews.has(sheet, name)) {
++            throw new InvalidSheetException(name + " is already a crew");
++        }
+         body.set(new PoolInput(name, user));
+     }
+ }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/pools.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/pools.GET.yml
+index e0e90fcc7..54c35a7c2 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/pools.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/pools.GET.yml
+@@ -1,5 +1,6 @@
+ # GET /api/sheets/{sheetId}/pools — the sheet's pools, in the order they were added, each with its members,
+ # total share (a retired member's counts as 0.00) and whether it is balanced (exactly 100.00).
++# Each crew is a pool too, after the others: its lead and members at equal shares.
+ respond:
+   class: net.officefloor.hq.app.pool.RespondWithPools
+   govern: [ readonly-transaction ]
