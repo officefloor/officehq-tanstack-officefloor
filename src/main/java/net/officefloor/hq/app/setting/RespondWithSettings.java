@@ -23,7 +23,7 @@ public class RespondWithSettings {
                 store.find(sheet, SettingStore.PERIOD_NUMBERING_FROM), gradeTerms(sheet, today, store),
                 store.find(sheet, SettingStore.CAP), store.find(sheet, SettingStore.PROOF_THRESHOLD),
                 history(sheet, SettingStore.FLOOR, store), history(sheet, SettingStore.LATE_PCT, store),
-                store.perms(sheet)));
+                store.perms(sheet), store.find(sheet, SettingStore.GRACE_DAYS)));
     }
 
     private static Map<String, String> gradeTerms(String sheetId, LocalDate today, SettingStore store) {

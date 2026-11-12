@@ -18,7 +18,7 @@ import org.springframework.stereotype.Repository;
  *  that carry a figure (the clerk limit, the floor, the cap, the proof threshold, the terms, a grade's terms and the late
  *  percent) are dated: each value is recorded from a from-date, and the value in force on a date is the
  *  one with the latest from-date on or before it (none before every from-date, then the sheet's starting
- *  value). The policy date, the period numbering date and the permission matrix are not dated. */
+ *  value). The policy date, the period numbering date, the grace days and the permission matrix are not dated. */
 @Repository
 public class SettingStore {
 
@@ -44,6 +44,9 @@ public class SettingStore {
     public static final String POLICY_DATE = "policy-date";
 
     public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
+
+    /** The whole days after its to-date an open period is closed by a new today; blank for off. */
+    public static final String GRACE_DAYS = "grace-days";
 
     /** The key of an action's permission: perm-open, perm-settle, and so on. */
     public static final String PERM_PREFIX = "perm-";
@@ -77,7 +80,8 @@ public class SettingStore {
 
     /** Whether the key's values are recorded from a from-date. */
     public static boolean isDated(String key) {
-        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !key.startsWith(PERM_PREFIX);
+        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key)
+                && !key.startsWith(PERM_PREFIX);
     }
 
     /** Whether the role may take the action (one of {@link #PERM_ACTIONS}): the roles listed in its
@@ -205,6 +209,12 @@ public class SettingStore {
     public LocalDate periodNumberingFrom(String sheetId) {
         String value = find(sheetId, PERIOD_NUMBERING_FROM);
         return value == null ? null : LocalDate.parse(value);
+    }
+
+    /** The whole days after its to-date an open period is closed by a new today, or null when blank (off). */
+    public Integer graceDays(String sheetId) {
+        String value = find(sheetId, GRACE_DAYS);
+        return value == null ? null : Integer.valueOf(value);
     }
 
     /** Records the setting's value; a dated one's from the date (replacing a value recorded from it). */

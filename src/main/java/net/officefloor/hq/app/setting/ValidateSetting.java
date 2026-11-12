@@ -31,6 +31,15 @@ public class ValidateSetting {
         boolean dated = SettingStore.POLICY_DATE.equals(key) || numbering;
         boolean cap = SettingStore.CAP.equals(key);
         boolean proof = SettingStore.PROOF_THRESHOLD.equals(key);
+        if (SettingStore.GRACE_DAYS.equals(key)) {
+            String value = request.value() == null ? "" : request.value().trim();
+            if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
+                throw new InvalidSheetException("The grace days must be a whole number of days, 0 or more, or blank");
+            }
+            body.set(new SettingInput(key, value.isEmpty() ? null : String.valueOf(Integer.parseInt(value)), null,
+                    request.user()));
+            return;
+        }
         if (key.startsWith(SettingStore.PERM_PREFIX)
                 && SettingStore.PERM_ACTIONS.contains(key.substring(SettingStore.PERM_PREFIX.length()))) {
             body.set(new SettingInput(key, perm(request.value()), null, request.user()));

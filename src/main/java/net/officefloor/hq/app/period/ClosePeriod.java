@@ -1,8 +1,5 @@
 package net.officefloor.hq.app.period;
 
-import java.math.BigDecimal;
-import java.time.LocalDate;
-import java.util.Map;
 import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.role.RoleStore;
 import net.officefloor.hq.app.rollup.RollupService;
@@ -31,14 +28,6 @@ public class ClosePeriod {
         if (period.closed()) {
             throw new InvalidSheetException("The period " + period.name() + " is already closed");
         }
-        LocalDate from = LocalDate.parse(period.from());
-        LocalDate to = LocalDate.parse(period.to());
-        Map<Long, BigDecimal> people = rollups.dueBetweenByPerson(sheet, from, to);
-        BigDecimal total = people.values().stream().reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
-        if (!store.close(sheet, period.name(), total)) {
-            throw new InvalidSheetException("The period " + period.name() + " is already closed");
-        }
-        store.fixPersonTotals(sheet, period.name(), people);
-        closed.set(PeriodResponse.of(period.name(), from, to, true, total, people));
+        closed.set(PeriodClosing.fix(sheet, period, store, rollups));
     }
 }
