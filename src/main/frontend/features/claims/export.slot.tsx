@@ -21,9 +21,14 @@ function ExportClaims() {
   const rates = useRates(sheet);
   const periods = usePeriods(sheet);
   const today = useSheetToday(sheet);
-  const settings = useSettings(sheet).data;
+  const settingsQuery = useSettings(sheet);
+  const settings = settingsQuery.data;
 
   if (!user || !sheet) return null;
+
+  // The figures are read as of the screen's as-of date: wait until every one is loaded for it.
+  const ready =
+    !!people.data && !!claims.data && !!rates.data && !!periods.data && !!settingsQuery.data && today !== undefined;
 
   const download = () => {
     const lines = [['person', 'number', 'date', 'amount', 'due', 'status', 'period']];
@@ -49,7 +54,7 @@ function ExportClaims() {
 
   return (
     <p>
-      <button type="button" data-testid="export-claims" onClick={download}>
+      <button type="button" data-testid="export-claims" disabled={!ready} onClick={download}>
         Export claims (CSV)
       </button>
     </p>

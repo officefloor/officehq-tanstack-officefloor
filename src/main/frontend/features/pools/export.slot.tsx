@@ -34,7 +34,7 @@ function ExportPools() {
 
   return (
     <p>
-      <button type="button" data-testid="export-pools" onClick={download}>
+      <button type="button" data-testid="export-pools" disabled={!pools.data} onClick={download}>
         Export pools (CSV)
       </button>
     </p>

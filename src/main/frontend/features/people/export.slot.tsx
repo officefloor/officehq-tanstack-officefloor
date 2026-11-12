@@ -19,9 +19,13 @@ function ExportPeople() {
   const claims = useClaims(sheet);
   const rates = useRates(sheet);
   const today = useSheetToday(sheet);
-  const settings = useSettings(sheet).data;
+  const settingsQuery = useSettings(sheet);
+  const settings = settingsQuery.data;
 
   if (!user || !sheet) return null;
+
+  // The figures are read as of the screen's as-of date: wait until every one is loaded for it.
+  const ready = !!people.data && !!claims.data && !!rates.data && !!settingsQuery.data && today !== undefined;
 
   const download = () => {
     const late = lateOf(settings, today, people.data);
@@ -43,7 +47,7 @@ function ExportPeople() {
 
   return (
     <p>
-      <button type="button" data-testid="export-people" onClick={download}>
+      <button type="button" data-testid="export-people" disabled={!ready} onClick={download}>
         Export people (CSV)
       </button>
     </p>
