@@ -46,7 +46,7 @@ public class ApplyStatus {
         }
         claim.setStatus(to);
         if (from == ClaimStatus.DRAFT && to == ClaimStatus.OPEN) {
-            claim.setNumber(Numbering.next(claim.getSheetId(), claim.getDate(), store, settings, sheets, periods));
+            claim.setNumber(Numbering.next(claim.getSheetId(), claim.getDueBy(), store, settings, sheets, periods));
             claim.setOpenedBy(input.user());
         }
         if (to == ClaimStatus.SETTLED) {

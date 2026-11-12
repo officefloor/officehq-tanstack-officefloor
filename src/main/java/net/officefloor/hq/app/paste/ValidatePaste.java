@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  * Checks every pasted line with exactly the claim form's rules before anything is stored: the name
  * must be on the sheet (ignoring case and the spaces around it), the amount a number with up to two
  * decimals (a negative one names no claim it corrects, so is refused), the date (blank for the
- * entry date while it is set, else the sheet's today) in no closed period and not after the person is retired from. The note is the rest
+ * entry date while it is set, else the sheet's today) due by (with the terms it would get) a date in no closed period and not after the person is retired from. The note is the rest
  * of the line, commas and all. Blank lines are skipped; a paste with no line is refused.
  */
 public class ValidatePaste {

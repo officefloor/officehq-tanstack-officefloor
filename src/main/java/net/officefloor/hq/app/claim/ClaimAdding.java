@@ -18,7 +18,7 @@ public final class ClaimAdding {
     public static ClaimInput check(String sheetId, Person person, ClaimRequest request, SettingStore settings,
             PeriodStore periods, ClaimStore claims) throws InvalidSheetException {
         ClaimInput input = ValidateClaim.check(sheetId, request, settings);
-        CheckClaimPeriod.refuseClosed(periods, sheetId, input.date());
+        ClaimPeriods.refuseClosed(periods, sheetId, ClaimPeriods.dueByOf(person, input.date(), settings));
         Retirement.refuseClaimDate(person, input.date());
         CheckCorrection.refuseUnsettled(claims, sheetId, person.getId(), input);
         return input;

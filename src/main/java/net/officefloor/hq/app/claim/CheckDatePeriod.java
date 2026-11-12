@@ -1,14 +1,17 @@
 package net.officefloor.hq.app.claim;
 
 import net.officefloor.hq.app.period.PeriodStore;
+import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.setting.SettingStore;
 import net.officefloor.hq.app.sheet.InvalidSheetException;
 import net.officefloor.plugin.variable.Val;
-import org.springframework.web.bind.annotation.PathVariable;
 
-/** Refuses a claim added, or edited, to a date inside a closed period. */
+/** Refuses a claim added for the person when the due-by it would be fixed with (its date plus the terms it
+ *  would get) falls inside a closed period. */
 public class CheckDatePeriod {
-    public void check(@PathVariable("sheetId") String sheetId, @Val ClaimInput input, PeriodStore periods)
+    public void check(@Val ClaimInput input, @Val Person person, SettingStore settings, PeriodStore periods)
             throws InvalidSheetException {
-        CheckClaimPeriod.refuseClosed(periods, sheetId.trim(), input.date());
+        ClaimPeriods.refuseClosed(periods, person.getSheetId(),
+                ClaimPeriods.dueByOf(person, input.date(), settings));
     }
 }

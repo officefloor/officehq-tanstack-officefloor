@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 /** Opens each selected claim that can be opened, in list order: its people in the order they were
  *  added, a person's claims newest first. Each is opened as a single open would be (its next
  *  number, opened-by the user) and recorded as CLAIM_OPENED, then how it moved the sheet's figures.
- *  A claim that is not on the sheet, is not a DRAFT, or is dated in a closed period, or has an empty note while its due is above the
+ *  A claim that is not on the sheet, is not a DRAFT, or is due by a date in a closed period, or has an empty note while its due is above the
  *  note threshold in force on its date, and every claim when
  *  the sheet is archived or the sheet's permission matrix does not allow the user's role to open, is refused and
  *  left as it is. */
@@ -63,7 +63,7 @@ public class OpenClaims {
                 continue;
             }
             claim.setStatus(ClaimStatus.OPEN);
-            claim.setNumber(Numbering.next(sheet, claim.getDate(), store, settings, sheets, periods));
+            claim.setNumber(Numbering.next(sheet, claim.getDueBy(), store, settings, sheets, periods));
             claim.setOpenedBy(input.user());
             store.save(claim);
             log.record(claim, input.user());
@@ -90,7 +90,7 @@ public class OpenClaims {
 
     private static boolean closed(PeriodStore periods, Claim claim) {
         try {
-            CheckClaimPeriod.refuseClosed(periods, claim.getSheetId(), claim.getDate());
+            ClaimPeriods.refuseClosed(periods, claim.getSheetId(), claim.getDueBy());
             return false;
         } catch (InvalidSheetException e) {
             return true;

@@ -9,7 +9,7 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 
-/** Closes the period, fixing its due-total and each person's due-total in it as they are now: the figures of the claims whose date falls in
+/** Closes the period, fixing its due-total and each person's due-total in it as they are now: the figures of the claims whose due-by falls in
  *  it and that count by their status at its end, skipping n/a. Refused when the sheet's permission matrix does not allow the user's role to close (by default a clerk or a steward),
  *  there is no such period or it is already closed. */
 public class ClosePeriod {

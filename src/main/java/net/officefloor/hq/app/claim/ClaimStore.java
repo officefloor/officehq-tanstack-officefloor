@@ -80,7 +80,7 @@ public class ClaimStore {
                 corrects, dueBy);
     }
 
-    /** Marks the added claim a late entry: added while the period its date falls in was soft-closed. */
+    /** Marks the added claim a late entry: added while the period its due-by falls in was soft-closed. */
     public void markLateEntry(Claim claim) {
         jdbc.update("UPDATE claim SET late_entry = TRUE WHERE sheet_id = ? AND id = ?", claim.getSheetId(), claim.getId());
         claim.setLateEntry(true);

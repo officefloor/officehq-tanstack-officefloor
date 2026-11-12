@@ -206,7 +206,7 @@ function PersonClaims({ person }: { person: Person }) {
     redate.reset();
     split.mutate({ id, amount: (splitAmounts[id] ?? '').trim() });
   };
-  // A steward re-dates an OPEN or PENDING claim; its period (and per-period number) follow the new date.
+  // A steward re-dates an OPEN or PENDING claim; its due-by, and so its period (and per-period number), stay as they are.
   const redate = useMutation({
     mutationFn: (d: { id: number; date: string }) =>
       postJson<Claim>(`${base}/claims/${d.id}/redate`, { date: d.date, user }),
@@ -302,7 +302,7 @@ function PersonClaims({ person }: { person: Person }) {
               <span data-testid="claim-date">{c.date}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}
               <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}
-              <span data-testid="claim-period">{periodOf(periods.data, c.date)?.name ?? ''}</span>{' '}
+              <span data-testid="claim-period">{periodOf(periods.data, c.dueBy)?.name ?? ''}</span>{' '}
               <span data-testid="claim-due">{claimDue(c, rates.data, person.grades, floor, lateOf(settings, today))}</span>{' '}
               <span data-testid="claim-due-by">{dueBy(c)}</span>{' '}
               <span data-testid="claim-overdue">{overdue(c, today) ? 'yes' : 'no'}</span>{' '}

@@ -112,7 +112,7 @@ public class RollupService {
         return sorted.stream().reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
     }
 
-    /** Each person's due-total of their claims dated from..to (inclusive) that count by the status they
+    /** Each person's due-total of their claims due by a date in from..to (inclusive) that count by the status they
      *  had at the end of {@code to} (see {@link #countsAt}), by person id in the order they were added: the
      *  sum of their figures as shown now, skipping n/a, as the screen shows a person's due-total for a
      *  period. A period's due-total is the sum of these. */
@@ -128,7 +128,7 @@ public class RollupService {
             for (Claim claim : all) {
                 if (claim.getPersonId() != person.getId()
                         || !countsAt(claim, atEnd.get(claim.getId()), person, today)
-                        || claim.getDate().isBefore(from) || claim.getDate().isAfter(to)) {
+                        || claim.getDueBy().isBefore(from) || claim.getDueBy().isAfter(to)) {
                     continue;
                 }
                 BigDecimal figure = lateness.due(claim, rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()));

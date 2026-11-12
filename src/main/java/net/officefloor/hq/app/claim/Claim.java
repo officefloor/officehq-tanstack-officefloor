@@ -94,7 +94,7 @@ public class Claim {
     /** The number of the claim this claim was split off; null when it was not split off another. */
     public String getSplitFrom() { return splitFrom; }
     public void setSplitFrom(String splitFrom) { this.splitFrom = splitFrom; }
-    /** Whether the claim was added while the period its date falls in was soft-closed. */
+    /** Whether the claim was added while the period its due-by falls in was soft-closed. */
     public boolean isLateEntry() { return lateEntry; }
     public void setLateEntry(boolean lateEntry) { this.lateEntry = lateEntry; }
     public void setDeferredUntil(LocalDate deferredUntil) { this.deferredUntil = deferredUntil; }

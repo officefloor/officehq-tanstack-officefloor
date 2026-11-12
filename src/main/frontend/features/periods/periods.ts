@@ -68,7 +68,7 @@ export function countsInPeriod(claim: Claim, period: Period, person: Person): bo
 }
 
 /** A person's due-total for a period: once closed or soft-closed, the figure fixed then (0.00 for a person
- *  added since); else the sum of the figures (as shown now) of their claims whose date falls in it
+ *  added since); else the sum of the figures (as shown now) of their claims whose due-by falls in it
  *  and that count by their status at the period's end, skipping n/a. */
 export function personPeriodDue(
   period: Period,
@@ -81,7 +81,7 @@ export function personPeriodDue(
   if (isFixed(period)) return period.people?.[String(person.id)] ?? '0.00';
   return dueTotal(
     (claims ?? [])
-      .filter((c) => c.personId === person.id && contains(period, c.date) && countsInPeriod(c, period, person))
+      .filter((c) => c.personId === person.id && contains(period, c.dueBy) && countsInPeriod(c, period, person))
       .map((c) => claimDue(c, rates, person.grades, floor, late)),
   );
 }
