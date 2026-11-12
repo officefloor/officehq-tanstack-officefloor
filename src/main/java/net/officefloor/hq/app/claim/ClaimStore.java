@@ -67,15 +67,19 @@ public class ClaimStore {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    /** Every tag ever carried by a claim on the sheet (by its history, see {@link History}), as stored (see
+    /** Every tag ever carried by a claim or a person on the sheet (by their history, see {@link History}), as stored (see
      *  {@link Tags}); up to the end of {@code date} when given, else up to now. */
     public List<String> tagsEverUsed(String sheetId, LocalDate date) {
         return date == null
                 ? jdbc.queryForList("SELECT DISTINCT tags FROM claim_hist WHERE sheet_id = ? AND tags IS NOT NULL "
-                        + "UNION SELECT DISTINCT tags FROM claim WHERE sheet_id = ? AND tags IS NOT NULL",
-                        String.class, sheetId, sheetId)
+                        + "UNION SELECT DISTINCT tags FROM claim WHERE sheet_id = ? AND tags IS NOT NULL "
+                        + "UNION SELECT DISTINCT tags FROM person_hist WHERE sheet_id = ? AND tags IS NOT NULL "
+                        + "UNION SELECT DISTINCT tags FROM person WHERE sheet_id = ? AND tags IS NOT NULL",
+                        String.class, sheetId, sheetId, sheetId, sheetId)
                 : jdbc.queryForList("SELECT DISTINCT tags FROM claim_hist WHERE sheet_id = ? AND tags IS NOT NULL "
-                        + "AND hist_made_on <= ?", String.class, sheetId, Date.valueOf(date));
+                        + "AND hist_made_on <= ? UNION SELECT DISTINCT tags FROM person_hist WHERE sheet_id = ? "
+                        + "AND tags IS NOT NULL AND hist_made_on <= ?", String.class, sheetId, Date.valueOf(date),
+                        sheetId, Date.valueOf(date));
     }
 
     /** Whether a claim on the sheet other than {@code exceptId} carries the reference, compared without regard to case. */

@@ -32,6 +32,7 @@ public class Person {
     private String contact;
     private boolean contactChanged;
     private String origin;
+    private String tags;
 
     public Person(long id, String sheetId, String name, NavigableMap<LocalDate, String> grades, long version) {
         this.id = id;
@@ -100,6 +101,9 @@ public class Person {
     }
     /** Whether the last {@link #setContact} changed their contact. */
     public boolean isContactChanged() { return contactChanged; }
+    /** Their tags as stored (see {@link net.officefloor.hq.app.claim.Tags}), null when they have none. */
+    public String getTags() { return tags; }
+    public void setTags(String tags) { this.tags = tags; }
     /** The sheet they were transferred from, null when they were not transferred here. */
     public String getOrigin() { return origin; }
     public void setOrigin(String origin) { this.origin = origin; }

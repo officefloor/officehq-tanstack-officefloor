@@ -87,6 +87,7 @@ public class PersonStore {
                     rs.getObject("retired_from", LocalDate.class), holds.getOrDefault(rs.getLong("id"), List.of()));
             p.setTerms(rs.getObject("terms", Integer.class));
             p.setContact(rs.getString("contact"));
+            p.setTags(rs.getString("tags"));
             p.setOrigin(rs.getString("origin"));
             p.getAliases().addAll(aliases.getOrDefault(rs.getLong("id"), List.of()));
             p.getPastRetirements().addAll(past.getOrDefault(rs.getLong("id"), List.of()));
@@ -207,16 +208,23 @@ public class PersonStore {
     /** Adds the person with their first grade, which applies from the beginning of time, their own
      *  terms (null for none) and their contact (null for none). */
     public Person add(String sheetId, String name, String grade, Integer terms, String contact) {
+        return add(sheetId, name, grade, terms, contact, null);
+    }
+
+    /** Adds the person as {@link #add(String, String, String, Integer, String)} does, with their tags as stored
+     *  (null for none). */
+    public Person add(String sheetId, String name, String grade, Integer terms, String contact, String tags) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, terms, contact, list_position) VALUES (?, ?, ?, ?, (SELECT"
+                    "INSERT INTO person (sheet_id, name, terms, contact, tags, list_position) VALUES (?, ?, ?, ?, ?, (SELECT"
                     + " COALESCE(MAX(list_position), 0) + 1 FROM person WHERE sheet_id = ?))", new String[] { "ID" });
             ps.setString(1, sheetId);
             ps.setString(2, name);
             ps.setObject(3, terms, java.sql.Types.INTEGER);
             ps.setString(4, contact);
-            ps.setString(5, sheetId);
+            ps.setString(5, tags);
+            ps.setString(6, sheetId);
             return ps;
         }, keys);
         long id = keys.getKey().longValue();
@@ -225,6 +233,7 @@ public class PersonStore {
         Person person = new Person(id, sheetId, name, new TreeMap<>(Map.of(Person.START, grade)), 0);
         person.setTerms(terms);
         person.setContact(contact);
+        person.setTags(tags);
         return person;
     }
 
@@ -235,8 +244,8 @@ public class PersonStore {
      */
     public boolean save(Person person) {
         int n = jdbc.update(
-                "UPDATE person SET name = ?, terms = ?, contact = ?, version = version + 1 WHERE sheet_id = ? AND id = ? AND version = ?",
-                person.getName(), person.getTerms(), person.getContact(), person.getSheetId(), person.getId(), person.getVersion());
+                "UPDATE person SET name = ?, terms = ?, contact = ?, tags = ?, version = version + 1 WHERE sheet_id = ? AND id = ? AND version = ?",
+                person.getName(), person.getTerms(), person.getContact(), person.getTags(), person.getSheetId(), person.getId(), person.getVersion());
         if (n == 1) {
             person.setVersion(person.getVersion() + 1);
             LocalDate from = person.getRecordFrom();
@@ -313,10 +322,11 @@ public class PersonStore {
     }
 
     /** Adds a copy of the person to the other sheet: their name, every grade with its from-date, their terms,
-     *  contact and aliases, noting this sheet as the one they came from. Their holds, statements and watchers
+     *  contact, tags and aliases, noting this sheet as the one they came from. Their holds, statements and watchers
      *  are not carried. */
     public Person copyTo(Person person, String toSheet) {
-        Person copy = add(toSheet, person.getName(), person.gradeOn(Person.START), person.getTerms(), person.getContact());
+        Person copy = add(toSheet, person.getName(), person.gradeOn(Person.START), person.getTerms(), person.getContact(),
+                person.getTags());
         person.getGrades().forEach((from, grade) -> {
             if (!from.equals(Person.START)) {
                 jdbc.update("INSERT INTO person_grade (sheet_id, person_id, from_date, grade) VALUES (?, ?, ?, ?)",

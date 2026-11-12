@@ -132,11 +132,11 @@ public class SheetCloneStore {
         }
     }
 
-    /** Copies the person with their grades, terms, contact, aliases, holds and retirements; the id of the copy. */
+    /** Copies the person with their grades, terms, contact, tags, aliases, holds and retirements; the id of the copy. */
     private long copyPerson(Person person, String to) {
         String from = person.getSheetId();
-        long id = insert("INSERT INTO person (sheet_id, name, retired_from, terms, contact, list_position, origin) "
-                + "SELECT ?, name, retired_from, terms, contact, list_position, origin FROM person "
+        long id = insert("INSERT INTO person (sheet_id, name, retired_from, terms, contact, tags, list_position, origin) "
+                + "SELECT ?, name, retired_from, terms, contact, tags, list_position, origin FROM person "
                 + "WHERE sheet_id = ? AND id = ?", to, from, person.getId());
         jdbc.update("INSERT INTO person_grade (sheet_id, person_id, from_date, grade) "
                 + "SELECT ?, ?, from_date, grade FROM person_grade WHERE sheet_id = ? AND person_id = ?",

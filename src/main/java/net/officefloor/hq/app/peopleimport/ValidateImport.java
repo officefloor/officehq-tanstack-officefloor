@@ -48,7 +48,7 @@ public class ValidateImport {
             }
             try {
                 PersonRequest person = PersonRules.check(new PersonRequest(fields[0], fields[1].trim(), null,
-                        request.user(), null, fields.length > 2 ? fields[2] : "", fields.length > 3 ? fields[3] : ""));
+                        request.user(), null, fields.length > 2 ? fields[2] : "", fields.length > 3 ? fields[3] : "", null));
                 Person existing = store.findByName(sheet, person.name());
                 if (existing == null) {
                     PersonRules.refuseTaken(sheet, person, store, settings);

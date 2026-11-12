@@ -20,7 +20,9 @@ import { useAsOf } from '../../session/session';
  *  `clashing` whether their name or an alias is used as a name or alias on another sheet of the sheet's tree (its
  *  ancestors and descendants); every edit of them is refused until it renames them to a name that does not clash.
  *  `origin` is the id of the sheet they were transferred from (null when they were not).
- *  `pastRetirements` are the retirements they were unretired from, oldest first. */
+ *  `pastRetirements` are the retirements they were unretired from, oldest first.
+ *  `tags` are their tags (trimmed, lower-cased, no repeats), sorted; a claim counts for a tag when it or its
+ *  person carries it. */
 export type Person = {
   id: number;
   name: string;
@@ -42,6 +44,7 @@ export type Person = {
   clashing: boolean;
   origin: string | null;
   pastRetirements: PastRetirement[];
+  tags: string[];
 };
 
 /** A past retirement: from the date retired from to the day unretired (yyyy-MM-dd). No claim dated

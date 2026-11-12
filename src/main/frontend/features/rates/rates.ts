@@ -279,18 +279,19 @@ export function personSplit(
   return { settled: total((c) => c.status === 'SETTLED'), open: total((c) => c.status !== 'SETTLED') };
 }
 
-/** A person's due on a tag: the sum of the dues (skipping n/a) of their claims that count that carry it;
- *  0.00 when their due-total is n/a. */
+/** A person's due on a tag: the sum of the dues (skipping n/a) of their claims that count that carry it, or
+ *  all of them when the person (whose tags are `personTags`) carries it, each once; 0.00 when their due-total is n/a. */
 export function personTagged(
   claims: Claim[],
   tag: string,
+  personTags: string[],
   rates: Rate[] | undefined,
   grades: Grades,
   today: string | undefined,
   floor: Floor,
   late?: Late,
 ): string {
-  return personDueWhere(claims, (c) => c.tags.includes(tag), rates, grades, today, floor, late);
+  return personDueWhere(claims, (c) => personTags.includes(tag) || c.tags.includes(tag), rates, grades, today, floor, late);
 }
 
 /** A person's due in a calendar month (yyyy-mm): the sum of the dues (skipping n/a) of their claims that

@@ -13,8 +13,8 @@ public final class PersonRules {
     private PersonRules() {
     }
 
-    /** The person form's rules for a name, grade, from-date, terms and contact: the request as stored
-     *  (name trimmed, blanks as none, contact lower-cased), or refused. */
+    /** The person form's rules for a name, grade, from-date, terms, contact and tags: the request as stored
+     *  (name trimmed, blanks as none, contact lower-cased, tags as {@link net.officefloor.hq.app.claim.Tags} stores them), or refused. */
     public static PersonRequest check(PersonRequest request) throws InvalidSheetException {
         if (request == null || request.name() == null || request.name().trim().isEmpty()) {
             throw new InvalidSheetException("A name is required");
@@ -38,7 +38,8 @@ public final class PersonRules {
         // Stored and compared without the spaces around the name; a blank from-date as none.
         return new PersonRequest(request.name().trim(), request.grade(), from.isEmpty() ? null : from,
                 request.user(), request.version(),
-                terms.isEmpty() ? null : String.valueOf(Integer.parseInt(terms)), contact.isEmpty() ? null : contact);
+                terms.isEmpty() ? null : String.valueOf(Integer.parseInt(terms)), contact.isEmpty() ? null : contact,
+                net.officefloor.hq.app.claim.Tags.normalise(request.tags()));
     }
 
     /** Refuses a name another person on the sheet, or anyone on another sheet of its tree, has as a name or
