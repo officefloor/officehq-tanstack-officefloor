@@ -1,0 +1,147 @@
+diff --git a/src/main/frontend/features/overdue/overdue.slot.tsx b/src/main/frontend/features/overdue/overdue.slot.tsx
+index d8658ccf1..3e30177f1 100644
+--- a/src/main/frontend/features/overdue/overdue.slot.tsx
++++ b/src/main/frontend/features/overdue/overdue.slot.tsx
+@@ -5,7 +5,7 @@ import { useCurrentSheet } from '../../session/session';
+ import { useSheetToday } from '../sheet/sheet';
+ import { counts, live, useClaims } from '../claims/claims';
+ import { floorOf, useSettings } from '../settings/settings';
+-import { dueTotal, useRates } from '../rates/rates';
++import { trimmedTotal, useRates } from '../rates/rates';
+ import { lateOf, overdueFigures } from './overdue';
+ 
+ // A person's overdue count and overdue-total (the due of their overdue claims that count), and the sheet's.
+@@ -45,12 +45,13 @@ function PersonOverdue({ person }: { person: Person }) {
+   );
+ }
+ 
+-/** The sheet's overdue figures: everyone's overdue counts and overdue-totals added up. */
++/** The sheet's overdue figures: everyone's overdue counts added up, and their overdue-totals
++ *  added up trimmed of the single highest and lowest when three or more people have one. */
+ export function useSheetOverdue(): { count: number; total: string } {
+   const [sheet] = useCurrentSheet();
+   const people = usePeople(sheet);
+   const figures = (people.data ?? []).map(useOverdue());
+-  return { count: figures.reduce((n, f) => n + f.count, 0), total: dueTotal(figures.map((f) => f.total)) };
++  return { count: figures.reduce((n, f) => n + f.count, 0), total: trimmedTotal(figures.map((f) => f.total)) };
+ }
+ 
+ function OverdueTotal() {
+diff --git a/src/main/frontend/features/rates/due.slot.tsx b/src/main/frontend/features/rates/due.slot.tsx
+index 08081cf8d..7ab19ebd8 100644
+--- a/src/main/frontend/features/rates/due.slot.tsx
++++ b/src/main/frontend/features/rates/due.slot.tsx
+@@ -6,10 +6,10 @@ import { useSheetToday } from '../sheet/sheet';
+ import { live, useClaims } from '../claims/claims';
+ import { floorOf, useSettings } from '../settings/settings';
+ import { lateOf } from '../overdue/overdue';
+-import { dueTotal, personDue, personExcess, useRates } from './rates';
++import { personDue, personExcess, trimmedTotal, useRates } from './rates';
+ 
+ // A person's due-total (the sum of their counting claims' rounded figures, at most the sheet's cap), their
+-// excess over the cap, and the sheet's due-total (everyone's, skipping n/a).
++// excess over the cap, and the sheet's due-total (everyone's, skipping n/a, trimmed).
+ function DueHead() {
+   return <th>Due total</th>;
+ }
+@@ -43,7 +43,8 @@ function PersonExcess({ person }: { person: Person }) {
+   );
+ }
+ 
+-/** The sheet's due-total: everyone's (retired people included) due-totals added up, skipping n/a. */
++/** The sheet's due-total: everyone's (retired people included) due-totals added up, skipping n/a, trimmed
++ *  of the single highest and lowest when three or more people have one. */
+ export function useSheetDueTotal(): string {
+   const [sheet] = useCurrentSheet();
+   const people = usePeople(sheet);
+@@ -55,7 +56,7 @@ export function useSheetDueTotal(): string {
+   const dues = (people.data ?? []).map((p) =>
+     personDue(live((claims.data ?? []).filter((c) => c.personId === p.id), [p]), rates.data, p.grades, today, floor, lateOf(settings, today), settings?.cap),
+   );
+-  return dueTotal(dues);
++  return trimmedTotal(dues);
+ }
+ 
+ function DueTotal() {
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index f78689810..31f6383db 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -90,6 +90,14 @@ export function dueTotal(dues: string[]): string {
+   return format(dues.filter((d) => d !== NA).reduce((sum, d) => sum + hundredths(d), 0n));
+ }
+ 
++/** A sheet total of people's figures: their sum, skipping n/a, leaving out the single highest and the
++ *  single lowest when three or more people have a figure. */
++export function trimmedTotal(dues: string[]): string {
++  const figures = dues.filter((d) => d !== NA).map(hundredths).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
++  const kept = figures.length >= 3 ? figures.slice(1, -1) : figures;
++  return format(kept.reduce((sum, d) => sum + d, 0n));
++}
++
+ /** What a claim's late charge follows: the sheet's late percent (two decimals) in force on a date and the
+  *  30-day boundaries (yyyy-MM-dd) the claim is overdue past; and whether the claim's live figures round half up (else half to even). */
+ export type Late = { pct: ((date: string) => string) | undefined; boundaries: (claim: Claim) => string[]; halfUp?: (claim: Claim) => boolean };
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/RollupService.java b/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
+index 9c8800275..06a6900ee 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
+@@ -2,6 +2,7 @@ package net.officefloor.hq.app.rollup;
+ 
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
++import java.util.ArrayList;
+ import java.util.LinkedHashMap;
+ import java.util.List;
+ import java.util.Map;
+@@ -24,7 +25,8 @@ import org.springframework.stereotype.Service;
+  * moved them: ROLLUP sheet=<id> by=<user> person=<name> claimed=<0.00> due-total=<0.00 or n/a>
+  * overdue-total=<0.00> for each person whose figures changed (a person new to the sheet counts as changed), in
+  * the order they were added, then TOTALS sheet=<id> by=<user> claimed-total=<0.00> due-total=<0.00>
+- * overdue-total=<0.00> when any of the sheet's totals changed. A person's overdue-total is the due (late charge
++ * overdue-total=<0.00> when any of the sheet's totals changed; the sheet's due-total and overdue-total leave out
++ * the single highest and the single lowest person's figure when three or more people have one (n/a is no figure). A person's overdue-total is the due (late charge
+  * included, skipping n/a) of their counting claims that are OPEN or PENDING with a due-by before today. A person's due-total is at most the sheet's cap. A change that moves no figure records nothing here.
+  */
+ @Service
+@@ -60,8 +62,8 @@ public class RollupService {
+                 new Rounding(policyDate(sheetId), all));
+         Map<Long, Rollup.Figures> figures = new LinkedHashMap<>();
+         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
+-        BigDecimal dueTotal = BigDecimal.ZERO.setScale(2);
+-        BigDecimal overdueTotal = BigDecimal.ZERO.setScale(2);
++        List<BigDecimal> dues = new ArrayList<>();
++        List<BigDecimal> overdues = new ArrayList<>();
+         for (Person person : people.list(sheetId)) {
+             BigDecimal claimed = BigDecimal.ZERO.setScale(2);
+             BigDecimal due = BigDecimal.ZERO.setScale(2);
+@@ -88,15 +90,26 @@ public class RollupService {
+             }
+             boolean na = rates.find(sheetId, person.gradeOn(today), today) == null && !fixed;
+             claimedTotal = claimedTotal.add(claimed);
+-            overdueTotal = overdueTotal.add(overdue);
++            overdues.add(overdue);
+             due = SettingStore.capped(due, cap);
+             if (!na) {
+-                dueTotal = dueTotal.add(due);
++                dues.add(due);
+             }
+             figures.put(person.getId(), new Rollup.Figures(person.getName(), shown(claimed), na ? NA : shown(due),
+                     shown(overdue)));
+         }
+-        return new Rollup(figures, shown(claimedTotal), shown(dueTotal), shown(overdueTotal));
++        return new Rollup(figures, shown(claimedTotal), shown(trimmed(dues)), shown(trimmed(overdues)));
++    }
++
++    /** The sum of people's figures, leaving out the single highest and the single lowest when three or more
++     *  people have one. */
++    private static BigDecimal trimmed(List<BigDecimal> figures) {
++        List<BigDecimal> sorted = new ArrayList<>(figures);
++        sorted.sort(null);
++        if (sorted.size() >= 3) {
++            sorted = sorted.subList(1, sorted.size() - 1);
++        }
++        return sorted.stream().reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
+     }
+ 
+     /** Each person's due-total of their claims dated from..to (inclusive) that count by the status they
