@@ -18,8 +18,8 @@ import net.officefloor.plugin.variable.Val;
  *  grade rate in force on the claim's date, rounded as the sheet's policy date has it (none when no rate of the grade applies then),
  *  or at the figure its person's last statement bound it to, plus the late charge it has then, and at least the sheet's floor (frozen in).
  *  A clerk's settle above the clerk limit makes it PENDING instead (see {@link CheckClerkLimit}); a steward's
- *  approval settles a PENDING claim, frozen then at its live figure (a statement does not bind it while
- *  PENDING), and a rejection moves it back to OPEN, bound again by its person's last statement if that included it.
+ *  approval settles a PENDING claim, frozen then at its figure (the one its person's last statement bound
+ *  it to, if any), and a rejection moves it back to OPEN, still bound by that statement if it included it.
  *  The user who opened a claim, or who last edited it, may not settle or approve it, and a claim deferred on the sheet's today may not be settled.
  *  Opening a DRAFT is refused while its person already has as many OPEN or PENDING claims in its period as the period's cap.
  *  A claim opened to REVIEW records who opened it but takes no number until a steward's review makes it OPEN.

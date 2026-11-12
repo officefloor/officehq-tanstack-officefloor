@@ -192,7 +192,7 @@ function lateCharge(claim: Claim, figure: string, late: Late | undefined): strin
 const fixed = (claim: Claim) => claim.due !== null || (isBound(claim) && claim.statedDue !== null);
 
 /** A claim's due: the due fixed when it was settled (its late charge frozen in), else its figure — the
- *  rate figure its person's last statement bound it to (not while PENDING), else its amount at the rate in force
+ *  rate figure its person's last statement bound it to, else its amount at the rate in force
  *  on the claim's date of its person's grade in force on that date — plus its late charge when overdue (worked out
  *  on that figure), and at least the sheet's floor in force on the claim's date, applied last.
  *  A correction's live due has no floor and it has no late charge.

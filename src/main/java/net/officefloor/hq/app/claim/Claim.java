@@ -80,9 +80,8 @@ public class Claim {
      *  ended (its to-date) before the claim's date. */
     public boolean isStatedNa() { return statedNa; }
     /** Whether the claim keeps the figure its person's last statement bound it to (a figure, or n/a when
-     *  {@link #isStatedNa()}): not while it is PENDING, when it follows its live figure (it is bound
-     *  again if rejected back to OPEN). */
-    public boolean isBound() { return stated && (statedDue != null || statedNa) && status != ClaimStatus.PENDING; }
+     *  {@link #isStatedNa()}), PENDING or not. */
+    public boolean isBound() { return stated && (statedDue != null || statedNa); }
     /** The number of the claim this correction corrects; null when it is not a correction. */
     public String getCorrects() { return corrects; }
     /** Whether the claim is a correction: a negative amount, with no floor and no late charge. */

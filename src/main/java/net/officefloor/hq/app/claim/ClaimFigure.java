@@ -4,7 +4,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 
 /** A claim's figure: the due fixed when settled, else the rate figure its person's last statement bound it
- *  to (not while it is PENDING, which a statement does not bind), else its amount at the grade rate in force on
+ *  to, else its amount at the grade rate in force on
  *  its date, rounded as the sheet's {@link Rounding} has it (null, n/a, when no rate applies). The floor is not
  *  part of the figure: {@link Lateness#due} applies it last, after the late charge. */
 public final class ClaimFigure {

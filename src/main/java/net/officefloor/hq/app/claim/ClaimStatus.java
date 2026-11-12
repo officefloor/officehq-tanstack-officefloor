@@ -1,8 +1,8 @@
 package net.officefloor.hq.app.claim;
 
 /** Where a claim stands. Only OPEN, PENDING and SETTLED claims count toward the totals; a PENDING claim
- *  (settled by a clerk above the clerk limit, awaiting a steward) is handled as an OPEN one, except
- *  that a statement does not bind it while it is PENDING. A DELETED claim (a deleted DRAFT) counts nowhere,
+ *  (settled by a clerk above the clerk limit, awaiting a steward) is handled as an OPEN one, and a
+ *  statement binds it like any other claim that counts. A DELETED claim (a deleted DRAFT) counts nowhere,
  *  and may be restored to a DRAFT only on the sheet's today it was deleted (see {@link CheckClerkLimit}).
  *  A REVIEW claim (opened while its due is above the review threshold in force on its date) awaits a
  *  steward's review, which makes it OPEN; until then it counts in no total and has no number. */

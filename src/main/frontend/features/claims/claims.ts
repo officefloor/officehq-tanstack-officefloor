@@ -5,8 +5,8 @@ import { useAsOf } from '../../session/session';
 import { asNumber, asString, useSearchParam } from '../../url/useSearchParam';
 import { type Hold, covers } from '../people/people';
 
-/** PENDING: settled by a clerk above the clerk limit, awaiting a steward's approval; handled as OPEN,
- *  except that a statement does not bind it while it is PENDING. DELETED: a deleted DRAFT, which counts
+/** PENDING: settled by a clerk above the clerk limit, awaiting a steward's approval; handled as OPEN
+ *  (a statement binds it like any other claim that counts). DELETED: a deleted DRAFT, which counts
  *  nowhere and can be restored to a DRAFT on the sheet's today it was deleted. REVIEW: opened while its due was
  *  above the review threshold on its date, awaiting a steward's review to make it OPEN; it counts in no total. */
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED' | 'REVIEW';
@@ -87,8 +87,8 @@ export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING
 /** Only OPEN, PENDING and SETTLED claims count toward claimed and the totals; a deferred claim does not. */
 export const counts = (c: Claim) => (isOpen(c) && !c.deferred) || c.status === 'SETTLED';
 
-/** Whether the claim keeps the figure (or n/a) its person's last statement bound it to: not while PENDING. */
-export const isBound = (c: Claim) => c.stated && (c.statedDue !== null || c.statedNa) && c.status !== 'PENDING';
+/** Whether the claim keeps the figure (or n/a) its person's last statement bound it to. */
+export const isBound = (c: Claim) => c.stated && (c.statedDue !== null || c.statedNa);
 
 /** These claims less the OPEN (or PENDING) claims dated within one of their person's holds, or of a
  *  person whose retirement date the sheet's today has reached, which count in no live total, unless a
