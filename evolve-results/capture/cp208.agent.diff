@@ -1,0 +1,157 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplySplit.java b/src/main/java/net/officefloor/hq/app/claim/ApplySplit.java
+index 7b7646ae4..5ebd4a764 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplySplit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplySplit.java
+@@ -12,7 +12,7 @@ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /** Splits the amount off the OPEN claim, which keeps the rest unbound from any statement figure, into a new
+- *  OPEN claim of the same date and note, numbered next in the period of its own due-by (see {@link Numbering}), opened by the user, due by
++ *  OPEN claim of the same date and note, unnumbered until it is settled, opened by the user, due by
+  *  the business day its person's own terms (else the grade's they have, else the sheet's, each in force on the sheet's today, when it is split off) after its date, fixed
+  *  now (a late entry when the period that due-by falls in is soft-closed), and logged as OPEN by the user. Refused when another user moved the claim on first. */
+ public class ApplySplit {
+@@ -26,8 +26,8 @@ public class ApplySplit {
+         Person person = people.find(sheetId, claim.getPersonId());
+         int terms = SaveClaimAdded.termsOf(person, settings);
+         LocalDate dueBy = holidays.businessDaysAfter(sheetId, claim.getDate(), terms);
+-        String number = Numbering.next(sheetId, dueBy, store, settings, sheets, periods);
+-        Claim into = store.addSplit(claim, input.amount(), number, input.user(), dueBy, terms);
++        // The new claim takes its number when it is settled.
++        Claim into = store.addSplit(claim, input.amount(), null, input.user(), dueBy, terms);
+         if (periods.softOn(sheetId, dueBy)) {
+             store.markLateEntry(into);
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyStatus.java
+index 177a85bf8..9fa734139 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyStatus.java
+@@ -14,8 +14,9 @@ import net.officefloor.hq.app.voidreason.VoidReasonStore;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Moves the claim to the new status, refusing a change its current status does not allow. Opening
+- *  gives the claim its next number (see {@link Numbering}) and records who opened it; a voided claim keeps its number, which is never reused. Settling fixes its due at its person's
++/** Moves the claim to the new status, refusing a change its current status does not allow.  Opening
++ *  records who opened it; settling (or a steward's approval) gives a claim that has none its next number (see {@link Numbering}),
++ *  and a voided claim keeps the number it has, which is never reused. Settling fixes its due at its person's
+  *  grade rate in force on the claim's date, rounded as the sheet's policy date has it (none when no rate of the grade applies then),
+  *  or at the figure its person's last statement bound it to, plus the late charge it has then, and at least the sheet's floor (frozen in).
+  *  A clerk's settle above the clerk limit makes it PENDING instead (see {@link CheckClerkLimit}); a steward's
+@@ -23,7 +24,7 @@ import net.officefloor.plugin.variable.Val;
+  *  it to, if any), and a rejection moves it back to OPEN, still bound by that statement if it included it.
+  *  The user who opened a claim, or who last edited it, may not settle or approve it, and a claim deferred on the sheet's today may not be settled.
+  *  Opening a DRAFT is refused while its person already has as many OPEN or PENDING claims in its period as the period's cap.
+- *  A claim opened to REVIEW records who opened it but takes no number until a steward's review makes it OPEN.
++ *  A claim opened to REVIEW records who opened it.
+  *  While the sheet has void reasons, a void needs one of them (the input's reason), kept on the claim. */
+ public class ApplyStatus {
+     public void apply(@Val StatusInput input, @Val StatusMove move, @Val Claim claim, ClaimStore store, PersonStore people,
+@@ -80,7 +81,7 @@ public class ApplyStatus {
+         if (to == ClaimStatus.VOID) {
+             claim.setVoidReason(voidReason);
+         }
+-        if ((from == ClaimStatus.DRAFT || from == ClaimStatus.REVIEW) && to == ClaimStatus.OPEN) {
++        if (to == ClaimStatus.SETTLED && claim.getNumber() == null) {
+             claim.setNumber(Numbering.next(claim.getSheetId(), claim.getDueBy(), store, settings, sheets, periods));
+         }
+         if (from == ClaimStatus.DRAFT && (to == ClaimStatus.OPEN || to == ClaimStatus.REVIEW)) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimSplit.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimSplit.java
+index 258595daf..afdc0fafb 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AuditClaimSplit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimSplit.java
+@@ -8,7 +8,7 @@ import net.officefloor.hq.app.rollup.RollupService;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /** Records a stored split: CLAIM_SPLIT sheet=<id> by=<user> person=<name> amount=<remaining 0.00>
+- *  date=<yyyy-mm-dd> number=<n> into=<new number>, then CLAIM_OPENED for the new claim as an opening
++ *  date=<yyyy-mm-dd>, then number=<n> when it has one, then into=<new number, blank when none>, then CLAIM_OPENED for the new claim as an opening
+  *  records it, then how the split moved the figures. */
+ public class AuditClaimSplit {
+     public void audit(@Val SplitInput input, @Val Claim claim, @Val Split split, @Val Rollup before, PersonStore people,
+@@ -17,10 +17,11 @@ public class AuditClaimSplit {
+         String who = " sheet=" + claim.getSheetId() + " by=" + input.user() + " person=" + person.getName();
+         ClaimResponse shown = ClaimResponse.from(claim);
+         audit.record("CLAIM_SPLIT" + who + " amount=" + shown.amount() + " date=" + shown.date()
+-                + " number=" + claim.getNumber() + " into=" + split.into().getNumber());
++                + (claim.getNumber() == null ? "" : " number=" + claim.getNumber())
++                + " into=" + (split.into().getNumber() == null ? "" : split.into().getNumber()));
+         ClaimResponse into = ClaimResponse.from(split.into());
+         audit.record(ClaimStatus.OPEN.event() + who + " amount=" + into.amount() + " date=" + into.date()
+-                + " number=" + split.into().getNumber());
++                + (split.into().getNumber() == null ? "" : " number=" + split.into().getNumber()));
+         rollups.record(claim.getSheetId(), input.user(), before);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java
+index 7e5e27268..025f7c326 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java
+@@ -15,8 +15,8 @@ import net.officefloor.plugin.variable.Val;
+  *  due=<0.00> as fixed on settling (n/a when its grade had no rate), for CLAIM_REJECTED reason=<reason>,
+  *  for CLAIM_VOIDED of a SETTLED claim reversed=<0.00>, the frozen figure it takes out of the totals (n/a when none),
+  *  then for CLAIM_VOIDED reason=<reason> when voided with one, then for CLAIM_SETTLED on=<date> when settled as of a date.
+- *  A claim opened above the review threshold is CLAIM_REVIEW (no number yet); a steward's review of it is
+- *  CLAIM_REVIEWED, then CLAIM_OPENED with its number.
++ *  A claim takes its number when settled or approved, so an opening has none. A claim opened above the review
++ *  threshold is CLAIM_REVIEW; a steward's review of it is CLAIM_REVIEWED, then CLAIM_OPENED.
+  *  A claim settled or approved then tells the person's watchers (NOTIFY), before the figures moved. */
+ public class AuditClaimStatus {
+     public void audit(@Val StatusInput input, @Val StatusMove move, @Val Claim claim, @Val StatusChange change, @Val Rollup before,
+@@ -27,7 +27,7 @@ public class AuditClaimStatus {
+             String which = " sheet=" + claim.getSheetId() + " by=" + input.user() + " person=" + person.getName()
+                     + " amount=" + shown.amount() + " date=" + shown.date();
+             audit.record(move.to().event(move.from()) + which);
+-            audit.record(move.to().event() + which + " number=" + change.number());
++            audit.record(move.to().event() + which + (change.number() == null ? "" : " number=" + change.number()));
+             rollups.record(claim.getSheetId(), input.user(), before);
+             return;
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Numbering.java b/src/main/java/net/officefloor/hq/app/claim/Numbering.java
+index 1d2c98d6f..879b73f0e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Numbering.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Numbering.java
+@@ -6,7 +6,7 @@ import net.officefloor.hq.app.period.PeriodStore;
+ import net.officefloor.hq.app.setting.SettingStore;
+ import net.officefloor.hq.app.sheet.SheetStore;
+ 
+-/** The number a claim receives when opened. While the sheet's period-numbering-from is set and the
++/** The number a claim receives when settled or approved. While the sheet's period-numbering-from is set and the
+  *  sheet's today is on or after it, the claim is numbered within the period its due-by falls in,
+  *  <period name>-<n> counting from 1 in each period, or X-<n> in its own sequence when it falls in
+  *  none. Otherwise it takes the next sheet-wide number of the fiscal year its due-by falls in (by the
+diff --git a/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java b/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java
+index 6cee944d1..15a77526e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java
+@@ -80,9 +80,6 @@ public class OpenClaims {
+                 continue;
+             }
+             claim.setStatus(to);
+-            if (to == ClaimStatus.OPEN) {
+-                claim.setNumber(Numbering.next(sheet, claim.getDueBy(), store, settings, sheets, periods));
+-            }
+             claim.setOpenedBy(input.user());
+             store.save(claim);
+             if (to == ClaimStatus.REVIEW) {
+@@ -93,7 +90,7 @@ public class OpenClaims {
+             ClaimResponse shown = ClaimResponse.from(claim);
+             audit.record(to.event() + " sheet=" + sheet + " by=" + input.user() + " person="
+                     + (person == null ? "" : person.getName()) + " amount=" + shown.amount() + " date=" + shown.date()
+-                    + (to == ClaimStatus.OPEN ? " number=" + claim.getNumber() : ""));
++                    + (claim.getNumber() == null ? "" : " number=" + claim.getNumber()));
+             rollups.record(sheet, input.user(), before);
+             opened++;
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/StatusChange.java b/src/main/java/net/officefloor/hq/app/claim/StatusChange.java
+index c4f9ff7be..75d64e125 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/StatusChange.java
++++ b/src/main/java/net/officefloor/hq/app/claim/StatusChange.java
+@@ -1,6 +1,6 @@
+ package net.officefloor.hq.app.claim;
+ 
+-/** A stored status change: the number the claim carried through it (given on opening, and kept
++/** A stored status change: the number the claim carried through it (given on settling, and kept
+  *  when voided), null when it had none. */
+ public record StatusChange(String number) {
+ }
