@@ -86,3 +86,10 @@ export function useLatestPersonAction(sheet: string, personId: number): number {
   });
   return Math.max(0, ...taken);
 }
+
+/** The ids of the people selected for a bulk grade, kept in the URL (`selectedPeople`, comma separated). */
+export function useSelectedPeople(): [number[], (ids: number[]) => void] {
+  const [raw, setRaw] = useSearchParam('selectedPeople', asString);
+  const ids = raw.split(',').filter((s) => s !== '').map(Number).filter((n) => !Number.isNaN(n));
+  return [ids, (next) => setRaw(next.join(','))];
+}

@@ -12,11 +12,15 @@ public class ApplyPerson {
     public void apply(@Val PersonRequest request, @Val Person person, SheetStore sheets) {
         person.setName(request.name());
         person.setTerms(request.terms() == null ? null : Integer.valueOf(request.terms()));
-        LocalDate today = sheets.today(person.getSheetId());
-        if (request.gradeFrom() == null && request.grade().equals(person.gradeOn(today))) {
+        applyGrade(person, request.grade(), request.gradeFrom(), sheets.today(person.getSheetId()));
+    }
+
+    /** Records the grade from the from-date (yyyy-MM-dd, null for the sheet's today), as an edit does: nothing
+     *  when the from-date is null and the grade is the one in force on the sheet's today. */
+    static void applyGrade(Person person, String grade, String gradeFrom, LocalDate today) {
+        if (gradeFrom == null && grade.equals(person.gradeOn(today))) {
             return;
         }
-        person.recordGrade(request.gradeFrom() == null ? today : LocalDate.parse(request.gradeFrom()),
-                request.grade());
+        person.recordGrade(gradeFrom == null ? today : LocalDate.parse(gradeFrom), grade);
     }
 }

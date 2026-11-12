@@ -1,7 +1,7 @@
 import { HomeMain } from '../../slots/defs/homeMain';
 import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
 import { useCurrentSheet } from '../../session/session';
-import { useEditingPerson, usePeople, useShowRetired } from './people';
+import { useEditingPerson, usePeople, useSelectedPeople, useShowRetired } from './people';
 
 // The sheet's people in the order they were added; retired people only while "show retired" is on.
 function PeopleList() {
@@ -9,11 +9,13 @@ function PeopleList() {
   const [, setEditing] = useEditingPerson();
   const people = usePeople(sheet);
   const [showRetired] = useShowRetired();
+  const [selected, setSelected] = useSelectedPeople();
 
   return (
     <table data-testid="people">
       <thead>
         <tr>
+          <th />
           <th>Name</th>
           <th>Grade</th>
           <th>Terms</th>
@@ -24,6 +26,15 @@ function PeopleList() {
       <tbody>
         {(people.data ?? []).filter((p) => showRetired || !p.retired).map((p) => (
           <tr key={p.id} data-testid={`person-row-${p.id}`}>
+            <td>
+              <input
+                type="checkbox"
+                data-testid="person-select"
+                aria-label="Select person"
+                checked={selected.includes(p.id)}
+                onChange={(e) => setSelected(e.target.checked ? [...selected, p.id] : selected.filter((id) => id !== p.id))}
+              />
+            </td>
             <td data-testid="person-name" style={{ whiteSpace: 'pre' }}>{p.name}</td>
             <td data-testid="person-grade">{p.grade}</td>
             <td data-testid="person-terms">{p.terms ?? ''}</td>
