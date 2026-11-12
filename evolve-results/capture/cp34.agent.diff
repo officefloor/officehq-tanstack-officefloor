@@ -1,0 +1,317 @@
+diff --git a/src/main/frontend/features/claims/bulk.slot.tsx b/src/main/frontend/features/claims/bulk.slot.tsx
+new file mode 100644
+index 000000000..988b662d5
+--- /dev/null
++++ b/src/main/frontend/features/claims/bulk.slot.tsx
+@@ -0,0 +1,53 @@
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { HomeMain } from '../../slots/defs/homeMain';
++import { HttpError, postJson } from '../../api/http';
++import { useSubmitOnce } from '../../query/useSubmitOnce';
++import { useCurrentSheet, useCurrentUser } from '../../session/session';
++import { claimsKey, useSelectedClaims } from './claims';
++
++type BulkOpenResult = { opened: number; refused: number };
++
++// Opens the selected claims together: the server opens and numbers each that can be opened in list
++// order and refuses the rest, and the counts show once it answers (gone while it runs).
++function BulkOpen() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const [selected, setSelected] = useSelectedClaims();
++  const queryClient = useQueryClient();
++
++  const bulk = useMutation({
++    mutationFn: (claimIds: number[]) =>
++      postJson<BulkOpenResult>(`/api/sheets/${encodeURIComponent(sheet)}/bulk-open`, {
++        claimIds: claimIds.map(String),
++        user,
++      }),
++    onSuccess: async () => {
++      setSelected([]);
++      await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
++    },
++  });
++  const submit = useSubmitOnce(bulk);
++
++  return (
++    <p>
++      <button type="button" data-testid="bulk-open" disabled={bulk.isPending} onClick={() => submit(selected)}>
++        Open selected
++      </button>
++      {bulk.isSuccess && (
++        <>
++          {' '}
++          Opened <strong data-testid="bulk-opened">{bulk.data.opened}</strong>, refused{' '}
++          <strong data-testid="bulk-refused">{bulk.data.refused}</strong>
++        </>
++      )}
++      {bulk.isError && (
++        <span data-testid="bulk-open-error" role="alert">
++          {' '}
++          {bulk.error instanceof HttpError && bulk.error.reason ? `${bulk.error.reason}.` : 'The bulk open was refused.'}
++        </span>
++      )}
++    </p>
++  );
++}
++
++export const contribution = HomeMain.fill({ order: 22, Component: BulkOpen });
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index cae5c1fba..1baa5b9d6 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -1,6 +1,7 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ import { sheetKey } from '../sheet/sheet';
++import { asString, useSearchParam } from '../../url/useSearchParam';
+ 
+ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+ 
+@@ -59,3 +60,10 @@ const cents = (amount: string) => Math.round(Number(amount) * 100);
+ export function claimed(claims: Claim[]): string {
+   return (claims.filter(counts).reduce((sum, c) => sum + cents(c.amount), 0) / 100).toFixed(2);
+ }
++
++/** The ids of the claims selected for a bulk action, kept in the URL (`selectedClaims`, comma separated). */
++export function useSelectedClaims(): [number[], (ids: number[]) => void] {
++  const [raw, setRaw] = useSearchParam('selectedClaims', asString);
++  const ids = raw.split(',').filter((s) => s !== '').map(Number).filter((n) => !Number.isNaN(n));
++  return [ids, (next) => setRaw(next.join(','))];
++}
+diff --git a/src/main/frontend/features/claims/list.slot.tsx b/src/main/frontend/features/claims/list.slot.tsx
+index 0b6f1c600..bf50e005a 100644
+--- a/src/main/frontend/features/claims/list.slot.tsx
++++ b/src/main/frontend/features/claims/list.slot.tsx
+@@ -10,7 +10,7 @@ import { useSettings } from '../settings/settings';
+ import { periodOf, usePeriods } from '../periods/periods';
+ import { useSheetToday } from '../sheet/sheet';
+ import { dueBy, lateOf, overdue } from '../overdue/overdue';
+-import { type Claim, type ClaimStatus, claimsKey, useClaims } from './claims';
++import { type Claim, type ClaimStatus, claimsKey, useClaims, useSelectedClaims } from './claims';
+ 
+ type Fields = { amount: string; date: string; note: string; corrects: string };
+ type StatusChange = { id: number; status: ClaimStatus };
+@@ -34,6 +34,7 @@ function PersonClaims({ person }: { person: Person }) {
+   const periods = usePeriods(sheet);
+   const [fields, setFields] = useState<Fields>(EMPTY);
+   const [editing, setEditing] = useState<number | undefined>();
++  const [selected, setSelected] = useSelectedClaims();
+   const queryClient = useQueryClient();
+   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
+ 
+@@ -84,6 +85,13 @@ function PersonClaims({ person }: { person: Person }) {
+           .filter((c) => c.personId === person.id)
+           .map((c) => (
+             <li key={c.id} data-testid={`claim-row-${c.id}`}>
++              <input
++                type="checkbox"
++                data-testid="claim-select"
++                aria-label="Select claim"
++                checked={selected.includes(c.id)}
++                onChange={(e) => setSelected(e.target.checked ? [...selected, c.id] : selected.filter((id) => id !== c.id))}
++              />{' '}
+               <span data-testid="claim-number">{c.number ?? ''}</span>{' '}
+               <span data-testid="claim-amount">{c.amount}</span>{' '}
+               <span data-testid="claim-date">{c.date}</span>{' '}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkOpenInput.java b/src/main/java/net/officefloor/hq/app/claim/BulkOpenInput.java
+new file mode 100644
+index 000000000..92ef6bcbe
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkOpenInput.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.List;
++
++/** A validated bulk open: the selected claim ids, each once (an id that is not a number is
++ *  null, and is refused), and who opens them. */
++public record BulkOpenInput(List<Long> claimIds, String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkOpenRequest.java b/src/main/java/net/officefloor/hq/app/claim/BulkOpenRequest.java
+new file mode 100644
+index 000000000..6846608d6
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkOpenRequest.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.List;
++
++/** Body of a bulk open, as sent: the ids of the selected claims and who opens them. */
++public record BulkOpenRequest(List<String> claimIds, String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/BulkOpenResult.java b/src/main/java/net/officefloor/hq/app/claim/BulkOpenResult.java
+new file mode 100644
+index 000000000..2f97e6f32
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/BulkOpenResult.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.claim;
++
++/** How many of the selected claims a bulk open opened, and how many it refused. */
++public record BulkOpenResult(int opened, int refused) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java b/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java
+new file mode 100644
+index 000000000..32075ec9d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java
+@@ -0,0 +1,80 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.ArrayList;
++import java.util.Comparator;
++import java.util.HashMap;
++import java.util.List;
++import java.util.Map;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.period.PeriodStore;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonStore;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.rollup.RollupService;
++import net.officefloor.hq.app.sheet.InvalidSheetException;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Opens each selected claim that can be opened, in list order: its people in the order they were
++ *  added, a person's claims newest first. Each is opened as a single open would be (the sheet's next
++ *  number, opened-by the user) and recorded as CLAIM_OPENED, then how it moved the sheet's figures.
++ *  A claim that is not on the sheet, is not a DRAFT, or is dated in a closed period is refused and
++ *  left as it is. */
++public class OpenClaims {
++    public void open(@PathVariable("sheetId") String sheetId, @Val BulkOpenInput input, ClaimStore store,
++            PersonStore people, PeriodStore periods, RollupService rollups, Audit audit, Out<BulkOpenResult> result) {
++        String sheet = sheetId.trim();
++        Map<Long, Integer> personOrder = new HashMap<>();
++        Map<Long, Person> persons = new HashMap<>();
++        for (Person person : people.list(sheet)) {
++            personOrder.put(person.getId(), personOrder.size());
++            persons.put(person.getId(), person);
++        }
++        int refused = 0;
++        List<Claim> selected = new ArrayList<>();
++        for (Long id : input.claimIds()) {
++            Claim claim = id == null ? null : store.find(sheet, id);
++            if (claim == null) {
++                refused++;
++            } else {
++                selected.add(claim);
++            }
++        }
++        selected.sort(Comparator.<Claim>comparingInt(c -> personOrder.getOrDefault(c.getPersonId(), Integer.MAX_VALUE))
++                .thenComparing(Comparator.comparingLong(Claim::getId).reversed()));
++        int opened = 0;
++        for (Claim claim : selected) {
++            if (!claim.getStatus().canBecome(ClaimStatus.OPEN) || closed(periods, claim)) {
++                refused++;
++                continue;
++            }
++            Rollup before = rollups.snapshot(sheet);
++            if (!store.move(claim, claim.getStatus(), ClaimStatus.OPEN)) {
++                refused++;
++                continue;
++            }
++            claim.setStatus(ClaimStatus.OPEN);
++            claim.setNumber(store.nextNumber(sheet));
++            claim.setOpenedBy(input.user());
++            store.save(claim);
++            Person person = persons.get(claim.getPersonId());
++            ClaimResponse shown = ClaimResponse.from(claim);
++            audit.record(ClaimStatus.OPEN.event() + " sheet=" + sheet + " by=" + input.user() + " person="
++                    + (person == null ? "" : person.getName()) + " amount=" + shown.amount() + " date=" + shown.date()
++                    + " number=" + claim.getNumber());
++            rollups.record(sheet, input.user(), before);
++            opened++;
++        }
++        result.set(new BulkOpenResult(opened, refused));
++    }
++
++    private static boolean closed(PeriodStore periods, Claim claim) {
++        try {
++            CheckClaimPeriod.refuseClosed(periods, claim.getSheetId(), claim.getDate());
++            return false;
++        } catch (InvalidSheetException e) {
++            return true;
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RespondWithBulkOpen.java b/src/main/java/net/officefloor/hq/app/claim/RespondWithBulkOpen.java
+new file mode 100644
+index 000000000..d859e1140
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/RespondWithBulkOpen.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithBulkOpen {
++    public void respond(@Val BulkOpenResult result, ObjectResponse<BulkOpenResult> response) {
++        response.send(result);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateBulkOpen.java b/src/main/java/net/officefloor/hq/app/claim/ValidateBulkOpen.java
+new file mode 100644
+index 000000000..04c2f7f20
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateBulkOpen.java
+@@ -0,0 +1,33 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.ArrayList;
++import java.util.LinkedHashSet;
++import java.util.List;
++import java.util.Set;
++import net.officefloor.hq.app.sheet.InvalidSheetException;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ValidateBulkOpen {
++    public void validate(@RequestBody BulkOpenRequest request, Out<BulkOpenInput> body) throws InvalidSheetException {
++        if (request == null || request.claimIds() == null || request.claimIds().isEmpty()) {
++            throw new InvalidSheetException("Select the claims to open");
++        }
++        Set<String> seen = new LinkedHashSet<>();
++        List<Long> ids = new ArrayList<>();
++        for (String raw : request.claimIds()) {
++            String id = raw == null ? "" : raw.trim();
++            if (!seen.add(id)) {
++                continue;
++            }
++            Long parsed = null;
++            try {
++                parsed = Long.parseLong(id);
++            } catch (NumberFormatException e) {
++                // not an id: no such claim, refused
++            }
++            ids.add(parsed);
++        }
++        body.set(new BulkOpenInput(ids, request.user()));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-open.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-open.POST.yml
+new file mode 100644
+index 000000000..4937afc5a
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-open.POST.yml
+@@ -0,0 +1,15 @@
++# POST /api/sheets/{sheetId}/bulk-open — open the selected claims together (body {claimIds, user}).
++# Each selected claim that can be opened (a DRAFT on the sheet, not dated in a closed period) is
++# opened and numbered in list order — people in the order they were added, a person's claims
++# newest first — and recorded as CLAIM_OPENED, as a single open is; each that cannot is refused and
++# left as it is. Answers {opened, refused}. Refused (400) only when no claim is selected.
++validate:
++  class: net.officefloor.hq.app.claim.ValidateBulkOpen
++  next: open
++open:
++  class: net.officefloor.hq.app.claim.OpenClaims
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithBulkOpen
++  govern: [ transaction ]
