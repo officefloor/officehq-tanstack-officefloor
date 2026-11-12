@@ -11,7 +11,7 @@ import net.officefloor.plugin.variable.Val;
 
 /** Moves the claim to the new status, refusing a change its current status does not allow. Opening
  *  gives the claim the sheet's next number; voiding clears it. Settling fixes its due at its person's
- *  grade rate in force on the claim's date (none when no rate of the grade applies then). */
+ *  grade rate in force on the claim's date, rounded half to even (none when no rate of the grade applies then). */
 public class ApplyStatus {
     public void apply(@Val StatusInput input, @Val Claim claim, ClaimStore store, PersonStore people,
             RateStore rates, Out<StatusChange> change)
@@ -28,7 +28,7 @@ public class ApplyStatus {
             Person person = people.find(claim.getSheetId(), claim.getPersonId());
             BigDecimal pct = person == null ? null : rates.find(claim.getSheetId(), person.getGrade(), claim.getDate());
             claim.setSettledDue(pct == null ? null
-                    : claim.getAmount().multiply(pct).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP));
+                    : claim.getAmount().multiply(pct).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_EVEN));
         }
         change.set(new StatusChange(claim.getNumber()));
         if (input.status() == ClaimStatus.VOID) {
