@@ -10,7 +10,7 @@ import { type Pool, poolsKey, usePools } from './pools';
 const refusal = (e: unknown, fallback: string) =>
   e instanceof HttpError && e.reason ? `${e.reason}.` : fallback;
 
-// One pool: its members with their shares and their cuts of the sheet's pot (blank when unbalanced or no pot), its total share and whether it is balanced, and the entry a
+// One pool: its members with their shares and their cuts of the sheet's pot (blank when unbalanced, no pot or every member retired), its total share and whether it is balanced, and the entry a
 // member is added with: a person, or another pool (pool:<name>). A person already in the pool, a pool already in
 // a pool, in a loop or more than three deep, or a bad share, is refused with an error on the pool. A membership
 // may carry a from- and a to-date (blank for no bound; a to-date before the from-date is refused): a member whose

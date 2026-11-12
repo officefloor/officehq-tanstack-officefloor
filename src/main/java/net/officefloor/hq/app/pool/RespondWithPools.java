@@ -61,10 +61,10 @@ public class RespondWithPools {
         }).toList());
     }
 
-    /** The total of the members' shares, a retired member's, or one whose dates do not include today, counting as
-     *  0.00. */
+    /** The total of the members' shares, a retired member's counting as given, one whose dates do not include
+     *  today as 0.00. */
     private static BigDecimal total(List<PoolStore.Member> ms, LocalDate today) {
-        return ms.stream().filter(m -> !m.retired() && m.covers(today)).map(PoolStore.Member::share)
+        return ms.stream().filter(m -> m.covers(today)).map(PoolStore.Member::share)
                 .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
     }
 
@@ -95,11 +95,18 @@ public class RespondWithPools {
     }
 
     /** Each member's cut, in the members' order: the pot times their share over the shares of the members with a
-     *  cut, rounded half to even to two decimals (a retired or held member's is 0.00, and each is 0.00 when none
-     *  has a cut); the remainder goes to the member with a cut with the largest share, the earliest added on a
+     *  cut, rounded half to even to two decimals (a retired or held member's is 0.00, their share spread over the
+     *  others, and each is 0.00 when none has a cut); null for every member when each whose dates include today is
+     *  retired. The remainder goes to the member with a cut with the largest share, the earliest added on a
      *  tie, so the cuts total exactly the pot. A member whose dates do not include today has no cut (null). */
     private static List<BigDecimal> cuts(List<PoolStore.Member> ms, Set<Long> held, LocalDate today,
             BigDecimal pot) {
+        List<PoolStore.Member> current = ms.stream().filter(m -> m.covers(today)).toList();
+        if (!current.isEmpty() && current.stream().allMatch(PoolStore.Member::retired)) {
+            List<BigDecimal> none = new ArrayList<>();
+            ms.forEach(m -> none.add(null));
+            return none;
+        }
         BigDecimal shares = ms.stream().filter(m -> m.covers(today) && hasCut(m, held)).map(PoolStore.Member::share)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         List<BigDecimal> cuts = new ArrayList<>();

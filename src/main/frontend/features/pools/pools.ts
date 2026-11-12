@@ -4,10 +4,10 @@ import { asOfKey, asOfPath, sheetKey } from '../sheet/sheet';
 import { useAsOf } from '../../session/session';
 
 /** A member of a pool: a person on the sheet, or another pool (`memberPoolId` set, `personId` null), and its share
- *  percent (two decimals). `retired` once a retirement date is set for them, whatever the date: their share then
- *  counts as 0.00 toward the total. `cut` is their cut of the pool's pot (two decimals; 0.00 when retired or held
- *  on the sheet's today, their share then spread over the members with a cut in proportion to their shares), null
- *  when the pool is not balanced or has no pot: a pool that is a member of none has the sheet's pot, a member
+ *  percent (two decimals). `retired` once a retirement date is set for them, whatever the date: their share still
+ *  counts toward the total. `cut` is their cut of the pool's pot (two decimals; 0.00 when retired or held on the
+ *  sheet's today, their share then spread over the members with a cut in proportion to their shares), null when
+ *  the pool is not balanced, has no pot, or every member is retired: a pool that is a member of none has the sheet's pot, a member
  *  pool's pot is its cut in the pool above. `from` and `to` bound the dates the membership counts (null for no
  *  bound): a member whose dates do not include the sheet's today counts toward neither the total nor the balance,
  *  and its `cut` is null. */
