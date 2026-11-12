@@ -9,8 +9,9 @@ import { type Grades, gradeOn } from '../people/people';
  *  from, null for from the beginning of time; `to` the date it applies through, null for no end. A
  *  grade may have several; one with no rate has none. `level` is the sheet it is on: 0 (or absent) for the
  *  sheet's own, 1 for its parent's, and so on up; a grade with no rate in force on a date on the sheet takes
- *  the first level up that has one. */
-export type Rate = { grade: string; pct: string; from: string | null; to: string | null; level?: number };
+ *  the first level up that has one. `version` is how many versions it has; `pct` is the newest's, the one in
+ *  force. */
+export type Rate = { grade: string; pct: string; from: string | null; to: string | null; level?: number; version?: number };
 
 /** The rates of each level, the sheet's own first. */
 function levels(rates: Rate[] | undefined): Rate[][] {

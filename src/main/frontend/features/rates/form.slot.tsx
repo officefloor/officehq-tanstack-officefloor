@@ -60,6 +60,7 @@ function Rates() {
             <th>From</th>
             <th>To</th>
             <th>Rate %</th>
+            <th>Versions</th>
           </tr>
         </thead>
         <tbody>
@@ -69,6 +70,7 @@ function Rates() {
               <td data-testid="rate-from">{r.from ?? ''}</td>
               <td data-testid="rate-to">{r.to ?? ''}</td>
               <td data-testid="rate-pct">{r.pct}</td>
+              <td data-testid="rate-version">{r.version ?? 1}</td>
             </tr>
           ))}
         </tbody>

@@ -9,7 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-/** The rates for each grade, kept per sheet, each applying from its from-date through its to-date
+/** The rates for each grade, kept per sheet as versions (see {@link #set}), each applying from its from-date through its to-date
  *  (if it has one). A rate with no from-date applies from the beginning of time (stored as
  *  {@link #START}). A grade with no rate is absent. When a grade has no rate in force on a date on a
  *  sheet, its parent sheet's (the setting {@code parent}) in force then is used, then the parent's parent,
@@ -68,11 +68,11 @@ public class RateStore {
         List<String> chain = chain(sheetId);
         for (int level = 0; level < chain.size(); level++) {
             int at = level;
-            all.addAll(jdbc.query("SELECT grade, pct, from_date, to_date FROM " + rates + " WHERE sheet_id = ? ORDER BY grade, from_date",
+            all.addAll(jdbc.query("SELECT grade, pct, from_date, to_date, version FROM " + rates + " WHERE sheet_id = ? ORDER BY grade, from_date",
                     (rs, i) -> {
                         LocalDate from = rs.getObject("from_date", LocalDate.class);
                         return RateResponse.of(rs.getString("grade"), rs.getBigDecimal("pct"),
-                                START.equals(from) ? null : from, rs.getObject("to_date", LocalDate.class), at);
+                                START.equals(from) ? null : from, rs.getObject("to_date", LocalDate.class), at, rs.getInt("version"));
                     }, chain.get(level)));
         }
         return all;
@@ -167,9 +167,22 @@ public class RateStore {
     }
 
     /** Sets the grade's rate from the date (null for from the beginning of time) through the to-date
-     *  (null for no end), replacing any there. */
+     *  (null for no end). When the grade and from-date already have a rate, the value it replaces is kept as an
+     *  older version and this is added as the newest, the one in force. */
     public void set(String sheetId, String grade, LocalDate from, LocalDate to, BigDecimal pct) {
-        jdbc.update("MERGE INTO rate (sheet_id, grade, from_date, to_date, pct) KEY (sheet_id, grade, from_date) VALUES (?, ?, ?, ?, ?)",
-                sheetId, grade, from == null ? START : from, to, pct);
+        LocalDate at = from == null ? START : from;
+        int version = version(sheetId, grade, from) + 1;
+        jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, pct, to_date) VALUES (?, ?, ?, ?, ?, ?)",
+                sheetId, grade, at, version, pct, to);
+        jdbc.update("MERGE INTO rate (sheet_id, grade, from_date, to_date, pct, version) KEY (sheet_id, grade, from_date) VALUES (?, ?, ?, ?, ?, ?)",
+                sheetId, grade, at, to, pct, version);
+    }
+
+    /** How many versions the sheet's rate of the grade from the date (null for from the beginning of time)
+     *  has; 0 when it has none. */
+    public int version(String sheetId, String grade, LocalDate from) {
+        Integer found = jdbc.queryForObject("SELECT MAX(version) FROM rate_version WHERE sheet_id = ? AND grade = ? AND from_date = ?",
+                Integer.class, sheetId, grade, from == null ? START : from);
+        return found == null ? 0 : found;
     }
 }
