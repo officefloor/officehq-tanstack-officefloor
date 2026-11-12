@@ -1,0 +1,43 @@
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SaveToday.java b/src/main/java/net/officefloor/hq/app/sheet/SaveToday.java
+index 318c92dd9..a3e08e2c9 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SaveToday.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SaveToday.java
+@@ -1,15 +1,22 @@
+ package net.officefloor.hq.app.sheet;
+ 
+ import java.time.LocalDate;
++import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.claim.ClaimStore;
++import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+-/** Stores the sheet's today; a new today releases every claim's lock (each open editor's). */
++/** Stores the sheet's today; a new today releases every claim's lock (each open editor's). Before a new today
++ *  takes effect, each person's due-total as it stood on the day being left is recorded, in list order, as
++ *  SNAPSHOT sheet=<id> by=<user> name=<name> due-total=<due-total>. */
+ public class SaveToday {
+-    public void save(@PathVariable("sheetId") String sheetId, @Val LocalDate today, SheetStore store, ClaimStore claims) {
++    public void save(@PathVariable("sheetId") String sheetId, @Val LocalDate today, @Val TodayRequest request,
++            @Val Rollup before, SheetStore store, ClaimStore claims, Audit audit) {
+         String id = sheetId.trim();
+         if (!today.equals(store.today(id))) {
++            before.people().values().forEach(figures -> audit.record("SNAPSHOT sheet=" + id + " by=" + request.user()
++                    + " name=" + figures.name() + " due-total=" + figures.dueTotal()));
+             claims.unlockAll(id);
+         }
+         store.setToday(id, today);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
+index 9271e03ce..97525d0b3 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
+@@ -1,6 +1,7 @@
+ # POST /api/sheets/{sheetId}/today — set the sheet's today (body: {today: yyyy-MM-dd, user}).
+-# A date that does not parse is refused (400) and nothing is stored. A new today records
+-# no line of its own, only the ROLLUP/TOTALS lines of the figures it moved. With grace days set, every
++# A date that does not parse is refused (400) and nothing is stored. A new today first records one
++# SNAPSHOT line per person (their due-total on the day being left), then only the ROLLUP/TOTALS lines
++# of the figures it moved. With grace days set, every
+ # open period whose to-date plus the grace days is before the new today is then closed (by to-date) as a
+ # close by hand would, each recorded as PERIOD_CLOSED ... auto=yes before the ROLLUP/TOTALS lines.
+ validate:
