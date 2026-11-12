@@ -11,7 +11,7 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
 
-/** The claims kept per sheet, newest first. */
+/** The claims kept per sheet, newest first: by when each was added, or moved to its person. */
 @Repository
 public class ClaimStore {
 
@@ -29,7 +29,7 @@ public class ClaimStore {
     }
 
     public List<Claim> list(String sheetId) {
-        return jdbc.query("SELECT * FROM claim WHERE sheet_id = ? ORDER BY id DESC", ROW, sheetId);
+        return jdbc.query("SELECT * FROM claim WHERE sheet_id = ? ORDER BY listed DESC", ROW, sheetId);
     }
 
     public Claim find(String sheetId, long id) {
@@ -78,7 +78,7 @@ public class ClaimStore {
 
     /** The person's claims, newest first, their rows locked until the transaction ends. */
     public List<Claim> listForUpdate(String sheetId, long personId) {
-        return jdbc.query("SELECT * FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY id DESC FOR UPDATE",
+        return jdbc.query("SELECT * FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY listed DESC FOR UPDATE",
                 ROW, sheetId, personId);
     }
 
@@ -86,6 +86,21 @@ public class ClaimStore {
     public void bind(Claim claim) {
         jdbc.update("UPDATE claim SET stated = ?, stated_due = ? WHERE sheet_id = ? AND id = ?", claim.isStated(),
                 claim.getStatedDue(), claim.getSheetId(), claim.getId());
+    }
+
+    /** Moves the stored DRAFT, OPEN or PENDING claim to the person, unbound from any statement figure and
+     *  listed as their newest claim; false when it is no longer one of those (another user moved it on). */
+    public boolean reassign(Claim claim, long personId) {
+        boolean moved = jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, "
+                + "listed = NEXT VALUE FOR claim_listed_seq WHERE sheet_id = ? AND id = ? AND status IN (?, ?, ?)",
+                personId, claim.getSheetId(), claim.getId(), ClaimStatus.DRAFT.name(), ClaimStatus.OPEN.name(),
+                ClaimStatus.PENDING.name()) == 1;
+        if (moved) {
+            claim.setPersonId(personId);
+            claim.setStated(false);
+            claim.setStatedDue(null);
+        }
+        return moved;
     }
 
     /** Moves the stored claim from {@code from} to {@code to}, locking its row until the transaction

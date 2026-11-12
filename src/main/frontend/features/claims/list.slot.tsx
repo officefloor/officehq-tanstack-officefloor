@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
-import type { Person } from '../people/people';
+import { type Person, peopleKey, usePeople } from '../people/people';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { claimDue, useRates } from '../rates/rates';
 import { useSettings } from '../settings/settings';
@@ -15,6 +15,8 @@ import { type Claim, type ClaimStatus, claimsKey, useClaims, useSelectedClaims }
 type Fields = { amount: string; date: string; note: string; corrects: string };
 /** `review` for a steward approving (SETTLED) or rejecting (OPEN, with a reason) a PENDING claim. */
 type StatusChange = { id: number; status: ClaimStatus; review?: boolean; reason?: string };
+/** A steward moving a claim to another person (`to`, their id). */
+type Reassign = { id: number; to: string };
 const EMPTY: Fields = { amount: '', date: '', note: '', corrects: '' };
 
 function ClaimsHead() {
@@ -36,6 +38,8 @@ function PersonClaims({ person }: { person: Person }) {
   const [fields, setFields] = useState<Fields>(EMPTY);
   const [editing, setEditing] = useState<number | undefined>();
   const [reasons, setReasons] = useState<Record<number, string>>({});
+  const [targets, setTargets] = useState<Record<number, string>>({});
+  const people = usePeople(sheet);
   const [selected, setSelected] = useSelectedClaims();
   const queryClient = useQueryClient();
   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
@@ -65,7 +69,32 @@ function PersonClaims({ person }: { person: Person }) {
   });
   const moveTo = (id: number, status: ClaimStatus, review?: { reason: string }) => {
     move.reset();
+    reassign.reset();
     move.mutate({ id, status, review: review !== undefined, reason: review?.reason });
+  };
+
+  // Moving a claim re-reads the people too: both people's figures follow it.
+  const reassign = useMutation({
+    mutationFn: (r: Reassign) => postJson<Claim>(`${base}/claims/${r.id}/reassign`, { to: r.to, user }),
+    onSuccess: async (_, r) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+      ]);
+      setTargets((t) => ({ ...t, [r.id]: '' }));
+    },
+  });
+  const reassignTo = (id: number) => {
+    move.reset();
+    reassign.reset();
+    reassign.mutate({ id, to: targets[id] ?? '' });
+  };
+  // The refusal of the last status change or move of the claim, as the server gave it; null when none.
+  const refusal = (id: number) => {
+    const error =
+      move.isError && move.variables?.id === id ? move.error : reassign.isError && reassign.variables?.id === id ? reassign.error : null;
+    if (error === null) return null;
+    return error instanceof HttpError && error.reason ? `${error.reason}.` : 'The change was refused.';
   };
 
   const set = (key: keyof Fields) => (e: ChangeEvent<HTMLInputElement>) => {
@@ -75,6 +104,7 @@ function PersonClaims({ person }: { person: Person }) {
   const open = (c: Claim) => {
     save.reset();
     move.reset();
+    reassign.reset();
     setEditing(c.id);
     setFields({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects ?? '' });
   };
@@ -145,6 +175,32 @@ function PersonClaims({ person }: { person: Person }) {
               >
                 Reject
               </button>{' '}
+              <select
+                data-testid="claim-reassign-to"
+                aria-label="Move to"
+                value={targets[c.id] ?? ''}
+                onChange={(e) => {
+                  setTargets({ ...targets, [c.id]: e.target.value });
+                  if (reassign.variables?.id === c.id) reassign.reset();
+                }}
+              >
+                <option value="">Move to…</option>
+                {(people.data ?? [])
+                  .filter((p) => p.id !== person.id)
+                  .map((p) => (
+                    <option key={p.id} value={String(p.id)}>
+                      {p.name}
+                    </option>
+                  ))}
+              </select>{' '}
+              <button
+                type="button"
+                data-testid="claim-reassign"
+                disabled={reassign.isPending}
+                onClick={() => reassignTo(c.id)}
+              >
+                Move
+              </button>{' '}
               <button type="button" data-testid="claim-edit" onClick={() => open(c)}>
                 Edit
               </button>
@@ -153,10 +209,10 @@ function PersonClaims({ person }: { person: Person }) {
                   Cancel
                 </button>
               )}
-              {move.isError && move.variables?.id === c.id && (
+              {refusal(c.id) !== null && (
                 <span data-testid="claim-error" role="alert">
                   {' '}
-                  {move.error instanceof HttpError && move.error.reason ? `${move.error.reason}.` : 'The change was refused.'}
+                  {refusal(c.id)}
                 </span>
               )}
             </li>

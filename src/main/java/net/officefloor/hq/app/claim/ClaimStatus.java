@@ -19,6 +19,11 @@ public enum ClaimStatus {
         };
     }
 
+    /** Whether a claim of this status may move to another person: DRAFT, OPEN or PENDING. */
+    public boolean canMove() {
+        return this == DRAFT || this == OPEN || this == PENDING;
+    }
+
     /** Whether the claim is open: OPEN, or PENDING, which is handled as open. */
     public boolean isOpen() {
         return this == OPEN || this == PENDING;

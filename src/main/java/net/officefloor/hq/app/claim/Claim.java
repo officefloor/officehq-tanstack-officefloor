@@ -9,7 +9,7 @@ import java.time.LocalDate;
 public class Claim {
     private final long id;
     private final String sheetId;
-    private final long personId;
+    private long personId;
     private BigDecimal amount;
     private LocalDate date;
     private String note;
@@ -66,6 +66,7 @@ public class Claim {
     public String getCorrects() { return corrects; }
     /** Whether the claim is a correction: a negative amount, with no floor and no late charge. */
     public boolean isCorrection() { return amount.signum() < 0; }
+    public void setPersonId(long personId) { this.personId = personId; }
     public void setCorrects(String corrects) { this.corrects = corrects; }
     public void setAmount(BigDecimal amount) { this.amount = amount; }
     public void setDate(LocalDate date) { this.date = date; }
