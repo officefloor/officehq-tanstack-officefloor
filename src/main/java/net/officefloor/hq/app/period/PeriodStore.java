@@ -2,7 +2,9 @@ package net.officefloor.hq.app.period;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -11,9 +13,10 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PeriodStore {
 
-    private static final RowMapper<PeriodResponse> ROW = (rs, i) -> PeriodResponse.of(rs.getString("name"),
+    private final RowMapper<PeriodResponse> ROW = (rs, i) -> PeriodResponse.of(rs.getString("name"),
             rs.getObject("from_date", LocalDate.class), rs.getObject("to_date", LocalDate.class),
-            rs.getBoolean("closed"), rs.getBigDecimal("closed_total"));
+            rs.getBoolean("closed"), rs.getBigDecimal("closed_total"),
+            rs.getBoolean("closed") ? personTotals(rs.getString("sheet_id"), rs.getString("name")) : Map.of());
 
     private final JdbcTemplate jdbc;
 
@@ -68,6 +71,23 @@ public class PeriodStore {
                 period.name(), period.from(), period.to());
     }
 
+    /** Each person's due-total fixed when the period was closed, by person id. */
+    private Map<Long, BigDecimal> personTotals(String sheetId, String name) {
+        Map<Long, BigDecimal> totals = new LinkedHashMap<>();
+        jdbc.query("SELECT person_id, total FROM period_person_total WHERE sheet_id = ? AND period_name = ? ORDER BY person_id",
+                rs -> {
+                    totals.put(rs.getLong("person_id"), rs.getBigDecimal("total"));
+                }, sheetId, name);
+        return totals;
+    }
+
+    /** Fixes each person's due-total in the period as it is when it is closed. */
+    public void fixPersonTotals(String sheetId, String name, Map<Long, BigDecimal> totals) {
+        totals.forEach((personId, total) -> jdbc.update(
+                "INSERT INTO period_person_total (sheet_id, period_name, person_id, total) VALUES (?, ?, ?, ?)",
+                sheetId, name, personId, total));
+    }
+
     /** Closes the open period with its due-total fixed; false when it is already closed (another user
      *  closed it first). */
     public boolean close(String sheetId, String name, BigDecimal total) {
@@ -78,6 +98,7 @@ public class PeriodStore {
     /** Reopens the closed period, dropping its fixed due-total; false when it is not closed (another
      *  user reopened it first). */
     public boolean reopen(String sheetId, String name) {
+        jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_name = ?", sheetId, name);
         return jdbc.update("UPDATE period SET closed = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ? AND closed",
                 sheetId, name) == 1;
     }

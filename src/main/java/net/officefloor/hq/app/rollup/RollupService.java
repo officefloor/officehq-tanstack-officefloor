@@ -80,7 +80,7 @@ public class RollupService {
                 }
                 // A figure at a grade other than the one in force today, or at a rate that ended before
                 // today, does not hang on today's grade's rate.
-                fixed |= claim.getSettledDue() != null || claim.isBound()
+                fixed |= claim.getSettledDue() != null || (claim.isBound() && claim.getStatedDue() != null)
                         || (figure != null && (!person.gradeOn(claim.getDate()).equals(person.gradeOn(today))
                                 || rates.endsBefore(sheetId, person.gradeOn(claim.getDate()), claim.getDate(), today)));
             }
@@ -97,15 +97,17 @@ public class RollupService {
         return new Rollup(figures, shown(claimedTotal), shown(dueTotal), shown(overdueTotal));
     }
 
-    /** The due-total of the claims that count dated from..to (inclusive): the sum of their figures,
-     *  skipping n/a, as the screen shows a period's due-total. */
-    public BigDecimal dueBetween(String sheetId, LocalDate from, LocalDate to) {
+    /** Each person's due-total of their claims that count dated from..to (inclusive), by person id in
+     *  the order they were added: the sum of their figures, skipping n/a, as the screen shows a person's
+     *  due-total for a period. A period's due-total is the sum of these. */
+    public Map<Long, BigDecimal> dueBetweenByPerson(String sheetId, LocalDate from, LocalDate to) {
         List<Claim> all = claims.list(sheetId);
         BigDecimal floor = settings.floor(sheetId);
         Lateness lateness = new Lateness(settings.latePct(sheetId), sheets.today(sheetId),
                 new Rounding(policyDate(sheetId), all));
-        BigDecimal total = BigDecimal.ZERO.setScale(2);
+        Map<Long, BigDecimal> totals = new LinkedHashMap<>();
         for (Person person : people.list(sheetId)) {
+            BigDecimal total = BigDecimal.ZERO.setScale(2);
             for (Claim claim : all) {
                 if (claim.getPersonId() != person.getId()
                         || !counts(claim, person)
@@ -117,8 +119,9 @@ public class RollupService {
                     total = total.add(figure);
                 }
             }
+            totals.put(person.getId(), total);
         }
-        return total;
+        return totals;
     }
 
     /** Records how the sheet's figures moved since {@code before}, the change made by {@code user}. */

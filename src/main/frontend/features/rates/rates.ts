@@ -101,8 +101,9 @@ function lateCharge(claim: Claim, figure: string, late: Late | undefined): strin
   return due(figure, format(hundredths(late!.pct!) * BigInt(periods)), late?.halfUp?.(claim) ?? false);
 }
 
-/** Whether the claim keeps a figure whatever the rates: fixed when settled, or bound by a statement. */
-const fixed = (claim: Claim) => claim.due !== null || isBound(claim);
+/** Whether the claim keeps a figure whatever the rates: fixed when settled, or bound by a statement to a
+ *  figure (bound to n/a keeps no figure). */
+const fixed = (claim: Claim) => claim.due !== null || (isBound(claim) && claim.statedDue !== null);
 
 /** A claim's due: the due fixed when it was settled (its late charge frozen in), else its figure — the
  *  figure its person's last statement bound it to (not while PENDING), else its live due: its amount at the rate in force

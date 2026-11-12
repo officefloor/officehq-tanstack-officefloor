@@ -6,9 +6,16 @@ import type { Person } from '../people/people';
 import { type Late, type Rate, claimDue, dueTotal } from '../rates/rates';
 
 /** A period: its name (unique on the sheet), its from and to dates (yyyy-MM-dd, inclusive), whether
- *  it is closed and, once closed, the due-total fixed on closing (null while open). No two periods on
- *  a sheet overlap. */
-export type Period = { name: string; from: string; to: string; closed: boolean; total: string | null };
+ *  it is closed and, once closed, the due-total fixed on closing (null while open) and each person's
+ *  due-total fixed on closing, by person id (empty while open). No two periods on a sheet overlap. */
+export type Period = {
+  name: string;
+  from: string;
+  to: string;
+  closed: boolean;
+  total: string | null;
+  people: Record<string, string>;
+};
 
 /** Under the sheet's key, so loading the sheet again re-reads its periods. */
 export const periodsKey = (sheet: string) => [...sheetKey(sheet), 'periods'] as const;
@@ -30,8 +37,26 @@ export function periodOf(periods: Period[] | undefined, date: string): Period | 
   return (periods ?? []).find((p) => contains(p, date));
 }
 
-/** A period's due-total as the list shows it: the total fixed on closing, else the sum of the figures
- *  of the claims that count whose date falls in it, skipping n/a. */
+/** A person's due-total for a period: once closed, the figure fixed on closing (0.00 for a person
+ *  added since); else the sum of the figures of their claims that count whose date falls in it,
+ *  skipping n/a. */
+export function personPeriodDue(
+  period: Period,
+  person: Person,
+  claims: Claim[] | undefined,
+  rates: Rate[] | undefined,
+  floor: string | undefined,
+  late: Late,
+): string {
+  if (period.closed) return period.people?.[String(person.id)] ?? '0.00';
+  return dueTotal(
+    live((claims ?? []).filter((c) => c.personId === person.id), [person])
+      .filter((c) => counts(c) && contains(period, c.date))
+      .map((c) => claimDue(c, rates, person.grades, floor, late)),
+  );
+}
+
+/** A period's due-total as the list shows it: the sum of the people's due-totals for it. */
 export function periodDue(
   period: Period,
   claims: Claim[] | undefined,
@@ -40,11 +65,5 @@ export function periodDue(
   floor: string | undefined,
   late: Late,
 ): string {
-  if (period.closed && period.total !== null) return period.total;
-  const gradesOf = new Map((people ?? []).map((p) => [p.id, p.grades]));
-  return dueTotal(
-    live(claims ?? [], people)
-      .filter((c) => counts(c) && contains(period, c.date) && gradesOf.has(c.personId))
-      .map((c) => claimDue(c, rates, gradesOf.get(c.personId)!, floor, late)),
-  );
+  return dueTotal((people ?? []).map((p) => personPeriodDue(period, p, claims, rates, floor, late)));
 }

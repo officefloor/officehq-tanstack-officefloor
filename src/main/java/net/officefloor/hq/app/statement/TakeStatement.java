@@ -46,7 +46,7 @@ public class TakeStatement {
                 }
                 // A figure at a grade other than the one in force today, or at a rate that ended before
                 // today, does not hang on today's grade's rate.
-                fixed |= claim.getSettledDue() != null || claim.isBound()
+                fixed |= claim.getSettledDue() != null || (claim.isBound() && claim.getStatedDue() != null)
                         || (figure != null && (!person.gradeOn(claim.getDate()).equals(person.gradeOn(today))
                                 || rates.endsBefore(sheetId, person.gradeOn(claim.getDate()), claim.getDate(), today)));
             }
