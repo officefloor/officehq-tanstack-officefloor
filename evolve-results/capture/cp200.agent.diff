@@ -1,0 +1,201 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index a92a6452c..7e5fe6942 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -3,7 +3,6 @@ import { getJson } from '../../api/http';
+ import { asOfKey, asOfPath, sheetKey } from '../sheet/sheet';
+ import { useAsOf } from '../../session/session';
+ import { asNumber, asString, useSearchParam } from '../../url/useSearchParam';
+-import { type Hold, covers } from '../people/people';
+ 
+ /** PENDING: settled by a clerk above the clerk limit, awaiting a steward's approval; handled as OPEN
+  *  (a statement binds it like any other claim that counts). DELETED: a deleted DRAFT, which counts
+@@ -80,8 +79,7 @@ export type Claim = {
+   reviewOn: string | null;
+   /** Whether a steward waived its late charge: it bears none from then on, whatever its overdue state. */
+   waived: boolean;
+-  /** Whether it is held: while OPEN (or PENDING) and unbound by a statement it counts in no live total, as a
+-   *  claim dated within one of its person's holds does. */
++  /** Whether it is held. A held claim still counts in every total. */
+   held: boolean;
+ };
+ 
+@@ -97,26 +95,20 @@ export const counts = (c: Claim) => (isOpen(c) && !c.deferred) || c.status === '
+ /** Whether the claim keeps the figure (or n/a) its person's last statement bound it to. */
+ export const isBound = (c: Claim) => c.stated && (c.statedDue !== null || c.statedNa);
+ 
+-/** These claims less the OPEN (or PENDING) claims held, or dated within one of their person's holds, or of a
+- *  person whose retirement date the sheet's today has reached, which count in no live due total, unless a
+- *  statement bound them. */
+-export const live = (claims: Claim[], people: { id: number; holds: Hold[]; retiredNow: boolean }[] | undefined) =>
+-  liveOf(claims, people, false);
+-
+ /** These claims less the OPEN (or PENDING) claims of a person whose retirement date the sheet's today has
+- *  reached, unless a statement bound them: a hold leaves a claim in claimed and the claimed-total. */
+-export const liveClaimed = (claims: Claim[], people: { id: number; holds: Hold[]; retiredNow: boolean }[] | undefined) =>
+-  liveOf(claims, people, true);
+-
+-const liveOf = (claims: Claim[], people: { id: number; holds: Hold[]; retiredNow: boolean }[] | undefined, keepHeld: boolean) => {
++ *  reached, which count in no live due total, unless a statement bound them. A hold (the claim's or its
++ *  person's) leaves a claim in every total: it only takes the person's cuts from their pools. */
++export const live = (claims: Claim[], people: { id: number; retiredNow: boolean }[] | undefined) => {
+   const byId = new Map((people ?? []).map((p) => [p.id, p]));
+   return claims.filter((c) => {
+     const p = byId.get(c.personId);
+-    const held = !keepHeld && (c.held || (p !== undefined && p.holds.some((h) => covers(h, c.date))));
+-    return !(isOpen(c) && !c.stated && (held || (p !== undefined && p.retiredNow)));
++    return !(isOpen(c) && !c.stated && p !== undefined && p.retiredNow);
+   });
+ };
+ 
++/** The claims that count toward claimed: as {@link live}. */
++export const liveClaimed = live;
++
+ /** The date (yyyy-MM-dd) the given number of days before this one. */
+ const daysBefore = (date: string, days: number) => {
+   const d = new Date(`${date}T00:00:00Z`);
+diff --git a/src/main/frontend/features/claims/list.slot.tsx b/src/main/frontend/features/claims/list.slot.tsx
+index b7983814b..38e191bdc 100644
+--- a/src/main/frontend/features/claims/list.slot.tsx
++++ b/src/main/frontend/features/claims/list.slot.tsx
+@@ -317,8 +317,7 @@ function PersonClaims({ person }: { person: Person }) {
+     inline.reset();
+     waive.mutate(id);
+   };
+-  // Holding an OPEN or PENDING claim, or releasing it when held: while held and unbound by a statement it counts
+-  // in no live total, as a claim dated within its person's hold does. Its figures move with it.
++  // Holding an OPEN or PENDING claim, or releasing it when held: a held claim still counts in every total.
+   const hold = useMutation({
+     mutationFn: (id: number) => postJson<Claim>(`${base}/claims/${id}/hold`, { user }),
+     onSuccess: async () => {
+diff --git a/src/main/frontend/features/hold/hold.slot.tsx b/src/main/frontend/features/hold/hold.slot.tsx
+index f06e29467..4186862ce 100644
+--- a/src/main/frontend/features/hold/hold.slot.tsx
++++ b/src/main/frontend/features/hold/hold.slot.tsx
+@@ -13,8 +13,8 @@ function HoldHead() {
+ }
+ 
+ // Whether the person has any hold, a line for each of their holds, and the dates and button that add
+-// one (a blank from-date takes the sheet's today, a blank to-date has no end). Their OPEN claims dated
+-// within a hold count in no live total unless a statement bound them. A refused hold shows its error
++// one (a blank from-date takes the sheet's today, a blank to-date has no end). A hold leaves their
++// claims in every total; one in force on today only takes their cuts. A refused hold shows its error
+ // until the dates are changed or the next is tried.
+ function PersonHold({ person }: { person: Person }) {
+   const [user] = useCurrentUser();
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index b62687748..a466df8e5 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -9,9 +9,9 @@ import { useAsOf } from '../../session/session';
+  *  and `statementDate` (yyyy-MM-dd) are the last one's, null when none was taken. `retired` is set
+  *  as soon as a `retiredFrom` date (yyyy-MM-dd, null when not retired) is, whatever the date;
+  *  `retiredNow` once the sheet's today reaches it: from then their OPEN claims count in no live total
+- *  unless a statement bound them, as a hold's would.
+- *  `holds` are their holds, oldest first; `held` whether they have any. Their OPEN claims dated within
+- *  a hold count in no live total unless a statement bound them; their SETTLED ones still do.
++ *  unless a statement bound them.
++ *  `holds` are their holds, oldest first; `held` whether they have any. A hold leaves their claims in
++ *  every total: one in force on the sheet's today only takes their cuts from their pools.
+  *  `patronIds` are the ids of the other people on the sheet they named as their patrons, in the order they named them.
+  *  `grade` is the grade in force on the sheet's today; `grades` every grade with the date it applies from.
+  *  `terms` are their own terms in force on the sheet's today, in whole days (null when none), ahead of their grade's and the sheet's.
+diff --git a/src/main/frontend/features/periods/periods.ts b/src/main/frontend/features/periods/periods.ts
+index 2254bef41..afc9fbb8d 100644
+--- a/src/main/frontend/features/periods/periods.ts
++++ b/src/main/frontend/features/periods/periods.ts
+@@ -3,7 +3,6 @@ import { getJson } from '../../api/http';
+ import { asOfKey, asOfPath, sheetKey } from '../sheet/sheet';
+ import { useAsOf } from '../../session/session';
+ import { type Claim, type ClaimStatus, isOpen } from '../claims/claims';
+-import { covers } from '../people/people';
+ import type { Person } from '../people/people';
+ import { type Floor, type Late, type Rate, claimDue, dueTotal } from '../rates/rates';
+ 
+@@ -63,13 +62,12 @@ export function statusAt(claim: Claim, date: string): ClaimStatus | null {
+ 
+ /** Whether the claim counts toward a period: by the status it had at the end of the period's last
+  *  day it was OPEN, PENDING or SETTLED; and, as the live rules say, it is not deferred on the sheet's
+- *  today, nor (while open then and still open now, and unbound by a statement) held or dated within one of its person's holds
+- *  or of a person whose retirement date the sheet's today has reached. */
++ *  today, nor (while open then and still open now, and unbound by a statement) of a person whose retirement date the sheet's today has reached. */
+ export function countsInPeriod(claim: Claim, period: Period, person: Person): boolean {
+   const status = statusAt(claim, period.to);
+   if (status === 'SETTLED') return true;
+   if (status !== 'OPEN' && status !== 'PENDING') return false;
+-  return !(claim.status !== 'VOID' && claim.deferred) && (claim.stated || !isOpen(claim) || !(claim.held || person.retiredNow || person.holds.some((h) => covers(h, claim.date))));
++  return !(claim.status !== 'VOID' && claim.deferred) && (claim.stated || !isOpen(claim) || !person.retiredNow);
+ }
+ 
+ /** A person's due-total for a period: once closed or soft-closed, the figure fixed then (0.00 for a person
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index dcfddd451..7e4e578d9 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -128,8 +128,7 @@ public class Claim {
+     /** Whether a steward waived its late charge: it bears none from then on, whatever its overdue state. */
+     public boolean isWaived() { return waived; }
+     public void setWaived(boolean waived) { this.waived = waived; }
+-    /** Whether the claim is held: while OPEN (or PENDING) and unbound by a statement it counts in no live total,
+-     *  as a claim dated within a hold of its person's does. */
++    /** Whether the claim is held. A held claim still counts in every total. */
+     public boolean isHeld() { return held; }
+     public void setHeld(boolean held) { this.held = held; }
+     /** The external reference, unique on the sheet without regard to case; null when it has none. */
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/RollupService.java b/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
+index 757e60760..d885402be 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
+@@ -242,17 +242,16 @@ public class RollupService {
+         return policy != null ? policy : sheets.today(sheetId);
+     }
+ 
+-    /** Only OPEN, PENDING and SETTLED claims count, and an OPEN or PENDING claim held, or dated within one of its
+-     *  person's holds, or of a person whose retirement date the sheet's today has reached, does not, unless a
+-     *  statement bound it; nor does an OPEN claim deferred on the sheet's today. */
++    /** Only OPEN, PENDING and SETTLED claims count, and an OPEN or PENDING claim of a person whose retirement
++     *  date the sheet's today has reached does not, unless a statement bound it; nor does an OPEN claim deferred
++     *  on the sheet's today. A hold (the claim's or its person's) does not take it out: holds only touch cuts. */
+     public static boolean counts(Claim claim, Person person, LocalDate today) {
+         return claim.getStatus() == ClaimStatus.SETTLED
+                 || (claim.getStatus().isOpen() && !claim.isDeferredOn(today)
+-                        && (claim.isStated() || !(claim.isHeld() || person.heldOn(claim.getDate()) || person.retiredOn(today))));
++                        && (claim.isStated() || !person.retiredOn(today)));
+     }
+ 
+-    /** Whether the claim counts toward claimed: as {@link #counts}, except that a hold (the claim's or its
+-     *  person's) does not take it out. */
++    /** Whether the claim counts toward claimed: as {@link #counts}. */
+     public static boolean countsClaimed(Claim claim, Person person, LocalDate today) {
+         return claim.getStatus() == ClaimStatus.SETTLED
+                 || (claim.getStatus().isOpen() && !claim.isDeferredOn(today)
+@@ -261,13 +260,13 @@ public class RollupService {
+ 
+     /** Whether the claim counts by {@code status}, the status it had at a period's end (null when it
+      *  was added after it): OPEN, PENDING or SETTLED then; and, as the live rules say, an OPEN claim
+-     *  deferred on the sheet's today does not, nor one open then and still open now held or dated within a hold
+-     *  of its person or of a person retired on the sheet's today, unless a statement bound it. */
++     *  deferred on the sheet's today does not, nor one open then and still open now of a person retired on
++     *  the sheet's today, unless a statement bound it. */
+     static boolean countsAt(Claim claim, ClaimStatus status, Person person, LocalDate today) {
+         return status == ClaimStatus.SETTLED
+                 || (status != null && status.isOpen() && !claim.isDeferredOn(today)
+                         && (claim.isStated() || !claim.getStatus().isOpen()
+-                                || !(claim.isHeld() || person.heldOn(claim.getDate()) || person.retiredOn(today))));
++                                || !person.retiredOn(today)));
+     }
+ 
+     private static String shown(BigDecimal value) {
+diff --git a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+index a19b211a3..8bb9968ca 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+@@ -73,7 +73,7 @@ public class TakeStatement {
+         for (Claim live : bound) {
+             // The claim as it stood then (itself when taken now); null when it was not theirs then.
+             Claim claim = was.get(live.getId());
+-            // An OPEN (or PENDING) claim dated within a hold counts in no live total unless a statement bound
++            // An OPEN (or PENDING) claim of a retired person counts in no live total unless a statement bound
+             // it, so a statement neither counts nor binds it; one it bound before stays counted. A deferred
+             // claim counts in no total until the sheet's today reaches its date: a statement leaves it unbound.
+             boolean counts = claim != null && RollupService.counts(claim, then, on);
