@@ -238,24 +238,24 @@ public class RollupService {
         return policy != null ? policy : sheets.today(sheetId);
     }
 
-    /** Only OPEN, PENDING and SETTLED claims count, and an OPEN or PENDING claim dated within one of its
+    /** Only OPEN, PENDING and SETTLED claims count, and an OPEN or PENDING claim held, or dated within one of its
      *  person's holds, or of a person whose retirement date the sheet's today has reached, does not, unless a
      *  statement bound it; nor does an OPEN claim deferred on the sheet's today. */
     public static boolean counts(Claim claim, Person person, LocalDate today) {
         return claim.getStatus() == ClaimStatus.SETTLED
                 || (claim.getStatus().isOpen() && !claim.isDeferredOn(today)
-                        && (claim.isStated() || !(person.heldOn(claim.getDate()) || person.retiredOn(today))));
+                        && (claim.isStated() || !(claim.isHeld() || person.heldOn(claim.getDate()) || person.retiredOn(today))));
     }
 
     /** Whether the claim counts by {@code status}, the status it had at a period's end (null when it
      *  was added after it): OPEN, PENDING or SETTLED then; and, as the live rules say, an OPEN claim
-     *  deferred on the sheet's today does not, nor one open then and still open now dated within a hold
+     *  deferred on the sheet's today does not, nor one open then and still open now held or dated within a hold
      *  of its person or of a person retired on the sheet's today, unless a statement bound it. */
     static boolean countsAt(Claim claim, ClaimStatus status, Person person, LocalDate today) {
         return status == ClaimStatus.SETTLED
                 || (status != null && status.isOpen() && !claim.isDeferredOn(today)
                         && (claim.isStated() || !claim.getStatus().isOpen()
-                                || !(person.heldOn(claim.getDate()) || person.retiredOn(today))));
+                                || !(claim.isHeld() || person.heldOn(claim.getDate()) || person.retiredOn(today))));
     }
 
     private static String shown(BigDecimal value) {

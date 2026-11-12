@@ -31,6 +31,7 @@ public class Claim {
     private boolean escalated;
     private LocalDate reviewOn;
     private boolean waived;
+    private boolean held;
     private String ref;
     private String tags;
     private String voidReason;
@@ -127,6 +128,10 @@ public class Claim {
     /** Whether a steward waived its late charge: it bears none from then on, whatever its overdue state. */
     public boolean isWaived() { return waived; }
     public void setWaived(boolean waived) { this.waived = waived; }
+    /** Whether the claim is held: while OPEN (or PENDING) and unbound by a statement it counts in no live total,
+     *  as a claim dated within a hold of its person's does. */
+    public boolean isHeld() { return held; }
+    public void setHeld(boolean held) { this.held = held; }
     /** The external reference, unique on the sheet without regard to case; null when it has none. */
     public String getRef() { return ref; }
     public void setRef(String ref) { this.ref = ref; }

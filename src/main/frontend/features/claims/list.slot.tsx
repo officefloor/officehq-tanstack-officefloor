@@ -152,6 +152,7 @@ function PersonClaims({ person }: { person: Person }) {
     defer.reset();
     remind.reset();
     waive.reset();
+    hold.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -181,6 +182,7 @@ function PersonClaims({ person }: { person: Person }) {
     defer.reset();
     remind.reset();
     waive.reset();
+    hold.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -208,6 +210,7 @@ function PersonClaims({ person }: { person: Person }) {
     defer.reset();
     remind.reset();
     waive.reset();
+    hold.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -236,6 +239,7 @@ function PersonClaims({ person }: { person: Person }) {
     defer.reset();
     remind.reset();
     waive.reset();
+    hold.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -260,6 +264,7 @@ function PersonClaims({ person }: { person: Person }) {
     defer.reset();
     remind.reset();
     waive.reset();
+    hold.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -287,6 +292,7 @@ function PersonClaims({ person }: { person: Person }) {
     defer.reset();
     remind.reset();
     waive.reset();
+    hold.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -294,6 +300,35 @@ function PersonClaims({ person }: { person: Person }) {
     redate.reset();
     inline.reset();
     waive.mutate(id);
+  };
+  // Holding an OPEN or PENDING claim, or releasing it when held: while held and unbound by a statement it counts
+  // in no live total, as a claim dated within its person's hold does. Its figures move with it.
+  const hold = useMutation({
+    mutationFn: (id: number) => postJson<Claim>(`${base}/claims/${id}/hold`, { user }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+      ]);
+    },
+  });
+  const holdClaim = (id: number) => {
+    move.reset();
+    lock.reset();
+    setUneditable(undefined);
+    reassign.reset();
+    resettle.reset();
+    defer.reset();
+    remind.reset();
+    waive.reset();
+    hold.reset();
+    comment.reset();
+    line.reset();
+    proof.reset();
+    split.reset();
+    redate.reset();
+    inline.reset();
+    hold.mutate(id);
   };
   // A comment is kept on the claim, in any status, with its writer and the sheet's today; not an empty one.
   const comment = useMutation({
@@ -313,6 +348,7 @@ function PersonClaims({ person }: { person: Person }) {
     defer.reset();
     remind.reset();
     waive.reset();
+    hold.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -342,6 +378,7 @@ function PersonClaims({ person }: { person: Person }) {
     defer.reset();
     remind.reset();
     waive.reset();
+    hold.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -374,6 +411,7 @@ function PersonClaims({ person }: { person: Person }) {
     defer.reset();
     remind.reset();
     waive.reset();
+    hold.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -403,6 +441,7 @@ function PersonClaims({ person }: { person: Person }) {
     defer.reset();
     remind.reset();
     waive.reset();
+    hold.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -432,6 +471,7 @@ function PersonClaims({ person }: { person: Person }) {
     defer.reset();
     remind.reset();
     waive.reset();
+    hold.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -468,6 +508,7 @@ function PersonClaims({ person }: { person: Person }) {
     defer.reset();
     remind.reset();
     waive.reset();
+    hold.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -476,7 +517,7 @@ function PersonClaims({ person }: { person: Person }) {
     inline.reset();
     inline.mutate({ claim: c, amount: (inlineAmounts[c.id] ?? '').trim() });
   };
-  // The refusal of the last status change, move, re-settle, deferral, reminder, waiver, comment, proof, split or re-dating of the claim, as the server gave it; null when none.
+  // The refusal of the last status change, move, re-settle, deferral, reminder, waiver, hold, comment, proof, split or re-dating of the claim, as the server gave it; null when none.
   const refusal = (id: number) => {
     const error =
       move.isError && move.variables?.id === id
@@ -491,6 +532,8 @@ function PersonClaims({ person }: { person: Person }) {
                 ? remind.error
                 : waive.isError && waive.variables === id
                   ? waive.error
+                : hold.isError && hold.variables === id
+                  ? hold.error
                 : comment.isError && comment.variables?.id === id
                   ? comment.error
                 : line.isError && line.variables?.id === id
@@ -526,6 +569,7 @@ function PersonClaims({ person }: { person: Person }) {
     defer.reset();
     remind.reset();
     waive.reset();
+    hold.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -596,6 +640,7 @@ function PersonClaims({ person }: { person: Person }) {
               <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
               <span data-testid="claim-reminded">{c.remindedOn ?? ''}</span>{' '}
               <span data-testid="claim-waived">{c.waived ? 'yes' : 'no'}</span>{' '}
+              <span data-testid="claim-held">{c.held ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}
               <span data-testid="claim-batch">{c.batch ?? ''}</span>{' '}
               <span data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</span>{' '}
@@ -724,6 +769,9 @@ function PersonClaims({ person }: { person: Person }) {
               </button>{' '}
               <button type="button" data-testid="claim-waive" disabled={waive.isPending} onClick={() => waiveClaim(c.id)}>
                 Waive late charge
+              </button>{' '}
+              <button type="button" data-testid="claim-hold" disabled={hold.isPending} onClick={() => holdClaim(c.id)}>
+                {c.held ? 'Release' : 'Hold'}
               </button>{' '}
               <input
                 data-testid="claim-date-new"

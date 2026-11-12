@@ -35,6 +35,7 @@ public class ClaimStore {
         claim.setEscalated(rs.getBoolean("escalated"));
         claim.setReviewOn(rs.getObject("review_on", LocalDate.class));
         claim.setWaived(rs.getBoolean("waived"));
+        claim.setHeld(rs.getBoolean("held"));
         claim.setRef(rs.getString("ref"));
         claim.setTags(rs.getString("tags"));
         claim.setVoidReason(rs.getString("void_reason"));
@@ -236,6 +237,18 @@ public class ClaimStore {
             claim.setWaived(true);
         }
         return waived;
+    }
+
+    /** Holds the stored OPEN or PENDING claim, or releases it when held; false when it is no longer one of those
+     *  or another user toggled it first. */
+    public boolean toggleHeld(Claim claim) {
+        boolean toggled = jdbc.update("UPDATE claim SET held = ? WHERE sheet_id = ? AND id = ? AND status IN (?, ?)"
+                + " AND held = ?", !claim.isHeld(), claim.getSheetId(), claim.getId(),
+                ClaimStatus.OPEN.name(), ClaimStatus.PENDING.name(), claim.isHeld()) == 1;
+        if (toggled) {
+            claim.setHeld(!claim.isHeld());
+        }
+        return toggled;
     }
 
     /** Marks the stored claim escalated; false when it already was (it is escalated once only). */
@@ -489,7 +502,7 @@ public class ClaimStore {
 
     /** Adds a copy of the claim to the person on the other sheet under {@code number} (null for none), correcting
      *  and split off the numbers given: its amount, date, note, status, frozen settled figure, opener, due-by and
-     *  the terms it was fixed with, deferral, proofs (and their kinds), late entry, reminder and escalation, review day, waiver, tags, void reason and editor, with its
+     *  the terms it was fixed with, deferral, proofs (and their kinds), late entry, reminder and escalation, review day, waiver, hold, tags, void reason and editor, with its
      *  status log, comments and lines, listed as the person's newest claim, keeping any figure a statement bound it to.
      *  Its reference, lock and bulk settle batch are not carried. The id of the copy. */
     public long copyTo(Claim claim, String toSheet, long toPerson, String number, String corrects, String splitFrom) {
@@ -529,9 +542,9 @@ public class ClaimStore {
             return ps;
         }, keys);
         long id = keys.getKey().longValue();
-        jdbc.update("UPDATE claim SET added_seq = ?, escalated = ?, review_on = ?, waived = ?, proof_photos = ? WHERE sheet_id = ? AND id = ?",
+        jdbc.update("UPDATE claim SET added_seq = ?, escalated = ?, review_on = ?, waived = ?, proof_photos = ?, held = ? WHERE sheet_id = ? AND id = ?",
                 claim.getAddedSeq(), claim.isEscalated(), claim.getReviewOn() == null ? null : Date.valueOf(claim.getReviewOn()),
-                claim.isWaived(), claim.getProofPhotos(),
+                claim.isWaived(), claim.getProofPhotos(), claim.isHeld(),
                 toSheet, id);
         jdbc.update("INSERT INTO claim_log (sheet_id, claim_id, status, by_user, log_date, due) "
                 + "SELECT ?, ?, status, by_user, log_date, due FROM claim_log WHERE sheet_id = ? AND claim_id = ? ORDER BY id",

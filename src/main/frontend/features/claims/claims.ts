@@ -80,6 +80,9 @@ export type Claim = {
   reviewOn: string | null;
   /** Whether a steward waived its late charge: it bears none from then on, whatever its overdue state. */
   waived: boolean;
+  /** Whether it is held: while OPEN (or PENDING) and unbound by a statement it counts in no live total, as a
+   *  claim dated within one of its person's holds does. */
+  held: boolean;
 };
 
 /** A correction: a claim with a negative amount, which has no floor and no late charge. */
@@ -94,14 +97,14 @@ export const counts = (c: Claim) => (isOpen(c) && !c.deferred) || c.status === '
 /** Whether the claim keeps the figure (or n/a) its person's last statement bound it to. */
 export const isBound = (c: Claim) => c.stated && (c.statedDue !== null || c.statedNa);
 
-/** These claims less the OPEN (or PENDING) claims dated within one of their person's holds, or of a
+/** These claims less the OPEN (or PENDING) claims held, or dated within one of their person's holds, or of a
  *  person whose retirement date the sheet's today has reached, which count in no live total, unless a
  *  statement bound them. */
 export const live = (claims: Claim[], people: { id: number; holds: Hold[]; retiredNow: boolean }[] | undefined) => {
   const byId = new Map((people ?? []).map((p) => [p.id, p]));
   return claims.filter((c) => {
     const p = byId.get(c.personId);
-    return !(isOpen(c) && !c.stated && p !== undefined && (p.retiredNow || p.holds.some((h) => covers(h, c.date))));
+    return !(isOpen(c) && !c.stated && (c.held || (p !== undefined && (p.retiredNow || p.holds.some((h) => covers(h, c.date))))));
   });
 };
 
