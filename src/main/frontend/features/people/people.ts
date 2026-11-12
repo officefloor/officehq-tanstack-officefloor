@@ -27,7 +27,8 @@ import { useAsOf } from '../../session/session';
  *  `statements` are their statements still standing (a cancelled one is gone), oldest first by date, the ones a
  *  merge or a transfer brought over among them.
  *  `flag` is the reason of their flag while it is in force on the sheet's today (null when none is): only a
- *  steward may open a claim of theirs then. */
+ *  steward may open a claim of theirs then.
+ *  `approver` is the user who may approve or reject their PENDING claims as a steward may (null when none). */
 export type Person = {
   id: number;
   name: string;
@@ -53,6 +54,7 @@ export type Person = {
   snapshots: Snapshot[];
   statements: StatementLine[];
   flag: string | null;
+  approver: string | null;
 };
 
 /** A statement: its date (yyyy-MM-dd) and the person's due-total it recorded (two decimals, or n/a). */

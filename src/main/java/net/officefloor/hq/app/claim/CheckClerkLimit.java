@@ -17,7 +17,7 @@ import net.officefloor.plugin.variable.Val;
  *  force on its date sends it to REVIEW instead; only a steward's review moves a REVIEW claim on, to OPEN,
  *  and otherwise it may only be voided. A clerk settling an OPEN claim whose due is above the
  *  sheet's clerk limit sends it to PENDING instead. A claim whose due is n/a is within any limit; a
- *  sheet with no limit, and a steward, settle anything. Only a steward reviews a PENDING claim, and
+ *  sheet with no limit, and a steward, settle anything. Only a steward, or the claim's person's approver, reviews a PENDING claim, and
  *  only a review moves it to SETTLED or back to OPEN; a review of a claim that is not PENDING is refused.
  *  Before the limit is considered, settling or approving a claim with no proofs whose due is above the
  *  proof threshold is refused (see {@link CheckProofs}), so it never goes to PENDING. Opening, settling
@@ -51,8 +51,8 @@ public class CheckClerkLimit {
             if (from != ClaimStatus.PENDING) {
                 throw new InvalidSheetException("Only a PENDING claim can be approved or rejected");
             }
-            if (!steward) {
-                throw new InvalidSheetException("Only a steward can approve or reject a claim");
+            if (!steward && !approver(claim, input.user(), people)) {
+                throw new InvalidSheetException("Only a steward or the person's approver can approve or reject a claim");
             }
             if (input.status() == ClaimStatus.OPEN && input.reason().isEmpty()) {
                 throw new InvalidSheetException("A rejection needs a reason");
@@ -125,6 +125,13 @@ public class CheckClerkLimit {
         if (deleted == null || today == null || !today.equals(deleted)) {
             throw new InvalidSheetException("A DELETED claim can be restored only on the day it was deleted");
         }
+    }
+
+    /** Whether the user is the approver of the claim's person: they may approve or reject its PENDING claims. */
+    static boolean approver(Claim claim, String user, PersonStore people) {
+        Person person = people.find(claim.getSheetId(), claim.getPersonId());
+        return person != null && person.getApprover() != null && user != null
+                && person.getApprover().equals(user.trim());
     }
 
     /** Refuses opening a claim by anyone but a steward while its person's flag is in force on the sheet's today. */

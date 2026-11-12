@@ -104,6 +104,16 @@ public class PersonStore {
         return flags;
     }
 
+    /** The people's approvers on the sheet (only the one person's when {@code personId} is given), by person. */
+    private Map<Long, String> approvers(String sheetId, Long personId) {
+        Map<Long, String> approvers = new HashMap<>();
+        jdbc.query("SELECT person_id, approver FROM person_approver WHERE sheet_id = ?"
+                + (personId == null ? "" : " AND person_id = " + personId), rs -> {
+                    approvers.put(rs.getLong("person_id"), rs.getString("approver"));
+                }, sheetId);
+        return approvers;
+    }
+
     private List<Person> query(String sheetId, Long personId, String sql, Object... args) {
         return queryFrom(sheetId, personId, "person_grade", "person_hold", "person_alias", "person_retirement",
                 "person_snapshot", "person_terms", sql, args);
@@ -119,6 +129,7 @@ public class PersonStore {
         Map<Long, List<PastRetirement>> past = pastRetirements(sheetId, personId, retirementTable);
         Map<Long, List<Snapshot>> snapshots = snapshots(sheetId, personId, snapshotTable);
         Map<Long, Flag> flags = flags(sheetId, personId);
+        Map<Long, String> approvers = approvers(sheetId, personId);
         RowMapper<Person> row = (rs, i) -> {
             Person p = new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
                     grades.getOrDefault(rs.getLong("id"), new TreeMap<>()), rs.getLong("version"),
@@ -130,6 +141,7 @@ public class PersonStore {
             p.setOrigin(rs.getString("origin"));
             p.setArrivedOn(rs.getObject("arrived_on", LocalDate.class));
             p.setFlag(flags.get(rs.getLong("id")));
+            p.setApprover(approvers.get(rs.getLong("id")));
             p.getAliases().addAll(aliases.getOrDefault(rs.getLong("id"), List.of()));
             p.getPastRetirements().addAll(past.getOrDefault(rs.getLong("id"), List.of()));
             p.getSnapshots().addAll(snapshots.getOrDefault(rs.getLong("id"), List.of()));
@@ -388,6 +400,19 @@ public class PersonStore {
         person.setFlag(flag);
     }
 
+    /** Makes the user the person's approver, replacing any they had; a blank user clears it. */
+    public void approver(Person person, String user) {
+        if (user.isEmpty()) {
+            jdbc.update("DELETE FROM person_approver WHERE sheet_id = ? AND person_id = ?", person.getSheetId(),
+                    person.getId());
+            person.setApprover(null);
+        } else {
+            jdbc.update("MERGE INTO person_approver (sheet_id, person_id, approver) KEY (sheet_id, person_id) "
+                    + "VALUES (?, ?, ?)", person.getSheetId(), person.getId(), user);
+            person.setApprover(user);
+        }
+    }
+
     /** Adds a copy of the person to the other sheet: their name, every grade with its from-date, their terms,
      *  contact, tags and aliases, noting this sheet as the one they came from. Their holds, statements and watchers
      *  are not carried (a transfer gives them their statements, see StatementStore). {@code arrivedOn} is the other
@@ -422,6 +447,7 @@ public class PersonStore {
         jdbc.update("DELETE FROM person_terms WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM person_flag WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
+        jdbc.update("DELETE FROM person_approver WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM person_snapshot WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM statement WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
@@ -442,6 +468,7 @@ public class PersonStore {
         jdbc.update("DELETE FROM person_terms WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM person_flag WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
+        jdbc.update("DELETE FROM person_approver WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM person_snapshot WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM statement WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());

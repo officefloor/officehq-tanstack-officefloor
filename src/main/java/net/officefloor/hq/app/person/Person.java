@@ -38,6 +38,7 @@ public class Person {
     private LocalDate arrivedOn;
     private String tags;
     private Flag flag;
+    private String approver;
 
     public Person(long id, String sheetId, String name, NavigableMap<LocalDate, String> grades, long version) {
         this.id = id;
@@ -142,6 +143,9 @@ public class Person {
     /** Their flag, null when they were never flagged (it may be past its until-date). */
     public Flag getFlag() { return flag; }
     public void setFlag(Flag flag) { this.flag = flag; }
+    /** Their approver, a user who may approve or reject their PENDING claims as a steward may (null when none). */
+    public String getApprover() { return approver; }
+    public void setApprover(String approver) { this.approver = approver; }
     /** Whether their flag is in force on the date: only a steward may open a claim of theirs then. */
     public boolean flaggedOn(LocalDate date) { return flag != null && flag.inForceOn(date); }
     /** Their snapshots, one per SNAPSHOT written for them, oldest first. */
