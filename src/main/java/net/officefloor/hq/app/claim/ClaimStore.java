@@ -337,6 +337,29 @@ public class ClaimStore {
         return jdbc.queryForObject("SELECT last_number FROM claim_number WHERE sheet_id = ?", Long.class, sheetId);
     }
 
+    /** Takes the next claim number in the sheet-wide sequence the sheets of a tree share: one after the last number
+     *  given on any of them (the sheet is among {@code tree}). Each sheet keeps its own counter, so the last number
+     *  given is the largest of theirs; the counters are locked, in id order, until the transaction ends, as
+     *  {@link #nextNumber(String)} does. */
+    public long nextNumber(String sheetId, java.util.Collection<String> tree) {
+        java.util.SortedSet<String> ids = new java.util.TreeSet<>(tree);
+        ids.add(sheetId);
+        long last = 0;
+        for (String id : ids) {
+            try {
+                jdbc.update("INSERT INTO claim_number (sheet_id, last_number) SELECT ?, 0 FROM DUAL "
+                        + "WHERE NOT EXISTS (SELECT 1 FROM claim_number WHERE sheet_id = ?)", id, id);
+            } catch (DataAccessException e) {
+                // another transaction added the sheet's counter first
+            }
+            jdbc.update("UPDATE claim_number SET last_number = last_number WHERE sheet_id = ?", id);
+            last = Math.max(last, jdbc.queryForObject("SELECT last_number FROM claim_number WHERE sheet_id = ?",
+                    Long.class, id));
+        }
+        jdbc.update("UPDATE claim_number SET last_number = ? WHERE sheet_id = ?", last + 1, sheetId);
+        return last + 1;
+    }
+
     /** Takes the next number in one of the sheet's per-period sequences: 1, then 2, and so on, locked
      *  as {@link #nextNumber(String)} is. */
     public long nextNumber(String sheetId, String sequence) {

@@ -124,6 +124,20 @@ public class SettingStore {
         return seen.stream().filter(sheets::exists).toList();
     }
 
+    /** Every sheet of the sheet's tree, the sheet among them: the topmost ancestor and all its descendants. The
+     *  parents are those named now. */
+    public List<String> wholeTree(String sheetId) {
+        java.util.Set<String> seen = new java.util.HashSet<>(List.of(sheetId));
+        String root = sheetId;
+        for (String at = parent(sheetId); at != null && seen.add(at); at = parent(at)) {
+            root = at;
+        }
+        java.util.Set<String> all = new java.util.LinkedHashSet<>(List.of(root));
+        all.addAll(descendants(root));
+        all.add(sheetId);
+        return List.copyOf(all);
+    }
+
     /** Whether naming the parent for the sheet would make the sheet its own ancestor: the parent is the sheet,
      *  or has it among its ancestors. */
     public boolean cyclic(String sheetId, String parent) {
