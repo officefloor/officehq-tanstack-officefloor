@@ -32,7 +32,6 @@ function PersonClaims({ person }: { person: Person }) {
   const rates = useRates(sheet);
   const settings = useSettings(sheet).data;
   const floor = settings?.floor;
-  const terms = settings?.terms;
   const today = useSheetToday(sheet);
   const periods = usePeriods(sheet);
   const [fields, setFields] = useState<Fields>(EMPTY);
@@ -135,8 +134,8 @@ function PersonClaims({ person }: { person: Person }) {
               <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}
               <span data-testid="claim-period">{periodOf(periods.data, c.date)?.name ?? ''}</span>{' '}
               <span data-testid="claim-due">{claimDue(c, rates.data, person.grades, floor, lateOf(settings, today))}</span>{' '}
-              <span data-testid="claim-due-by">{dueBy(c, terms)}</span>{' '}
-              <span data-testid="claim-overdue">{overdue(c, terms, today) ? 'yes' : 'no'}</span>{' '}
+              <span data-testid="claim-due-by">{dueBy(c)}</span>{' '}
+              <span data-testid="claim-overdue">{overdue(c, today) ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-status">{c.status}</span>{' '}
               <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
               <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}

@@ -16,6 +16,12 @@ public class SettingStore {
 
     public static final String TERMS = "terms";
 
+    /** The key of a grade's own terms: terms-A, terms-B or terms-C. */
+    public static final String TERMS_PREFIX = "terms-";
+
+    /** The grades that may have terms of their own. */
+    public static final List<String> GRADES = List.of("A", "B", "C");
+
     public static final String LATE_PCT = "late-pct";
 
     public static final String POLICY_DATE = "policy-date";
@@ -61,6 +67,19 @@ public class SettingStore {
     public int terms(String sheetId) {
         String value = find(sheetId, TERMS);
         return value == null ? DEFAULT_TERMS : Integer.parseInt(value);
+    }
+
+    /** The grade's own terms (days), or null when it has none (then the sheet's terms). */
+    public Integer gradeTerms(String sheetId, String grade) {
+        String value = find(sheetId, TERMS_PREFIX + grade);
+        return value == null ? null : Integer.valueOf(value);
+    }
+
+    /** The days after its date a claim of a person of the grade is due by: the grade's own terms, else
+     *  the sheet's. */
+    public int terms(String sheetId, String grade) {
+        Integer own = grade == null ? null : gradeTerms(sheetId, grade);
+        return own == null ? terms(sheetId) : own;
     }
 
     /** The percent of an overdue claim's figure charged for every full 30 days overdue: the one set, else 0.00. */

@@ -30,7 +30,6 @@ function useOverdue() {
       rates.data,
       person.grades,
       settings?.floor,
-      settings?.terms,
       today,
       lateOf(settings, today),
     );

@@ -52,7 +52,7 @@ public class RollupService {
         LocalDate today = sheets.today(sheetId);
         List<Claim> all = claims.list(sheetId);
         BigDecimal floor = settings.floor(sheetId);
-        Lateness lateness = new Lateness(settings.terms(sheetId), settings.latePct(sheetId), sheets.today(sheetId),
+        Lateness lateness = new Lateness(settings.latePct(sheetId), sheets.today(sheetId),
                 new Rounding(policyDate(sheetId), all));
         Map<Long, Rollup.Figures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
@@ -90,7 +90,7 @@ public class RollupService {
     public BigDecimal dueBetween(String sheetId, LocalDate from, LocalDate to) {
         List<Claim> all = claims.list(sheetId);
         BigDecimal floor = settings.floor(sheetId);
-        Lateness lateness = new Lateness(settings.terms(sheetId), settings.latePct(sheetId), sheets.today(sheetId),
+        Lateness lateness = new Lateness(settings.latePct(sheetId), sheets.today(sheetId),
                 new Rounding(policyDate(sheetId), all));
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         for (Person person : people.list(sheetId)) {

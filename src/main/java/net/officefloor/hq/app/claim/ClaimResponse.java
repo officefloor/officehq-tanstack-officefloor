@@ -8,9 +8,10 @@ import java.time.LocalDate;
  *  (null until opened), whether its person's last statement bound it, and the figure it was bound to
  *  (null when not bound, or bound while it had none), and the number of the claim a correction corrects
  *  (null when it is not a correction), and the date its live figures round by (its own, or for a
- *  correction that of the claim it corrects). */
+ *  correction that of the claim it corrects), and the date it is due by, fixed when it was added. */
 public record ClaimResponse(long id, long personId, String amount, String date, String note, String status, String number,
-        String due, String openedBy, boolean stated, String statedDue, String corrects, String roundsBy) {
+        String due, String openedBy, boolean stated, String statedDue, String corrects, String roundsBy,
+        String dueBy) {
     public static ClaimResponse from(Claim c) {
         return from(c, c.getDate());
     }
@@ -25,6 +26,6 @@ public record ClaimResponse(long id, long personId, String amount, String date, 
                 c.getSettledDue() == null ? null : c.getSettledDue().setScale(2).toPlainString(),
                 c.getOpenedBy(), c.isStated(),
                 c.getStatedDue() == null ? null : c.getStatedDue().setScale(2).toPlainString(),
-                c.getCorrects(), roundsBy.toString());
+                c.getCorrects(), roundsBy.toString(), c.getDueBy().toString());
     }
 }

@@ -20,7 +20,7 @@ public class ClaimStore {
             rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
             rs.getString("number"), rs.getBigDecimal("settled_due"),
             rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
-            rs.getString("corrects"));
+            rs.getString("corrects"), rs.getObject("due_by", LocalDate.class));
 
     private final JdbcTemplate jdbc;
 
@@ -44,11 +44,13 @@ public class ClaimStore {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects) {
+    /** Adds a draft claim due by {@code dueBy}, which stays as it is whatever later changes. */
+    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
+            LocalDate dueBy) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects) VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "ID" });
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
@@ -56,10 +58,11 @@ public class ClaimStore {
             ps.setDate(4, Date.valueOf(date));
             ps.setString(5, note);
             ps.setString(6, corrects);
+            ps.setDate(7, Date.valueOf(dueBy));
             return ps;
         }, keys);
         return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null,
-                corrects);
+                corrects, dueBy);
     }
 
     public void save(Claim claim) {

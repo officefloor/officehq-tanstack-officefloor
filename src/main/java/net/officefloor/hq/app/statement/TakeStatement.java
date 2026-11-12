@@ -27,7 +27,7 @@ public class TakeStatement {
         LocalDate today = sheets.today(sheetId);
         BigDecimal floor = settings.floor(sheetId);
         Rounding rounding = Rounding.of(sheetId, settings, sheets, claims);
-        Lateness lateness = new Lateness(settings.terms(sheetId), settings.latePct(sheetId), today, rounding);
+        Lateness lateness = new Lateness(settings.latePct(sheetId), today, rounding);
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         boolean fixed = false;
         int counted = 0;

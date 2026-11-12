@@ -29,6 +29,8 @@ export type Claim = {
   corrects: string | null;
   /** The date (yyyy-MM-dd) its live figures round by: its own, or for a correction that of the claim it corrects. */
   roundsBy: string;
+  /** The date (yyyy-MM-dd) it is due by, fixed when it was added from the terms of its person's grade then. */
+  dueBy: string;
 };
 
 /** A correction: a claim with a negative amount, which has no floor and no late charge. */

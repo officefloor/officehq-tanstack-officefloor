@@ -20,10 +20,11 @@ public class Claim {
     private boolean stated;
     private BigDecimal statedDue;
     private String corrects;
+    private final LocalDate dueBy;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue, String openedBy, boolean stated,
-            BigDecimal statedDue, String corrects) {
+            BigDecimal statedDue, String corrects, LocalDate dueBy) {
         this.id = id;
         this.sheetId = sheetId;
         this.personId = personId;
@@ -37,6 +38,7 @@ public class Claim {
         this.stated = stated;
         this.statedDue = statedDue;
         this.corrects = corrects;
+        this.dueBy = dueBy;
     }
 
     public long getId() { return id; }
@@ -65,6 +67,9 @@ public class Claim {
     /** The number of the claim this correction corrects; null when it is not a correction. */
     public String getCorrects() { return corrects; }
     /** Whether the claim is a correction: a negative amount, with no floor and no late charge. */
+    /** The date the claim is due by, fixed when it was added; later changes to the terms or its date
+     *  leave it as it is. */
+    public LocalDate getDueBy() { return dueBy; }
     public boolean isCorrection() { return amount.signum() < 0; }
     public void setPersonId(long personId) { this.personId = personId; }
     public void setCorrects(String corrects) { this.corrects = corrects; }
