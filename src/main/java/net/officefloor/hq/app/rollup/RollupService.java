@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.Claim;
+import net.officefloor.hq.app.claim.ClaimLogStore;
 import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.ClaimStore;
 import net.officefloor.hq.app.claim.Lateness;
@@ -37,10 +38,12 @@ public class RollupService {
     private final SheetStore sheets;
     private final SettingStore settings;
     private final Audit audit;
+    private final ClaimLogStore log;
 
     public RollupService(PersonStore people, ClaimStore claims, RateStore rates, SheetStore sheets, SettingStore settings,
-            Audit audit) {
+            Audit audit, ClaimLogStore log) {
         this.people = people;
+        this.log = log;
         this.claims = claims;
         this.rates = rates;
         this.sheets = sheets;
@@ -96,20 +99,22 @@ public class RollupService {
         return new Rollup(figures, shown(claimedTotal), shown(dueTotal), shown(overdueTotal));
     }
 
-    /** Each person's due-total of their claims that count dated from..to (inclusive), by person id in
-     *  the order they were added: the sum of their figures, skipping n/a, as the screen shows a person's
-     *  due-total for a period. A period's due-total is the sum of these. */
+    /** Each person's due-total of their claims dated from..to (inclusive) that count by the status they
+     *  had at the end of {@code to} (see {@link #countsAt}), by person id in the order they were added: the
+     *  sum of their figures as shown now, skipping n/a, as the screen shows a person's due-total for a
+     *  period. A period's due-total is the sum of these. */
     public Map<Long, BigDecimal> dueBetweenByPerson(String sheetId, LocalDate from, LocalDate to) {
         LocalDate today = sheets.today(sheetId);
         List<Claim> all = claims.list(sheetId);
         Lateness lateness = new Lateness(settings.latePcts(sheetId), settings.floors(sheetId), today,
                 new Rounding(policyDate(sheetId), all));
+        Map<Long, ClaimStatus> atEnd = log.statusesAt(sheetId, to);
         Map<Long, BigDecimal> totals = new LinkedHashMap<>();
         for (Person person : people.list(sheetId)) {
             BigDecimal total = BigDecimal.ZERO.setScale(2);
             for (Claim claim : all) {
                 if (claim.getPersonId() != person.getId()
-                        || !counts(claim, person, today)
+                        || !countsAt(claim, atEnd.get(claim.getId()), person, today)
                         || claim.getDate().isBefore(from) || claim.getDate().isAfter(to)) {
                     continue;
                 }
@@ -157,6 +162,16 @@ public class RollupService {
     public static boolean counts(Claim claim, Person person, LocalDate today) {
         return claim.getStatus() == ClaimStatus.SETTLED
                 || (claim.getStatus().isOpen() && !claim.isDeferredOn(today)
+                        && (claim.isStated() || !person.heldOn(claim.getDate())));
+    }
+
+    /** Whether the claim counts by {@code status}, the status it had at a period's end (null when it
+     *  was added after it): OPEN, PENDING or SETTLED then; and, as the live rules say, an OPEN claim
+     *  deferred on the sheet's today does not, nor one open then dated within a hold of its person,
+     *  unless a statement bound it. */
+    static boolean countsAt(Claim claim, ClaimStatus status, Person person, LocalDate today) {
+        return status == ClaimStatus.SETTLED
+                || (status != null && status.isOpen() && !claim.isDeferredOn(today)
                         && (claim.isStated() || !person.heldOn(claim.getDate())));
     }
 

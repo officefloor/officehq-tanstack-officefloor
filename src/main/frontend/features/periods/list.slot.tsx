@@ -15,8 +15,8 @@ import { type Period, periodDue, periodsKey, usePeriods } from './periods';
 type Fields = { name: string; from: string; to: string };
 const EMPTY: Fields = { name: '', from: '', to: '' };
 
-// The sheet's periods, each with its due-total (the figures of the claims that count whose date falls
-// in it, skipping n/a; fixed when the period was closed), its closed yes/no and the buttons that
+// The sheet's periods, each with its due-total (the figures of the claims whose date falls in it and that
+// count by their status at its end, skipping n/a; fixed when the period was closed), its closed yes/no and the buttons that
 // close it and (a steward only) reopen it, and the form that adds one.
 function Periods() {
   const [user] = useCurrentUser();

@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { sheetKey } from '../sheet/sheet';
-import { type Claim, counts, live } from '../claims/claims';
+import { type Claim, type ClaimStatus } from '../claims/claims';
+import { covers } from '../people/people';
 import type { Person } from '../people/people';
 import { type Floor, type Late, type Rate, claimDue, dueTotal } from '../rates/rates';
 
@@ -37,9 +38,30 @@ export function periodOf(periods: Period[] | undefined, date: string): Period | 
   return (periods ?? []).find((p) => contains(p, date));
 }
 
+/** The claim's status at the end of the day (yyyy-MM-dd), as its status log records it (each line
+ *  dated the sheet's today when the change was made); null when it had not been added by then. */
+export function statusAt(claim: Claim, date: string): ClaimStatus | null {
+  let status: ClaimStatus | null = null;
+  for (const line of claim.log ?? []) {
+    const m = /^(\S+) by .* on (\d{4}-\d{2}-\d{2}) due=/.exec(line);
+    if (m && m[2] <= date) status = m[1] as ClaimStatus;
+  }
+  return status;
+}
+
+/** Whether the claim counts toward a period: by the status it had at the end of the period's last
+ *  day it was OPEN, PENDING or SETTLED; and, as the live rules say, it is not deferred on the sheet's
+ *  today, nor (while open then and unbound by a statement) dated within one of its person's holds. */
+export function countsInPeriod(claim: Claim, period: Period, person: Person): boolean {
+  const status = statusAt(claim, period.to);
+  if (status === 'SETTLED') return true;
+  if (status !== 'OPEN' && status !== 'PENDING') return false;
+  return !claim.deferred && (claim.stated || !person.holds.some((h) => covers(h, claim.date)));
+}
+
 /** A person's due-total for a period: once closed, the figure fixed on closing (0.00 for a person
- *  added since); else the sum of the figures of their claims that count whose date falls in it,
- *  skipping n/a. */
+ *  added since); else the sum of the figures (as shown now) of their claims whose date falls in it
+ *  and that count by their status at the period's end, skipping n/a. */
 export function personPeriodDue(
   period: Period,
   person: Person,
@@ -50,8 +72,8 @@ export function personPeriodDue(
 ): string {
   if (period.closed) return period.people?.[String(person.id)] ?? '0.00';
   return dueTotal(
-    live((claims ?? []).filter((c) => c.personId === person.id), [person])
-      .filter((c) => counts(c) && contains(period, c.date))
+    (claims ?? [])
+      .filter((c) => c.personId === person.id && contains(period, c.date) && countsInPeriod(c, period, person))
       .map((c) => claimDue(c, rates, person.grades, floor, late)),
   );
 }

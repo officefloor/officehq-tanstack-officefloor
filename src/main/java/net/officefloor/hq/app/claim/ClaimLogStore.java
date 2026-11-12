@@ -62,6 +62,16 @@ public class ClaimLogStore {
         return lines;
     }
 
+    /** Each claim's status at the end of the date, by claim id, as its log records it: the last status
+     *  logged on or before the date. A claim logged only after it (added after it) is absent. */
+    public Map<Long, ClaimStatus> statusesAt(String sheetId, LocalDate date) {
+        Map<Long, ClaimStatus> statuses = new HashMap<>();
+        jdbc.query("SELECT claim_id, status FROM claim_log WHERE sheet_id = ? AND log_date <= ? ORDER BY id", rs -> {
+            statuses.put(rs.getLong("claim_id"), ClaimStatus.valueOf(rs.getString("status")));
+        }, sheetId, Date.valueOf(date));
+        return statuses;
+    }
+
     /** The claim's log lines, oldest first. */
     public List<String> lines(Claim claim) {
         return lines(claim.getSheetId()).getOrDefault(claim.getId(), List.of());

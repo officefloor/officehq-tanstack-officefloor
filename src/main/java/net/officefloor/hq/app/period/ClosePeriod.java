@@ -8,8 +8,8 @@ import net.officefloor.hq.app.sheet.InvalidSheetException;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
 
-/** Closes the period, fixing its due-total and each person's due-total in it as they are now: the figures of the claims that count whose
- *  date falls in it, skipping n/a. Refused when there is no such period or it is already closed. */
+/** Closes the period, fixing its due-total and each person's due-total in it as they are now: the figures of the claims whose date falls in
+ *  it and that count by their status at its end, skipping n/a. Refused when there is no such period or it is already closed. */
 public class ClosePeriod {
     public void close(@PathVariable("sheetId") String sheetId, @PathVariable("periodName") String periodName,
             PeriodStore store, RollupService rollups, Out<PeriodResponse> closed) throws InvalidSheetException {
