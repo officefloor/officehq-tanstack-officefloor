@@ -1,0 +1,117 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplySplit.java b/src/main/java/net/officefloor/hq/app/claim/ApplySplit.java
+index a418304c7..7b7646ae4 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplySplit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplySplit.java
+@@ -13,7 +13,7 @@ import net.officefloor.plugin.variable.Val;
+ 
+ /** Splits the amount off the OPEN claim, which keeps the rest unbound from any statement figure, into a new
+  *  OPEN claim of the same date and note, numbered next in the period of its own due-by (see {@link Numbering}), opened by the user, due by
+- *  the business day its person's own terms (else their grade's in force on that date, else the sheet's then) after its date, fixed
++ *  the business day its person's own terms (else the grade's they have, else the sheet's, each in force on the sheet's today, when it is split off) after its date, fixed
+  *  now (a late entry when the period that due-by falls in is soft-closed), and logged as OPEN by the user. Refused when another user moved the claim on first. */
+ public class ApplySplit {
+     public void apply(@Val SplitInput input, @Val Claim claim, ClaimStore store, PersonStore people, SettingStore settings,
+@@ -24,7 +24,7 @@ public class ApplySplit {
+         }
+         String sheetId = claim.getSheetId();
+         Person person = people.find(sheetId, claim.getPersonId());
+-        int terms = SaveClaimAdded.termsOf(person, claim.getDate(), settings);
++        int terms = SaveClaimAdded.termsOf(person, settings);
+         LocalDate dueBy = holidays.businessDaysAfter(sheetId, claim.getDate(), terms);
+         String number = Numbering.next(sheetId, dueBy, store, settings, sheets, periods);
+         Claim into = store.addSplit(claim, input.amount(), number, input.user(), dueBy, terms);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimPeriods.java b/src/main/java/net/officefloor/hq/app/claim/ClaimPeriods.java
+index 8f75fc295..e5287b631 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimPeriods.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimPeriods.java
+@@ -15,10 +15,10 @@ public final class ClaimPeriods {
+     }
+ 
+     /** The due-by a claim of the person dated {@code date} would be fixed with, were it added now: its date
+-     *  the terms-th business day after it, for the terms it would get (see {@link SaveClaimAdded#termsOf}),
++     *  the terms-th business day after it, for the terms in force on the sheet's today it would get (see {@link SaveClaimAdded#termsOf}),
+      *  skipping weekends and the holidays on the sheet now. */
+     public static LocalDate dueByOf(Person person, LocalDate date, SettingStore settings, HolidayStore holidays) {
+-        return holidays.businessDaysAfter(person.getSheetId(), date, SaveClaimAdded.termsOf(person, date, settings));
++        return holidays.businessDaysAfter(person.getSheetId(), date, SaveClaimAdded.termsOf(person, settings));
+     }
+ 
+     /** Refuses opening the claim when the period it belongs to caps its open claims and the claim's person
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveClaimAdded.java b/src/main/java/net/officefloor/hq/app/claim/SaveClaimAdded.java
+index d3b8ac17b..fe5ad5dc5 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveClaimAdded.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveClaimAdded.java
+@@ -8,8 +8,8 @@ import net.officefloor.hq.app.setting.SettingStore;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Adds the claim (a late entry when the period its due-by falls in is soft-closed), due by the business day its person's own terms (else the terms of their grade in force on
+- *  that date, else the sheet's terms in force then) after its date, skipping weekends and the sheet's holidays, fixed now, and logs it as DRAFT by the user at its due then. */
++/** Adds the claim (a late entry when the period its due-by falls in is soft-closed), due by the business day its person's own terms (else the terms of the grade they have on
++ *  the day it is added, the sheet's today, else the sheet's terms in force then), each in force on that day, after its date, skipping weekends and the sheet's holidays, fixed now, and logs it as DRAFT by the user at its due then. */
+ public class SaveClaimAdded {
+     public void save(@Val ClaimInput input, @Val Person person, ClaimStore store, SettingStore settings,
+             ClaimLogStore log, PeriodStore periods, HolidayStore holidays, Out<Claim> claim) {
+@@ -18,7 +18,7 @@ public class SaveClaimAdded {
+ 
+     static Claim add(ClaimInput input, Person person, ClaimStore store, SettingStore settings, ClaimLogStore log,
+             PeriodStore periods, HolidayStore holidays) {
+-        int terms = termsOf(person, input.date(), settings);
++        int terms = termsOf(person, settings);
+         LocalDate dueBy = holidays.businessDaysAfter(person.getSheetId(), input.date(), terms);
+         Claim added = store.add(person.getSheetId(), person.getId(), input.amount(), input.date(), input.note(),
+                 input.corrects(), dueBy, terms, input.ref(), input.tags());
+@@ -29,10 +29,11 @@ public class SaveClaimAdded {
+         return added;
+     }
+ 
+-    /** The terms a claim of the person dated {@code date} is due by: their own in force on the date, else their grade's in force
+-     *  on the date, else the sheet's then. */
+-    static int termsOf(Person person, LocalDate date, SettingStore settings) {
+-        Integer own = person.termsOn(date);
+-        return own != null ? own : settings.terms(person.getSheetId(), person.gradeOn(date), date);
++    /** The terms a claim of the person added now is due by, whatever its date: those in force on the day it is added (the
++     *  sheet's today): their own then, else the terms of the grade they have then, else the sheet's then. */
++    static int termsOf(Person person, SettingStore settings) {
++        LocalDate day = settings.termsDay(person.getSheetId());
++        Integer own = person.termsOn(day);
++        return own != null ? own : settings.terms(person.getSheetId(), person.gradeOn(day), day);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/quick/CheckQuickAddPeriod.java b/src/main/java/net/officefloor/hq/app/quick/CheckQuickAddPeriod.java
+index fc50310d3..d6e922ef6 100644
+--- a/src/main/java/net/officefloor/hq/app/quick/CheckQuickAddPeriod.java
++++ b/src/main/java/net/officefloor/hq/app/quick/CheckQuickAddPeriod.java
+@@ -14,14 +14,14 @@ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ /** Refuses a quick add whose claim would be due by a date inside a closed period: the business day after its date the terms
+- *  of the person named (or, for a person still to be added, of their grade). */
++ *  of the person named (or, for a person still to be added, of their grade), in force on the sheet's today. */
+ public class CheckQuickAddPeriod {
+     public void check(@PathVariable("sheetId") String sheetId, @Val PersonRequest request, @Val ClaimInput claim,
+             PersonStore people, SettingStore settings, PeriodStore periods, HolidayStore holidays) throws InvalidSheetException {
+         String sheet = sheetId.trim();
+         Person person = people.findByName(sheet, request.name());
+         LocalDate dueBy = person != null ? ClaimPeriods.dueByOf(person, claim.date(), settings, holidays)
+-                : holidays.businessDaysAfter(sheet, claim.date(), settings.terms(sheet, request.grade(), claim.date()));
++                : holidays.businessDaysAfter(sheet, claim.date(), settings.terms(sheet, request.grade(), settings.termsDay(sheet)));
+         ClaimPeriods.refuseClosed(periods, sheet, dueBy);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingStore.java b/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
+index ae188b596..33a776224 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
+@@ -270,6 +270,11 @@ public class SettingStore {
+         return asOf != null ? asOf : sheets.today(sheetId);
+     }
+ 
++    /** The day a claim added now takes its terms on: the sheet's today (the date standing in for it when as of a date). */
++    public LocalDate termsDay(String sheetId) {
++        return today(sheetId);
++    }
++
+     /** Whether the key's values are recorded from a from-date. */
+     public static boolean isDated(String key) {
+         return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key)
