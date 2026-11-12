@@ -45,6 +45,7 @@ function PersonClaims({ person }: { person: Person }) {
   const [deferDates, setDeferDates] = useState<Record<number, string>>({});
   const [redates, setRedates] = useState<Record<number, string>>({});
   const [splitAmounts, setSplitAmounts] = useState<Record<number, string>>({});
+  const [inlineAmounts, setInlineAmounts] = useState<Record<number, string>>({});
   const people = usePeople(sheet);
   const [selected, setSelected] = useSelectedClaims();
   const queryClient = useQueryClient();
@@ -98,6 +99,7 @@ function PersonClaims({ person }: { person: Person }) {
     proof.reset();
     split.reset();
     redate.reset();
+    inline.reset();
     move.mutate({ id, status, review: review !== undefined, reason: review?.reason });
   };
 
@@ -122,6 +124,7 @@ function PersonClaims({ person }: { person: Person }) {
     proof.reset();
     split.reset();
     redate.reset();
+    inline.reset();
     reassign.mutate({ id, to: targets[id] ?? '' });
   };
   // A steward re-settling a SETTLED claim freezes it again at today's figure.
@@ -144,6 +147,7 @@ function PersonClaims({ person }: { person: Person }) {
     proof.reset();
     split.reset();
     redate.reset();
+    inline.reset();
     resettle.mutate(id);
   };
   // Deferring an OPEN claim until a date after today takes it out of every figure until then.
@@ -167,6 +171,7 @@ function PersonClaims({ person }: { person: Person }) {
     proof.reset();
     split.reset();
     redate.reset();
+    inline.reset();
     defer.mutate({ id, until: (deferDates[id] ?? '').trim() });
   };
   // Reminding an OPEN or PENDING claim marks it reminded on the sheet's today; once per day.
@@ -186,6 +191,7 @@ function PersonClaims({ person }: { person: Person }) {
     proof.reset();
     split.reset();
     redate.reset();
+    inline.reset();
     remind.mutate(id);
   };
   // A proof raises the claim's proofs count by one; not on a SETTLED or VOID claim.
@@ -205,6 +211,7 @@ function PersonClaims({ person }: { person: Person }) {
     proof.reset();
     split.reset();
     redate.reset();
+    inline.reset();
     proof.mutate(id);
   };
   // Splitting an amount off an OPEN claim lists a new OPEN claim with it; both people's figures follow.
@@ -229,6 +236,7 @@ function PersonClaims({ person }: { person: Person }) {
     proof.reset();
     split.reset();
     redate.reset();
+    inline.reset();
     split.mutate({ id, amount: (splitAmounts[id] ?? '').trim() });
   };
   // A steward re-dates an OPEN or PENDING claim; its due-by, and so its period (and per-period number), stay as they are.
@@ -254,6 +262,38 @@ function PersonClaims({ person }: { person: Person }) {
     split.reset();
     redate.mutate({ id, date: (redates[id] ?? '').trim() });
   };
+  // A draft's amount changed in its row: an edit as the claim form makes it, keeping the claim's date, note
+  // and the claim it corrects, so the server applies the form's rules and records CLAIM_EDITED.
+  const inline = useMutation({
+    mutationFn: (d: { claim: Claim; amount: string }) =>
+      putJson<Claim>(`${base}/claims/${d.claim.id}`, {
+        amount: d.amount,
+        date: d.claim.date,
+        note: d.claim.note,
+        corrects: d.claim.corrects ?? '',
+        user,
+      }),
+    onSuccess: async (_, d) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+      ]);
+      setInlineAmounts((a) => ({ ...a, [d.claim.id]: '' }));
+    },
+  });
+  const saveInline = (c: Claim) => {
+    move.reset();
+    lock.reset();
+    reassign.reset();
+    resettle.reset();
+    defer.reset();
+    remind.reset();
+    proof.reset();
+    split.reset();
+    redate.reset();
+    inline.reset();
+    inline.mutate({ claim: c, amount: (inlineAmounts[c.id] ?? '').trim() });
+  };
   // The refusal of the last status change, move, re-settle, deferral, reminder, proof, split or re-dating of the claim, as the server gave it; null when none.
   const refusal = (id: number) => {
     const error =
@@ -273,9 +313,11 @@ function PersonClaims({ person }: { person: Person }) {
                     ? split.error
                     : redate.isError && redate.variables?.id === id
                       ? redate.error
-                      : lock.isError && lock.variables?.id === id
-                        ? lock.error
-                        : null;
+                      : inline.isError && inline.variables?.claim.id === id
+                        ? inline.error
+                        : lock.isError && lock.variables?.id === id
+                          ? lock.error
+                          : null;
     if (error === null) return null;
     return error instanceof HttpError && error.reason ? `${error.reason}.` : 'The change was refused.';
   };
@@ -295,6 +337,7 @@ function PersonClaims({ person }: { person: Person }) {
     proof.reset();
     split.reset();
     redate.reset();
+    inline.reset();
     lock.mutate(c);
   };
   const cancel = () => {
@@ -458,6 +501,20 @@ function PersonClaims({ person }: { person: Person }) {
               />{' '}
               <button type="button" data-testid="claim-split" disabled={split.isPending} onClick={() => splitClaim(c.id)}>
                 Split
+              </button>{' '}
+              <input
+                data-testid="claim-inline-amount"
+                placeholder="Amount"
+                aria-label="New amount"
+                inputMode="decimal"
+                value={inlineAmounts[c.id] ?? ''}
+                onChange={(e) => {
+                  setInlineAmounts({ ...inlineAmounts, [c.id]: e.target.value });
+                  if (inline.variables?.claim.id === c.id) inline.reset();
+                }}
+              />{' '}
+              <button type="button" data-testid="claim-inline-save" disabled={inline.isPending} onClick={() => saveInline(c)}>
+                Save amount
               </button>{' '}
               <button type="button" data-testid="claim-edit" disabled={lock.isPending} onClick={() => open(c)}>
                 Edit
