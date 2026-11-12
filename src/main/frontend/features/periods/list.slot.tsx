@@ -19,8 +19,8 @@ const EMPTY: Fields = { name: '', from: '', to: '', cap: '' };
 type Range = { from: string; to: string };
 type GenerateResult = { generated: number };
 
-/** A generate: a range of months, or a fiscal year's twelve months. */
-type Generate = { range: Range } | { year: string };
+/** A generate: a range of months, a fiscal year's twelve months, or a calendar year's four quarters. */
+type Generate = { range: Range } | { year: string } | { quarters: string };
 
 // The sheet's periods, each with its due-total (the figures of the claims whose date falls in it and that
 // count by their status at its end, skipping n/a; fixed when the period was closed or soft-closed), its closed yes/soft/no and the buttons that
@@ -54,14 +54,18 @@ function Periods() {
   // Generates one period per calendar month from the from-date's month to the to-date's; the server
   // leaves out a month whose name is taken or whose days overlap a period, and the count made shows
   // once it answers (gone while it runs). A fiscal year (yyyy) generates its twelve months the same way,
-  // from the sheet's fiscal start month in that year; both show their count in the same place.
+  // from the sheet's fiscal start month in that year; a calendar year (yyyy) generates its four quarters
+  // as <yyyy>-Q1 to <yyyy>-Q4, leaving out the same way; all show their count in the same place.
   const [range, setRange] = useState<Range>({ from: '', to: '' });
   const [fyYear, setFyYear] = useState('');
+  const [quarterYear, setQuarterYear] = useState('');
   const generate = useMutation({
     mutationFn: (g: Generate) =>
       'range' in g
         ? postJson<GenerateResult>(`/api/sheets/${encodeURIComponent(sheet)}/periods/generate`, { ...g.range, user })
-        : postJson<GenerateResult>(`/api/sheets/${encodeURIComponent(sheet)}/periods/generate-fy`, { year: g.year, user }),
+        : 'quarters' in g
+          ? postJson<GenerateResult>(`/api/sheets/${encodeURIComponent(sheet)}/periods/generate-quarters`, { year: g.quarters, user })
+          : postJson<GenerateResult>(`/api/sheets/${encodeURIComponent(sheet)}/periods/generate-fy`, { year: g.year, user }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheet) }),
   });
   const submitGenerate = useSubmitOnce(generate);
@@ -194,6 +198,23 @@ function Periods() {
           onClick={() => submitGenerate({ year: fyYear })}
         >
           Generate fiscal year
+        </button>{' '}
+        <input
+          data-testid="period-generate-quarters-year"
+          placeholder="Year (yyyy)"
+          value={quarterYear}
+          onChange={(e) => {
+            setQuarterYear(e.target.value);
+            generate.reset();
+          }}
+        />
+        <button
+          type="button"
+          data-testid="period-generate-quarters"
+          disabled={generate.isPending}
+          onClick={() => submitGenerate({ quarters: quarterYear })}
+        >
+          Generate quarters
         </button>
         {generate.isSuccess && (
           <>
