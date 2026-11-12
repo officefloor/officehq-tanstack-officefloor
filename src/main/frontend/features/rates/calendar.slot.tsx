@@ -1,0 +1,47 @@
+import { HomeMain } from '../../slots/defs/homeMain';
+import { useCurrentSheet } from '../../session/session';
+import { GRADES } from '../people/people';
+import { useSheetToday } from '../sheet/sheet';
+import { NA, rateOf, useRates } from './rates';
+import { useFigure } from '../locale/locale';
+
+// The rate calendar: for each grade and each month (yyyy-mm) of the calendar year of the sheet's today,
+// the rate in force on the first day of that month (its parent sheets' when it has none), n/a when none.
+function RateCalendar() {
+  const fig = useFigure();
+  const [sheet] = useCurrentSheet();
+  const rates = useRates(sheet);
+  const today = useSheetToday(sheet);
+  if (today === undefined) return null;
+  const year = today.slice(0, 4);
+  const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
+  return (
+    <section data-testid="rate-calendar">
+      <h2>Rate calendar {year}</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Grade</th>
+            {months.map((m) => (
+              <th key={m}>{m.slice(5)}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {GRADES.map((g) => (
+            <tr key={g}>
+              <td>{g}</td>
+              {months.map((m) => (
+                <td key={m} data-testid={`rate-month-${g}-${m}`}>
+                  {fig(rateOf(rates.data, g, `${m}-01`) ?? NA)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+export const contribution = HomeMain.fill({ order: 40.5, Component: RateCalendar });
