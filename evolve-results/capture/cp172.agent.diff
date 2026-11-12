@@ -1,0 +1,98 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index dbe5450df..b84941d2b 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -5,8 +5,8 @@ import { useAsOf } from '../../session/session';
+ import { asNumber, asString, useSearchParam } from '../../url/useSearchParam';
+ import { type Hold, covers } from '../people/people';
+ 
+-/** PENDING: settled by a clerk above the clerk limit, awaiting a steward's approval; handled as OPEN,
+- *  except that a statement does not bind it while it is PENDING. DELETED: a deleted DRAFT, which counts
++/** PENDING: settled by a clerk above the clerk limit, awaiting a steward's approval; handled as OPEN
++ *  (a statement binds it like any other claim that counts). DELETED: a deleted DRAFT, which counts
+  *  nowhere and can be restored to a DRAFT on the sheet's today it was deleted. REVIEW: opened while its due was
+  *  above the review threshold on its date, awaiting a steward's review to make it OPEN; it counts in no total. */
+ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED' | 'REVIEW';
+@@ -87,8 +87,8 @@ export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING
+ /** Only OPEN, PENDING and SETTLED claims count toward claimed and the totals; a deferred claim does not. */
+ export const counts = (c: Claim) => (isOpen(c) && !c.deferred) || c.status === 'SETTLED';
+ 
+-/** Whether the claim keeps the figure (or n/a) its person's last statement bound it to: not while PENDING. */
+-export const isBound = (c: Claim) => c.stated && (c.statedDue !== null || c.statedNa) && c.status !== 'PENDING';
++/** Whether the claim keeps the figure (or n/a) its person's last statement bound it to. */
++export const isBound = (c: Claim) => c.stated && (c.statedDue !== null || c.statedNa);
+ 
+ /** These claims less the OPEN (or PENDING) claims dated within one of their person's holds, or of a
+  *  person whose retirement date the sheet's today has reached, which count in no live total, unless a
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 1aeef31ae..1779f94e6 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -192,7 +192,7 @@ function lateCharge(claim: Claim, figure: string, late: Late | undefined): strin
+ const fixed = (claim: Claim) => claim.due !== null || (isBound(claim) && claim.statedDue !== null);
+ 
+ /** A claim's due: the due fixed when it was settled (its late charge frozen in), else its figure — the
+- *  rate figure its person's last statement bound it to (not while PENDING), else its amount at the rate in force
++ *  rate figure its person's last statement bound it to, else its amount at the rate in force
+  *  on the claim's date of its person's grade in force on that date — plus its late charge when overdue (worked out
+  *  on that figure), and at least the sheet's floor in force on the claim's date, applied last.
+  *  A correction's live due has no floor and it has no late charge.
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyStatus.java
+index b1a18f9d1..89402c24b 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyStatus.java
+@@ -18,8 +18,8 @@ import net.officefloor.plugin.variable.Val;
+  *  grade rate in force on the claim's date, rounded as the sheet's policy date has it (none when no rate of the grade applies then),
+  *  or at the figure its person's last statement bound it to, plus the late charge it has then, and at least the sheet's floor (frozen in).
+  *  A clerk's settle above the clerk limit makes it PENDING instead (see {@link CheckClerkLimit}); a steward's
+- *  approval settles a PENDING claim, frozen then at its live figure (a statement does not bind it while
+- *  PENDING), and a rejection moves it back to OPEN, bound again by its person's last statement if that included it.
++ *  approval settles a PENDING claim, frozen then at its figure (the one its person's last statement bound
++ *  it to, if any), and a rejection moves it back to OPEN, still bound by that statement if it included it.
+  *  The user who opened a claim, or who last edited it, may not settle or approve it, and a claim deferred on the sheet's today may not be settled.
+  *  Opening a DRAFT is refused while its person already has as many OPEN or PENDING claims in its period as the period's cap.
+  *  A claim opened to REVIEW records who opened it but takes no number until a steward's review makes it OPEN.
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index bd2be4dc6..368add2b5 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -80,9 +80,8 @@ public class Claim {
+      *  ended (its to-date) before the claim's date. */
+     public boolean isStatedNa() { return statedNa; }
+     /** Whether the claim keeps the figure its person's last statement bound it to (a figure, or n/a when
+-     *  {@link #isStatedNa()}): not while it is PENDING, when it follows its live figure (it is bound
+-     *  again if rejected back to OPEN). */
+-    public boolean isBound() { return stated && (statedDue != null || statedNa) && status != ClaimStatus.PENDING; }
++     *  {@link #isStatedNa()}), PENDING or not. */
++    public boolean isBound() { return stated && (statedDue != null || statedNa); }
+     /** The number of the claim this correction corrects; null when it is not a correction. */
+     public String getCorrects() { return corrects; }
+     /** Whether the claim is a correction: a negative amount, with no floor and no late charge. */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimFigure.java b/src/main/java/net/officefloor/hq/app/claim/ClaimFigure.java
+index 8bfcc49f2..d2ecbe765 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimFigure.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimFigure.java
+@@ -4,7 +4,7 @@ import java.math.BigDecimal;
+ import java.math.RoundingMode;
+ 
+ /** A claim's figure: the due fixed when settled, else the rate figure its person's last statement bound it
+- *  to (not while it is PENDING, which a statement does not bind), else its amount at the grade rate in force on
++ *  to, else its amount at the grade rate in force on
+  *  its date, rounded as the sheet's {@link Rounding} has it (null, n/a, when no rate applies). The floor is not
+  *  part of the figure: {@link Lateness#due} applies it last, after the late charge. */
+ public final class ClaimFigure {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
+index 466baac34..4dab2dbd7 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
+@@ -1,8 +1,8 @@
+ package net.officefloor.hq.app.claim;
+ 
+ /** Where a claim stands. Only OPEN, PENDING and SETTLED claims count toward the totals; a PENDING claim
+- *  (settled by a clerk above the clerk limit, awaiting a steward) is handled as an OPEN one, except
+- *  that a statement does not bind it while it is PENDING. A DELETED claim (a deleted DRAFT) counts nowhere,
++ *  (settled by a clerk above the clerk limit, awaiting a steward) is handled as an OPEN one, and a
++ *  statement binds it like any other claim that counts. A DELETED claim (a deleted DRAFT) counts nowhere,
+  *  and may be restored to a DRAFT only on the sheet's today it was deleted (see {@link CheckClerkLimit}).
+  *  A REVIEW claim (opened while its due is above the review threshold in force on its date) awaits a
+  *  steward's review, which makes it OPEN; until then it counts in no total and has no number. */
