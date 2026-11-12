@@ -1,10 +1,33 @@
 import { HomeMain } from '../../slots/defs/homeMain';
 import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
-import { useCurrentSheet } from '../../session/session';
+import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { usePersonDue } from '../rates/due.slot';
 import { type Person, shownName, useEditingPerson, usePeople, useSelectedPeople, useShowRetired } from './people';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { useColumnShown } from '../columns/columns';
+import { useRoles } from '../roles/roles';
+import { useCrews } from '../crews/crews';
+
+/** Whether this screen's user may see the person's row: a restricted user sees only the person with their
+ *  name and the people of the crews that person leads or belongs to (nothing until roles and crews are read);
+ *  anyone else sees every row. Only the rows are restricted — every total is still over the whole sheet. */
+function useRowVisible(sheet: string): (p: Person) => boolean {
+  const [user] = useCurrentUser();
+  const roles = useRoles(sheet);
+  const crews = useCrews(sheet);
+  const people = usePeople(sheet);
+  if (!roles.data) return () => false;
+  if (!roles.data.some((r) => r.user === user && r.role === 'restricted')) return () => true;
+  if (!crews.data || !people.data) return () => false;
+  const self = people.data.find((p) => p.name === user);
+  if (!self) return () => false;
+  const ids = new Set<number>([self.id]);
+  for (const c of crews.data) {
+    const members = [c.leadId, ...c.members.map((m) => m.personId)];
+    if (members.includes(self.id)) members.forEach((id) => ids.add(id));
+  }
+  return (p) => ids.has(p.id);
+}
 
 const SORTS = ['added', 'name', 'grade', 'due-total'] as const;
 type Sort = (typeof SORTS)[number];
@@ -62,6 +85,7 @@ function PeopleList() {
   const [sortBy] = useSortBy();
   const dueOf = usePersonDue(sheet);
   const shown = useColumnShown();
+  const visible = useRowVisible(sheet);
 
   return (
     <>
@@ -82,7 +106,7 @@ function PeopleList() {
         </tr>
       </thead>
       <tbody>
-        {sorted(people.data ?? [], sortBy, dueOf).filter((p) => showRetired || !p.retired).map((p) => (
+        {sorted(people.data ?? [], sortBy, dueOf).filter((p) => (showRetired || !p.retired) && visible(p)).map((p) => (
           <tr key={p.id} data-testid={`person-row-${p.id}`}>
             <td>
               <input

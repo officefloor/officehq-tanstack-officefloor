@@ -15,7 +15,7 @@ public class ValidateRole {
         String text = request.role() == null ? "" : request.role().trim();
         Role role = Role.of(text);
         if (role == null) {
-            throw new InvalidSheetException("The role must be clerk, steward or viewer");
+            throw new InvalidSheetException("The role must be clerk, steward, viewer or restricted");
         }
         body.set(new RoleInput(user, role, request.by()));
     }

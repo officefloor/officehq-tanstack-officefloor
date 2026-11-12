@@ -303,8 +303,9 @@ public class SettingStore {
     }
 
     /** Whether the role may take the action (one of {@link #PERM_ACTIONS}): the roles listed in its
-     *  permission, else, when blank, the standing rule. */
-    public boolean allows(String sheetId, String action, Role role) {
+     *  permission, else, when blank, the standing rule. A restricted user takes the actions a clerk may. */
+    public boolean allows(String sheetId, String action, Role actingAs) {
+        Role role = actingAs == Role.RESTRICTED ? Role.CLERK : actingAs;
         if (role == Role.VIEWER) {
             return false;
         }

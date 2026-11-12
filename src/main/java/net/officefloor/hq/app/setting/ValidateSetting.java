@@ -230,7 +230,7 @@ public class ValidateSetting {
         List<String> roles = new ArrayList<>();
         for (String part : value.split(",")) {
             String role = part.trim();
-            if (Role.of(role) == null || Role.of(role) == Role.VIEWER) {
+            if (Role.of(role) == null || Role.of(role) == Role.VIEWER || Role.of(role) == Role.RESTRICTED) {
                 throw new InvalidSheetException("A permission lists roles (clerk, steward), comma separated, or is blank");
             }
             if (!roles.contains(role)) {

@@ -3,10 +3,11 @@ import { getJson } from '../../api/http';
 import { asOfKey, asOfPath, sheetKey } from '../sheet/sheet';
 import { useAsOf } from '../../session/session';
 
-/** A user name's role on the sheet. A name with none assigned is a clerk; a viewer may change nothing. */
+/** A user name's role on the sheet. A name with none assigned is a clerk; a viewer may change nothing;
+ *  a restricted user acts as a clerk but sees on the people list only its own and its crews' people. */
 export type Role = { user: string; role: string };
 
-export const ROLES = ['clerk', 'steward', 'viewer'] as const;
+export const ROLES = ['clerk', 'steward', 'viewer', 'restricted'] as const;
 
 /** Under the sheet's key, so loading the sheet again re-reads its roles. */
 export const rolesKey = (sheet: string) => [...sheetKey(sheet), 'roles'] as const;
