@@ -196,3 +196,21 @@ function uncappedDue(
   }
   return dueTotal(mine.map((c) => claimDue(c, rates, grades, floor, late)));
 }
+
+/** A person's settled-total and open-total: the sum of the dues (skipping n/a) of their claims that count
+ *  that are SETTLED (at their frozen figures), and that are OPEN or PENDING. Together they make their
+ *  due-total before the cap (0.00 each when it is n/a). */
+export function personSplit(
+  claims: Claim[],
+  rates: Rate[] | undefined,
+  grades: Grades,
+  today: string | undefined,
+  floor: Floor,
+  late?: Late,
+): { settled: string; open: string } {
+  if (uncappedDue(claims, rates, grades, today, floor, late) === NA) return { settled: format(0n), open: format(0n) };
+  const mine = claims.filter(counts);
+  const total = (keep: (c: Claim) => boolean) =>
+    dueTotal(mine.filter(keep).map((c) => claimDue(c, rates, grades, floor, late)));
+  return { settled: total((c) => c.status === 'SETTLED'), open: total((c) => c.status !== 'SETTLED') };
+}
