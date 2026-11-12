@@ -69,6 +69,8 @@ export type Claim = {
   comments: string[];
   /** The bulk settle batch it was settled in (1, 2, ... on the sheet); null when settled one at a time, or not settled. */
   batch: number | null;
+  /** Its lines, in the order added: `<label> <qty> x <unit>`; a claim with lines has their sum as its amount. */
+  lines: string[];
 };
 
 /** A correction: a claim with a negative amount, which has no floor and no late charge. */

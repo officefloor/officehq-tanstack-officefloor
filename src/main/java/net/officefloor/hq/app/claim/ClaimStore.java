@@ -137,6 +137,13 @@ public class ClaimStore {
                 ClaimStatus.DRAFT.name()) == 1;
     }
 
+    /** Stores a draft's amount and edited-by as a line added to it sets them, keeping its lock; false when it is
+     *  no longer a DRAFT. */
+    public boolean editAmount(Claim claim) {
+        return jdbc.update("UPDATE claim SET amount = ?, edited_by = ? WHERE sheet_id = ? AND id = ? AND status = ?",
+                claim.getAmount(), claim.getEditedBy(), claim.getSheetId(), claim.getId(), ClaimStatus.DRAFT.name()) == 1;
+    }
+
     /** Locks the claim for the user opening its editor (again, when they hold it already); false while
      *  another user holds its lock. */
     public boolean lock(Claim claim, String user) {
@@ -393,7 +400,7 @@ public class ClaimStore {
     /** Adds a copy of the claim to the person on the other sheet under {@code number} (null for none), correcting
      *  and split off the numbers given: its amount, date, note, status, frozen settled figure, opener, due-by and
      *  the terms it was fixed with, deferral, proofs, late entry, reminder, tags, void reason and editor, with its
-     *  status log and comments, listed as the person's newest claim, keeping any figure a statement bound it to.
+     *  status log, comments and lines, listed as the person's newest claim, keeping any figure a statement bound it to.
      *  Its reference, lock and bulk settle batch are not carried. The id of the copy. */
     public long copyTo(Claim claim, String toSheet, long toPerson, String number, String corrects, String splitFrom) {
         Integer terms = jdbc.queryForObject("SELECT due_terms FROM claim WHERE sheet_id = ? AND id = ?", Integer.class,
@@ -438,14 +445,18 @@ public class ClaimStore {
         jdbc.update("INSERT INTO claim_comment (sheet_id, claim_id, by_user, written_on, text) "
                 + "SELECT ?, ?, by_user, written_on, text FROM claim_comment WHERE sheet_id = ? AND claim_id = ? ORDER BY id",
                 toSheet, id, claim.getSheetId(), claim.getId());
+        jdbc.update("INSERT INTO claim_line (sheet_id, claim_id, label, qty, unit, added_on) "
+                + "SELECT ?, ?, label, qty, unit, added_on FROM claim_line WHERE sheet_id = ? AND claim_id = ? ORDER BY id",
+                toSheet, id, claim.getSheetId(), claim.getId());
         return id;
     }
 
-    /** Drops every claim of the person, with their status logs and comments. */
+    /** Drops every claim of the person, with their status logs, comments and lines. */
     public void removeAll(String sheetId, long personId) {
         String mine = "SELECT id FROM claim WHERE sheet_id = ? AND person_id = ?";
         jdbc.update("DELETE FROM claim_log WHERE sheet_id = ? AND claim_id IN (" + mine + ")", sheetId, sheetId, personId);
         jdbc.update("DELETE FROM claim_comment WHERE sheet_id = ? AND claim_id IN (" + mine + ")", sheetId, sheetId, personId);
+        jdbc.update("DELETE FROM claim_line WHERE sheet_id = ? AND claim_id IN (" + mine + ")", sheetId, sheetId, personId);
         jdbc.update("DELETE FROM claim WHERE sheet_id = ? AND person_id = ?", sheetId, personId);
     }
 }

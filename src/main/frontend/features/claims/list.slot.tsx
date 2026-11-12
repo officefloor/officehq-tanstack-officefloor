@@ -52,6 +52,7 @@ function PersonClaims({ person }: { person: Person }) {
   const [splitAmounts, setSplitAmounts] = useState<Record<number, string>>({});
   const [inlineAmounts, setInlineAmounts] = useState<Record<number, string>>({});
   const [commentTexts, setCommentTexts] = useState<Record<number, string>>({});
+  const [lineFields, setLineFields] = useState<Record<number, { label: string; qty: string; unit: string }>>({});
   const people = usePeople(sheet);
   const [selected, setSelected] = useSelectedClaims();
   const queryClient = useQueryClient();
@@ -115,6 +116,7 @@ function PersonClaims({ person }: { person: Person }) {
     defer.reset();
     remind.reset();
     comment.reset();
+    line.reset();
     proof.reset();
     split.reset();
     redate.reset();
@@ -141,6 +143,7 @@ function PersonClaims({ person }: { person: Person }) {
     defer.reset();
     remind.reset();
     comment.reset();
+    line.reset();
     proof.reset();
     split.reset();
     redate.reset();
@@ -165,6 +168,7 @@ function PersonClaims({ person }: { person: Person }) {
     defer.reset();
     remind.reset();
     comment.reset();
+    line.reset();
     proof.reset();
     split.reset();
     redate.reset();
@@ -190,6 +194,7 @@ function PersonClaims({ person }: { person: Person }) {
     defer.reset();
     remind.reset();
     comment.reset();
+    line.reset();
     proof.reset();
     split.reset();
     redate.reset();
@@ -211,6 +216,7 @@ function PersonClaims({ person }: { person: Person }) {
     defer.reset();
     remind.reset();
     comment.reset();
+    line.reset();
     proof.reset();
     split.reset();
     redate.reset();
@@ -234,11 +240,44 @@ function PersonClaims({ person }: { person: Person }) {
     defer.reset();
     remind.reset();
     comment.reset();
+    line.reset();
     proof.reset();
     split.reset();
     redate.reset();
     inline.reset();
     comment.mutate({ id, text: commentTexts[id] ?? '' });
+  };
+  // A line on a DRAFT claim makes its amount the sum of its lines; an edit of the claim, refused like one.
+  const line = useMutation({
+    mutationFn: (d: { id: number; label: string; qty: string; unit: string }) =>
+      postJson<Claim>(`${base}/claims/${d.id}/line`, { label: d.label, qty: d.qty, unit: d.unit, user }),
+    onSuccess: async (_, d) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+      ]);
+      setLineFields((l) => ({ ...l, [d.id]: { label: '', qty: '', unit: '' } }));
+    },
+  });
+  const addLine = (id: number) => {
+    move.reset();
+    lock.reset();
+    reassign.reset();
+    resettle.reset();
+    defer.reset();
+    remind.reset();
+    comment.reset();
+    line.reset();
+    proof.reset();
+    split.reset();
+    redate.reset();
+    inline.reset();
+    const f = lineFields[id] ?? { label: '', qty: '', unit: '' };
+    line.mutate({ id, label: f.label.trim(), qty: f.qty.trim(), unit: f.unit.trim() });
+  };
+  const setLine = (id: number, key: 'label' | 'qty' | 'unit') => (e: ChangeEvent<HTMLInputElement>) => {
+    setLineFields({ ...lineFields, [id]: { ...(lineFields[id] ?? { label: '', qty: '', unit: '' }), [key]: e.target.value } });
+    if (line.variables?.id === id) line.reset();
   };
   // A proof raises the claim's proofs count by one; not on a SETTLED or VOID claim.
   const proof = useMutation({
@@ -255,6 +294,7 @@ function PersonClaims({ person }: { person: Person }) {
     defer.reset();
     remind.reset();
     comment.reset();
+    line.reset();
     proof.reset();
     split.reset();
     redate.reset();
@@ -281,6 +321,7 @@ function PersonClaims({ person }: { person: Person }) {
     defer.reset();
     remind.reset();
     comment.reset();
+    line.reset();
     proof.reset();
     split.reset();
     redate.reset();
@@ -307,6 +348,7 @@ function PersonClaims({ person }: { person: Person }) {
     defer.reset();
     remind.reset();
     comment.reset();
+    line.reset();
     proof.reset();
     split.reset();
     redate.mutate({ id, date: (redates[id] ?? '').trim() });
@@ -340,6 +382,7 @@ function PersonClaims({ person }: { person: Person }) {
     defer.reset();
     remind.reset();
     comment.reset();
+    line.reset();
     proof.reset();
     split.reset();
     redate.reset();
@@ -361,6 +404,8 @@ function PersonClaims({ person }: { person: Person }) {
                 ? remind.error
                 : comment.isError && comment.variables?.id === id
                   ? comment.error
+                : line.isError && line.variables?.id === id
+                  ? line.error
                 : proof.isError && proof.variables === id
                   ? proof.error
                   : split.isError && split.variables?.id === id
@@ -391,6 +436,7 @@ function PersonClaims({ person }: { person: Person }) {
     defer.reset();
     remind.reset();
     comment.reset();
+    line.reset();
     proof.reset();
     split.reset();
     redate.reset();
@@ -640,6 +686,39 @@ function PersonClaims({ person }: { person: Person }) {
               <button type="button" data-testid="claim-comment-add" disabled={comment.isPending} onClick={() => addComment(c.id)}>
                 Comment
               </button>
+              <input
+                data-testid="claim-line-label"
+                placeholder="Line"
+                aria-label="Line label"
+                value={lineFields[c.id]?.label ?? ''}
+                onChange={setLine(c.id, 'label')}
+              />{' '}
+              <input
+                data-testid="claim-line-qty"
+                placeholder="Qty"
+                aria-label="Line quantity"
+                inputMode="numeric"
+                value={lineFields[c.id]?.qty ?? ''}
+                onChange={setLine(c.id, 'qty')}
+              />{' '}
+              <input
+                data-testid="claim-line-unit"
+                placeholder="Unit"
+                aria-label="Line unit amount"
+                inputMode="decimal"
+                value={lineFields[c.id]?.unit ?? ''}
+                onChange={setLine(c.id, 'unit')}
+              />{' '}
+              <button type="button" data-testid="claim-line-add" disabled={line.isPending} onClick={() => addLine(c.id)}>
+                Add line
+              </button>
+              <ol data-testid="claim-lines">
+                {(c.lines ?? []).map((l, i) => (
+                  <li key={i} data-testid="claim-lines-line">
+                    {l}
+                  </li>
+                ))}
+              </ol>
               <ol data-testid="claim-comments">
                 {(c.comments ?? []).map((line, i) => (
                   <li key={i} data-testid="claim-comments-line">
