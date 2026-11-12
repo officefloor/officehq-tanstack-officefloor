@@ -21,7 +21,7 @@ public class RespondWithSettings {
                 store.latePcts(sheet).apply(today).setScale(2).toPlainString(),
                 store.find(sheet, SettingStore.POLICY_DATE),
                 store.find(sheet, SettingStore.PERIOD_NUMBERING_FROM), gradeTerms(sheet, today, store),
-                store.find(sheet, SettingStore.CAP),
+                store.find(sheet, SettingStore.CAP), store.find(sheet, SettingStore.PROOF_THRESHOLD),
                 history(sheet, SettingStore.FLOOR, store), history(sheet, SettingStore.LATE_PCT, store)));
     }
 

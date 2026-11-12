@@ -6,14 +6,14 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { type Settings, settingsKey, useSettings } from './settings';
 
-type Key = 'clerk-limit' | 'floor' | 'terms' | 'terms-A' | 'terms-B' | 'terms-C' | 'late-pct' | 'policy-date' | 'period-numbering-from' | 'cap';
+type Key = 'clerk-limit' | 'floor' | 'terms' | 'terms-A' | 'terms-B' | 'terms-C' | 'late-pct' | 'policy-date' | 'period-numbering-from' | 'cap' | 'proof-threshold';
 
 const GRADES = ['A', 'B', 'C'] as const;
 
 /** The settings that carry a figure: each is saved from a from-date (blank for the sheet's today). */
 type DatedKey = Exclude<Key, 'policy-date' | 'period-numbering-from'>;
 
-const NO_FROM: Record<DatedKey, string> = { 'clerk-limit': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'late-pct': '', cap: '' };
+const NO_FROM: Record<DatedKey, string> = { 'clerk-limit': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'late-pct': '', cap: '', 'proof-threshold': '' };
 
 const isDated = (k: Key): k is DatedKey => k in NO_FROM;
 
@@ -21,14 +21,14 @@ const isDated = (k: Key): k is DatedKey => k in NO_FROM;
 // the floor (blank for its default), the terms in days (blank for 14), each grade's own terms (blank
 // for the sheet's terms) and the late percent (blank for
 // 0.00), the policy date rounding turns on (blank for the sheet's today) and the date claims opened
-// are numbered per period from (blank for off), and the cap on a person's due-total (blank for none). Saving changes the setting last touched, so a field left blank does not clear the others.
+// are numbered per period from (blank for off), and the cap on a person's due-total (blank for none), and the proof threshold above which a claim's due needs a proof to be settled or approved (blank for none). Saving changes the setting last touched, so a field left blank does not clear the others.
 // Each setting that carries a figure is saved from its from-date (blank for the sheet's today), and shows
 // the value in force on the sheet's today; the policy date and period numbering date are not dated.
 function SheetSettings() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const settings = useSettings(sheet);
-  const [values, setValues] = useState<Record<Key, string>>({ 'clerk-limit': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '', cap: '' });
+  const [values, setValues] = useState<Record<Key, string>>({ 'clerk-limit': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '', cap: '', 'proof-threshold': '' });
   const [froms, setFroms] = useState<Record<DatedKey, string>>(NO_FROM);
   const [key, setKey] = useState<Key>('clerk-limit');
   const queryClient = useQueryClient();
@@ -102,7 +102,9 @@ function SheetSettings() {
         Period numbering from <strong data-testid="setting-period-numbering-from-current">{settings.data?.periodNumberingFrom ?? ''}</strong>{' '}
         {field('period-numbering-from', 'Period numbering from YYYY-MM-DD (blank for off)', 'text')}{' '}
         Cap <strong data-testid="setting-cap-current">{settings.data?.cap ?? ''}</strong>{' '}
-        {field('cap', 'Cap (blank for none)')}{' '}{from('cap')}
+        {field('cap', 'Cap (blank for none)')}{' '}{from('cap')}{' '}
+        Proof threshold <strong data-testid="setting-proof-threshold-current">{settings.data?.proofThreshold ?? ''}</strong>{' '}
+        {field('proof-threshold', 'Proof threshold (blank for none)')}{' '}{from('proof-threshold')}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>

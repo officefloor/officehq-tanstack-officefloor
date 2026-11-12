@@ -23,6 +23,7 @@ public class Claim {
     private String corrects;
     private final LocalDate dueBy;
     private LocalDate deferredUntil;
+    private int proofs;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue, String openedBy, boolean stated,
@@ -84,6 +85,10 @@ public class Claim {
     public boolean isDeferredOn(LocalDate today) {
         return status == ClaimStatus.OPEN && deferredUntil != null && today != null && today.isBefore(deferredUntil);
     }
+    /** How many proofs the claim has; a claim due above the sheet's proof threshold on its date cannot be
+     *  settled or approved while it has none (see {@link CheckProofs}). */
+    public int getProofs() { return proofs; }
+    public void setProofs(int proofs) { this.proofs = proofs; }
     public void setDeferredUntil(LocalDate deferredUntil) { this.deferredUntil = deferredUntil; }
     public void setPersonId(long personId) { this.personId = personId; }
     public void setCorrects(String corrects) { this.corrects = corrects; }

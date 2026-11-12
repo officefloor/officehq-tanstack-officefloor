@@ -24,6 +24,7 @@ public class ClaimStore {
             rs.getString("corrects"), rs.getObject("due_by", LocalDate.class));
         claim.setStatedNa(rs.getBoolean("stated_na"));
         claim.setDeferredUntil(rs.getObject("deferred_until", LocalDate.class));
+        claim.setProofs(rs.getInt("proofs"));
         return claim;
     };
 
@@ -104,6 +105,19 @@ public class ClaimStore {
             claim.setDeferredUntil(until);
         }
         return deferred;
+    }
+
+    /** Raises the stored DRAFT, OPEN or PENDING claim's proofs count by one; false when it is no longer one of
+     *  those (another user moved it on). */
+    public boolean addProof(Claim claim) {
+        boolean added = jdbc.update("UPDATE claim SET proofs = proofs + 1 WHERE sheet_id = ? AND id = ? AND status IN (?, ?, ?)",
+                claim.getSheetId(), claim.getId(), ClaimStatus.DRAFT.name(), ClaimStatus.OPEN.name(),
+                ClaimStatus.PENDING.name()) == 1;
+        if (added) {
+            claim.setProofs(jdbc.queryForObject("SELECT proofs FROM claim WHERE sheet_id = ? AND id = ?", Integer.class,
+                    claim.getSheetId(), claim.getId()));
+        }
+        return added;
     }
 
     /** Moves the stored DRAFT, OPEN or PENDING claim to the person, unbound from any statement figure and

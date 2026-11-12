@@ -72,6 +72,7 @@ function PersonClaims({ person }: { person: Person }) {
     reassign.reset();
     resettle.reset();
     defer.reset();
+    proof.reset();
     move.mutate({ id, status, review: review !== undefined, reason: review?.reason });
   };
 
@@ -91,6 +92,7 @@ function PersonClaims({ person }: { person: Person }) {
     reassign.reset();
     resettle.reset();
     defer.reset();
+    proof.reset();
     reassign.mutate({ id, to: targets[id] ?? '' });
   };
   // A steward re-settling a SETTLED claim freezes it again at today's figure.
@@ -108,6 +110,7 @@ function PersonClaims({ person }: { person: Person }) {
     reassign.reset();
     resettle.reset();
     defer.reset();
+    proof.reset();
     resettle.mutate(id);
   };
   // Deferring an OPEN claim until a date after today takes it out of every figure until then.
@@ -126,9 +129,25 @@ function PersonClaims({ person }: { person: Person }) {
     reassign.reset();
     resettle.reset();
     defer.reset();
+    proof.reset();
     defer.mutate({ id, until: (deferDates[id] ?? '').trim() });
   };
-  // The refusal of the last status change, move, re-settle or deferral of the claim, as the server gave it; null when none.
+  // A proof raises the claim's proofs count by one; not on a SETTLED or VOID claim.
+  const proof = useMutation({
+    mutationFn: (id: number) => postJson<Claim>(`${base}/claims/${id}/proof`, { user }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+    },
+  });
+  const addProof = (id: number) => {
+    move.reset();
+    reassign.reset();
+    resettle.reset();
+    defer.reset();
+    proof.reset();
+    proof.mutate(id);
+  };
+  // The refusal of the last status change, move, re-settle, deferral or proof of the claim, as the server gave it; null when none.
   const refusal = (id: number) => {
     const error =
       move.isError && move.variables?.id === id
@@ -139,7 +158,9 @@ function PersonClaims({ person }: { person: Person }) {
             ? resettle.error
             : defer.isError && defer.variables?.id === id
               ? defer.error
-              : null;
+              : proof.isError && proof.variables === id
+                ? proof.error
+                : null;
     if (error === null) return null;
     return error instanceof HttpError && error.reason ? `${error.reason}.` : 'The change was refused.';
   };
@@ -154,6 +175,7 @@ function PersonClaims({ person }: { person: Person }) {
     reassign.reset();
     resettle.reset();
     defer.reset();
+    proof.reset();
     setEditing(c.id);
     setFields({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects ?? '' });
   };
@@ -190,7 +212,7 @@ function PersonClaims({ person }: { person: Person }) {
               <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
               <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-deferred">{c.deferred ? 'yes' : 'no'}</span>{' '}
-              <span data-testid="claim-deferred-until">{c.deferred ? (c.deferredUntil ?? '') : ''}</span>{' '}
+              <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
               <button type="button" data-testid="claim-open" disabled={move.isPending} onClick={() => moveTo(c.id, 'OPEN')}>
                 Open
               </button>{' '}
@@ -272,6 +294,10 @@ function PersonClaims({ person }: { person: Person }) {
               />{' '}
               <button type="button" data-testid="claim-defer" disabled={defer.isPending} onClick={() => deferClaim(c.id)}>
                 Defer
+              </button>{' '}
+              <span data-testid="claim-proofs">{c.proofs ?? 0}</span>{' '}
+              <button type="button" data-testid="claim-proof" disabled={proof.isPending} onClick={() => addProof(c.id)}>
+                Add proof
               </button>{' '}
               <button type="button" data-testid="claim-edit" onClick={() => open(c)}>
                 Edit

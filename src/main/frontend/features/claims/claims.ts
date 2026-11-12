@@ -48,6 +48,8 @@ export type Claim = {
   deferred: boolean;
   /** The date (yyyy-MM-dd) it was last deferred until; null when it was never deferred. */
   deferredUntil: string | null;
+  /** How many proofs it has: a claim due above the proof threshold on its date cannot be settled or approved with none. */
+  proofs: number;
 };
 
 /** A correction: a claim with a negative amount, which has no floor and no late charge. */

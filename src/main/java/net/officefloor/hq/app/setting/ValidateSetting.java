@@ -24,7 +24,8 @@ public class ValidateSetting {
         boolean numbering = SettingStore.PERIOD_NUMBERING_FROM.equals(key);
         boolean dated = SettingStore.POLICY_DATE.equals(key) || numbering;
         boolean cap = SettingStore.CAP.equals(key);
-        if (!SettingStore.CLERK_LIMIT.equals(key) && !cap && !floor && !terms && !gradeTerms && !late && !dated) {
+        boolean proof = SettingStore.PROOF_THRESHOLD.equals(key);
+        if (!SettingStore.CLERK_LIMIT.equals(key) && !cap && !proof && !floor && !terms && !gradeTerms && !late && !dated) {
             throw new InvalidSheetException("Not a setting: " + key);
         }
         String value = request.value() == null ? "" : request.value().trim();
@@ -87,6 +88,7 @@ public class ValidateSetting {
         if (!LIMIT.matcher(value).matches()) {
             throw new InvalidSheetException(floor ? "The floor must be 0.00 or more with up to two decimals"
                     : late ? "The late percent must be 0.00 or more with up to two decimals"
+                    : proof ? "The proof threshold must be 0.00 or more with up to two decimals, or blank"
                     : cap ? "The cap must be 0.00 or more with up to two decimals, or blank"
                     : "The clerk limit must be 0.00 or more with up to two decimals, or blank");
         }

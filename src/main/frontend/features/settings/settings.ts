@@ -9,11 +9,12 @@ import { sheetKey } from '../sheet/sheet';
  *  rounding turns on, null when blank (then the sheet's today); `periodNumberingFrom` (yyyy-MM-dd) is the
  *  date from which claims opened are numbered per period, null when blank (off); `gradeTerms` is the terms
  *  in force for each grade (its own, else the sheet's), by grade; `cap` (two decimals) is the most a person's
- *  due-total may be, null for no cap. Each of these that carries a figure is the one in force on the sheet's today.
+ *  due-total may be, null for no cap; `proofThreshold` (two decimals) is the due above which a claim needs a proof
+ *  before it is settled or approved, null for none. Each of these that carries a figure is the one in force on the sheet's today.
  *  `floorFrom` and `latePctFrom` are the floor and late percent recorded, oldest from-date (yyyy-MM-dd) first:
  *  a claim's floor and late percent are those in force on its date. */
 export type Settings = { clerkLimit: string | null; floor: string; terms: string; latePct: string; policyDate: string | null;
-  periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null;
+  periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; proofThreshold: string | null;
   floorFrom: Dated[]; latePctFrom: Dated[] };
 
 /** A setting's value recorded from a date (yyyy-MM-dd); a null value is blank. */

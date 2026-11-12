@@ -11,7 +11,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 /** The settings kept per sheet, by key. A setting never set, or set blank, has no value. The settings
- *  that carry a figure (the clerk limit, the floor, the cap, the terms, a grade's terms and the late
+ *  that carry a figure (the clerk limit, the floor, the cap, the proof threshold, the terms, a grade's terms and the late
  *  percent) are dated: each value is recorded from a from-date, and the value in force on a date is the
  *  one with the latest from-date on or before it (none before every from-date, then the sheet's starting
  *  value). The policy date and the period numbering date are not dated. */
@@ -23,6 +23,9 @@ public class SettingStore {
     public static final String FLOOR = "floor";
 
     public static final String CAP = "cap";
+
+    /** Above it a claim's due needs a proof before it is settled or approved. */
+    public static final String PROOF_THRESHOLD = "proof-threshold";
 
     public static final String TERMS = "terms";
 
@@ -101,6 +104,13 @@ public class SettingStore {
     /** The most a person's due-total may be (the one in force on the sheet's today), or null for no cap. */
     public BigDecimal cap(String sheetId) {
         String value = find(sheetId, CAP);
+        return value == null ? null : new BigDecimal(value);
+    }
+
+    /** The due above which a claim dated on the date needs a proof before it is settled or approved (the
+     *  one in force on that date), or null for none. */
+    public BigDecimal proofThreshold(String sheetId, LocalDate date) {
+        String value = findOn(sheetId, PROOF_THRESHOLD, date);
         return value == null ? null : new BigDecimal(value);
     }
 

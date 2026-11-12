@@ -15,7 +15,9 @@ import net.officefloor.plugin.variable.Val;
 /** Works out the move a status change makes. A clerk settling an OPEN claim whose due is above the
  *  sheet's clerk limit sends it to PENDING instead. A claim whose due is n/a is within any limit; a
  *  sheet with no limit, and a steward, settle anything. Only a steward reviews a PENDING claim, and
- *  only a review moves it to SETTLED or back to OPEN; a review of a claim that is not PENDING is refused. */
+ *  only a review moves it to SETTLED or back to OPEN; a review of a claim that is not PENDING is refused.
+ *  Before the limit is considered, settling or approving a claim with no proofs whose due is above the
+ *  proof threshold is refused (see {@link CheckProofs}), so it never goes to PENDING. */
 public class CheckClerkLimit {
     public void check(@Val StatusInput input, @Val Claim claim, RoleStore roles, SettingStore settings,
             PersonStore people, RateStore rates, SheetStore sheets, ClaimStore claims, Out<StatusMove> move)
@@ -29,12 +31,14 @@ public class CheckClerkLimit {
             if (!steward) {
                 throw new InvalidSheetException("Only a steward can approve or reject a claim");
             }
+            CheckProofs.refuseUnproved(input, claim, settings, people, rates, sheets, claims);
             move.set(new StatusMove(from, input.status()));
             return;
         }
         if (from == ClaimStatus.PENDING && input.status() != ClaimStatus.VOID) {
             throw new InvalidSheetException("A PENDING claim waits for a steward to approve or reject it");
         }
+        CheckProofs.refuseUnproved(input, claim, settings, people, rates, sheets, claims);
         move.set(new StatusMove(from, overLimit(input, claim, steward, settings, people, rates, sheets, claims)
                 ? ClaimStatus.PENDING : input.status()));
     }
