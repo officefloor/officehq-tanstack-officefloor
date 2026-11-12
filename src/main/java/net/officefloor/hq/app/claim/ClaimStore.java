@@ -28,6 +28,7 @@ public class ClaimStore {
         claim.setStatedNa(rs.getBoolean("stated_na"));
         claim.setDeferredUntil(rs.getObject("deferred_until", LocalDate.class));
         claim.setProofs(rs.getInt("proofs"));
+        claim.setProofPhotos(rs.getInt("proof_photos"));
         claim.setSplitFrom(rs.getString("split_from"));
         claim.setLateEntry(rs.getBoolean("late_entry"));
         claim.setRemindedOn(rs.getObject("reminded_on", LocalDate.class));
@@ -327,15 +328,19 @@ public class ClaimStore {
                 }, sheetId, ClaimStatus.SETTLED.name(), ClaimStatus.VOID.name(), Date.valueOf(from));
     }
 
-    /** Raises the stored DRAFT, OPEN or PENDING claim's proofs count by one; false when it is no longer one of
-     *  those (another user moved it on). */
-    public boolean addProof(Claim claim) {
-        boolean added = jdbc.update("UPDATE claim SET proofs = proofs + 1 WHERE sheet_id = ? AND id = ? AND status IN (?, ?, ?)",
-                claim.getSheetId(), claim.getId(), ClaimStatus.DRAFT.name(), ClaimStatus.OPEN.name(),
+    /** Raises the stored DRAFT, OPEN or PENDING claim's proofs count by one, a proof of the kind (receipt or
+     *  photo); false when it is no longer one of those (another user moved it on). */
+    public boolean addProof(Claim claim, String kind) {
+        int photo = "photo".equals(kind) ? 1 : 0;
+        boolean added = jdbc.update("UPDATE claim SET proofs = proofs + 1, proof_photos = proof_photos + ? "
+                + "WHERE sheet_id = ? AND id = ? AND status IN (?, ?, ?)",
+                photo, claim.getSheetId(), claim.getId(), ClaimStatus.DRAFT.name(), ClaimStatus.OPEN.name(),
                 ClaimStatus.PENDING.name()) == 1;
         if (added) {
-            claim.setProofs(jdbc.queryForObject("SELECT proofs FROM claim WHERE sheet_id = ? AND id = ?", Integer.class,
-                    claim.getSheetId(), claim.getId()));
+            jdbc.query("SELECT proofs, proof_photos FROM claim WHERE sheet_id = ? AND id = ?", rs -> {
+                claim.setProofs(rs.getInt("proofs"));
+                claim.setProofPhotos(rs.getInt("proof_photos"));
+            }, claim.getSheetId(), claim.getId());
         }
         return added;
     }
@@ -484,7 +489,7 @@ public class ClaimStore {
 
     /** Adds a copy of the claim to the person on the other sheet under {@code number} (null for none), correcting
      *  and split off the numbers given: its amount, date, note, status, frozen settled figure, opener, due-by and
-     *  the terms it was fixed with, deferral, proofs, late entry, reminder and escalation, review day, waiver, tags, void reason and editor, with its
+     *  the terms it was fixed with, deferral, proofs (and their kinds), late entry, reminder and escalation, review day, waiver, tags, void reason and editor, with its
      *  status log, comments and lines, listed as the person's newest claim, keeping any figure a statement bound it to.
      *  Its reference, lock and bulk settle batch are not carried. The id of the copy. */
     public long copyTo(Claim claim, String toSheet, long toPerson, String number, String corrects, String splitFrom) {
@@ -524,9 +529,9 @@ public class ClaimStore {
             return ps;
         }, keys);
         long id = keys.getKey().longValue();
-        jdbc.update("UPDATE claim SET added_seq = ?, escalated = ?, review_on = ?, waived = ? WHERE sheet_id = ? AND id = ?",
+        jdbc.update("UPDATE claim SET added_seq = ?, escalated = ?, review_on = ?, waived = ?, proof_photos = ? WHERE sheet_id = ? AND id = ?",
                 claim.getAddedSeq(), claim.isEscalated(), claim.getReviewOn() == null ? null : Date.valueOf(claim.getReviewOn()),
-                claim.isWaived(),
+                claim.isWaived(), claim.getProofPhotos(),
                 toSheet, id);
         jdbc.update("INSERT INTO claim_log (sheet_id, claim_id, status, by_user, log_date, due) "
                 + "SELECT ?, ?, status, by_user, log_date, due FROM claim_log WHERE sheet_id = ? AND claim_id = ? ORDER BY id",

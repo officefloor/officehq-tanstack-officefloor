@@ -61,6 +61,10 @@ public class ValidateSetting {
             body.set(new SettingInput(key, String.valueOf(month), null, request.user()));
             return;
         }
+        if (SettingStore.PROOF_KINDS.equals(key)) {
+            body.set(new SettingInput(key, kinds(request.value()), null, request.user()));
+            return;
+        }
         if (SettingStore.PARENT.equals(key)) {
             String value = request.value() == null ? "" : request.value().trim();
             if (value.isEmpty()) {
@@ -186,6 +190,25 @@ public class ValidateSetting {
                     : "The clerk limit must be 0.00 or more with up to two decimals, or blank");
         }
         body.set(new SettingInput(key, new BigDecimal(value).setScale(2).toPlainString(), from, request.user()));
+    }
+
+    /** The proof kinds listed (receipt, photo), comma separated without spaces, each once, or null when blank. */
+    private static String kinds(String raw) throws InvalidSheetException {
+        String value = raw == null ? "" : raw.trim();
+        if (value.isEmpty()) {
+            return null;
+        }
+        List<String> kinds = new ArrayList<>();
+        for (String part : value.split(",")) {
+            String kind = part.trim();
+            if (!SettingStore.KINDS.contains(kind)) {
+                throw new InvalidSheetException("The proof kinds list kinds (receipt, photo), comma separated, or are blank");
+            }
+            if (!kinds.contains(kind)) {
+                kinds.add(kind);
+            }
+        }
+        return String.join(",", kinds);
     }
 
     /** The roles listed, comma separated without spaces, or null when blank (the standing rule). */

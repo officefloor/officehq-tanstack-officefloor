@@ -54,6 +54,8 @@ export type Claim = {
   deferredUntil: string | null;
   /** How many proofs it has: a claim due above the proof threshold on its date cannot be settled or approved with none. */
   proofs: number;
+  /** How many of its proofs are of each kind (receipt, photo), by kind; a proof added with no kind is a receipt. */
+  proofKinds: Record<string, number>;
   /** The number of the claim it was split off; null when it was not split off another. */
   splitFrom: string | null;
   /** Whether it was added while the period its due-by falls in was soft-closed. */

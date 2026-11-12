@@ -38,14 +38,17 @@ import java.util.Map;
  *  {@code escalateAfter} is the whole days at least between a claim's previous reminder and the sheet's today for a
  *  reminder to escalate it (once per claim), null for off (not dated).
  *  {@code reviewSla} is the whole days after its review day a claim in REVIEW may stay there before it is late, null
- *  for none (not dated). */
+ *  for none (not dated).
+ *  {@code proofKinds} is the kinds of proof a claim above its proof threshold needs one of each of before it is settled
+ *  or approved, comma separated, null for none (not dated). */
 public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
         String periodNumberingFrom, Map<String, String> gradeTerms, String cap, String proofThreshold, List<Dated> floorFrom,
         List<Dated> latePctFrom, Map<String, String> perms, String graceDays,
         String noteThreshold, String entryDate, Map<String, String> gradeGrace,
         Map<String, List<Dated>> gradeGraceFrom, Map<String, String> gradeProofThreshold,
         String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding,
-        List<Dated> roundingFrom, String reviewThreshold, String escalateAfter, String reviewSla) {
+        List<Dated> roundingFrom, String reviewThreshold, String escalateAfter, String reviewSla,
+        String proofKinds) {
 
     /** A value recorded from a date (yyyy-MM-dd). */
     public record Dated(String from, String value) {

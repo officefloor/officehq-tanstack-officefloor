@@ -22,6 +22,9 @@ type StatusChange = { id: number; status: ClaimStatus; review?: boolean; reason?
 type Reassign = { id: number; to: string };
 const EMPTY: Fields = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
 
+/** The kinds a proof may be; a proof added with no kind chosen is a receipt. */
+const PROOF_KINDS = ['receipt', 'photo'] as const;
+
 function ClaimsHead() {
   return <th>Claims</th>;
 }
@@ -352,10 +355,13 @@ function PersonClaims({ person }: { person: Person }) {
     setLineFields({ ...lineFields, [id]: { ...(lineFields[id] ?? { label: '', qty: '', unit: '' }), [key]: e.target.value } });
     if (line.variables?.id === id) line.reset();
   };
-  // A proof raises the claim's proofs count by one; not on a SETTLED or VOID claim.
+  // A proof raises the claim's proofs count by one; not on a SETTLED or VOID claim. Its kind is the one chosen
+  // (receipt or photo), a receipt when none is; the choice is cleared once the proof is added.
+  const [proofKinds, setProofKinds] = useState<Record<number, string>>({});
   const proof = useMutation({
-    mutationFn: (id: number) => postJson<Claim>(`${base}/claims/${id}/proof`, { user }),
-    onSuccess: async () => {
+    mutationFn: (id: number) => postJson<Claim>(`${base}/claims/${id}/proof`, { user, kind: proofKinds[id] ?? '' }),
+    onSuccess: async (_, id) => {
+      setProofKinds((k) => ({ ...k, [id]: '' }));
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
     },
   });
@@ -733,6 +739,25 @@ function PersonClaims({ person }: { person: Person }) {
                 Re-date
               </button>{' '}
               <span data-testid="claim-proofs">{c.proofs ?? 0}</span>{' '}
+              {PROOF_KINDS.map((k) => (
+                <span key={k}>
+                  {k} <span data-testid={`claim-proofs-${k}`}>{c.proofKinds?.[k] ?? 0}</span>{' '}
+                </span>
+              ))}
+              <select
+                data-testid="claim-proof-kind"
+                aria-label="Proof kind"
+                value={proofKinds[c.id] ?? ''}
+                onChange={(e) => {
+                  setProofKinds({ ...proofKinds, [c.id]: e.target.value });
+                  if (proof.variables === c.id) proof.reset();
+                }}
+              >
+                <option value="">(kind)</option>
+                {PROOF_KINDS.map((k) => (
+                  <option key={k} value={k}>{k}</option>
+                ))}
+              </select>{' '}
               <button type="button" data-testid="claim-proof" disabled={proof.isPending} onClick={() => addProof(c.id)}>
                 Add proof
               </button>{' '}

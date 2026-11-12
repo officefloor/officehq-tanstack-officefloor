@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
+import java.util.List;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonStore;
 import net.officefloor.hq.app.rate.RateStore;
@@ -8,7 +9,8 @@ import net.officefloor.hq.app.setting.SettingStore;
 import net.officefloor.hq.app.sheet.InvalidSheetException;
 import net.officefloor.hq.app.sheet.SheetStore;
 
-/** Refuses settling an OPEN claim, or approving a PENDING one, while it has no proofs and its due is above
+/** Refuses settling an OPEN claim, or approving a PENDING one, while it has no proofs (or, while the sheet lists proof
+ *  kinds, lacks a proof of any kind listed) and its due is above
  *  the proof threshold in force on its date (its person's grade's then when one is set, else the sheet's). A sheet with no threshold then, and a claim whose due is n/a,
  *  need no proof. */
 final class CheckProofs {
@@ -19,7 +21,7 @@ final class CheckProofs {
             RateStore rates, SheetStore sheets, ClaimStore claims) throws InvalidSheetException {
         ClaimStatus from = claim.getStatus();
         if (input.status() != ClaimStatus.SETTLED || (from != ClaimStatus.OPEN && from != ClaimStatus.PENDING)
-                || claim.getProofs() > 0) {
+                || proved(claim, settings.proofKinds(claim.getSheetId()))) {
             return;
         }
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
@@ -32,8 +34,14 @@ final class CheckProofs {
         BigDecimal due = Lateness.of(claim.getSheetId(), settings, sheets, claims, people).due(claim, pct);
         if (due != null && due.compareTo(threshold) > 0) {
             throw new InvalidSheetException("A claim due above the proof threshold of " + threshold.setScale(2)
-                    + " needs a proof before it can be " + (input.review() ? "approved" : "settled"));
+                    + " needs " + (claim.getProofs() == 0 ? "a proof" : "a proof of each kind listed")
+                    + " before it can be " + (input.review() ? "approved" : "settled"));
         }
+    }
+
+    /** Whether the claim has a proof, and at least one of each kind listed. */
+    private static boolean proved(Claim claim, List<String> kinds) {
+        return claim.getProofs() > 0 && kinds.stream().allMatch(kind -> claim.proofsOf(kind) > 0);
     }
 
     /** Refuses opening a DRAFT claim with an empty note while its due is above the note threshold in force on

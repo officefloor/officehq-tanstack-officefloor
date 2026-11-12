@@ -22,7 +22,7 @@ import org.springframework.stereotype.Repository;
  *  that carry a figure (the clerk limit, the floor, the cap, the proof threshold, a grade's proof threshold, the note threshold, the review threshold, the terms, a grade's terms, a grade's grace days and the late
  *  percent) are dated: each value is recorded from a from-date, and the value in force on a date is the
  *  one with the latest from-date on or before it (none before every from-date, then the sheet's starting
- *  value). The policy date, the period numbering date, the entry date, the grace days, the escalation gap, the review SLA, the pot, the alert threshold, the parent sheet, the fiscal start month and the permission matrix are not dated. */
+ *  value). The policy date, the period numbering date, the entry date, the grace days, the escalation gap, the review SLA, the pot, the alert threshold, the parent sheet, the fiscal start month, the proof kinds and the permission matrix are not dated. */
 @Repository
 public class SettingStore {
 
@@ -42,6 +42,19 @@ public class SettingStore {
     /** Whether the key is a grade's proof threshold. */
     public static boolean isGradeProofThreshold(String key) {
         return key.startsWith(PROOF_THRESHOLD_PREFIX) && GRADES.contains(key.substring(PROOF_THRESHOLD_PREFIX.length()));
+    }
+
+    /** The kinds of proof a claim above its proof threshold needs at least one of each of before it is settled
+     *  or approved: listed comma separated (receipt, photo); blank for none, not dated. */
+    public static final String PROOF_KINDS = "proof-kinds";
+
+    /** The kinds a proof may be; a proof added with no kind is a receipt. */
+    public static final List<String> KINDS = List.of("receipt", "photo");
+
+    /** The proof kinds listed, in the order listed; empty when blank (none). */
+    public List<String> proofKinds(String sheetId) {
+        String value = find(sheetId, PROOF_KINDS);
+        return value == null ? List.of() : List.of(value.split(","));
     }
 
     /** Above it a claim's due needs a note before it is opened. */
@@ -261,7 +274,7 @@ public class SettingStore {
     public static boolean isDated(String key) {
         return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key)
                 && !ENTRY_DATE.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
-                && !key.startsWith(PERM_PREFIX);
+                && !PROOF_KINDS.equals(key) && !key.startsWith(PERM_PREFIX);
     }
 
     /** Whether the role may take the action (one of {@link #PERM_ACTIONS}): the roles listed in its

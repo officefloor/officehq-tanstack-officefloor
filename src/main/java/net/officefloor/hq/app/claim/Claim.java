@@ -24,6 +24,7 @@ public class Claim {
     private final LocalDate dueBy;
     private LocalDate deferredUntil;
     private int proofs;
+    private int proofPhotos;
     private String splitFrom;
     private boolean lateEntry;
     private LocalDate remindedOn;
@@ -101,6 +102,13 @@ public class Claim {
      *  settled or approved while it has none (see {@link CheckProofs}). */
     public int getProofs() { return proofs; }
     public void setProofs(int proofs) { this.proofs = proofs; }
+    /** How many of the claim's proofs are photos; the rest are receipts. */
+    public int getProofPhotos() { return proofPhotos; }
+    public void setProofPhotos(int proofPhotos) { this.proofPhotos = proofPhotos; }
+    /** How many of the claim's proofs are of the kind (receipt or photo). */
+    public int proofsOf(String kind) {
+        return "photo".equals(kind) ? proofPhotos : "receipt".equals(kind) ? proofs - proofPhotos : 0;
+    }
     /** The number of the claim this claim was split off; null when it was not split off another. */
     public String getSplitFrom() { return splitFrom; }
     public void setSplitFrom(String splitFrom) { this.splitFrom = splitFrom; }
