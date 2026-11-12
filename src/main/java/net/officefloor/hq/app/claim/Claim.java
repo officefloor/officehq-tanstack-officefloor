@@ -74,7 +74,7 @@ public class Claim {
     public String getOpenedBy() { return openedBy; }
     /** Whether the person's last statement bound the claim to its figure then. */
     public boolean isStated() { return stated; }
-    /** The figure the claim was bound to by the person's last statement; null when it had none (n/a)
+    /** The due as shown (late charge and floor included) the claim was bound to by the person's last statement; null when it had none (n/a)
      *  or is not bound. */
     public BigDecimal getStatedDue() { return statedDue; }
     /** Whether the person's last statement bound the claim to n/a: the rate that would apply to it had

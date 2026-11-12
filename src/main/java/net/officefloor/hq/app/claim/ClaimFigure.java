@@ -3,10 +3,10 @@ package net.officefloor.hq.app.claim;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 
-/** A claim's figure: the due fixed when settled, else the rate figure its person's last statement bound it
- *  to, else its amount at the grade rate in force on
+/** A claim's figure: the due fixed when settled, else the due as shown (late charge and floor included) its
+ *  person's last statement bound it to, else its amount at the grade rate in force on
  *  its date, rounded as the sheet's {@link Rounding} has it (null, n/a, when no rate applies). The floor is not
- *  part of the figure: {@link Lateness#due} applies it last, after the late charge. */
+ *  part of a rate figure: {@link Lateness#due} applies it last, after the late charge. */
 public final class ClaimFigure {
     private ClaimFigure() {
     }

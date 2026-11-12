@@ -191,12 +191,12 @@ function lateCharge(claim: Claim, figure: string, late: Late | undefined): strin
  *  figure (bound to n/a keeps no figure). */
 const fixed = (claim: Claim) => claim.due !== null || (isBound(claim) && claim.statedDue !== null);
 
-/** A claim's due: the due fixed when it was settled (its late charge frozen in), else its figure — the
- *  rate figure its person's last statement bound it to, else its amount at the rate in force
+/** A claim's due: the due fixed when it was settled (its late charge frozen in), else the due as shown its
+ *  person's last statement bound it to (its late charge and floor in it), else its figure — its amount at the rate in force
  *  on the claim's date of its person's grade in force on that date — plus its late charge when overdue (worked out
  *  on that figure), and at least the sheet's floor in force on the claim's date, applied last.
  *  A correction's live due has no floor and it has no late charge.
- *  A statement never binds the charge or the floor: they keep following the sheet's today and settings. */
+ *  While bound by a statement, its late charge no longer follows the sheet's today. */
 export function claimDue(
   claim: Claim,
   rates: Rate[] | undefined,
@@ -205,9 +205,10 @@ export function claimDue(
   late?: Late,
 ): string {
   if (claim.due !== null) return claim.due;
+  if (isBound(claim)) return claim.statedDue ?? NA;
   const pct = rateOf(ratesFor(rates, claim), gradeOn(grades, claim.date), claim.date);
   const halfUp = late?.halfUp?.(claim) ?? false;
-  const figure = isBound(claim) ? claim.statedDue ?? NA : due(claim.amount, pct, halfUp);
+  const figure = due(claim.amount, pct, halfUp);
   const charge = lateCharge(claim, figure, late);
   const charged = charge === undefined ? figure : format(hundredths(figure) + hundredths(charge));
   return isCorrection(claim) ? charged : liveDue(charged, floor?.(claim.date));

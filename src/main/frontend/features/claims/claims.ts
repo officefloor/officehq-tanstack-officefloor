@@ -34,7 +34,7 @@ export type Claim = {
   openedBy: string | null;
   /** Whether the person's last statement bound the claim to its figure then. */
   stated: boolean;
-  /** The figure the claim was bound to; null when not bound, or bound while it had none. */
+  /** The due as shown (late charge and floor included) the claim was bound to; null when not bound, or bound while it had none. */
   statedDue: string | null;
   /** Whether the statement bound the claim to n/a: the rate that would apply to it had ended (its to-date). */
   statedNa: boolean;
