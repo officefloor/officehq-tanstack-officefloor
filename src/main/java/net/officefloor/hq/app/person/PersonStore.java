@@ -58,6 +58,18 @@ public class PersonStore {
         return aliases;
     }
 
+    /** The people's past retirements on the sheet (only the one person's when {@code personId} is given), by
+     *  person, oldest first. */
+    private Map<Long, List<PastRetirement>> pastRetirements(String sheetId, Long personId) {
+        Map<Long, List<PastRetirement>> past = new HashMap<>();
+        jdbc.query("SELECT person_id, from_date, to_date FROM person_retirement WHERE sheet_id = ?"
+                + (personId == null ? "" : " AND person_id = " + personId) + " ORDER BY id", rs -> {
+                    past.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(new PastRetirement(
+                            rs.getObject("from_date", LocalDate.class), rs.getObject("to_date", LocalDate.class)));
+                }, sheetId);
+        return past;
+    }
+
     private List<Person> query(String sheetId, Long personId, String sql, Object... args) {
         return queryFrom(sheetId, personId, "person_grade", "person_hold", "person_alias", sql, args);
     }
@@ -67,6 +79,7 @@ public class PersonStore {
         Map<Long, NavigableMap<LocalDate, String>> grades = grades(sheetId, personId, gradeTable);
         Map<Long, List<Hold>> holds = holds(sheetId, personId, holdTable);
         Map<Long, List<String>> aliases = aliases(sheetId, personId, aliasTable);
+        Map<Long, List<PastRetirement>> past = pastRetirements(sheetId, personId);
         RowMapper<Person> row = (rs, i) -> {
             Person p = new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
                     grades.getOrDefault(rs.getLong("id"), new TreeMap<>()), rs.getLong("version"),
@@ -75,6 +88,7 @@ public class PersonStore {
             p.setContact(rs.getString("contact"));
             p.setOrigin(rs.getString("origin"));
             p.getAliases().addAll(aliases.getOrDefault(rs.getLong("id"), List.of()));
+            p.getPastRetirements().addAll(past.getOrDefault(rs.getLong("id"), List.of()));
             return p;
         };
         return jdbc.query(sql, row, args);
@@ -278,6 +292,16 @@ public class PersonStore {
         person.setRetiredFrom(from);
     }
 
+    /** Unretires the person on the date, keeping their retirement as a past one, from its date to this one. */
+    public void unretire(Person person, LocalDate on) {
+        jdbc.update("INSERT INTO person_retirement (sheet_id, person_id, from_date, to_date) VALUES (?, ?, ?, ?)",
+                person.getSheetId(), person.getId(), person.getRetiredFrom(), on);
+        jdbc.update("UPDATE person SET retired_from = NULL WHERE sheet_id = ? AND id = ?", person.getSheetId(),
+                person.getId());
+        person.getPastRetirements().add(new PastRetirement(person.getRetiredFrom(), on));
+        person.setRetiredFrom(null);
+    }
+
     /** Adds a hold to the person's holds. An edit of their name or grade leaves them as they are. */
     public void hold(Person person, Hold hold) {
         jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date) VALUES (?, ?, ?, ?)",
@@ -312,6 +336,7 @@ public class PersonStore {
         jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
+        jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM statement WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM watch WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
     }
@@ -328,6 +353,7 @@ public class PersonStore {
                 person.getName());
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
+        jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM statement WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM watch WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
     }

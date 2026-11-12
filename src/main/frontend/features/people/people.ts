@@ -19,7 +19,8 @@ import { useAsOf } from '../../session/session';
  *  `aliases` are other names they are found by (no name or other alias on the sheet), sorted as names are compared.
  *  `clashing` whether their name or an alias is used as a name or alias on another sheet of the sheet's tree (its
  *  ancestors and descendants); every edit of them is refused until it renames them to a name that does not clash.
- *  `origin` is the id of the sheet they were transferred from (null when they were not). */
+ *  `origin` is the id of the sheet they were transferred from (null when they were not).
+ *  `pastRetirements` are the retirements they were unretired from, oldest first. */
 export type Person = {
   id: number;
   name: string;
@@ -40,7 +41,12 @@ export type Person = {
   aliases: string[];
   clashing: boolean;
   origin: string | null;
+  pastRetirements: PastRetirement[];
 };
+
+/** A past retirement: from the date retired from to the day unretired (yyyy-MM-dd). No claim dated
+ *  after its from-date and before its to-date may be added. */
+export type PastRetirement = { from: string; to: string };
 
 /** A hold from its from-date to its to-date (yyyy-MM-dd, both inclusive; null for no end). */
 export type Hold = { from: string; to: string | null };

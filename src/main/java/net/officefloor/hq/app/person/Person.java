@@ -9,7 +9,8 @@ import java.util.TreeMap;
 
 /** A person on a sheet. {@code grades} are their grades (each one of A, B or C) by the date each applies
  *  from, the first from {@link #START} (the beginning of time); {@code version} moves on with each stored edit;
- *  {@code retiredFrom} is the date they are retired from (null while not retired); {@code holds} their holds,
+ *  {@code retiredFrom} is the date they are retired from (null while not retired); {@code pastRetirements}
+ *  the retirements they were unretired from, oldest first; {@code holds} their holds,
  *  oldest first: their OPEN claims dated within one count in no live total unless a statement bound them, nor do
  *  any of their OPEN claims once the sheet's today reaches their retirement date. */
 public class Person {
@@ -23,6 +24,7 @@ public class Person {
     private long version;
     private LocalDate retiredFrom;
     private final List<Hold> holds = new ArrayList<>();
+    private final List<PastRetirement> pastRetirements = new ArrayList<>();
     private final List<String> aliases = new ArrayList<>();
     private LocalDate recordFrom;
     private Integer terms;
@@ -103,4 +105,6 @@ public class Person {
     public void setOrigin(String origin) { this.origin = origin; }
     public void setVersion(long version) { this.version = version; }
     public void setRetiredFrom(LocalDate retiredFrom) { this.retiredFrom = retiredFrom; }
+    /** Their past retirements (each ended by unretiring them), oldest first. */
+    public List<PastRetirement> getPastRetirements() { return pastRetirements; }
 }

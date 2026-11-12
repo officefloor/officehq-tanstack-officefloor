@@ -31,8 +31,9 @@ function RetiredHead() {
   return <th>Retired</th>;
 }
 
-// Whether the person is retired and from when, and the date and button that retire them (a blank
-// date takes the sheet's today). A refused retirement shows its error until the next is tried.
+// Whether the person is retired and from when, their past retirements (one line each), the date and
+// button that retire them (a blank date takes the sheet's today) and the button that unretires them on
+// the sheet's today. A refused retirement or unretirement shows its error until the next is tried.
 function PersonRetired({ person }: { person: Person }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -49,12 +50,26 @@ function PersonRetired({ person }: { person: Person }) {
     },
   });
 
+  const unretire = useMutation({
+    mutationKey: personActionKey(sheet, person.id),
+    mutationFn: () =>
+      postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/unretire`, { user }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
+    },
+  });
+
   const latest = useLatestPersonAction(sheet, person.id);
 
   return (
     <td>
       <span data-testid="person-retired">{person.retired ? 'yes' : 'no'}</span>{' '}
       <span data-testid="person-retired-from">{person.retiredFrom ?? ''}</span>{' '}
+      {person.pastRetirements.map((r, i) => (
+        <div key={i} data-testid="person-retirement-line">
+          {r.from} to {r.to}
+        </div>
+      ))}
       <input
         type="date"
         data-testid="person-retire-date"
@@ -75,10 +90,29 @@ function PersonRetired({ person }: { person: Person }) {
       >
         Retire
       </button>
+      <button
+        type="button"
+        data-testid="person-unretire"
+        disabled={unretire.isPending}
+        onClick={() => {
+          unretire.reset();
+          unretire.mutate();
+        }}
+      >
+        Unretire
+      </button>
       {retire.isError && retire.submittedAt >= latest && (
         <span data-testid="person-error" role="alert">
           {' '}
           {retire.error instanceof HttpError && retire.error.reason ? `${retire.error.reason}.` : 'The retirement was refused.'}
+        </span>
+      )}
+      {unretire.isError && unretire.submittedAt >= latest && (
+        <span data-testid="person-error" role="alert">
+          {' '}
+          {unretire.error instanceof HttpError && unretire.error.reason
+            ? `${unretire.error.reason}.`
+            : 'The unretirement was refused.'}
         </span>
       )}
     </td>
