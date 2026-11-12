@@ -211,4 +211,20 @@ public class PersonStore {
                 person.getSheetId(), person.getId(), hold.from(), hold.to());
         person.addHold(hold);
     }
+
+    /** Makes the person's name and aliases aliases of {@code into}, then drops the person with their grades,
+     *  holds, statements and watchers (their contact goes with them). Their claims, patrons and pool
+     *  memberships are moved before this (see ClaimStore, PatronStore and PoolStore). */
+    public void mergeInto(Person person, Person into) {
+        String sheetId = person.getSheetId();
+        jdbc.update("UPDATE person_alias SET person_id = ? WHERE sheet_id = ? AND person_id = ?", into.getId(), sheetId,
+                person.getId());
+        jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, person.getId());
+        jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias) VALUES (?, ?, ?)", sheetId, into.getId(),
+                person.getName());
+        jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
+        jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
+        jdbc.update("DELETE FROM statement WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
+        jdbc.update("DELETE FROM watch WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
+    }
 }

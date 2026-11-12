@@ -46,4 +46,24 @@ public class PatronStore {
     public void add(String sheetId, long personId, long patronId) {
         jdbc.update("INSERT INTO patron (sheet_id, person_id, patron_id) VALUES (?, ?, ?)", sheetId, personId, patronId);
     }
+
+    /** Gives {@code intoId} the patrons of {@code fromId} (not themselves, none twice), has anyone naming
+     *  {@code fromId} name {@code intoId} instead (not themselves, none twice), and drops every patron of or by
+     *  {@code fromId}. */
+    public void merge(String sheetId, long fromId, long intoId) {
+        List<Long> into = new ArrayList<>(of(sheetId, intoId));
+        for (Long patron : of(sheetId, fromId)) {
+            if (patron != intoId && !into.contains(patron)) {
+                add(sheetId, intoId, patron);
+                into.add(patron);
+            }
+        }
+        for (Long person : jdbc.queryForList("SELECT person_id FROM patron WHERE sheet_id = ? AND patron_id = ?",
+                Long.class, sheetId, fromId)) {
+            if (person != intoId && person != fromId && !of(sheetId, person).contains(intoId)) {
+                add(sheetId, person, intoId);
+            }
+        }
+        jdbc.update("DELETE FROM patron WHERE sheet_id = ? AND (person_id = ? OR patron_id = ?)", sheetId, fromId, fromId);
+    }
 }

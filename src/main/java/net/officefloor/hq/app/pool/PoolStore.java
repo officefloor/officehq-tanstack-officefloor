@@ -75,4 +75,22 @@ public class PoolStore {
         jdbc.update("INSERT INTO pool_member (sheet_id, pool_id, person_id, share) VALUES (?, ?, ?, ?)", sheetId,
                 poolId, personId, share);
     }
+
+    /** Moves the memberships of {@code fromId} to {@code intoId}, adding the share to theirs in a pool they are
+     *  already in. */
+    public void merge(String sheetId, long fromId, long intoId) {
+        List<Map<String, Object>> rows = jdbc.queryForList(
+                "SELECT id, pool_id, share FROM pool_member WHERE sheet_id = ? AND person_id = ? ORDER BY id", sheetId, fromId);
+        for (Map<String, Object> row : rows) {
+            long poolId = ((Number) row.get("POOL_ID")).longValue();
+            long id = ((Number) row.get("ID")).longValue();
+            if (isMember(poolId, intoId)) {
+                jdbc.update("UPDATE pool_member SET share = share + ? WHERE pool_id = ? AND person_id = ?",
+                        row.get("SHARE"), poolId, intoId);
+                jdbc.update("DELETE FROM pool_member WHERE id = ?", id);
+            } else {
+                jdbc.update("UPDATE pool_member SET person_id = ? WHERE id = ?", intoId, id);
+            }
+        }
+    }
 }

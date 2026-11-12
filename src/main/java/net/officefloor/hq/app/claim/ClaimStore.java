@@ -352,4 +352,14 @@ public class ClaimStore {
         return jdbc.queryForObject("SELECT last_number FROM claim_period_number WHERE sheet_id = ? AND sequence = ?",
                 Long.class, sheetId, sequence);
     }
+
+    /** Moves every claim of {@code fromId} to {@code intoId}, keeping their numbers and dates, each unbound from any
+     *  statement figure and listed after the claims {@code intoId} has, in the order they were listed. */
+    public void moveAll(String sheetId, long fromId, long intoId) {
+        for (Long id : jdbc.queryForList("SELECT id FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY listed",
+                Long.class, sheetId, fromId)) {
+            jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, stated_na = FALSE, "
+                    + "listed = NEXT VALUE FOR claim_listed_seq WHERE sheet_id = ? AND id = ?", intoId, sheetId, id);
+        }
+    }
 }
