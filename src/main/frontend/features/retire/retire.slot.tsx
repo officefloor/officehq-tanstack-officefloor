@@ -5,6 +5,7 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
 import { type Person, peopleKey, personActionKey, useLatestPersonAction, useShowRetired } from '../people/people';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
+import { poolsKey } from '../pools/pools';
 
 // The "show retired" toggle: the people list leaves retired people out unless it is on. It belongs
 // to the screen, so loading a sheet leaves it as it is.
@@ -45,7 +46,10 @@ function PersonRetired({ person }: { person: Person }) {
     mutationFn: (from: string) =>
       postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/retire`, { date: from, user }),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: poolsKey(sheet) }),
+      ]);
       setDate('');
     },
   });
@@ -55,7 +59,10 @@ function PersonRetired({ person }: { person: Person }) {
     mutationFn: () =>
       postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/unretire`, { user }),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: poolsKey(sheet) }),
+      ]);
     },
   });
 
