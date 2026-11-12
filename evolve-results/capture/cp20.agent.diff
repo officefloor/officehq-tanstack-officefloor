@@ -1,0 +1,147 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyStatus.java
+index f73425b56..9dd302d8a 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyStatus.java
+@@ -9,7 +9,7 @@ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /** Moves the claim to the new status, refusing a change its current status does not allow. Opening
+- *  gives the claim the sheet's next number and records who opened it; voiding clears it. Settling fixes its due at its person's
++ *  gives the claim the sheet's next number and records who opened it; a voided claim keeps its number, which is never reused. Settling fixes its due at its person's
+  *  grade rate in force on the claim's date, rounded half to even (none when no rate of the grade applies then),
+  *  or at the figure its person's last statement bound it to.
+  *  The user who opened a claim may not settle it. */
+@@ -36,8 +36,5 @@ public class ApplyStatus {
+             claim.setSettledDue(ClaimFigure.of(claim, pct));
+         }
+         change.set(new StatusChange(claim.getNumber()));
+-        if (input.status() == ClaimStatus.VOID) {
+-            claim.setNumber(null);
+-        }
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/CheckClaimDraft.java b/src/main/java/net/officefloor/hq/app/claim/CheckClaimDraft.java
+new file mode 100644
+index 000000000..8bbb0d167
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/CheckClaimDraft.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.sheet.InvalidSheetException;
++import net.officefloor.plugin.variable.Val;
++
++/** Refuses an edit of a claim that is no longer a draft: an open claim is voided and added anew instead. */
++public class CheckClaimDraft {
++    public void check(@Val Claim claim) throws InvalidSheetException {
++        if (claim.getStatus() != ClaimStatus.DRAFT) {
++            throw new InvalidSheetException("A " + claim.getStatus() + " claim cannot be edited");
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 097f7357a..f1d5cafac 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -43,7 +43,8 @@ public class Claim {
+     public LocalDate getDate() { return date; }
+     public String getNote() { return note; }
+     public ClaimStatus getStatus() { return status; }
+-    /** The number given when the claim was opened; null for a draft or a voided claim. */
++    /** The number given when the claim was opened; null for a draft, or a claim voided as a draft;
++     *  a claim voided once open keeps it. */
+     public Long getNumber() { return number; }
+     /** The due fixed when the claim was settled; null when not settled, or settled with no rate. */
+     public BigDecimal getSettledDue() { return settledDue; }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java
+index 41589c659..a19efd835 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java
+@@ -59,6 +59,13 @@ public class ClaimStore {
+                 claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getSheetId(), claim.getId());
+     }
+ 
++    /** Stores a draft's amount, date and note; false when the stored claim is no longer a draft. */
++    public boolean edit(Claim claim) {
++        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ? WHERE sheet_id = ? AND id = ? AND status = ?",
++                claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getSheetId(), claim.getId(),
++                ClaimStatus.DRAFT.name()) == 1;
++    }
++
+     /** The person's claims, newest first, their rows locked until the transaction ends. */
+     public List<Claim> listForUpdate(String sheetId, long personId) {
+         return jdbc.query("SELECT * FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY id DESC FOR UPDATE",
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveClaimEdit.java b/src/main/java/net/officefloor/hq/app/claim/SaveClaimEdit.java
+new file mode 100644
+index 000000000..eca6ed46f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveClaimEdit.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.sheet.InvalidSheetException;
++import net.officefloor.plugin.variable.Val;
++
++/** Stores an edit of a draft, refusing it when another user moved the claim on first. */
++public class SaveClaimEdit {
++    public void save(@Val Claim claim, ClaimStore store) throws InvalidSheetException {
++        if (!store.edit(claim)) {
++            throw new InvalidSheetException("Only a DRAFT claim can be edited");
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/StatusChange.java b/src/main/java/net/officefloor/hq/app/claim/StatusChange.java
+index 08602b074..bf2570161 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/StatusChange.java
++++ b/src/main/java/net/officefloor/hq/app/claim/StatusChange.java
+@@ -1,6 +1,6 @@
+ package net.officefloor.hq.app.claim;
+ 
+-/** A stored status change: the number the claim carried through it (given on opening, or held until
+- *  voided), null when it had none. */
++/** A stored status change: the number the claim carried through it (given on opening, and kept
++ *  when voided), null when it had none. */
+ public record StatusChange(Long number) {
+ }
+diff --git a/src/main/resources/db/migration/V15__claim_void_keeps_number.sql b/src/main/resources/db/migration/V15__claim_void_keeps_number.sql
+new file mode 100644
+index 000000000..667c7f3c6
+--- /dev/null
++++ b/src/main/resources/db/migration/V15__claim_void_keeps_number.sql
+@@ -0,0 +1,3 @@
++-- A voided claim now keeps the number it was given when opened (still never reused). Claims voided
++-- before this change had theirs cleared and stay without one.
++COMMENT ON COLUMN claim.number IS 'Given when opened, the next on its sheet; kept when voided, never reused';
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+index fc3a8f656..83515130d 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+@@ -1,5 +1,6 @@
+-# PUT /api/sheets/{sheetId}/claims/{claimId} — edit a claim's amount, date and note (body as an
+-# add). Refused (400) like an add, when the claim is not on the sheet, or
++# PUT /api/sheets/{sheetId}/claims/{claimId} — edit a draft claim's amount, date and note (body as an
++# add). Refused (400) like an add, when the claim is not on the sheet, when it is not a DRAFT
++# (an open claim is voided and added anew instead), or
+ # when its date or its new date falls in a closed period; nothing is stored then.
+ # A stored change is recorded in the audit file as CLAIM_EDITED; a refused one records nothing.
+ validate:
+@@ -8,6 +9,10 @@ validate:
+ load:
+   class: net.officefloor.hq.app.claim.LoadClaim
+   govern: [ transaction ]
++  next: checkDraft
++checkDraft:
++  class: net.officefloor.hq.app.claim.CheckClaimDraft
++  govern: [ transaction ]
+   next: checkClaim
+ checkClaim:
+   class: net.officefloor.hq.app.claim.CheckClaimPeriod
+@@ -26,7 +31,7 @@ apply:
+   govern: [ transaction ]
+   next: save
+ save:
+-  class: net.officefloor.hq.app.claim.SaveClaim
++  class: net.officefloor.hq.app.claim.SaveClaimEdit
+   govern: [ transaction ]
+   next: audit
+ audit:
