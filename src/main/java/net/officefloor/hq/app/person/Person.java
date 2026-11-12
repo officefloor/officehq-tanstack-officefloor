@@ -29,6 +29,8 @@ public class Person {
     private final List<String> aliases = new ArrayList<>();
     private LocalDate recordFrom;
     private Integer terms;
+    private final NavigableMap<LocalDate, Integer> datedTerms = new TreeMap<>();
+    private LocalDate termsRecordFrom;
     private boolean termsChanged;
     private String contact;
     private boolean contactChanged;
@@ -84,14 +86,32 @@ public class Person {
         grades.put(from, grade);
         recordFrom = from;
     }
-    /** Their own terms (whole days), null when they have none. */
+    /** Their own terms (whole days) from the beginning of time, until the first dated terms; null when they have none. */
     public Integer getTerms() { return terms; }
-    /** Sets their own terms, noting whether they differ from the ones they had. */
+    /** Sets their own terms from the beginning of time, noting whether they differ from the ones they had. */
     public void setTerms(Integer terms) {
         termsChanged = !java.util.Objects.equals(this.terms, terms);
         this.terms = terms;
     }
-    /** Whether the last {@link #setTerms} changed their terms. */
+    /** Their own terms by the date each applies from, after those from the beginning of time (a null value:
+     *  none of their own from that date). */
+    public NavigableMap<LocalDate, Integer> getDatedTerms() { return datedTerms; }
+    /** Their own terms in force on the date: the dated ones with the latest from-date on or before it, else
+     *  those from the beginning of time; null when they have none then. */
+    public Integer termsOn(LocalDate on) {
+        Map.Entry<LocalDate, Integer> e = datedTerms.floorEntry(on);
+        return e == null ? terms : e.getValue();
+    }
+    /** Records their own terms (null for none) from the date at the next save, keeping the others (replacing
+     *  those from the same date), noting whether that changed them. */
+    public void recordTerms(LocalDate from, Integer terms) {
+        termsChanged = !datedTerms.containsKey(from) || !java.util.Objects.equals(datedTerms.get(from), terms);
+        datedTerms.put(from, terms);
+        termsRecordFrom = from;
+    }
+    /** The from-date of the dated terms the next save records, null when it records none. */
+    public LocalDate getTermsRecordFrom() { return termsRecordFrom; }
+    /** Whether the last {@link #setTerms} or {@link #recordTerms} changed their terms. */
     public boolean isTermsChanged() { return termsChanged; }
     /** Their contact (trimmed, lower-cased), null when they have none. */
     public String getContact() { return contact; }

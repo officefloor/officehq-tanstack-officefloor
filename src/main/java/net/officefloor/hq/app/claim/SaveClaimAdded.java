@@ -29,10 +29,10 @@ public class SaveClaimAdded {
         return added;
     }
 
-    /** The terms a claim of the person dated {@code date} is due by: their own, else their grade's in force
+    /** The terms a claim of the person dated {@code date} is due by: their own in force on the date, else their grade's in force
      *  on the date, else the sheet's then. */
     static int termsOf(Person person, LocalDate date, SettingStore settings) {
-        return person.getTerms() != null ? person.getTerms()
-                : settings.terms(person.getSheetId(), person.gradeOn(date), date);
+        Integer own = person.termsOn(date);
+        return own != null ? own : settings.terms(person.getSheetId(), person.gradeOn(date), date);
     }
 }

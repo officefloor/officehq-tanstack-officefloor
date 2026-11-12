@@ -13,7 +13,7 @@ public final class PersonRules {
     private PersonRules() {
     }
 
-    /** The person form's rules for a name, grade, from-date, terms, contact and tags: the request as stored
+    /** The person form's rules for a name, grade, from-date, terms, terms from-date, contact and tags: the request as stored
      *  (name trimmed, blanks as none, contact lower-cased, tags as {@link net.officefloor.hq.app.claim.Tags} stores them), or refused. */
     public static PersonRequest check(PersonRequest request) throws InvalidSheetException {
         if (request == null || request.name() == null || request.name().trim().isEmpty()) {
@@ -34,12 +34,20 @@ public final class PersonRules {
         if (!terms.isEmpty() && !terms.matches("\\d{1,6}")) {
             throw new InvalidSheetException("The terms must be a whole number of days, 0 or more, or blank");
         }
+        String termsFrom = request.termsFrom() == null ? "" : request.termsFrom().trim();
+        try {
+            if (!termsFrom.isEmpty()) {
+                LocalDate.parse(termsFrom);
+            }
+        } catch (DateTimeParseException e) {
+            throw new InvalidSheetException("Not a date: " + termsFrom);
+        }
         String contact = request.contact() == null ? "" : request.contact().trim().toLowerCase(java.util.Locale.ROOT);
         // Stored and compared without the spaces around the name; a blank from-date as none.
         return new PersonRequest(request.name().trim(), request.grade(), from.isEmpty() ? null : from,
                 request.user(), request.version(),
                 terms.isEmpty() ? null : String.valueOf(Integer.parseInt(terms)), contact.isEmpty() ? null : contact,
-                net.officefloor.hq.app.claim.Tags.normalise(request.tags()));
+                net.officefloor.hq.app.claim.Tags.normalise(request.tags()), termsFrom.isEmpty() ? null : termsFrom);
     }
 
     /** Refuses a name another person on the sheet, or anyone on another sheet of its tree, has as a name or
@@ -52,6 +60,17 @@ public final class PersonRules {
         }
         if (request.contact() != null && store.contactTaken(sheetId.trim(), request.contact(), null)) {
             throw new DuplicateContactException(request.contact());
+        }
+    }
+
+    /** Records the terms (null for none) as an edit does: from the terms from-date (yyyy-MM-dd), keeping the
+     *  ones already recorded, or when it is null from the beginning of time. */
+    public static void applyTerms(Person person, String terms, String termsFrom) {
+        Integer days = terms == null ? null : Integer.valueOf(terms);
+        if (termsFrom == null) {
+            person.setTerms(days);
+        } else {
+            person.recordTerms(LocalDate.parse(termsFrom), days);
         }
     }
 

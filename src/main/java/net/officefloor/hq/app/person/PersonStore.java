@@ -36,6 +36,17 @@ public class PersonStore {
         return grades;
     }
 
+    /** The people's dated terms on the sheet (only the one person's when {@code personId} is given), by person. */
+    private Map<Long, NavigableMap<LocalDate, Integer>> datedTerms(String sheetId, Long personId, String table) {
+        Map<Long, NavigableMap<LocalDate, Integer>> terms = new HashMap<>();
+        jdbc.query("SELECT person_id, from_date, terms FROM " + table + " WHERE sheet_id = ?"
+                + (personId == null ? "" : " AND person_id = " + personId), rs -> {
+                    terms.computeIfAbsent(rs.getLong("person_id"), k -> new TreeMap<>())
+                            .put(rs.getObject("from_date", LocalDate.class), rs.getObject("terms", Integer.class));
+                }, sheetId);
+        return terms;
+    }
+
     /** The people's holds on the sheet (only the one person's when {@code personId} is given), by person, oldest first. */
     private Map<Long, List<Hold>> holds(String sheetId, Long personId, String table) {
         Map<Long, List<Hold>> holds = new HashMap<>();
@@ -84,11 +95,13 @@ public class PersonStore {
 
     private List<Person> query(String sheetId, Long personId, String sql, Object... args) {
         return queryFrom(sheetId, personId, "person_grade", "person_hold", "person_alias", "person_retirement",
-                "person_snapshot", sql, args);
+                "person_snapshot", "person_terms", sql, args);
     }
 
     private List<Person> queryFrom(String sheetId, Long personId, String gradeTable, String holdTable,
-            String aliasTable, String retirementTable, String snapshotTable, String sql, Object... args) {
+            String aliasTable, String retirementTable, String snapshotTable, String termsTable, String sql,
+            Object... args) {
+        Map<Long, NavigableMap<LocalDate, Integer>> dated = datedTerms(sheetId, personId, termsTable);
         Map<Long, NavigableMap<LocalDate, String>> grades = grades(sheetId, personId, gradeTable);
         Map<Long, List<Hold>> holds = holds(sheetId, personId, holdTable);
         Map<Long, List<String>> aliases = aliases(sheetId, personId, aliasTable);
@@ -99,6 +112,7 @@ public class PersonStore {
                     grades.getOrDefault(rs.getLong("id"), new TreeMap<>()), rs.getLong("version"),
                     rs.getObject("retired_from", LocalDate.class), holds.getOrDefault(rs.getLong("id"), List.of()));
             p.setTerms(rs.getObject("terms", Integer.class));
+            p.getDatedTerms().putAll(dated.getOrDefault(rs.getLong("id"), new TreeMap<>()));
             p.setContact(rs.getString("contact"));
             p.setTags(rs.getString("tags"));
             p.setOrigin(rs.getString("origin"));
@@ -120,6 +134,7 @@ public class PersonStore {
         return queryFrom(sheetId, null, History.asOf("person_grade", "person_id, from_date", date),
                 History.asOf("person_hold", "id", date), History.asOf("person_alias", "id", date),
                 History.asOf("person_retirement", "id", date), History.asOf("person_snapshot", "id", date),
+                History.asOf("person_terms", "person_id, from_date", date),
                 "SELECT * FROM " + History.asOf("person", "id", date) + " WHERE sheet_id = ? ORDER BY list_position, id", sheetId);
     }
 
@@ -134,6 +149,7 @@ public class PersonStore {
         List<Person> found = queryFrom(sheetId, id, History.asOf("person_grade", "person_id, from_date", date),
                 History.asOf("person_hold", "id", date), History.asOf("person_alias", "id", date),
                 History.asOf("person_retirement", "id", date), History.asOf("person_snapshot", "id", date),
+                History.asOf("person_terms", "person_id, from_date", date),
                 "SELECT * FROM " + History.asOf("person", "id", date) + " WHERE sheet_id = ? AND id = ?", sheetId, id);
         return found.isEmpty() ? null : found.get(0);
     }
@@ -267,8 +283,18 @@ public class PersonStore {
                 jdbc.update("MERGE INTO person_grade (sheet_id, person_id, from_date, grade) KEY (person_id, from_date)"
                         + " VALUES (?, ?, ?, ?)", person.getSheetId(), person.getId(), from, person.getGrades().get(from));
             }
+            LocalDate termsFrom = person.getTermsRecordFrom();
+            if (termsFrom != null) {
+                recordTerms(person, termsFrom);
+            }
         }
         return n == 1;
+    }
+
+    /** Stores the person's dated terms from the date, replacing any from the same date. */
+    public void recordTerms(Person person, LocalDate from) {
+        jdbc.update("MERGE INTO person_terms (sheet_id, person_id, from_date, terms) KEY (person_id, from_date)"
+                + " VALUES (?, ?, ?, ?)", person.getSheetId(), person.getId(), from, person.getDatedTerms().get(from));
     }
 
     /**
@@ -353,6 +379,9 @@ public class PersonStore {
                         toSheet, copy.getId(), from, grade);
             }
         });
+        person.getDatedTerms().forEach((from, terms) -> jdbc.update(
+                "INSERT INTO person_terms (sheet_id, person_id, from_date, terms) VALUES (?, ?, ?, ?)", toSheet,
+                copy.getId(), from, terms));
         for (String alias : person.getAliases()) {
             addAlias(copy, alias);
         }
@@ -368,6 +397,7 @@ public class PersonStore {
         jdbc.update("DELETE FROM person_alias WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
+        jdbc.update("DELETE FROM person_terms WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM person_snapshot WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
@@ -386,6 +416,7 @@ public class PersonStore {
         jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias) VALUES (?, ?, ?)", sheetId, into.getId(),
                 person.getName());
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
+        jdbc.update("DELETE FROM person_terms WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM person_snapshot WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());

@@ -9,7 +9,7 @@ import net.officefloor.hq.app.statement.StatementSummary;
  *  statement count and the last statement's due-total and date (null when none was taken), whether they
  *  are retired and from when (null when not) and whether the sheet's today has reached that date, whether they have any hold
  *  and each hold's from-date and to-date (null for no end), the ids of their patrons (in the order named), and their own terms
- *  (whole days, null when none), their contact (null when none) and their aliases, sorted as names are compared, and whether they clash: their
+ *  in force on the sheet's today (whole days, null when none), their contact (null when none) and their aliases, sorted as names are compared, and whether they clash: their
  *  name or an alias is used as a name or alias on another sheet of the sheet's tree, and the sheet they were
  *  transferred from (null when they were not), and their past retirements, oldest first, and their tags, sorted, and their snapshots, oldest first, and their statements still standing, oldest first (by date). */
 public record PersonResponse(long id, String name, String grade, List<GradeFrom> grades, long version,
@@ -45,7 +45,7 @@ public record PersonResponse(long id, String name, String grade, List<GradeFrom>
                 p.getRetiredFrom() == null ? null : p.getRetiredFrom().toString(), p.isHeld(),
                 p.getHolds().stream().map(h -> new HoldFrom(h.from().toString(), h.to() == null ? null : h.to().toString()))
                         .toList(),
-                patronIds, p.getTerms(), p.retiredOn(today), p.getContact(),
+                patronIds, p.termsOn(today), p.retiredOn(today), p.getContact(),
                 List.copyOf(p.getAliases()), clashing, p.getOrigin(),
                 p.getPastRetirements().stream().map(r -> new RetirementFrom(r.from().toString(), r.to().toString()))
                         .toList(),

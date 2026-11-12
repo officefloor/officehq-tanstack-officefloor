@@ -143,6 +143,9 @@ public class SheetCloneStore {
         jdbc.update("INSERT INTO person_grade (sheet_id, person_id, from_date, grade) "
                 + "SELECT ?, ?, from_date, grade FROM person_grade WHERE sheet_id = ? AND person_id = ?",
                 to, id, from, person.getId());
+        jdbc.update("INSERT INTO person_terms (sheet_id, person_id, from_date, terms) "
+                + "SELECT ?, ?, from_date, terms FROM person_terms WHERE sheet_id = ? AND person_id = ?",
+                to, id, from, person.getId());
         jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date) "
                 + "SELECT ?, ?, from_date, to_date FROM person_hold WHERE sheet_id = ? AND person_id = ? ORDER BY id",
                 to, id, from, person.getId());

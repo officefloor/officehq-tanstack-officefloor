@@ -14,7 +14,7 @@ import { useAsOf } from '../../session/session';
  *  a hold count in no live total unless a statement bound them; their SETTLED ones still do.
  *  `patronIds` are the ids of the other people on the sheet they named as their patrons, in the order they named them.
  *  `grade` is the grade in force on the sheet's today; `grades` every grade with the date it applies from.
- *  `terms` are their own terms in whole days (null when none), ahead of their grade's and the sheet's.
+ *  `terms` are their own terms in force on the sheet's today, in whole days (null when none), ahead of their grade's and the sheet's.
  *  `contact` is their contact (trimmed, lower-cased; null when none), no other person's on the sheet.
  *  `aliases` are other names they are found by (no name or other alias on the sheet), sorted as names are compared.
  *  `clashing` whether their name or an alias is used as a name or alias on another sheet of the sheet's tree (its
