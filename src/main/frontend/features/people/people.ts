@@ -73,6 +73,9 @@ export const covers = (h: Hold, date: string) => h.from <= date && (h.to === nul
 
 export const GRADES = ['A', 'B', 'C'] as const;
 
+/** A person's name as the screen shows it: <name> (<grade in force on the sheet's today>). */
+export const shownName = (p: Person) => `${p.name} (${p.grade})`;
+
 /** A person's grades, each with the date (yyyy-MM-dd) it applies from; the first has none (null),
  *  applying from the beginning of time. */
 export type Grades = { grade: string; from: string | null }[];

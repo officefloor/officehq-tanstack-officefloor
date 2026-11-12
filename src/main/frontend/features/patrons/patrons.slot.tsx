@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, postJson } from '../../api/http';
 import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
-import { type Person, peopleKey, usePeople } from '../people/people';
+import { type Person, peopleKey, shownName, usePeople } from '../people/people';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { useSheetToday } from '../sheet/sheet';
 import { isRecentSettled, useClaims } from '../claims/claims';
@@ -48,9 +48,9 @@ function PersonPatrons({ person }: { person: Person }) {
     return p ? [{ person: p, share: shares[i] }] : [];
   });
   const named = patrons
-    .map((p) => ({ name: p.person.name, share: p.share }))
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .map((p) => `${p.name} ${p.share}`);
+    .map((p) => ({ person: p.person, share: p.share }))
+    .sort((a, b) => a.person.name.localeCompare(b.person.name))
+    .map((p) => `${shownName(p.person)} ${p.share}`);
   const backing = sharedTotal(
     patrons.map((p) => ({
       figure: dueTotal(

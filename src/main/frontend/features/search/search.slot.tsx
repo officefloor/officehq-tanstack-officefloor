@@ -4,7 +4,7 @@ import { getJson } from '../../api/http';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { LiveView, useCurrentSheet } from '../../session/session';
 import { sheetKey, useSheet } from '../sheet/sheet';
-import { type Person, usePeople } from '../people/people';
+import { type Person, shownName, usePeople } from '../people/people';
 import { useClaims } from '../claims/claims';
 import { useRates } from '../rates/rates';
 import { useSettings } from '../settings/settings';
@@ -33,7 +33,7 @@ function Gather({ sheets, text, sofar, done }: { sheets: string[]; text: string;
   const dueOf = usePersonDue(first);
   const ready = !!(people.data && claims.data && rates.data && settings.data && sheet.data);
   const lines = ready
-    ? [...sofar, ...people.data!.filter((p) => matches(p, text)).map((p) => `${first} ${p.name} ${dueOf(p)}`)]
+    ? [...sofar, ...people.data!.filter((p) => matches(p, text)).map((p) => `${first} ${shownName(p)} ${dueOf(p)}`)]
     : sofar;
   const last = ready && rest.length === 0;
   const key = lines.join('\n');

@@ -2,7 +2,7 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
 import { useCurrentSheet } from '../../session/session';
 import { usePersonDue } from '../rates/due.slot';
-import { type Person, useEditingPerson, usePeople, useSelectedPeople, useShowRetired } from './people';
+import { type Person, shownName, useEditingPerson, usePeople, useSelectedPeople, useShowRetired } from './people';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { useColumnShown } from '../columns/columns';
 
@@ -93,7 +93,7 @@ function PeopleList() {
                 onChange={(e) => setSelected(e.target.checked ? [...selected, p.id] : selected.filter((id) => id !== p.id))}
               />
             </td>
-            <td data-testid="person-name" style={{ whiteSpace: 'pre' }}>{p.name}</td>
+            <td data-testid="person-name" style={{ whiteSpace: 'pre' }}>{shownName(p)}</td>
             <td data-testid="person-grade">{p.grade}</td>
             {shown('terms') && <td data-testid="person-terms">{p.terms ?? ''}</td>}
             {shown('contact') && <td data-testid="person-contact">{p.contact ?? ''}</td>}

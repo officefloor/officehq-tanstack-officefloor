@@ -4,7 +4,7 @@ import { HttpError, postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
-import { type Person, usePeople } from '../people/people';
+import { type Person, shownName, usePeople } from '../people/people';
 import { usePersonDue } from '../rates/due.slot';
 import { type Crew, crewDue, crewsKey, useCrews } from './crews';
 import { poolsKey } from '../pools/pools';
@@ -35,10 +35,12 @@ function CrewRow({ crew, people, due }: { crew: Crew; people: Person[]; due: (p:
   const submit = useSubmitOnce(add);
 
   const total = crewDue(crew, people, due);
+  const leader = people.find((p) => p.id === crew.leadId);
+  const leadShown = crew.lead === null ? '' : leader ? shownName(leader) : crew.lead;
 
   return (
     <li data-testid={`crew-row-${crew.name}`}>
-      <strong>{crew.name}</strong> — lead <span data-testid="crew-lead">{crew.lead ?? ''}</span>, due total{' '}
+      <strong>{crew.name}</strong> — lead <span data-testid="crew-lead">{leadShown}</span>, due total{' '}
       <span data-testid="crew-due-total">{fig(total)}</span>
       <ul>
         {crew.members.map((m) => (
