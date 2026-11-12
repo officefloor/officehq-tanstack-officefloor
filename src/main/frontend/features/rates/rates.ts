@@ -119,6 +119,11 @@ export function dueTotal(dues: string[]): string {
   return format(dues.filter((d) => d !== NA).reduce((sum, d) => sum + hundredths(d), 0n));
 }
 
+/** `value` less `base`, two decimals, with a minus sign when lower. */
+export function difference(value: string, base: string): string {
+  return format(hundredths(value) - hundredths(base));
+}
+
 /** Shares of 100.00 split equally among `count` patrons in the order they were named: each rounded half to
  *  even to two decimals, with the remainder (100.00 less the shares added up) given to the first. */
 export function patronShares(count: number): string[] {

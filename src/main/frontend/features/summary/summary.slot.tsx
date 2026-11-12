@@ -3,7 +3,7 @@ import { useCurrentSheet } from '../../session/session';
 import { STATUSES, isActive, live, statusCount, useClaims } from '../claims/claims';
 import { GRADES, gradeOn, usePeople } from '../people/people';
 import { periodDue, usePeriods } from '../periods/periods';
-import { dueTotal, personDue, useRates } from '../rates/rates';
+import { difference, dueTotal, personDue, useRates } from '../rates/rates';
 import { floorOf, useSettings } from '../settings/settings';
 import { useSheetToday } from '../sheet/sheet';
 import { lateOf } from '../overdue/overdue';
@@ -11,7 +11,8 @@ import { useVoidReasons } from '../voidreasons/voidreasons';
 
 // The sheet at a glance, worked out from the same figures the lists show: per grade, the people on it
 // today (retired people excluded), their due-totals added up (skipping n/a) and how many of them are
-// active; per period, its due-total; per status, how many claims have it; per void reason on the list,
+// active; per period, its due-total and its change from the period before it by start date (none for
+// the earliest); per status, how many claims have it; per void reason on the list,
 // how many VOID claims were voided with it.
 function Summary() {
   const [sheet] = useCurrentSheet();
@@ -29,6 +30,14 @@ function Summary() {
   const onGrade = (grade: string) => active.filter((p) => gradeOn(p.grades, today) === grade);
   const dueOf = (p: (typeof active)[number]) =>
     personDue(live((claims.data ?? []).filter((c) => c.personId === p.id), [p]), rates.data, p.grades, today, floor, late, settings?.cap);
+
+  const periodTotal = (p: NonNullable<typeof periods.data>[number]) =>
+    periodDue(p, claims.data, people.data, rates.data, floor, late);
+  const byStart = [...(periods.data ?? [])].sort((a, b) => a.from.localeCompare(b.from));
+  const changeOf = (p: (typeof byStart)[number]) => {
+    const i = byStart.indexOf(p);
+    return i > 0 ? difference(periodTotal(p), periodTotal(byStart[i - 1])) : '';
+  };
 
   const isActiveOn = (p: (typeof active)[number]) =>
     isActive(live((claims.data ?? []).filter((c) => c.personId === p.id), [p]), today);
@@ -61,6 +70,7 @@ function Summary() {
           <tr>
             <th>Period</th>
             <th>Due total</th>
+            <th>Change</th>
           </tr>
         </thead>
         <tbody>
@@ -68,8 +78,9 @@ function Summary() {
             <tr key={p.name}>
               <td>{p.name}</td>
               <td data-testid={`summary-period-${p.name}-due-total`}>
-                {periodDue(p, claims.data, people.data, rates.data, floor, late)}
+                {periodTotal(p)}
               </td>
+              <td data-testid={`summary-period-${p.name}-change`}>{changeOf(p)}</td>
             </tr>
           ))}
         </tbody>
