@@ -73,7 +73,7 @@ public class StatementStore {
 
     private Map<Long, StatementSummary> summariesFrom(String sheetId, String table) {
         Map<Long, List<StatementSummary.Line>> lines = new HashMap<>();
-        jdbc.query("SELECT person_id, taken_on, due_total FROM " + table + " WHERE sheet_id = ? ORDER BY taken_on, id",
+        jdbc.query("SELECT person_id, taken_on, due_total FROM " + table + " WHERE sheet_id = ? ORDER BY id",
                 rs -> {
                     lines.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(new StatementSummary.Line(
                             rs.getObject("taken_on", LocalDate.class).toString(), figure(rs.getBigDecimal("due_total"))));

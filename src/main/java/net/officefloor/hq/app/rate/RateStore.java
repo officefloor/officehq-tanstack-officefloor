@@ -33,36 +33,52 @@ public class RateStore {
     /** Where the rates are read from: the rate table, or the rates as they stood at the end of a date. */
     private final String rates;
 
+    /** Where each sheet's parent is read from: the setting table, or the settings as they stood at the end of a date. */
+    private final String settings;
+
     @Autowired
     public RateStore(JdbcTemplate jdbc) {
-        this(jdbc, "rate");
+        this(jdbc, "rate", "sheet_setting");
     }
 
-    private RateStore(JdbcTemplate jdbc, String rates) {
+    private RateStore(JdbcTemplate jdbc, String rates, String settings) {
         this.jdbc = jdbc;
         this.rates = rates;
+        this.settings = settings;
     }
 
     /** The rates that apply to the claim (to read only): those that are not forward-only, and those saved
      *  before the claim was added. */
     public RateStore forClaim(Claim claim) {
         return new RateStore(jdbc, "(SELECT * FROM " + rates + " WHERE forward_seq IS NULL OR forward_seq < "
-                + claim.getAddedSeq() + ") rate");
+                + claim.getAddedSeq() + ") rate", settings);
     }
 
-    /** The rates as they stood at the end of the date (see {@link History}), to read only. */
+    /** The rates, and the parents the sheets name, as they stood at the end of the date (see {@link History}), to
+     *  read only. A sheet that has no today of its own has kept no dated history (its changes are dated by the
+     *  real date), so its rates and its parent are read as they are now. */
     public RateStore asOf(LocalDate date) {
-        return new RateStore(jdbc, History.asOf("rate", "sheet_id, grade, from_date", date));
+        return new RateStore(jdbc,
+                datedOrNow("rate", "sheet_id, grade, from_date", "sheet_id, grade, from_date, to_date, pct, version, forward_seq", date),
+                datedOrNow("sheet_setting", "sheet_id, setting_key", "sheet_id, setting_key, setting_value", date));
+    }
+
+    /** The table's rows (these columns) as they stood at the end of the date for the sheets with a today of their
+     *  own, and as they are now for the others. */
+    private static String datedOrNow(String table, String keys, String columns, LocalDate date) {
+        String dated = "SELECT id FROM sheet WHERE today IS NOT NULL";
+        return "(SELECT " + columns + " FROM " + History.asOf(table, keys, date) + " WHERE sheet_id IN (" + dated + ")"
+                + " UNION ALL SELECT " + columns + " FROM " + table + " WHERE sheet_id NOT IN (" + dated + ")) " + table;
     }
 
     /** The sheet, then its parent, its parent's parent, up to {@link #LEVELS} levels up (stopping at a sheet
-     *  with no parent, or one already in the chain). The parents are those named now, also when the rates are
-     *  read as of a date. */
+     *  with no parent, or one already in the chain). The parents are those named now, or when the rates are
+     *  read as of a date, then. */
     public List<String> chain(String sheetId) {
         List<String> chain = new ArrayList<>();
         chain.add(sheetId);
         for (int level = 0; level < LEVELS; level++) {
-            List<String> found = jdbc.queryForList("SELECT setting_value FROM sheet_setting"
+            List<String> found = jdbc.queryForList("SELECT setting_value FROM " + settings
                     + " WHERE sheet_id = ? AND setting_key = 'parent'", String.class, chain.get(chain.size() - 1));
             String parent = found.isEmpty() ? null : found.get(0);
             if (parent == null || chain.contains(parent)) {
