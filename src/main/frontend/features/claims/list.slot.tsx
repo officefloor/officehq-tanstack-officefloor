@@ -11,6 +11,7 @@ import { periodOf, usePeriods } from '../periods/periods';
 import { useSheetToday } from '../sheet/sheet';
 import { dueBy, lateOf, overdue } from '../overdue/overdue';
 import { useVoidReasons } from '../voidreasons/voidreasons';
+import { useTemplates } from '../templates/templates';
 import { type Claim, type ClaimStatus, claimsKey, useClaims, useEditingClaim, useSelectedClaims } from './claims';
 
 type Fields = { amount: string; date: string; note: string; corrects: string; ref: string; tags: string };
@@ -69,6 +70,18 @@ function PersonClaims({ person }: { person: Person }) {
   });
 
   const submit = useSubmitOnce(save);
+
+  // A DRAFT claim made from a template: the server takes the template's amount and note as they are
+  // now and dates it as the form dates a blank date; a refusal shows as the form's error.
+  const templates = useTemplates(sheet).data ?? [];
+  const [template, setTemplate] = useState('');
+  const fromTemplate = useMutation({
+    mutationFn: (name: string) => postJson<Claim>(`${base}/people/${person.id}/template-claims`, { template: name, user }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+    },
+  });
+  const submitTemplate = useSubmitOnce(fromTemplate);
 
   // Opening a claim's editor locks it for every other user; the server refuses a claim that cannot be
   // edited or that another user has locked, and the error shows on that claim.
@@ -366,9 +379,11 @@ function PersonClaims({ person }: { person: Person }) {
   const set = (key: keyof Fields) => (e: ChangeEvent<HTMLInputElement>) => {
     setFields({ ...fields, [key]: e.target.value });
     save.reset();
+    fromTemplate.reset();
   };
   const open = (c: Claim) => {
     save.reset();
+    fromTemplate.reset();
     move.reset();
     lock.reset();
     reassign.reset();
@@ -384,6 +399,7 @@ function PersonClaims({ person }: { person: Person }) {
   };
   const cancel = () => {
     save.reset();
+    fromTemplate.reset();
     lock.reset();
     if (editing !== undefined) release(editing);
     setEditing(undefined);
@@ -641,6 +657,7 @@ function PersonClaims({ person }: { person: Person }) {
           e.preventDefault();
           // Submitting the form is the next action on the row: a refused editor opening no longer shows.
           lock.reset();
+          fromTemplate.reset();
           submit(fields);
         }}
       >
@@ -659,10 +676,42 @@ function PersonClaims({ person }: { person: Person }) {
         <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
           {editing !== undefined ? 'Save claim' : 'Add claim'}
         </button>
-        {save.isError && (
+        <select
+          data-testid="claim-template-select"
+          aria-label="Claim template"
+          value={template}
+          onChange={(e) => {
+            setTemplate(e.target.value);
+            save.reset();
+            fromTemplate.reset();
+          }}
+        >
+          <option value="">Template…</option>
+          {templates.map((t) => (
+            <option key={t.name} value={t.name}>
+              {t.name}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          data-testid="claim-template-add"
+          disabled={fromTemplate.isPending}
+          onClick={() => {
+            save.reset();
+            lock.reset();
+            submitTemplate(template);
+          }}
+        >
+          Add from template
+        </button>
+        {(save.isError || fromTemplate.isError) && (
           <span data-testid="claim-form-error" role="alert">
             {' '}
-            {save.error instanceof HttpError && save.error.reason ? `${save.error.reason}.` : 'The claim was refused.'}
+            {(() => {
+              const error = save.isError ? save.error : fromTemplate.error;
+              return error instanceof HttpError && error.reason ? `${error.reason}.` : 'The claim was refused.';
+            })()}
           </span>
         )}
       </form>
