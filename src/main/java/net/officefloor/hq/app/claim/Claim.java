@@ -29,6 +29,7 @@ public class Claim {
     private LocalDate remindedOn;
     private boolean escalated;
     private LocalDate reviewOn;
+    private boolean waived;
     private String ref;
     private String tags;
     private String voidReason;
@@ -115,6 +116,9 @@ public class Claim {
     /** The sheet's today the claim went to REVIEW on (its review day); null when it never went to REVIEW. */
     public LocalDate getReviewOn() { return reviewOn; }
     public void setReviewOn(LocalDate reviewOn) { this.reviewOn = reviewOn; }
+    /** Whether a steward waived its late charge: it bears none from then on, whatever its overdue state. */
+    public boolean isWaived() { return waived; }
+    public void setWaived(boolean waived) { this.waived = waived; }
     /** The external reference, unique on the sheet without regard to case; null when it has none. */
     public String getRef() { return ref; }
     public void setRef(String ref) { this.ref = ref; }

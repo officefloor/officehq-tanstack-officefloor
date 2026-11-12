@@ -76,6 +76,8 @@ export type Claim = {
   added: number;
   /** The date (yyyy-MM-dd) it went to REVIEW on, the sheet's today then (its review day); null when it never went to REVIEW. */
   reviewOn: string | null;
+  /** Whether a steward waived its late charge: it bears none from then on, whatever its overdue state. */
+  waived: boolean;
 };
 
 /** A correction: a claim with a negative amount, which has no floor and no late charge. */

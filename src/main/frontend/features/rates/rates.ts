@@ -178,9 +178,9 @@ export type Floor = ((date: string) => string) | undefined;
 
 /** The late charge on a figure, compounding: for every full 30 days overdue, the late percent in force on that
  *  boundary of the figure plus the charges of the boundaries before it, rounded like due, added up (a boundary at
- *  0.00 adds nothing). */
+ *  0.00 adds nothing). None on a correction, nor on a claim whose charge was waived. */
 function lateCharge(claim: Claim, figure: string, late: Late | undefined): string | undefined {
-  const boundaries = late?.pct === undefined || isCorrection(claim) ? [] : late.boundaries(claim);
+  const boundaries = late?.pct === undefined || isCorrection(claim) || claim.waived ? [] : late.boundaries(claim);
   if (boundaries.length === 0 || figure === NA) return undefined;
   const halfUp = late?.halfUp?.(claim) ?? false;
   return format(boundaries.reduce(

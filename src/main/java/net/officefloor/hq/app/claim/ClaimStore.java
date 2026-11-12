@@ -33,6 +33,7 @@ public class ClaimStore {
         claim.setRemindedOn(rs.getObject("reminded_on", LocalDate.class));
         claim.setEscalated(rs.getBoolean("escalated"));
         claim.setReviewOn(rs.getObject("review_on", LocalDate.class));
+        claim.setWaived(rs.getBoolean("waived"));
         claim.setRef(rs.getString("ref"));
         claim.setTags(rs.getString("tags"));
         claim.setVoidReason(rs.getString("void_reason"));
@@ -222,6 +223,18 @@ public class ClaimStore {
             claim.setRemindedOn(today);
         }
         return reminded;
+    }
+
+    /** Waives the stored OPEN or PENDING claim's late charge; false when it is no longer one of those or was already
+     *  waived (another user got there first). */
+    public boolean waive(Claim claim) {
+        boolean waived = jdbc.update("UPDATE claim SET waived = TRUE WHERE sheet_id = ? AND id = ? AND status IN (?, ?)"
+                + " AND waived = FALSE", claim.getSheetId(), claim.getId(),
+                ClaimStatus.OPEN.name(), ClaimStatus.PENDING.name()) == 1;
+        if (waived) {
+            claim.setWaived(true);
+        }
+        return waived;
     }
 
     /** Marks the stored claim escalated; false when it already was (it is escalated once only). */
@@ -471,7 +484,7 @@ public class ClaimStore {
 
     /** Adds a copy of the claim to the person on the other sheet under {@code number} (null for none), correcting
      *  and split off the numbers given: its amount, date, note, status, frozen settled figure, opener, due-by and
-     *  the terms it was fixed with, deferral, proofs, late entry, reminder and escalation, review day, tags, void reason and editor, with its
+     *  the terms it was fixed with, deferral, proofs, late entry, reminder and escalation, review day, waiver, tags, void reason and editor, with its
      *  status log, comments and lines, listed as the person's newest claim, keeping any figure a statement bound it to.
      *  Its reference, lock and bulk settle batch are not carried. The id of the copy. */
     public long copyTo(Claim claim, String toSheet, long toPerson, String number, String corrects, String splitFrom) {
@@ -511,8 +524,9 @@ public class ClaimStore {
             return ps;
         }, keys);
         long id = keys.getKey().longValue();
-        jdbc.update("UPDATE claim SET added_seq = ?, escalated = ?, review_on = ? WHERE sheet_id = ? AND id = ?",
+        jdbc.update("UPDATE claim SET added_seq = ?, escalated = ?, review_on = ?, waived = ? WHERE sheet_id = ? AND id = ?",
                 claim.getAddedSeq(), claim.isEscalated(), claim.getReviewOn() == null ? null : Date.valueOf(claim.getReviewOn()),
+                claim.isWaived(),
                 toSheet, id);
         jdbc.update("INSERT INTO claim_log (sheet_id, claim_id, status, by_user, log_date, due) "
                 + "SELECT ?, ?, status, by_user, log_date, due FROM claim_log WHERE sheet_id = ? AND claim_id = ? ORDER BY id",

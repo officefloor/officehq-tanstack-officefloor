@@ -50,10 +50,10 @@ public record Lateness(Function<LocalDate, BigDecimal> latePcts, Function<LocalD
     }
 
     /** The late charge on a claim whose figure (bound, else the rate figure, never floored) is {@code figure}; none on
-     *  a correction. */
+     *  a correction, nor on a claim whose charge was waived. */
     public BigDecimal charge(Claim claim, BigDecimal figure) {
         if (figure == null || !claim.getStatus().isOpen() || today == null || claim.isCorrection()
-                || claim.isDeferredOn(today)) {
+                || claim.isDeferredOn(today) || claim.isWaived()) {
             return BigDecimal.ZERO.setScale(2);
         }
         LocalDate from = graceBy.apply(claim);

@@ -148,6 +148,7 @@ function PersonClaims({ person }: { person: Person }) {
     resettle.reset();
     defer.reset();
     remind.reset();
+    waive.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -176,6 +177,7 @@ function PersonClaims({ person }: { person: Person }) {
     resettle.reset();
     defer.reset();
     remind.reset();
+    waive.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -202,6 +204,7 @@ function PersonClaims({ person }: { person: Person }) {
     resettle.reset();
     defer.reset();
     remind.reset();
+    waive.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -229,6 +232,7 @@ function PersonClaims({ person }: { person: Person }) {
     resettle.reset();
     defer.reset();
     remind.reset();
+    waive.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -252,6 +256,7 @@ function PersonClaims({ person }: { person: Person }) {
     resettle.reset();
     defer.reset();
     remind.reset();
+    waive.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -259,6 +264,33 @@ function PersonClaims({ person }: { person: Person }) {
     redate.reset();
     inline.reset();
     remind.mutate(id);
+  };
+  // A steward waiving an OPEN or PENDING claim's late charge: it bears none from then on. Its figures move with it.
+  const waive = useMutation({
+    mutationFn: (id: number) => postJson<Claim>(`${base}/claims/${id}/waive`, { user }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+      ]);
+    },
+  });
+  const waiveClaim = (id: number) => {
+    move.reset();
+    lock.reset();
+    setUneditable(undefined);
+    reassign.reset();
+    resettle.reset();
+    defer.reset();
+    remind.reset();
+    waive.reset();
+    comment.reset();
+    line.reset();
+    proof.reset();
+    split.reset();
+    redate.reset();
+    inline.reset();
+    waive.mutate(id);
   };
   // A comment is kept on the claim, in any status, with its writer and the sheet's today; not an empty one.
   const comment = useMutation({
@@ -277,6 +309,7 @@ function PersonClaims({ person }: { person: Person }) {
     resettle.reset();
     defer.reset();
     remind.reset();
+    waive.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -305,6 +338,7 @@ function PersonClaims({ person }: { person: Person }) {
     resettle.reset();
     defer.reset();
     remind.reset();
+    waive.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -333,6 +367,7 @@ function PersonClaims({ person }: { person: Person }) {
     resettle.reset();
     defer.reset();
     remind.reset();
+    waive.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -361,6 +396,7 @@ function PersonClaims({ person }: { person: Person }) {
     resettle.reset();
     defer.reset();
     remind.reset();
+    waive.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -389,6 +425,7 @@ function PersonClaims({ person }: { person: Person }) {
     resettle.reset();
     defer.reset();
     remind.reset();
+    waive.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -424,6 +461,7 @@ function PersonClaims({ person }: { person: Person }) {
     resettle.reset();
     defer.reset();
     remind.reset();
+    waive.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -432,7 +470,7 @@ function PersonClaims({ person }: { person: Person }) {
     inline.reset();
     inline.mutate({ claim: c, amount: (inlineAmounts[c.id] ?? '').trim() });
   };
-  // The refusal of the last status change, move, re-settle, deferral, reminder, comment, proof, split or re-dating of the claim, as the server gave it; null when none.
+  // The refusal of the last status change, move, re-settle, deferral, reminder, waiver, comment, proof, split or re-dating of the claim, as the server gave it; null when none.
   const refusal = (id: number) => {
     const error =
       move.isError && move.variables?.id === id
@@ -445,6 +483,8 @@ function PersonClaims({ person }: { person: Person }) {
               ? defer.error
               : remind.isError && remind.variables === id
                 ? remind.error
+                : waive.isError && waive.variables === id
+                  ? waive.error
                 : comment.isError && comment.variables?.id === id
                   ? comment.error
                 : line.isError && line.variables?.id === id
@@ -479,6 +519,7 @@ function PersonClaims({ person }: { person: Person }) {
     resettle.reset();
     defer.reset();
     remind.reset();
+    waive.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -548,6 +589,7 @@ function PersonClaims({ person }: { person: Person }) {
               <span data-testid="claim-deferred">{c.deferred ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
               <span data-testid="claim-reminded">{c.remindedOn ?? ''}</span>{' '}
+              <span data-testid="claim-waived">{c.waived ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}
               <span data-testid="claim-batch">{c.batch ?? ''}</span>{' '}
               <span data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</span>{' '}
@@ -673,6 +715,9 @@ function PersonClaims({ person }: { person: Person }) {
               </button>{' '}
               <button type="button" data-testid="claim-remind" disabled={remind.isPending} onClick={() => remindClaim(c.id)}>
                 Remind
+              </button>{' '}
+              <button type="button" data-testid="claim-waive" disabled={waive.isPending} onClick={() => waiveClaim(c.id)}>
+                Waive late charge
               </button>{' '}
               <input
                 data-testid="claim-date-new"
