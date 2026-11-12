@@ -67,4 +67,11 @@ public class PeriodStore {
         return jdbc.update("UPDATE period SET closed = TRUE, closed_total = ? WHERE sheet_id = ? AND name = ? AND NOT closed",
                 total, sheetId, name) == 1;
     }
+
+    /** Reopens the closed period, dropping its fixed due-total; false when it is not closed (another
+     *  user reopened it first). */
+    public boolean reopen(String sheetId, String name) {
+        return jdbc.update("UPDATE period SET closed = FALSE, closed_total = NULL WHERE sheet_id = ? AND name = ? AND closed",
+                sheetId, name) == 1;
+    }
 }

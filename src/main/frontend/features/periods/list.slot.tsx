@@ -16,8 +16,8 @@ type Fields = { name: string; from: string; to: string };
 const EMPTY: Fields = { name: '', from: '', to: '' };
 
 // The sheet's periods, each with its due-total (the figures of the claims that count whose date falls
-// in it, skipping n/a; fixed when the period was closed), its closed yes/no and the button that
-// closes it, and the form that adds one.
+// in it, skipping n/a; fixed when the period was closed), its closed yes/no and the buttons that
+// close it and (a steward only) reopen it, and the form that adds one.
 function Periods() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -40,15 +40,17 @@ function Periods() {
   });
   const submit = useSubmitOnce(save);
 
-  // The server refuses closing a period that is already closed; the error shows on that period.
-  const close = useMutation({
-    mutationFn: (name: string) =>
-      postJson<Period>(`/api/sheets/${encodeURIComponent(sheet)}/periods/${encodeURIComponent(name)}/close`, { user }),
+  // The server refuses closing a period that is already closed, and reopening one that is not closed
+  // or by anyone but a steward; the error shows on that period.
+  type Action = { name: string; action: 'close' | 'reopen' };
+  const act = useMutation({
+    mutationFn: ({ name, action }: Action) =>
+      postJson<Period>(`/api/sheets/${encodeURIComponent(sheet)}/periods/${encodeURIComponent(name)}/${action}`, { user }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheet) }),
   });
-  const closePeriod = (name: string) => {
-    close.reset();
-    close.mutate(name);
+  const periodAction = (name: string, action: Action['action']) => {
+    act.reset();
+    act.mutate({ name, action });
   };
 
   const set = (key: keyof Fields) => (e: ChangeEvent<HTMLInputElement>) => {
@@ -87,13 +89,16 @@ function Periods() {
               <td data-testid="period-due-total">{p.closed && p.total !== null ? p.total : periodDue(p)}</td>
               <td data-testid="period-closed">{p.closed ? 'yes' : 'no'}</td>
               <td>
-                <button type="button" data-testid="period-close" disabled={close.isPending} onClick={() => closePeriod(p.name)}>
+                <button type="button" data-testid="period-close" disabled={act.isPending} onClick={() => periodAction(p.name, 'close')}>
                   Close
+                </button>{' '}
+                <button type="button" data-testid="period-reopen" disabled={act.isPending} onClick={() => periodAction(p.name, 'reopen')}>
+                  Reopen
                 </button>
-                {close.isError && close.variables === p.name && (
+                {act.isError && act.variables?.name === p.name && (
                   <span data-testid="period-error" role="alert">
                     {' '}
-                    {close.error instanceof HttpError && close.error.reason ? `${close.error.reason}.` : 'The period was refused.'}
+                    {act.error instanceof HttpError && act.error.reason ? `${act.error.reason}.` : 'The period was refused.'}
                   </span>
                 )}
               </td>
