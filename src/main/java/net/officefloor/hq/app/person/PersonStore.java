@@ -121,6 +121,35 @@ public class PersonStore {
         return (n != null && n > 0) || aliasTaken(sheetId, name);
     }
 
+    /** Whether anyone on any of the sheets has this name or alias, ignoring case and the spaces around it. */
+    public boolean usedOn(List<String> sheetIds, String name) {
+        for (String sheetId : sheetIds) {
+            if (nameTaken(sheetId, name, null)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** The names and aliases used on any of the sheets, lower-cased. */
+    public java.util.Set<String> namesOn(List<String> sheetIds) {
+        java.util.Set<String> names = new java.util.HashSet<>();
+        for (String sheetId : sheetIds) {
+            names.addAll(jdbc.queryForList("SELECT name_key FROM person WHERE sheet_id = ?", String.class, sheetId));
+            names.addAll(jdbc.queryForList("SELECT alias_key FROM person_alias WHERE sheet_id = ?", String.class,
+                    sheetId));
+        }
+        return names;
+    }
+
+    /** Whether the person's name or any of their aliases is among the names (lower-cased). */
+    public static boolean clashes(Person person, java.util.Set<String> names) {
+        if (names.contains(person.getName().trim().toLowerCase(java.util.Locale.ROOT))) {
+            return true;
+        }
+        return person.getAliases().stream().anyMatch(a -> names.contains(a.trim().toLowerCase(java.util.Locale.ROOT)));
+    }
+
     /** Whether anyone on the sheet has this alias, ignoring case and the spaces around it. */
     public boolean aliasTaken(String sheetId, String alias) {
         Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM person_alias WHERE sheet_id = ? AND alias_key = LOWER(?)",

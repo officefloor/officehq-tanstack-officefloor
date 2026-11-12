@@ -20,7 +20,7 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /** Transfers the person to another sheet, refusing a retired person, an archived sheet, or a name, alias or
- *  contact of theirs already on it. They arrive with their grades, terms, contact, aliases and claims; each claim
+ *  contact of theirs already on it (a name or alias also when on another sheet of its tree). They arrive with their grades, terms, contact, aliases and claims; each claim
  *  that had a number takes the other sheet's next, in the order they were opened (by the sheet's today when each
  *  was opened, then the order they were added). They leave this sheet entirely. */
 public class TransferPerson {
@@ -33,11 +33,13 @@ public class TransferPerson {
             throw new InvalidSheetException("A retired person cannot be transferred");
         }
         sheets.refuseArchived(to);
-        if (people.nameTaken(to, person.getName(), null)) {
+        // the sheet they leave is not counted: they take their names with them
+        List<String> tree = settings.tree(to).stream().filter(s -> !s.equals(from)).toList();
+        if (people.nameTaken(to, person.getName(), null) || people.usedOn(tree, person.getName())) {
             throw new InvalidSheetException("The other sheet already has " + person.getName());
         }
         for (String alias : person.getAliases()) {
-            if (people.nameTaken(to, alias, null)) {
+            if (people.nameTaken(to, alias, null) || people.usedOn(tree, alias)) {
                 throw new InvalidSheetException("The other sheet already has " + alias);
             }
         }

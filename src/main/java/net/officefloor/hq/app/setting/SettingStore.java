@@ -113,6 +113,17 @@ public class SettingStore {
         return List.copyOf(seen).subList(1, seen.size());
     }
 
+    /** The other sheets of the sheet's tree: its ancestors (its parent, its parent's parent, and so on), then its
+     *  descendants, each once, among the sheets that exist. The parents are those named now. */
+    public List<String> tree(String sheetId) {
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>(List.of(sheetId));
+        for (String at = parent(sheetId); at != null && seen.add(at); at = parent(at)) {
+        }
+        seen.addAll(descendants(sheetId));
+        seen.remove(sheetId);
+        return seen.stream().filter(sheets::exists).toList();
+    }
+
     /** Whether naming the parent for the sheet would make the sheet its own ancestor: the parent is the sheet,
      *  or has it among its ancestors. */
     public boolean cyclic(String sheetId, String parent) {
