@@ -25,11 +25,11 @@ public final class ClaimAdding {
         return input;
     }
 
-    /** Stores the checked claim as a DRAFT and records it as CLAIM_ADDED, then how it moved the figures. */
+    /** Stores the checked claim as a DRAFT and records it as CLAIM_ADDED (and LATE_ENTRY for a late entry), then how it moved the figures. */
     public static Claim add(ClaimInput input, Person person, ClaimStore store, SettingStore settings,
-            ClaimLogStore log, RollupService rollups, Audit audit) {
+            ClaimLogStore log, PeriodStore periods, RollupService rollups, Audit audit) {
         var before = rollups.snapshot(person.getSheetId());
-        Claim claim = SaveClaimAdded.add(input, person, store, settings, log);
+        Claim claim = SaveClaimAdded.add(input, person, store, settings, log, periods);
         AuditClaimAdded.record(input, person, claim, before, audit, rollups);
         return claim;
     }

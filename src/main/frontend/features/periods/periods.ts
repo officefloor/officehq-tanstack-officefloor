@@ -8,7 +8,8 @@ import { type Floor, type Late, type Rate, claimDue, dueTotal } from '../rates/r
 
 /** A period: its name (unique on the sheet), its from and to dates (yyyy-MM-dd, inclusive), whether
  *  it is closed and, once closed, the due-total fixed on closing (null while open) and each person's
- *  due-total fixed on closing, by person id (empty while open). No two periods on a sheet overlap. */
+ *  due-total fixed on closing, by person id (empty while open), and whether it is soft-closed: not closed,
+ *  but with those figures fixed as when it was soft-closed. No two periods on a sheet overlap. */
 export type Period = {
   name: string;
   from: string;
@@ -16,7 +17,11 @@ export type Period = {
   closed: boolean;
   total: string | null;
   people: Record<string, string>;
+  soft: boolean;
 };
+
+/** Whether the period's figures are fixed: it is closed or soft-closed. */
+export const isFixed = (period: Period) => period.closed || period.soft;
 
 /** Under the sheet's key, so loading the sheet again re-reads its periods. */
 export const periodsKey = (sheet: string) => [...sheetKey(sheet), 'periods'] as const;
@@ -59,7 +64,7 @@ export function countsInPeriod(claim: Claim, period: Period, person: Person): bo
   return !claim.deferred && (claim.stated || !isOpen(claim) || !person.holds.some((h) => covers(h, claim.date)));
 }
 
-/** A person's due-total for a period: once closed, the figure fixed on closing (0.00 for a person
+/** A person's due-total for a period: once closed or soft-closed, the figure fixed then (0.00 for a person
  *  added since); else the sum of the figures (as shown now) of their claims whose date falls in it
  *  and that count by their status at the period's end, skipping n/a. */
 export function personPeriodDue(
@@ -70,7 +75,7 @@ export function personPeriodDue(
   floor: Floor,
   late: Late,
 ): string {
-  if (period.closed) return period.people?.[String(person.id)] ?? '0.00';
+  if (isFixed(period)) return period.people?.[String(person.id)] ?? '0.00';
   return dueTotal(
     (claims ?? [])
       .filter((c) => c.personId === person.id && contains(period, c.date) && countsInPeriod(c, period, person))

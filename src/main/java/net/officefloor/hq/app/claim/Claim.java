@@ -25,6 +25,7 @@ public class Claim {
     private LocalDate deferredUntil;
     private int proofs;
     private String splitFrom;
+    private boolean lateEntry;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue, String openedBy, boolean stated,
@@ -93,6 +94,9 @@ public class Claim {
     /** The number of the claim this claim was split off; null when it was not split off another. */
     public String getSplitFrom() { return splitFrom; }
     public void setSplitFrom(String splitFrom) { this.splitFrom = splitFrom; }
+    /** Whether the claim was added while the period its date falls in was soft-closed. */
+    public boolean isLateEntry() { return lateEntry; }
+    public void setLateEntry(boolean lateEntry) { this.lateEntry = lateEntry; }
     public void setDeferredUntil(LocalDate deferredUntil) { this.deferredUntil = deferredUntil; }
     public void setPersonId(long personId) { this.personId = personId; }
     public void setCorrects(String corrects) { this.corrects = corrects; }

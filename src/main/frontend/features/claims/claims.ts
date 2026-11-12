@@ -52,6 +52,8 @@ export type Claim = {
   proofs: number;
   /** The number of the claim it was split off; null when it was not split off another. */
   splitFrom: string | null;
+  /** Whether it was added while the period its date falls in was soft-closed. */
+  lateEntry: boolean;
 };
 
 /** A correction: a claim with a negative amount, which has no floor and no late charge. */

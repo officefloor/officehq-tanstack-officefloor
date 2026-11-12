@@ -19,8 +19,8 @@ type Range = { from: string; to: string };
 type GenerateResult = { generated: number };
 
 // The sheet's periods, each with its due-total (the figures of the claims whose date falls in it and that
-// count by their status at its end, skipping n/a; fixed when the period was closed), its closed yes/no and the buttons that
-// close it and reopen it (as the sheet's permission matrix allows), and the form that adds one.
+// count by their status at its end, skipping n/a; fixed when the period was closed or soft-closed), its closed yes/soft/no and the buttons that
+// close it, soft-close it and reopen it (as the sheet's permission matrix allows), and the form that adds one.
 function Periods() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -58,9 +58,10 @@ function Periods() {
     generate.reset();
   };
 
-  // The server refuses closing a period that is already closed, and reopening one that is not closed
+  // The server refuses closing a period that is already closed, soft-closing one that is closed or
+  // soft-closed, and reopening one that is neither
   // or by a role the sheet's permission matrix does not allow; the error shows on that period.
-  type Action = { name: string; action: 'close' | 'reopen' };
+  type Action = { name: string; action: 'close' | 'soft-close' | 'reopen' };
   const act = useMutation({
     mutationFn: ({ name, action }: Action) =>
       postJson<Period>(`/api/sheets/${encodeURIComponent(sheet)}/periods/${encodeURIComponent(name)}/${action}`, { user }),
@@ -98,10 +99,13 @@ function Periods() {
               <td data-testid="period-from">{p.from}</td>
               <td data-testid="period-to">{p.to}</td>
               <td data-testid="period-due-total">{periodDue(p, claims.data, people.data, rates.data, floor, lateOf(settings, today))}</td>
-              <td data-testid="period-closed">{p.closed ? 'yes' : 'no'}</td>
+              <td data-testid="period-closed">{p.closed ? 'yes' : p.soft ? 'soft' : 'no'}</td>
               <td>
                 <button type="button" data-testid="period-close" disabled={act.isPending} onClick={() => periodAction(p.name, 'close')}>
                   Close
+                </button>{' '}
+                <button type="button" data-testid="period-soft-close" disabled={act.isPending} onClick={() => periodAction(p.name, 'soft-close')}>
+                  Soft close
                 </button>{' '}
                 <button type="button" data-testid="period-reopen" disabled={act.isPending} onClick={() => periodAction(p.name, 'reopen')}>
                   Reopen

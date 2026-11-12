@@ -26,6 +26,7 @@ public class ClaimStore {
         claim.setDeferredUntil(rs.getObject("deferred_until", LocalDate.class));
         claim.setProofs(rs.getInt("proofs"));
         claim.setSplitFrom(rs.getString("split_from"));
+        claim.setLateEntry(rs.getBoolean("late_entry"));
         return claim;
     };
 
@@ -70,6 +71,12 @@ public class ClaimStore {
         }, keys);
         return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null,
                 corrects, dueBy);
+    }
+
+    /** Marks the added claim a late entry: added while the period its date falls in was soft-closed. */
+    public void markLateEntry(Claim claim) {
+        jdbc.update("UPDATE claim SET late_entry = TRUE WHERE sheet_id = ? AND id = ?", claim.getSheetId(), claim.getId());
+        claim.setLateEntry(true);
     }
 
     public void save(Claim claim) {
