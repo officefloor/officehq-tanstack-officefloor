@@ -31,6 +31,8 @@ export type Claim = {
   roundsBy: string;
   /** The date (yyyy-MM-dd) it is due by, fixed when it was added from the terms of its person's grade then. */
   dueBy: string;
+  /** Its status log, oldest first: `<STATUS> by <user> on <date> due=<due>`, one line per status it has had. */
+  log: string[];
 };
 
 /** A correction: a claim with a negative amount, which has no floor and no late charge. */

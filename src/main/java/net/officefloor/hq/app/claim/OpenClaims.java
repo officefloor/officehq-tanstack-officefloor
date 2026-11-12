@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  left as it is. */
 public class OpenClaims {
     public void open(@PathVariable("sheetId") String sheetId, @Val BulkOpenInput input, ClaimStore store,
-            PersonStore people, PeriodStore periods, SettingStore settings, SheetStore sheets, RollupService rollups, Audit audit, Out<BulkOpenResult> result) {
+            PersonStore people, PeriodStore periods, SettingStore settings, SheetStore sheets, ClaimLogStore log, RollupService rollups, Audit audit, Out<BulkOpenResult> result) {
         String sheet = sheetId.trim();
         Map<Long, Integer> personOrder = new HashMap<>();
         Map<Long, Person> persons = new HashMap<>();
@@ -60,6 +60,7 @@ public class OpenClaims {
             claim.setNumber(Numbering.next(sheet, claim.getDate(), store, settings, sheets, periods));
             claim.setOpenedBy(input.user());
             store.save(claim);
+            log.record(claim, input.user());
             Person person = persons.get(claim.getPersonId());
             ClaimResponse shown = ClaimResponse.from(claim);
             audit.record(ClaimStatus.OPEN.event() + " sheet=" + sheet + " by=" + input.user() + " person="
