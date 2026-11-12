@@ -73,6 +73,19 @@ export const live = (claims: Claim[], people: { id: number; holds: Hold[] }[] | 
   return claims.filter((c) => !(isOpen(c) && !c.stated && (holds.get(c.personId) ?? []).some((h) => covers(h, c.date))));
 };
 
+/** The date (yyyy-MM-dd) the given number of days before this one. */
+const daysBefore = (date: string, days: number) => {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - days);
+  return d.toISOString().slice(0, 10);
+};
+
+/** Whether a person is active on the date (yyyy-MM-dd): one of their claims (already filtered to those
+ *  live) is OPEN or PENDING, counts, and is dated within the 30 days up to and including the date. */
+export const isActive = (claims: Claim[], today: string | undefined) =>
+  today !== undefined &&
+  claims.some((c) => isOpen(c) && counts(c) && c.date > daysBefore(today, 30) && c.date <= today);
+
 /** Under the sheet's key, so loading the sheet again re-reads its claims. */
 export const claimsKey = (sheet: string) => [...sheetKey(sheet), 'claims'] as const;
 
