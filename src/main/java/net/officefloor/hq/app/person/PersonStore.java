@@ -116,6 +116,7 @@ public class PersonStore {
             p.setContact(rs.getString("contact"));
             p.setTags(rs.getString("tags"));
             p.setOrigin(rs.getString("origin"));
+            p.setArrivedOn(rs.getObject("arrived_on", LocalDate.class));
             p.getAliases().addAll(aliases.getOrDefault(rs.getLong("id"), List.of()));
             p.getPastRetirements().addAll(past.getOrDefault(rs.getLong("id"), List.of()));
             p.getSnapshots().addAll(snapshots.getOrDefault(rs.getLong("id"), List.of()));
@@ -369,8 +370,9 @@ public class PersonStore {
 
     /** Adds a copy of the person to the other sheet: their name, every grade with its from-date, their terms,
      *  contact, tags and aliases, noting this sheet as the one they came from. Their holds, statements and watchers
-     *  are not carried (a transfer gives them their statements, see StatementStore). */
-    public Person copyTo(Person person, String toSheet) {
+     *  are not carried (a transfer gives them their statements, see StatementStore). {@code arrivedOn} is the other
+     *  sheet's today, the day they arrived there. */
+    public Person copyTo(Person person, String toSheet, LocalDate arrivedOn) {
         Person copy = add(toSheet, person.getName(), person.gradeOn(Person.START), person.getTerms(), person.getContact(),
                 person.getTags());
         person.getGrades().forEach((from, grade) -> {
@@ -385,8 +387,8 @@ public class PersonStore {
         for (String alias : person.getAliases()) {
             addAlias(copy, alias);
         }
-        jdbc.update("UPDATE person SET origin = ? WHERE sheet_id = ? AND id = ?", person.getSheetId(), toSheet,
-                copy.getId());
+        jdbc.update("UPDATE person SET origin = ?, arrived_on = ? WHERE sheet_id = ? AND id = ?", person.getSheetId(),
+                arrivedOn, toSheet, copy.getId());
         return find(toSheet, copy.getId());
     }
 

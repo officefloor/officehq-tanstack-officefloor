@@ -68,7 +68,7 @@ public class TransferPerson {
             numbers.putIfAbsent(claim.getNumber(), number);
             numberOf.put(claim.getId(), number);
         }
-        Person copy = into == null ? people.copyTo(person, to) : into;
+        Person copy = into == null ? people.copyTo(person, to, sheets.today(to)) : into;
         // listed newest first: copy the oldest first, so they keep their order
         for (int i = theirs.size() - 1; i >= 0; i--) {
             Claim claim = theirs.get(i);

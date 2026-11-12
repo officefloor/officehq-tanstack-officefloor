@@ -35,6 +35,7 @@ public class Person {
     private String contact;
     private boolean contactChanged;
     private String origin;
+    private LocalDate arrivedOn;
     private String tags;
 
     public Person(long id, String sheetId, String name, NavigableMap<LocalDate, String> grades, long version) {
@@ -128,6 +129,9 @@ public class Person {
     /** The sheet they were transferred from, null when they were not transferred here. */
     public String getOrigin() { return origin; }
     public void setOrigin(String origin) { this.origin = origin; }
+    /** The sheet's today on which a transfer brought them here, null when they were not transferred here. */
+    public LocalDate getArrivedOn() { return arrivedOn; }
+    public void setArrivedOn(LocalDate arrivedOn) { this.arrivedOn = arrivedOn; }
     public void setVersion(long version) { this.version = version; }
     public void setRetiredFrom(LocalDate retiredFrom) { this.retiredFrom = retiredFrom; }
     /** Their past retirements (each ended by unretiring them), oldest first. */

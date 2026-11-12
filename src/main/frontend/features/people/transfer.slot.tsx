@@ -81,9 +81,64 @@ function PersonTransfer({ person }: { person: Person }) {
   );
 }
 
+function TransferUndoHead() {
+  return <th>Undo transfer</th>;
+}
+
+// The button that undoes the transfer that brought this person here: a steward's action, on the sheet-today they
+// arrived. They are transferred back to the sheet they came from and their row leaves this one. A refused undo
+// shows its error until the next action is taken.
+function PersonTransferUndo({ person }: { person: Person }) {
+  const [user] = useCurrentUser();
+  const [sheet] = useCurrentSheet();
+  const queryClient = useQueryClient();
+
+  const undo = useMutation({
+    mutationKey: personActionKey(sheet, person.id),
+    mutationFn: () =>
+      postJson<unknown>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/transfer-undo`, { user }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: poolsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: [...sheetKey(sheet), 'watches'] }),
+      ]);
+    },
+  });
+
+  const latest = useLatestPersonAction(sheet, person.id);
+
+  return (
+    <td>
+      <button
+        type="button"
+        data-testid="person-transfer-undo"
+        disabled={undo.isPending}
+        onClick={() => {
+          undo.reset();
+          undo.mutate();
+        }}
+      >
+        Undo transfer
+      </button>
+      {undo.isError && undo.submittedAt >= latest && (
+        <span data-testid="person-error" role="alert">
+          {' '}
+          {undo.error instanceof HttpError && undo.error.reason
+            ? `${undo.error.reason}.`
+            : 'The transfer undo was refused.'}
+        </span>
+      )}
+    </td>
+  );
+}
+
 export const contributions = [
   PersonColumnHeads.fill({ order: 19.94, Component: OriginHead }),
   PersonColumns.fill({ order: 19.94, Component: PersonOrigin }),
   PersonColumnHeads.fill({ order: 19.95, Component: TransferHead }),
   PersonColumns.fill({ order: 19.95, Component: PersonTransfer }),
+  PersonColumnHeads.fill({ order: 19.955, Component: TransferUndoHead }),
+  PersonColumns.fill({ order: 19.955, Component: PersonTransferUndo }),
 ];
