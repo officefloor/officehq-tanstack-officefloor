@@ -233,3 +233,32 @@ export function personTagged(
   if (uncappedDue(claims, rates, grades, today, floor, late) === NA) return format(0n);
   return dueTotal(claims.filter((c) => counts(c) && c.tags.includes(tag)).map((c) => claimDue(c, rates, grades, floor, late)));
 }
+
+/** A preview of a candidate percent for a grade: of these people's OPEN and PENDING claims whose person
+ *  was on the grade on the claim's date, how many would show a different due were the candidate the
+ *  grade's only rate (from the beginning of time, no end), and the sum of new due less current due (n/a
+ *  as 0.00). A claim bound by a statement or settled keeps its figure. Nothing is saved. */
+export function ratePreview(
+  people: { grades: Grades; claims: Claim[]; late?: Late }[],
+  rates: Rate[] | undefined,
+  grade: string,
+  pct: string,
+  floor: Floor,
+): { count: number; diff: string } {
+  const candidate: Rate[] = [...(rates ?? []).filter((r) => r.grade !== grade), { grade, pct, from: null, to: null }];
+  const figure = (d: string) => (d === NA ? 0n : hundredths(d));
+  let count = 0;
+  let diff = 0n;
+  for (const p of people) {
+    for (const c of p.claims) {
+      if (c.status !== 'OPEN' && c.status !== 'PENDING') continue;
+      if (gradeOn(p.grades, c.date) !== grade) continue;
+      const now = claimDue(c, rates, p.grades, floor, p.late);
+      const then = claimDue(c, candidate, p.grades, floor, p.late);
+      if (now === then) continue;
+      count += 1;
+      diff += figure(then) - figure(now);
+    }
+  }
+  return { count, diff: format(diff) };
+}
