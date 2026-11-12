@@ -1,15 +1,12 @@
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet } from '../../session/session';
-import { live, useClaims } from '../claims/claims';
+import { STATUSES, live, statusCount, useClaims } from '../claims/claims';
 import { GRADES, gradeOn, usePeople } from '../people/people';
 import { periodDue, usePeriods } from '../periods/periods';
 import { dueTotal, personDue, useRates } from '../rates/rates';
 import { useSettings } from '../settings/settings';
 import { useSheetToday } from '../sheet/sheet';
 import { lateOf } from '../overdue/overdue';
-
-/** Every status the summary counts, whether or not a claim can reach it. */
-const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
 
 // The sheet at a glance, worked out from the same figures the lists show: per grade, the people on it
 // today (retired people excluded) and their due-totals added up (skipping n/a); per period, its
@@ -80,7 +77,7 @@ function Summary() {
           {STATUSES.map((s) => (
             <tr key={s}>
               <td>{s}</td>
-              <td data-testid={`summary-status-${s}-count`}>{(claims.data ?? []).filter((c) => c.status === s).length}</td>
+              <td data-testid={`summary-status-${s}-count`}>{statusCount(claims.data, s)}</td>
             </tr>
           ))}
         </tbody>

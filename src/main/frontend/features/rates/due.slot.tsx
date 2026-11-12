@@ -24,7 +24,8 @@ function PersonDue({ person }: { person: Person }) {
   return <td data-testid="person-due-total">{personDue(mine, rates.data, person.grades, today, floor, lateOf(settings, today))}</td>;
 }
 
-function DueTotal() {
+/** The sheet's due-total: everyone's (retired people included) due-totals added up, skipping n/a. */
+export function useSheetDueTotal(): string {
   const [sheet] = useCurrentSheet();
   const people = usePeople(sheet);
   const claims = useClaims(sheet);
@@ -35,9 +36,13 @@ function DueTotal() {
   const dues = (people.data ?? []).map((p) =>
     personDue(live((claims.data ?? []).filter((c) => c.personId === p.id), [p]), rates.data, p.grades, today, floor, lateOf(settings, today)),
   );
+  return dueTotal(dues);
+}
+
+function DueTotal() {
   return (
     <p>
-      Due total <strong data-testid="rollup-due-total">{dueTotal(dues)}</strong>
+      Due total <strong data-testid="rollup-due-total">{useSheetDueTotal()}</strong>
     </p>
   );
 }

@@ -8,6 +8,13 @@ import { type Hold, covers } from '../people/people';
  *  except that a statement does not bind it while it is PENDING. */
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
 
+/** Every status the summary and header count, whether or not a claim can reach it. */
+export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const satisfies readonly ClaimStatus[];
+
+/** How many of these claims have the status. */
+export const statusCount = (claims: Claim[] | undefined, status: ClaimStatus) =>
+  (claims ?? []).filter((c) => c.status === status).length;
+
 /** `amount` has two decimals; `date` is yyyy-MM-dd; `number` is given when the claim is opened
  *  (null for a draft or a voided claim): the sheet-wide 1, 2, ... or, numbered per period, <period>-<n> / X-<n>. */
 export type Claim = {

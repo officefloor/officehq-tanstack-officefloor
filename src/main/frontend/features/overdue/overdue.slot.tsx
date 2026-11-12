@@ -45,14 +45,20 @@ function PersonOverdue({ person }: { person: Person }) {
   );
 }
 
-function OverdueTotal() {
+/** The sheet's overdue figures: everyone's overdue counts and overdue-totals added up. */
+export function useSheetOverdue(): { count: number; total: string } {
   const [sheet] = useCurrentSheet();
   const people = usePeople(sheet);
   const figures = (people.data ?? []).map(useOverdue());
+  return { count: figures.reduce((n, f) => n + f.count, 0), total: dueTotal(figures.map((f) => f.total)) };
+}
+
+function OverdueTotal() {
+  const { count, total } = useSheetOverdue();
   return (
     <p>
-      Overdue <strong data-testid="rollup-overdue-count">{figures.reduce((n, f) => n + f.count, 0)}</strong>{' '}
-      Overdue total <strong data-testid="rollup-overdue-total">{dueTotal(figures.map((f) => f.total))}</strong>
+      Overdue <strong data-testid="rollup-overdue-count">{count}</strong>{' '}
+      Overdue total <strong data-testid="rollup-overdue-total">{total}</strong>
     </p>
   );
 }
