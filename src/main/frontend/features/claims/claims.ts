@@ -61,6 +61,8 @@ export type Claim = {
   ref: string | null;
   /** Its tags, each trimmed and lower-cased, sorted; empty when it has none. */
   tags: string[];
+  /** The reason it was voided with, from the sheet's list then; null when none. */
+  voidReason: string | null;
 };
 
 /** A correction: a claim with a negative amount, which has no floor and no late charge. */

@@ -10,6 +10,7 @@ import { floorOf, useSettings } from '../settings/settings';
 import { periodOf, usePeriods } from '../periods/periods';
 import { useSheetToday } from '../sheet/sheet';
 import { dueBy, lateOf, overdue } from '../overdue/overdue';
+import { useVoidReasons } from '../voidreasons/voidreasons';
 import { type Claim, type ClaimStatus, claimsKey, useClaims, useEditingClaim, useSelectedClaims } from './claims';
 
 type Fields = { amount: string; date: string; note: string; corrects: string; ref: string; tags: string };
@@ -41,6 +42,9 @@ function PersonClaims({ person }: { person: Person }) {
   const editingClaim = (claims.data ?? []).find((c) => c.id === editingId && c.personId === person.id);
   const editing = editingClaim?.id;
   const [reasons, setReasons] = useState<Record<number, string>>({});
+  // The void reason chosen per claim, from the sheet's list; a void needs one while the list is not empty.
+  const voidReasons = useVoidReasons(sheet).data ?? [];
+  const [voidChoices, setVoidChoices] = useState<Record<number, string>>({});
   const [targets, setTargets] = useState<Record<number, string>>({});
   const [deferDates, setDeferDates] = useState<Record<number, string>>({});
   const [redates, setRedates] = useState<Record<number, string>>({});
@@ -89,7 +93,7 @@ function PersonClaims({ person }: { person: Person }) {
       if (m.review) setReasons((r) => ({ ...r, [m.id]: '' }));
     },
   });
-  const moveTo = (id: number, status: ClaimStatus, review?: { reason: string }) => {
+  const moveTo = (id: number, status: ClaimStatus, review?: { reason: string }, voidReason?: string) => {
     move.reset();
     lock.reset();
     reassign.reset();
@@ -100,7 +104,7 @@ function PersonClaims({ person }: { person: Person }) {
     split.reset();
     redate.reset();
     inline.reset();
-    move.mutate({ id, status, review: review !== undefined, reason: review?.reason });
+    move.mutate({ id, status, review: review !== undefined, reason: review?.reason ?? voidReason });
   };
 
   // Moving a claim re-reads the people too: both people's figures follow it.
@@ -403,7 +407,30 @@ function PersonClaims({ person }: { person: Person }) {
               <button type="button" data-testid="claim-settle" disabled={move.isPending} onClick={() => moveTo(c.id, 'SETTLED')}>
                 Settle
               </button>{' '}
-              <button type="button" data-testid="claim-void" disabled={move.isPending} onClick={() => moveTo(c.id, 'VOID')}>
+              {voidReasons.length > 0 && (
+                <select
+                  data-testid="claim-void-reason"
+                  aria-label="Void reason"
+                  value={voidChoices[c.id] ?? ''}
+                  onChange={(e) => {
+                    setVoidChoices({ ...voidChoices, [c.id]: e.target.value });
+                    if (move.variables?.id === c.id) move.reset();
+                  }}
+                >
+                  <option value="">(void reason)</option>
+                  {voidReasons.map((r) => (
+                    <option key={r.reason} value={r.reason}>
+                      {r.reason}
+                    </option>
+                  ))}
+                </select>
+              )}{' '}
+              <button
+                type="button"
+                data-testid="claim-void"
+                disabled={move.isPending}
+                onClick={() => moveTo(c.id, 'VOID', undefined, voidChoices[c.id] ?? '')}
+              >
                 Void
               </button>{' '}
               <button

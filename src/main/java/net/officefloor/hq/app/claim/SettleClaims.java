@@ -16,6 +16,7 @@ import net.officefloor.hq.app.rollup.RollupService;
 import net.officefloor.hq.app.setting.SettingStore;
 import net.officefloor.hq.app.sheet.InvalidSheetException;
 import net.officefloor.hq.app.sheet.SheetStore;
+import net.officefloor.hq.app.voidreason.VoidReasonStore;
 import net.officefloor.hq.app.watch.WatchStore;
 import net.officefloor.plugin.variable.Val;
 import net.officefloor.plugin.variable.Out;
@@ -30,6 +31,7 @@ public class SettleClaims {
     public void settle(@PathVariable("sheetId") String sheetId, @Val BulkSettleInput input, ClaimStore store,
             PersonStore people, PeriodStore periods, SettingStore settings, SheetStore sheets, RoleStore roles,
             RateStore rates, ClaimLogStore log, RollupService rollups, Audit audit, WatchStore watches,
+            VoidReasonStore voidReasons,
             Out<BulkSettleResult> result) {
         String sheet = sheetId.trim();
         Map<Long, Integer> personOrder = new HashMap<>();
@@ -59,7 +61,7 @@ public class SettleClaims {
                         m -> move[0] = m);
                 Rollup before = rollups.snapshot(sheet);
                 StatusChange[] change = new StatusChange[1];
-                new ApplyStatus().apply(status, move[0], claim, store, people, rates, settings, sheets, periods,
+                new ApplyStatus().apply(status, move[0], claim, store, people, rates, settings, sheets, periods, voidReasons,
                         c -> change[0] = c);
                 new SaveClaim().save(status, claim, store, log);
                 new AuditClaimStatus().audit(status, move[0], claim, change[0], before, people, audit, rollups, watches);

@@ -7,10 +7,12 @@ import { dueTotal, personDue, useRates } from '../rates/rates';
 import { floorOf, useSettings } from '../settings/settings';
 import { useSheetToday } from '../sheet/sheet';
 import { lateOf } from '../overdue/overdue';
+import { useVoidReasons } from '../voidreasons/voidreasons';
 
 // The sheet at a glance, worked out from the same figures the lists show: per grade, the people on it
 // today (retired people excluded), their due-totals added up (skipping n/a) and how many of them are
-// active; per period, its due-total; per status, how many claims have it.
+// active; per period, its due-total; per status, how many claims have it; per void reason on the list,
+// how many VOID claims were voided with it.
 function Summary() {
   const [sheet] = useCurrentSheet();
   const people = usePeople(sheet);
@@ -21,6 +23,7 @@ function Summary() {
   const settings = useSettings(sheet).data;
   const floor = floorOf(settings);
   const late = lateOf(settings, today, people.data);
+  const voidReasons = useVoidReasons(sheet).data ?? [];
 
   const active = (people.data ?? []).filter((p) => !p.retired);
   const onGrade = (grade: string) => active.filter((p) => gradeOn(p.grades, today) === grade);
@@ -83,6 +86,24 @@ function Summary() {
             <tr key={s}>
               <td>{s}</td>
               <td data-testid={`summary-status-${s}-count`}>{statusCount(claims.data, s)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <table>
+        <thead>
+          <tr>
+            <th>Void reason</th>
+            <th>Claims</th>
+          </tr>
+        </thead>
+        <tbody>
+          {voidReasons.map((r) => (
+            <tr key={r.reason}>
+              <td>{r.reason}</td>
+              <td data-testid={`summary-void-${r.reason}-count`}>
+                {(claims.data ?? []).filter((c) => c.status === 'VOID' && c.voidReason === r.reason).length}
+              </td>
             </tr>
           ))}
         </tbody>

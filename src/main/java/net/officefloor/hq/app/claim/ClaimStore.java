@@ -31,6 +31,7 @@ public class ClaimStore {
         claim.setRemindedOn(rs.getObject("reminded_on", LocalDate.class));
         claim.setRef(rs.getString("ref"));
         claim.setTags(rs.getString("tags"));
+        claim.setVoidReason(rs.getString("void_reason"));
         return claim;
     };
 
@@ -125,10 +126,10 @@ public class ClaimStore {
     }
 
     public void save(Claim claim) {
-        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, number = ?, settled_due = ?, opened_by = ? "
+        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, number = ?, settled_due = ?, opened_by = ?, void_reason = ? "
                 + "WHERE sheet_id = ? AND id = ?",
                 claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getStatus().name(),
-                claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getSheetId(), claim.getId());
+                claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getVoidReason(), claim.getSheetId(), claim.getId());
     }
 
     /** Stores a draft's amount, date, note, the claim it corrects and its reference and its tags, releasing its lock; false when the stored claim is no longer a draft. */

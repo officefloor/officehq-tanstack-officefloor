@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
+import java.util.List;
 import net.officefloor.hq.app.period.PeriodStore;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonStore;
@@ -8,6 +9,7 @@ import net.officefloor.hq.app.rate.RateStore;
 import net.officefloor.hq.app.setting.SettingStore;
 import net.officefloor.hq.app.sheet.SheetStore;
 import net.officefloor.hq.app.sheet.InvalidSheetException;
+import net.officefloor.hq.app.voidreason.VoidReasonStore;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
@@ -18,11 +20,12 @@ import net.officefloor.plugin.variable.Val;
  *  A clerk's settle above the clerk limit makes it PENDING instead (see {@link CheckClerkLimit}); a steward's
  *  approval settles a PENDING claim, frozen then at its live figure (a statement does not bind it while
  *  PENDING), and a rejection moves it back to OPEN, bound again by its person's last statement if that included it.
- *  The user who opened a claim may not settle or approve it, and a claim deferred on the sheet's today may not be settled. */
+ *  The user who opened a claim may not settle or approve it, and a claim deferred on the sheet's today may not be settled.
+ *  While the sheet has void reasons, a void needs one of them (the input's reason), kept on the claim. */
 public class ApplyStatus {
     public void apply(@Val StatusInput input, @Val StatusMove move, @Val Claim claim, ClaimStore store, PersonStore people,
             RateStore rates, SettingStore settings, SheetStore sheets, PeriodStore periods,
-            Out<StatusChange> change)
+            VoidReasonStore voidReasons, Out<StatusChange> change)
             throws InvalidSheetException {
         ClaimStatus from = move.from();
         ClaimStatus to = move.to();
@@ -33,6 +36,19 @@ public class ApplyStatus {
         }
         if (input.status() == ClaimStatus.SETTLED && claim.isDeferredOn(sheets.today(claim.getSheetId()))) {
             throw new InvalidSheetException("A deferred claim cannot be settled until " + claim.getDeferredUntil());
+        }
+        String voidReason = null;
+        if (to == ClaimStatus.VOID) {
+            List<String> reasons = voidReasons.list(claim.getSheetId());
+            if (!reasons.isEmpty()) {
+                if (input.reason().isEmpty()) {
+                    throw new InvalidSheetException("A void needs a reason from the sheet's list");
+                }
+                if (!reasons.contains(input.reason())) {
+                    throw new InvalidSheetException(input.reason() + " is not a void reason on the sheet");
+                }
+                voidReason = input.reason();
+            }
         }
         if (!from.canBecome(to) || !store.move(claim, from, to)) {
             throw new InvalidSheetException("A " + from + " claim cannot become " + to);
@@ -45,6 +61,9 @@ public class ApplyStatus {
             settledDue = Lateness.of(claim.getSheetId(), settings, sheets, store, people).due(claim, pct);
         }
         claim.setStatus(to);
+        if (to == ClaimStatus.VOID) {
+            claim.setVoidReason(voidReason);
+        }
         if (from == ClaimStatus.DRAFT && to == ClaimStatus.OPEN) {
             claim.setNumber(Numbering.next(claim.getSheetId(), claim.getDueBy(), store, settings, sheets, periods));
             claim.setOpenedBy(input.user());

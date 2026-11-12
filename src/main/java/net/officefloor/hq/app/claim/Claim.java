@@ -29,6 +29,7 @@ public class Claim {
     private LocalDate remindedOn;
     private String ref;
     private String tags;
+    private String voidReason;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue, String openedBy, boolean stated,
@@ -109,6 +110,9 @@ public class Claim {
     /** Its tags (see {@link Tags}): sorted, comma separated; null when it has none. */
     public String getTags() { return tags; }
     public void setTags(String tags) { this.tags = tags; }
+    /** The reason it was voided with, from the sheet's list then; null when not voided, or voided while the list was empty. */
+    public String getVoidReason() { return voidReason; }
+    public void setVoidReason(String voidReason) { this.voidReason = voidReason; }
     public void setDeferredUntil(LocalDate deferredUntil) { this.deferredUntil = deferredUntil; }
     public void setPersonId(long personId) { this.personId = personId; }
     public void setCorrects(String corrects) { this.corrects = corrects; }
