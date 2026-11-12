@@ -106,6 +106,49 @@ public class Audit {
         return sheet == null || by == null ? null : delegations.delegator(sheet, by);
     }
 
+    /** The sheet's lines exactly as the file holds them, newest first; with a person's name, only the lines
+     *  carrying name=<it> or person=<it>, compared as names are (case and surrounding spaces ignored). */
+    public synchronized List<String> lines(String sheet, String person) {
+        if (!Files.exists(file)) {
+            return List.of();
+        }
+        List<String> all;
+        try {
+            all = Files.readAllLines(file, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        String marker = " sheet=" + sheet + " ";
+        String name = person == null ? "" : person.trim().toLowerCase(java.util.Locale.ROOT);
+        List<String> found = new ArrayList<>();
+        for (int i = all.size() - 1; i >= 0; i--) {
+            String line = all.get(i);
+            if ((line + " ").contains(marker) && (name.isEmpty() || about(line, name))) {
+                found.add(line);
+            }
+        }
+        return found;
+    }
+
+    /** Whether the line carries name=<name> or person=<name>: the value runs to the line's end or to the next field. */
+    private static boolean about(String line, String name) {
+        String lower = line.toLowerCase(java.util.Locale.ROOT);
+        for (String key : List.of(" name=", " person=")) {
+            int at = lower.indexOf(key);
+            while (at >= 0) {
+                int start = at + key.length();
+                if (lower.startsWith(name, start)) {
+                    String rest = lower.substring(start + name.length());
+                    if (rest.isEmpty() || rest.matches(" [a-z][a-z0-9-]*=.*")) {
+                        return true;
+                    }
+                }
+                at = lower.indexOf(key, at + 1);
+            }
+        }
+        return false;
+    }
+
     /** Remove the audit file. */
     public synchronized void clear() {
         try {
