@@ -25,6 +25,7 @@ public class Person {
     private LocalDate retiredFrom;
     private final List<Hold> holds = new ArrayList<>();
     private final List<PastRetirement> pastRetirements = new ArrayList<>();
+    private final List<Snapshot> snapshots = new ArrayList<>();
     private final List<String> aliases = new ArrayList<>();
     private LocalDate recordFrom;
     private Integer terms;
@@ -111,4 +112,6 @@ public class Person {
     public void setRetiredFrom(LocalDate retiredFrom) { this.retiredFrom = retiredFrom; }
     /** Their past retirements (each ended by unretiring them), oldest first. */
     public List<PastRetirement> getPastRetirements() { return pastRetirements; }
+    /** Their snapshots, one per SNAPSHOT written for them, oldest first. */
+    public List<Snapshot> getSnapshots() { return snapshots; }
 }

@@ -70,17 +70,30 @@ public class PersonStore {
         return past;
     }
 
+    /** The people's snapshots on the sheet (only the one person's when {@code personId} is given), by person,
+     *  oldest first. */
+    private Map<Long, List<Snapshot>> snapshots(String sheetId, Long personId, String table) {
+        Map<Long, List<Snapshot>> snapshots = new HashMap<>();
+        jdbc.query("SELECT person_id, left_day, due_total FROM " + table + " WHERE sheet_id = ?"
+                + (personId == null ? "" : " AND person_id = " + personId) + " ORDER BY id", rs -> {
+                    snapshots.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(new Snapshot(
+                            rs.getObject("left_day", LocalDate.class), rs.getString("due_total")));
+                }, sheetId);
+        return snapshots;
+    }
+
     private List<Person> query(String sheetId, Long personId, String sql, Object... args) {
-        return queryFrom(sheetId, personId, "person_grade", "person_hold", "person_alias", "person_retirement", sql,
-                args);
+        return queryFrom(sheetId, personId, "person_grade", "person_hold", "person_alias", "person_retirement",
+                "person_snapshot", sql, args);
     }
 
     private List<Person> queryFrom(String sheetId, Long personId, String gradeTable, String holdTable,
-            String aliasTable, String retirementTable, String sql, Object... args) {
+            String aliasTable, String retirementTable, String snapshotTable, String sql, Object... args) {
         Map<Long, NavigableMap<LocalDate, String>> grades = grades(sheetId, personId, gradeTable);
         Map<Long, List<Hold>> holds = holds(sheetId, personId, holdTable);
         Map<Long, List<String>> aliases = aliases(sheetId, personId, aliasTable);
         Map<Long, List<PastRetirement>> past = pastRetirements(sheetId, personId, retirementTable);
+        Map<Long, List<Snapshot>> snapshots = snapshots(sheetId, personId, snapshotTable);
         RowMapper<Person> row = (rs, i) -> {
             Person p = new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
                     grades.getOrDefault(rs.getLong("id"), new TreeMap<>()), rs.getLong("version"),
@@ -91,6 +104,7 @@ public class PersonStore {
             p.setOrigin(rs.getString("origin"));
             p.getAliases().addAll(aliases.getOrDefault(rs.getLong("id"), List.of()));
             p.getPastRetirements().addAll(past.getOrDefault(rs.getLong("id"), List.of()));
+            p.getSnapshots().addAll(snapshots.getOrDefault(rs.getLong("id"), List.of()));
             return p;
         };
         return jdbc.query(sql, row, args);
@@ -105,7 +119,7 @@ public class PersonStore {
     public List<Person> listAsOf(String sheetId, LocalDate date) {
         return queryFrom(sheetId, null, History.asOf("person_grade", "person_id, from_date", date),
                 History.asOf("person_hold", "id", date), History.asOf("person_alias", "id", date),
-                History.asOf("person_retirement", "id", date),
+                History.asOf("person_retirement", "id", date), History.asOf("person_snapshot", "id", date),
                 "SELECT * FROM " + History.asOf("person", "id", date) + " WHERE sheet_id = ? ORDER BY list_position, id", sheetId);
     }
 
@@ -119,7 +133,7 @@ public class PersonStore {
     public Person findAsOf(String sheetId, long id, LocalDate date) {
         List<Person> found = queryFrom(sheetId, id, History.asOf("person_grade", "person_id, from_date", date),
                 History.asOf("person_hold", "id", date), History.asOf("person_alias", "id", date),
-                History.asOf("person_retirement", "id", date),
+                History.asOf("person_retirement", "id", date), History.asOf("person_snapshot", "id", date),
                 "SELECT * FROM " + History.asOf("person", "id", date) + " WHERE sheet_id = ? AND id = ?", sheetId, id);
         return found.isEmpty() ? null : found.get(0);
     }
@@ -314,6 +328,12 @@ public class PersonStore {
         person.setRetiredFrom(null);
     }
 
+    /** Keeps a snapshot of the person on the sheet: the day being left and their due-total as it stood then. */
+    public void snapshot(String sheetId, long personId, LocalDate day, String dueTotal) {
+        jdbc.update("INSERT INTO person_snapshot (sheet_id, person_id, left_day, due_total) VALUES (?, ?, ?, ?)",
+                sheetId, personId, day, dueTotal);
+    }
+
     /** Adds a hold to the person's holds. An edit of their name or grade leaves them as they are. */
     public void hold(Person person, Hold hold) {
         jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date) VALUES (?, ?, ?, ?)",
@@ -341,7 +361,7 @@ public class PersonStore {
         return find(toSheet, copy.getId());
     }
 
-    /** Drops the person from their sheet with their grades, holds, aliases, statements and watchers. Their claims,
+    /** Drops the person from their sheet with their grades, holds, aliases, snapshots, statements and watchers. Their claims,
      *  patrons and pool memberships are dropped before this (see ClaimStore, PatronStore and PoolStore). */
     public void remove(Person person) {
         String sheetId = person.getSheetId();
@@ -350,12 +370,13 @@ public class PersonStore {
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
+        jdbc.update("DELETE FROM person_snapshot WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM statement WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM watch WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
     }
 
     /** Makes the person's name and aliases aliases of {@code into}, then drops the person with their grades,
-     *  holds, statements and watchers (their contact goes with them). Their claims, patrons and pool
+     *  holds, snapshots, statements and watchers (their contact goes with them). Their claims, patrons and pool
      *  memberships are moved before this (see ClaimStore, PatronStore and PoolStore). */
     public void mergeInto(Person person, Person into) {
         String sheetId = person.getSheetId();
@@ -367,6 +388,7 @@ public class PersonStore {
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
+        jdbc.update("DELETE FROM person_snapshot WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM statement WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM watch WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
     }

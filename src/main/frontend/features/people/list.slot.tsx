@@ -73,6 +73,7 @@ function PeopleList() {
           <th>Terms</th>
           <th>Contact</th>
           <th>Tags</th>
+          <th>Snapshots</th>
           <th>Clashing</th>
           <PersonColumnHeads.Slot />
           <th />
@@ -95,6 +96,13 @@ function PeopleList() {
             <td data-testid="person-terms">{p.terms ?? ''}</td>
             <td data-testid="person-contact">{p.contact ?? ''}</td>
             <td data-testid="person-tags">{p.tags.join(', ')}</td>
+            <td>
+              {p.snapshots.map((n, i) => (
+                <div key={i} data-testid="person-snapshot-line">
+                  {n.day} {n.dueTotal}
+                </div>
+              ))}
+            </td>
             <td data-testid="person-clashing">{p.clashing ? 'yes' : 'no'}</td>
             <PersonColumns.Slot person={p} />
             <td>

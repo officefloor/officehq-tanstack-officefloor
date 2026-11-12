@@ -22,7 +22,8 @@ import { useAsOf } from '../../session/session';
  *  `origin` is the id of the sheet they were transferred from (null when they were not).
  *  `pastRetirements` are the retirements they were unretired from, oldest first.
  *  `tags` are their tags (trimmed, lower-cased, no repeats), sorted; a claim counts for a tag when it or its
- *  person carries it. */
+ *  person carries it.
+ *  `snapshots` are their snapshots, one per SNAPSHOT written for them as the sheet's today moved on, oldest first. */
 export type Person = {
   id: number;
   name: string;
@@ -45,7 +46,11 @@ export type Person = {
   origin: string | null;
   pastRetirements: PastRetirement[];
   tags: string[];
+  snapshots: Snapshot[];
 };
+
+/** A snapshot: the day being left (yyyy-MM-dd) and the person's due-total as it stood then (two decimals, or n/a). */
+export type Snapshot = { day: string; dueTotal: string };
 
 /** A past retirement: from the date retired from to the day unretired (yyyy-MM-dd). No claim dated
  *  after its from-date and before its to-date may be added. */
