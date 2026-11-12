@@ -64,7 +64,7 @@ export function countsInPeriod(claim: Claim, period: Period, person: Person): bo
   const status = statusAt(claim, period.to);
   if (status === 'SETTLED') return true;
   if (status !== 'OPEN' && status !== 'PENDING') return false;
-  return !claim.deferred && (claim.stated || !isOpen(claim) || !(person.retiredNow || person.holds.some((h) => covers(h, claim.date))));
+  return !(claim.status !== 'VOID' && claim.deferred) && (claim.stated || !isOpen(claim) || !(person.retiredNow || person.holds.some((h) => covers(h, claim.date))));
 }
 
 /** A person's due-total for a period: once closed or soft-closed, the figure fixed then (0.00 for a person

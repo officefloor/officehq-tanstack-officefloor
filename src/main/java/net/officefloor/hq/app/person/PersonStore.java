@@ -46,20 +46,33 @@ public class PersonStore {
         return holds;
     }
 
-    private List<Person> query(String sheetId, Long personId, String sql, Object... args) {
-        return queryFrom(sheetId, personId, "person_grade", "person_hold", sql, args);
+    /** The people's aliases on the sheet (only the one person's when {@code personId} is given), by person,
+     *  sorted as names are compared. */
+    private Map<Long, List<String>> aliases(String sheetId, Long personId, String table) {
+        Map<Long, List<String>> aliases = new HashMap<>();
+        jdbc.query("SELECT person_id, alias FROM " + table + " WHERE sheet_id = ?"
+                + (personId == null ? "" : " AND person_id = " + personId) + " ORDER BY LOWER(alias), alias", rs -> {
+                    aliases.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(rs.getString("alias"));
+                }, sheetId);
+        return aliases;
     }
 
-    private List<Person> queryFrom(String sheetId, Long personId, String gradeTable, String holdTable, String sql,
-            Object... args) {
+    private List<Person> query(String sheetId, Long personId, String sql, Object... args) {
+        return queryFrom(sheetId, personId, "person_grade", "person_hold", "person_alias", sql, args);
+    }
+
+    private List<Person> queryFrom(String sheetId, Long personId, String gradeTable, String holdTable,
+            String aliasTable, String sql, Object... args) {
         Map<Long, NavigableMap<LocalDate, String>> grades = grades(sheetId, personId, gradeTable);
         Map<Long, List<Hold>> holds = holds(sheetId, personId, holdTable);
+        Map<Long, List<String>> aliases = aliases(sheetId, personId, aliasTable);
         RowMapper<Person> row = (rs, i) -> {
             Person p = new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
                     grades.getOrDefault(rs.getLong("id"), new TreeMap<>()), rs.getLong("version"),
                     rs.getObject("retired_from", LocalDate.class), holds.getOrDefault(rs.getLong("id"), List.of()));
             p.setTerms(rs.getObject("terms", Integer.class));
             p.setContact(rs.getString("contact"));
+            p.getAliases().addAll(aliases.getOrDefault(rs.getLong("id"), List.of()));
             return p;
         };
         return jdbc.query(sql, row, args);
@@ -73,7 +86,7 @@ public class PersonStore {
      *  {@link History}), in the order they were added. */
     public List<Person> listAsOf(String sheetId, LocalDate date) {
         return queryFrom(sheetId, null, History.asOf("person_grade", "person_id, from_date", date),
-                History.asOf("person_hold", "id", date),
+                History.asOf("person_hold", "id", date), History.asOf("person_alias", "id", date),
                 "SELECT * FROM " + History.asOf("person", "id", date) + " WHERE sheet_id = ? ORDER BY id", sheetId);
     }
 
@@ -86,24 +99,42 @@ public class PersonStore {
      *  null when they were not on the sheet then. */
     public Person findAsOf(String sheetId, long id, LocalDate date) {
         List<Person> found = queryFrom(sheetId, id, History.asOf("person_grade", "person_id, from_date", date),
-                History.asOf("person_hold", "id", date),
+                History.asOf("person_hold", "id", date), History.asOf("person_alias", "id", date),
                 "SELECT * FROM " + History.asOf("person", "id", date) + " WHERE sheet_id = ? AND id = ?", sheetId, id);
         return found.isEmpty() ? null : found.get(0);
     }
 
-    /** The person on the sheet with this name, ignoring case and the spaces around it; null when none. */
+    /** The person on the sheet with this name or alias, ignoring case and the spaces around it; null when none. */
     public Person findByName(String sheetId, String name) {
-        List<Person> found = query(sheetId, null, "SELECT * FROM person WHERE sheet_id = ? AND name_key = LOWER(?)",
-                sheetId, name.trim());
+        List<Person> found = query(sheetId, null, "SELECT * FROM person WHERE sheet_id = ? AND (name_key = LOWER(?)"
+                + " OR id IN (SELECT person_id FROM person_alias WHERE sheet_id = ? AND alias_key = LOWER(?)))",
+                sheetId, name.trim(), sheetId, name.trim());
         return found.isEmpty() ? null : found.get(0);
     }
 
-    /** Whether another person on the sheet (not {@code exceptId}) has this name, ignoring case. */
+    /** Whether another person on the sheet (not {@code exceptId}) has this name, or anyone on the sheet has it
+     *  as an alias, ignoring case. */
     public boolean nameTaken(String sheetId, String name, Long exceptId) {
         Integer n = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND name_key = LOWER(?) AND id <> ?",
                 Integer.class, sheetId, name.trim(), exceptId == null ? -1L : exceptId);
+        return (n != null && n > 0) || aliasTaken(sheetId, name);
+    }
+
+    /** Whether anyone on the sheet has this alias, ignoring case and the spaces around it. */
+    public boolean aliasTaken(String sheetId, String alias) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM person_alias WHERE sheet_id = ? AND alias_key = LOWER(?)",
+                Integer.class, sheetId, alias.trim());
         return n != null && n > 0;
+    }
+
+    /** Adds the alias (trimmed) to the person's aliases. An edit of their name or grade leaves them as they are. */
+    public void addAlias(Person person, String alias) {
+        jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias) VALUES (?, ?, ?)", person.getSheetId(),
+                person.getId(), alias.trim());
+        person.getAliases().add(alias.trim());
+        person.getAliases().sort(java.util.Comparator.comparing((String a) -> a.toLowerCase(java.util.Locale.ROOT))
+                .thenComparing(java.util.Comparator.naturalOrder()));
     }
 
     /** Adds the person with their first grade, which applies from the beginning of time, and no terms of their own. */

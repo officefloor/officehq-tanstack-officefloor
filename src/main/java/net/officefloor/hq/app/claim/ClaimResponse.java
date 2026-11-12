@@ -11,7 +11,7 @@ import java.util.List;
  *  (null when it is not a correction), and the date its live figures round by (its own, or for a
  *  correction that of the claim it corrects), and the date it is due by, fixed when it was added, and its status log
  *  (see {@link ClaimLogStore}), oldest first, and whether it is deferred on the sheet's today (see
- *  {@link Claim#isDeferredOn}) and the date it was deferred until (null when never deferred), and how many proofs it has, and the number of the claim it was
+ *  {@link Claim#isDeferredOn}; a VOID claim deferred until after it shows as deferred too) and the date it was deferred until (null when never deferred), and how many proofs it has, and the number of the claim it was
  *  split off (null when it was not split off another), and whether it is a late entry (added while its period was soft-closed),
  *  and the last date it was reminded on (null when never reminded), and its external reference (null when it has none), and its tags, sorted (empty when it has none),
  *  and the reason it was voided with (null when none), and its comments (see {@link ClaimCommentStore}), oldest first,
@@ -53,9 +53,11 @@ public record ClaimResponse(long id, long personId, String amount, String date, 
                 statedNa, corrects, roundsBy, dueBy, log, deferred, deferredUntil, proofs, splitFrom, lateEntry, remindedOn, ref, tags, voidReason, lines, batch);
     }
 
-    /** The same claim, deferred when OPEN and deferred until a date after the sheet's {@code today}. */
+    /** The same claim, deferred when OPEN, or VOID (a voided claim still shows its deferral, though it counts
+     *  nowhere), and deferred until a date after the sheet's {@code today}. */
     public ClaimResponse on(LocalDate today) {
-        boolean now = ClaimStatus.OPEN.name().equals(status) && deferredUntil != null && today != null
+        boolean now = (ClaimStatus.OPEN.name().equals(status) || ClaimStatus.VOID.name().equals(status))
+                && deferredUntil != null && today != null
                 && today.toString().compareTo(deferredUntil) < 0;
         return new ClaimResponse(id, personId, amount, date, note, status, number, due, openedBy, stated, statedDue,
                 statedNa, corrects, roundsBy, dueBy, log, now, deferredUntil, proofs, splitFrom, lateEntry, remindedOn, ref, tags, voidReason, comments, batch);

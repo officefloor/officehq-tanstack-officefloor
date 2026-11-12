@@ -14,7 +14,7 @@ import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 
 /**
- * The person on the sheet with the quick add's name (ignoring case); when there is none, adds them
+ * The person on the sheet with the quick add's name or alias (ignoring case); when there is none, adds them
  * as the person form would, recording PERSON_ADDED and how it moved the figures. Runs only once the
  * claim has passed every check, so a refused quick add leaves no person behind. Refuses the claim when
  * the person found is retired from a date before it.

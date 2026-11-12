@@ -15,7 +15,8 @@ import { useAsOf } from '../../session/session';
  *  `patronIds` are the ids of the other people on the sheet they named as their patrons.
  *  `grade` is the grade in force on the sheet's today; `grades` every grade with the date it applies from.
  *  `terms` are their own terms in whole days (null when none), ahead of their grade's and the sheet's.
- *  `contact` is their contact (trimmed, lower-cased; null when none), no other person's on the sheet. */
+ *  `contact` is their contact (trimmed, lower-cased; null when none), no other person's on the sheet.
+ *  `aliases` are other names they are found by (no name or other alias on the sheet), sorted as names are compared. */
 export type Person = {
   id: number;
   name: string;
@@ -33,6 +34,7 @@ export type Person = {
   patronIds: number[];
   terms: number | null;
   contact: string | null;
+  aliases: string[];
 };
 
 /** A hold from its from-date to its to-date (yyyy-MM-dd, both inclusive; null for no end). */

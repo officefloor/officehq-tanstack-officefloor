@@ -21,11 +21,10 @@ function PasteClaims() {
   const paste = useMutation({
     mutationFn: (t: string) =>
       postJson<PasteResult>(`/api/sheets/${encodeURIComponent(sheet)}/paste-claims`, { text: t, user }),
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
-        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
-      ]);
+    // Not awaited: the count added shows as soon as the server answers, no later than the rows it added.
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
+      void queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
     },
   });
   const submit = useSubmitOnce(paste);

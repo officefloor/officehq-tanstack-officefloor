@@ -23,6 +23,7 @@ public class Person {
     private long version;
     private LocalDate retiredFrom;
     private final List<Hold> holds = new ArrayList<>();
+    private final List<String> aliases = new ArrayList<>();
     private LocalDate recordFrom;
     private Integer terms;
     private boolean termsChanged;
@@ -70,6 +71,8 @@ public class Person {
     /** Whether a hold of theirs covers the date. */
     public boolean heldOn(LocalDate date) { return holds.stream().anyMatch(h -> h.covers(date)); }
     public void addHold(Hold hold) { holds.add(hold); }
+    /** Their aliases: other names they are found by, sorted as names are compared. */
+    public List<String> getAliases() { return aliases; }
     public void setName(String name) { this.name = name; }
     /** Records the grade from the date at the next save, keeping the others. */
     public void recordGrade(LocalDate from, String grade) {

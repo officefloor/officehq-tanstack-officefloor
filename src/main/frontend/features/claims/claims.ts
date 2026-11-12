@@ -45,7 +45,8 @@ export type Claim = {
   /** Its status log, oldest first: `<STATUS> by <user> on <date> due=<due>`, one line per status it has had. */
   log: string[];
   /** Whether it is deferred on the sheet's today: OPEN and deferred until a date after it. Until then it
-   *  counts in no total, is not overdue, cannot be settled and is left unbound by a statement. */
+   *  counts in no total, is not overdue, cannot be settled and is left unbound by a statement. A VOID claim
+   *  deferred until after it shows as deferred too, though it counts nowhere. */
   deferred: boolean;
   /** The date (yyyy-MM-dd) it was last deferred until; null when it was never deferred. */
   deferredUntil: string | null;
