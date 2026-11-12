@@ -55,7 +55,7 @@ public class RollupService {
             boolean fixed = false;
             for (Claim claim : all) {
                 if (claim.getPersonId() != person.getId()
-                        || (claim.getStatus() != ClaimStatus.OPEN && claim.getStatus() != ClaimStatus.SETTLED)) {
+                        || !counts(claim, person)) {
                     continue;
                 }
                 claimed = claimed.add(claim.getAmount());
@@ -83,7 +83,7 @@ public class RollupService {
         for (Person person : people.list(sheetId)) {
             for (Claim claim : all) {
                 if (claim.getPersonId() != person.getId()
-                        || (claim.getStatus() != ClaimStatus.OPEN && claim.getStatus() != ClaimStatus.SETTLED)
+                        || !counts(claim, person)
                         || claim.getDate().isBefore(from) || claim.getDate().isAfter(to)) {
                     continue;
                 }
@@ -109,6 +109,12 @@ public class RollupService {
         if (!after.claimedTotal().equals(before.claimedTotal()) || !after.dueTotal().equals(before.dueTotal())) {
             audit.record("TOTALS" + who + " claimed-total=" + after.claimedTotal() + " due-total=" + after.dueTotal());
         }
+    }
+
+    /** Only OPEN and SETTLED claims count, and a held person's OPEN claims do not. */
+    private static boolean counts(Claim claim, Person person) {
+        return claim.getStatus() == ClaimStatus.SETTLED
+                || (claim.getStatus() == ClaimStatus.OPEN && !person.isHeld());
     }
 
     private static String shown(BigDecimal value) {

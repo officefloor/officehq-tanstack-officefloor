@@ -6,7 +6,8 @@ import { sheetKey } from '../sheet/sheet';
 /** `version` moves on with each stored edit; an edit is saved only over the version its editor loaded.
  *  `statementCount` is how many statements were taken of them; `statedTotal` (two decimals, or n/a)
  *  and `statementDate` (yyyy-MM-dd) are the last one's, null when none was taken. `retired` is set
- *  as soon as a `retiredFrom` date (yyyy-MM-dd, null when not retired) is, whatever the date. */
+ *  as soon as a `retiredFrom` date (yyyy-MM-dd, null when not retired) is, whatever the date.
+ *  While `held`, their OPEN claims count in no live total; their SETTLED ones still do. */
 export type Person = {
   id: number;
   name: string;
@@ -17,6 +18,7 @@ export type Person = {
   statementDate: string | null;
   retired: boolean;
   retiredFrom: string | null;
+  held: boolean;
 };
 
 export const GRADES = ['A', 'B', 'C'] as const;

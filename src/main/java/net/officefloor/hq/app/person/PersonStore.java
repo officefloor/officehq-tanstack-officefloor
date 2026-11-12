@@ -14,7 +14,7 @@ public class PersonStore {
 
     private static final RowMapper<Person> ROW = (rs, i) -> new Person(rs.getLong("id"),
             rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getLong("version"),
-            rs.getObject("retired_from", LocalDate.class));
+            rs.getObject("retired_from", LocalDate.class), rs.getBoolean("held"));
 
     private final JdbcTemplate jdbc;
 
@@ -78,5 +78,12 @@ public class PersonStore {
         jdbc.update("UPDATE person SET retired_from = ? WHERE sheet_id = ? AND id = ?", from, person.getSheetId(),
                 person.getId());
         person.setRetiredFrom(from);
+    }
+
+    /** Puts the person on hold (true) or takes them off it (false). An edit of their name or grade leaves it as it is. */
+    public void hold(Person person, boolean held) {
+        jdbc.update("UPDATE person SET held = ? WHERE sheet_id = ? AND id = ?", held, person.getSheetId(),
+                person.getId());
+        person.setHeld(held);
     }
 }

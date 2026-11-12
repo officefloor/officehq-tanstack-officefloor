@@ -4,7 +4,7 @@ import { HttpError, postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
-import { counts, useClaims } from '../claims/claims';
+import { counts, live, useClaims } from '../claims/claims';
 import { usePeople } from '../people/people';
 import { claimDue, dueTotal, useRates } from '../rates/rates';
 import { type Period, contains, periodsKey, usePeriods } from './periods';
@@ -53,7 +53,7 @@ function Periods() {
   const gradeOf = new Map((people.data ?? []).map((p) => [p.id, p.grade]));
   const periodDue = (period: Period) =>
     dueTotal(
-      (claims.data ?? [])
+      live(claims.data ?? [], people.data)
         .filter((c) => counts(c) && contains(period, c.date) && gradeOf.has(c.personId))
         .map((c) => claimDue(c, rates.data, gradeOf.get(c.personId)!)),
     );

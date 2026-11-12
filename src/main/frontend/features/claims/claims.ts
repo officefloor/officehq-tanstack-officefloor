@@ -27,6 +27,12 @@ export type Claim = {
 /** Only OPEN and SETTLED claims count toward claimed and the totals. */
 export const counts = (c: Claim) => c.status === 'OPEN' || c.status === 'SETTLED';
 
+/** These claims less the OPEN claims of people on hold, which count in no live total. */
+export const live = (claims: Claim[], people: { id: number; held: boolean }[] | undefined) => {
+  const held = new Set((people ?? []).filter((p) => p.held).map((p) => p.id));
+  return claims.filter((c) => !(c.status === 'OPEN' && held.has(c.personId)));
+};
+
 /** Under the sheet's key, so loading the sheet again re-reads its claims. */
 export const claimsKey = (sheet: string) => [...sheetKey(sheet), 'claims'] as const;
 

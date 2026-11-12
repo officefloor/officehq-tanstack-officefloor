@@ -1,8 +1,8 @@
 import { HomeMain } from '../../slots/defs/homeMain';
 import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
-import type { Person } from '../people/people';
+import { type Person, usePeople } from '../people/people';
 import { useCurrentSheet } from '../../session/session';
-import { claimed, useClaims } from './claims';
+import { claimed, live, useClaims } from './claims';
 
 // A person's claimed (the sum of their claims) and the sheet's claimed-total (everyone's).
 function ClaimedHead() {
@@ -12,15 +12,16 @@ function ClaimedHead() {
 function PersonClaimed({ person }: { person: Person }) {
   const [sheet] = useCurrentSheet();
   const claims = useClaims(sheet);
-  return <td data-testid="person-claimed">{claimed((claims.data ?? []).filter((c) => c.personId === person.id))}</td>;
+  return <td data-testid="person-claimed">{claimed(live((claims.data ?? []).filter((c) => c.personId === person.id), [person]))}</td>;
 }
 
 function ClaimedTotal() {
   const [sheet] = useCurrentSheet();
+  const people = usePeople(sheet);
   const claims = useClaims(sheet);
   return (
     <p>
-      Claimed total <strong data-testid="rollup-claimed-total">{claimed(claims.data ?? [])}</strong>
+      Claimed total <strong data-testid="rollup-claimed-total">{claimed(live(claims.data ?? [], people.data))}</strong>
     </p>
   );
 }

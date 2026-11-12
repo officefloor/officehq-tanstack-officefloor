@@ -3,7 +3,8 @@ package net.officefloor.hq.app.person;
 import java.time.LocalDate;
 
 /** A person on a sheet. {@code grade} is one of A, B or C; {@code version} moves on with each stored edit;
- *  {@code retiredFrom} is the date they are retired from (null while not retired). */
+ *  {@code retiredFrom} is the date they are retired from (null while not retired); {@code held} whether
+ *  they are on hold, when their OPEN claims count in no live total. */
 public class Person {
     private final long id;
     private final String sheetId;
@@ -11,6 +12,7 @@ public class Person {
     private String grade;
     private long version;
     private LocalDate retiredFrom;
+    private boolean held;
 
     public Person(long id, String sheetId, String name, String grade, long version) {
         this.id = id;
@@ -25,6 +27,12 @@ public class Person {
         this.retiredFrom = retiredFrom;
     }
 
+    public Person(long id, String sheetId, String name, String grade, long version, LocalDate retiredFrom,
+            boolean held) {
+        this(id, sheetId, name, grade, version, retiredFrom);
+        this.held = held;
+    }
+
     public long getId() { return id; }
     public String getSheetId() { return sheetId; }
     public String getName() { return name; }
@@ -33,6 +41,8 @@ public class Person {
     public LocalDate getRetiredFrom() { return retiredFrom; }
     /** Retired as soon as a date is set, whatever the date. */
     public boolean isRetired() { return retiredFrom != null; }
+    public boolean isHeld() { return held; }
+    public void setHeld(boolean held) { this.held = held; }
     public void setName(String name) { this.name = name; }
     public void setGrade(String grade) { this.grade = grade; }
     public void setVersion(long version) { this.version = version; }
