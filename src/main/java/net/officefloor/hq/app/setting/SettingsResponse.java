@@ -27,13 +27,15 @@ import java.util.Map;
  *  {@code pot} has two decimals, the sum shared out among a balanced pool's members, null for none (not dated).
  *  {@code parent} is the id of the sheet whose rates a grade with no rate in force on a date takes, null for none (not dated;
  *  the one named now, also as of a date).
- *  {@code fiscalStartMonth} is the month (1 to 12) a fiscal year starts in, 1 unless set (not dated). */
+ *  {@code fiscalStartMonth} is the month (1 to 12) a fiscal year starts in, 1 unless set (not dated).
+ *  {@code alertThreshold} has two decimals, the due-total above which a person crossing it raises an ALERT, null for
+ *  off (not dated). */
 public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
         String periodNumberingFrom, Map<String, String> gradeTerms, String cap, String proofThreshold, List<Dated> floorFrom,
         List<Dated> latePctFrom, Map<String, String> perms, String graceDays,
         String noteThreshold, String entryDate, Map<String, String> gradeGrace,
         Map<String, List<Dated>> gradeGraceFrom, Map<String, String> gradeProofThreshold,
-        String pot, String parent, String fiscalStartMonth) {
+        String pot, String parent, String fiscalStartMonth, String alertThreshold) {
 
     /** A value recorded from a date (yyyy-MM-dd). */
     public record Dated(String from, String value) {

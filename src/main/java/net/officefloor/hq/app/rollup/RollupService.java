@@ -29,6 +29,8 @@ import org.springframework.stereotype.Service;
  * overdue-total=<0.00> when any of the sheet's totals changed; the sheet's due-total and overdue-total leave out
  * the single highest and the single lowest person's figure when three or more people have one (n/a is no figure). A person's overdue-total is the due (late charge
  * included, skipping n/a) of their counting claims that are OPEN or PENDING with a due-by (plus any grace days of their grade, see {@link Lateness}) before today. A person's due-total is at most the sheet's cap. A change that moves no figure records nothing here.
+ * After those lines, while the sheet's alert threshold is set, ALERT sheet=<id> by=<user> name=<name> due-total=<0.00>
+ * for each person whose due-total the change took from at or below it (or no due-total) to above it, in list order.
  */
 @Service
 public class RollupService {
@@ -155,10 +157,31 @@ public class RollupService {
             audit.record("TOTALS" + who + " claimed-total=" + after.claimedTotal() + " due-total=" + after.dueTotal()
                     + " overdue-total=" + after.overdueTotal());
         }
+        alerts(sheetId, who, before, after);
+    }
+
+    /** Records ALERT for each person whose due-total went from at or below the sheet's alert threshold (or none)
+     *  to above it, in list order; nothing while the threshold is off. */
+    private void alerts(String sheetId, String who, Rollup before, Rollup after) {
+        BigDecimal threshold = settings.alertThreshold(sheetId);
+        if (threshold == null) {
+            return;
+        }
+        after.people().forEach((id, now) -> {
+            Rollup.Figures was = before == null ? null : before.people().get(id);
+            if (above(now, threshold) && !above(was, threshold)) {
+                audit.record("ALERT" + who + " name=" + now.name() + " due-total=" + now.dueTotal());
+            }
+        });
+    }
+
+    private static boolean above(Rollup.Figures figures, BigDecimal threshold) {
+        return figures != null && !NA.equals(figures.dueTotal())
+                && new BigDecimal(figures.dueTotal()).compareTo(threshold) > 0;
     }
 
     /** Records the sheet's figures as they stand, the change made by {@code user}: a ROLLUP line for every
-     *  person, then its TOTALS. */
+     *  person, then its TOTALS, then an ALERT for each person above the alert threshold (each counts as new). */
     public void recordAll(String sheetId, String user) {
         Rollup now = snapshot(sheetId);
         String who = " sheet=" + sheetId + " by=" + user;
@@ -166,6 +189,7 @@ public class RollupService {
                 + p.claimed() + " due-total=" + p.dueTotal() + " overdue-total=" + p.overdueTotal()));
         audit.record("TOTALS" + who + " claimed-total=" + now.claimedTotal() + " due-total=" + now.dueTotal()
                 + " overdue-total=" + now.overdueTotal());
+        alerts(sheetId, who, null, now);
     }
 
     /** What the sheet's late charge follows on the date, for these claims (see {@link Lateness}). */

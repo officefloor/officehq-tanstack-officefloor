@@ -33,7 +33,7 @@ public class RespondWithSettings {
                 store.find(sheet, SettingStore.NOTE_THRESHOLD), store.find(sheet, SettingStore.ENTRY_DATE),
                 gradeGrace(sheet, today, store), gradeGraceFrom(sheet, store), gradeProofThreshold(sheet, today, store),
                 store.find(sheet, SettingStore.POT), settings.parent(sheet),
-                String.valueOf(store.fiscalStartMonth(sheet))));
+                String.valueOf(store.fiscalStartMonth(sheet)), store.find(sheet, SettingStore.ALERT_THRESHOLD)));
     }
 
     private static Map<String, String> gradeTerms(String sheetId, LocalDate today, SettingStore store) {
