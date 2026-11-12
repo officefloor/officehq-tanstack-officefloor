@@ -39,6 +39,7 @@ function PersonClaims({ person }: { person: Person }) {
   const [reasons, setReasons] = useState<Record<number, string>>({});
   const [targets, setTargets] = useState<Record<number, string>>({});
   const [deferDates, setDeferDates] = useState<Record<number, string>>({});
+  const [splitAmounts, setSplitAmounts] = useState<Record<number, string>>({});
   const people = usePeople(sheet);
   const [selected, setSelected] = useSelectedClaims();
   const queryClient = useQueryClient();
@@ -73,6 +74,7 @@ function PersonClaims({ person }: { person: Person }) {
     resettle.reset();
     defer.reset();
     proof.reset();
+    split.reset();
     move.mutate({ id, status, review: review !== undefined, reason: review?.reason });
   };
 
@@ -93,6 +95,7 @@ function PersonClaims({ person }: { person: Person }) {
     resettle.reset();
     defer.reset();
     proof.reset();
+    split.reset();
     reassign.mutate({ id, to: targets[id] ?? '' });
   };
   // A steward re-settling a SETTLED claim freezes it again at today's figure.
@@ -111,6 +114,7 @@ function PersonClaims({ person }: { person: Person }) {
     resettle.reset();
     defer.reset();
     proof.reset();
+    split.reset();
     resettle.mutate(id);
   };
   // Deferring an OPEN claim until a date after today takes it out of every figure until then.
@@ -130,6 +134,7 @@ function PersonClaims({ person }: { person: Person }) {
     resettle.reset();
     defer.reset();
     proof.reset();
+    split.reset();
     defer.mutate({ id, until: (deferDates[id] ?? '').trim() });
   };
   // A proof raises the claim's proofs count by one; not on a SETTLED or VOID claim.
@@ -145,9 +150,31 @@ function PersonClaims({ person }: { person: Person }) {
     resettle.reset();
     defer.reset();
     proof.reset();
+    split.reset();
     proof.mutate(id);
   };
-  // The refusal of the last status change, move, re-settle, deferral or proof of the claim, as the server gave it; null when none.
+  // Splitting an amount off an OPEN claim lists a new OPEN claim with it; both people's figures follow.
+  const split = useMutation({
+    mutationFn: (d: { id: number; amount: string }) =>
+      postJson<Claim>(`${base}/claims/${d.id}/split`, { amount: d.amount, user }),
+    onSuccess: async (_, d) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+      ]);
+      setSplitAmounts((a) => ({ ...a, [d.id]: '' }));
+    },
+  });
+  const splitClaim = (id: number) => {
+    move.reset();
+    reassign.reset();
+    resettle.reset();
+    defer.reset();
+    proof.reset();
+    split.reset();
+    split.mutate({ id, amount: (splitAmounts[id] ?? '').trim() });
+  };
+  // The refusal of the last status change, move, re-settle, deferral, proof or split of the claim, as the server gave it; null when none.
   const refusal = (id: number) => {
     const error =
       move.isError && move.variables?.id === id
@@ -160,7 +187,9 @@ function PersonClaims({ person }: { person: Person }) {
               ? defer.error
               : proof.isError && proof.variables === id
                 ? proof.error
-                : null;
+                : split.isError && split.variables?.id === id
+                  ? split.error
+                  : null;
     if (error === null) return null;
     return error instanceof HttpError && error.reason ? `${error.reason}.` : 'The change was refused.';
   };
@@ -176,6 +205,7 @@ function PersonClaims({ person }: { person: Person }) {
     resettle.reset();
     defer.reset();
     proof.reset();
+    split.reset();
     setEditing(c.id);
     setFields({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects ?? '' });
   };
@@ -213,6 +243,7 @@ function PersonClaims({ person }: { person: Person }) {
               <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-deferred">{c.deferred ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
+              <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}
               <button type="button" data-testid="claim-open" disabled={move.isPending} onClick={() => moveTo(c.id, 'OPEN')}>
                 Open
               </button>{' '}
@@ -298,6 +329,20 @@ function PersonClaims({ person }: { person: Person }) {
               <span data-testid="claim-proofs">{c.proofs ?? 0}</span>{' '}
               <button type="button" data-testid="claim-proof" disabled={proof.isPending} onClick={() => addProof(c.id)}>
                 Add proof
+              </button>{' '}
+              <input
+                data-testid="claim-split-amount"
+                placeholder="Split off"
+                aria-label="Amount to split off"
+                inputMode="decimal"
+                value={splitAmounts[c.id] ?? ''}
+                onChange={(e) => {
+                  setSplitAmounts({ ...splitAmounts, [c.id]: e.target.value });
+                  if (split.variables?.id === c.id) split.reset();
+                }}
+              />{' '}
+              <button type="button" data-testid="claim-split" disabled={split.isPending} onClick={() => splitClaim(c.id)}>
+                Split
               </button>{' '}
               <button type="button" data-testid="claim-edit" onClick={() => open(c)}>
                 Edit

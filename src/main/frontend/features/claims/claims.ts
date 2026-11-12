@@ -50,6 +50,8 @@ export type Claim = {
   deferredUntil: string | null;
   /** How many proofs it has: a claim due above the proof threshold on its date cannot be settled or approved with none. */
   proofs: number;
+  /** The number of the claim it was split off; null when it was not split off another. */
+  splitFrom: string | null;
 };
 
 /** A correction: a claim with a negative amount, which has no floor and no late charge. */

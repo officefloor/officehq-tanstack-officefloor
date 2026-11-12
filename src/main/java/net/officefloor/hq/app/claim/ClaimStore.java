@@ -25,6 +25,7 @@ public class ClaimStore {
         claim.setStatedNa(rs.getBoolean("stated_na"));
         claim.setDeferredUntil(rs.getObject("deferred_until", LocalDate.class));
         claim.setProofs(rs.getInt("proofs"));
+        claim.setSplitFrom(rs.getString("split_from"));
         return claim;
     };
 
@@ -105,6 +106,48 @@ public class ClaimStore {
             claim.setDeferredUntil(until);
         }
         return deferred;
+    }
+
+    /** Leaves the stored OPEN claim with {@code rest} of its amount, unbound from any statement figure; false
+     *  when it is no longer OPEN at the amount it had (another user changed it first). */
+    public boolean shrink(Claim claim, BigDecimal rest) {
+        boolean shrunk = jdbc.update("UPDATE claim SET amount = ?, stated = FALSE, stated_due = NULL, stated_na = FALSE "
+                + "WHERE sheet_id = ? AND id = ? AND status = ? AND amount = ?",
+                rest, claim.getSheetId(), claim.getId(), ClaimStatus.OPEN.name(), claim.getAmount()) == 1;
+        if (shrunk) {
+            claim.setAmount(rest);
+            claim.setStated(false);
+            claim.setStatedDue(null);
+            claim.setStatedNa(false);
+        }
+        return shrunk;
+    }
+
+    /** Adds an OPEN claim split off {@code from}: its date and note, the given number, opened by the user
+     *  and due by {@code dueBy}, listed as its person's newest claim. */
+    public Claim addSplit(Claim from, BigDecimal amount, String number, String openedBy, LocalDate dueBy) {
+        GeneratedKeyHolder keys = new GeneratedKeyHolder();
+        jdbc.update(con -> {
+            PreparedStatement ps = con.prepareStatement(
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, number, opened_by, due_by, split_from) "
+                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    new String[] { "ID" });
+            ps.setString(1, from.getSheetId());
+            ps.setLong(2, from.getPersonId());
+            ps.setBigDecimal(3, amount);
+            ps.setDate(4, Date.valueOf(from.getDate()));
+            ps.setString(5, from.getNote());
+            ps.setString(6, ClaimStatus.OPEN.name());
+            ps.setString(7, number);
+            ps.setString(8, openedBy);
+            ps.setDate(9, Date.valueOf(dueBy));
+            ps.setString(10, from.getNumber());
+            return ps;
+        }, keys);
+        Claim added = new Claim(keys.getKey().longValue(), from.getSheetId(), from.getPersonId(), amount, from.getDate(),
+                from.getNote(), ClaimStatus.OPEN, number, null, openedBy, false, null, null, dueBy);
+        added.setSplitFrom(from.getNumber());
+        return added;
     }
 
     /** Raises the stored DRAFT, OPEN or PENDING claim's proofs count by one; false when it is no longer one of

@@ -24,6 +24,7 @@ public class Claim {
     private final LocalDate dueBy;
     private LocalDate deferredUntil;
     private int proofs;
+    private String splitFrom;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue, String openedBy, boolean stated,
@@ -89,6 +90,9 @@ public class Claim {
      *  settled or approved while it has none (see {@link CheckProofs}). */
     public int getProofs() { return proofs; }
     public void setProofs(int proofs) { this.proofs = proofs; }
+    /** The number of the claim this claim was split off; null when it was not split off another. */
+    public String getSplitFrom() { return splitFrom; }
+    public void setSplitFrom(String splitFrom) { this.splitFrom = splitFrom; }
     public void setDeferredUntil(LocalDate deferredUntil) { this.deferredUntil = deferredUntil; }
     public void setPersonId(long personId) { this.personId = personId; }
     public void setCorrects(String corrects) { this.corrects = corrects; }
