@@ -11,6 +11,11 @@ public class SettingStore {
 
     public static final String CLERK_LIMIT = "clerk-limit";
 
+    public static final String FLOOR = "floor";
+
+    /** The floor a sheet has until one is set. */
+    public static final BigDecimal DEFAULT_FLOOR = new BigDecimal("1.00");
+
     private final JdbcTemplate jdbc;
 
     public SettingStore(JdbcTemplate jdbc) {
@@ -29,6 +34,12 @@ public class SettingStore {
     public BigDecimal clerkLimit(String sheetId) {
         String value = find(sheetId, CLERK_LIMIT);
         return value == null ? null : new BigDecimal(value);
+    }
+
+    /** The least a claim's live due may be: the floor set, else 1.00. */
+    public BigDecimal floor(String sheetId) {
+        String value = find(sheetId, FLOOR);
+        return value == null ? DEFAULT_FLOOR : new BigDecimal(value);
     }
 
     public void set(String sheetId, String key, String value) {

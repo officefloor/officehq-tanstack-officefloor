@@ -3,8 +3,8 @@ import { getJson } from '../../api/http';
 import { sheetKey } from '../sheet/sheet';
 
 /** The sheet's settings: `clerkLimit` (two decimals) is the most due a clerk may settle a claim at,
- *  null for no limit. */
-export type Settings = { clerkLimit: string | null };
+ *  null for no limit; `floor` (two decimals) is the least a claim's live due may be. */
+export type Settings = { clerkLimit: string | null; floor: string };
 
 /** Under the sheet's key, so loading the sheet again re-reads its settings. */
 export const settingsKey = (sheet: string) => [...sheetKey(sheet), 'settings'] as const;

@@ -4,6 +4,7 @@ import { type Person, usePeople } from '../people/people';
 import { useCurrentSheet } from '../../session/session';
 import { useSheetToday } from '../sheet/sheet';
 import { live, useClaims } from '../claims/claims';
+import { useSettings } from '../settings/settings';
 import { dueTotal, personDue, useRates } from './rates';
 
 // A person's due-total (the sum of their counting claims' rounded figures) and the sheet's (everyone's, skipping n/a).
@@ -16,8 +17,9 @@ function PersonDue({ person }: { person: Person }) {
   const claims = useClaims(sheet);
   const rates = useRates(sheet);
   const today = useSheetToday(sheet);
+  const floor = useSettings(sheet).data?.floor;
   const mine = live((claims.data ?? []).filter((c) => c.personId === person.id), [person]);
-  return <td data-testid="person-due-total">{personDue(mine, rates.data, person.grade, today)}</td>;
+  return <td data-testid="person-due-total">{personDue(mine, rates.data, person.grade, today, floor)}</td>;
 }
 
 function DueTotal() {
@@ -26,8 +28,9 @@ function DueTotal() {
   const claims = useClaims(sheet);
   const rates = useRates(sheet);
   const today = useSheetToday(sheet);
+  const floor = useSettings(sheet).data?.floor;
   const dues = (people.data ?? []).map((p) =>
-    personDue(live((claims.data ?? []).filter((c) => c.personId === p.id), [p]), rates.data, p.grade, today),
+    personDue(live((claims.data ?? []).filter((c) => c.personId === p.id), [p]), rates.data, p.grade, today, floor),
   );
   return (
     <p>

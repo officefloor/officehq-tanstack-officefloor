@@ -13,6 +13,7 @@ import net.officefloor.hq.app.claim.ClaimStore;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonStore;
 import net.officefloor.hq.app.rate.RateStore;
+import net.officefloor.hq.app.setting.SettingStore;
 import net.officefloor.hq.app.sheet.SheetStore;
 import org.springframework.stereotype.Service;
 
@@ -32,13 +33,16 @@ public class RollupService {
     private final ClaimStore claims;
     private final RateStore rates;
     private final SheetStore sheets;
+    private final SettingStore settings;
     private final Audit audit;
 
-    public RollupService(PersonStore people, ClaimStore claims, RateStore rates, SheetStore sheets, Audit audit) {
+    public RollupService(PersonStore people, ClaimStore claims, RateStore rates, SheetStore sheets, SettingStore settings,
+            Audit audit) {
         this.people = people;
         this.claims = claims;
         this.rates = rates;
         this.sheets = sheets;
+        this.settings = settings;
         this.audit = audit;
     }
 
@@ -46,6 +50,7 @@ public class RollupService {
     public Rollup snapshot(String sheetId) {
         LocalDate today = sheets.today(sheetId);
         List<Claim> all = claims.list(sheetId);
+        BigDecimal floor = settings.floor(sheetId);
         Map<Long, Rollup.Figures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
         BigDecimal dueTotal = BigDecimal.ZERO.setScale(2);
@@ -59,7 +64,7 @@ public class RollupService {
                     continue;
                 }
                 claimed = claimed.add(claim.getAmount());
-                BigDecimal figure = ClaimFigure.of(claim, rates.find(sheetId, person.getGrade(), claim.getDate()));
+                BigDecimal figure = ClaimFigure.of(claim, rates.find(sheetId, person.getGrade(), claim.getDate()), floor);
                 if (figure != null) {
                     due = due.add(figure);
                 }
@@ -79,6 +84,7 @@ public class RollupService {
      *  skipping n/a, as the screen shows a period's due-total. */
     public BigDecimal dueBetween(String sheetId, LocalDate from, LocalDate to) {
         List<Claim> all = claims.list(sheetId);
+        BigDecimal floor = settings.floor(sheetId);
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         for (Person person : people.list(sheetId)) {
             for (Claim claim : all) {
@@ -87,7 +93,7 @@ public class RollupService {
                         || claim.getDate().isBefore(from) || claim.getDate().isAfter(to)) {
                     continue;
                 }
-                BigDecimal figure = ClaimFigure.of(claim, rates.find(sheetId, person.getGrade(), claim.getDate()));
+                BigDecimal figure = ClaimFigure.of(claim, rates.find(sheetId, person.getGrade(), claim.getDate()), floor);
                 if (figure != null) {
                     total = total.add(figure);
                 }

@@ -12,16 +12,22 @@ public class ValidateSetting {
 
     public void validate(@RequestBody SettingRequest request, Out<SettingInput> body) throws InvalidSheetException {
         String key = request == null || request.key() == null ? "" : request.key().trim();
-        if (!SettingStore.CLERK_LIMIT.equals(key)) {
+        boolean floor = SettingStore.FLOOR.equals(key);
+        if (!SettingStore.CLERK_LIMIT.equals(key) && !floor) {
             throw new InvalidSheetException("Not a setting: " + key);
         }
         String value = request.value() == null ? "" : request.value().trim();
+        if (value.isEmpty() && floor) {
+            body.set(new SettingInput(key, SettingStore.DEFAULT_FLOOR.toPlainString(), request.user()));
+            return;
+        }
         if (value.isEmpty()) {
             body.set(new SettingInput(key, null, request.user()));
             return;
         }
         if (!LIMIT.matcher(value).matches()) {
-            throw new InvalidSheetException("The clerk limit must be 0.00 or more with up to two decimals, or blank");
+            throw new InvalidSheetException(floor ? "The floor must be 0.00 or more with up to two decimals"
+                    : "The clerk limit must be 0.00 or more with up to two decimals, or blank");
         }
         body.set(new SettingInput(key, new BigDecimal(value).setScale(2).toPlainString(), request.user()));
     }
