@@ -9,15 +9,15 @@ import { claimsKey } from '../claims/claims';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { type Plan, plansKey, usePlans } from './plans';
 
-type Fields = { amount: string; start: string; every: string; end: string };
-const EMPTY: Fields = { amount: '', start: '', every: '', end: '' };
+type Fields = { amount: string; start: string; every: string; day: string; end: string };
+const EMPTY: Fields = { amount: '', start: '', every: '', day: '', end: '' };
 
 function PlansHead() {
   return <th>Plans</th>;
 }
 
 // The person's plans, each with how many claims it has made so far, and the form that adds one. A bad
-// amount or interval, or an end before the start, is refused with an error on the row until the form is
+// amount, interval or day of the month, or an end before the start, is refused with an error on the row until the form is
 // changed or the next action on the row is taken.
 function PersonPlans({ person }: { person: Person }) {
   const [user] = useCurrentUser();
@@ -49,7 +49,8 @@ function PersonPlans({ person }: { person: Person }) {
           .filter((p) => p.personId === person.id)
           .map((p) => (
             <li key={p.id} data-testid={`plan-row-${p.id}`}>
-              <span data-testid="plan-amount-shown">{p.amount}</span> from {p.start} every {p.every} days to {p.end}
+              <span data-testid="plan-amount-shown">{p.amount}</span> from {p.start}{' '}
+              {p.day !== null ? `monthly on day ${p.day}` : `every ${p.every} days`} to {p.end}
               {' — made '}
               <span data-testid="plan-generated">{p.generated}</span>
             </li>
@@ -64,6 +65,7 @@ function PersonPlans({ person }: { person: Person }) {
         <input data-testid="plan-form-amount" placeholder="Amount" inputMode="decimal" value={fields.amount} onChange={set('amount')} />
         <input data-testid="plan-form-start" placeholder="Start (yyyy-mm-dd)" value={fields.start} onChange={set('start')} />
         <input data-testid="plan-form-every" placeholder="Every N days" inputMode="numeric" value={fields.every} onChange={set('every')} />
+        <input data-testid="plan-form-day" placeholder="Or day of month (1-31)" inputMode="numeric" value={fields.day} onChange={set('day')} />
         <input data-testid="plan-form-end" placeholder="End (yyyy-mm-dd)" value={fields.end} onChange={set('end')} />
         <button type="submit" data-testid="plan-form-submit" disabled={add.isPending}>
           Add plan

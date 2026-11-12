@@ -16,7 +16,8 @@ public class PlanStore {
 
     private static final RowMapper<Plan> ROW = (rs, n) -> new Plan(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getLong("person_id"), rs.getBigDecimal("amount").setScale(2), rs.getObject("start_date", LocalDate.class),
-            rs.getInt("every_days"), rs.getObject("end_date", LocalDate.class), rs.getInt("generated"));
+            rs.getObject("every_days", Integer.class), rs.getObject("month_day", Integer.class),
+            rs.getObject("end_date", LocalDate.class), rs.getInt("generated"));
 
     private final JdbcTemplate jdbc;
 
@@ -37,14 +38,15 @@ public class PlanStore {
     public Plan add(String sheetId, long personId, PlanInput input) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(c -> {
-            var ps = c.prepareStatement("INSERT INTO plan (sheet_id, person_id, amount, start_date, every_days, end_date)"
-                    + " VALUES (?, ?, ?, ?, ?, ?)", new String[] { "id" });
+            var ps = c.prepareStatement("INSERT INTO plan (sheet_id, person_id, amount, start_date, every_days, month_day, end_date)"
+                    + " VALUES (?, ?, ?, ?, ?, ?, ?)", new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
             ps.setBigDecimal(3, input.amount());
             ps.setObject(4, input.start());
-            ps.setInt(5, input.every());
-            ps.setObject(6, input.end());
+            ps.setObject(5, input.every());
+            ps.setObject(6, input.day());
+            ps.setObject(7, input.end());
             return ps;
         }, keys);
         return find(keys.getKey().longValue());

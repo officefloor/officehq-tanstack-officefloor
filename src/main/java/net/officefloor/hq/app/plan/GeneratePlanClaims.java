@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 
 /**
  * For every plan on the sheet in the order they were added, adds a DRAFT claim of the plan's amount, dated that
- * day with an empty note, for every plan date (the start, then every N days) up to its end and the sheet's today
+ * day with an empty note, for every plan date (the start, then every N days, or a monthly plan's day in each month) up to its end and the sheet's today
  * that it has made none for yet, as the claim form would (recorded as CLAIM_ADDED). A date the claim form refuses
  * is skipped, and tried again on the next generate.
  */
@@ -35,7 +35,7 @@ public class GeneratePlanClaims {
         int made = 0;
         for (Plan plan : plans.list(sheet)) {
             LocalDate last = plan.end().isBefore(today) ? plan.end() : today;
-            for (LocalDate d = plan.start(); !d.isAfter(last); d = d.plusDays(plan.every())) {
+            for (LocalDate d : plan.dates(last)) {
                 if (plans.made(plan.id(), d)) {
                     continue;
                 }

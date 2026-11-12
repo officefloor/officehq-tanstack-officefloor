@@ -13,7 +13,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 /** Refuses a plan by a viewer, with an amount the claim form would refuse for a claim made from it (one that is
  *  not a number with up to two decimals, or a negative one), an interval that is not a whole number of at least
- *  1, a bad date or an end before the start. A blank start is the sheet's today. */
+ *  1, a day of the month that is not a whole number from 1 to 31, both an interval and a day or neither, a bad
+ *  date or an end before the start. A blank start is the sheet's today. */
 public class ValidatePlan {
     private static final Pattern AMOUNT = Pattern.compile("\\d+(\\.\\d{1,2})?");
     private static final Pattern EVERY = Pattern.compile("\\d{1,6}");
@@ -30,8 +31,22 @@ public class ValidatePlan {
             throw new InvalidSheetException("The amount must be a number with up to two decimals");
         }
         String every = request.every() == null ? "" : request.every().trim();
-        if (!EVERY.matcher(every).matches() || Integer.parseInt(every) < 1) {
-            throw new InvalidSheetException("Every must be a whole number of days, at least 1");
+        String day = request.day() == null ? "" : request.day().trim();
+        if (!every.isEmpty() && !day.isEmpty()) {
+            throw new InvalidSheetException("A plan runs either every N days or on a day of the month, not both");
+        }
+        Integer everyDays = null;
+        Integer monthDay = null;
+        if (!day.isEmpty()) {
+            if (!EVERY.matcher(day).matches() || Integer.parseInt(day) < 1 || Integer.parseInt(day) > 31) {
+                throw new InvalidSheetException("The day must be a day of the month from 1 to 31");
+            }
+            monthDay = Integer.parseInt(day);
+        } else {
+            if (!EVERY.matcher(every).matches() || Integer.parseInt(every) < 1) {
+                throw new InvalidSheetException("Every must be a whole number of days, at least 1");
+            }
+            everyDays = Integer.parseInt(every);
         }
         String startText = request.start() == null ? "" : request.start().trim();
         LocalDate start = startText.isEmpty() ? sheets.today(sheetId.trim()) : date(startText);
@@ -39,7 +54,7 @@ public class ValidatePlan {
         if (end.isBefore(start)) {
             throw new InvalidSheetException("The end must not be before the start");
         }
-        body.set(new PlanInput(new BigDecimal(amount).setScale(2), start, Integer.parseInt(every), end, user));
+        body.set(new PlanInput(new BigDecimal(amount).setScale(2), start, everyDays, monthDay, end, user));
     }
 
     private static LocalDate date(String text) throws InvalidSheetException {
