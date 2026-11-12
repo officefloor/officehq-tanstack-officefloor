@@ -1,0 +1,360 @@
+diff --git a/src/main/frontend/features/people/grade.slot.tsx b/src/main/frontend/features/people/grade.slot.tsx
+new file mode 100644
+index 000000000..fd9652d2d
+--- /dev/null
++++ b/src/main/frontend/features/people/grade.slot.tsx
+@@ -0,0 +1,90 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { HomeMain } from '../../slots/defs/homeMain';
++import { HttpError, postJson } from '../../api/http';
++import { useSubmitOnce } from '../../query/useSubmitOnce';
++import { useCurrentSheet, useCurrentUser } from '../../session/session';
++import { sheetKey } from '../sheet/sheet';
++import { GRADES, useSelectedPeople } from './people';
++
++type BulkGradeResult = { graded: number };
++
++// Gives the selected people a grade together, from the from-date (the sheet's today when blank): the
++// server edits each in list order as the person form would, and the count shows once it answers (gone
++// while it runs). A refusal changes nothing.
++function BulkGrade() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const [selected, setSelected] = useSelectedPeople();
++  const [grade, setGrade] = useState<string>('A');
++  const [from, setFrom] = useState('');
++  const queryClient = useQueryClient();
++
++  const bulk = useMutation({
++    mutationFn: (p: { personIds: number[]; grade: string; gradeFrom: string }) =>
++      postJson<BulkGradeResult>(`/api/sheets/${encodeURIComponent(sheet)}/bulk-grade`, {
++        personIds: p.personIds.map(String),
++        grade: p.grade,
++        gradeFrom: p.gradeFrom,
++        user,
++      }),
++    onSuccess: async () => {
++      setSelected([]);
++      // Grades move people's figures and their claims' dues, so the whole sheet is re-read.
++      await queryClient.invalidateQueries({ queryKey: sheetKey(sheet) });
++    },
++  });
++  const submit = useSubmitOnce(bulk);
++
++  return (
++    <p>
++      <select
++        data-testid="bulk-grade"
++        aria-label="Grade for the selected people"
++        value={grade}
++        onChange={(e) => {
++          setGrade(e.target.value);
++          bulk.reset();
++        }}
++      >
++        {GRADES.map((g) => (
++          <option key={g} value={g}>
++            {g}
++          </option>
++        ))}
++      </select>{' '}
++      <input
++        data-testid="bulk-grade-from"
++        type="date"
++        aria-label="Grade from (blank for the sheet's today)"
++        value={from}
++        onChange={(e) => {
++          setFrom(e.target.value);
++          bulk.reset();
++        }}
++      />{' '}
++      <button
++        type="button"
++        data-testid="bulk-grade-apply"
++        disabled={bulk.isPending}
++        onClick={() => submit({ personIds: selected, grade, gradeFrom: from })}
++      >
++        Grade selected
++      </button>
++      {bulk.isSuccess && (
++        <>
++          {' '}
++          Changed <strong data-testid="bulk-graded">{bulk.data.graded}</strong>
++        </>
++      )}
++      {bulk.isError && (
++        <span data-testid="person-error" role="alert">
++          {' '}
++          {bulk.error instanceof HttpError && bulk.error.reason ? `${bulk.error.reason}.` : 'The bulk grade was refused.'}
++        </span>
++      )}
++    </p>
++  );
++}
++
++export const contribution = HomeMain.fill({ order: 21, Component: BulkGrade });
+diff --git a/src/main/frontend/features/people/list.slot.tsx b/src/main/frontend/features/people/list.slot.tsx
+index 38758c66c..53147a4c4 100644
+--- a/src/main/frontend/features/people/list.slot.tsx
++++ b/src/main/frontend/features/people/list.slot.tsx
+@@ -1,7 +1,7 @@
+ import { HomeMain } from '../../slots/defs/homeMain';
+ import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
+ import { useCurrentSheet } from '../../session/session';
+-import { useEditingPerson, usePeople, useShowRetired } from './people';
++import { useEditingPerson, usePeople, useSelectedPeople, useShowRetired } from './people';
+ 
+ // The sheet's people in the order they were added; retired people only while "show retired" is on.
+ function PeopleList() {
+@@ -9,11 +9,13 @@ function PeopleList() {
+   const [, setEditing] = useEditingPerson();
+   const people = usePeople(sheet);
+   const [showRetired] = useShowRetired();
++  const [selected, setSelected] = useSelectedPeople();
+ 
+   return (
+     <table data-testid="people">
+       <thead>
+         <tr>
++          <th />
+           <th>Name</th>
+           <th>Grade</th>
+           <th>Terms</th>
+@@ -24,6 +26,15 @@ function PeopleList() {
+       <tbody>
+         {(people.data ?? []).filter((p) => showRetired || !p.retired).map((p) => (
+           <tr key={p.id} data-testid={`person-row-${p.id}`}>
++            <td>
++              <input
++                type="checkbox"
++                data-testid="person-select"
++                aria-label="Select person"
++                checked={selected.includes(p.id)}
++                onChange={(e) => setSelected(e.target.checked ? [...selected, p.id] : selected.filter((id) => id !== p.id))}
++              />
++            </td>
+             <td data-testid="person-name" style={{ whiteSpace: 'pre' }}>{p.name}</td>
+             <td data-testid="person-grade">{p.grade}</td>
+             <td data-testid="person-terms">{p.terms ?? ''}</td>
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index abb7830b2..b6f24aecb 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -86,3 +86,10 @@ export function useLatestPersonAction(sheet: string, personId: number): number {
+   });
+   return Math.max(0, ...taken);
+ }
++
++/** The ids of the people selected for a bulk grade, kept in the URL (`selectedPeople`, comma separated). */
++export function useSelectedPeople(): [number[], (ids: number[]) => void] {
++  const [raw, setRaw] = useSearchParam('selectedPeople', asString);
++  const ids = raw.split(',').filter((s) => s !== '').map(Number).filter((n) => !Number.isNaN(n));
++  return [ids, (next) => setRaw(next.join(','))];
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+index 2b9d54f6a..ecd69ea13 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+@@ -12,11 +12,15 @@ public class ApplyPerson {
+     public void apply(@Val PersonRequest request, @Val Person person, SheetStore sheets) {
+         person.setName(request.name());
+         person.setTerms(request.terms() == null ? null : Integer.valueOf(request.terms()));
+-        LocalDate today = sheets.today(person.getSheetId());
+-        if (request.gradeFrom() == null && request.grade().equals(person.gradeOn(today))) {
++        applyGrade(person, request.grade(), request.gradeFrom(), sheets.today(person.getSheetId()));
++    }
++
++    /** Records the grade from the from-date (yyyy-MM-dd, null for the sheet's today), as an edit does: nothing
++     *  when the from-date is null and the grade is the one in force on the sheet's today. */
++    static void applyGrade(Person person, String grade, String gradeFrom, LocalDate today) {
++        if (gradeFrom == null && grade.equals(person.gradeOn(today))) {
+             return;
+         }
+-        person.recordGrade(request.gradeFrom() == null ? today : LocalDate.parse(request.gradeFrom()),
+-                request.grade());
++        person.recordGrade(gradeFrom == null ? today : LocalDate.parse(gradeFrom), grade);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/BulkGradeInput.java b/src/main/java/net/officefloor/hq/app/person/BulkGradeInput.java
+new file mode 100644
+index 000000000..e3fca8f1d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/BulkGradeInput.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.person;
++
++import java.util.List;
++
++/** A validated bulk grade: the selected person ids, each once, the grade, its from-date (null for the
++ *  sheet's today) and who gives it. */
++public record BulkGradeInput(List<Long> personIds, String grade, String gradeFrom, String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/BulkGradeRequest.java b/src/main/java/net/officefloor/hq/app/person/BulkGradeRequest.java
+new file mode 100644
+index 000000000..8d90a3195
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/BulkGradeRequest.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.person;
++
++import java.util.List;
++
++/** Body of a bulk grade, as sent: the ids of the selected people, the grade (A, B or C), the date
++ *  (yyyy-MM-dd, blank for the sheet's today) it applies from and who gives it. */
++public record BulkGradeRequest(List<String> personIds, String grade, String gradeFrom, String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/BulkGradeResult.java b/src/main/java/net/officefloor/hq/app/person/BulkGradeResult.java
+new file mode 100644
+index 000000000..d53785106
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/BulkGradeResult.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** How many of the selected people a bulk grade changed. */
++public record BulkGradeResult(int graded) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/GradePeople.java b/src/main/java/net/officefloor/hq/app/person/GradePeople.java
+new file mode 100644
+index 000000000..ae29294f9
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/GradePeople.java
+@@ -0,0 +1,46 @@
++package net.officefloor.hq.app.person;
++
++import java.time.LocalDate;
++import java.util.ArrayList;
++import java.util.Comparator;
++import java.util.List;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.rollup.RollupService;
++import net.officefloor.hq.app.sheet.InvalidSheetException;
++import net.officefloor.hq.app.sheet.SheetStore;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Gives each selected person the grade from the from-date, in list order (the order they were added),
++ *  exactly as the person form's edit would (keeping their name and terms), each recorded as PERSON_EDITED
++ *  and then how it moved the sheet's figures. A selected person not on the sheet refuses the whole change. */
++public class GradePeople {
++    public void grade(@PathVariable("sheetId") String sheetId, @Val BulkGradeInput input, PersonStore store,
++            SheetStore sheets, RollupService rollups, Audit audit, Out<BulkGradeResult> result)
++            throws InvalidSheetException, StalePersonException {
++        String sheet = sheetId.trim();
++        List<Person> selected = new ArrayList<>();
++        for (Long id : input.personIds()) {
++            Person person = store.find(sheet, id);
++            if (person == null) {
++                throw new InvalidSheetException("No such person: " + id);
++            }
++            selected.add(person);
++        }
++        selected.sort(Comparator.comparingLong(Person::getId));
++        LocalDate today = sheets.today(sheet);
++        for (Person person : selected) {
++            Rollup before = rollups.snapshot(sheet);
++            ApplyPerson.applyGrade(person, input.grade(), input.gradeFrom(), today);
++            if (!store.save(person)) {
++                throw new StalePersonException();
++            }
++            audit.record("PERSON_EDITED sheet=" + sheet + " by=" + input.user() + " name=" + person.getName()
++                    + " grade=" + person.gradeOn(today));
++            rollups.record(sheet, input.user(), before);
++        }
++        result.set(new BulkGradeResult(selected.size()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithBulkGrade.java b/src/main/java/net/officefloor/hq/app/person/RespondWithBulkGrade.java
+new file mode 100644
+index 000000000..ac950c5c8
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithBulkGrade.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithBulkGrade {
++    public void respond(@Val BulkGradeResult result, ObjectResponse<BulkGradeResult> response) {
++        response.send(result);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateBulkGrade.java b/src/main/java/net/officefloor/hq/app/person/ValidateBulkGrade.java
+new file mode 100644
+index 000000000..150d8b56c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateBulkGrade.java
+@@ -0,0 +1,47 @@
++package net.officefloor.hq.app.person;
++
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
++import java.util.ArrayList;
++import java.util.LinkedHashSet;
++import java.util.List;
++import java.util.Set;
++import net.officefloor.hq.app.role.RoleStore;
++import net.officefloor.hq.app.sheet.InvalidSheetException;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ValidateBulkGrade {
++    private static final Set<String> GRADES = Set.of("A", "B", "C");
++
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody BulkGradeRequest request,
++            Out<BulkGradeInput> body, RoleStore roles) throws InvalidSheetException {
++        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
++        if (request == null || request.personIds() == null || request.personIds().isEmpty()) {
++            throw new InvalidSheetException("Select the people to grade");
++        }
++        if (request.grade() == null || !GRADES.contains(request.grade())) {
++            throw new InvalidSheetException("The grade must be A, B or C");
++        }
++        String from = request.gradeFrom() == null ? "" : request.gradeFrom().trim();
++        try {
++            if (!from.isEmpty()) {
++                LocalDate.parse(from);
++            }
++        } catch (DateTimeParseException e) {
++            throw new InvalidSheetException("Not a date: " + from);
++        }
++        Set<Long> ids = new LinkedHashSet<>();
++        for (String raw : request.personIds()) {
++            String id = raw == null ? "" : raw.trim();
++            try {
++                ids.add(Long.parseLong(id));
++            } catch (NumberFormatException e) {
++                throw new InvalidSheetException("No such person: " + id);
++            }
++        }
++        List<Long> list = new ArrayList<>(ids);
++        body.set(new BulkGradeInput(list, request.grade(), from.isEmpty() ? null : from, request.user()));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-grade.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-grade.POST.yml
+new file mode 100644
+index 000000000..bfd1a3633
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-grade.POST.yml
+@@ -0,0 +1,16 @@
++# POST /api/sheets/{sheetId}/bulk-grade — give the selected people a grade together (body {personIds,
++# grade, gradeFrom, user}). Each selected person, in list order (the order they were added), is given
++# the grade from gradeFrom (the sheet's today when blank) exactly as the person form's edit would,
++# keeping their name and terms, and recorded as PERSON_EDITED, then how it moved the sheet's figures.
++# Answers {graded}. Refused (400), storing nothing, when no person is selected, one is not on the
++# sheet, the grade is not A, B or C, gradeFrom is not a date, or the user may change nothing.
++validate:
++  class: net.officefloor.hq.app.person.ValidateBulkGrade
++  next: grade
++grade:
++  class: net.officefloor.hq.app.person.GradePeople
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithBulkGrade
++  govern: [ transaction ]
