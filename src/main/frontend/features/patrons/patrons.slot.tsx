@@ -5,26 +5,23 @@ import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns
 import { type Person, peopleKey, usePeople } from '../people/people';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { useSheetToday } from '../sheet/sheet';
-import { live, useClaims } from '../claims/claims';
-import { floorOf, useSettings } from '../settings/settings';
-import { lateOf } from '../overdue/overdue';
-import { dueTotal, personDue, useRates } from '../rates/rates';
+import { isRecentSettled, useClaims } from '../claims/claims';
+import { NA, dueTotal } from '../rates/rates';
 
 function PatronsHead() {
   return <th>Patrons</th>;
 }
 
-// The person's patrons (names, sorted) and their backing: the patrons' due-totals added up, skipping
-// n/a. Another person on the sheet is named as a patron one at a time; a refusal shows its error until
-// the next is tried.
+// The person's patrons (names, sorted) and their backing: the frozen figures of the patrons' SETTLED
+// claims dated within the 90 days up to and including the sheet's today, added up (0.00 with none).
+// Another person on the sheet is named as a patron one at a time; a refusal shows its error until the
+// next is tried.
 function PersonPatrons({ person }: { person: Person }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const people = usePeople(sheet).data ?? [];
   const claims = useClaims(sheet);
-  const rates = useRates(sheet);
   const today = useSheetToday(sheet);
-  const settings = useSettings(sheet).data;
   const [chosen, setChosen] = useState('');
   const queryClient = useQueryClient();
 
@@ -40,17 +37,9 @@ function PersonPatrons({ person }: { person: Person }) {
   const patrons = people.filter((p) => person.patronIds.includes(p.id));
   const names = patrons.map((p) => p.name).sort((a, b) => a.localeCompare(b));
   const backing = dueTotal(
-    patrons.map((p) =>
-      personDue(
-        live((claims.data ?? []).filter((c) => c.personId === p.id), [p]),
-        rates.data,
-        p.grades,
-        today,
-        floorOf(settings),
-        lateOf(settings, today),
-        settings?.cap,
-      ),
-    ),
+    (claims.data ?? [])
+      .filter((c) => person.patronIds.includes(c.personId) && isRecentSettled(c, today))
+      .map((c) => c.due ?? NA),
   );
   const candidates = people.filter((p) => p.id !== person.id && !person.patronIds.includes(p.id));
 

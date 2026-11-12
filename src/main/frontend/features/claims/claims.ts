@@ -86,6 +86,10 @@ export const isActive = (claims: Claim[], today: string | undefined) =>
   today !== undefined &&
   claims.some((c) => isOpen(c) && counts(c) && c.date > daysBefore(today, 30) && c.date <= today);
 
+/** Whether the claim is SETTLED and dated within the 90 days up to and including the date (yyyy-MM-dd). */
+export const isRecentSettled = (c: Claim, today: string | undefined) =>
+  today !== undefined && c.status === 'SETTLED' && c.date > daysBefore(today, 90) && c.date <= today;
+
 /** Under the sheet's key, so loading the sheet again re-reads its claims. */
 export const claimsKey = (sheet: string) => [...sheetKey(sheet), 'claims'] as const;
 
