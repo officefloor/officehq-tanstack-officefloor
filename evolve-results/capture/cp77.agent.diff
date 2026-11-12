@@ -1,0 +1,313 @@
+diff --git a/src/main/frontend/features/settings/form.slot.tsx b/src/main/frontend/features/settings/form.slot.tsx
+index 5163ec65f..0fb684911 100644
+--- a/src/main/frontend/features/settings/form.slot.tsx
++++ b/src/main/frontend/features/settings/form.slot.tsx
+@@ -15,14 +15,14 @@ const STANDING_PERMS: Record<(typeof PERM_ACTIONS)[number], string> = {
+ 
+ type PermKey = `perm-${(typeof PERM_ACTIONS)[number]}`;
+ 
+-type Key = 'clerk-limit' | 'floor' | 'terms' | 'terms-A' | 'terms-B' | 'terms-C' | 'late-pct' | 'policy-date' | 'period-numbering-from' | 'cap' | 'proof-threshold' | 'grace-days' | PermKey;
++type Key = 'clerk-limit' | 'floor' | 'terms' | 'terms-A' | 'terms-B' | 'terms-C' | 'late-pct' | 'policy-date' | 'period-numbering-from' | 'cap' | 'proof-threshold' | 'note-threshold' | 'grace-days' | PermKey;
+ 
+ const GRADES = ['A', 'B', 'C'] as const;
+ 
+ /** The settings that carry a figure: each is saved from a from-date (blank for the sheet's today). */
+ type DatedKey = Exclude<Key, 'policy-date' | 'period-numbering-from' | 'grace-days' | PermKey>;
+ 
+-const NO_FROM: Record<DatedKey, string> = { 'clerk-limit': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'late-pct': '', cap: '', 'proof-threshold': '' };
++const NO_FROM: Record<DatedKey, string> = { 'clerk-limit': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'late-pct': '', cap: '', 'proof-threshold': '', 'note-threshold': '' };
+ 
+ const isDated = (k: Key): k is DatedKey => k in NO_FROM;
+ 
+@@ -30,7 +30,7 @@ const isDated = (k: Key): k is DatedKey => k in NO_FROM;
+ // the floor (blank for its default), the terms in days (blank for 14), each grade's own terms (blank
+ // for the sheet's terms) and the late percent (blank for
+ // 0.00), the policy date rounding turns on (blank for the sheet's today) and the date claims opened
+-// are numbered per period from (blank for off), and the cap on a person's due-total (blank for none), and the proof threshold above which a claim's due needs a proof to be settled or approved (blank for none). Saving changes the setting last touched, so a field left blank does not clear the others.
++// are numbered per period from (blank for off), and the cap on a person's due-total (blank for none), and the proof threshold above which a claim's due needs a proof to be settled or approved (blank for none), and the note threshold above which a claim's due needs a note to be opened (blank for none). Saving changes the setting last touched, so a field left blank does not clear the others.
+ // Each setting that carries a figure is saved from its from-date (blank for the sheet's today), and shows
+ // the value in force on the sheet's today; the policy date and period numbering date are not dated.
+ // The permission matrix gives, for each action, the roles that may take it, comma separated (blank keeps
+@@ -40,7 +40,7 @@ function SheetSettings() {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+   const settings = useSettings(sheet);
+-  const [values, setValues] = useState<Record<Key, string>>({ 'clerk-limit': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '', cap: '', 'proof-threshold': '', 'grace-days': '',
++  const [values, setValues] = useState<Record<Key, string>>({ 'clerk-limit': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '', cap: '', 'proof-threshold': '', 'note-threshold': '', 'grace-days': '',
+     'perm-open': '', 'perm-settle': '', 'perm-void': '', 'perm-reassign': '', 'perm-close': '', 'perm-reopen': '' });
+   const [froms, setFroms] = useState<Record<DatedKey, string>>(NO_FROM);
+   const [key, setKey] = useState<Key>('clerk-limit');
+@@ -118,6 +118,8 @@ function SheetSettings() {
+         {field('cap', 'Cap (blank for none)')}{' '}{from('cap')}{' '}
+         Proof threshold <strong data-testid="setting-proof-threshold-current">{settings.data?.proofThreshold ?? ''}</strong>{' '}
+         {field('proof-threshold', 'Proof threshold (blank for none)')}{' '}{from('proof-threshold')}{' '}
++        Note threshold <strong data-testid="setting-note-threshold-current">{settings.data?.noteThreshold ?? ''}</strong>{' '}
++        {field('note-threshold', 'Note threshold (blank for none)')}{' '}{from('note-threshold')}{' '}
+         Grace days <strong data-testid="setting-grace-days-current">{settings.data?.graceDays ?? ''}</strong>{' '}
+         {field('grace-days', 'Grace days (blank for off)')}{' '}
+         {PERM_ACTIONS.map((a) => (
+diff --git a/src/main/frontend/features/settings/settings.ts b/src/main/frontend/features/settings/settings.ts
+index d46dc9042..edc115f55 100644
+--- a/src/main/frontend/features/settings/settings.ts
++++ b/src/main/frontend/features/settings/settings.ts
+@@ -11,7 +11,8 @@ import { useAsOf } from '../../session/session';
+  *  date from which claims opened are numbered per period, null when blank (off); `gradeTerms` is the terms
+  *  in force for each grade (its own, else the sheet's), by grade; `cap` (two decimals) is the most a person's
+  *  due-total may be, null for no cap; `proofThreshold` (two decimals) is the due above which a claim needs a proof
+- *  before it is settled or approved, null for none. Each of these that carries a figure is the one in force on the sheet's today.
++ *  before it is settled or approved, null for none; `noteThreshold` (two decimals) is the due above which a
++ *  claim needs a note before it is opened, null for none. Each of these that carries a figure is the one in force on the sheet's today.
+  *  `floorFrom` and `latePctFrom` are the floor and late percent recorded, oldest from-date (yyyy-MM-dd) first:
+  *  a claim's floor and late percent are those in force on its date. `perms` is the permission matrix: the roles
+  *  that may take each action (open, settle, void, reassign, close, reopen), comma separated, by action; null when
+@@ -20,7 +21,7 @@ import { useAsOf } from '../../session/session';
+ export type Settings = { clerkLimit: string | null; floor: string; terms: string; latePct: string; policyDate: string | null;
+   periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; proofThreshold: string | null;
+   floorFrom: Dated[]; latePctFrom: Dated[]; perms: Record<string, string | null>;
+-  graceDays: string | null };
++  graceDays: string | null; noteThreshold: string | null };
+ 
+ /** A setting's value recorded from a date (yyyy-MM-dd); a null value is blank. */
+ export type Dated = { from: string; value: string | null };
+diff --git a/src/main/java/net/officefloor/hq/app/claim/CheckClerkLimit.java b/src/main/java/net/officefloor/hq/app/claim/CheckClerkLimit.java
+index e32a30df8..2292f4ca3 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/CheckClerkLimit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/CheckClerkLimit.java
+@@ -51,6 +51,9 @@ public class CheckClerkLimit {
+         if (from == ClaimStatus.SETTLED && input.status() == ClaimStatus.VOID) {
+             refuseLateVoid(claim, steward, log, sheets);
+         }
++        if (from == ClaimStatus.DRAFT && input.status() == ClaimStatus.OPEN) {
++            CheckProofs.refuseUnnoted(claim, settings, people, rates, sheets, claims);
++        }
+         CheckProofs.refuseUnproved(input, claim, settings, people, rates, sheets, claims);
+         move.set(new StatusMove(from, overLimit(input, claim, steward, settings, people, rates, sheets, claims)
+                 ? ClaimStatus.PENDING : input.status()));
+diff --git a/src/main/java/net/officefloor/hq/app/claim/CheckProofs.java b/src/main/java/net/officefloor/hq/app/claim/CheckProofs.java
+index 15f492913..caa8ff3f6 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/CheckProofs.java
++++ b/src/main/java/net/officefloor/hq/app/claim/CheckProofs.java
+@@ -34,4 +34,24 @@ final class CheckProofs {
+                     + " needs a proof before it can be " + (input.review() ? "approved" : "settled"));
+         }
+     }
++
++    /** Refuses opening a DRAFT claim with an empty note while its due is above the note threshold in force on
++     *  its date. A sheet with no threshold then, and a claim whose due is n/a, need no note. */
++    static void refuseUnnoted(Claim claim, SettingStore settings, PersonStore people, RateStore rates,
++            SheetStore sheets, ClaimStore claims) throws InvalidSheetException {
++        if (claim.getNote() != null && !claim.getNote().isBlank()) {
++            return;
++        }
++        BigDecimal threshold = settings.noteThreshold(claim.getSheetId(), claim.getDate());
++        if (threshold == null) {
++            return;
++        }
++        Person person = people.find(claim.getSheetId(), claim.getPersonId());
++        BigDecimal pct = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
++        BigDecimal due = Lateness.of(claim.getSheetId(), settings, sheets, claims).due(claim, pct);
++        if (due != null && due.compareTo(threshold) > 0) {
++            throw new InvalidSheetException("A claim due above the note threshold of " + threshold.setScale(2)
++                    + " needs a note before it can be opened");
++        }
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java b/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java
+index d2c8f5560..b7f3336f1 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java
+@@ -9,6 +9,7 @@ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.period.PeriodStore;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonStore;
++import net.officefloor.hq.app.rate.RateStore;
+ import net.officefloor.hq.app.role.RoleStore;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.rollup.RollupService;
+@@ -22,12 +23,13 @@ import org.springframework.web.bind.annotation.PathVariable;
+ /** Opens each selected claim that can be opened, in list order: its people in the order they were
+  *  added, a person's claims newest first. Each is opened as a single open would be (its next
+  *  number, opened-by the user) and recorded as CLAIM_OPENED, then how it moved the sheet's figures.
+- *  A claim that is not on the sheet, is not a DRAFT, or is dated in a closed period, and every claim when
++ *  A claim that is not on the sheet, is not a DRAFT, or is dated in a closed period, or has an empty note while its due is above the
++ *  note threshold in force on its date, and every claim when
+  *  the sheet is archived or the sheet's permission matrix does not allow the user's role to open, is refused and
+  *  left as it is. */
+ public class OpenClaims {
+     public void open(@PathVariable("sheetId") String sheetId, @Val BulkOpenInput input, ClaimStore store,
+-            PersonStore people, PeriodStore periods, SettingStore settings, SheetStore sheets, RoleStore roles, ClaimLogStore log, RollupService rollups, Audit audit, Out<BulkOpenResult> result) {
++            PersonStore people, PeriodStore periods, SettingStore settings, SheetStore sheets, RoleStore roles, RateStore rates, ClaimLogStore log, RollupService rollups, Audit audit, Out<BulkOpenResult> result) {
+         String sheet = sheetId.trim();
+         Map<Long, Integer> personOrder = new HashMap<>();
+         Map<Long, Person> persons = new HashMap<>();
+@@ -50,7 +52,8 @@ public class OpenClaims {
+         boolean permitted = !sheets.archived(sheet) && settings.allows(sheet, "open", roles.find(sheet, input.user()));
+         int opened = 0;
+         for (Claim claim : selected) {
+-            if (!permitted || claim.getStatus() != ClaimStatus.DRAFT || closed(periods, claim)) {
++            if (!permitted || claim.getStatus() != ClaimStatus.DRAFT || closed(periods, claim)
++                    || unnoted(claim, settings, people, rates, sheets, store)) {
+                 refused++;
+                 continue;
+             }
+@@ -75,6 +78,16 @@ public class OpenClaims {
+         result.set(new BulkOpenResult(opened, refused));
+     }
+ 
++    private static boolean unnoted(Claim claim, SettingStore settings, PersonStore people, RateStore rates,
++            SheetStore sheets, ClaimStore store) {
++        try {
++            CheckProofs.refuseUnnoted(claim, settings, people, rates, sheets, store);
++            return false;
++        } catch (InvalidSheetException e) {
++            return true;
++        }
++    }
++
+     private static boolean closed(PeriodStore periods, Claim claim) {
+         try {
+             CheckClaimPeriod.refuseClosed(periods, claim.getSheetId(), claim.getDate());
+diff --git a/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java b/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
+index 05c43e087..812d7f6e5 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
+@@ -29,7 +29,8 @@ public class RespondWithSettings {
+                 store.find(sheet, SettingStore.PERIOD_NUMBERING_FROM), gradeTerms(sheet, today, store),
+                 store.find(sheet, SettingStore.CAP), store.find(sheet, SettingStore.PROOF_THRESHOLD),
+                 history(sheet, SettingStore.FLOOR, store), history(sheet, SettingStore.LATE_PCT, store),
+-                store.perms(sheet), store.find(sheet, SettingStore.GRACE_DAYS)));
++                store.perms(sheet), store.find(sheet, SettingStore.GRACE_DAYS),
++                store.find(sheet, SettingStore.NOTE_THRESHOLD)));
+     }
+ 
+     private static Map<String, String> gradeTerms(String sheetId, LocalDate today, SettingStore store) {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingStore.java b/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
+index 2d05ad313..a26916d4a 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
+@@ -17,7 +17,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+ 
+ /** The settings kept per sheet, by key. A setting never set, or set blank, has no value. The settings
+- *  that carry a figure (the clerk limit, the floor, the cap, the proof threshold, the terms, a grade's terms and the late
++ *  that carry a figure (the clerk limit, the floor, the cap, the proof threshold, the note threshold, the terms, a grade's terms and the late
+  *  percent) are dated: each value is recorded from a from-date, and the value in force on a date is the
+  *  one with the latest from-date on or before it (none before every from-date, then the sheet's starting
+  *  value). The policy date, the period numbering date, the grace days and the permission matrix are not dated. */
+@@ -33,6 +33,9 @@ public class SettingStore {
+     /** Above it a claim's due needs a proof before it is settled or approved. */
+     public static final String PROOF_THRESHOLD = "proof-threshold";
+ 
++    /** Above it a claim's due needs a note before it is opened. */
++    public static final String NOTE_THRESHOLD = "note-threshold";
++
+     public static final String TERMS = "terms";
+ 
+     /** The key of a grade's own terms: terms-A, terms-B or terms-C. */
+@@ -186,6 +189,13 @@ public class SettingStore {
+         return value == null ? null : new BigDecimal(value);
+     }
+ 
++    /** The due above which a claim dated on the date needs a note before it is opened (the one in force on
++     *  that date), or null for none. */
++    public BigDecimal noteThreshold(String sheetId, LocalDate date) {
++        String value = findOn(sheetId, NOTE_THRESHOLD, date);
++        return value == null ? null : new BigDecimal(value);
++    }
++
+     /** The least a claim's live due may be, in force on each date: the floor recorded then, else 1.00. Read once, for many claims. */
+     public Function<LocalDate, BigDecimal> floors(String sheetId) {
+         return amounts(history(sheetId, FLOOR), DEFAULT_FLOOR);
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+index 864087d5d..8d9d647b7 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+@@ -11,7 +11,8 @@ import java.util.Map;
+  *  numbered per period, null when blank (off); {@code gradeTerms} is the terms in force for each grade
+  *  (its own, else the sheet's), by grade; {@code cap} has two decimals, the most a person's due-total may
+  *  be, null for no cap; {@code proofThreshold} has two decimals, the due above which a claim needs a proof
+- *  before it is settled or approved, null for none. Each of these that carries a figure is the one in force on the sheet's today.
++ *  before it is settled or approved, null for none; {@code noteThreshold} has two decimals, the due above
++ *  which a claim needs a note before it is opened, null for none. Each of these that carries a figure is the one in force on the sheet's today.
+  *  {@code floorFrom} and {@code latePctFrom} are the floor and late percent recorded, oldest from-date
+  *  first (a claim's floor is the one in force on its date, its late percent the one in force on each 30-day boundary). {@code perms} is the permission
+  *  matrix: the roles that may take each action (open, settle, void, reassign, close, reopen), comma
+@@ -19,7 +20,8 @@ import java.util.Map;
+  *  {@code graceDays} is the whole days after its to-date an open period is closed by a new today, null when blank (off). */
+ public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
+         String periodNumberingFrom, Map<String, String> gradeTerms, String cap, String proofThreshold, List<Dated> floorFrom,
+-        List<Dated> latePctFrom, Map<String, String> perms, String graceDays) {
++        List<Dated> latePctFrom, Map<String, String> perms, String graceDays,
++        String noteThreshold) {
+ 
+     /** A value recorded from a date (yyyy-MM-dd). */
+     public record Dated(String from, String value) {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+index a600cb332..f99877be4 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+@@ -31,6 +31,7 @@ public class ValidateSetting {
+         boolean dated = SettingStore.POLICY_DATE.equals(key) || numbering;
+         boolean cap = SettingStore.CAP.equals(key);
+         boolean proof = SettingStore.PROOF_THRESHOLD.equals(key);
++        boolean note = SettingStore.NOTE_THRESHOLD.equals(key);
+         if (SettingStore.GRACE_DAYS.equals(key)) {
+             String value = request.value() == null ? "" : request.value().trim();
+             if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
+@@ -45,7 +46,7 @@ public class ValidateSetting {
+             body.set(new SettingInput(key, perm(request.value()), null, request.user()));
+             return;
+         }
+-        if (!SettingStore.CLERK_LIMIT.equals(key) && !cap && !proof && !floor && !terms && !gradeTerms && !late && !dated) {
++        if (!SettingStore.CLERK_LIMIT.equals(key) && !cap && !proof && !note && !floor && !terms && !gradeTerms && !late && !dated) {
+             throw new InvalidSheetException("Not a setting: " + key);
+         }
+         String value = request.value() == null ? "" : request.value().trim();
+@@ -109,6 +110,7 @@ public class ValidateSetting {
+             throw new InvalidSheetException(floor ? "The floor must be 0.00 or more with up to two decimals"
+                     : late ? "The late percent must be 0.00 or more with up to two decimals"
+                     : proof ? "The proof threshold must be 0.00 or more with up to two decimals, or blank"
++                    : note ? "The note threshold must be 0.00 or more with up to two decimals, or blank"
+                     : cap ? "The cap must be 0.00 or more with up to two decimals, or blank"
+                     : "The clerk limit must be 0.00 or more with up to two decimals, or blank");
+         }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-open.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-open.POST.yml
+index 4937afc5a..cd30fa73e 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-open.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-open.POST.yml
+@@ -1,5 +1,6 @@
+ # POST /api/sheets/{sheetId}/bulk-open — open the selected claims together (body {claimIds, user}).
+-# Each selected claim that can be opened (a DRAFT on the sheet, not dated in a closed period) is
++# Each selected claim that can be opened (a DRAFT on the sheet, not dated in a closed period, with a note or a due not above the note threshold in force on
++# its date) is
+ # opened and numbered in list order — people in the order they were added, a person's claims
+ # newest first — and recorded as CLAIM_OPENED, as a single open is; each that cannot is refused and
+ # left as it is. Answers {opened, refused}. Refused (400) only when no claim is selected.
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.POST.yml
+index 78b5ecd2b..31fb040f7 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.POST.yml
+@@ -6,7 +6,8 @@
+ # it (not by the user who opened it), status OPEN with a reason rejects it. Refused (400) for any
+ # other change, when the sheet's permission matrix (perm-open, perm-settle, perm-void; by default a
+ # clerk or a steward) does not allow the user's role to open, settle or void, when settling or approving a claim with no proofs whose due is above the proof threshold
+-# in force on its date (checked before the clerk limit, so it never goes to PENDING), when the user who opened the claim tries to settle it, when the claim is not on
++# in force on its date, when opening a claim with an empty note whose due is above the note threshold
++# in force on its date (both checked before the clerk limit, so it never goes to PENDING), when the user who opened the claim tries to settle it, when the claim is not on
+ # the sheet, or when its date falls in a closed period; nothing is stored then. Opening records the
+ # user as the claim's opened-by. A stored change is recorded in the audit file as CLAIM_OPENED,
+ # CLAIM_PENDING, CLAIM_SETTLED, CLAIM_APPROVED, CLAIM_REJECTED or CLAIM_VOIDED (with reversed=<the
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.POST.yml
+index 9f2c4884d..3bc9587b5 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.POST.yml
+@@ -6,7 +6,8 @@
+ # date) takes instead, blank to use the sheet's terms (a claim's due-by is fixed when it is added); and
+ # late-pct: the percent of an overdue claim's figure charged per full 30 days overdue, 0.00 or more with
+ # up to two decimals, blank for its default 0.00; and cap: the most a person's due-total may be, 0.00 or
+-# more with up to two decimals, or blank for none; and proof-threshold: the due above which a claim needs a
++# more with up to two decimals, or blank for none; note-threshold: the due above which a claim needs a
++# note before it is opened, 0.00 or more with up to two decimals, or blank for none; and proof-threshold: the due above which a claim needs a
+ # proof before it is settled or approved, 0.00 or more with up to two decimals, or blank for none.
+ # Each of these is dated: its value is recorded from the from-date (yyyy-MM-dd, blank for the sheet's
+ # today), keeping the values recorded from other dates and replacing one recorded from the same date. A
