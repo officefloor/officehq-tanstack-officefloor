@@ -39,6 +39,7 @@ function PersonClaims({ person }: { person: Person }) {
   const [reasons, setReasons] = useState<Record<number, string>>({});
   const [targets, setTargets] = useState<Record<number, string>>({});
   const [deferDates, setDeferDates] = useState<Record<number, string>>({});
+  const [redates, setRedates] = useState<Record<number, string>>({});
   const [splitAmounts, setSplitAmounts] = useState<Record<number, string>>({});
   const people = usePeople(sheet);
   const [selected, setSelected] = useSelectedClaims();
@@ -75,6 +76,7 @@ function PersonClaims({ person }: { person: Person }) {
     defer.reset();
     proof.reset();
     split.reset();
+    redate.reset();
     move.mutate({ id, status, review: review !== undefined, reason: review?.reason });
   };
 
@@ -96,6 +98,7 @@ function PersonClaims({ person }: { person: Person }) {
     defer.reset();
     proof.reset();
     split.reset();
+    redate.reset();
     reassign.mutate({ id, to: targets[id] ?? '' });
   };
   // A steward re-settling a SETTLED claim freezes it again at today's figure.
@@ -115,6 +118,7 @@ function PersonClaims({ person }: { person: Person }) {
     defer.reset();
     proof.reset();
     split.reset();
+    redate.reset();
     resettle.mutate(id);
   };
   // Deferring an OPEN claim until a date after today takes it out of every figure until then.
@@ -135,6 +139,7 @@ function PersonClaims({ person }: { person: Person }) {
     defer.reset();
     proof.reset();
     split.reset();
+    redate.reset();
     defer.mutate({ id, until: (deferDates[id] ?? '').trim() });
   };
   // A proof raises the claim's proofs count by one; not on a SETTLED or VOID claim.
@@ -151,6 +156,7 @@ function PersonClaims({ person }: { person: Person }) {
     defer.reset();
     proof.reset();
     split.reset();
+    redate.reset();
     proof.mutate(id);
   };
   // Splitting an amount off an OPEN claim lists a new OPEN claim with it; both people's figures follow.
@@ -172,9 +178,31 @@ function PersonClaims({ person }: { person: Person }) {
     defer.reset();
     proof.reset();
     split.reset();
+    redate.reset();
     split.mutate({ id, amount: (splitAmounts[id] ?? '').trim() });
   };
-  // The refusal of the last status change, move, re-settle, deferral, proof or split of the claim, as the server gave it; null when none.
+  // A steward re-dates an OPEN or PENDING claim; its period (and per-period number) follow the new date.
+  const redate = useMutation({
+    mutationFn: (d: { id: number; date: string }) =>
+      postJson<Claim>(`${base}/claims/${d.id}/redate`, { date: d.date, user }),
+    onSuccess: async (_, d) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+      ]);
+      setRedates((a) => ({ ...a, [d.id]: '' }));
+    },
+  });
+  const redateClaim = (id: number) => {
+    move.reset();
+    reassign.reset();
+    resettle.reset();
+    defer.reset();
+    proof.reset();
+    split.reset();
+    redate.mutate({ id, date: (redates[id] ?? '').trim() });
+  };
+  // The refusal of the last status change, move, re-settle, deferral, proof, split or re-dating of the claim, as the server gave it; null when none.
   const refusal = (id: number) => {
     const error =
       move.isError && move.variables?.id === id
@@ -189,7 +217,9 @@ function PersonClaims({ person }: { person: Person }) {
                 ? proof.error
                 : split.isError && split.variables?.id === id
                   ? split.error
-                  : null;
+                  : redate.isError && redate.variables?.id === id
+                    ? redate.error
+                    : null;
     if (error === null) return null;
     return error instanceof HttpError && error.reason ? `${error.reason}.` : 'The change was refused.';
   };
@@ -206,6 +236,7 @@ function PersonClaims({ person }: { person: Person }) {
     defer.reset();
     proof.reset();
     split.reset();
+    redate.reset();
     setEditing(c.id);
     setFields({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects ?? '' });
   };
@@ -325,6 +356,19 @@ function PersonClaims({ person }: { person: Person }) {
               />{' '}
               <button type="button" data-testid="claim-defer" disabled={defer.isPending} onClick={() => deferClaim(c.id)}>
                 Defer
+              </button>{' '}
+              <input
+                data-testid="claim-date-new"
+                type="date"
+                aria-label="New date"
+                value={redates[c.id] ?? ''}
+                onChange={(e) => {
+                  setRedates({ ...redates, [c.id]: e.target.value });
+                  if (redate.variables?.id === c.id) redate.reset();
+                }}
+              />{' '}
+              <button type="button" data-testid="claim-redate" disabled={redate.isPending} onClick={() => redateClaim(c.id)}>
+                Re-date
               </button>{' '}
               <span data-testid="claim-proofs">{c.proofs ?? 0}</span>{' '}
               <button type="button" data-testid="claim-proof" disabled={proof.isPending} onClick={() => addProof(c.id)}>

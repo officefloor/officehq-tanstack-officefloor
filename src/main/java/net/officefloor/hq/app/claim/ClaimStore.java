@@ -108,6 +108,20 @@ public class ClaimStore {
         return deferred;
     }
 
+    /** Re-dates the stored OPEN or PENDING claim, under {@code number}; false when it is no longer one of
+     *  those at the date it had (another user changed it first). Its due-by and any statement figure stay. */
+    public boolean redate(Claim claim, LocalDate date, String number) {
+        boolean redated = jdbc.update("UPDATE claim SET claim_date = ?, number = ? "
+                + "WHERE sheet_id = ? AND id = ? AND status IN (?, ?) AND claim_date = ?",
+                Date.valueOf(date), number, claim.getSheetId(), claim.getId(), ClaimStatus.OPEN.name(),
+                ClaimStatus.PENDING.name(), Date.valueOf(claim.getDate())) == 1;
+        if (redated) {
+            claim.setDate(date);
+            claim.setNumber(number);
+        }
+        return redated;
+    }
+
     /** Leaves the stored OPEN claim with {@code rest} of its amount, unbound from any statement figure; false
      *  when it is no longer OPEN at the amount it had (another user changed it first). */
     public boolean shrink(Claim claim, BigDecimal rest) {
