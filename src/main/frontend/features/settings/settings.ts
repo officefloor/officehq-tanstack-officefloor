@@ -21,13 +21,14 @@ import { useAsOf } from '../../session/session';
  *  in place of the sheet's today, null when blank (off). `gradeGrace` is each grade's grace days in force on the sheet's
  *  today, by grade, null when it has none; `gradeGraceFrom` is each grade's grace days recorded, by grade, oldest
  *  from-date first: a claim's grace is the one in force on its date for its person's grade then. `gradeProofThreshold`
- *  is each grade's proof threshold in force on the sheet's today, by grade, null when it has none (then the sheet's). */
+ *  is each grade's proof threshold in force on the sheet's today, by grade, null when it has none (then the sheet's).
+ *  `pot` (two decimals) is the sum a balanced pool shares out among its members, null for none; it is not dated. */
 export type Settings = { clerkLimit: string | null; floor: string; terms: string; latePct: string; policyDate: string | null;
   periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; proofThreshold: string | null;
   floorFrom: Dated[]; latePctFrom: Dated[]; perms: Record<string, string | null>;
   graceDays: string | null; noteThreshold: string | null; entryDate: string | null;
   gradeGrace: Record<string, string | null>; gradeGraceFrom: Record<string, Dated[]>;
-  gradeProofThreshold: Record<string, string | null> };
+  gradeProofThreshold: Record<string, string | null>; pot: string | null };
 
 /** A setting's value recorded from a date (yyyy-MM-dd); a null value is blank. */
 export type Dated = { from: string; value: string | null };

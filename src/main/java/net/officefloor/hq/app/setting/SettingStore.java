@@ -21,7 +21,7 @@ import org.springframework.stereotype.Repository;
  *  that carry a figure (the clerk limit, the floor, the cap, the proof threshold, a grade's proof threshold, the note threshold, the terms, a grade's terms, a grade's grace days and the late
  *  percent) are dated: each value is recorded from a from-date, and the value in force on a date is the
  *  one with the latest from-date on or before it (none before every from-date, then the sheet's starting
- *  value). The policy date, the period numbering date, the entry date, the grace days and the permission matrix are not dated. */
+ *  value). The policy date, the period numbering date, the entry date, the grace days, the pot and the permission matrix are not dated. */
 @Repository
 public class SettingStore {
 
@@ -73,6 +73,15 @@ public class SettingStore {
     public LocalDate claimDate(String sheetId) {
         LocalDate entry = entryDate(sheetId);
         return entry != null ? entry : today(sheetId);
+    }
+
+    /** The pot shared out among a balanced pool's members (two decimals); blank for none, not dated. */
+    public static final String POT = "pot";
+
+    /** The pot, or null when blank (none). */
+    public BigDecimal pot(String sheetId) {
+        String value = find(sheetId, POT);
+        return value == null ? null : new BigDecimal(value);
     }
 
     /** The whole days after its to-date an open period is closed by a new today; blank for off. */
@@ -147,7 +156,7 @@ public class SettingStore {
     /** Whether the key's values are recorded from a from-date. */
     public static boolean isDated(String key) {
         return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key)
-                && !ENTRY_DATE.equals(key)
+                && !ENTRY_DATE.equals(key) && !POT.equals(key)
                 && !key.startsWith(PERM_PREFIX);
     }
 

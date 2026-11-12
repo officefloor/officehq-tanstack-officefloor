@@ -23,12 +23,14 @@ import java.util.Map;
  *  {@code gradeGraceFrom} is each grade's grace days recorded, by grade, oldest from-date first (a claim's grace is the
  *  one in force on its date for its person's grade then).
  *  {@code gradeProofThreshold} is each grade's proof threshold in force on the sheet's today, by grade, null when it has
- *  none (a claim's proof threshold is its person's grade's in force on its date when one is set, else the sheet's). */
+ *  none (a claim's proof threshold is its person's grade's in force on its date when one is set, else the sheet's).
+ *  {@code pot} has two decimals, the sum shared out among a balanced pool's members, null for none (not dated). */
 public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
         String periodNumberingFrom, Map<String, String> gradeTerms, String cap, String proofThreshold, List<Dated> floorFrom,
         List<Dated> latePctFrom, Map<String, String> perms, String graceDays,
         String noteThreshold, String entryDate, Map<String, String> gradeGrace,
-        Map<String, List<Dated>> gradeGraceFrom, Map<String, String> gradeProofThreshold) {
+        Map<String, List<Dated>> gradeGraceFrom, Map<String, String> gradeProofThreshold,
+        String pot) {
 
     /** A value recorded from a date (yyyy-MM-dd). */
     public record Dated(String from, String value) {

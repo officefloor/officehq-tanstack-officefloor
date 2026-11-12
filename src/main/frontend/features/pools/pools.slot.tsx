@@ -10,7 +10,7 @@ import { type Pool, poolsKey, usePools } from './pools';
 const refusal = (e: unknown, fallback: string) =>
   e instanceof HttpError && e.reason ? `${e.reason}.` : fallback;
 
-// One pool: its members with their shares, its total share and whether it is balanced, and the entry a
+// One pool: its members with their shares and their cuts of the sheet's pot (blank when unbalanced or no pot), its total share and whether it is balanced, and the entry a
 // member is added with. A person already in the pool, or a bad share, is refused with an error on the pool.
 function PoolRow({ pool }: { pool: Pool }) {
   const [user] = useCurrentUser();
@@ -38,7 +38,8 @@ function PoolRow({ pool }: { pool: Pool }) {
       <ul>
         {pool.members.map((m) => (
           <li key={m.personId} data-testid={`pool-member-${pool.name}-${m.personId}`}>
-            {m.name}: <span data-testid="pool-share">{m.share}</span>%{m.retired ? ' (retired)' : ''}
+            {m.name}: <span data-testid="pool-share">{m.share}</span>%{m.retired ? ' (retired)' : ''}, cut{' '}
+            <span data-testid="pool-cut">{m.cut ?? ''}</span>
           </li>
         ))}
       </ul>

@@ -35,6 +35,7 @@ public class ValidateSetting {
         boolean gradeProof = SettingStore.isGradeProofThreshold(key);
         boolean proof = SettingStore.PROOF_THRESHOLD.equals(key) || gradeProof;
         boolean note = SettingStore.NOTE_THRESHOLD.equals(key);
+        boolean pot = SettingStore.POT.equals(key);
         if (SettingStore.GRACE_DAYS.equals(key)) {
             String value = request.value() == null ? "" : request.value().trim();
             if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
@@ -49,13 +50,13 @@ public class ValidateSetting {
             body.set(new SettingInput(key, perm(request.value()), null, request.user()));
             return;
         }
-        if (!SettingStore.CLERK_LIMIT.equals(key) && !cap && !proof && !note && !floor && !terms && !gradeTerms && !gradeGrace && !late && !dated) {
+        if (!SettingStore.CLERK_LIMIT.equals(key) && !cap && !proof && !note && !pot && !floor && !terms && !gradeTerms && !gradeGrace && !late && !dated) {
             throw new InvalidSheetException("Not a setting: " + key);
         }
         String value = request.value() == null ? "" : request.value().trim();
         String fromValue = request.from() == null ? "" : request.from().trim();
         LocalDate from = null;
-        if (!dated && !fromValue.isEmpty()) {
+        if (!dated && !pot && !fromValue.isEmpty()) {
             try {
                 from = LocalDate.parse(fromValue);
             } catch (DateTimeParseException e) {
@@ -126,6 +127,7 @@ public class ValidateSetting {
                     : gradeProof ? "The grade's proof threshold must be 0.00 or more with up to two decimals, or blank"
                     : proof ? "The proof threshold must be 0.00 or more with up to two decimals, or blank"
                     : note ? "The note threshold must be 0.00 or more with up to two decimals, or blank"
+                    : pot ? "The pot must be 0.00 or more with up to two decimals, or blank"
                     : cap ? "The cap must be 0.00 or more with up to two decimals, or blank"
                     : "The clerk limit must be 0.00 or more with up to two decimals, or blank");
         }
