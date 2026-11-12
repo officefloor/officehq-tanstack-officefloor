@@ -1,0 +1,90 @@
+diff --git a/src/main/frontend/features/crews/crews.slot.tsx b/src/main/frontend/features/crews/crews.slot.tsx
+index 65664de24..55c9f0ba5 100644
+--- a/src/main/frontend/features/crews/crews.slot.tsx
++++ b/src/main/frontend/features/crews/crews.slot.tsx
+@@ -6,8 +6,7 @@ import { HomeMain } from '../../slots/defs/homeMain';
+ import { useCurrentSheet, useCurrentUser } from '../../session/session';
+ import { type Person, usePeople } from '../people/people';
+ import { usePersonDue } from '../rates/due.slot';
+-import { dueTotal } from '../rates/rates';
+-import { type Crew, crewsKey, useCrews } from './crews';
++import { type Crew, crewDue, crewsKey, useCrews } from './crews';
+ import { useFigure } from '../locale/locale';
+ 
+ const refusal = (e: unknown, fallback: string) =>
+@@ -33,8 +32,7 @@ function CrewRow({ crew, people, due }: { crew: Crew; people: Person[]; due: (p:
+   });
+   const submit = useSubmitOnce(add);
+ 
+-  const ids = [crew.leadId, ...crew.members.map((m) => m.personId)];
+-  const total = dueTotal(people.filter((p) => ids.includes(p.id)).map(due));
++  const total = crewDue(crew, people, due);
+ 
+   return (
+     <li data-testid={`crew-row-${crew.name}`}>
+diff --git a/src/main/frontend/features/crews/crews.ts b/src/main/frontend/features/crews/crews.ts
+index c3a0ac0de..cf1a8bae2 100644
+--- a/src/main/frontend/features/crews/crews.ts
++++ b/src/main/frontend/features/crews/crews.ts
+@@ -2,6 +2,8 @@ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ import { asOfKey, asOfPath, sheetKey } from '../sheet/sheet';
+ import { useAsOf } from '../../session/session';
++import type { Person } from '../people/people';
++import { dueTotal } from '../rates/rates';
+ 
+ /** A member of a crew: a person on the sheet. */
+ export type CrewMember = { personId: number; name: string };
+@@ -20,3 +22,9 @@ export function useCrews(sheet: string) {
+     enabled: sheet !== '',
+   });
+ }
++
++/** A crew's due-total: its lead's and its members' due-totals added up, skipping n/a. */
++export function crewDue(crew: Crew, people: Person[], due: (p: Person) => string): string {
++  const ids = [crew.leadId, ...crew.members.map((m) => m.personId)];
++  return dueTotal(people.filter((p) => ids.includes(p.id)).map(due));
++}
+diff --git a/src/main/frontend/features/header/counters.slot.tsx b/src/main/frontend/features/header/counters.slot.tsx
+index b47a81e77..bdc547bef 100644
+--- a/src/main/frontend/features/header/counters.slot.tsx
++++ b/src/main/frontend/features/header/counters.slot.tsx
+@@ -3,6 +3,8 @@ import { useCurrentSheet, useCurrentUser } from '../../session/session';
+ import { STATUSES, statusCount, useClaims } from '../claims/claims';
+ import { type Person, usePeople } from '../people/people';
+ import { usePersonDue, useSheetDueTotal } from '../rates/due.slot';
++import { dueTotal } from '../rates/rates';
++import { crewDue, useCrews } from '../crews/crews';
+ import { useOverdue, useSheetOverdue } from '../overdue/overdue.slot';
+ import { useFigure } from '../locale/locale';
+ 
+@@ -18,7 +20,8 @@ function personNamed(people: Person[] | undefined, user: string): Person | undef
+ 
+ // The sheet's counters, always in the header: its people (retired people included), its claims per
+ // status (the summary's counts) and its due- and overdue-totals (the rollup's), from the same figures;
+-// then the signed-in user's own due- and overdue-totals (their person's, blank when no person has their name).
++// then the signed-in user's own due- and overdue-totals (their person's, blank when no person has their name),
++// and their crew total: the due-totals of the crews their person leads, added up (blank when they lead none).
+ function HeaderCounters() {
+   const fig = useFigure();
+   const [sheet] = useCurrentSheet();
+@@ -30,6 +33,9 @@ function HeaderCounters() {
+   const me = personNamed(people.data, user);
+   const myDue = usePersonDue();
+   const myOverdue = useOverdue();
++  const crews = useCrews(sheet);
++  const led = me ? (crews.data ?? []).filter((c) => c.leadId === me.id) : [];
++  const myCrewDue = led.length > 0 ? dueTotal(led.map((c) => crewDue(c, people.data ?? [], myDue))) : '';
+ 
+   return (
+     <p data-testid="header-counters">
+@@ -42,7 +48,8 @@ function HeaderCounters() {
+       Due total <strong data-testid="header-due-total">{fig(due)}</strong>{' '}
+       Overdue total <strong data-testid="header-overdue-total">{fig(overdue.total)}</strong>{' '}
+       My due total <strong data-testid="my-due-total">{fig(me ? myDue(me) : '')}</strong>{' '}
+-      My overdue total <strong data-testid="my-overdue-total">{fig(me ? myOverdue(me).total : '')}</strong>
++      My overdue total <strong data-testid="my-overdue-total">{fig(me ? myOverdue(me).total : '')}</strong>{' '}
++      My crew total <strong data-testid="my-crew-due-total">{fig(myCrewDue)}</strong>
+     </p>
+   );
+ }
