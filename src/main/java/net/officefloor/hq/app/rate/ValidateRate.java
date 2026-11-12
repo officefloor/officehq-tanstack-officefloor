@@ -19,6 +19,11 @@ public class ValidateRate {
 
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody RateRequest request, Out<RateInput> body, RoleStore roles) throws InvalidSheetException {
         roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
+        body.set(check(request));
+    }
+
+    /** The rate change the request asks for, checked with the rate form's rules. */
+    static RateInput check(RateRequest request) throws InvalidSheetException {
         if (request == null || request.grade() == null || !GRADES.contains(request.grade())) {
             throw new InvalidSheetException("The grade must be A, B or C");
         }
@@ -31,7 +36,7 @@ public class ValidateRate {
         if (to != null && from != null && to.isBefore(from)) {
             throw new InvalidSheetException("The to-date must not be before the from-date");
         }
-        body.set(new RateInput(request.grade(), new BigDecimal(pct).setScale(2), from, to, request.user()));
+        return new RateInput(request.grade(), new BigDecimal(pct).setScale(2), from, to, request.user());
     }
 
     /** The date (yyyy-MM-dd) of the text, null when blank. */
