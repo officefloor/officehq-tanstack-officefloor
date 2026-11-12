@@ -13,8 +13,8 @@ import net.officefloor.plugin.variable.Val;
 
 /** Moves the claim to the new status, refusing a change its current status does not allow. Opening
  *  gives the claim its next number (see {@link Numbering}) and records who opened it; a voided claim keeps its number, which is never reused. Settling fixes its due at its person's
- *  grade rate in force on the claim's date, rounded as the sheet's policy date has it and at least the sheet's floor (none when no rate of the grade applies then),
- *  or at the figure its person's last statement bound it to, plus the late charge it has then (frozen in).
+ *  grade rate in force on the claim's date, rounded as the sheet's policy date has it (none when no rate of the grade applies then),
+ *  or at the figure its person's last statement bound it to, plus the late charge it has then, and at least the sheet's floor (frozen in).
  *  A clerk's settle above the clerk limit makes it PENDING instead (see {@link CheckClerkLimit}); a steward's
  *  approval settles a PENDING claim, frozen then at its live figure (a statement does not bind it while
  *  PENDING), and a rejection moves it back to OPEN, bound again by its person's last statement if that included it.

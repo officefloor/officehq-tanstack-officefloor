@@ -17,9 +17,9 @@ import net.officefloor.plugin.variable.Val;
 
 /** Takes a statement of the person on the sheet's today: their due-total (the sum of the figures of
  *  their claims that count; n/a when their grade in force today has no rate today and no counting claim
- *  keeps a fixed figure or a figure at another grade, the one in force on its date), binding each counting claim to its figure now (its floored live due when not fixed) and unbinding the rest. A settled
- *  claim keeps its fixed figure. The due-total includes the late charges of overdue claims, but a
- *  claim is bound to its figure without its charge, which keeps following the sheet's today. The
+ *  keeps a fixed figure or a figure at another grade, the one in force on its date), binding each counting claim to its figure now (its rate figure, not floored, when not fixed) and unbinding the rest. A settled
+ *  claim keeps its fixed figure. The due-total includes the late charges of overdue claims and the floor, but a
+ *  claim is bound to its figure without its charge or floor, which keeps following the sheet's today. The
  *  due-total is at most the sheet's cap. */
 public class TakeStatement {
     public void take(@Val StatementRequest request, @Val Person person, ClaimStore claims, RateStore rates,
@@ -39,10 +39,10 @@ public class TakeStatement {
             boolean counts = RollupService.counts(claim, person, today);
             BigDecimal figure = null;
             if (counts) {
-                figure = ClaimFigure.of(claim, rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()), lateness.floor(claim), rounding);
+                figure = ClaimFigure.of(claim, rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()), rounding);
                 counted++;
                 if (figure != null) {
-                    total = total.add(claim.getSettledDue() != null ? figure : figure.add(lateness.charge(claim, figure)));
+                    total = total.add(lateness.dueOf(claim, figure));
                 }
                 // A figure at a grade other than the one in force today, or at a rate that ended before
                 // today, does not hang on today's grade's rate.

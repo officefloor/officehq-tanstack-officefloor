@@ -11,7 +11,8 @@ import net.officefloor.hq.app.sheet.SheetStore;
  *  percent in force on each date and its today; and the sheet's floor in force on each claim's date. An overdue claim (OPEN or PENDING, not deferred, due-by before today) gains, for every full 30 days it is
  *  overdue, the late percent in force on that boundary (its due-by plus 30, 60, 90 ... days) of its figure, rounded as the
  *  sheet's {@link Rounding} has the claim, the charges added up (a boundary at 0.00 adds nothing). The charge is never bound by a
- *  statement; settling freezes it into the settled due. */
+ *  statement; settling freezes it into the settled due. The floor is applied last: a live due is at least the floor
+ *  in force on the claim's date (none for a correction). */
 public record Lateness(Function<LocalDate, BigDecimal> latePcts, Function<LocalDate, BigDecimal> floors,
         LocalDate today, Rounding rounding) {
 
@@ -23,7 +24,7 @@ public record Lateness(Function<LocalDate, BigDecimal> latePcts, Function<LocalD
                 Rounding.of(sheetId, settings, sheets, claims));
     }
 
-    /** The late charge on a claim whose figure (bound, else floored live) is {@code figure}; none on
+    /** The late charge on a claim whose figure (bound, else the rate figure, never floored) is {@code figure}; none on
      *  a correction. */
     public BigDecimal charge(Claim claim, BigDecimal figure) {
         if (figure == null || !claim.getStatus().isOpen() || today == null || claim.isCorrection()
@@ -45,12 +46,18 @@ public record Lateness(Function<LocalDate, BigDecimal> latePcts, Function<LocalD
         return floors.apply(claim.getDate());
     }
 
-    /** The claim's due now: its figure, plus the late charge unless settled (its settled due has it). */
+    /** The claim's due now: its settled due, else the greater of its floor and its figure plus the late
+     *  charge (a correction has no floor and no charge). */
     public BigDecimal due(Claim claim, BigDecimal pct) {
-        BigDecimal figure = ClaimFigure.of(claim, pct, floor(claim), rounding);
+        return dueOf(claim, ClaimFigure.of(claim, pct, rounding));
+    }
+
+    /** The claim's due now, given its figure (see {@link ClaimFigure}). */
+    public BigDecimal dueOf(Claim claim, BigDecimal figure) {
         if (figure == null || claim.getSettledDue() != null) {
             return figure;
         }
-        return figure.add(charge(claim, figure));
+        BigDecimal charged = figure.add(charge(claim, figure));
+        return claim.isCorrection() ? charged : ClaimFigure.floored(charged, floor(claim));
     }
 }

@@ -12,7 +12,7 @@ import net.officefloor.plugin.variable.Val;
 
 /** Freezes the SETTLED claim again at the due it would have today as an OPEN claim bound by no
  *  statement: its person's grade rate in force on its date, rounded as the sheet's policy date has
- *  it, at least the sheet's floor (none for a correction), plus the late charge it would have now.
+ *  it, plus the late charge it would have now, and at least the sheet's floor (none for a correction).
  *  Stores it and logs a SETTLED line, by the user; refused when another user moved it on first. */
 public class ApplyResettle {
     public void apply(@Val ResettleInput input, @Val Claim claim, ClaimStore store, ClaimLogStore log,
