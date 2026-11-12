@@ -13,7 +13,9 @@ import net.officefloor.hq.app.sheet.SheetStore;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
-/** Works out the move a status change makes. A clerk settling an OPEN claim whose due is above the
+/** Works out the move a status change makes. Opening a DRAFT whose due is above the review threshold in
+ *  force on its date sends it to REVIEW instead; only a steward's review moves a REVIEW claim on, to OPEN,
+ *  and otherwise it may only be voided. A clerk settling an OPEN claim whose due is above the
  *  sheet's clerk limit sends it to PENDING instead. A claim whose due is n/a is within any limit; a
  *  sheet with no limit, and a steward, settle anything. Only a steward reviews a PENDING claim, and
  *  only a review moves it to SETTLED or back to OPEN; a review of a claim that is not PENDING is refused.
@@ -34,6 +36,16 @@ public class CheckClerkLimit {
         ClaimStatus from = claim.getStatus();
         Role role = roles.find(claim.getSheetId(), input.user());
         boolean steward = role == Role.STEWARD;
+        if (input.review() && from == ClaimStatus.REVIEW) {
+            if (!steward) {
+                throw new InvalidSheetException("Only a steward can review a claim");
+            }
+            if (input.status() != ClaimStatus.OPEN) {
+                throw new InvalidSheetException("A review makes a REVIEW claim OPEN");
+            }
+            move.set(new StatusMove(from, ClaimStatus.OPEN));
+            return;
+        }
         if (input.review()) {
             if (from != ClaimStatus.PENDING) {
                 throw new InvalidSheetException("Only a PENDING claim can be approved or rejected");
@@ -41,12 +53,18 @@ public class CheckClerkLimit {
             if (!steward) {
                 throw new InvalidSheetException("Only a steward can approve or reject a claim");
             }
+            if (input.status() == ClaimStatus.OPEN && input.reason().isEmpty()) {
+                throw new InvalidSheetException("A rejection needs a reason");
+            }
             CheckProofs.refuseUnproved(input, claim, settings, people, rates, sheets, claims);
             move.set(new StatusMove(from, input.status()));
             return;
         }
         if (from == ClaimStatus.PENDING && input.status() != ClaimStatus.VOID) {
             throw new InvalidSheetException("A PENDING claim waits for a steward to approve or reject it");
+        }
+        if (from == ClaimStatus.REVIEW && input.status() != ClaimStatus.VOID) {
+            throw new InvalidSheetException("A REVIEW claim waits for a steward to review it");
         }
         refuseUnpermitted(input.status(), claim.getSheetId(), role, settings);
         if (from == ClaimStatus.SETTLED && input.status() == ClaimStatus.VOID) {
@@ -59,8 +77,27 @@ public class CheckClerkLimit {
             CheckProofs.refuseUnnoted(claim, settings, people, rates, sheets, claims);
         }
         CheckProofs.refuseUnproved(input, claim, settings, people, rates, sheets, claims);
-        move.set(new StatusMove(from, overLimit(input, claim, steward, settings, people, rates, sheets, claims)
-                ? ClaimStatus.PENDING : input.status()));
+        ClaimStatus to = overLimit(input, claim, steward, settings, people, rates, sheets, claims)
+                ? ClaimStatus.PENDING : input.status();
+        if (from == ClaimStatus.DRAFT && to == ClaimStatus.OPEN
+                && overReview(claim, settings, people, rates, sheets, claims)) {
+            to = ClaimStatus.REVIEW;
+        }
+        move.set(new StatusMove(from, to));
+    }
+
+    /** Whether opening the claim sends it to REVIEW: its due is above the review threshold in force on its
+     *  date. A sheet with no threshold then, and a claim whose due is n/a, open as OPEN. */
+    static boolean overReview(Claim claim, SettingStore settings, PersonStore people, RateStore rates,
+            SheetStore sheets, ClaimStore claims) {
+        BigDecimal threshold = settings.reviewThreshold(claim.getSheetId(), claim.getDate());
+        if (threshold == null) {
+            return false;
+        }
+        Person person = people.find(claim.getSheetId(), claim.getPersonId());
+        BigDecimal pct = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
+        BigDecimal due = Lateness.of(claim.getSheetId(), settings, sheets, claims, people).due(claim, pct);
+        return due != null && due.compareTo(threshold) > 0;
     }
 
     /** Refuses voiding a SETTLED claim by anyone but a steward, or later than {@link #VOID_SETTLED_DAYS}

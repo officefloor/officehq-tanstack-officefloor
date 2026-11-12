@@ -22,7 +22,9 @@ import org.springframework.web.bind.annotation.PathVariable;
 
 /** Opens each selected claim that can be opened, in list order: its people in the order they were
  *  added, a person's claims newest first. Each is opened as a single open would be (its next
- *  number, opened-by the user) and recorded as CLAIM_OPENED, then how it moved the sheet's figures.
+ *  number, opened-by the user) and recorded as CLAIM_OPENED, then how it moved the sheet's figures; one whose
+ *  due is above the review threshold in force on its date goes to REVIEW instead (CLAIM_REVIEW, no number yet),
+ *  counted as opened.
  *  A claim that is not on the sheet, is not a DRAFT, or is due by a date in a closed period, or whose person already has
  *  as many OPEN or PENDING claims in its period as the period's cap (counting those opened before it here), or has an empty note while its due is above the
  *  note threshold in force on its date, and every claim when
@@ -64,20 +66,24 @@ public class OpenClaims {
                 continue;
             }
             Rollup before = rollups.snapshot(sheet);
-            if (!store.move(claim, claim.getStatus(), ClaimStatus.OPEN)) {
+            ClaimStatus to = CheckClerkLimit.overReview(claim, settings, people, rates, sheets, store)
+                    ? ClaimStatus.REVIEW : ClaimStatus.OPEN;
+            if (!store.move(claim, claim.getStatus(), to)) {
                 refused++;
                 continue;
             }
-            claim.setStatus(ClaimStatus.OPEN);
-            claim.setNumber(Numbering.next(sheet, claim.getDueBy(), store, settings, sheets, periods));
+            claim.setStatus(to);
+            if (to == ClaimStatus.OPEN) {
+                claim.setNumber(Numbering.next(sheet, claim.getDueBy(), store, settings, sheets, periods));
+            }
             claim.setOpenedBy(input.user());
             store.save(claim);
             log.record(claim, input.user());
             Person person = persons.get(claim.getPersonId());
             ClaimResponse shown = ClaimResponse.from(claim);
-            audit.record(ClaimStatus.OPEN.event() + " sheet=" + sheet + " by=" + input.user() + " person="
+            audit.record(to.event() + " sheet=" + sheet + " by=" + input.user() + " person="
                     + (person == null ? "" : person.getName()) + " amount=" + shown.amount() + " date=" + shown.date()
-                    + " number=" + claim.getNumber());
+                    + (to == ClaimStatus.OPEN ? " number=" + claim.getNumber() : ""));
             rollups.record(sheet, input.user(), before);
             opened++;
         }

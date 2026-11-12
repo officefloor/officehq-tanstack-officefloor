@@ -28,14 +28,15 @@ import { useAsOf } from '../../session/session';
  *  1 unless set; it is not dated. `alertThreshold` (two decimals) is the due-total above which a person
  *  crossing it raises an ALERT, null for off; it is not dated. `rounding` is the rounding mode in force on
  *  the sheet's today (half-up or half-even), null for none; `roundingFrom` is the modes recorded, oldest from-date
- *  first (a claim rounds by the one in force on its date, else by the policy date). */
+ *  first (a claim rounds by the one in force on its date, else by the policy date). `reviewThreshold` (two decimals)
+ *  is the due above which a claim goes to REVIEW when opened, in force on the sheet's today, null for none. */
 export type Settings = { clerkLimit: string | null; floor: string; terms: string; latePct: string; policyDate: string | null;
   periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; proofThreshold: string | null;
   floorFrom: Dated[]; latePctFrom: Dated[]; perms: Record<string, string | null>;
   graceDays: string | null; noteThreshold: string | null; entryDate: string | null;
   gradeGrace: Record<string, string | null>; gradeGraceFrom: Record<string, Dated[]>;
   gradeProofThreshold: Record<string, string | null>; pot: string | null; parent: string | null; fiscalStartMonth: string;
-  alertThreshold: string | null; rounding: string | null; roundingFrom: Dated[] };
+  alertThreshold: string | null; rounding: string | null; roundingFrom: Dated[]; reviewThreshold: string | null };
 
 /** A setting's value recorded from a date (yyyy-MM-dd); a null value is blank. */
 export type Dated = { from: string; value: string | null };

@@ -40,6 +40,8 @@ function PersonClaims({ person }: { person: Person }) {
   // The claim whose editor is open (and locked by this user), kept in the URL so it outlives a re-load
   // of the sheet; this person's form edits it when it is one of theirs.
   const [editingId, setEditing] = useEditingClaim();
+  // The claim whose editor was refused here, without asking the server: it is not a DRAFT.
+  const [uneditable, setUneditable] = useState<Claim | undefined>(undefined);
   const editingClaim = (claims.data ?? []).find((c) => c.id === editingId && c.personId === person.id);
   const editing = editingClaim?.id;
   const [reasons, setReasons] = useState<Record<number, string>>({});
@@ -111,6 +113,7 @@ function PersonClaims({ person }: { person: Person }) {
   const moveTo = (id: number, status: ClaimStatus, review?: { reason: string }, voidReason?: string) => {
     move.reset();
     lock.reset();
+    setUneditable(undefined);
     reassign.reset();
     resettle.reset();
     defer.reset();
@@ -138,6 +141,7 @@ function PersonClaims({ person }: { person: Person }) {
   const reassignTo = (id: number) => {
     move.reset();
     lock.reset();
+    setUneditable(undefined);
     reassign.reset();
     resettle.reset();
     defer.reset();
@@ -163,6 +167,7 @@ function PersonClaims({ person }: { person: Person }) {
   const resettleClaim = (id: number) => {
     move.reset();
     lock.reset();
+    setUneditable(undefined);
     reassign.reset();
     resettle.reset();
     defer.reset();
@@ -189,6 +194,7 @@ function PersonClaims({ person }: { person: Person }) {
   const deferClaim = (id: number) => {
     move.reset();
     lock.reset();
+    setUneditable(undefined);
     reassign.reset();
     resettle.reset();
     defer.reset();
@@ -211,6 +217,7 @@ function PersonClaims({ person }: { person: Person }) {
   const remindClaim = (id: number) => {
     move.reset();
     lock.reset();
+    setUneditable(undefined);
     reassign.reset();
     resettle.reset();
     defer.reset();
@@ -235,6 +242,7 @@ function PersonClaims({ person }: { person: Person }) {
   const addComment = (id: number) => {
     move.reset();
     lock.reset();
+    setUneditable(undefined);
     reassign.reset();
     resettle.reset();
     defer.reset();
@@ -262,6 +270,7 @@ function PersonClaims({ person }: { person: Person }) {
   const addLine = (id: number) => {
     move.reset();
     lock.reset();
+    setUneditable(undefined);
     reassign.reset();
     resettle.reset();
     defer.reset();
@@ -289,6 +298,7 @@ function PersonClaims({ person }: { person: Person }) {
   const addProof = (id: number) => {
     move.reset();
     lock.reset();
+    setUneditable(undefined);
     reassign.reset();
     resettle.reset();
     defer.reset();
@@ -316,6 +326,7 @@ function PersonClaims({ person }: { person: Person }) {
   const splitClaim = (id: number) => {
     move.reset();
     lock.reset();
+    setUneditable(undefined);
     reassign.reset();
     resettle.reset();
     defer.reset();
@@ -343,6 +354,7 @@ function PersonClaims({ person }: { person: Person }) {
   const redateClaim = (id: number) => {
     move.reset();
     lock.reset();
+    setUneditable(undefined);
     reassign.reset();
     resettle.reset();
     defer.reset();
@@ -377,6 +389,7 @@ function PersonClaims({ person }: { person: Person }) {
   const saveInline = (c: Claim) => {
     move.reset();
     lock.reset();
+    setUneditable(undefined);
     reassign.reset();
     resettle.reset();
     defer.reset();
@@ -417,7 +430,7 @@ function PersonClaims({ person }: { person: Person }) {
                         : lock.isError && lock.variables?.id === id
                           ? lock.error
                           : null;
-    if (error === null) return null;
+    if (error === null) return uneditable?.id === id ? `A ${uneditable.status} claim cannot be edited.` : null;
     return error instanceof HttpError && error.reason ? `${error.reason}.` : 'The change was refused.';
   };
 
@@ -431,6 +444,7 @@ function PersonClaims({ person }: { person: Person }) {
     fromTemplate.reset();
     move.reset();
     lock.reset();
+    setUneditable(undefined);
     reassign.reset();
     resettle.reset();
     defer.reset();
@@ -441,12 +455,18 @@ function PersonClaims({ person }: { person: Person }) {
     split.reset();
     redate.reset();
     inline.reset();
+    // Only a DRAFT can be edited: any other claim is refused at once, as the server would refuse it.
+    if (c.status !== 'DRAFT') {
+      setUneditable(c);
+      return;
+    }
     lock.mutate(c);
   };
   const cancel = () => {
     save.reset();
     fromTemplate.reset();
     lock.reset();
+    setUneditable(undefined);
     if (editing !== undefined) release(editing);
     setEditing(undefined);
     setFields(EMPTY);
@@ -571,6 +591,15 @@ function PersonClaims({ person }: { person: Person }) {
                 onClick={() => moveTo(c.id, 'OPEN', { reason: reasons[c.id] ?? '' })}
               >
                 Reject
+              </button>{' '}
+              {/* A steward's review makes a REVIEW claim OPEN; the server refuses anyone else. */}
+              <button
+                type="button"
+                data-testid="claim-review"
+                disabled={move.isPending}
+                onClick={() => moveTo(c.id, 'OPEN', { reason: '' })}
+              >
+                Review
               </button>{' '}
               <select
                 data-testid="claim-reassign-to"
@@ -742,6 +771,7 @@ function PersonClaims({ person }: { person: Person }) {
           e.preventDefault();
           // Submitting the form is the next action on the row: a refused editor opening no longer shows.
           lock.reset();
+          setUneditable(undefined);
           fromTemplate.reset();
           submit(fields);
         }}
@@ -785,6 +815,7 @@ function PersonClaims({ person }: { person: Person }) {
           onClick={() => {
             save.reset();
             lock.reset();
+            setUneditable(undefined);
             submitTemplate(template);
           }}
         >

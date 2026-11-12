@@ -37,6 +37,7 @@ public class ValidateSetting {
         boolean gradeProof = SettingStore.isGradeProofThreshold(key);
         boolean proof = SettingStore.PROOF_THRESHOLD.equals(key) || gradeProof;
         boolean note = SettingStore.NOTE_THRESHOLD.equals(key);
+        boolean review = SettingStore.REVIEW_THRESHOLD.equals(key);
         boolean pot = SettingStore.POT.equals(key);
         boolean alert = SettingStore.ALERT_THRESHOLD.equals(key);
         if (SettingStore.GRACE_DAYS.equals(key)) {
@@ -98,7 +99,7 @@ public class ValidateSetting {
             body.set(new SettingInput(key, value.isEmpty() ? null : value, from, request.user()));
             return;
         }
-        if (!SettingStore.CLERK_LIMIT.equals(key) && !cap && !proof && !note && !pot && !alert && !floor && !terms && !gradeTerms && !gradeGrace && !late && !dated) {
+        if (!SettingStore.CLERK_LIMIT.equals(key) && !cap && !proof && !note && !review && !pot && !alert && !floor && !terms && !gradeTerms && !gradeGrace && !late && !dated) {
             throw new InvalidSheetException("Not a setting: " + key);
         }
         String value = request.value() == null ? "" : request.value().trim();
@@ -175,6 +176,7 @@ public class ValidateSetting {
                     : gradeProof ? "The grade's proof threshold must be 0.00 or more with up to two decimals, or blank"
                     : proof ? "The proof threshold must be 0.00 or more with up to two decimals, or blank"
                     : note ? "The note threshold must be 0.00 or more with up to two decimals, or blank"
+                    : review ? "The review threshold must be 0.00 or more with up to two decimals, or blank"
                     : alert ? "The alert threshold must be 0.00 or more with up to two decimals, or blank"
                     : pot ? "The pot must be 0.00 or more with up to two decimals, or blank"
                     : cap ? "The cap must be 0.00 or more with up to two decimals, or blank"

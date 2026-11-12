@@ -7,11 +7,12 @@ import { type Hold, covers } from '../people/people';
 
 /** PENDING: settled by a clerk above the clerk limit, awaiting a steward's approval; handled as OPEN,
  *  except that a statement does not bind it while it is PENDING. DELETED: a deleted DRAFT, which counts
- *  nowhere and can be restored to a DRAFT on the sheet's today it was deleted. */
-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED';
+ *  nowhere and can be restored to a DRAFT on the sheet's today it was deleted. REVIEW: opened while its due was
+ *  above the review threshold on its date, awaiting a steward's review to make it OPEN; it counts in no total. */
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED' | 'REVIEW';
 
 /** Every status the summary and header count, whether or not a claim can reach it; a DELETED claim counts nowhere. */
-export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const satisfies readonly ClaimStatus[];
+export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID', 'REVIEW'] as const satisfies readonly ClaimStatus[];
 
 /** How many of these claims have the status. */
 export const statusCount = (claims: Claim[] | undefined, status: ClaimStatus) =>

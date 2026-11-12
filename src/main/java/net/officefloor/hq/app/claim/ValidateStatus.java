@@ -21,9 +21,6 @@ public class ValidateStatus {
         if (review && to != ClaimStatus.SETTLED && to != ClaimStatus.OPEN) {
             throw new InvalidSheetException("A review approves or rejects a claim");
         }
-        if (review && to == ClaimStatus.OPEN && reason.isEmpty()) {
-            throw new InvalidSheetException("A rejection needs a reason");
-        }
         body.set(new StatusInput(to, request.user(), review, reason));
     }
 }

@@ -19,7 +19,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 /** The settings kept per sheet, by key. A setting never set, or set blank, has no value. The settings
- *  that carry a figure (the clerk limit, the floor, the cap, the proof threshold, a grade's proof threshold, the note threshold, the terms, a grade's terms, a grade's grace days and the late
+ *  that carry a figure (the clerk limit, the floor, the cap, the proof threshold, a grade's proof threshold, the note threshold, the review threshold, the terms, a grade's terms, a grade's grace days and the late
  *  percent) are dated: each value is recorded from a from-date, and the value in force on a date is the
  *  one with the latest from-date on or before it (none before every from-date, then the sheet's starting
  *  value). The policy date, the period numbering date, the entry date, the grace days, the pot, the alert threshold, the parent sheet, the fiscal start month and the permission matrix are not dated. */
@@ -46,6 +46,9 @@ public class SettingStore {
 
     /** Above it a claim's due needs a note before it is opened. */
     public static final String NOTE_THRESHOLD = "note-threshold";
+
+    /** Above it a claim's due sends it to REVIEW when opened, instead of OPEN (dated; blank for none). */
+    public static final String REVIEW_THRESHOLD = "review-threshold";
 
     public static final String TERMS = "terms";
 
@@ -337,6 +340,13 @@ public class SettingStore {
      *  that date), or null for none. */
     public BigDecimal noteThreshold(String sheetId, LocalDate date) {
         String value = findOn(sheetId, NOTE_THRESHOLD, date);
+        return value == null ? null : new BigDecimal(value);
+    }
+
+    /** The due above which a claim dated on the date goes to REVIEW when opened (the one in force on that
+     *  date), or null for none. */
+    public BigDecimal reviewThreshold(String sheetId, LocalDate date) {
+        String value = findOn(sheetId, REVIEW_THRESHOLD, date);
         return value == null ? null : new BigDecimal(value);
     }
 

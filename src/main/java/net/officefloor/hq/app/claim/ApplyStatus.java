@@ -22,6 +22,7 @@ import net.officefloor.plugin.variable.Val;
  *  PENDING), and a rejection moves it back to OPEN, bound again by its person's last statement if that included it.
  *  The user who opened a claim, or who last edited it, may not settle or approve it, and a claim deferred on the sheet's today may not be settled.
  *  Opening a DRAFT is refused while its person already has as many OPEN or PENDING claims in its period as the period's cap.
+ *  A claim opened to REVIEW records who opened it but takes no number until a steward's review makes it OPEN.
  *  While the sheet has void reasons, a void needs one of them (the input's reason), kept on the claim. */
 public class ApplyStatus {
     public void apply(@Val StatusInput input, @Val StatusMove move, @Val Claim claim, ClaimStore store, PersonStore people,
@@ -56,7 +57,7 @@ public class ApplyStatus {
                 voidReason = input.reason();
             }
         }
-        if (from == ClaimStatus.DRAFT && to == ClaimStatus.OPEN) {
+        if (from == ClaimStatus.DRAFT && (to == ClaimStatus.OPEN || to == ClaimStatus.REVIEW)) {
             ClaimPeriods.refuseCapped(periods, store, claim);
         }
         if (!from.canBecome(to) || !store.move(claim, from, to)) {
@@ -73,8 +74,10 @@ public class ApplyStatus {
         if (to == ClaimStatus.VOID) {
             claim.setVoidReason(voidReason);
         }
-        if (from == ClaimStatus.DRAFT && to == ClaimStatus.OPEN) {
+        if ((from == ClaimStatus.DRAFT || from == ClaimStatus.REVIEW) && to == ClaimStatus.OPEN) {
             claim.setNumber(Numbering.next(claim.getSheetId(), claim.getDueBy(), store, settings, sheets, periods));
+        }
+        if (from == ClaimStatus.DRAFT && (to == ClaimStatus.OPEN || to == ClaimStatus.REVIEW)) {
             claim.setOpenedBy(input.user());
         }
         if (to == ClaimStatus.SETTLED) {

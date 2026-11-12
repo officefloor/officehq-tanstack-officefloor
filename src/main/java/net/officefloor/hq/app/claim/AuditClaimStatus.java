@@ -15,12 +15,22 @@ import net.officefloor.plugin.variable.Val;
  *  due=<0.00> as fixed on settling (n/a when its grade had no rate), for CLAIM_REJECTED reason=<reason>,
  *  for CLAIM_VOIDED of a SETTLED claim reversed=<0.00>, the frozen figure it takes out of the totals (n/a when none),
  *  then for CLAIM_VOIDED reason=<reason> when voided with one.
+ *  A claim opened above the review threshold is CLAIM_REVIEW (no number yet); a steward's review of it is
+ *  CLAIM_REVIEWED, then CLAIM_OPENED with its number.
  *  A claim settled or approved then tells the person's watchers (NOTIFY), before the figures moved. */
 public class AuditClaimStatus {
     public void audit(@Val StatusInput input, @Val StatusMove move, @Val Claim claim, @Val StatusChange change, @Val Rollup before,
             PersonStore people, Audit audit, RollupService rollups, WatchStore watches) {
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         ClaimResponse shown = ClaimResponse.from(claim);
+        if (move.from() == ClaimStatus.REVIEW && move.to() == ClaimStatus.OPEN) {
+            String which = " sheet=" + claim.getSheetId() + " by=" + input.user() + " person=" + person.getName()
+                    + " amount=" + shown.amount() + " date=" + shown.date();
+            audit.record(move.to().event(move.from()) + which);
+            audit.record(move.to().event() + which + " number=" + change.number());
+            rollups.record(claim.getSheetId(), input.user(), before);
+            return;
+        }
         audit.record(move.to().event(move.from()) + " sheet=" + claim.getSheetId() + " by=" + input.user() + " person="
                 + person.getName() + " amount=" + shown.amount() + " date=" + shown.date()
                 + (change.number() == null ? "" : " number=" + change.number())
