@@ -71,9 +71,11 @@ public class RollupService {
                 if (figure != null) {
                     due = due.add(figure);
                 }
-                // A figure at a grade other than the one in force today does not hang on today's grade's rate.
+                // A figure at a grade other than the one in force today, or at a rate that ended before
+                // today, does not hang on today's grade's rate.
                 fixed |= claim.getSettledDue() != null || claim.isBound()
-                        || (figure != null && !person.gradeOn(claim.getDate()).equals(person.gradeOn(today)));
+                        || (figure != null && (!person.gradeOn(claim.getDate()).equals(person.gradeOn(today))
+                                || rates.endsBefore(sheetId, person.gradeOn(claim.getDate()), claim.getDate(), today)));
             }
             boolean na = rates.find(sheetId, person.gradeOn(today), today) == null && !fixed;
             claimedTotal = claimedTotal.add(claimed);

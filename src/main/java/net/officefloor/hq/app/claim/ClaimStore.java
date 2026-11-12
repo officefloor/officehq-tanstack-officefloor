@@ -15,12 +15,16 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimStore {
 
-    private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getString("sheet_id"),
+    private static final RowMapper<Claim> ROW = (rs, i) -> {
+        Claim claim = new Claim(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getObject("claim_date", LocalDate.class),
             rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
             rs.getString("number"), rs.getBigDecimal("settled_due"),
             rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
             rs.getString("corrects"), rs.getObject("due_by", LocalDate.class));
+        claim.setStatedNa(rs.getBoolean("stated_na"));
+        return claim;
+    };
 
     private final JdbcTemplate jdbc;
 
@@ -87,14 +91,14 @@ public class ClaimStore {
 
     /** Binds the claim to the figure (null for n/a), or unbinds it when not {@code stated}. */
     public void bind(Claim claim) {
-        jdbc.update("UPDATE claim SET stated = ?, stated_due = ? WHERE sheet_id = ? AND id = ?", claim.isStated(),
-                claim.getStatedDue(), claim.getSheetId(), claim.getId());
+        jdbc.update("UPDATE claim SET stated = ?, stated_due = ?, stated_na = ? WHERE sheet_id = ? AND id = ?",
+                claim.isStated(), claim.getStatedDue(), claim.isStatedNa(), claim.getSheetId(), claim.getId());
     }
 
     /** Moves the stored DRAFT, OPEN or PENDING claim to the person, unbound from any statement figure and
      *  listed as their newest claim; false when it is no longer one of those (another user moved it on). */
     public boolean reassign(Claim claim, long personId) {
-        boolean moved = jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, "
+        boolean moved = jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, stated_na = FALSE, "
                 + "listed = NEXT VALUE FOR claim_listed_seq WHERE sheet_id = ? AND id = ? AND status IN (?, ?, ?)",
                 personId, claim.getSheetId(), claim.getId(), ClaimStatus.DRAFT.name(), ClaimStatus.OPEN.name(),
                 ClaimStatus.PENDING.name()) == 1;
@@ -102,6 +106,7 @@ public class ClaimStore {
             claim.setPersonId(personId);
             claim.setStated(false);
             claim.setStatedDue(null);
+            claim.setStatedNa(false);
         }
         return moved;
     }

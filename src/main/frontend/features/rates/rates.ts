@@ -5,8 +5,9 @@ import { type Claim, counts, isBound, isCorrection } from '../claims/claims';
 import { type Grades, gradeOn } from '../people/people';
 
 /** A grade's rate: `pct` is a percent with two decimals; `from` (yyyy-MM-dd) is the date it applies
- *  from, null for from the beginning of time. A grade may have several; one with no rate has none. */
-export type Rate = { grade: string; pct: string; from: string | null };
+ *  from, null for from the beginning of time; `to` the date it applies through, null for no end. A
+ *  grade may have several; one with no rate has none. */
+export type Rate = { grade: string; pct: string; from: string | null; to: string | null };
 
 /** Under the sheet's key, so loading the sheet again re-reads its rates. */
 export const ratesKey = (sheet: string) => [...sheetKey(sheet), 'rates'] as const;
@@ -20,7 +21,7 @@ export function useRates(sheet: string) {
 }
 
 /** The grade's percent in force on the date (yyyy-MM-dd): the rate with the latest from-date on or
- *  before it, or undefined when none of the grade's rates applies then. */
+ *  before it, or undefined when none of the grade's rates applies then, or that rate ended (its to-date) before it. */
 export function rateOf(rates: Rate[] | undefined, grade: string, on: string | undefined): string | undefined {
   if (on === undefined) return undefined;
   let best: Rate | undefined;
@@ -28,7 +29,24 @@ export function rateOf(rates: Rate[] | undefined, grade: string, on: string | un
     if (r.grade !== grade || (r.from !== null && r.from > on)) continue;
     if (best === undefined || (best.from ?? '') < (r.from ?? '')) best = r;
   }
-  return best?.pct;
+  return best === undefined || (best.to !== null && best.to < on) ? undefined : best.pct;
+}
+
+/** Whether the grade's rate in force on the date ends before `today`: its to-date, or the day before the
+ *  grade's next rate starts, whichever is first, is before it. */
+export function endsBefore(rates: Rate[] | undefined, grade: string, on: string, today: string): boolean {
+  let best: Rate | undefined;
+  let next: string | undefined;
+  for (const r of rates ?? []) {
+    if (r.grade !== grade) continue;
+    if (r.from !== null && r.from > on) {
+      if (next === undefined || r.from < next) next = r.from;
+    } else if (best === undefined || (best.from ?? '') < (r.from ?? '')) {
+      best = r;
+    }
+  }
+  if (best === undefined) return false;
+  return (best.to !== null && best.to < today) || (next !== undefined && next <= today);
 }
 
 export const NA = 'n/a';
@@ -101,15 +119,16 @@ export function claimDue(
   if (claim.due !== null) return claim.due;
   const pct = rateOf(rates, gradeOn(grades, claim.date), claim.date);
   const halfUp = late?.halfUp?.(claim) ?? false;
-  const figure = (isBound(claim) ? claim.statedDue : null)
-    ?? (isCorrection(claim) ? due(claim.amount, pct, halfUp) : liveDue(claim.amount, pct, floor, halfUp));
+  const figure = isBound(claim)
+    ? claim.statedDue ?? NA
+    : isCorrection(claim) ? due(claim.amount, pct, halfUp) : liveDue(claim.amount, pct, floor, halfUp);
   const charge = lateCharge(claim, figure, late);
   return charge === undefined ? figure : format(hundredths(figure) + hundredths(charge));
 }
 
 /** A person's due-total: the sum of the figures of their claims that count. n/a when their grade
  *  in force on the sheet's today has no rate then, unless a claim that counts keeps a fixed (settled or
- *  stated) figure, or a figure at another grade (the one in force on its date). */
+ *  stated) figure, or a figure at another grade (the one in force on its date), or at a rate that ended before today. */
 export function personDue(
   claims: Claim[],
   rates: Rate[] | undefined,
@@ -120,7 +139,11 @@ export function personDue(
 ): string {
   const mine = claims.filter(counts);
   const now = gradeOn(grades, today);
-  const elsewhere = (c: Claim) => gradeOn(grades, c.date) !== now && rateOf(rates, gradeOn(grades, c.date), c.date) !== undefined;
+  const elsewhere = (c: Claim) => {
+    const grade = gradeOn(grades, c.date);
+    return rateOf(rates, grade, c.date) !== undefined
+      && (grade !== now || (today !== undefined && endsBefore(rates, grade, c.date, today)));
+  };
   if (rateOf(rates, now, today) === undefined && !mine.some((c) => fixed(c) || elsewhere(c))) {
     return NA;
   }

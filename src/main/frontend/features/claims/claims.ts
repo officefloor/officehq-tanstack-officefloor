@@ -33,6 +33,8 @@ export type Claim = {
   stated: boolean;
   /** The figure the claim was bound to; null when not bound, or bound while it had none. */
   statedDue: string | null;
+  /** Whether the statement bound the claim to n/a: the rate that would apply to it had ended (its to-date). */
+  statedNa: boolean;
   /** The number of the settled claim a correction (a negative amount) corrects; null for any other claim. */
   corrects: string | null;
   /** The date (yyyy-MM-dd) its live figures round by: its own, or for a correction that of the claim it corrects. */
@@ -52,8 +54,8 @@ export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING
 /** Only OPEN, PENDING and SETTLED claims count toward claimed and the totals. */
 export const counts = (c: Claim) => isOpen(c) || c.status === 'SETTLED';
 
-/** Whether the claim keeps the figure its person's last statement bound it to: not while PENDING. */
-export const isBound = (c: Claim) => c.stated && c.statedDue !== null && c.status !== 'PENDING';
+/** Whether the claim keeps the figure (or n/a) its person's last statement bound it to: not while PENDING. */
+export const isBound = (c: Claim) => c.stated && (c.statedDue !== null || c.statedNa) && c.status !== 'PENDING';
 
 /** These claims less the OPEN (or PENDING) claims dated within one of their person's holds, which
  *  count in no live total, unless a statement bound them. */

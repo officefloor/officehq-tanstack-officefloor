@@ -43,12 +43,18 @@ public class TakeStatement {
                 if (figure != null) {
                     total = total.add(claim.getSettledDue() != null ? figure : figure.add(lateness.charge(claim, figure)));
                 }
-                // A figure at a grade other than the one in force today does not hang on today's grade's rate.
+                // A figure at a grade other than the one in force today, or at a rate that ended before
+                // today, does not hang on today's grade's rate.
                 fixed |= claim.getSettledDue() != null || claim.isBound()
-                        || (figure != null && !person.gradeOn(claim.getDate()).equals(person.gradeOn(today)));
+                        || (figure != null && (!person.gradeOn(claim.getDate()).equals(person.gradeOn(today))
+                                || rates.endsBefore(sheetId, person.gradeOn(claim.getDate()), claim.getDate(), today)));
             }
+            // A claim whose rate ended before its date is bound to n/a, so a later rate leaves it so.
+            boolean na = counts && figure == null && (claim.isBound()
+                    || (claim.getSettledDue() == null && rates.ended(sheetId, person.gradeOn(claim.getDate()), claim.getDate())));
             claim.setStated(counts);
             claim.setStatedDue(figure);
+            claim.setStatedNa(na);
             claims.bind(claim);
         }
         boolean na = rates.find(sheetId, person.gradeOn(today), today) == null && !fixed;

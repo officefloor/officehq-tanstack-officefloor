@@ -8,8 +8,9 @@ import { GRADES } from '../people/people';
 import { useSheetToday } from '../sheet/sheet';
 import { NA, type Rate, rateOf, ratesKey, useRates } from './rates';
 
-// The rate in force for each grade on the sheet's today, every rate with the date it applies from,
-// and the form that sets one (a blank from-date applies from the beginning of time).
+// The rate in force for each grade on the sheet's today, every rate with the dates it applies from and
+// through, and the form that sets one (a blank from-date applies from the beginning of time, a blank
+// to-date has no end).
 function Rates() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -18,15 +19,17 @@ function Rates() {
   const [grade, setGrade] = useState<string>('A');
   const [pct, setPct] = useState('');
   const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const queryClient = useQueryClient();
 
   const save = useMutation({
-    mutationFn: (r: { grade: string; pct: string; from: string }) =>
+    mutationFn: (r: { grade: string; pct: string; from: string; to: string }) =>
       postJson<Rate>(`/api/sheets/${encodeURIComponent(sheet)}/rates`, { ...r, user }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ratesKey(sheet) });
       setPct('');
       setFrom('');
+      setTo('');
     },
   });
   const submit = useSubmitOnce(save);
@@ -55,6 +58,7 @@ function Rates() {
           <tr>
             <th>Grade</th>
             <th>From</th>
+            <th>To</th>
             <th>Rate %</th>
           </tr>
         </thead>
@@ -63,6 +67,7 @@ function Rates() {
             <tr key={`${r.grade}-${r.from ?? 'start'}`} data-testid={`rate-row-${r.grade}-${r.from ?? 'start'}`}>
               <td>{r.grade}</td>
               <td data-testid="rate-from">{r.from ?? ''}</td>
+              <td data-testid="rate-to">{r.to ?? ''}</td>
               <td data-testid="rate-pct">{r.pct}</td>
             </tr>
           ))}
@@ -72,7 +77,7 @@ function Rates() {
         data-testid="rate-form"
         onSubmit={(e) => {
           e.preventDefault();
-          submit({ grade, pct, from });
+          submit({ grade, pct, from, to });
         }}
       >
         <select
@@ -105,6 +110,15 @@ function Rates() {
           value={from}
           onChange={(e) => {
             setFrom(e.target.value);
+            save.reset();
+          }}
+        />
+        <input
+          data-testid="rate-form-to"
+          placeholder="To (yyyy-mm-dd)"
+          value={to}
+          onChange={(e) => {
+            setTo(e.target.value);
             save.reset();
           }}
         />

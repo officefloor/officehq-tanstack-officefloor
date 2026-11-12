@@ -23,13 +23,21 @@ public class ValidateRate {
         if (!PCT.matcher(pct).matches()) {
             throw new InvalidSheetException("The rate must be a percent of 0.00 or more with up to two decimals");
         }
-        String fromText = request.from() == null ? "" : request.from().trim();
-        LocalDate from;
-        try {
-            from = fromText.isEmpty() ? null : LocalDate.parse(fromText);
-        } catch (DateTimeParseException e) {
-            throw new InvalidSheetException("Not a date: " + fromText);
+        LocalDate from = date(request.from());
+        LocalDate to = date(request.to());
+        if (to != null && from != null && to.isBefore(from)) {
+            throw new InvalidSheetException("The to-date must not be before the from-date");
         }
-        body.set(new RateInput(request.grade(), new BigDecimal(pct).setScale(2), from, request.user()));
+        body.set(new RateInput(request.grade(), new BigDecimal(pct).setScale(2), from, to, request.user()));
+    }
+
+    /** The date (yyyy-MM-dd) of the text, null when blank. */
+    private static LocalDate date(String value) throws InvalidSheetException {
+        String text = value == null ? "" : value.trim();
+        try {
+            return text.isEmpty() ? null : LocalDate.parse(text);
+        } catch (DateTimeParseException e) {
+            throw new InvalidSheetException("Not a date: " + text);
+        }
     }
 }
