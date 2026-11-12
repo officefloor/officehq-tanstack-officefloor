@@ -230,8 +230,36 @@ export function personTagged(
   floor: Floor,
   late?: Late,
 ): string {
+  return personDueWhere(claims, (c) => c.tags.includes(tag), rates, grades, today, floor, late);
+}
+
+/** A person's due in a calendar month (yyyy-mm): the sum of the dues (skipping n/a) of their claims that
+ *  count dated in it; 0.00 when their due-total is n/a. */
+export function personMonthDue(
+  claims: Claim[],
+  month: string,
+  rates: Rate[] | undefined,
+  grades: Grades,
+  today: string | undefined,
+  floor: Floor,
+  late?: Late,
+): string {
+  return personDueWhere(claims, (c) => c.date.slice(0, 7) === month, rates, grades, today, floor, late);
+}
+
+/** The sum of the dues (skipping n/a) of a person's claims that count that `keep` picks; 0.00 when their
+ *  due-total is n/a. */
+function personDueWhere(
+  claims: Claim[],
+  keep: (c: Claim) => boolean,
+  rates: Rate[] | undefined,
+  grades: Grades,
+  today: string | undefined,
+  floor: Floor,
+  late?: Late,
+): string {
   if (uncappedDue(claims, rates, grades, today, floor, late) === NA) return format(0n);
-  return dueTotal(claims.filter((c) => counts(c) && c.tags.includes(tag)).map((c) => claimDue(c, rates, grades, floor, late)));
+  return dueTotal(claims.filter((c) => counts(c) && keep(c)).map((c) => claimDue(c, rates, grades, floor, late)));
 }
 
 /** A preview of a candidate percent for a grade: of these people's OPEN and PENDING claims whose person
