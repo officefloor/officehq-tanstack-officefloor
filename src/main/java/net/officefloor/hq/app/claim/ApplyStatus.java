@@ -14,8 +14,9 @@ import net.officefloor.hq.app.voidreason.VoidReasonStore;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
-/** Moves the claim to the new status, refusing a change its current status does not allow. Opening
- *  gives the claim its next number (see {@link Numbering}) and records who opened it; a voided claim keeps its number, which is never reused. Settling fixes its due at its person's
+/** Moves the claim to the new status, refusing a change its current status does not allow.  Opening
+ *  records who opened it; settling (or a steward's approval) gives a claim that has none its next number (see {@link Numbering}),
+ *  and a voided claim keeps the number it has, which is never reused. Settling fixes its due at its person's
  *  grade rate in force on the claim's date, rounded as the sheet's policy date has it (none when no rate of the grade applies then),
  *  or at the figure its person's last statement bound it to, plus the late charge it has then, and at least the sheet's floor (frozen in).
  *  A clerk's settle above the clerk limit makes it PENDING instead (see {@link CheckClerkLimit}); a steward's
@@ -23,7 +24,7 @@ import net.officefloor.plugin.variable.Val;
  *  it to, if any), and a rejection moves it back to OPEN, still bound by that statement if it included it.
  *  The user who opened a claim, or who last edited it, may not settle or approve it, and a claim deferred on the sheet's today may not be settled.
  *  Opening a DRAFT is refused while its person already has as many OPEN or PENDING claims in its period as the period's cap.
- *  A claim opened to REVIEW records who opened it but takes no number until a steward's review makes it OPEN.
+ *  A claim opened to REVIEW records who opened it.
  *  While the sheet has void reasons, a void needs one of them (the input's reason), kept on the claim. */
 public class ApplyStatus {
     public void apply(@Val StatusInput input, @Val StatusMove move, @Val Claim claim, ClaimStore store, PersonStore people,
@@ -80,7 +81,7 @@ public class ApplyStatus {
         if (to == ClaimStatus.VOID) {
             claim.setVoidReason(voidReason);
         }
-        if ((from == ClaimStatus.DRAFT || from == ClaimStatus.REVIEW) && to == ClaimStatus.OPEN) {
+        if (to == ClaimStatus.SETTLED && claim.getNumber() == null) {
             claim.setNumber(Numbering.next(claim.getSheetId(), claim.getDueBy(), store, settings, sheets, periods));
         }
         if (from == ClaimStatus.DRAFT && (to == ClaimStatus.OPEN || to == ClaimStatus.REVIEW)) {

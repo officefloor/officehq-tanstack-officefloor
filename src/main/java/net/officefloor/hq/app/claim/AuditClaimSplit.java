@@ -8,7 +8,7 @@ import net.officefloor.hq.app.rollup.RollupService;
 import net.officefloor.plugin.variable.Val;
 
 /** Records a stored split: CLAIM_SPLIT sheet=<id> by=<user> person=<name> amount=<remaining 0.00>
- *  date=<yyyy-mm-dd> number=<n> into=<new number>, then CLAIM_OPENED for the new claim as an opening
+ *  date=<yyyy-mm-dd>, then number=<n> when it has one, then into=<new number, blank when none>, then CLAIM_OPENED for the new claim as an opening
  *  records it, then how the split moved the figures. */
 public class AuditClaimSplit {
     public void audit(@Val SplitInput input, @Val Claim claim, @Val Split split, @Val Rollup before, PersonStore people,
@@ -17,10 +17,11 @@ public class AuditClaimSplit {
         String who = " sheet=" + claim.getSheetId() + " by=" + input.user() + " person=" + person.getName();
         ClaimResponse shown = ClaimResponse.from(claim);
         audit.record("CLAIM_SPLIT" + who + " amount=" + shown.amount() + " date=" + shown.date()
-                + " number=" + claim.getNumber() + " into=" + split.into().getNumber());
+                + (claim.getNumber() == null ? "" : " number=" + claim.getNumber())
+                + " into=" + (split.into().getNumber() == null ? "" : split.into().getNumber()));
         ClaimResponse into = ClaimResponse.from(split.into());
         audit.record(ClaimStatus.OPEN.event() + who + " amount=" + into.amount() + " date=" + into.date()
-                + " number=" + split.into().getNumber());
+                + (split.into().getNumber() == null ? "" : " number=" + split.into().getNumber()));
         rollups.record(claim.getSheetId(), input.user(), before);
     }
 }

@@ -80,9 +80,6 @@ public class OpenClaims {
                 continue;
             }
             claim.setStatus(to);
-            if (to == ClaimStatus.OPEN) {
-                claim.setNumber(Numbering.next(sheet, claim.getDueBy(), store, settings, sheets, periods));
-            }
             claim.setOpenedBy(input.user());
             store.save(claim);
             if (to == ClaimStatus.REVIEW) {
@@ -93,7 +90,7 @@ public class OpenClaims {
             ClaimResponse shown = ClaimResponse.from(claim);
             audit.record(to.event() + " sheet=" + sheet + " by=" + input.user() + " person="
                     + (person == null ? "" : person.getName()) + " amount=" + shown.amount() + " date=" + shown.date()
-                    + (to == ClaimStatus.OPEN ? " number=" + claim.getNumber() : ""));
+                    + (claim.getNumber() == null ? "" : " number=" + claim.getNumber()));
             rollups.record(sheet, input.user(), before);
             opened++;
         }

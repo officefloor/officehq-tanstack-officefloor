@@ -6,7 +6,7 @@ import net.officefloor.hq.app.period.PeriodStore;
 import net.officefloor.hq.app.setting.SettingStore;
 import net.officefloor.hq.app.sheet.SheetStore;
 
-/** The number a claim receives when opened. While the sheet's period-numbering-from is set and the
+/** The number a claim receives when settled or approved. While the sheet's period-numbering-from is set and the
  *  sheet's today is on or after it, the claim is numbered within the period its due-by falls in,
  *  <period name>-<n> counting from 1 in each period, or X-<n> in its own sequence when it falls in
  *  none. Otherwise it takes the next sheet-wide number of the fiscal year its due-by falls in (by the
