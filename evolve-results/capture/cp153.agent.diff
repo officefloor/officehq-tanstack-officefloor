@@ -1,0 +1,189 @@
+diff --git a/src/main/frontend/features/rates/form.slot.tsx b/src/main/frontend/features/rates/form.slot.tsx
+index 43bd4086a..6d9ec19a4 100644
+--- a/src/main/frontend/features/rates/form.slot.tsx
++++ b/src/main/frontend/features/rates/form.slot.tsx
+@@ -60,6 +60,7 @@ function Rates() {
+             <th>From</th>
+             <th>To</th>
+             <th>Rate %</th>
++            <th>Versions</th>
+           </tr>
+         </thead>
+         <tbody>
+@@ -69,6 +70,7 @@ function Rates() {
+               <td data-testid="rate-from">{r.from ?? ''}</td>
+               <td data-testid="rate-to">{r.to ?? ''}</td>
+               <td data-testid="rate-pct">{r.pct}</td>
++              <td data-testid="rate-version">{r.version ?? 1}</td>
+             </tr>
+           ))}
+         </tbody>
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 2aadc7916..f655cd49f 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -9,8 +9,9 @@ import { type Grades, gradeOn } from '../people/people';
+  *  from, null for from the beginning of time; `to` the date it applies through, null for no end. A
+  *  grade may have several; one with no rate has none. `level` is the sheet it is on: 0 (or absent) for the
+  *  sheet's own, 1 for its parent's, and so on up; a grade with no rate in force on a date on the sheet takes
+- *  the first level up that has one. */
+-export type Rate = { grade: string; pct: string; from: string | null; to: string | null; level?: number };
++ *  the first level up that has one. `version` is how many versions it has; `pct` is the newest's, the one in
++ *  force. */
++export type Rate = { grade: string; pct: string; from: string | null; to: string | null; level?: number; version?: number };
+ 
+ /** The rates of each level, the sheet's own first. */
+ function levels(rates: Rate[] | undefined): Rate[][] {
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateResponse.java b/src/main/java/net/officefloor/hq/app/rate/RateResponse.java
+index 9d35b2ebf..cf277c816 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateResponse.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateResponse.java
+@@ -6,14 +6,14 @@ import java.time.LocalDate;
+ /** A grade's rate as the front end reads it: the percent with two decimals and the date (yyyy-MM-dd)
+  *  it applies from, null when it applies from the beginning of time; and the date it applies through,
+  *  null when it has no end; and the level of the sheet it is on: 0 for the sheet's own, 1 for its parent's,
+- *  and so on up. */
+-public record RateResponse(String grade, String pct, String from, String to, int level) {
+-    public static RateResponse of(String grade, BigDecimal pct, LocalDate from, LocalDate to) {
+-        return of(grade, pct, from, to, 0);
++ *  and so on up; and how many versions it has (the newest is the one shown). */
++public record RateResponse(String grade, String pct, String from, String to, int level, int version) {
++    public static RateResponse of(String grade, BigDecimal pct, LocalDate from, LocalDate to, int version) {
++        return of(grade, pct, from, to, 0, version);
+     }
+ 
+-    public static RateResponse of(String grade, BigDecimal pct, LocalDate from, LocalDate to, int level) {
++    public static RateResponse of(String grade, BigDecimal pct, LocalDate from, LocalDate to, int level, int version) {
+         return new RateResponse(grade, pct.setScale(2).toPlainString(), from == null ? null : from.toString(),
+-                to == null ? null : to.toString(), level);
++                to == null ? null : to.toString(), level, version);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateStore.java b/src/main/java/net/officefloor/hq/app/rate/RateStore.java
+index be3e2f4f5..a2570e620 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateStore.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateStore.java
+@@ -9,7 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+ 
+-/** The rates for each grade, kept per sheet, each applying from its from-date through its to-date
++/** The rates for each grade, kept per sheet as versions (see {@link #set}), each applying from its from-date through its to-date
+  *  (if it has one). A rate with no from-date applies from the beginning of time (stored as
+  *  {@link #START}). A grade with no rate is absent. When a grade has no rate in force on a date on a
+  *  sheet, its parent sheet's (the setting {@code parent}) in force then is used, then the parent's parent,
+@@ -68,11 +68,11 @@ public class RateStore {
+         List<String> chain = chain(sheetId);
+         for (int level = 0; level < chain.size(); level++) {
+             int at = level;
+-            all.addAll(jdbc.query("SELECT grade, pct, from_date, to_date FROM " + rates + " WHERE sheet_id = ? ORDER BY grade, from_date",
++            all.addAll(jdbc.query("SELECT grade, pct, from_date, to_date, version FROM " + rates + " WHERE sheet_id = ? ORDER BY grade, from_date",
+                     (rs, i) -> {
+                         LocalDate from = rs.getObject("from_date", LocalDate.class);
+                         return RateResponse.of(rs.getString("grade"), rs.getBigDecimal("pct"),
+-                                START.equals(from) ? null : from, rs.getObject("to_date", LocalDate.class), at);
++                                START.equals(from) ? null : from, rs.getObject("to_date", LocalDate.class), at, rs.getInt("version"));
+                     }, chain.get(level)));
+         }
+         return all;
+@@ -167,9 +167,22 @@ public class RateStore {
+     }
+ 
+     /** Sets the grade's rate from the date (null for from the beginning of time) through the to-date
+-     *  (null for no end), replacing any there. */
++     *  (null for no end). When the grade and from-date already have a rate, the value it replaces is kept as an
++     *  older version and this is added as the newest, the one in force. */
+     public void set(String sheetId, String grade, LocalDate from, LocalDate to, BigDecimal pct) {
+-        jdbc.update("MERGE INTO rate (sheet_id, grade, from_date, to_date, pct) KEY (sheet_id, grade, from_date) VALUES (?, ?, ?, ?, ?)",
+-                sheetId, grade, from == null ? START : from, to, pct);
++        LocalDate at = from == null ? START : from;
++        int version = version(sheetId, grade, from) + 1;
++        jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, pct, to_date) VALUES (?, ?, ?, ?, ?, ?)",
++                sheetId, grade, at, version, pct, to);
++        jdbc.update("MERGE INTO rate (sheet_id, grade, from_date, to_date, pct, version) KEY (sheet_id, grade, from_date) VALUES (?, ?, ?, ?, ?, ?)",
++                sheetId, grade, at, to, pct, version);
++    }
++
++    /** How many versions the sheet's rate of the grade from the date (null for from the beginning of time)
++     *  has; 0 when it has none. */
++    public int version(String sheetId, String grade, LocalDate from) {
++        Integer found = jdbc.queryForObject("SELECT MAX(version) FROM rate_version WHERE sheet_id = ? AND grade = ? AND from_date = ?",
++                Integer.class, sheetId, grade, from == null ? START : from);
++        return found == null ? 0 : found;
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RespondWithRate.java b/src/main/java/net/officefloor/hq/app/rate/RespondWithRate.java
+index f9ddf5c2b..163f9458e 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RespondWithRate.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RespondWithRate.java
+@@ -2,9 +2,12 @@ package net.officefloor.hq.app.rate;
+ 
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
+ 
+ public class RespondWithRate {
+-    public void respond(@Val RateInput rate, ObjectResponse<RateResponse> response) {
+-        response.send(RateResponse.of(rate.grade(), rate.pct(), rate.from(), rate.to()));
++    public void respond(@PathVariable("sheetId") String sheetId, @Val RateInput rate, RateStore store,
++            ObjectResponse<RateResponse> response) {
++        response.send(RateResponse.of(rate.grade(), rate.pct(), rate.from(), rate.to(),
++                store.version(sheetId.trim(), rate.grade(), rate.from())));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloneStore.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloneStore.java
+index b3a5c312a..0451a453f 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetCloneStore.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloneStore.java
+@@ -63,8 +63,10 @@ public class SheetCloneStore {
+                 + "SELECT ?, setting_key, from_date, setting_value FROM sheet_setting_from WHERE sheet_id = ?", to, from);
+         jdbc.update("INSERT INTO sheet_role (sheet_id, user_name, role) "
+                 + "SELECT ?, user_name, role FROM sheet_role WHERE sheet_id = ?", to, from);
+-        jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date) "
+-                + "SELECT ?, grade, pct, from_date, to_date FROM rate WHERE sheet_id = ?", to, from);
++        jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date, version) "
++                + "SELECT ?, grade, pct, from_date, to_date, version FROM rate WHERE sheet_id = ?", to, from);
++        jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, pct, to_date) "
++                + "SELECT ?, grade, from_date, version, pct, to_date FROM rate_version WHERE sheet_id = ?", to, from);
+         jdbc.update("INSERT INTO holiday (sheet_id, holiday_date) "
+                 + "SELECT ?, holiday_date FROM holiday WHERE sheet_id = ? ORDER BY id", to, from);
+         jdbc.update("INSERT INTO void_reason (sheet_id, reason) "
+diff --git a/src/main/resources/db/migration/V70__rate_versions.sql b/src/main/resources/db/migration/V70__rate_versions.sql
+new file mode 100644
+index 000000000..8fa9c1a22
+--- /dev/null
++++ b/src/main/resources/db/migration/V70__rate_versions.sql
+@@ -0,0 +1,22 @@
++-- A rate is kept as versions: setting a rate for a grade and from-date that already exist keeps the value it
++-- replaces as an older version in rate_version and adds a new one. The rate row holds the newest version (the
++-- one in force) and its number (version), which counts its versions. Kept in rate_hist too; the history
++-- trigger is set again afterwards, as in V69__period_cap.sql.
++DROP TRIGGER rate_history;
++ALTER TABLE rate ADD COLUMN version INT DEFAULT 1 NOT NULL;
++ALTER TABLE rate_hist ADD COLUMN version INT DEFAULT 1 NOT NULL;
++CREATE TRIGGER rate_history AFTER INSERT, UPDATE, DELETE ON rate FOR EACH ROW
++    CALL 'net.officefloor.hq.app.history.HistoryTrigger';
++
++-- Every version of a rate, numbered from 1 in the order set; the newest is the one in the rate table.
++CREATE TABLE rate_version (
++    sheet_id  VARCHAR(255)   NOT NULL,
++    grade     VARCHAR(1)     NOT NULL,
++    from_date DATE           NOT NULL,
++    version   INT            NOT NULL,
++    pct       DECIMAL(19, 2) NOT NULL,
++    to_date   DATE,
++    PRIMARY KEY (sheet_id, grade, from_date, version)
++);
++INSERT INTO rate_version (sheet_id, grade, from_date, version, pct, to_date)
++    SELECT sheet_id, grade, from_date, 1, pct, to_date FROM rate;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.POST.yml
+index 2a1678bfb..186c82dba 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.POST.yml
+@@ -1,5 +1,5 @@
+ # POST /api/sheets/{sheetId}/rates — set a grade's rate from a date (body: {grade, pct, from, to, user};
+-# a blank from applies from the beginning of time; an existing grade and from-date is replaced).
++# a blank from applies from the beginning of time; an existing grade and from-date keeps the value it replaces as an older version and adds a new one).
+ # A blank to has no end. A from or to that is not a date (yyyy-MM-dd), or a to before the from, is
+ # refused (400). A grade other
+ # than A, B or C, or a pct that is not a number of 0.00 or more with up to two decimals, is refused
