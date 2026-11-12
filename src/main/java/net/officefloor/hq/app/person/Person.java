@@ -1,14 +1,16 @@
 package net.officefloor.hq.app.person;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.TreeMap;
 
 /** A person on a sheet. {@code grades} are their grades (each one of A, B or C) by the date each applies
  *  from, the first from {@link #START} (the beginning of time); {@code version} moves on with each stored edit;
- *  {@code retiredFrom} is the date they are retired from (null while not retired); {@code held} whether
- *  they are on hold, when their OPEN claims count in no live total. */
+ *  {@code retiredFrom} is the date they are retired from (null while not retired); {@code holds} their holds,
+ *  oldest first: their OPEN claims dated within one count in no live total unless a statement bound them. */
 public class Person {
     /** The from-date of a person's first grade: the beginning of time. */
     public static final LocalDate START = LocalDate.of(1, 1, 1);
@@ -19,7 +21,7 @@ public class Person {
     private final NavigableMap<LocalDate, String> grades;
     private long version;
     private LocalDate retiredFrom;
-    private boolean held;
+    private final List<Hold> holds = new ArrayList<>();
     private LocalDate recordFrom;
 
     public Person(long id, String sheetId, String name, NavigableMap<LocalDate, String> grades, long version) {
@@ -31,10 +33,10 @@ public class Person {
     }
 
     public Person(long id, String sheetId, String name, NavigableMap<LocalDate, String> grades, long version,
-            LocalDate retiredFrom, boolean held) {
+            LocalDate retiredFrom, List<Hold> holds) {
         this(id, sheetId, name, grades, version);
         this.retiredFrom = retiredFrom;
-        this.held = held;
+        this.holds.addAll(holds);
     }
 
     public long getId() { return id; }
@@ -53,8 +55,13 @@ public class Person {
     public LocalDate getRetiredFrom() { return retiredFrom; }
     /** Retired as soon as a date is set, whatever the date. */
     public boolean isRetired() { return retiredFrom != null; }
-    public boolean isHeld() { return held; }
-    public void setHeld(boolean held) { this.held = held; }
+    /** Whether the person has any hold, whatever its dates. */
+    public boolean isHeld() { return !holds.isEmpty(); }
+    /** Their holds, oldest first. */
+    public List<Hold> getHolds() { return holds; }
+    /** Whether a hold of theirs covers the date. */
+    public boolean heldOn(LocalDate date) { return holds.stream().anyMatch(h -> h.covers(date)); }
+    public void addHold(Hold hold) { holds.add(hold); }
     public void setName(String name) { this.name = name; }
     /** Records the grade from the date at the next save, keeping the others. */
     public void recordGrade(LocalDate from, String grade) {

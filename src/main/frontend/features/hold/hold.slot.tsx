@@ -1,3 +1,4 @@
+import { type ChangeEvent, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, postJson } from '../../api/http';
 import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
@@ -8,31 +9,50 @@ function HoldHead() {
   return <th>Hold</th>;
 }
 
-// Whether the person is on hold, and the button that puts them on it or takes them off it. While
-// held, their OPEN claims count in no live total. A refused toggle shows its error until the next.
+// Whether the person has any hold, a line for each of their holds, and the dates and button that add
+// one (a blank from-date takes the sheet's today, a blank to-date has no end). Their OPEN claims dated
+// within a hold count in no live total unless a statement bound them. A refused hold shows its error
+// until the dates are changed or the next is tried.
 function PersonHold({ person }: { person: Person }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
+  const [fields, setFields] = useState({ from: '', to: '' });
   const queryClient = useQueryClient();
 
   const hold = useMutation({
-    mutationFn: () => postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/hold`, { user }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+    mutationFn: (dates: { from: string; to: string }) =>
+      postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/hold`, { ...dates, user }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
+      setFields({ from: '', to: '' });
+    },
   });
+
+  const set = (k: 'from' | 'to') => (e: ChangeEvent<HTMLInputElement>) => {
+    hold.reset();
+    setFields((f) => ({ ...f, [k]: e.target.value }));
+  };
 
   return (
     <td>
-      <span data-testid="person-hold">{person.held ? 'yes' : 'no'}</span>{' '}
+      <span data-testid="person-hold">{person.held ? 'yes' : 'no'}</span>
+      {person.holds.map((h, i) => (
+        <div key={i} data-testid="person-hold-line">
+          {h.from} – {h.to ?? 'open'}
+        </div>
+      ))}
+      <input type="date" data-testid="person-hold-from" aria-label="Hold from" value={fields.from} onChange={set('from')} />
+      <input type="date" data-testid="person-hold-to" aria-label="Hold to" value={fields.to} onChange={set('to')} />
       <button
         type="button"
         data-testid="person-hold-toggle"
         disabled={hold.isPending}
         onClick={() => {
           hold.reset();
-          hold.mutate();
+          hold.mutate(fields);
         }}
       >
-        {person.held ? 'Release' : 'Hold'}
+        Hold
       </button>
       {hold.isError && (
         <span data-testid="person-error" role="alert">

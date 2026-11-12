@@ -7,7 +7,8 @@ import { sheetKey } from '../sheet/sheet';
  *  `statementCount` is how many statements were taken of them; `statedTotal` (two decimals, or n/a)
  *  and `statementDate` (yyyy-MM-dd) are the last one's, null when none was taken. `retired` is set
  *  as soon as a `retiredFrom` date (yyyy-MM-dd, null when not retired) is, whatever the date.
- *  While `held`, their OPEN claims count in no live total; their SETTLED ones still do.
+ *  `holds` are their holds, oldest first; `held` whether they have any. Their OPEN claims dated within
+ *  a hold count in no live total unless a statement bound them; their SETTLED ones still do.
  *  `patronIds` are the ids of the other people on the sheet they named as their patrons.
  *  `grade` is the grade in force on the sheet's today; `grades` every grade with the date it applies from. */
 export type Person = {
@@ -22,8 +23,15 @@ export type Person = {
   retired: boolean;
   retiredFrom: string | null;
   held: boolean;
+  holds: Hold[];
   patronIds: number[];
 };
+
+/** A hold from its from-date to its to-date (yyyy-MM-dd, both inclusive; null for no end). */
+export type Hold = { from: string; to: string | null };
+
+/** Whether the hold covers the date (yyyy-MM-dd). */
+export const covers = (h: Hold, date: string) => h.from <= date && (h.to === null || date <= h.to);
 
 export const GRADES = ['A', 'B', 'C'] as const;
 

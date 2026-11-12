@@ -130,10 +130,11 @@ public class RollupService {
         return policy != null ? policy : sheets.today(sheetId);
     }
 
-    /** Only OPEN, PENDING and SETTLED claims count, and a held person's OPEN or PENDING claims do not. */
-    private static boolean counts(Claim claim, Person person) {
+    /** Only OPEN, PENDING and SETTLED claims count, and an OPEN or PENDING claim dated within one of its
+     *  person's holds does not, unless a statement bound it. */
+    public static boolean counts(Claim claim, Person person) {
         return claim.getStatus() == ClaimStatus.SETTLED
-                || (claim.getStatus().isOpen() && !person.isHeld());
+                || (claim.getStatus().isOpen() && (claim.isStated() || !person.heldOn(claim.getDate())));
     }
 
     private static String shown(BigDecimal value) {

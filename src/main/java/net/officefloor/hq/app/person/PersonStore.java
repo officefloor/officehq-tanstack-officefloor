@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.person;
 
 import java.sql.PreparedStatement;
+import java.util.ArrayList;
 import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
@@ -33,11 +34,23 @@ public class PersonStore {
         return grades;
     }
 
+    /** The people's holds on the sheet (only the one person's when {@code personId} is given), by person, oldest first. */
+    private Map<Long, List<Hold>> holds(String sheetId, Long personId) {
+        Map<Long, List<Hold>> holds = new HashMap<>();
+        jdbc.query("SELECT person_id, from_date, to_date FROM person_hold WHERE sheet_id = ?"
+                + (personId == null ? "" : " AND person_id = " + personId) + " ORDER BY id", rs -> {
+                    holds.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(new Hold(
+                            rs.getObject("from_date", LocalDate.class), rs.getObject("to_date", LocalDate.class)));
+                }, sheetId);
+        return holds;
+    }
+
     private List<Person> query(String sheetId, Long personId, String sql, Object... args) {
         Map<Long, NavigableMap<LocalDate, String>> grades = grades(sheetId, personId);
+        Map<Long, List<Hold>> holds = holds(sheetId, personId);
         RowMapper<Person> row = (rs, i) -> new Person(rs.getLong("id"), rs.getString("sheet_id"),
                 rs.getString("name"), grades.getOrDefault(rs.getLong("id"), new TreeMap<>()), rs.getLong("version"),
-                rs.getObject("retired_from", LocalDate.class), rs.getBoolean("held"));
+                rs.getObject("retired_from", LocalDate.class), holds.getOrDefault(rs.getLong("id"), List.of()));
         return jdbc.query(sql, row, args);
     }
 
@@ -108,10 +121,10 @@ public class PersonStore {
         person.setRetiredFrom(from);
     }
 
-    /** Puts the person on hold (true) or takes them off it (false). An edit of their name or grade leaves it as it is. */
-    public void hold(Person person, boolean held) {
-        jdbc.update("UPDATE person SET held = ? WHERE sheet_id = ? AND id = ?", held, person.getSheetId(),
-                person.getId());
-        person.setHeld(held);
+    /** Adds a hold to the person's holds. An edit of their name or grade leaves them as they are. */
+    public void hold(Person person, Hold hold) {
+        jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date) VALUES (?, ?, ?, ?)",
+                person.getSheetId(), person.getId(), hold.from(), hold.to());
+        person.addHold(hold);
     }
 }

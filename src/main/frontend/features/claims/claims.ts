@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { sheetKey } from '../sheet/sheet';
 import { asString, useSearchParam } from '../../url/useSearchParam';
+import { type Hold, covers } from '../people/people';
 
 /** PENDING: settled by a clerk above the clerk limit, awaiting a steward's approval; handled as OPEN,
  *  except that a statement does not bind it while it is PENDING. */
@@ -47,10 +48,11 @@ export const counts = (c: Claim) => isOpen(c) || c.status === 'SETTLED';
 /** Whether the claim keeps the figure its person's last statement bound it to: not while PENDING. */
 export const isBound = (c: Claim) => c.stated && c.statedDue !== null && c.status !== 'PENDING';
 
-/** These claims less the OPEN (or PENDING) claims of people on hold, which count in no live total. */
-export const live = (claims: Claim[], people: { id: number; held: boolean }[] | undefined) => {
-  const held = new Set((people ?? []).filter((p) => p.held).map((p) => p.id));
-  return claims.filter((c) => !(isOpen(c) && held.has(c.personId)));
+/** These claims less the OPEN (or PENDING) claims dated within one of their person's holds, which
+ *  count in no live total, unless a statement bound them. */
+export const live = (claims: Claim[], people: { id: number; holds: Hold[] }[] | undefined) => {
+  const holds = new Map((people ?? []).map((p) => [p.id, p.holds]));
+  return claims.filter((c) => !(isOpen(c) && !c.stated && (holds.get(c.personId) ?? []).some((h) => covers(h, c.date))));
 };
 
 /** Under the sheet's key, so loading the sheet again re-reads its claims. */

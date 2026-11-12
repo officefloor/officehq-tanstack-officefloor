@@ -4,12 +4,12 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimFigure;
-import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.ClaimStore;
 import net.officefloor.hq.app.claim.Lateness;
 import net.officefloor.hq.app.claim.Rounding;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rate.RateStore;
+import net.officefloor.hq.app.rollup.RollupService;
 import net.officefloor.hq.app.setting.SettingStore;
 import net.officefloor.hq.app.sheet.SheetStore;
 import net.officefloor.plugin.variable.Out;
@@ -33,9 +33,9 @@ public class TakeStatement {
         int counted = 0;
         // Locked, so a status change or another statement made at once waits for this one.
         for (Claim claim : claims.listForUpdate(sheetId, person.getId())) {
-            // A held person's OPEN (or PENDING) claims count in no live total, so a statement neither counts nor binds them.
-            boolean counts = claim.getStatus() == ClaimStatus.SETTLED
-                    || (claim.getStatus().isOpen() && !person.isHeld());
+            // An OPEN (or PENDING) claim dated within a hold counts in no live total unless a statement bound
+            // it, so a statement neither counts nor binds it; one it bound before stays counted.
+            boolean counts = RollupService.counts(claim, person);
             BigDecimal figure = null;
             if (counts) {
                 figure = ClaimFigure.of(claim, rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()), floor, rounding);
