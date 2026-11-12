@@ -1,0 +1,96 @@
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index f37184ebb..57f509496 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -8,7 +8,8 @@ import { type Grades, gradeOn } from '../people/people';
+ /** A grade's rate: `pct` is a percent with two decimals; `from` (yyyy-MM-dd) is the date it applies
+  *  from, null for from the beginning of time; `to` the date it applies through, null for no end. A
+  *  grade may have several; one with no rate has none. `level` is the sheet it is on: 0 (or absent) for the
+- *  sheet's own, 1 for its parent's, and so on up; a grade with no rate in force on a date on the sheet takes
++ *  sheet's own, 1 for its parent's, and so on up (then, on a cloned sheet, the sheet it was cloned from and up
++ *  its parents and source likewise); a grade with no rate in force on a date on the sheet takes
+  *  the first level up that has one. `version` is how many versions it has; `pct` is the newest's, the one in
+  *  force. `forward` is set on a forward-only rate (saved with a from-date on or after the sheet's today): when
+  *  it was saved, so it applies only to claims added after (see `ratesFor`); null or absent for one that applies
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RateStore.java b/src/main/java/net/officefloor/hq/app/rate/RateStore.java
+index dbd54a883..a470ea63d 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RateStore.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RateStore.java
+@@ -14,7 +14,8 @@ import org.springframework.stereotype.Repository;
+  *  (if it has one). A rate with no from-date applies from the beginning of time (stored as
+  *  {@link #START}). A grade with no rate is absent. When a grade has no rate in force on a date on a
+  *  sheet, its parent sheet's (the setting {@code parent}) in force then is used, then the parent's parent,
+- *  up to {@link #LEVELS} levels up.
++ *  up to {@link #LEVELS} levels up; then, on a sheet that was cloned, the
++ *  rates of the sheet it was cloned from, up its parents and its own source likewise (see {@link #chain}).
+  *  <p>A rate saved with a from-date on or after the sheet's today is forward-only: it takes the next
+  *  {@code change_seq} as its {@code forward_seq} and applies only to claims added after it (with a later
+  *  {@code added_seq}; see {@link #forClaim}). The rate in force (the rates panel, preview and calendar) is read
+@@ -72,23 +73,34 @@ public class RateStore {
+     }
+ 
+     /** The sheet, then its parent, its parent's parent, up to {@link #LEVELS} levels up (stopping at a sheet
+-     *  with no parent, or one already in the chain). The parents are those named now, or when the rates are
++     *  with no parent, or one already in the chain); then, when the sheet was cloned, the chain of the sheet it was
++     *  cloned from (its source), and so on up the sources. The parents are those named now, or when the rates are
+      *  read as of a date, then. */
+     public List<String> chain(String sheetId) {
+         List<String> chain = new ArrayList<>();
+-        chain.add(sheetId);
+-        for (int level = 0; level < LEVELS; level++) {
+-            List<String> found = jdbc.queryForList("SELECT setting_value FROM " + settings
+-                    + " WHERE sheet_id = ? AND setting_key = 'parent'", String.class, chain.get(chain.size() - 1));
+-            String parent = found.isEmpty() ? null : found.get(0);
+-            if (parent == null || chain.contains(parent)) {
+-                break;
++        for (String at = sheetId; at != null && !chain.contains(at); at = source(at)) {
++            chain.add(at);
++            String bottom = at;
++            for (int level = 0; level < LEVELS; level++) {
++                List<String> found = jdbc.queryForList("SELECT setting_value FROM " + settings
++                        + " WHERE sheet_id = ? AND setting_key = 'parent'", String.class, bottom);
++                String parent = found.isEmpty() ? null : found.get(0);
++                if (parent == null || chain.contains(parent)) {
++                    break;
++                }
++                chain.add(parent);
++                bottom = parent;
+             }
+-            chain.add(parent);
+         }
+         return chain;
+     }
+ 
++    /** The sheet the sheet was cloned from, or null when it was not cloned. */
++    private String source(String sheetId) {
++        List<String> found = jdbc.queryForList("SELECT source_id FROM sheet_source WHERE sheet_id = ?", String.class, sheetId);
++        return found.isEmpty() ? null : found.get(0);
++    }
++
+     /** Every rate on the sheet, by grade then from-date (level 0); then those of its parent sheets, each
+      *  with its level up. */
+     public List<RateResponse> list(String sheetId) {
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetCloneStore.java b/src/main/java/net/officefloor/hq/app/sheet/SheetCloneStore.java
+index ab826e9ba..3e126b9d7 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetCloneStore.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetCloneStore.java
+@@ -56,6 +56,7 @@ public class SheetCloneStore {
+         }
+         sheets.markLoaded(to);
+         sheets.setToday(to, sheets.today(from));
++        jdbc.update("INSERT INTO sheet_source (sheet_id, source_id) VALUES (?, ?)", to, from);
+ 
+         jdbc.update("INSERT INTO sheet_setting (sheet_id, setting_key, setting_value) "
+                 + "SELECT ?, setting_key, setting_value FROM sheet_setting WHERE sheet_id = ?", to, from);
+diff --git a/src/main/resources/db/migration/V86__sheet_source.sql b/src/main/resources/db/migration/V86__sheet_source.sql
+new file mode 100644
+index 000000000..4db7a5808
+--- /dev/null
++++ b/src/main/resources/db/migration/V86__sheet_source.sql
+@@ -0,0 +1,6 @@
++-- The sheet a sheet was cloned from (its source): a grade with no rate in force on a date on the sheet nor on
++-- its parents takes the source's (then up the source's parents and source). Not dated: a clone keeps its source.
++CREATE TABLE sheet_source (
++    sheet_id   VARCHAR(255) PRIMARY KEY,
++    source_id  VARCHAR(255) NOT NULL
++);
