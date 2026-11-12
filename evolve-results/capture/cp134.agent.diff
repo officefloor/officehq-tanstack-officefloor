@@ -1,0 +1,91 @@
+diff --git a/src/main/frontend/features/people/list.slot.tsx b/src/main/frontend/features/people/list.slot.tsx
+index ff10ee1b5..2b320d59b 100644
+--- a/src/main/frontend/features/people/list.slot.tsx
++++ b/src/main/frontend/features/people/list.slot.tsx
+@@ -1,7 +1,55 @@
+ import { HomeMain } from '../../slots/defs/homeMain';
+ import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
+ import { useCurrentSheet } from '../../session/session';
+-import { useEditingPerson, usePeople, useSelectedPeople, useShowRetired } from './people';
++import { usePersonDue } from '../rates/due.slot';
++import { type Person, useEditingPerson, usePeople, useSelectedPeople, useShowRetired } from './people';
++import { asString, useSearchParam } from '../../url/useSearchParam';
++
++const SORTS = ['added', 'name', 'grade', 'due-total'] as const;
++type Sort = (typeof SORTS)[number];
++
++/** What this screen sorts the people list by (`sortBy`; 'added' — list order — when none is set). It belongs
++ *  to the screen: other users' screens, the positions and everything that works in list order are unaffected. */
++const useSortBy = (): [Sort, (value: Sort) => void] => {
++  const [raw, setRaw] = useSearchParam('sortBy', asString);
++  return [(SORTS as readonly string[]).includes(raw) ? (raw as Sort) : 'added', (v) => setRaw(v === 'added' ? undefined : v)];
++};
++
++/** Names compare as the store compares them: trimmed and lower-cased, then as written. */
++const nameKey = (name: string) => name.trim().toLowerCase();
++const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
++
++/** The people sorted by the key; equal keys (and 'added') keep list order. A due-total of n/a sorts last. */
++function sorted(people: Person[], by: Sort, dueOf: (p: Person) => string): Person[] {
++  if (by === 'added') return people;
++  const compare = (a: Person, b: Person): number => {
++    if (by === 'name') return cmp(nameKey(a.name), nameKey(b.name)) || cmp(a.name, b.name);
++    if (by === 'grade') return cmp(a.grade, b.grade);
++    const da = Number(dueOf(a));
++    const db = Number(dueOf(b));
++    const na = Number.isNaN(da);
++    const nb = Number.isNaN(db);
++    if (na || nb) return Number(na) - Number(nb);
++    return da - db;
++  };
++  return people.map((p, i) => ({ p, i })).sort((x, y) => compare(x.p, y.p) || x.i - y.i).map((x) => x.p);
++}
++
++function SortBy() {
++  const [by, setBy] = useSortBy();
++  return (
++    <label>
++      Sort by{' '}
++      <select data-testid="sort-by" value={by} onChange={(e) => setBy(e.target.value as Sort)}>
++        {SORTS.map((s) => (
++          <option key={s} value={s}>
++            {s}
++          </option>
++        ))}
++      </select>
++    </label>
++  );
++}
+ 
+ // The sheet's people in list order (by their positions, see move.slot.tsx); retired people only while "show retired" is on.
+ function PeopleList() {
+@@ -10,8 +58,12 @@ function PeopleList() {
+   const people = usePeople(sheet);
+   const [showRetired] = useShowRetired();
+   const [selected, setSelected] = useSelectedPeople();
++  const [sortBy] = useSortBy();
++  const dueOf = usePersonDue(sheet);
+ 
+   return (
++    <>
++    <SortBy />
+     <table data-testid="people">
+       <thead>
+         <tr>
+@@ -27,7 +79,7 @@ function PeopleList() {
+         </tr>
+       </thead>
+       <tbody>
+-        {(people.data ?? []).filter((p) => showRetired || !p.retired).map((p) => (
++        {sorted(people.data ?? [], sortBy, dueOf).filter((p) => showRetired || !p.retired).map((p) => (
+           <tr key={p.id} data-testid={`person-row-${p.id}`}>
+             <td>
+               <input
+@@ -54,6 +106,7 @@ function PeopleList() {
+         ))}
+       </tbody>
+     </table>
++    </>
+   );
+ }
+ 
