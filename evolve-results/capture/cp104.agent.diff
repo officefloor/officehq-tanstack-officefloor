@@ -1,0 +1,102 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java b/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java
+index 1a2626b5a..a3d57710a 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyReassign.java
+@@ -1,13 +1,20 @@
+ package net.officefloor.hq.app.claim;
+ 
++import net.officefloor.hq.app.period.PeriodStore;
++import net.officefloor.hq.app.setting.SettingStore;
+ import net.officefloor.hq.app.sheet.InvalidSheetException;
++import net.officefloor.hq.app.sheet.SheetStore;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Moves the claim to its new person: it keeps its number and date, loses any figure a statement
+- *  bound it to, and is listed as their newest claim. */
++/** Moves the claim to its new person: it keeps its date, takes the next number in the sequence it would be
++ *  numbered in (its old one is never used again; a draft, having none, gets none), loses any figure a
++ *  statement bound it to, and is listed as their newest claim. */
+ public class ApplyReassign {
+-    public void apply(@Val Claim claim, @Val Reassignment reassignment, ClaimStore store) throws InvalidSheetException {
+-        if (!store.reassign(claim, reassignment.to().getId())) {
++    public void apply(@Val Claim claim, @Val Reassignment reassignment, ClaimStore store, SettingStore settings,
++            SheetStore sheets, PeriodStore periods) throws InvalidSheetException {
++        String number = claim.getNumber() == null ? null
++                : Numbering.next(claim.getSheetId(), claim.getDueBy(), store, settings, sheets, periods);
++        if (!store.reassign(claim, reassignment.to().getId(), number)) {
+             throw new InvalidSheetException("The claim has moved on");
+         }
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java
+index 961d8afb6..c0b32208c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java
+@@ -279,15 +279,18 @@ public class ClaimStore {
+         return added;
+     }
+ 
+-    /** Moves the stored DRAFT, OPEN or PENDING claim to the person, unbound from any statement figure and
+-     *  listed as their newest claim; false when it is no longer one of those (another user moved it on). */
+-    public boolean reassign(Claim claim, long personId) {
+-        boolean moved = jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, stated_na = FALSE, "
+-                + "listed = NEXT VALUE FOR claim_listed_seq WHERE sheet_id = ? AND id = ? AND status IN (?, ?, ?)",
+-                personId, claim.getSheetId(), claim.getId(), ClaimStatus.DRAFT.name(), ClaimStatus.OPEN.name(),
+-                ClaimStatus.PENDING.name()) == 1;
++    /** Moves the stored DRAFT, OPEN or PENDING claim to the person under {@code number} (null for a draft),
++     *  unbound from any statement figure and listed as their newest claim; false when it is no longer one of
++     *  those under the number it had (another user moved it on). */
++    public boolean reassign(Claim claim, long personId, String number) {
++        boolean moved = jdbc.update("UPDATE claim SET person_id = ?, number = ?, stated = FALSE, stated_due = NULL, "
++                + "stated_na = FALSE, listed = NEXT VALUE FOR claim_listed_seq "
++                + "WHERE sheet_id = ? AND id = ? AND status IN (?, ?, ?) AND number IS NOT DISTINCT FROM ?",
++                personId, number, claim.getSheetId(), claim.getId(), ClaimStatus.DRAFT.name(), ClaimStatus.OPEN.name(),
++                ClaimStatus.PENDING.name(), claim.getNumber()) == 1;
+         if (moved) {
+             claim.setPersonId(personId);
++            claim.setNumber(number);
+             claim.setStated(false);
+             claim.setStatedDue(null);
+             claim.setStatedNa(false);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ReassignClaims.java b/src/main/java/net/officefloor/hq/app/claim/ReassignClaims.java
+index 4eba16eeb..2942d55de 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ReassignClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ReassignClaims.java
+@@ -14,6 +14,7 @@ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.rollup.RollupService;
+ import net.officefloor.hq.app.setting.SettingStore;
+ import net.officefloor.hq.app.sheet.InvalidSheetException;
++import net.officefloor.hq.app.sheet.SheetStore;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
+@@ -25,7 +26,7 @@ import org.springframework.web.bind.annotation.PathVariable;
+ public class ReassignClaims {
+     public void reassign(@PathVariable("sheetId") String sheetId, @Val BulkReassignInput input, ClaimStore store,
+             PersonStore people, PeriodStore periods, SettingStore settings, RoleStore roles, RollupService rollups,
+-            Audit audit, Out<BulkReassignResult> result) {
++            SheetStore sheets, Audit audit, Out<BulkReassignResult> result) {
+         String sheet = sheetId.trim();
+         Map<Long, Integer> personOrder = new HashMap<>();
+         // A person's claims newest first, as listed: a claim moved to them is listed as their newest.
+@@ -56,7 +57,7 @@ public class ReassignClaims {
+                 new CheckClaimPeriod().check(claim, periods);
+                 Reassignment reassignment = CheckReassign.refuse(move, claim, roles, people, settings, true);
+                 Rollup before = rollups.snapshot(sheet);
+-                new ApplyReassign().apply(claim, reassignment, store);
++                new ApplyReassign().apply(claim, reassignment, store, settings, sheets, periods);
+                 new AuditClaimReassigned().audit(move, claim, reassignment, before, audit, rollups);
+                 reassigned++;
+             } catch (InvalidSheetException e) {
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reassign.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reassign.POST.yml
+index e95d8fa43..497e1bf67 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reassign.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reassign.POST.yml
+@@ -1,7 +1,7 @@
+ # POST /api/sheets/{sheetId}/claims/{claimId}/reassign — move a claim to another person on the sheet
+ # (body {to, user}, `to` the person's id). A role the sheet's permission matrix
+ # allows (perm-reassign; by default a steward) moves a claim, and only a DRAFT, OPEN or
+-# PENDING one that is not a correction; it keeps its number and date, loses any figure a statement
++# PENDING one that is not a correction; it keeps its date, takes the next number in its sequence (a draft none), loses any figure a statement
+ # bound it to, and is listed as its new person's newest claim. Refused (400) when the matrix does not
+ # allow the user's role, the claim is SETTLED or VOID, the claim or the person is not on the sheet, the person is
+ # the claim's own, the claim's due-by falls in a closed period, or its date is after the date the person is
