@@ -1,0 +1,87 @@
+diff --git a/src/main/frontend/features/periods/people.slot.tsx b/src/main/frontend/features/periods/people.slot.tsx
+index cf88a22e6..890eec7f8 100644
+--- a/src/main/frontend/features/periods/people.slot.tsx
++++ b/src/main/frontend/features/periods/people.slot.tsx
+@@ -1,3 +1,4 @@
++import { Fragment } from 'react';
+ import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
+ import { type Person } from '../people/people';
+ import { useCurrentSheet } from '../../session/session';
+@@ -6,18 +7,21 @@ import { useClaims } from '../claims/claims';
+ import { useRates } from '../rates/rates';
+ import { floorOf, useSettings } from '../settings/settings';
+ import { lateOf } from '../overdue/overdue';
+-import { personPeriodDue, usePeriods } from './periods';
++import { personPeriodCarried, personPeriodDue, usePeriods } from './periods';
+ import { useFigure } from '../locale/locale';
+ 
+ // For every period on the sheet, a person's due-total for it: live while the period is open, fixed
+-// when it was closed.
++// when it was closed; and the figure carried into it from earlier periods' claims still open at its end.
+ function PeriodHeads() {
+   const [sheet] = useCurrentSheet();
+   const periods = usePeriods(sheet);
+   return (
+     <>
+       {(periods.data ?? []).map((p) => (
+-        <th key={p.name}>{p.name} due</th>
++        <Fragment key={p.name}>
++          <th>{p.name} due</th>
++          <th>{p.name} carried</th>
++        </Fragment>
+       ))}
+     </>
+   );
+@@ -35,9 +39,14 @@ function PersonPeriods({ person }: { person: Person }) {
+   return (
+     <>
+       {(periods.data ?? []).map((p) => (
+-        <td key={p.name} data-testid={`person-period-${p.name}-due-total`}>
+-          {fig(personPeriodDue(p, person, claims.data, rates.data, floorOf(settings), late))}
+-        </td>
++        <Fragment key={p.name}>
++          <td data-testid={`person-period-${p.name}-due-total`}>
++            {fig(personPeriodDue(p, person, claims.data, rates.data, floorOf(settings), late))}
++          </td>
++          <td data-testid={`person-period-${p.name}-carried`}>
++            {fig(personPeriodCarried(p, periods.data, person, claims.data, rates.data, floorOf(settings), late))}
++          </td>
++        </Fragment>
+       ))}
+     </>
+   );
+diff --git a/src/main/frontend/features/periods/periods.ts b/src/main/frontend/features/periods/periods.ts
+index 68ddac138..78dec8f3f 100644
+--- a/src/main/frontend/features/periods/periods.ts
++++ b/src/main/frontend/features/periods/periods.ts
+@@ -88,6 +88,30 @@ export function personPeriodDue(
+   );
+ }
+ 
++/** A person's carried figure for a period: the sum of the figures (as shown now) of their claims that count
++ *  in it, whose due-by falls in a period ending before it starts, and that were still OPEN or PENDING at
++ *  its end by their status log, skipping n/a; 0.00 when nothing is carried. */
++export function personPeriodCarried(
++  period: Period,
++  periods: Period[] | undefined,
++  person: Person,
++  claims: Claim[] | undefined,
++  rates: Rate[] | undefined,
++  floor: Floor,
++  late: Late,
++): string {
++  const earlier = (periods ?? []).filter((p) => p.to < period.from);
++  return dueTotal(
++    (claims ?? [])
++      .filter((c) => c.personId === person.id && earlier.some((p) => contains(p, c.dueBy)))
++      .filter((c) => {
++        const status = statusAt(c, period.to);
++        return (status === 'OPEN' || status === 'PENDING') && countsInPeriod(c, period, person);
++      })
++      .map((c) => claimDue(c, rates, person.grades, floor, late)),
++  );
++}
++
+ /** A period's due-total as the list shows it: the sum of the people's due-totals for it. */
+ export function periodDue(
+   period: Period,
