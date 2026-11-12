@@ -10,7 +10,7 @@ import { useSettings } from '../settings/settings';
 import { periodOf, usePeriods } from '../periods/periods';
 import { useSheetToday } from '../sheet/sheet';
 import { dueBy, lateOf, overdue } from '../overdue/overdue';
-import { type Claim, type ClaimStatus, claimsKey, useClaims } from './claims';
+import { type Claim, type ClaimStatus, claimsKey, useClaims, useSelectedClaims } from './claims';
 
 type Fields = { amount: string; date: string; note: string; corrects: string };
 type StatusChange = { id: number; status: ClaimStatus };
@@ -34,6 +34,7 @@ function PersonClaims({ person }: { person: Person }) {
   const periods = usePeriods(sheet);
   const [fields, setFields] = useState<Fields>(EMPTY);
   const [editing, setEditing] = useState<number | undefined>();
+  const [selected, setSelected] = useSelectedClaims();
   const queryClient = useQueryClient();
   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
 
@@ -84,6 +85,13 @@ function PersonClaims({ person }: { person: Person }) {
           .filter((c) => c.personId === person.id)
           .map((c) => (
             <li key={c.id} data-testid={`claim-row-${c.id}`}>
+              <input
+                type="checkbox"
+                data-testid="claim-select"
+                aria-label="Select claim"
+                checked={selected.includes(c.id)}
+                onChange={(e) => setSelected(e.target.checked ? [...selected, c.id] : selected.filter((id) => id !== c.id))}
+              />{' '}
               <span data-testid="claim-number">{c.number ?? ''}</span>{' '}
               <span data-testid="claim-amount">{c.amount}</span>{' '}
               <span data-testid="claim-date">{c.date}</span>{' '}

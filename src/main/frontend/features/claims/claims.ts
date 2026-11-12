@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { sheetKey } from '../sheet/sheet';
+import { asString, useSearchParam } from '../../url/useSearchParam';
 
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 
@@ -58,4 +59,11 @@ const cents = (amount: string) => Math.round(Number(amount) * 100);
 /** The sum of the amounts of those of these claims that count, with two decimals. */
 export function claimed(claims: Claim[]): string {
   return (claims.filter(counts).reduce((sum, c) => sum + cents(c.amount), 0) / 100).toFixed(2);
+}
+
+/** The ids of the claims selected for a bulk action, kept in the URL (`selectedClaims`, comma separated). */
+export function useSelectedClaims(): [number[], (ids: number[]) => void] {
+  const [raw, setRaw] = useSearchParam('selectedClaims', asString);
+  const ids = raw.split(',').filter((s) => s !== '').map(Number).filter((n) => !Number.isNaN(n));
+  return [ids, (next) => setRaw(next.join(','))];
 }
