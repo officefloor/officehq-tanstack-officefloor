@@ -9,12 +9,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class CheckNameFree {
     public void check(@PathVariable("sheetId") String sheetId, @Val PersonRequest request, PersonStore store,
             SettingStore settings) throws DuplicateNameException, DuplicateContactException {
-        if (store.nameTaken(sheetId.trim(), request.name(), null)
-                || store.usedOn(settings.tree(sheetId.trim()), request.name())) {
-            throw new DuplicateNameException(request.name());
-        }
-        if (request.contact() != null && store.contactTaken(sheetId.trim(), request.contact(), null)) {
-            throw new DuplicateContactException(request.contact());
-        }
+        PersonRules.refuseTaken(sheetId, request, store, settings);
     }
 }
