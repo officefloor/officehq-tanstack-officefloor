@@ -14,7 +14,8 @@ import org.springframework.stereotype.Repository;
  *  (if it has one). A rate with no from-date applies from the beginning of time (stored as
  *  {@link #START}). A grade with no rate is absent. When a grade has no rate in force on a date on a
  *  sheet, its parent sheet's (the setting {@code parent}) in force then is used, then the parent's parent,
- *  up to {@link #LEVELS} levels up.
+ *  up to {@link #LEVELS} levels up; then, on a sheet that was cloned, the
+ *  rates of the sheet it was cloned from, up its parents and its own source likewise (see {@link #chain}).
  *  <p>A rate saved with a from-date on or after the sheet's today is forward-only: it takes the next
  *  {@code change_seq} as its {@code forward_seq} and applies only to claims added after it (with a later
  *  {@code added_seq}; see {@link #forClaim}). The rate in force (the rates panel, preview and calendar) is read
@@ -72,21 +73,32 @@ public class RateStore {
     }
 
     /** The sheet, then its parent, its parent's parent, up to {@link #LEVELS} levels up (stopping at a sheet
-     *  with no parent, or one already in the chain). The parents are those named now, or when the rates are
+     *  with no parent, or one already in the chain); then, when the sheet was cloned, the chain of the sheet it was
+     *  cloned from (its source), and so on up the sources. The parents are those named now, or when the rates are
      *  read as of a date, then. */
     public List<String> chain(String sheetId) {
         List<String> chain = new ArrayList<>();
-        chain.add(sheetId);
-        for (int level = 0; level < LEVELS; level++) {
-            List<String> found = jdbc.queryForList("SELECT setting_value FROM " + settings
-                    + " WHERE sheet_id = ? AND setting_key = 'parent'", String.class, chain.get(chain.size() - 1));
-            String parent = found.isEmpty() ? null : found.get(0);
-            if (parent == null || chain.contains(parent)) {
-                break;
+        for (String at = sheetId; at != null && !chain.contains(at); at = source(at)) {
+            chain.add(at);
+            String bottom = at;
+            for (int level = 0; level < LEVELS; level++) {
+                List<String> found = jdbc.queryForList("SELECT setting_value FROM " + settings
+                        + " WHERE sheet_id = ? AND setting_key = 'parent'", String.class, bottom);
+                String parent = found.isEmpty() ? null : found.get(0);
+                if (parent == null || chain.contains(parent)) {
+                    break;
+                }
+                chain.add(parent);
+                bottom = parent;
             }
-            chain.add(parent);
         }
         return chain;
+    }
+
+    /** The sheet the sheet was cloned from, or null when it was not cloned. */
+    private String source(String sheetId) {
+        List<String> found = jdbc.queryForList("SELECT source_id FROM sheet_source WHERE sheet_id = ?", String.class, sheetId);
+        return found.isEmpty() ? null : found.get(0);
     }
 
     /** Every rate on the sheet, by grade then from-date (level 0); then those of its parent sheets, each

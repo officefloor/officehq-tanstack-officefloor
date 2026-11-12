@@ -8,7 +8,8 @@ import { type Grades, gradeOn } from '../people/people';
 /** A grade's rate: `pct` is a percent with two decimals; `from` (yyyy-MM-dd) is the date it applies
  *  from, null for from the beginning of time; `to` the date it applies through, null for no end. A
  *  grade may have several; one with no rate has none. `level` is the sheet it is on: 0 (or absent) for the
- *  sheet's own, 1 for its parent's, and so on up; a grade with no rate in force on a date on the sheet takes
+ *  sheet's own, 1 for its parent's, and so on up (then, on a cloned sheet, the sheet it was cloned from and up
+ *  its parents and source likewise); a grade with no rate in force on a date on the sheet takes
  *  the first level up that has one. `version` is how many versions it has; `pct` is the newest's, the one in
  *  force. `forward` is set on a forward-only rate (saved with a from-date on or after the sheet's today): when
  *  it was saved, so it applies only to claims added after (see `ratesFor`); null or absent for one that applies

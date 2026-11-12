@@ -56,6 +56,7 @@ public class SheetCloneStore {
         }
         sheets.markLoaded(to);
         sheets.setToday(to, sheets.today(from));
+        jdbc.update("INSERT INTO sheet_source (sheet_id, source_id) VALUES (?, ?)", to, from);
 
         jdbc.update("INSERT INTO sheet_setting (sheet_id, setting_key, setting_value) "
                 + "SELECT ?, setting_key, setting_value FROM sheet_setting WHERE sheet_id = ?", to, from);
