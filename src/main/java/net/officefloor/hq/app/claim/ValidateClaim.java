@@ -50,6 +50,7 @@ public class ValidateClaim {
             throw new InvalidSheetException("Only a negative amount corrects a claim");
         }
         String ref = request.ref() == null ? "" : request.ref().trim();
-        return new ClaimInput(value, date, note, request.user(), corrects, ref.isEmpty() ? null : ref);
+        return new ClaimInput(value, date, note, request.user(), corrects, ref.isEmpty() ? null : ref,
+                Tags.normalise(request.tags()));
     }
 }

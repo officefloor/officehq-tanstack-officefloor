@@ -30,6 +30,7 @@ public class ClaimStore {
         claim.setLateEntry(rs.getBoolean("late_entry"));
         claim.setRemindedOn(rs.getObject("reminded_on", LocalDate.class));
         claim.setRef(rs.getString("ref"));
+        claim.setTags(rs.getString("tags"));
         return claim;
     };
 
@@ -61,6 +62,17 @@ public class ClaimStore {
         return found.isEmpty() ? null : found.get(0);
     }
 
+    /** Every tag ever carried by a claim on the sheet (by its history, see {@link History}), as stored (see
+     *  {@link Tags}); up to the end of {@code date} when given, else up to now. */
+    public List<String> tagsEverUsed(String sheetId, LocalDate date) {
+        return date == null
+                ? jdbc.queryForList("SELECT DISTINCT tags FROM claim_hist WHERE sheet_id = ? AND tags IS NOT NULL "
+                        + "UNION SELECT DISTINCT tags FROM claim WHERE sheet_id = ? AND tags IS NOT NULL",
+                        String.class, sheetId, sheetId)
+                : jdbc.queryForList("SELECT DISTINCT tags FROM claim_hist WHERE sheet_id = ? AND tags IS NOT NULL "
+                        + "AND hist_made_on <= ?", String.class, sheetId, Date.valueOf(date));
+    }
+
     /** Whether a claim on the sheet other than {@code exceptId} carries the reference, compared without regard to case. */
     public boolean refTaken(String sheetId, String ref, long exceptId) {
         Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND LOWER(ref) = LOWER(?) AND id <> ?",
@@ -77,10 +89,16 @@ public class ClaimStore {
     /** Adds a draft claim due by {@code dueBy} with the external reference (null for none). */
     public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
             LocalDate dueBy, String ref) {
+        return add(sheetId, personId, amount, date, note, corrects, dueBy, ref, null);
+    }
+
+    /** Adds a draft claim due by {@code dueBy} with the external reference and tags (null for none). */
+    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
+            LocalDate dueBy, String ref, String tags) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, ref) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, ref, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "ID" });
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
@@ -90,11 +108,13 @@ public class ClaimStore {
             ps.setString(6, corrects);
             ps.setDate(7, Date.valueOf(dueBy));
             ps.setString(8, ref);
+            ps.setString(9, tags);
             return ps;
         }, keys);
         Claim added = new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null,
                 false, null, corrects, dueBy);
         added.setRef(ref);
+        added.setTags(tags);
         return added;
     }
 
@@ -111,10 +131,10 @@ public class ClaimStore {
                 claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getSheetId(), claim.getId());
     }
 
-    /** Stores a draft's amount, date, note, the claim it corrects and its reference, releasing its lock; false when the stored claim is no longer a draft. */
+    /** Stores a draft's amount, date, note, the claim it corrects and its reference and its tags, releasing its lock; false when the stored claim is no longer a draft. */
     public boolean edit(Claim claim) {
-        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ?, locked_by = NULL WHERE sheet_id = ? AND id = ? AND status = ?",
-                claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getCorrects(), claim.getRef(), claim.getSheetId(), claim.getId(),
+        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ?, tags = ?, locked_by = NULL WHERE sheet_id = ? AND id = ? AND status = ?",
+                claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getCorrects(), claim.getRef(), claim.getTags(), claim.getSheetId(), claim.getId(),
                 ClaimStatus.DRAFT.name()) == 1;
     }
 
@@ -206,14 +226,14 @@ public class ClaimStore {
         return shrunk;
     }
 
-    /** Adds an OPEN claim split off {@code from}: its date and note, the given number, opened by the user
+    /** Adds an OPEN claim split off {@code from}: its date, note and tags, the given number, opened by the user
      *  and due by {@code dueBy}, listed as its person's newest claim. */
     public Claim addSplit(Claim from, BigDecimal amount, String number, String openedBy, LocalDate dueBy) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, number, opened_by, due_by, split_from) "
-                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, number, opened_by, due_by, split_from, tags) "
+                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "ID" });
             ps.setString(1, from.getSheetId());
             ps.setLong(2, from.getPersonId());
@@ -225,11 +245,13 @@ public class ClaimStore {
             ps.setString(8, openedBy);
             ps.setDate(9, Date.valueOf(dueBy));
             ps.setString(10, from.getNumber());
+            ps.setString(11, from.getTags());
             return ps;
         }, keys);
         Claim added = new Claim(keys.getKey().longValue(), from.getSheetId(), from.getPersonId(), amount, from.getDate(),
                 from.getNote(), ClaimStatus.OPEN, number, null, openedBy, false, null, null, dueBy);
         added.setSplitFrom(from.getNumber());
+        added.setTags(from.getTags());
         return added;
     }
 

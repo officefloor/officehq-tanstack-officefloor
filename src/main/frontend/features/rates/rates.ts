@@ -218,3 +218,18 @@ export function personSplit(
     dueTotal(mine.filter(keep).map((c) => claimDue(c, rates, grades, floor, late)));
   return { settled: total((c) => c.status === 'SETTLED'), open: total((c) => c.status !== 'SETTLED') };
 }
+
+/** A person's due on a tag: the sum of the dues (skipping n/a) of their claims that count that carry it;
+ *  0.00 when their due-total is n/a. */
+export function personTagged(
+  claims: Claim[],
+  tag: string,
+  rates: Rate[] | undefined,
+  grades: Grades,
+  today: string | undefined,
+  floor: Floor,
+  late?: Late,
+): string {
+  if (uncappedDue(claims, rates, grades, today, floor, late) === NA) return format(0n);
+  return dueTotal(claims.filter((c) => counts(c) && c.tags.includes(tag)).map((c) => claimDue(c, rates, grades, floor, late)));
+}

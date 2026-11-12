@@ -59,6 +59,8 @@ export type Claim = {
   remindedOn: string | null;
   /** Its external reference, unique on the sheet without regard to case; null when it has none. */
   ref: string | null;
+  /** Its tags, each trimmed and lower-cased, sorted; empty when it has none. */
+  tags: string[];
 };
 
 /** A correction: a claim with a negative amount, which has no floor and no late charge. */
@@ -103,6 +105,19 @@ export const isRecentSettled = (c: Claim, today: string | undefined) =>
 
 /** Under the sheet's key, so loading the sheet again re-reads its claims. */
 export const claimsKey = (sheet: string) => [...sheetKey(sheet), 'claims'] as const;
+
+/** Under the claims' key, so whatever re-reads the claims re-reads the tags too. */
+export const tagsKey = (sheet: string) => [...claimsKey(sheet), 'tags'] as const;
+
+/** Every tag ever carried by a claim on the sheet, sorted. */
+export function useTags(sheet: string) {
+  const [asOf] = useAsOf();
+  return useQuery({
+    queryKey: asOfKey(tagsKey(sheet), asOf),
+    queryFn: () => getJson<string[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/tags`, asOf)),
+    enabled: sheet !== '',
+  });
+}
 
 /** Every claim on the sheet, newest first. */
 export function useClaims(sheet: string) {

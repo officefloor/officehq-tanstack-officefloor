@@ -28,6 +28,7 @@ public class Claim {
     private boolean lateEntry;
     private LocalDate remindedOn;
     private String ref;
+    private String tags;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue, String openedBy, boolean stated,
@@ -105,6 +106,9 @@ public class Claim {
     /** The external reference, unique on the sheet without regard to case; null when it has none. */
     public String getRef() { return ref; }
     public void setRef(String ref) { this.ref = ref; }
+    /** Its tags (see {@link Tags}): sorted, comma separated; null when it has none. */
+    public String getTags() { return tags; }
+    public void setTags(String tags) { this.tags = tags; }
     public void setDeferredUntil(LocalDate deferredUntil) { this.deferredUntil = deferredUntil; }
     public void setPersonId(long personId) { this.personId = personId; }
     public void setCorrects(String corrects) { this.corrects = corrects; }
