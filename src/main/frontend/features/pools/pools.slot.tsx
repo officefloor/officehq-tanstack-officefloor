@@ -12,22 +12,28 @@ const refusal = (e: unknown, fallback: string) =>
 
 // One pool: its members with their shares and their cuts of the sheet's pot (blank when unbalanced or no pot), its total share and whether it is balanced, and the entry a
 // member is added with: a person, or another pool (pool:<name>). A person already in the pool, a pool already in
-// a pool, in a loop or more than three deep, or a bad share, is refused with an error on the pool.
+// a pool, in a loop or more than three deep, or a bad share, is refused with an error on the pool. A membership
+// may carry a from- and a to-date (blank for no bound; a to-date before the from-date is refused): a member whose
+// dates do not include the sheet's today counts in neither the total nor the balance, and has no cut.
 function PoolRow({ pool, pools }: { pool: Pool; pools: Pool[] }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const people = usePeople(sheet).data ?? [];
   const [personId, setPersonId] = useState('');
   const [share, setShare] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const queryClient = useQueryClient();
 
   const add = useMutation({
-    mutationFn: (m: { personId: number | null; memberPoolId: number | null; share: string }) =>
+    mutationFn: (m: { personId: number | null; memberPoolId: number | null; share: string; from: string; to: string }) =>
       postJson(`/api/sheets/${encodeURIComponent(sheet)}/pools/${pool.id}/members`, { ...m, user }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: poolsKey(sheet) });
       setPersonId('');
       setShare('');
+      setFrom('');
+      setTo('');
     },
   });
   const submit = useSubmitOnce(add);
@@ -42,7 +48,8 @@ function PoolRow({ pool, pools }: { pool: Pool; pools: Pool[] }) {
             key={m.memberPoolId !== null ? `pool-${m.memberPoolId}` : m.personId}
             data-testid={`pool-member-${pool.name}-${m.memberPoolId !== null ? `pool-${m.name}` : m.personId}`}
           >
-            {m.name}: <span data-testid="pool-share">{m.share}</span>%{m.retired ? ' (retired)' : ''}, cut{' '}
+            {m.name}: <span data-testid="pool-share">{m.share}</span>%{m.retired ? ' (retired)' : ''}
+            {m.from !== null || m.to !== null ? ` (${m.from ?? '…'} – ${m.to ?? '…'})` : ''}, cut{' '}
             <span data-testid="pool-cut">{m.cut ?? ''}</span>
           </li>
         ))}
@@ -54,6 +61,8 @@ function PoolRow({ pool, pools }: { pool: Pool; pools: Pool[] }) {
             personId: personId === '' || personId.startsWith('pool:') ? null : Number(personId),
             memberPoolId: personId.startsWith('pool:') ? Number(personId.slice(5)) : null,
             share,
+            from,
+            to,
           });
         }}
       >
@@ -83,6 +92,26 @@ function PoolRow({ pool, pools }: { pool: Pool; pools: Pool[] }) {
           value={share}
           onChange={(e) => {
             setShare(e.target.value);
+            add.reset();
+          }}
+        />
+        <input
+          type="date"
+          data-testid="pool-member-from"
+          aria-label="Member from"
+          value={from}
+          onChange={(e) => {
+            setFrom(e.target.value);
+            add.reset();
+          }}
+        />
+        <input
+          type="date"
+          data-testid="pool-member-to"
+          aria-label="Member to"
+          value={to}
+          onChange={(e) => {
+            setTo(e.target.value);
             add.reset();
           }}
         />

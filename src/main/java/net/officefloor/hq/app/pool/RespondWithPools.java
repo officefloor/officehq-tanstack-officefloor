@@ -20,7 +20,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /** The sheet's pools with their members, total share and whether they are balanced, and each member's cut
  *  of the pool's pot: the sheet's pot for a pool that is a member of none, else its cut in the pool above. A
- *  person with a hold in force on the sheet's today (the as-of date when one is given) gets no cut. */
+ *  person with a hold in force on the sheet's today (the as-of date when one is given) gets no cut. A member
+ *  whose dates do not include that day is left out entirely: not in the total share, not in the balance, no cut. */
 public class RespondWithPools {
     private static final BigDecimal HUNDRED = new BigDecimal("100.00");
 
@@ -42,7 +43,7 @@ public class RespondWithPools {
                 .forEach(m -> parents.put(m.memberPoolId(), poolId)));
         Map<Long, List<BigDecimal>> cuts = new HashMap<>();
         for (PoolStore.Pool p : pools) {
-            cutsOf(p.id(), members, parents, held, sheetPot, cuts, 0);
+            cutsOf(p.id(), members, parents, held, today, sheetPot, cuts, 0);
         }
         response.send(pools.stream().map(p -> {
             List<PoolStore.Member> ms = members.getOrDefault(p.id(), List.of());
@@ -52,31 +53,33 @@ public class RespondWithPools {
                 PoolStore.Member m = ms.get(i);
                 shown.add(new PoolResponse.MemberResponse(m.personId(), m.memberPoolId(), m.name(),
                         m.share().setScale(2).toPlainString(), m.retired(),
-                        cs == null ? null : cs.get(i).toPlainString()));
+                        cs == null || cs.get(i) == null ? null : cs.get(i).toPlainString(),
+                        m.from() == null ? null : m.from().toString(), m.to() == null ? null : m.to().toString()));
             }
-            BigDecimal total = total(ms);
+            BigDecimal total = total(ms, today);
             return new PoolResponse(p.id(), p.name(), shown, total.toPlainString(), total.compareTo(HUNDRED) == 0);
         }).toList());
     }
 
-    /** The total of the members' shares, a retired member's counting as 0.00. */
-    private static BigDecimal total(List<PoolStore.Member> ms) {
-        return ms.stream().filter(m -> !m.retired()).map(PoolStore.Member::share)
+    /** The total of the members' shares, a retired member's, or one whose dates do not include today, counting as
+     *  0.00. */
+    private static BigDecimal total(List<PoolStore.Member> ms, LocalDate today) {
+        return ms.stream().filter(m -> !m.retired() && m.covers(today)).map(PoolStore.Member::share)
                 .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
     }
 
     /** The pool's members' cuts of its pot, null when it is not balanced or has no pot: the sheet's pot for a
      *  pool that is a member of none, else its cut in the pool above. Kept in {@code cuts} as worked out. */
     private static List<BigDecimal> cutsOf(long poolId, Map<Long, List<PoolStore.Member>> members,
-            Map<Long, Long> parents, Set<Long> held, BigDecimal sheetPot, Map<Long, List<BigDecimal>> cuts,
-            int depth) {
+            Map<Long, Long> parents, Set<Long> held, LocalDate today, BigDecimal sheetPot,
+            Map<Long, List<BigDecimal>> cuts, int depth) {
         if (cuts.containsKey(poolId) || depth > members.size() + 1) {
             return cuts.get(poolId);
         }
         BigDecimal pot = sheetPot;
         Long parent = parents.get(poolId);
         if (parent != null) {
-            List<BigDecimal> above = cutsOf(parent, members, parents, held, sheetPot, cuts, depth + 1);
+            List<BigDecimal> above = cutsOf(parent, members, parents, held, today, sheetPot, cuts, depth + 1);
             pot = null;
             List<PoolStore.Member> siblings = members.getOrDefault(parent, List.of());
             for (int i = 0; above != null && i < siblings.size(); i++) {
@@ -86,7 +89,7 @@ public class RespondWithPools {
             }
         }
         List<PoolStore.Member> ms = members.getOrDefault(poolId, List.of());
-        List<BigDecimal> found = total(ms).compareTo(HUNDRED) == 0 && pot != null ? cuts(ms, held, pot) : null;
+        List<BigDecimal> found = total(ms, today).compareTo(HUNDRED) == 0 && pot != null ? cuts(ms, held, today, pot) : null;
         cuts.put(poolId, found);
         return found;
     }
@@ -94,15 +97,20 @@ public class RespondWithPools {
     /** Each member's cut, in the members' order: the pot times their share over the shares of the members with a
      *  cut, rounded half to even to two decimals (a retired or held member's is 0.00, and each is 0.00 when none
      *  has a cut); the remainder goes to the member with a cut with the largest share, the earliest added on a
-     *  tie, so the cuts total exactly the pot. */
-    private static List<BigDecimal> cuts(List<PoolStore.Member> ms, Set<Long> held, BigDecimal pot) {
-        BigDecimal shares = ms.stream().filter(m -> hasCut(m, held)).map(PoolStore.Member::share)
+     *  tie, so the cuts total exactly the pot. A member whose dates do not include today has no cut (null). */
+    private static List<BigDecimal> cuts(List<PoolStore.Member> ms, Set<Long> held, LocalDate today,
+            BigDecimal pot) {
+        BigDecimal shares = ms.stream().filter(m -> m.covers(today) && hasCut(m, held)).map(PoolStore.Member::share)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         List<BigDecimal> cuts = new ArrayList<>();
         BigDecimal sum = BigDecimal.ZERO.setScale(2);
         int largest = -1;
         for (int i = 0; i < ms.size(); i++) {
             PoolStore.Member m = ms.get(i);
+            if (!m.covers(today)) {
+                cuts.add(null);
+                continue;
+            }
             boolean cut = hasCut(m, held) && shares.signum() > 0;
             BigDecimal c = cut ? pot.multiply(m.share()).divide(shares, 2, RoundingMode.HALF_EVEN)
                     : BigDecimal.ZERO.setScale(2);

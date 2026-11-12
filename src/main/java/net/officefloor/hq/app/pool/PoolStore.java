@@ -18,9 +18,15 @@ public class PoolStore {
     }
 
     /** A member of a pool: the person, or the pool (personId null, memberPoolId set), the name, the share,
-     *  and whether the person is retired (a retirement date set; never for a pool). */
+     *  whether the person is retired (a retirement date set; never for a pool), and the dates the membership
+     *  counts from and to (null for no bound). */
     public record Member(long poolId, Long personId, Long memberPoolId, String name, BigDecimal share,
-            boolean retired) {
+            boolean retired, LocalDate from, LocalDate to) {
+
+        /** Whether the membership's dates include the day. */
+        public boolean covers(LocalDate day) {
+            return (from == null || !day.isBefore(from)) && (to == null || !day.isAfter(to));
+        }
     }
 
     private final JdbcTemplate jdbc;
@@ -43,7 +49,8 @@ public class PoolStore {
         String pool = on == null ? "pool" : History.asOf("pool", "id", on);
         Map<Long, List<Member>> found = new LinkedHashMap<>();
         jdbc.query("SELECT pool_member.pool_id, pool_member.person_id, pool_member.member_pool_id, person.name,"
-                + " pool.name AS pool_name, pool_member.share, person.retired_from FROM " + member
+                + " pool.name AS pool_name, pool_member.share, person.retired_from, pool_member.from_date,"
+                + " pool_member.to_date FROM " + member
                 + " LEFT JOIN " + person + " ON person.id = pool_member.person_id"
                 + " LEFT JOIN " + pool + " ON pool.id = pool_member.member_pool_id"
                 + " WHERE pool_member.sheet_id = ? AND (person.id IS NOT NULL OR pool.id IS NOT NULL)"
@@ -52,10 +59,15 @@ public class PoolStore {
                     Long memberPoolId = rs.getObject("member_pool_id") == null ? null : rs.getLong("member_pool_id");
                     Member m = new Member(rs.getLong("pool_id"), personId, memberPoolId,
                             personId != null ? rs.getString("name") : rs.getString("pool_name"),
-                            rs.getBigDecimal("share"), rs.getObject("retired_from") != null);
+                            rs.getBigDecimal("share"), rs.getObject("retired_from") != null,
+                            date(rs.getDate("from_date")), date(rs.getDate("to_date")));
                     found.computeIfAbsent(m.poolId(), k -> new java.util.ArrayList<>()).add(m);
                 }, sheetId);
         return found;
+    }
+
+    private static LocalDate date(java.sql.Date d) {
+        return d == null ? null : d.toLocalDate();
     }
 
     public Pool find(String sheetId, long id) {
@@ -80,15 +92,17 @@ public class PoolStore {
         return n != null && n > 0;
     }
 
-    public void addMember(String sheetId, long poolId, long personId, BigDecimal share) {
-        jdbc.update("INSERT INTO pool_member (sheet_id, pool_id, person_id, share) VALUES (?, ?, ?, ?)", sheetId,
-                poolId, personId, share);
+    public void addMember(String sheetId, long poolId, long personId, BigDecimal share, LocalDate from,
+            LocalDate to) {
+        jdbc.update("INSERT INTO pool_member (sheet_id, pool_id, person_id, share, from_date, to_date)"
+                + " VALUES (?, ?, ?, ?, ?, ?)", sheetId, poolId, personId, share, from, to);
     }
 
     /** Adds the pool {@code memberPoolId} as a member of the pool {@code poolId}. */
-    public void addPoolMember(String sheetId, long poolId, long memberPoolId, BigDecimal share) {
-        jdbc.update("INSERT INTO pool_member (sheet_id, pool_id, member_pool_id, share) VALUES (?, ?, ?, ?)",
-                sheetId, poolId, memberPoolId, share);
+    public void addPoolMember(String sheetId, long poolId, long memberPoolId, BigDecimal share, LocalDate from,
+            LocalDate to) {
+        jdbc.update("INSERT INTO pool_member (sheet_id, pool_id, member_pool_id, share, from_date, to_date)"
+                + " VALUES (?, ?, ?, ?, ?, ?)", sheetId, poolId, memberPoolId, share, from, to);
     }
 
     /** The sheet's pools that are members of another, each to the pool it is a member of. */

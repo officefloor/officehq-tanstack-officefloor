@@ -1,6 +1,8 @@
 package net.officefloor.hq.app.pool;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.Map;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonStore;
@@ -13,7 +15,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 /** Refuses a member by a viewer, of a pool or person not on the sheet, of a person already in the pool, or
  *  with a share that is not a number of at most two decimals, more than 0.00 and at most 100.00. A member pool
  *  is refused when it is already a member of a pool, when it would contain the pool through any chain (or is
- *  the pool itself), or when the chain of pools would be more than three deep. */
+ *  the pool itself), or when the chain of pools would be more than three deep. A from- or to-date is optional;
+ *  one that is not a date, or a to-date before the from-date, is refused. */
 public class ValidateMember {
     private static final BigDecimal HUNDRED = new BigDecimal("100.00");
     private static final int MAX_DEPTH = 3;
@@ -51,15 +54,33 @@ public class ValidateMember {
         if (share.signum() <= 0 || share.compareTo(HUNDRED) > 0) {
             throw new InvalidSheetException("A share is more than 0.00 and at most 100.00");
         }
+        LocalDate from = date(request.from());
+        LocalDate to = date(request.to());
+        if (from != null && to != null && to.isBefore(from)) {
+            throw new InvalidSheetException("The to date must not be before the from date");
+        }
         if (member != null) {
             refuseNesting(sheet, pool, member, pools);
-            body.set(new MemberInput(pool, null, member.id(), member.name(), share, user));
+            body.set(new MemberInput(pool, null, member.id(), member.name(), share, from, to, user));
             return;
         }
         if (pools.isMember(pool.id(), person.getId())) {
             throw new InvalidSheetException(person.getName() + " is already in " + pool.name());
         }
-        body.set(new MemberInput(pool, person.getId(), null, person.getName(), share, user));
+        body.set(new MemberInput(pool, person.getId(), null, person.getName(), share, from, to, user));
+    }
+
+    /** The date given, or null when blank. */
+    private static LocalDate date(String value) throws InvalidSheetException {
+        String text = value == null ? "" : value.trim();
+        if (text.isEmpty()) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(text);
+        } catch (DateTimeParseException e) {
+            throw new InvalidSheetException("Not a date: " + text);
+        }
     }
 
     private static void refuseNesting(String sheet, PoolStore.Pool pool, PoolStore.Pool member, PoolStore pools)
