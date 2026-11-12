@@ -4,7 +4,7 @@ import { STATUSES, live, statusCount, useClaims } from '../claims/claims';
 import { GRADES, gradeOn, usePeople } from '../people/people';
 import { periodDue, usePeriods } from '../periods/periods';
 import { dueTotal, personDue, useRates } from '../rates/rates';
-import { useSettings } from '../settings/settings';
+import { floorOf, useSettings } from '../settings/settings';
 import { useSheetToday } from '../sheet/sheet';
 import { lateOf } from '../overdue/overdue';
 
@@ -19,7 +19,7 @@ function Summary() {
   const rates = useRates(sheet);
   const today = useSheetToday(sheet);
   const settings = useSettings(sheet).data;
-  const floor = settings?.floor;
+  const floor = floorOf(settings);
   const late = lateOf(settings, today);
 
   const active = (people.data ?? []).filter((p) => !p.retired);

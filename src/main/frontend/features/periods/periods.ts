@@ -3,7 +3,7 @@ import { getJson } from '../../api/http';
 import { sheetKey } from '../sheet/sheet';
 import { type Claim, counts, live } from '../claims/claims';
 import type { Person } from '../people/people';
-import { type Late, type Rate, claimDue, dueTotal } from '../rates/rates';
+import { type Floor, type Late, type Rate, claimDue, dueTotal } from '../rates/rates';
 
 /** A period: its name (unique on the sheet), its from and to dates (yyyy-MM-dd, inclusive), whether
  *  it is closed and, once closed, the due-total fixed on closing (null while open) and each person's
@@ -45,7 +45,7 @@ export function personPeriodDue(
   person: Person,
   claims: Claim[] | undefined,
   rates: Rate[] | undefined,
-  floor: string | undefined,
+  floor: Floor,
   late: Late,
 ): string {
   if (period.closed) return period.people?.[String(person.id)] ?? '0.00';
@@ -62,7 +62,7 @@ export function periodDue(
   claims: Claim[] | undefined,
   people: Person[] | undefined,
   rates: Rate[] | undefined,
-  floor: string | undefined,
+  floor: Floor,
   late: Late,
 ): string {
   return dueTotal((people ?? []).map((p) => personPeriodDue(period, p, claims, rates, floor, late)));

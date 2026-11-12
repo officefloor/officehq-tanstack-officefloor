@@ -90,15 +90,18 @@ export function dueTotal(dues: string[]): string {
   return format(dues.filter((d) => d !== NA).reduce((sum, d) => sum + hundredths(d), 0n));
 }
 
-/** What a claim's late charge follows: the sheet's late percent (two decimals) and how many full
- *  30 days the claim is overdue; and whether the claim's live figures round half up (else half to even). */
-export type Late = { pct: string | undefined; periods: (claim: Claim) => number; halfUp?: (claim: Claim) => boolean };
+/** What a claim's late charge follows: the sheet's late percent (two decimals) in force on the claim's date
+ *  and how many full 30 days the claim is overdue; and whether the claim's live figures round half up (else half to even). */
+export type Late = { pct: ((claim: Claim) => string) | undefined; periods: (claim: Claim) => number; halfUp?: (claim: Claim) => boolean };
+
+/** The sheet's floor (two decimals) in force on a date; undefined for none known. */
+export type Floor = ((date: string) => string) | undefined;
 
 /** The late charge on a figure: the late percent of it for every full 30 days overdue, rounded like due. */
 function lateCharge(claim: Claim, figure: string, late: Late | undefined): string | undefined {
   const periods = late?.pct === undefined || isCorrection(claim) ? 0 : late.periods(claim);
   if (periods <= 0 || figure === NA) return undefined;
-  return due(figure, format(hundredths(late!.pct!) * BigInt(periods)), late?.halfUp?.(claim) ?? false);
+  return due(figure, format(hundredths(late!.pct!(claim)) * BigInt(periods)), late?.halfUp?.(claim) ?? false);
 }
 
 /** Whether the claim keeps a figure whatever the rates: fixed when settled, or bound by a statement to a
@@ -107,14 +110,14 @@ const fixed = (claim: Claim) => claim.due !== null || (isBound(claim) && claim.s
 
 /** A claim's due: the due fixed when it was settled (its late charge frozen in), else its figure — the
  *  figure its person's last statement bound it to (not while PENDING), else its live due: its amount at the rate in force
- *  on the claim's date of its person's grade in force on that date, at least the sheet's floor — plus its late charge when overdue.
+ *  on the claim's date of its person's grade in force on that date, at least the sheet's floor in force on that date — plus its late charge when overdue.
  *  A correction's live due has no floor and it has no late charge.
  *  A statement never binds the charge: it keeps following the sheet's today. */
 export function claimDue(
   claim: Claim,
   rates: Rate[] | undefined,
   grades: Grades,
-  floor: string | undefined,
+  floor: Floor,
   late?: Late,
 ): string {
   if (claim.due !== null) return claim.due;
@@ -122,7 +125,7 @@ export function claimDue(
   const halfUp = late?.halfUp?.(claim) ?? false;
   const figure = isBound(claim)
     ? claim.statedDue ?? NA
-    : isCorrection(claim) ? due(claim.amount, pct, halfUp) : liveDue(claim.amount, pct, floor, halfUp);
+    : isCorrection(claim) ? due(claim.amount, pct, halfUp) : liveDue(claim.amount, pct, floor?.(claim.date), halfUp);
   const charge = lateCharge(claim, figure, late);
   return charge === undefined ? figure : format(hundredths(figure) + hundredths(charge));
 }
@@ -137,7 +140,7 @@ export function personDue(
   rates: Rate[] | undefined,
   grades: Grades,
   today: string | undefined,
-  floor: string | undefined,
+  floor: Floor,
   late?: Late,
   cap?: string | null,
 ): string {
@@ -152,7 +155,7 @@ export function personExcess(
   rates: Rate[] | undefined,
   grades: Grades,
   today: string | undefined,
-  floor: string | undefined,
+  floor: Floor,
   late?: Late,
   cap?: string | null,
 ): string {
@@ -168,7 +171,7 @@ function uncappedDue(
   rates: Rate[] | undefined,
   grades: Grades,
   today: string | undefined,
-  floor: string | undefined,
+  floor: Floor,
   late?: Late,
 ): string {
   const mine = claims.filter(counts);

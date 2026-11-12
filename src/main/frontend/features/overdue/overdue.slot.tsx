@@ -4,7 +4,7 @@ import { type Person, usePeople } from '../people/people';
 import { useCurrentSheet } from '../../session/session';
 import { useSheetToday } from '../sheet/sheet';
 import { counts, live, useClaims } from '../claims/claims';
-import { useSettings } from '../settings/settings';
+import { floorOf, useSettings } from '../settings/settings';
 import { dueTotal, useRates } from '../rates/rates';
 import { lateOf, overdueFigures } from './overdue';
 
@@ -29,7 +29,7 @@ function useOverdue() {
       live((claims.data ?? []).filter((c) => c.personId === person.id), [person]).filter(counts),
       rates.data,
       person.grades,
-      settings?.floor,
+      floorOf(settings),
       today,
       lateOf(settings, today),
     );

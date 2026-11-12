@@ -3,10 +3,18 @@ package net.officefloor.hq.app.setting;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.NavigableMap;
+import java.util.TreeMap;
+import java.util.function.Function;
+import net.officefloor.hq.app.sheet.SheetStore;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-/** The settings kept per sheet, by key. A setting never set, or set blank, has no value. */
+/** The settings kept per sheet, by key. A setting never set, or set blank, has no value. The settings
+ *  that carry a figure (the clerk limit, the floor, the cap, the terms, a grade's terms and the late
+ *  percent) are dated: each value is recorded from a from-date, and the value in force on a date is the
+ *  one with the latest from-date on or before it (none before every from-date, then the sheet's starting
+ *  value). The policy date and the period numbering date are not dated. */
 @Repository
 public class SettingStore {
 
@@ -41,28 +49,78 @@ public class SettingStore {
 
     private final JdbcTemplate jdbc;
 
-    public SettingStore(JdbcTemplate jdbc) {
+    private final SheetStore sheets;
+
+    public SettingStore(JdbcTemplate jdbc, SheetStore sheets) {
         this.jdbc = jdbc;
+        this.sheets = sheets;
     }
 
-    /** The setting's value, or null when it has none. */
+    /** Whether the key's values are recorded from a from-date. */
+    public static boolean isDated(String key) {
+        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key);
+    }
+
+    /** The setting's value (a dated one's in force on the sheet's today), or null when it has none. */
     public String find(String sheetId, String key) {
+        if (isDated(key)) {
+            return findOn(sheetId, key, sheets.today(sheetId));
+        }
         List<String> found = jdbc.queryForList(
                 "SELECT setting_value FROM sheet_setting WHERE sheet_id = ? AND setting_key = ?", String.class,
                 sheetId, key);
         return found.isEmpty() ? null : found.get(0);
     }
 
-    /** The most a clerk may settle a claim's due at, or null for no limit. */
+    /** The dated setting's values recorded, by from-date (a null value is blank). */
+    public NavigableMap<LocalDate, String> history(String sheetId, String key) {
+        NavigableMap<LocalDate, String> values = new TreeMap<>();
+        jdbc.query("SELECT from_date, setting_value FROM sheet_setting_from WHERE sheet_id = ? AND setting_key = ?",
+                rs -> {
+                    values.put(rs.getObject("from_date", LocalDate.class), rs.getString("setting_value"));
+                }, sheetId, key);
+        return values;
+    }
+
+    /** The dated setting's value in force on the date, or null when it has none then. */
+    public String findOn(String sheetId, String key, LocalDate date) {
+        return on(history(sheetId, key), date);
+    }
+
+    private static String on(NavigableMap<LocalDate, String> history, LocalDate date) {
+        var entry = date == null ? null : history.floorEntry(date);
+        return entry == null ? null : entry.getValue();
+    }
+
+    /** The most a clerk may settle a claim's due at (the one in force on the sheet's today), or null for no limit. */
     public BigDecimal clerkLimit(String sheetId) {
         String value = find(sheetId, CLERK_LIMIT);
         return value == null ? null : new BigDecimal(value);
     }
 
-    /** The most a person's due-total may be, or null for no cap. */
+    /** The most a person's due-total may be (the one in force on the sheet's today), or null for no cap. */
     public BigDecimal cap(String sheetId) {
         String value = find(sheetId, CAP);
         return value == null ? null : new BigDecimal(value);
+    }
+
+    /** The least a claim's live due may be, in force on each date: the floor recorded then, else 1.00. Read once, for many claims. */
+    public Function<LocalDate, BigDecimal> floors(String sheetId) {
+        return amounts(history(sheetId, FLOOR), DEFAULT_FLOOR);
+    }
+
+    /** The percent of an overdue claim's figure charged for every full 30 days overdue, in force on each
+     *  date: the one recorded then, else 0.00. Read once, for many claims. */
+    public Function<LocalDate, BigDecimal> latePcts(String sheetId) {
+        return amounts(history(sheetId, LATE_PCT), DEFAULT_LATE_PCT);
+    }
+
+    private static Function<LocalDate, BigDecimal> amounts(NavigableMap<LocalDate, String> history,
+            BigDecimal starting) {
+        return date -> {
+            String value = on(history, date);
+            return value == null ? starting : new BigDecimal(value);
+        };
     }
 
     /** The due-total at most the cap (none when null). */
@@ -70,35 +128,23 @@ public class SettingStore {
         return cap != null && dueTotal.compareTo(cap) > 0 ? cap.setScale(2) : dueTotal;
     }
 
-    /** The least a claim's live due may be: the floor set, else 1.00. */
-    public BigDecimal floor(String sheetId) {
-        String value = find(sheetId, FLOOR);
-        return value == null ? DEFAULT_FLOOR : new BigDecimal(value);
-    }
-
-    /** The days after its date a claim is due by: the terms set, else 14. */
-    public int terms(String sheetId) {
-        String value = find(sheetId, TERMS);
+    /** The days after its date a claim is due by, in force on the date: the terms recorded then, else 14. */
+    public int terms(String sheetId, LocalDate date) {
+        String value = findOn(sheetId, TERMS, date);
         return value == null ? DEFAULT_TERMS : Integer.parseInt(value);
     }
 
-    /** The grade's own terms (days), or null when it has none (then the sheet's terms). */
-    public Integer gradeTerms(String sheetId, String grade) {
-        String value = find(sheetId, TERMS_PREFIX + grade);
+    /** The grade's own terms (days) in force on the date, or null when it has none then (then the sheet's terms). */
+    public Integer gradeTerms(String sheetId, String grade, LocalDate date) {
+        String value = findOn(sheetId, TERMS_PREFIX + grade, date);
         return value == null ? null : Integer.valueOf(value);
     }
 
-    /** The days after its date a claim of a person of the grade is due by: the grade's own terms, else
-     *  the sheet's. */
-    public int terms(String sheetId, String grade) {
-        Integer own = grade == null ? null : gradeTerms(sheetId, grade);
-        return own == null ? terms(sheetId) : own;
-    }
-
-    /** The percent of an overdue claim's figure charged for every full 30 days overdue: the one set, else 0.00. */
-    public BigDecimal latePct(String sheetId) {
-        String value = find(sheetId, LATE_PCT);
-        return value == null ? DEFAULT_LATE_PCT : new BigDecimal(value);
+    /** The days after its date a claim of a person of the grade is due by, in force on the date: the
+     *  grade's own terms, else the sheet's. */
+    public int terms(String sheetId, String grade, LocalDate date) {
+        Integer own = grade == null ? null : gradeTerms(sheetId, grade, date);
+        return own == null ? terms(sheetId, date) : own;
     }
 
     /** The date the sheet's rounding turns on, or null when blank (then the sheet's today). */
@@ -113,7 +159,13 @@ public class SettingStore {
         return value == null ? null : LocalDate.parse(value);
     }
 
-    public void set(String sheetId, String key, String value) {
+    /** Records the setting's value; a dated one's from the date (replacing a value recorded from it). */
+    public void set(String sheetId, String key, String value, LocalDate from) {
+        if (isDated(key)) {
+            jdbc.update("MERGE INTO sheet_setting_from (sheet_id, setting_key, from_date, setting_value) "
+                    + "KEY (sheet_id, setting_key, from_date) VALUES (?, ?, ?, ?)", sheetId, key, from, value);
+            return;
+        }
         jdbc.update("MERGE INTO sheet_setting (sheet_id, setting_key, setting_value) KEY (sheet_id, setting_key) "
                 + "VALUES (?, ?, ?)", sheetId, key, value);
     }

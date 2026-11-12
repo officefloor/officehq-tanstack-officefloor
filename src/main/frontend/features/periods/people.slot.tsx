@@ -4,7 +4,7 @@ import { useCurrentSheet } from '../../session/session';
 import { useSheetToday } from '../sheet/sheet';
 import { useClaims } from '../claims/claims';
 import { useRates } from '../rates/rates';
-import { useSettings } from '../settings/settings';
+import { floorOf, useSettings } from '../settings/settings';
 import { lateOf } from '../overdue/overdue';
 import { personPeriodDue, usePeriods } from './periods';
 
@@ -34,7 +34,7 @@ function PersonPeriods({ person }: { person: Person }) {
     <>
       {(periods.data ?? []).map((p) => (
         <td key={p.name} data-testid={`person-period-${p.name}-due-total`}>
-          {personPeriodDue(p, person, claims.data, rates.data, settings?.floor, late)}
+          {personPeriodDue(p, person, claims.data, rates.data, floorOf(settings), late)}
         </td>
       ))}
     </>

@@ -50,7 +50,7 @@ public class CheckClerkLimit {
         }
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         BigDecimal pct = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
-        BigDecimal due = Lateness.of(claim.getSheetId(), settings, sheets, claims).due(claim, pct, settings.floor(claim.getSheetId()));
+        BigDecimal due = Lateness.of(claim.getSheetId(), settings, sheets, claims).due(claim, pct);
         return due != null && due.compareTo(limit) > 0;
     }
 }

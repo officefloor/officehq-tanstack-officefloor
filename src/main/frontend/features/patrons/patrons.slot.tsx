@@ -6,7 +6,7 @@ import { type Person, peopleKey, usePeople } from '../people/people';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { useSheetToday } from '../sheet/sheet';
 import { live, useClaims } from '../claims/claims';
-import { useSettings } from '../settings/settings';
+import { floorOf, useSettings } from '../settings/settings';
 import { lateOf } from '../overdue/overdue';
 import { dueTotal, personDue, useRates } from '../rates/rates';
 
@@ -46,7 +46,7 @@ function PersonPatrons({ person }: { person: Person }) {
         rates.data,
         p.grades,
         today,
-        settings?.floor,
+        floorOf(settings),
         lateOf(settings, today),
         settings?.cap,
       ),

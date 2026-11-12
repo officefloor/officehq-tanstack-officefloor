@@ -52,9 +52,8 @@ public class RollupService {
     public Rollup snapshot(String sheetId) {
         LocalDate today = sheets.today(sheetId);
         List<Claim> all = claims.list(sheetId);
-        BigDecimal floor = settings.floor(sheetId);
         BigDecimal cap = settings.cap(sheetId);
-        Lateness lateness = new Lateness(settings.latePct(sheetId), sheets.today(sheetId),
+        Lateness lateness = new Lateness(settings.latePcts(sheetId), settings.floors(sheetId), sheets.today(sheetId),
                 new Rounding(policyDate(sheetId), all));
         Map<Long, Rollup.Figures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
@@ -71,7 +70,7 @@ public class RollupService {
                     continue;
                 }
                 claimed = claimed.add(claim.getAmount());
-                BigDecimal figure = lateness.due(claim, rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()), floor);
+                BigDecimal figure = lateness.due(claim, rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()));
                 if (figure != null) {
                     due = due.add(figure);
                     if (overdue(claim, today)) {
@@ -102,8 +101,7 @@ public class RollupService {
      *  due-total for a period. A period's due-total is the sum of these. */
     public Map<Long, BigDecimal> dueBetweenByPerson(String sheetId, LocalDate from, LocalDate to) {
         List<Claim> all = claims.list(sheetId);
-        BigDecimal floor = settings.floor(sheetId);
-        Lateness lateness = new Lateness(settings.latePct(sheetId), sheets.today(sheetId),
+        Lateness lateness = new Lateness(settings.latePcts(sheetId), settings.floors(sheetId), sheets.today(sheetId),
                 new Rounding(policyDate(sheetId), all));
         Map<Long, BigDecimal> totals = new LinkedHashMap<>();
         for (Person person : people.list(sheetId)) {
@@ -114,7 +112,7 @@ public class RollupService {
                         || claim.getDate().isBefore(from) || claim.getDate().isAfter(to)) {
                     continue;
                 }
-                BigDecimal figure = lateness.due(claim, rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()), floor);
+                BigDecimal figure = lateness.due(claim, rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()));
                 if (figure != null) {
                     total = total.add(figure);
                 }

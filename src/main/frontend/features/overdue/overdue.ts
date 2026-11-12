@@ -1,6 +1,6 @@
 import { type Claim, isOpen } from '../claims/claims';
-import { type Late, type Rate, claimDue, dueTotal } from '../rates/rates';
-import type { Settings } from '../settings/settings';
+import { type Floor, type Late, type Rate, claimDue, dueTotal } from '../rates/rates';
+import { type Settings, latePctOf } from '../settings/settings';
 import type { Grades } from '../people/people';
 
 /** The claim's due-by (yyyy-MM-dd): fixed when it was added, from the terms of its person's grade then. */
@@ -20,12 +20,13 @@ export function latePeriods(claim: Claim, today: string | undefined): number {
   return Math.floor(days / 30);
 }
 
-/** What the sheet's late charge follows: its late percent, each claim's due-by and its today; and how it rounds:
+/** What the sheet's late charge follows: its late percent in force on each claim's date, each claim's due-by and its today; and how it rounds:
  *  a claim rounding by a date before the policy date (else the sheet's today) rounds half up. */
 export function lateOf(settings: Settings | undefined, today: string | undefined): Late {
   const policy = settings?.policyDate ?? today;
+  const pcts = latePctOf(settings);
   return {
-    pct: settings?.latePct,
+    pct: pcts && ((c) => pcts(c.date)),
     periods: (c) => latePeriods(c, today),
     halfUp: (c) => policy !== undefined && (c.roundsBy ?? c.date) < policy,
   };
@@ -37,7 +38,7 @@ export function overdueFigures(
   claims: Claim[],
   rates: Rate[] | undefined,
   grades: Grades,
-  floor: string | undefined,
+  floor: Floor,
   today: string | undefined,
   lateCharge?: Late,
 ): { count: number; total: string } {

@@ -4,7 +4,7 @@ import { type Person, usePeople } from '../people/people';
 import { useCurrentSheet } from '../../session/session';
 import { useSheetToday } from '../sheet/sheet';
 import { live, useClaims } from '../claims/claims';
-import { useSettings } from '../settings/settings';
+import { floorOf, useSettings } from '../settings/settings';
 import { lateOf } from '../overdue/overdue';
 import { dueTotal, personDue, personExcess, useRates } from './rates';
 
@@ -20,7 +20,7 @@ function PersonDue({ person }: { person: Person }) {
   const rates = useRates(sheet);
   const today = useSheetToday(sheet);
   const settings = useSettings(sheet).data;
-  const floor = settings?.floor;
+  const floor = floorOf(settings);
   const mine = live((claims.data ?? []).filter((c) => c.personId === person.id), [person]);
   return <td data-testid="person-due-total">{personDue(mine, rates.data, person.grades, today, floor, lateOf(settings, today), settings?.cap)}</td>;
 }
@@ -38,7 +38,7 @@ function PersonExcess({ person }: { person: Person }) {
   const mine = live((claims.data ?? []).filter((c) => c.personId === person.id), [person]);
   return (
     <td data-testid="person-excess">
-      {personExcess(mine, rates.data, person.grades, today, settings?.floor, lateOf(settings, today), settings?.cap)}
+      {personExcess(mine, rates.data, person.grades, today, floorOf(settings), lateOf(settings, today), settings?.cap)}
     </td>
   );
 }
@@ -51,7 +51,7 @@ export function useSheetDueTotal(): string {
   const rates = useRates(sheet);
   const today = useSheetToday(sheet);
   const settings = useSettings(sheet).data;
-  const floor = settings?.floor;
+  const floor = floorOf(settings);
   const dues = (people.data ?? []).map((p) =>
     personDue(live((claims.data ?? []).filter((c) => c.personId === p.id), [p]), rates.data, p.grades, today, floor, lateOf(settings, today), settings?.cap),
   );

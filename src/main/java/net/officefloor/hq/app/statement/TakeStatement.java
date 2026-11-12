@@ -26,9 +26,8 @@ public class TakeStatement {
             SheetStore sheets, SettingStore settings, StatementStore statements, Out<Statement> statementOut) {
         String sheetId = person.getSheetId();
         LocalDate today = sheets.today(sheetId);
-        BigDecimal floor = settings.floor(sheetId);
         Rounding rounding = Rounding.of(sheetId, settings, sheets, claims);
-        Lateness lateness = new Lateness(settings.latePct(sheetId), today, rounding);
+        Lateness lateness = new Lateness(settings.latePcts(sheetId), settings.floors(sheetId), today, rounding);
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         boolean fixed = false;
         int counted = 0;
@@ -39,7 +38,7 @@ public class TakeStatement {
             boolean counts = RollupService.counts(claim, person);
             BigDecimal figure = null;
             if (counts) {
-                figure = ClaimFigure.of(claim, rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()), floor, rounding);
+                figure = ClaimFigure.of(claim, rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()), lateness.floor(claim), rounding);
                 counted++;
                 if (figure != null) {
                     total = total.add(claim.getSettledDue() != null ? figure : figure.add(lateness.charge(claim, figure)));

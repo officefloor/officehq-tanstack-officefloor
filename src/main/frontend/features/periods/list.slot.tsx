@@ -7,7 +7,7 @@ import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { useClaims } from '../claims/claims';
 import { usePeople } from '../people/people';
 import { useRates } from '../rates/rates';
-import { useSettings } from '../settings/settings';
+import { floorOf, useSettings } from '../settings/settings';
 import { useSheetToday } from '../sheet/sheet';
 import { lateOf } from '../overdue/overdue';
 import { type Period, periodDue, periodsKey, usePeriods } from './periods';
@@ -26,7 +26,7 @@ function Periods() {
   const claims = useClaims(sheet);
   const rates = useRates(sheet);
   const settings = useSettings(sheet).data;
-  const floor = settings?.floor;
+  const floor = floorOf(settings);
   const today = useSheetToday(sheet);
   const [fields, setFields] = useState<Fields>(EMPTY);
   const queryClient = useQueryClient();

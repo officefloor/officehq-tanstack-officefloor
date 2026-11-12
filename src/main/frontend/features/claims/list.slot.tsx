@@ -6,7 +6,7 @@ import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns
 import { type Person, peopleKey, usePeople } from '../people/people';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { claimDue, useRates } from '../rates/rates';
-import { useSettings } from '../settings/settings';
+import { floorOf, useSettings } from '../settings/settings';
 import { periodOf, usePeriods } from '../periods/periods';
 import { useSheetToday } from '../sheet/sheet';
 import { dueBy, lateOf, overdue } from '../overdue/overdue';
@@ -31,7 +31,7 @@ function PersonClaims({ person }: { person: Person }) {
   const claims = useClaims(sheet);
   const rates = useRates(sheet);
   const settings = useSettings(sheet).data;
-  const floor = settings?.floor;
+  const floor = floorOf(settings);
   const today = useSheetToday(sheet);
   const periods = usePeriods(sheet);
   const [fields, setFields] = useState<Fields>(EMPTY);
