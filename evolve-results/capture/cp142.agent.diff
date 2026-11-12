@@ -1,0 +1,123 @@
+diff --git a/src/main/frontend/features/plans/plans.slot.tsx b/src/main/frontend/features/plans/plans.slot.tsx
+index addfac0c4..ab59ad6a7 100644
+--- a/src/main/frontend/features/plans/plans.slot.tsx
++++ b/src/main/frontend/features/plans/plans.slot.tsx
+@@ -16,7 +16,7 @@ function PlansHead() {
+   return <th>Plans</th>;
+ }
+ 
+-// The person's plans, each with how many claims it has made so far, and the form that adds one. A bad
++// The person's plans, each with how many claims it has made so far and its next five dates, and the form that adds one. A bad
+ // amount, interval or day of the month, or an end before the start, is refused with an error on the row until the form is
+ // changed or the next action on the row is taken.
+ function PersonPlans({ person }: { person: Person }) {
+@@ -53,6 +53,8 @@ function PersonPlans({ person }: { person: Person }) {
+               {p.day !== null ? `monthly on day ${p.day}` : `every ${p.every} days`} to {p.end}
+               {' — made '}
+               <span data-testid="plan-generated">{p.generated}</span>
++              {' — next '}
++              <span data-testid="plan-next-dates">{p.nextDates}</span>
+             </li>
+           ))}
+       </ul>
+diff --git a/src/main/frontend/features/plans/plans.ts b/src/main/frontend/features/plans/plans.ts
+index 331235d15..84adacd6f 100644
+--- a/src/main/frontend/features/plans/plans.ts
++++ b/src/main/frontend/features/plans/plans.ts
+@@ -4,7 +4,8 @@ import { sheetKey } from '../sheet/sheet';
+ 
+ /** A person's plan: a DRAFT claim of `amount` on every plan date, `start` then every `every` days, or for a
+  *  monthly plan (`day` set, `every` null) that day of every month from the start, up to `end` (yyyy-MM-dd);
+- *  `generated` is how many claims it has made so far. */
++ *  `generated` is how many claims it has made so far; `nextDates` its first five plan dates after the sheet's today and on or before
++ *  the end, comma and space separated. */
+ export type Plan = {
+   id: number;
+   personId: number;
+@@ -14,6 +15,7 @@ export type Plan = {
+   day: number | null;
+   end: string;
+   generated: number;
++  nextDates: string;
+ };
+ 
+ /** Under the sheet's key, so loading the sheet again re-reads its plans. */
+diff --git a/src/main/java/net/officefloor/hq/app/plan/Plan.java b/src/main/java/net/officefloor/hq/app/plan/Plan.java
+index 67774ed51..b47138511 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/Plan.java
++++ b/src/main/java/net/officefloor/hq/app/plan/Plan.java
+@@ -31,4 +31,9 @@ public record Plan(long id, String sheetId, long personId, BigDecimal amount, Lo
+         }
+         return dates;
+     }
++
++    /** The first {@code count} plan dates after {@code today} and on or before the end, in order. */
++    public List<LocalDate> nextDates(LocalDate today, int count) {
++        return dates(end).stream().filter(d -> d.isAfter(today)).limit(count).toList();
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/PlanResponse.java b/src/main/java/net/officefloor/hq/app/plan/PlanResponse.java
+index 0f73faaf3..154e9ee99 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/PlanResponse.java
++++ b/src/main/java/net/officefloor/hq/app/plan/PlanResponse.java
+@@ -1,11 +1,15 @@
+ package net.officefloor.hq.app.plan;
+ 
+-/** A plan as the front end reads it: the amount with two decimals, dates yyyy-MM-dd. */
++import java.time.LocalDate;
++
++/** A plan as the front end reads it: the amount with two decimals, dates yyyy-MM-dd; {@code nextDates} its first
++ *  five plan dates after the sheet's today and on or before the end, comma and space separated. */
+ public record PlanResponse(long id, long personId, String amount, String start, Integer every, Integer day,
+-        String end, int generated) {
++        String end, int generated, String nextDates) {
+ 
+-    public static PlanResponse from(Plan p) {
++    public static PlanResponse from(Plan p, LocalDate today) {
+         return new PlanResponse(p.id(), p.personId(), p.amount().toPlainString(), p.start().toString(), p.every(), p.day(),
+-                p.end().toString(), p.generated());
++                p.end().toString(), p.generated(),
++                String.join(", ", p.nextDates(today, 5).stream().map(LocalDate::toString).toList()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/RespondWithPlan.java b/src/main/java/net/officefloor/hq/app/plan/RespondWithPlan.java
+index 44eab9d52..b1dacfbd1 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/RespondWithPlan.java
++++ b/src/main/java/net/officefloor/hq/app/plan/RespondWithPlan.java
+@@ -1,10 +1,11 @@
+ package net.officefloor.hq.app.plan;
+ 
++import net.officefloor.hq.app.sheet.SheetStore;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
+ 
+ public class RespondWithPlan {
+-    public void respond(@Val Plan plan, ObjectResponse<PlanResponse> response) {
+-        response.send(PlanResponse.from(plan));
++    public void respond(@Val Plan plan, SheetStore sheets, ObjectResponse<PlanResponse> response) {
++        response.send(PlanResponse.from(plan, sheets.today(plan.sheetId())));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java b/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java
+index e6ef21a9b..2e3ee9efe 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java
++++ b/src/main/java/net/officefloor/hq/app/plan/RespondWithPlans.java
+@@ -1,12 +1,16 @@
+ package net.officefloor.hq.app.plan;
+ 
++import java.time.LocalDate;
+ import java.util.List;
++import net.officefloor.hq.app.sheet.SheetStore;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ public class RespondWithPlans {
+-    public void respond(@PathVariable("sheetId") String sheetId, PlanStore store,
++    public void respond(@PathVariable("sheetId") String sheetId, PlanStore store, SheetStore sheets,
+             ObjectResponse<List<PlanResponse>> response) {
+-        response.send(store.list(sheetId.trim()).stream().map(PlanResponse::from).toList());
++        String sheet = sheetId.trim();
++        LocalDate today = sheets.today(sheet);
++        response.send(store.list(sheet).stream().map(p -> PlanResponse.from(p, today)).toList());
+     }
+ }
