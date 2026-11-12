@@ -1,0 +1,152 @@
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index 977365587..2eb9dbc30 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -23,7 +23,9 @@ import { useAsOf } from '../../session/session';
+  *  `pastRetirements` are the retirements they were unretired from, oldest first.
+  *  `tags` are their tags (trimmed, lower-cased, no repeats), sorted; a claim counts for a tag when it or its
+  *  person carries it.
+- *  `snapshots` are their snapshots, one per SNAPSHOT written for them as the sheet's today moved on, oldest first. */
++ *  `snapshots` are their snapshots, one per SNAPSHOT written for them as the sheet's today moved on, oldest first.
++ *  `statements` are their statements still standing (a cancelled one is gone), oldest first by date, the ones a
++ *  merge or a transfer brought over among them. */
+ export type Person = {
+   id: number;
+   name: string;
+@@ -47,8 +49,12 @@ export type Person = {
+   pastRetirements: PastRetirement[];
+   tags: string[];
+   snapshots: Snapshot[];
++  statements: StatementLine[];
+ };
+ 
++/** A statement: its date (yyyy-MM-dd) and the person's due-total it recorded (two decimals, or n/a). */
++export type StatementLine = { date: string; dueTotal: string };
++
+ /** A snapshot: the day being left (yyyy-MM-dd) and the person's due-total as it stood then (two decimals, or n/a). */
+ export type Snapshot = { day: string; dueTotal: string };
+ 
+diff --git a/src/main/frontend/features/statements/statement.slot.tsx b/src/main/frontend/features/statements/statement.slot.tsx
+index 1214fa7cc..4f55d7fca 100644
+--- a/src/main/frontend/features/statements/statement.slot.tsx
++++ b/src/main/frontend/features/statements/statement.slot.tsx
+@@ -14,7 +14,8 @@ function StatementHead() {
+   return <th>Statements</th>;
+ }
+ 
+-// A person's statements: how many were taken, the last one's due-total and date, and the date and button
++// A person's statements: how many were taken, the last one's due-total and date, a line for each still
++// standing (oldest first, by date), and the date and button
+ // that take one (binding their counting claims to their figures now, or as they stood at the end of the
+ // date given; a blank date takes it now), and the button that cancels the last one
+ // (a steward only; its claims follow their live figures again). A refused action shows its error until
+@@ -58,6 +59,11 @@ function PersonStatement({ person }: { person: Person }) {
+       {shown('statement-count') && <><span data-testid="person-statement-count">{person.statementCount}</span>{' '}</>}
+       {shown('stated-total') && <><span data-testid="person-stated-total">{fig(person.statedTotal ?? '')}</span>{' '}</>}
+       {shown('statement-date') && <><span data-testid="person-statement-date">{person.statementDate ?? ''}</span>{' '}</>}
++      {person.statements.map((s, i) => (
++        <div key={i} data-testid="person-statement-line-line">
++          {s.date} {s.dueTotal}
++        </div>
++      ))}
+       <input
+         type="date"
+         data-testid="person-statement-asof"
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+index 3ec9cdab6..21cafca26 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+@@ -11,13 +11,13 @@ import net.officefloor.hq.app.statement.StatementSummary;
+  *  and each hold's from-date and to-date (null for no end), the ids of their patrons (in the order named), and their own terms
+  *  (whole days, null when none), their contact (null when none) and their aliases, sorted as names are compared, and whether they clash: their
+  *  name or an alias is used as a name or alias on another sheet of the sheet's tree, and the sheet they were
+- *  transferred from (null when they were not), and their past retirements, oldest first, and their tags, sorted, and their snapshots, oldest first. */
++ *  transferred from (null when they were not), and their past retirements, oldest first, and their tags, sorted, and their snapshots, oldest first, and their statements still standing, oldest first (by date). */
+ public record PersonResponse(long id, String name, String grade, List<GradeFrom> grades, long version,
+         int statementCount, String statedTotal, String statementDate, boolean retired, String retiredFrom,
+         boolean held, List<HoldFrom> holds, List<Long> patronIds, Integer terms,
+         boolean retiredNow, String contact, List<String> aliases, boolean clashing,
+         String origin, List<RetirementFrom> pastRetirements, List<String> tags,
+-        List<SnapshotLine> snapshots) {
++        List<SnapshotLine> snapshots, List<StatementSummary.Line> statements) {
+ 
+     /** A snapshot's day being left (yyyy-MM-dd) and the due-total as it stood then (two decimals, or n/a). */
+     public record SnapshotLine(String day, String dueTotal) {
+@@ -50,6 +50,7 @@ public record PersonResponse(long id, String name, String grade, List<GradeFrom>
+                 p.getPastRetirements().stream().map(r -> new RetirementFrom(r.from().toString(), r.to().toString()))
+                         .toList(),
+                 net.officefloor.hq.app.claim.Tags.list(p.getTags()),
+-                p.getSnapshots().stream().map(n -> new SnapshotLine(n.day().toString(), n.dueTotal())).toList());
++                p.getSnapshots().stream().map(n -> new SnapshotLine(n.day().toString(), n.dueTotal())).toList(),
++                s.lines());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/statement/StatementStore.java b/src/main/java/net/officefloor/hq/app/statement/StatementStore.java
+index dd4746df5..e04a810bd 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/StatementStore.java
++++ b/src/main/java/net/officefloor/hq/app/statement/StatementStore.java
+@@ -3,7 +3,9 @@ package net.officefloor.hq.app.statement;
+ import java.math.BigDecimal;
+ import java.sql.Date;
+ import java.time.LocalDate;
++import java.util.ArrayList;
+ import java.util.HashMap;
++import java.util.List;
+ import java.util.Map;
+ import net.officefloor.hq.app.history.History;
+ import org.springframework.jdbc.core.JdbcTemplate;
+@@ -70,18 +72,28 @@ public class StatementStore {
+     }
+ 
+     private Map<Long, StatementSummary> summariesFrom(String sheetId, String table) {
++        Map<Long, List<StatementSummary.Line>> lines = new HashMap<>();
++        jdbc.query("SELECT person_id, taken_on, due_total FROM " + table + " WHERE sheet_id = ? ORDER BY taken_on, id",
++                rs -> {
++                    lines.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(new StatementSummary.Line(
++                            rs.getObject("taken_on", LocalDate.class).toString(), figure(rs.getBigDecimal("due_total"))));
++                }, sheetId);
+         Map<Long, StatementSummary> found = new HashMap<>();
+         jdbc.query("SELECT s.person_id, s.taken_on, s.due_total, c.n FROM (SELECT * FROM " + table + ") s JOIN "
+                 + "(SELECT person_id, COUNT(*) AS n, MAX(id) AS last_id FROM " + table + " WHERE sheet_id = ? GROUP BY person_id) c "
+                 + "ON s.id = c.last_id", rs -> {
+-                    BigDecimal total = rs.getBigDecimal("due_total");
+-                    found.put(rs.getLong("person_id"), new StatementSummary(rs.getInt("n"),
+-                            total == null ? "n/a" : total.setScale(2).toPlainString(),
+-                            rs.getObject("taken_on", LocalDate.class).toString()));
++                    long personId = rs.getLong("person_id");
++                    found.put(personId, new StatementSummary(rs.getInt("n"), figure(rs.getBigDecimal("due_total")),
++                            rs.getObject("taken_on", LocalDate.class).toString(),
++                            List.copyOf(lines.getOrDefault(personId, List.of()))));
+                 }, sheetId);
+         return found;
+     }
+ 
++    private static String figure(BigDecimal total) {
++        return total == null ? "n/a" : total.setScale(2).toPlainString();
++    }
++
+     public StatementSummary summary(String sheetId, long personId) {
+         return summaries(sheetId).getOrDefault(personId, StatementSummary.NONE);
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/statement/StatementSummary.java b/src/main/java/net/officefloor/hq/app/statement/StatementSummary.java
+index 71069afd5..2ab646930 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/StatementSummary.java
++++ b/src/main/java/net/officefloor/hq/app/statement/StatementSummary.java
+@@ -1,7 +1,14 @@
+ package net.officefloor.hq.app.statement;
+ 
++import java.util.List;
++
+ /** A person's statements as the front end reads them: how many were taken, and the last one's
+- *  due-total (two decimals, or n/a) and date (yyyy-MM-dd); both null when none was taken. */
+-public record StatementSummary(int count, String lastDueTotal, String lastDate) {
+-    public static final StatementSummary NONE = new StatementSummary(0, null, null);
++ *  due-total (two decimals, or n/a) and date (yyyy-MM-dd); both null when none was taken; and every
++ *  statement still standing, oldest first (by date, then as taken). */
++public record StatementSummary(int count, String lastDueTotal, String lastDate, List<Line> lines) {
++    public static final StatementSummary NONE = new StatementSummary(0, null, null, List.of());
++
++    /** A statement's date (yyyy-MM-dd) and its due-total (two decimals, or n/a). */
++    public record Line(String date, String dueTotal) {
++    }
+ }
