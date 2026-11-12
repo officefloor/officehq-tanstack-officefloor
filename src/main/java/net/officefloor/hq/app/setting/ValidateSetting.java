@@ -47,6 +47,15 @@ public class ValidateSetting {
                     request.user()));
             return;
         }
+        if (SettingStore.FISCAL_START_MONTH.equals(key)) {
+            String value = request.value() == null ? "" : request.value().trim();
+            int month = value.matches("\\d{1,2}") ? Integer.parseInt(value) : 0;
+            if (month < 1 || month > 12) {
+                throw new InvalidSheetException("The fiscal start month must be a month from 1 to 12");
+            }
+            body.set(new SettingInput(key, String.valueOf(month), null, request.user()));
+            return;
+        }
         if (SettingStore.PARENT.equals(key)) {
             String value = request.value() == null ? "" : request.value().trim();
             if (value.isEmpty()) {

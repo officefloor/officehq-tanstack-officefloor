@@ -7,7 +7,7 @@ import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { useClaims } from '../claims/claims';
 import { usePeople } from '../people/people';
 import { useRates } from '../rates/rates';
-import { floorOf, useSettings } from '../settings/settings';
+import { fiscalYearOf, floorOf, useSettings } from '../settings/settings';
 import { useSheetToday } from '../sheet/sheet';
 import { lateOf } from '../overdue/overdue';
 import { type Period, periodDue, periodsKey, usePeriods } from './periods';
@@ -17,6 +17,9 @@ const EMPTY: Fields = { name: '', from: '', to: '' };
 
 type Range = { from: string; to: string };
 type GenerateResult = { generated: number };
+
+/** A generate: a range of months, or a fiscal year's twelve months. */
+type Generate = { range: Range } | { year: string };
 
 // The sheet's periods, each with its due-total (the figures of the claims whose date falls in it and that
 // count by their status at its end, skipping n/a; fixed when the period was closed or soft-closed), its closed yes/soft/no and the buttons that
@@ -31,6 +34,7 @@ function Periods() {
   const settings = useSettings(sheet).data;
   const floor = floorOf(settings);
   const today = useSheetToday(sheet);
+  const fiscalStart = Number(settings?.fiscalStartMonth ?? '1');
   const [fields, setFields] = useState<Fields>(EMPTY);
   const queryClient = useQueryClient();
 
@@ -45,11 +49,15 @@ function Periods() {
 
   // Generates one period per calendar month from the from-date's month to the to-date's; the server
   // leaves out a month whose name is taken or whose days overlap a period, and the count made shows
-  // once it answers (gone while it runs).
+  // once it answers (gone while it runs). A fiscal year (yyyy) generates its twelve months the same way,
+  // from the sheet's fiscal start month in that year; both show their count in the same place.
   const [range, setRange] = useState<Range>({ from: '', to: '' });
+  const [fyYear, setFyYear] = useState('');
   const generate = useMutation({
-    mutationFn: (r: Range) =>
-      postJson<GenerateResult>(`/api/sheets/${encodeURIComponent(sheet)}/periods/generate`, { ...r, user }),
+    mutationFn: (g: Generate) =>
+      'range' in g
+        ? postJson<GenerateResult>(`/api/sheets/${encodeURIComponent(sheet)}/periods/generate`, { ...g.range, user })
+        : postJson<GenerateResult>(`/api/sheets/${encodeURIComponent(sheet)}/periods/generate-fy`, { year: g.year, user }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheet) }),
   });
   const submitGenerate = useSubmitOnce(generate);
@@ -89,6 +97,7 @@ function Periods() {
             <th>To</th>
             <th>Due total</th>
             <th>Closed</th>
+            <th>Fiscal year</th>
             <th />
           </tr>
         </thead>
@@ -100,6 +109,7 @@ function Periods() {
               <td data-testid="period-to">{p.to}</td>
               <td data-testid="period-due-total">{periodDue(p, claims.data, people.data, rates.data, floor, lateOf(settings, today, people.data))}</td>
               <td data-testid="period-closed">{p.closed ? 'yes' : p.soft ? 'soft' : 'no'}</td>
+              <td data-testid="period-fy">{settings ? fiscalYearOf(p.from, fiscalStart) : ''}</td>
               <td>
                 <button type="button" data-testid="period-close" disabled={act.isPending} onClick={() => periodAction(p.name, 'close')}>
                   Close
@@ -145,13 +155,30 @@ function Periods() {
         data-testid="period-generate-form"
         onSubmit={(e) => {
           e.preventDefault();
-          submitGenerate(range);
+          submitGenerate({ range });
         }}
       >
         <input data-testid="period-generate-from" placeholder="From (yyyy-mm-dd)" value={range.from} onChange={setBound('from')} />
         <input data-testid="period-generate-to" placeholder="To (yyyy-mm-dd)" value={range.to} onChange={setBound('to')} />
         <button type="submit" data-testid="period-generate" disabled={generate.isPending}>
           Generate monthly periods
+        </button>{' '}
+        <input
+          data-testid="period-generate-fy-year"
+          placeholder="Fiscal year (yyyy)"
+          value={fyYear}
+          onChange={(e) => {
+            setFyYear(e.target.value);
+            generate.reset();
+          }}
+        />
+        <button
+          type="button"
+          data-testid="period-generate-fy"
+          disabled={generate.isPending}
+          onClick={() => submitGenerate({ year: fyYear })}
+        >
+          Generate fiscal year
         </button>
         {generate.isSuccess && (
           <>

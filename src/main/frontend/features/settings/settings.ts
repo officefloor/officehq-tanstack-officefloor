@@ -24,13 +24,14 @@ import { useAsOf } from '../../session/session';
  *  is each grade's proof threshold in force on the sheet's today, by grade, null when it has none (then the sheet's).
  *  `pot` (two decimals) is the sum a balanced pool shares out among its members, null for none; it is not dated.
  *  `parent` is the id of the sheet whose rates a grade with no rate in force on a date takes (then its parent's, up
- *  to three levels up), null for none; it is not dated. */
+ *  to three levels up), null for none; it is not dated. `fiscalStartMonth` is the month (1 to 12) a fiscal year starts in,
+ *  1 unless set; it is not dated. */
 export type Settings = { clerkLimit: string | null; floor: string; terms: string; latePct: string; policyDate: string | null;
   periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; proofThreshold: string | null;
   floorFrom: Dated[]; latePctFrom: Dated[]; perms: Record<string, string | null>;
   graceDays: string | null; noteThreshold: string | null; entryDate: string | null;
   gradeGrace: Record<string, string | null>; gradeGraceFrom: Record<string, Dated[]>;
-  gradeProofThreshold: Record<string, string | null>; pot: string | null; parent: string | null };
+  gradeProofThreshold: Record<string, string | null>; pot: string | null; parent: string | null; fiscalStartMonth: string };
 
 /** A setting's value recorded from a date (yyyy-MM-dd); a null value is blank. */
 export type Dated = { from: string; value: string | null };
@@ -64,6 +65,14 @@ export function graceOf(settings: Settings | undefined): ((grade: string, date: 
     const value = valueOn(settings.gradeGraceFrom?.[grade] ?? [], date, '');
     return value === '' ? null : Number(value);
   });
+}
+
+/** The fiscal year (FY<yyyy>, by the calendar year its first day falls in) the date (yyyy-MM-dd) falls in,
+ *  for a fiscal year starting on the first of the start month (1 to 12). */
+export function fiscalYearOf(date: string, startMonth: number): string {
+  const year = Number(date.slice(0, 4));
+  const month = Number(date.slice(5, 7));
+  return `FY${month >= startMonth ? year : year - 1}`;
 }
 
 /** Under the sheet's key, so loading the sheet again re-reads its settings. */

@@ -21,7 +21,7 @@ import org.springframework.stereotype.Repository;
  *  that carry a figure (the clerk limit, the floor, the cap, the proof threshold, a grade's proof threshold, the note threshold, the terms, a grade's terms, a grade's grace days and the late
  *  percent) are dated: each value is recorded from a from-date, and the value in force on a date is the
  *  one with the latest from-date on or before it (none before every from-date, then the sheet's starting
- *  value). The policy date, the period numbering date, the entry date, the grace days, the pot, the parent sheet and the permission matrix are not dated. */
+ *  value). The policy date, the period numbering date, the entry date, the grace days, the pot, the parent sheet, the fiscal start month and the permission matrix are not dated. */
 @Repository
 public class SettingStore {
 
@@ -82,6 +82,15 @@ public class SettingStore {
     public BigDecimal pot(String sheetId) {
         String value = find(sheetId, POT);
         return value == null ? null : new BigDecimal(value);
+    }
+
+    /** The month (1 to 12) a fiscal year starts in; 1 unless set, not dated. */
+    public static final String FISCAL_START_MONTH = "fiscal-start-month";
+
+    /** The month a fiscal year starts in: the one set, else 1 (January). */
+    public int fiscalStartMonth(String sheetId) {
+        String value = find(sheetId, FISCAL_START_MONTH);
+        return value == null ? 1 : Integer.parseInt(value);
     }
 
     /** The sheet whose rates a grade with no rate in force on a date takes (then its parent's, up to three levels
@@ -222,7 +231,7 @@ public class SettingStore {
     /** Whether the key's values are recorded from a from-date. */
     public static boolean isDated(String key) {
         return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key)
-                && !ENTRY_DATE.equals(key) && !POT.equals(key) && !PARENT.equals(key)
+                && !ENTRY_DATE.equals(key) && !POT.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
                 && !key.startsWith(PERM_PREFIX);
     }
 
