@@ -93,6 +93,26 @@ public class SettingStore {
         return find(sheetId, PARENT);
     }
 
+    /** The sheet's descendants: the sheets naming it as their parent (its children), then their children, and so
+     *  on, each once, by id within each level. The parents are those named now. */
+    public List<String> descendants(String sheetId) {
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>(List.of(sheetId));
+        List<String> level = List.of(sheetId);
+        while (!level.isEmpty()) {
+            List<String> next = new java.util.ArrayList<>();
+            for (String parent : level) {
+                for (String child : jdbc.queryForList("SELECT sheet_id FROM sheet_setting WHERE setting_key = '"
+                        + PARENT + "' AND setting_value = ? ORDER BY sheet_id", String.class, parent)) {
+                    if (seen.add(child)) {
+                        next.add(child);
+                    }
+                }
+            }
+            level = next;
+        }
+        return List.copyOf(seen).subList(1, seen.size());
+    }
+
     /** Whether naming the parent for the sheet would make the sheet its own ancestor: the parent is the sheet,
      *  or has it among its ancestors. */
     public boolean cyclic(String sheetId, String parent) {

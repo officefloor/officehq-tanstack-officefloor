@@ -43,10 +43,11 @@ function PersonExcess({ person }: { person: Person }) {
   );
 }
 
-/** The sheet's due-total: everyone's (retired people included) due-totals added up, skipping n/a, trimmed
- *  of the single highest and lowest when three or more people have one. */
-export function useSheetDueTotal(): string {
-  const [sheet] = useCurrentSheet();
+/** The sheet's due-total (the current sheet's unless another is named): everyone's (retired people included)
+ *  due-totals added up, skipping n/a, trimmed of the single highest and lowest when three or more people have one. */
+export function useSheetDueTotal(of?: string): string {
+  const [current] = useCurrentSheet();
+  const sheet = of ?? current;
   const people = usePeople(sheet);
   const claims = useClaims(sheet);
   const rates = useRates(sheet);

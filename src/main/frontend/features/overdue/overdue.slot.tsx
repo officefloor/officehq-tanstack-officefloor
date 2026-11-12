@@ -18,8 +18,9 @@ function OverdueHead() {
   );
 }
 
-function useOverdue() {
-  const [sheet] = useCurrentSheet();
+function useOverdue(of?: string) {
+  const [current] = useCurrentSheet();
+  const sheet = of ?? current;
   const claims = useClaims(sheet);
   const rates = useRates(sheet);
   const today = useSheetToday(sheet);
@@ -45,12 +46,14 @@ function PersonOverdue({ person }: { person: Person }) {
   );
 }
 
-/** The sheet's overdue figures: everyone's overdue counts added up, and their overdue-totals
- *  added up trimmed of the single highest and lowest when three or more people have one. */
-export function useSheetOverdue(): { count: number; total: string } {
-  const [sheet] = useCurrentSheet();
+/** The sheet's overdue figures (the current sheet's unless another is named): everyone's overdue counts
+ *  added up, and their overdue-totals added up trimmed of the single highest and lowest when three or more
+ *  people have one. */
+export function useSheetOverdue(of?: string): { count: number; total: string } {
+  const [current] = useCurrentSheet();
+  const sheet = of ?? current;
   const people = usePeople(sheet);
-  const figures = (people.data ?? []).map(useOverdue());
+  const figures = (people.data ?? []).map(useOverdue(sheet));
   return { count: figures.reduce((n, f) => n + f.count, 0), total: trimmedTotal(figures.map((f) => f.total)) };
 }
 
