@@ -4,7 +4,7 @@ import { type Person, usePeople } from '../people/people';
 import { useCurrentSheet } from '../../session/session';
 import { claimed, live, useClaims } from './claims';
 
-// A person's claimed (the sum of their claims) and the sheet's claimed-total (everyone's).
+// A person's claimed (the sum of their claims, leaving out corrections) and the sheet's claimed-total (everyone's).
 function ClaimedHead() {
   return <th>Claimed</th>;
 }

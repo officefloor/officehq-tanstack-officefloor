@@ -142,9 +142,13 @@ export function useClaims(sheet: string) {
 /** Amounts are added in whole cents, so the sum is exact. */
 const cents = (amount: string) => Math.round(Number(amount) * 100);
 
-/** The sum of the amounts of those of these claims that count, with two decimals. */
+/** Whether the claim corrects another: it names the number of the claim it corrects. */
+export const correctsAnother = (c: Claim) => c.corrects !== null && c.corrects.trim() !== '';
+
+/** The sum of the amounts of those of these claims that count, leaving out claims that correct another,
+ *  with two decimals. */
 export function claimed(claims: Claim[]): string {
-  return (claims.filter(counts).reduce((sum, c) => sum + cents(c.amount), 0) / 100).toFixed(2);
+  return (claims.filter((c) => counts(c) && !correctsAnother(c)).reduce((sum, c) => sum + cents(c.amount), 0) / 100).toFixed(2);
 }
 
 /** The ids of the claims selected for a bulk action, kept in the URL (`selectedClaims`, comma separated). */

@@ -76,7 +76,10 @@ public class RollupService {
                         || !counts(claim, person, today)) {
                     continue;
                 }
-                claimed = claimed.add(claim.getAmount());
+                // A claim that corrects another counts toward due but not toward claimed.
+                if (claim.getCorrects() == null || claim.getCorrects().isBlank()) {
+                    claimed = claimed.add(claim.getAmount());
+                }
                 BigDecimal figure = lateness.due(claim, rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()));
                 if (figure != null) {
                     due = due.add(figure);
