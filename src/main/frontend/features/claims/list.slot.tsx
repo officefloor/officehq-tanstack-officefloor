@@ -4,6 +4,7 @@ import { HttpError, postJson, putJson } from '../../api/http';
 import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
 import type { Person } from '../people/people';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
+import { due, rateOf, useRates } from '../rates/rates';
 import { type Claim, claimsKey, useClaims } from './claims';
 
 type Fields = { amount: string; date: string; note: string };
@@ -18,6 +19,7 @@ function PersonClaims({ person }: { person: Person }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const claims = useClaims(sheet);
+  const rates = useRates(sheet);
   const [fields, setFields] = useState<Fields>(EMPTY);
   const [editing, setEditing] = useState<number | undefined>();
   const queryClient = useQueryClient();
@@ -60,6 +62,7 @@ function PersonClaims({ person }: { person: Person }) {
               <span data-testid="claim-amount">{c.amount}</span>{' '}
               <span data-testid="claim-date">{c.date}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}
+              <span data-testid="claim-due">{due(c.amount, rateOf(rates.data, person.grade))}</span>{' '}
               <button type="button" data-testid="claim-edit" onClick={() => open(c)}>
                 Edit
               </button>
