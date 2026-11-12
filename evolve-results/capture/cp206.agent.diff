@@ -1,0 +1,153 @@
+diff --git a/src/main/frontend/features/people/list.slot.tsx b/src/main/frontend/features/people/list.slot.tsx
+index 1e1900947..125b0bb37 100644
+--- a/src/main/frontend/features/people/list.slot.tsx
++++ b/src/main/frontend/features/people/list.slot.tsx
+@@ -1,10 +1,33 @@
+ import { HomeMain } from '../../slots/defs/homeMain';
+ import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
+-import { useCurrentSheet } from '../../session/session';
++import { useCurrentSheet, useCurrentUser } from '../../session/session';
+ import { usePersonDue } from '../rates/due.slot';
+ import { type Person, shownName, useEditingPerson, usePeople, useSelectedPeople, useShowRetired } from './people';
+ import { asString, useSearchParam } from '../../url/useSearchParam';
+ import { useColumnShown } from '../columns/columns';
++import { useRoles } from '../roles/roles';
++import { useCrews } from '../crews/crews';
++
++/** Whether this screen's user may see the person's row: a restricted user sees only the person with their
++ *  name and the people of the crews that person leads or belongs to (nothing until roles and crews are read);
++ *  anyone else sees every row. Only the rows are restricted — every total is still over the whole sheet. */
++function useRowVisible(sheet: string): (p: Person) => boolean {
++  const [user] = useCurrentUser();
++  const roles = useRoles(sheet);
++  const crews = useCrews(sheet);
++  const people = usePeople(sheet);
++  if (!roles.data) return () => false;
++  if (!roles.data.some((r) => r.user === user && r.role === 'restricted')) return () => true;
++  if (!crews.data || !people.data) return () => false;
++  const self = people.data.find((p) => p.name === user);
++  if (!self) return () => false;
++  const ids = new Set<number>([self.id]);
++  for (const c of crews.data) {
++    const members = [c.leadId, ...c.members.map((m) => m.personId)];
++    if (members.includes(self.id)) members.forEach((id) => ids.add(id));
++  }
++  return (p) => ids.has(p.id);
++}
+ 
+ const SORTS = ['added', 'name', 'grade', 'due-total'] as const;
+ type Sort = (typeof SORTS)[number];
+@@ -62,6 +85,7 @@ function PeopleList() {
+   const [sortBy] = useSortBy();
+   const dueOf = usePersonDue(sheet);
+   const shown = useColumnShown();
++  const visible = useRowVisible(sheet);
+ 
+   return (
+     <>
+@@ -82,7 +106,7 @@ function PeopleList() {
+         </tr>
+       </thead>
+       <tbody>
+-        {sorted(people.data ?? [], sortBy, dueOf).filter((p) => showRetired || !p.retired).map((p) => (
++        {sorted(people.data ?? [], sortBy, dueOf).filter((p) => (showRetired || !p.retired) && visible(p)).map((p) => (
+           <tr key={p.id} data-testid={`person-row-${p.id}`}>
+             <td>
+               <input
+diff --git a/src/main/frontend/features/roles/roles.ts b/src/main/frontend/features/roles/roles.ts
+index 0fa7fc7f7..7c1698abd 100644
+--- a/src/main/frontend/features/roles/roles.ts
++++ b/src/main/frontend/features/roles/roles.ts
+@@ -3,10 +3,11 @@ import { getJson } from '../../api/http';
+ import { asOfKey, asOfPath, sheetKey } from '../sheet/sheet';
+ import { useAsOf } from '../../session/session';
+ 
+-/** A user name's role on the sheet. A name with none assigned is a clerk; a viewer may change nothing. */
++/** A user name's role on the sheet. A name with none assigned is a clerk; a viewer may change nothing;
++ *  a restricted user acts as a clerk but sees on the people list only its own and its crews' people. */
+ export type Role = { user: string; role: string };
+ 
+-export const ROLES = ['clerk', 'steward', 'viewer'] as const;
++export const ROLES = ['clerk', 'steward', 'viewer', 'restricted'] as const;
+ 
+ /** Under the sheet's key, so loading the sheet again re-reads its roles. */
+ export const rolesKey = (sheet: string) => [...sheetKey(sheet), 'roles'] as const;
+diff --git a/src/main/java/net/officefloor/hq/app/role/Role.java b/src/main/java/net/officefloor/hq/app/role/Role.java
+index 46e304058..5dcbe5eb9 100644
+--- a/src/main/java/net/officefloor/hq/app/role/Role.java
++++ b/src/main/java/net/officefloor/hq/app/role/Role.java
+@@ -4,16 +4,17 @@ import java.util.Locale;
+ 
+ /** A user's role on a sheet: every name is a clerk unless assigned otherwise. A clerk settles only
+  *  claims within the sheet's clerk limit; a steward settles any. A viewer sees everything and may
+- *  change nothing. */
++ *  change nothing. A restricted user acts as a clerk, but its people list shows only the person with its
++ *  name and the people of the crews that person leads or belongs to (every total is still over everyone). */
+ public enum Role {
+-    CLERK, STEWARD, VIEWER;
++    CLERK, STEWARD, VIEWER, RESTRICTED;
+ 
+-    /** The role as the screen and the audit file show it: clerk, steward or viewer. */
++    /** The role as the screen and the audit file show it: clerk, steward, viewer or restricted. */
+     public String shown() {
+         return name().toLowerCase(Locale.ROOT);
+     }
+ 
+-    /** The role named by the text (clerk, steward or viewer), or null when it names none. */
++    /** The role named by the text (clerk, steward, viewer or restricted), or null when it names none. */
+     public static Role of(String text) {
+         for (Role r : values()) {
+             if (r.shown().equals(text)) {
+diff --git a/src/main/java/net/officefloor/hq/app/role/RoleResponse.java b/src/main/java/net/officefloor/hq/app/role/RoleResponse.java
+index d844cfdf2..933affed6 100644
+--- a/src/main/java/net/officefloor/hq/app/role/RoleResponse.java
++++ b/src/main/java/net/officefloor/hq/app/role/RoleResponse.java
+@@ -1,5 +1,5 @@
+ package net.officefloor.hq.app.role;
+ 
+-/** A user's role as the front end reads it: clerk, steward or viewer. */
++/** A user's role as the front end reads it: clerk, steward, viewer or restricted. */
+ public record RoleResponse(String user, String role) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/role/ValidateRole.java b/src/main/java/net/officefloor/hq/app/role/ValidateRole.java
+index 8165a8dd2..2f4fbdb13 100644
+--- a/src/main/java/net/officefloor/hq/app/role/ValidateRole.java
++++ b/src/main/java/net/officefloor/hq/app/role/ValidateRole.java
+@@ -15,7 +15,7 @@ public class ValidateRole {
+         String text = request.role() == null ? "" : request.role().trim();
+         Role role = Role.of(text);
+         if (role == null) {
+-            throw new InvalidSheetException("The role must be clerk, steward or viewer");
++            throw new InvalidSheetException("The role must be clerk, steward, viewer or restricted");
+         }
+         body.set(new RoleInput(user, role, request.by()));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingStore.java b/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
+index 25e2c1bc1..585d4d390 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
+@@ -303,8 +303,9 @@ public class SettingStore {
+     }
+ 
+     /** Whether the role may take the action (one of {@link #PERM_ACTIONS}): the roles listed in its
+-     *  permission, else, when blank, the standing rule. */
+-    public boolean allows(String sheetId, String action, Role role) {
++     *  permission, else, when blank, the standing rule. A restricted user takes the actions a clerk may. */
++    public boolean allows(String sheetId, String action, Role actingAs) {
++        Role role = actingAs == Role.RESTRICTED ? Role.CLERK : actingAs;
+         if (role == Role.VIEWER) {
+             return false;
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+index 43388812d..3c3a3ebd7 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+@@ -230,7 +230,7 @@ public class ValidateSetting {
+         List<String> roles = new ArrayList<>();
+         for (String part : value.split(",")) {
+             String role = part.trim();
+-            if (Role.of(role) == null || Role.of(role) == Role.VIEWER) {
++            if (Role.of(role) == null || Role.of(role) == Role.VIEWER || Role.of(role) == Role.RESTRICTED) {
+                 throw new InvalidSheetException("A permission lists roles (clerk, steward), comma separated, or is blank");
+             }
+             if (!roles.contains(role)) {
