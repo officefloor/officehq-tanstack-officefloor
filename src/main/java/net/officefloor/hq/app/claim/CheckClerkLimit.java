@@ -21,7 +21,8 @@ import net.officefloor.plugin.variable.Val;
  *  only a review moves it to SETTLED or back to OPEN; a review of a claim that is not PENDING is refused.
  *  Before the limit is considered, settling or approving a claim with no proofs whose due is above the
  *  proof threshold is refused (see {@link CheckProofs}), so it never goes to PENDING. Opening, settling
- *  and voiding are refused to a role the sheet's permission matrix does not allow it. A SETTLED claim
+ *  and voiding are refused to a role the sheet's permission matrix does not allow it, and opening
+ *  a claim of a person whose flag is in force on the sheet's today to anyone but a steward. A SETTLED claim
  *  may be voided only by a steward, and only within {@link #VOID_SETTLED_DAYS} days of the sheet's today
  *  it was settled on (its status log's SETTLED date). A DELETED claim may be restored only on the
  *  sheet's today it was deleted on. */
@@ -74,6 +75,7 @@ public class CheckClerkLimit {
             refuseLateRestore(claim, log, sheets);
         }
         if (from == ClaimStatus.DRAFT && input.status() == ClaimStatus.OPEN) {
+            refuseFlagged(claim, steward, people, sheets);
             CheckProofs.refuseUnnoted(claim, settings, people, rates, sheets, claims);
         }
         CheckProofs.refuseUnproved(input, claim, settings, people, rates, sheets, claims);
@@ -123,6 +125,20 @@ public class CheckClerkLimit {
         if (deleted == null || today == null || !today.equals(deleted)) {
             throw new InvalidSheetException("A DELETED claim can be restored only on the day it was deleted");
         }
+    }
+
+    /** Refuses opening a claim by anyone but a steward while its person's flag is in force on the sheet's today. */
+    static void refuseFlagged(Claim claim, boolean steward, PersonStore people, SheetStore sheets)
+            throws InvalidSheetException {
+        if (!steward && flagged(claim, people, sheets)) {
+            throw new InvalidSheetException("Only a steward can open a claim of a flagged person");
+        }
+    }
+
+    /** Whether the claim's person has a flag in force on the sheet's today. */
+    static boolean flagged(Claim claim, PersonStore people, SheetStore sheets) {
+        Person person = people.find(claim.getSheetId(), claim.getPersonId());
+        return person != null && person.flaggedOn(sheets.today(claim.getSheetId()));
     }
 
     /** Refuses opening, settling or voiding a claim by a role the sheet's permission matrix does not allow it. */

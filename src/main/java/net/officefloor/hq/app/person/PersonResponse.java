@@ -11,13 +11,13 @@ import net.officefloor.hq.app.statement.StatementSummary;
  *  and each hold's from-date and to-date (null for no end), the ids of their patrons (in the order named), and their own terms
  *  in force on the sheet's today (whole days, null when none), their contact (null when none) and their aliases, sorted as names are compared, and whether they clash: their
  *  name or an alias is used as a name or alias on another sheet of the sheet's tree, and the sheet they were
- *  transferred from (null when they were not), and their past retirements, oldest first, and their tags, sorted, and their snapshots, oldest first, and their statements still standing, oldest first (by date). */
+ *  transferred from (null when they were not), and their past retirements, oldest first, and their tags, sorted, and their snapshots, oldest first, and their statements still standing, oldest first (by date), and the reason of their flag while it is in force on the sheet's today (null when none is). */
 public record PersonResponse(long id, String name, String grade, List<GradeFrom> grades, long version,
         int statementCount, String statedTotal, String statementDate, boolean retired, String retiredFrom,
         boolean held, List<HoldFrom> holds, List<Long> patronIds, Integer terms,
         boolean retiredNow, String contact, List<String> aliases, boolean clashing,
         String origin, List<RetirementFrom> pastRetirements, List<String> tags,
-        List<SnapshotLine> snapshots, List<StatementSummary.Line> statements) {
+        List<SnapshotLine> snapshots, List<StatementSummary.Line> statements, String flag) {
 
     /** A snapshot's day being left (yyyy-MM-dd) and the due-total as it stood then (two decimals, or n/a). */
     public record SnapshotLine(String day, String dueTotal) {
@@ -51,6 +51,6 @@ public record PersonResponse(long id, String name, String grade, List<GradeFrom>
                         .toList(),
                 net.officefloor.hq.app.claim.Tags.list(p.getTags()),
                 p.getSnapshots().stream().map(n -> new SnapshotLine(n.day().toString(), n.dueTotal())).toList(),
-                s.lines());
+                s.lines(), p.flaggedOn(today) ? p.getFlag().reason() : null);
     }
 }

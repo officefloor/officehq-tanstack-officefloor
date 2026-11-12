@@ -93,6 +93,17 @@ public class PersonStore {
         return snapshots;
     }
 
+    /** The people's flags on the sheet (only the one person's when {@code personId} is given), by person. */
+    private Map<Long, Flag> flags(String sheetId, Long personId) {
+        Map<Long, Flag> flags = new HashMap<>();
+        jdbc.query("SELECT person_id, reason, until_date FROM person_flag WHERE sheet_id = ?"
+                + (personId == null ? "" : " AND person_id = " + personId), rs -> {
+                    flags.put(rs.getLong("person_id"),
+                            new Flag(rs.getString("reason"), rs.getObject("until_date", LocalDate.class)));
+                }, sheetId);
+        return flags;
+    }
+
     private List<Person> query(String sheetId, Long personId, String sql, Object... args) {
         return queryFrom(sheetId, personId, "person_grade", "person_hold", "person_alias", "person_retirement",
                 "person_snapshot", "person_terms", sql, args);
@@ -107,6 +118,7 @@ public class PersonStore {
         Map<Long, List<String>> aliases = aliases(sheetId, personId, aliasTable);
         Map<Long, List<PastRetirement>> past = pastRetirements(sheetId, personId, retirementTable);
         Map<Long, List<Snapshot>> snapshots = snapshots(sheetId, personId, snapshotTable);
+        Map<Long, Flag> flags = flags(sheetId, personId);
         RowMapper<Person> row = (rs, i) -> {
             Person p = new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
                     grades.getOrDefault(rs.getLong("id"), new TreeMap<>()), rs.getLong("version"),
@@ -117,6 +129,7 @@ public class PersonStore {
             p.setTags(rs.getString("tags"));
             p.setOrigin(rs.getString("origin"));
             p.setArrivedOn(rs.getObject("arrived_on", LocalDate.class));
+            p.setFlag(flags.get(rs.getLong("id")));
             p.getAliases().addAll(aliases.getOrDefault(rs.getLong("id"), List.of()));
             p.getPastRetirements().addAll(past.getOrDefault(rs.getLong("id"), List.of()));
             p.getSnapshots().addAll(snapshots.getOrDefault(rs.getLong("id"), List.of()));
@@ -368,6 +381,13 @@ public class PersonStore {
         person.addHold(hold);
     }
 
+    /** Puts the flag on the person, replacing any they had. */
+    public void flag(Person person, Flag flag) {
+        jdbc.update("MERGE INTO person_flag (sheet_id, person_id, reason, until_date) KEY (sheet_id, person_id) "
+                + "VALUES (?, ?, ?, ?)", person.getSheetId(), person.getId(), flag.reason(), flag.until());
+        person.setFlag(flag);
+    }
+
     /** Adds a copy of the person to the other sheet: their name, every grade with its from-date, their terms,
      *  contact, tags and aliases, noting this sheet as the one they came from. Their holds, statements and watchers
      *  are not carried (a transfer gives them their statements, see StatementStore). {@code arrivedOn} is the other
@@ -401,6 +421,7 @@ public class PersonStore {
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM person_terms WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
+        jdbc.update("DELETE FROM person_flag WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM person_snapshot WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM statement WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
@@ -420,6 +441,7 @@ public class PersonStore {
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM person_terms WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
+        jdbc.update("DELETE FROM person_flag WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM person_snapshot WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
         jdbc.update("DELETE FROM statement WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());

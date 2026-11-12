@@ -25,7 +25,9 @@ import { useAsOf } from '../../session/session';
  *  person carries it.
  *  `snapshots` are their snapshots, one per SNAPSHOT written for them as the sheet's today moved on, oldest first.
  *  `statements` are their statements still standing (a cancelled one is gone), oldest first by date, the ones a
- *  merge or a transfer brought over among them. */
+ *  merge or a transfer brought over among them.
+ *  `flag` is the reason of their flag while it is in force on the sheet's today (null when none is): only a
+ *  steward may open a claim of theirs then. */
 export type Person = {
   id: number;
   name: string;
@@ -50,6 +52,7 @@ export type Person = {
   tags: string[];
   snapshots: Snapshot[];
   statements: StatementLine[];
+  flag: string | null;
 };
 
 /** A statement: its date (yyyy-MM-dd) and the person's due-total it recorded (two decimals, or n/a). */

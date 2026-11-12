@@ -37,6 +37,7 @@ public class Person {
     private String origin;
     private LocalDate arrivedOn;
     private String tags;
+    private Flag flag;
 
     public Person(long id, String sheetId, String name, NavigableMap<LocalDate, String> grades, long version) {
         this.id = id;
@@ -112,8 +113,10 @@ public class Person {
     }
     /** The from-date of the dated terms the next save records, null when it records none. */
     public LocalDate getTermsRecordFrom() { return termsRecordFrom; }
-    /** Whether the last {@link #setTerms} or {@link #recordTerms} changed their terms. */
+    /** Whether the last {@link #setTerms} or {@link #recordTerms} changed their terms (or as last noted). */
     public boolean isTermsChanged() { return termsChanged; }
+    /** Notes whether an edit changed their terms, overriding what the last set or record noted. */
+    public void noteTermsChanged(boolean changed) { termsChanged = changed; }
     /** Their contact (trimmed, lower-cased), null when they have none. */
     public String getContact() { return contact; }
     /** Sets their contact, noting whether it differs from the one they had. */
@@ -136,6 +139,11 @@ public class Person {
     public void setRetiredFrom(LocalDate retiredFrom) { this.retiredFrom = retiredFrom; }
     /** Their past retirements (each ended by unretiring them), oldest first. */
     public List<PastRetirement> getPastRetirements() { return pastRetirements; }
+    /** Their flag, null when they were never flagged (it may be past its until-date). */
+    public Flag getFlag() { return flag; }
+    public void setFlag(Flag flag) { this.flag = flag; }
+    /** Whether their flag is in force on the date: only a steward may open a claim of theirs then. */
+    public boolean flaggedOn(LocalDate date) { return flag != null && flag.inForceOn(date); }
     /** Their snapshots, one per SNAPSHOT written for them, oldest first. */
     public List<Snapshot> getSnapshots() { return snapshots; }
 }

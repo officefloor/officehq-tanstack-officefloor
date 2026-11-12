@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.claim;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -10,6 +11,7 @@ import net.officefloor.hq.app.period.PeriodStore;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonStore;
 import net.officefloor.hq.app.rate.RateStore;
+import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.role.RoleStore;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.rollup.RollupService;
@@ -27,7 +29,8 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  counted as opened.
  *  A claim that is not on the sheet, is not a DRAFT, or is due by a date in a closed period, or whose person already has
  *  as many OPEN or PENDING claims in its period as the period's cap (counting those opened before it here), or has an empty note while its due is above the
- *  note threshold in force on its date, and every claim when
+ *  note threshold in force on its date, or whose person's flag is in force on the sheet's today while the user
+ *  is not a steward, and every claim when
  *  the sheet is archived or the sheet's permission matrix does not allow the user's role to open, is refused and
  *  left as it is. */
 public class OpenClaims {
@@ -57,10 +60,14 @@ public class OpenClaims {
         }
         selected.sort(Comparator.<Claim>comparingInt(c -> personOrder.getOrDefault(c.getPersonId(), Integer.MAX_VALUE))
                 .thenComparing(c -> listed.getOrDefault(c.getId(), Integer.MAX_VALUE)));
-        boolean permitted = !sheets.archived(sheet) && settings.allows(sheet, "open", roles.find(sheet, input.user()));
+        Role role = roles.find(sheet, input.user());
+        boolean permitted = !sheets.archived(sheet) && settings.allows(sheet, "open", role);
+        LocalDate today = sheets.today(sheet);
         int opened = 0;
         for (Claim claim : selected) {
+            Person owner = persons.get(claim.getPersonId());
             if (!permitted || claim.getStatus() != ClaimStatus.DRAFT || closed(periods, claim)
+                    || (role != Role.STEWARD && owner != null && owner.flaggedOn(today))
                     || capped(periods, store, claim) || unnoted(claim, settings, people, rates, sheets, store)) {
                 refused++;
                 continue;
