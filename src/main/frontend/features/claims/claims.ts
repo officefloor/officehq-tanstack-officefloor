@@ -14,6 +14,8 @@ export type Claim = {
   note: string;
   status: ClaimStatus;
   number: number | null;
+  /** The due fixed when the claim was settled; null when it has none, so its due follows the rate. */
+  due: string | null;
 };
 
 /** Only OPEN and SETTLED claims count toward claimed and the totals. */

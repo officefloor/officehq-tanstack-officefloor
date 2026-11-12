@@ -20,6 +20,13 @@ public class RateStore {
                 (rs, i) -> RateResponse.of(rs.getString("grade"), rs.getBigDecimal("pct")), sheetId);
     }
 
+    /** The grade's percent, or null when the grade has no rate. */
+    public BigDecimal find(String sheetId, String grade) {
+        List<BigDecimal> found = jdbc.queryForList("SELECT pct FROM rate WHERE sheet_id = ? AND grade = ?",
+                BigDecimal.class, sheetId, grade);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
     public void set(String sheetId, String grade, BigDecimal pct) {
         jdbc.update("MERGE INTO rate (sheet_id, grade, pct) KEY (sheet_id, grade) VALUES (?, ?, ?)", sheetId, grade,
                 pct);
