@@ -1,0 +1,455 @@
+diff --git a/src/main/frontend/features/people/list.slot.tsx b/src/main/frontend/features/people/list.slot.tsx
+index 21aac038d..dbd23541e 100644
+--- a/src/main/frontend/features/people/list.slot.tsx
++++ b/src/main/frontend/features/people/list.slot.tsx
+@@ -3,7 +3,7 @@ import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns
+ import { useCurrentSheet } from '../../session/session';
+ import { useEditingPerson, usePeople, useSelectedPeople, useShowRetired } from './people';
+ 
+-// The sheet's people in the order they were added; retired people only while "show retired" is on.
++// The sheet's people in list order (by their positions, see move.slot.tsx); retired people only while "show retired" is on.
+ function PeopleList() {
+   const [sheet] = useCurrentSheet();
+   const [, setEditing] = useEditingPerson();
+diff --git a/src/main/frontend/features/people/move.slot.tsx b/src/main/frontend/features/people/move.slot.tsx
+new file mode 100644
+index 000000000..5815e89cc
+--- /dev/null
++++ b/src/main/frontend/features/people/move.slot.tsx
+@@ -0,0 +1,60 @@
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { HttpError, postJson } from '../../api/http';
++import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
++import { type Person, peopleKey, personActionKey, useLatestPersonAction } from './people';
++import { useCurrentSheet, useCurrentUser } from '../../session/session';
++
++function MoveHead() {
++  return <th>Move</th>;
++}
++
++// The buttons that swap the person with the one above or below them in the list. The list, the
++// rollup lines and every action that works in list order follow the move; the top row cannot move
++// up nor the bottom row down. A refused move shows its error until the next action on the row.
++function PersonMove({ person }: { person: Person }) {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const queryClient = useQueryClient();
++
++  const move = useMutation({
++    mutationKey: personActionKey(sheet, person.id),
++    mutationFn: (direction: 'up' | 'down') =>
++      postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/move`, { direction, user }),
++    onSuccess: async () => {
++      await queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
++    },
++  });
++
++  const latest = useLatestPersonAction(sheet, person.id);
++
++  return (
++    <td>
++      {(['up', 'down'] as const).map((direction) => (
++        <button
++          key={direction}
++          type="button"
++          data-testid={`person-move-${direction}`}
++          aria-label={`Move ${direction}`}
++          disabled={move.isPending}
++          onClick={() => {
++            move.reset();
++            move.mutate(direction);
++          }}
++        >
++          {direction === 'up' ? '↑' : '↓'}
++        </button>
++      ))}
++      {move.isError && move.submittedAt >= latest && (
++        <span data-testid="person-error" role="alert">
++          {' '}
++          {move.error instanceof HttpError && move.error.reason ? `${move.error.reason}.` : 'The move was refused.'}
++        </span>
++      )}
++    </td>
++  );
++}
++
++export const contributions = [
++  PersonColumnHeads.fill({ order: 0.5, Component: MoveHead }),
++  PersonColumns.fill({ order: 0.5, Component: PersonMove }),
++];
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ReassignClaims.java b/src/main/java/net/officefloor/hq/app/claim/ReassignClaims.java
+index 2942d55de..1e761a6e4 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ReassignClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ReassignClaims.java
+@@ -19,7 +19,7 @@ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+-/** Moves each selected claim to the chosen person, in list order: its people in the order they were added, a
++/** Moves each selected claim to the chosen person, in list order: its people by their positions, a
+  *  person's claims newest first. Each goes through the very steps of a single move by the user (role, period,
+  *  status, correction and retirement checks, then store and audit as CLAIM_REASSIGNED with its rollup lines). A
+  *  claim that is not on the sheet, or that a single move would refuse, is refused and left as it is. */
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java b/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java
+index 82d966a1d..029b9c7b9 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java
+@@ -27,7 +27,7 @@ import org.springframework.transaction.TransactionDefinition;
+ import org.springframework.transaction.support.TransactionTemplate;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+-/** Settles each selected claim, in list order: its people in the order they were added, a person's
++/** Settles each selected claim, in list order: its people by their positions, a person's
+  *  claims newest first. Each goes through the very steps of a single settle by the user (period,
+  *  clerk limit, opened-by, edited-by and status checks, then store, log and audit), so a clerk's settle above
+  *  the clerk limit sends it to PENDING, which counts as settled. A claim that is not on the sheet,
+diff --git a/src/main/java/net/officefloor/hq/app/person/AuditPersonMoved.java b/src/main/java/net/officefloor/hq/app/person/AuditPersonMoved.java
+new file mode 100644
+index 000000000..1b522cd10
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/AuditPersonMoved.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++
++/** Records a move: PERSON_MOVED sheet=<id> by=<user> name=<name> position=<new position, counting from 1>. */
++public class AuditPersonMoved {
++    public void audit(@Val MoveInput input, @Val Person person, @Val Moved moved, Audit audit) {
++        audit.record("PERSON_MOVED sheet=" + person.getSheetId() + " by=" + input.user() + " name=" + person.getName()
++                + " position=" + moved.position());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/GradePeople.java b/src/main/java/net/officefloor/hq/app/person/GradePeople.java
+index 300ede4ab..6930fbd6c 100644
+--- a/src/main/java/net/officefloor/hq/app/person/GradePeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/GradePeople.java
+@@ -15,7 +15,7 @@ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+-/** Gives each selected person the grade from the from-date, in list order (the order they were added),
++/** Gives each selected person the grade from the from-date, in list order (by their positions),
+  *  exactly as the person form's edit would (keeping their name and terms), each recorded as PERSON_EDITED
+  *  and then how it moved the sheet's figures. A selected person not on the sheet refuses the whole change; a viewer grades no one (0, nothing stored). */
+ public class GradePeople {
+@@ -35,7 +35,8 @@ public class GradePeople {
+             result.set(new BulkGradeResult(0));
+             return;
+         }
+-        selected.sort(Comparator.comparingLong(Person::getId));
++        List<Long> order = store.list(sheet).stream().map(Person::getId).toList();
++        selected.sort(Comparator.comparingInt(p -> order.indexOf(p.getId())));
+         LocalDate today = sheets.today(sheet);
+         for (Person person : selected) {
+             Rollup before = rollups.snapshot(sheet);
+diff --git a/src/main/java/net/officefloor/hq/app/person/MoveInput.java b/src/main/java/net/officefloor/hq/app/person/MoveInput.java
+new file mode 100644
+index 000000000..7536b733a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/MoveInput.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** A validated move: up the list (else down), and who moves them. */
++public record MoveInput(boolean up, String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/MovePerson.java b/src/main/java/net/officefloor/hq/app/person/MovePerson.java
+new file mode 100644
+index 000000000..ffd352578
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/MovePerson.java
+@@ -0,0 +1,17 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.sheet.InvalidSheetException;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++/** Swaps the person with their neighbour above or below; refused when they are already at that end. */
++public class MovePerson {
++    public void move(@Val MoveInput input, @Val Person person, PersonStore store, Out<Moved> moved)
++            throws InvalidSheetException {
++        int position = store.move(person, input.up());
++        if (position == 0) {
++            throw new InvalidSheetException(input.up() ? "The first person cannot move up" : "The last person cannot move down");
++        }
++        moved.set(new Moved(position));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/MoveRequest.java b/src/main/java/net/officefloor/hq/app/person/MoveRequest.java
+new file mode 100644
+index 000000000..2ec86d4cb
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/MoveRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** Body of a move in the list, as typed: the direction ("up" or "down") and who moves them. */
++public record MoveRequest(String direction, String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/Moved.java b/src/main/java/net/officefloor/hq/app/person/Moved.java
+new file mode 100644
+index 000000000..6fb0cb0fd
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/Moved.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** Where a stored move left the person: their position in the list, counting from 1. */
++public record Moved(int position) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonStore.java b/src/main/java/net/officefloor/hq/app/person/PersonStore.java
+index 200f75c43..cb390782b 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonStore.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonStore.java
+@@ -14,7 +14,8 @@ import org.springframework.jdbc.core.RowMapper;
+ import org.springframework.jdbc.support.GeneratedKeyHolder;
+ import org.springframework.stereotype.Repository;
+ 
+-/** The people kept per sheet, in the order they were added, each with their dated grades. */
++/** The people kept per sheet, in list order (by their position: a new person goes to the end, a move swaps
++ *  two neighbours), each with their dated grades. */
+ @Repository
+ public class PersonStore {
+ 
+@@ -79,15 +80,15 @@ public class PersonStore {
+     }
+ 
+     public List<Person> list(String sheetId) {
+-        return query(sheetId, null, "SELECT * FROM person WHERE sheet_id = ? ORDER BY id", sheetId);
++        return query(sheetId, null, "SELECT * FROM person WHERE sheet_id = ? ORDER BY list_position, id", sheetId);
+     }
+ 
+     /** The people on the sheet as they stood at the end of the date, with their grades and holds then (see
+-     *  {@link History}), in the order they were added. */
++     *  {@link History}), in list order then. */
+     public List<Person> listAsOf(String sheetId, LocalDate date) {
+         return queryFrom(sheetId, null, History.asOf("person_grade", "person_id, from_date", date),
+                 History.asOf("person_hold", "id", date), History.asOf("person_alias", "id", date),
+-                "SELECT * FROM " + History.asOf("person", "id", date) + " WHERE sheet_id = ? ORDER BY id", sheetId);
++                "SELECT * FROM " + History.asOf("person", "id", date) + " WHERE sheet_id = ? ORDER BY list_position, id", sheetId);
+     }
+ 
+     public Person find(String sheetId, long id) {
+@@ -191,11 +192,13 @@ public class PersonStore {
+         GeneratedKeyHolder keys = new GeneratedKeyHolder();
+         jdbc.update(con -> {
+             PreparedStatement ps = con.prepareStatement(
+-                    "INSERT INTO person (sheet_id, name, terms, contact) VALUES (?, ?, ?, ?)", new String[] { "ID" });
++                    "INSERT INTO person (sheet_id, name, terms, contact, list_position) VALUES (?, ?, ?, ?, (SELECT"
++                    + " COALESCE(MAX(list_position), 0) + 1 FROM person WHERE sheet_id = ?))", new String[] { "ID" });
+             ps.setString(1, sheetId);
+             ps.setString(2, name);
+             ps.setObject(3, terms, java.sql.Types.INTEGER);
+             ps.setString(4, contact);
++            ps.setString(5, sheetId);
+             return ps;
+         }, keys);
+         long id = keys.getKey().longValue();
+@@ -227,6 +230,46 @@ public class PersonStore {
+         return n == 1;
+     }
+ 
++    /**
++     * Swaps the person with their neighbour in the list (the one above when {@code up}, else the one below);
++     * answers the person's new position in the list, counting from 1, or 0 (nothing stored) when there is no
++     * neighbour that way: the top cannot move up, nor the bottom down. An edit of them leaves it as it is.
++     */
++    public int move(Person person, boolean up) {
++        List<long[]> order = jdbc.query("SELECT id, list_position FROM person WHERE sheet_id = ? ORDER BY list_position, id"
++                + " FOR UPDATE", (rs, i) -> new long[] { rs.getLong("id"), rs.getLong("list_position") },
++                person.getSheetId());
++        int at = -1;
++        for (int i = 0; i < order.size(); i++) {
++            if (order.get(i)[0] == person.getId()) {
++                at = i;
++            }
++        }
++        int to = up ? at - 1 : at + 1;
++        if (at < 0 || to < 0 || to >= order.size()) {
++            return 0;
++        }
++        long[] mine = order.get(at);
++        long[] theirs = order.get(to);
++        if (mine[1] == theirs[1]) {
++            // tied positions (never made by this store): number them apart first, so the swap moves them
++            renumber(person.getSheetId(), order);
++            return move(person, up);
++        }
++        jdbc.update("UPDATE person SET list_position = ? WHERE sheet_id = ? AND id = ?", theirs[1], person.getSheetId(),
++                mine[0]);
++        jdbc.update("UPDATE person SET list_position = ? WHERE sheet_id = ? AND id = ?", mine[1], person.getSheetId(),
++                theirs[0]);
++        return to + 1;
++    }
++
++    /** Gives the people positions 1, 2, ... in their present order. */
++    private void renumber(String sheetId, List<long[]> order) {
++        for (int i = 0; i < order.size(); i++) {
++            jdbc.update("UPDATE person SET list_position = ? WHERE sheet_id = ? AND id = ?", i + 1, sheetId, order.get(i)[0]);
++        }
++    }
++
+     /** Retires the person from the date. An edit of their name or grade leaves it as it is. */
+     public void retire(Person person, LocalDate from) {
+         jdbc.update("UPDATE person SET retired_from = ? WHERE sheet_id = ? AND id = ?", from, person.getSheetId(),
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateMove.java b/src/main/java/net/officefloor/hq/app/person/ValidateMove.java
+new file mode 100644
+index 000000000..d9c940bd8
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateMove.java
+@@ -0,0 +1,19 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.role.RoleStore;
++import net.officefloor.hq.app.sheet.InvalidSheetException;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ValidateMove {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody MoveRequest request, Out<MoveInput> body,
++            RoleStore roles) throws InvalidSheetException {
++        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
++        String direction = request == null || request.direction() == null ? "" : request.direction().trim();
++        if (!direction.equals("up") && !direction.equals("down")) {
++            throw new InvalidSheetException("Move a person up or down");
++        }
++        body.set(new MoveInput(direction.equals("up"), request.user()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+index 39fe9709f..252f4a8d7 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -2,8 +2,8 @@ package net.officefloor.hq.app.rollup;
+ 
+ import java.util.Map;
+ 
+-/** The sheet's figures at one moment: each person's claimed, due-total and overdue-total (by person id, in the
+- *  order they were added) and the sheet's claimed-total, due-total and overdue-total, all as shown (two decimals, n/a). */
++/** The sheet's figures at one moment: each person's claimed, due-total and overdue-total (by person id, in
++ *  list order) and the sheet's claimed-total, due-total and overdue-total, all as shown (two decimals, n/a). */
+ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueTotal, String overdueTotal) {
+ 
+     /** A person's figures; {@code name} is what the ROLLUP line shows, not part of the comparison. */
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/RollupService.java b/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
+index 7cdd86e57..655237a16 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
+@@ -25,7 +25,7 @@ import org.springframework.stereotype.Service;
+  * Works out the sheet's figures as the screen shows them, and records in the audit file how a change
+  * moved them: ROLLUP sheet=<id> by=<user> person=<name> claimed=<0.00> due-total=<0.00 or n/a>
+  * overdue-total=<0.00> for each person whose figures changed (a person new to the sheet counts as changed), in
+- * the order they were added, then TOTALS sheet=<id> by=<user> claimed-total=<0.00> due-total=<0.00>
++ * list order (by their positions), then TOTALS sheet=<id> by=<user> claimed-total=<0.00> due-total=<0.00>
+  * overdue-total=<0.00> when any of the sheet's totals changed; the sheet's due-total and overdue-total leave out
+  * the single highest and the single lowest person's figure when three or more people have one (n/a is no figure). A person's overdue-total is the due (late charge
+  * included, skipping n/a) of their counting claims that are OPEN or PENDING with a due-by (plus any grace days of their grade, see {@link Lateness}) before today. A person's due-total is at most the sheet's cap. A change that moves no figure records nothing here.
+diff --git a/src/main/resources/db/migration/V58__person_position.sql b/src/main/resources/db/migration/V58__person_position.sql
+new file mode 100644
+index 000000000..c49851b79
+--- /dev/null
++++ b/src/main/resources/db/migration/V58__person_position.sql
+@@ -0,0 +1,12 @@
++-- A person's place in the list: the people are listed by position (lowest first). A new person goes to
++-- the end (one past the highest position on the sheet); moving a person up or down swaps their position
++-- with the neighbour's. Existing people keep the order they were added. Kept in person_hist too; the
++-- history trigger is set again afterwards, as in V45__claim_tags.sql.
++DROP TRIGGER person_history;
++ALTER TABLE person ADD COLUMN list_position BIGINT;
++ALTER TABLE person_hist ADD COLUMN list_position BIGINT;
++UPDATE person SET list_position = id;
++UPDATE person_hist SET list_position = id;
++ALTER TABLE person ALTER COLUMN list_position SET NOT NULL;
++CREATE TRIGGER person_history AFTER INSERT, UPDATE, DELETE ON person FOR EACH ROW
++    CALL 'net.officefloor.hq.app.history.HistoryTrigger';
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-grade.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-grade.POST.yml
+index d599ededc..a81eae18c 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-grade.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-grade.POST.yml
+@@ -1,5 +1,5 @@
+ # POST /api/sheets/{sheetId}/bulk-grade — give the selected people a grade together (body {personIds,
+-# grade, gradeFrom, user}). Each selected person, in list order (the order they were added), is given
++# grade, gradeFrom, user}). Each selected person, in list order (by their positions), is given
+ # the grade from gradeFrom (the sheet's today when blank) exactly as the person form's edit would,
+ # keeping their name and terms, and recorded as PERSON_EDITED, then how it moved the sheet's figures.
+ # Answers {graded}. Refused (400), storing nothing, when no person is selected, one is not on the
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-open.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-open.POST.yml
+index b4a4817de..7f4079b8f 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-open.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-open.POST.yml
+@@ -1,7 +1,7 @@
+ # POST /api/sheets/{sheetId}/bulk-open — open the selected claims together (body {claimIds, user}).
+ # Each selected claim that can be opened (a DRAFT on the sheet, not due by a date in a closed period, with a note or a due not above the note threshold in force on
+ # its date) is
+-# opened and numbered in list order — people in the order they were added, a person's claims
++# opened and numbered in list order — people by their positions, a person's claims
+ # newest first — and recorded as CLAIM_OPENED, as a single open is; each that cannot is refused and
+ # left as it is. Answers {opened, refused}. Refused (400) only when no claim is selected.
+ validate:
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-reassign.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-reassign.POST.yml
+index 0fb03f01b..fdfbfb306 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-reassign.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-reassign.POST.yml
+@@ -1,6 +1,6 @@
+ # POST /api/sheets/{sheetId}/bulk-reassign — move the selected claims to another person together (body
+-# {claimIds, to, user}, `to` the person's id). Each selected claim is moved in list order — people in the
+-# order they were added, a person's claims newest first — by exactly the rules of a single move by the user
++# {claimIds, to, user}, `to` the person's id). Each selected claim is moved in list order — people by their
++# positions, a person's claims newest first — by exactly the rules of a single move by the user
+ # (who may, which statuses, closed periods, retirement), and recorded as a single move is (CLAIM_REASSIGNED
+ # and its rollup lines); each that a single move would refuse is refused and left as it is. Answers
+ # {reassigned, refused}. Refused (400) only when no claim or no person is chosen.
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-settle.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-settle.POST.yml
+index df6826990..5064b0ced 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-settle.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-settle.POST.yml
+@@ -1,5 +1,5 @@
+ # POST /api/sheets/{sheetId}/bulk-settle — settle the selected claims together (body {claimIds, user}).
+-# Each selected claim is settled in list order — people in the order they were added, a person's
++# Each selected claim is settled in list order — people by their positions, a person's
+ # claims newest first — by exactly the rules of a single settle by the user, and recorded as a single
+ # settle is (CLAIM_SETTLED, or CLAIM_PENDING for a clerk above the clerk limit, which counts as
+ # settled). All or nothing: when a single settle would refuse any of them, none is settled, every one
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.GET.yml
+index 1531e7908..a076d4807 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.GET.yml
+@@ -1,4 +1,4 @@
+-# GET /api/sheets/{sheetId}/people — the sheet's people in the order they were added.
++# GET /api/sheets/{sheetId}/people — the sheet's people in list order (by their positions; a new person goes to the end).
+ respond:
+   class: net.officefloor.hq.app.person.RespondWithPeople
+   govern: [ readonly-transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/move.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/move.POST.yml
+new file mode 100644
+index 000000000..5e3799c4d
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/move.POST.yml
+@@ -0,0 +1,23 @@
++# POST /api/sheets/{sheetId}/people/{personId}/move — swap the person with the one above or below them in
++# the list (body: {direction: "up" | "down", user}). The list, the rollup lines and every action that works
++# in list order follow the people's positions. Refused (400), storing nothing, when the direction is neither,
++# the user is a viewer, the person is not on the sheet, or they are the top moving up or the bottom moving
++# down. A stored move is recorded in the audit file as PERSON_MOVED with the person's new position (from 1).
++validate:
++  class: net.officefloor.hq.app.person.ValidateMove
++  next: load
++load:
++  class: net.officefloor.hq.app.person.LoadPerson
++  govern: [ transaction ]
++  next: move
++move:
++  class: net.officefloor.hq.app.person.MovePerson
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.person.AuditPersonMoved
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPerson
++  govern: [ transaction ]
