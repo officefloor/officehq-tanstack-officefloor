@@ -1,0 +1,243 @@
+diff --git a/src/main/frontend/features/claims/list.slot.tsx b/src/main/frontend/features/claims/list.slot.tsx
+index 0398bd9a6..b7983814b 100644
+--- a/src/main/frontend/features/claims/list.slot.tsx
++++ b/src/main/frontend/features/claims/list.slot.tsx
+@@ -17,7 +17,7 @@ import { useFigure } from '../locale/locale';
+ 
+ type Fields = { amount: string; date: string; note: string; corrects: string; ref: string; tags: string };
+ /** `review` for a steward approving (SETTLED) or rejecting (OPEN, with a reason) a PENDING claim. */
+-type StatusChange = { id: number; status: ClaimStatus; review?: boolean; reason?: string };
++type StatusChange = { id: number; status: ClaimStatus; review?: boolean; reason?: string; on?: string };
+ /** A steward moving a claim to another person (`to`, their id). */
+ type Reassign = { id: number; to: string };
+ const EMPTY: Fields = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
+@@ -78,6 +78,8 @@ function PersonClaims({ person }: { person: Person }) {
+   const editingClaim = (claims.data ?? []).find((c) => c.id === editingId && c.personId === person.id);
+   const editing = editingClaim?.id;
+   const [reasons, setReasons] = useState<Record<number, string>>({});
++  // The date each claim's settle is made as of (blank: the sheet's today).
++  const [settleDates, setSettleDates] = useState<Record<number, string>>({});
+   // The void reason chosen per claim, from the sheet's list; a void needs one while the list is not empty.
+   const voidReasons = useVoidReasons(sheet).data ?? [];
+   const [voidChoices, setVoidChoices] = useState<Record<number, string>>({});
+@@ -138,13 +140,20 @@ function PersonClaims({ person }: { person: Person }) {
+   // The server refuses a change the claim's status does not allow; the error shows on that claim.
+   const move = useMutation({
+     mutationFn: (m: StatusChange) =>
+-      postJson<Claim>(`${base}/claims/${m.id}/status`, { status: m.status, user, review: m.review ?? false, reason: m.reason ?? '' }),
++      postJson<Claim>(`${base}/claims/${m.id}/status`, {
++        status: m.status,
++        user,
++        review: m.review ?? false,
++        reason: m.reason ?? '',
++        on: m.on ?? '',
++      }),
+     onSuccess: async (_, m) => {
+       await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+       if (m.review) setReasons((r) => ({ ...r, [m.id]: '' }));
++      if (m.on) setSettleDates((d) => ({ ...d, [m.id]: '' }));
+     },
+   });
+-  const moveTo = (id: number, status: ClaimStatus, review?: { reason: string }, voidReason?: string) => {
++  const moveTo = (id: number, status: ClaimStatus, review?: { reason: string }, voidReason?: string, on?: string) => {
+     move.reset();
+     lock.reset();
+     setUneditable(undefined);
+@@ -161,7 +170,7 @@ function PersonClaims({ person }: { person: Person }) {
+     partSettle.reset();
+     redate.reset();
+     inline.reset();
+-    move.mutate({ id, status, review: review !== undefined, reason: review?.reason ?? voidReason });
++    move.mutate({ id, status, review: review !== undefined, reason: review?.reason ?? voidReason, on });
+   };
+ 
+   // Moving a claim re-reads the people too: both people's figures follow it.
+@@ -695,7 +704,22 @@ function PersonClaims({ person }: { person: Person }) {
+               <button type="button" data-testid="claim-open" disabled={move.isPending} onClick={() => moveTo(c.id, 'OPEN')}>
+                 Open
+               </button>{' '}
+-              <button type="button" data-testid="claim-settle" disabled={move.isPending} onClick={() => moveTo(c.id, 'SETTLED')}>
++              <input
++                type="date"
++                data-testid="claim-settle-date"
++                aria-label="Settle as of"
++                value={settleDates[c.id] ?? ''}
++                onChange={(e) => {
++                  setSettleDates({ ...settleDates, [c.id]: e.target.value });
++                  if (move.variables?.id === c.id) move.reset();
++                }}
++              />{' '}
++              <button
++                type="button"
++                data-testid="claim-settle"
++                disabled={move.isPending}
++                onClick={() => moveTo(c.id, 'SETTLED', undefined, undefined, settleDates[c.id] || undefined)}
++              >
+                 Settle
+               </button>{' '}
+               {voidReasons.length > 0 && (
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyStatus.java
+index 89402c24b..177a85bf8 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyStatus.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.claim;
+ 
+ import java.math.BigDecimal;
++import java.time.LocalDate;
+ import java.util.List;
+ import net.officefloor.hq.app.period.PeriodStore;
+ import net.officefloor.hq.app.person.Person;
+@@ -57,6 +58,9 @@ public class ApplyStatus {
+                 voidReason = input.reason();
+             }
+         }
++        // A settle as of a date fixes its due as the claim stood at the end of that date.
++        BigDecimal dueThen = input.status() == ClaimStatus.SETTLED && input.on() != null
++                ? dueAsOf(claim, input.on(), store, people, rates, settings, sheets) : null;
+         if (from == ClaimStatus.DRAFT && (to == ClaimStatus.OPEN || to == ClaimStatus.REVIEW)) {
+             ClaimPeriods.refuseCapped(periods, store, claim);
+         }
+@@ -65,7 +69,9 @@ public class ApplyStatus {
+         }
+         // The due to freeze is worked out while the claim is still OPEN or PENDING, so it takes its late charge in.
+         BigDecimal settledDue = null;
+-        if (to == ClaimStatus.SETTLED) {
++        if (to == ClaimStatus.SETTLED && input.on() != null) {
++            settledDue = dueThen;
++        } else if (to == ClaimStatus.SETTLED) {
+             Person person = people.find(claim.getSheetId(), claim.getPersonId());
+             BigDecimal pct = person == null ? null : rates.forClaim(claim).find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
+             settledDue = Lateness.of(claim.getSheetId(), settings, sheets, store, people).due(claim, pct);
+@@ -88,4 +94,33 @@ public class ApplyStatus {
+         }
+         change.set(new StatusChange(claim.getNumber()));
+     }
++
++    /** The claim's due as it stood at the end of the date, as the as-of view works it out (see
++     *  {@link net.officefloor.hq.app.history.History}): the claim, its person, rates and settings as they stood
++     *  then, the date standing in for the sheet's today. Refused when the date is after the sheet's today, or the
++     *  claim or its person was not on the sheet then. */
++    static BigDecimal dueAsOf(Claim claim, LocalDate on, ClaimStore store, PersonStore people, RateStore rates,
++            SettingStore settings, SheetStore sheets) throws InvalidSheetException {
++        String sheetId = claim.getSheetId();
++        if (on.isAfter(sheets.today(sheetId))) {
++            throw new InvalidSheetException("The settle date is after the sheet's today");
++        }
++        List<Claim> all = store.listAsOf(sheetId, on);
++        Claim then = all.stream().filter(c -> c.getId() == claim.getId()).findFirst().orElse(null);
++        if (then == null || then.getStatus() == ClaimStatus.DELETED) {
++            throw new InvalidSheetException("The claim was not on the sheet on " + on);
++        }
++        Person person = people.findAsOf(sheetId, then.getPersonId(), on);
++        if (person == null) {
++            throw new InvalidSheetException("The claim's person was not on the sheet on " + on);
++        }
++        RateStore ratesThen = rates.asOf(on);
++        SettingStore settingsThen = settings.asOf(on);
++        LocalDate policy = settingsThen.policyDate(sheetId);
++        Rounding rounding = new Rounding(policy != null ? policy : on, settingsThen.roundings(sheetId), all);
++        Lateness lateness = new Lateness(settingsThen.latePcts(sheetId), settingsThen.floors(sheetId), on, rounding,
++                Lateness.graced(settingsThen.graces(sheetId), id -> id == person.getId() ? person : null));
++        BigDecimal pct = ratesThen.forClaim(then).find(sheetId, person.gradeOn(then.getDate()), then.getDate());
++        return lateness.due(then, pct);
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java
+index 24d7efec1..7e5e27268 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimStatus.java
+@@ -14,7 +14,7 @@ import net.officefloor.plugin.variable.Val;
+  *  then number=<n> when the claim has or had a number, then for CLAIM_SETTLED and CLAIM_APPROVED
+  *  due=<0.00> as fixed on settling (n/a when its grade had no rate), for CLAIM_REJECTED reason=<reason>,
+  *  for CLAIM_VOIDED of a SETTLED claim reversed=<0.00>, the frozen figure it takes out of the totals (n/a when none),
+- *  then for CLAIM_VOIDED reason=<reason> when voided with one.
++ *  then for CLAIM_VOIDED reason=<reason> when voided with one, then for CLAIM_SETTLED on=<date> when settled as of a date.
+  *  A claim opened above the review threshold is CLAIM_REVIEW (no number yet); a steward's review of it is
+  *  CLAIM_REVIEWED, then CLAIM_OPENED with its number.
+  *  A claim settled or approved then tells the person's watchers (NOTIFY), before the figures moved. */
+@@ -38,7 +38,8 @@ public class AuditClaimStatus {
+                 + (move.from() == ClaimStatus.PENDING && move.to() == ClaimStatus.OPEN ? " reason=" + input.reason() : "")
+                 + (move.from() == ClaimStatus.SETTLED && move.to() == ClaimStatus.VOID
+                         ? " reversed=" + (shown.due() == null ? "n/a" : shown.due()) : "")
+-                + (move.to() == ClaimStatus.VOID && claim.getVoidReason() != null ? " reason=" + claim.getVoidReason() : ""));
++                + (move.to() == ClaimStatus.VOID && claim.getVoidReason() != null ? " reason=" + claim.getVoidReason() : "")
++                + (move.to() == ClaimStatus.SETTLED && input.on() != null ? " on=" + input.on() : ""));
+         if (move.to() == ClaimStatus.SETTLED) {
+             Notify.watchers(watches, audit, person, input.user(), change.number());
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/StatusInput.java b/src/main/java/net/officefloor/hq/app/claim/StatusInput.java
+index e9025a674..056077f0f 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/StatusInput.java
++++ b/src/main/java/net/officefloor/hq/app/claim/StatusInput.java
+@@ -1,6 +1,13 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.time.LocalDate;
++
+ /** A validated claim status change; {@code review} for a steward approving (SETTLED) or rejecting
+- *  (OPEN, with its trimmed {@code reason}) a PENDING claim, or reviewing (OPEN) a REVIEW claim. */
+-public record StatusInput(ClaimStatus status, String user, boolean review, String reason) {
++ *  (OPEN, with its trimmed {@code reason}) a PENDING claim, or reviewing (OPEN) a REVIEW claim; {@code on}
++ *  the date a settle is made as of (null for the sheet's today, see {@link ApplyStatus}). */
++public record StatusInput(ClaimStatus status, String user, boolean review, String reason, LocalDate on) {
++
++    public StatusInput(ClaimStatus status, String user, boolean review, String reason) {
++        this(status, user, review, reason, null);
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/StatusRequest.java b/src/main/java/net/officefloor/hq/app/claim/StatusRequest.java
+index 6e209a197..a9563ace0 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/StatusRequest.java
++++ b/src/main/java/net/officefloor/hq/app/claim/StatusRequest.java
+@@ -2,6 +2,6 @@ package net.officefloor.hq.app.claim;
+ 
+ /** Body of a claim status change, as sent: the status to move to and who makes the change; for a
+  *  steward's review of a PENDING claim, {@code review} true (status SETTLED to approve, OPEN to reject)
+- *  and the reason given for a rejection. */
+-public record StatusRequest(String status, String user, Boolean review, String reason) {
++ *  and the reason given for a rejection; for a settle, the date (yyyy-MM-dd) it is made as of, if any. */
++public record StatusRequest(String status, String user, Boolean review, String reason, String on) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateStatus.java b/src/main/java/net/officefloor/hq/app/claim/ValidateStatus.java
+index 02da4c234..79a17b1dd 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateStatus.java
+@@ -1,5 +1,7 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
+ import net.officefloor.hq.app.role.RoleStore;
+ import net.officefloor.hq.app.sheet.InvalidSheetException;
+ import net.officefloor.plugin.variable.Out;
+@@ -21,6 +23,14 @@ public class ValidateStatus {
+         if (review && to != ClaimStatus.SETTLED && to != ClaimStatus.OPEN) {
+             throw new InvalidSheetException("A review approves or rejects a claim");
+         }
+-        body.set(new StatusInput(to, request.user(), review, reason));
++        LocalDate on = null;
++        if (to == ClaimStatus.SETTLED && request.on() != null && !request.on().isBlank()) {
++            try {
++                on = LocalDate.parse(request.on().trim());
++            } catch (DateTimeParseException e) {
++                throw new InvalidSheetException("Not a date: " + request.on().trim());
++            }
++        }
++        body.set(new StatusInput(to, request.user(), review, reason, on));
+     }
+ }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.POST.yml
+index 3efc7d7d9..a2fcdc131 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.POST.yml
+@@ -19,6 +19,9 @@
+ # CLAIM_PENDING, CLAIM_SETTLED, CLAIM_APPROVED, CLAIM_REJECTED, CLAIM_VOIDED, CLAIM_DELETED or CLAIM_RESTORED (with reversed=<the
+ # frozen figure> when a SETTLED claim is voided). While the sheet has void reasons, a void needs one of
+ # them as its reason (refused otherwise); it is kept on the claim and CLAIM_VOIDED ends with reason=<it>.
++# A settle may name a date (on, yyyy-MM-dd): its due is then frozen as the claim stood at the end of that date (the
++# as-of view, the date standing in for the sheet's today), and CLAIM_SETTLED ends with on=<date>; refused when the
++# date is after the sheet's today or the claim (or its person) was not on the sheet then.
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateStatus
+   next: load
