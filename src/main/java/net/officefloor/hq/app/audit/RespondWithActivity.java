@@ -1,0 +1,34 @@
+package net.officefloor.hq.app.audit;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+import net.officefloor.hq.app.Audit;
+import net.officefloor.web.ObjectResponse;
+import org.springframework.web.bind.annotation.PathVariable;
+
+/** The sheet's activity: for every user (by=) and every event in its audit lines, one line
+ *  "<user> <EVENT> <count>", sorted by user then event. */
+public class RespondWithActivity {
+    public void respond(@PathVariable("sheetId") String sheetId, Audit audit, ObjectResponse<List<String>> response) {
+        Map<String, Map<String, Integer>> counts = new TreeMap<>();
+        for (String line : audit.lines(sheetId.trim(), null)) {
+            String[] fields = line.split(" ");
+            String by = null;
+            for (String f : fields) {
+                if (f.startsWith("by=")) {
+                    by = f.substring("by=".length());
+                    break;
+                }
+            }
+            if (by == null || by.isEmpty()) {
+                continue;
+            }
+            counts.computeIfAbsent(by, u -> new TreeMap<>()).merge(fields[0], 1, Integer::sum);
+        }
+        List<String> lines = new ArrayList<>();
+        counts.forEach((user, events) -> events.forEach((event, n) -> lines.add(user + " " + event + " " + n)));
+        response.send(lines);
+    }
+}
