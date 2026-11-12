@@ -5,14 +5,17 @@ import net.officefloor.hq.app.sheet.InvalidSheetException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-/** The roles assigned per sheet. A user name with none assigned is a clerk. */
+/** The roles assigned per sheet. A user name with none assigned is a clerk; one with a delegation of the
+ *  steward role in force on the sheet's today acts as a steward (see {@link DelegationStore}). */
 @Repository
 public class RoleStore {
 
     private final JdbcTemplate jdbc;
+    private final DelegationStore delegations;
 
-    public RoleStore(JdbcTemplate jdbc) {
+    public RoleStore(JdbcTemplate jdbc, DelegationStore delegations) {
         this.jdbc = jdbc;
+        this.delegations = delegations;
     }
 
     /** Every role assigned on the sheet, by user name. */
@@ -22,8 +25,14 @@ public class RoleStore {
                 sheetId);
     }
 
-    /** The user's role on the sheet: clerk unless assigned otherwise. */
+    /** The role the user acts in on the sheet: steward while a delegation to them is in force, else
+     *  the role assigned. */
     public Role find(String sheetId, String user) {
+        return delegations.delegator(sheetId, user) != null ? Role.STEWARD : assigned(sheetId, user);
+    }
+
+    /** The user's role as assigned on the sheet, delegations aside: clerk unless assigned otherwise. */
+    public Role assigned(String sheetId, String user) {
         List<String> found = jdbc.queryForList("SELECT role FROM sheet_role WHERE sheet_id = ? AND user_name = ?",
                 String.class, sheetId, user);
         return found.isEmpty() ? Role.CLERK : Role.valueOf(found.get(0));

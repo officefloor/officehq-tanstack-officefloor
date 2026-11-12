@@ -17,3 +17,16 @@ export function useRoles(sheet: string) {
     enabled: sheet !== '',
   });
 }
+
+/** The steward role delegated to `user` by the steward `by` for from..to (yyyy-mm-dd), inclusive. */
+export type Delegation = { user: string; from: string; to: string; by: string };
+
+export const delegationsKey = (sheet: string) => [...sheetKey(sheet), 'delegations'] as const;
+
+export function useDelegations(sheet: string) {
+  return useQuery({
+    queryKey: delegationsKey(sheet),
+    queryFn: () => getJson<Delegation[]>(`/api/sheets/${encodeURIComponent(sheet)}/delegations`),
+    enabled: sheet !== '',
+  });
+}
