@@ -1,0 +1,554 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index c525c32bc..f85b24ff4 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -59,6 +59,8 @@ export type Claim = {
+   remindedOn: string | null;
+   /** Its external reference, unique on the sheet without regard to case; null when it has none. */
+   ref: string | null;
++  /** Its tags, each trimmed and lower-cased, sorted; empty when it has none. */
++  tags: string[];
+ };
+ 
+ /** A correction: a claim with a negative amount, which has no floor and no late charge. */
+@@ -104,6 +106,19 @@ export const isRecentSettled = (c: Claim, today: string | undefined) =>
+ /** Under the sheet's key, so loading the sheet again re-reads its claims. */
+ export const claimsKey = (sheet: string) => [...sheetKey(sheet), 'claims'] as const;
+ 
++/** Under the claims' key, so whatever re-reads the claims re-reads the tags too. */
++export const tagsKey = (sheet: string) => [...claimsKey(sheet), 'tags'] as const;
++
++/** Every tag ever carried by a claim on the sheet, sorted. */
++export function useTags(sheet: string) {
++  const [asOf] = useAsOf();
++  return useQuery({
++    queryKey: asOfKey(tagsKey(sheet), asOf),
++    queryFn: () => getJson<string[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/tags`, asOf)),
++    enabled: sheet !== '',
++  });
++}
++
+ /** Every claim on the sheet, newest first. */
+ export function useClaims(sheet: string) {
+   const [asOf] = useAsOf();
+diff --git a/src/main/frontend/features/claims/list.slot.tsx b/src/main/frontend/features/claims/list.slot.tsx
+index 303c93cea..8bd0bab1a 100644
+--- a/src/main/frontend/features/claims/list.slot.tsx
++++ b/src/main/frontend/features/claims/list.slot.tsx
+@@ -12,12 +12,12 @@ import { useSheetToday } from '../sheet/sheet';
+ import { dueBy, lateOf, overdue } from '../overdue/overdue';
+ import { type Claim, type ClaimStatus, claimsKey, useClaims, useEditingClaim, useSelectedClaims } from './claims';
+ 
+-type Fields = { amount: string; date: string; note: string; corrects: string; ref: string };
++type Fields = { amount: string; date: string; note: string; corrects: string; ref: string; tags: string };
+ /** `review` for a steward approving (SETTLED) or rejecting (OPEN, with a reason) a PENDING claim. */
+ type StatusChange = { id: number; status: ClaimStatus; review?: boolean; reason?: string };
+ /** A steward moving a claim to another person (`to`, their id). */
+ type Reassign = { id: number; to: string };
+-const EMPTY: Fields = { amount: '', date: '', note: '', corrects: '', ref: '' };
++const EMPTY: Fields = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
+ 
+ function ClaimsHead() {
+   return <th>Claims</th>;
+@@ -72,7 +72,7 @@ function PersonClaims({ person }: { person: Person }) {
+     onSuccess: (_, c) => {
+       if (editingId !== undefined && editingId !== c.id) release(editingId);
+       setEditing(c.id);
+-      setFields({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects ?? '', ref: c.ref ?? '' });
++      setFields({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects ?? '', ref: c.ref ?? '', tags: c.tags.join(', ') });
+     },
+   });
+   // Cancelling an editor releases its lock.
+@@ -263,7 +263,7 @@ function PersonClaims({ person }: { person: Person }) {
+     redate.mutate({ id, date: (redates[id] ?? '').trim() });
+   };
+   // A draft's amount changed in its row: an edit as the claim form makes it, keeping the claim's date, note,
+-  // the claim it corrects and its reference, so the server applies the form's rules and records CLAIM_EDITED.
++  // the claim it corrects, its reference and its tags, so the server applies the form's rules and records CLAIM_EDITED.
+   const inline = useMutation({
+     mutationFn: (d: { claim: Claim; amount: string }) =>
+       putJson<Claim>(`${base}/claims/${d.claim.id}`, {
+@@ -272,6 +272,7 @@ function PersonClaims({ person }: { person: Person }) {
+         note: d.claim.note,
+         corrects: d.claim.corrects ?? '',
+         ref: d.claim.ref ?? '',
++        tags: d.claim.tags.join(','),
+         user,
+       }),
+     onSuccess: async (_, d) => {
+@@ -358,6 +359,7 @@ function PersonClaims({ person }: { person: Person }) {
+         note: editingClaim.note,
+         corrects: editingClaim.corrects ?? '',
+         ref: editingClaim.ref ?? '',
++        tags: editingClaim.tags.join(', '),
+       });
+     }
+   }, [editing]);
+@@ -382,6 +384,7 @@ function PersonClaims({ person }: { person: Person }) {
+               <span data-testid="claim-note">{c.note}</span>{' '}
+               <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}
+               <span data-testid="claim-ref">{c.ref ?? ''}</span>{' '}
++              <span data-testid="claim-tags">{c.tags.join(', ')}</span>{' '}
+               <span data-testid="claim-period">{periodOf(periods.data, c.dueBy)?.name ?? ''}</span>{' '}
+               <span data-testid="claim-due">{claimDue(c, rates.data, person.grades, floor, lateOf(settings, today, [person]))}</span>{' '}
+               <span data-testid="claim-due-by">{dueBy(c)}</span>{' '}
+@@ -552,6 +555,8 @@ function PersonClaims({ person }: { person: Person }) {
+         data-testid="claim-form"
+         onSubmit={(e) => {
+           e.preventDefault();
++          // Submitting the form is the next action on the row: a refused editor opening no longer shows.
++          lock.reset();
+           submit(fields);
+         }}
+       >
+@@ -566,6 +571,7 @@ function PersonClaims({ person }: { person: Person }) {
+           onChange={set('corrects')}
+         />
+         <input data-testid="claim-form-ref" placeholder="Reference" value={fields.ref} onChange={set('ref')} />
++        <input data-testid="claim-form-tags" placeholder="Tags (comma separated)" value={fields.tags} onChange={set('tags')} />
+         <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
+           {editing !== undefined ? 'Save claim' : 'Add claim'}
+         </button>
+diff --git a/src/main/frontend/features/claims/tags.slot.tsx b/src/main/frontend/features/claims/tags.slot.tsx
+new file mode 100644
+index 000000000..e5c259c8b
+--- /dev/null
++++ b/src/main/frontend/features/claims/tags.slot.tsx
+@@ -0,0 +1,41 @@
++import { HomeMain } from '../../slots/defs/homeMain';
++import { usePeople } from '../people/people';
++import { useCurrentSheet } from '../../session/session';
++import { useSheetToday } from '../sheet/sheet';
++import { floorOf, useSettings } from '../settings/settings';
++import { lateOf } from '../overdue/overdue';
++import { dueTotal, personTagged, useRates } from '../rates/rates';
++import { live, useClaims, useTags } from './claims';
++
++// For every tag ever used on the sheet, its due-total: the dues of the claims that count which carry it,
++// everyone's added up, not capped or trimmed (a claim with two tags counts in both).
++function TagTotals() {
++  const [sheet] = useCurrentSheet();
++  const tags = useTags(sheet);
++  const people = usePeople(sheet);
++  const claims = useClaims(sheet);
++  const rates = useRates(sheet);
++  const today = useSheetToday(sheet);
++  const settings = useSettings(sheet).data;
++  const floor = floorOf(settings);
++  const total = (tag: string) =>
++    dueTotal(
++      (people.data ?? []).map((p) =>
++        personTagged(live((claims.data ?? []).filter((c) => c.personId === p.id), [p]), tag, rates.data, p.grades, today, floor,
++          lateOf(settings, today, [p])),
++      ),
++    );
++  if ((tags.data ?? []).length === 0) return null;
++  return (
++    <p>
++      Due by tag{' '}
++      {(tags.data ?? []).map((tag) => (
++        <span key={tag}>
++          {tag} <strong data-testid={`tag-${tag}-due-total`}>{total(tag)}</strong>{' '}
++        </span>
++      ))}
++    </p>
++  );
++}
++
++export const contribution = HomeMain.fill({ order: 36.5, Component: TagTotals });
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 97651e649..9cbb02759 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -218,3 +218,18 @@ export function personSplit(
+     dueTotal(mine.filter(keep).map((c) => claimDue(c, rates, grades, floor, late)));
+   return { settled: total((c) => c.status === 'SETTLED'), open: total((c) => c.status !== 'SETTLED') };
+ }
++
++/** A person's due on a tag: the sum of the dues (skipping n/a) of their claims that count that carry it;
++ *  0.00 when their due-total is n/a. */
++export function personTagged(
++  claims: Claim[],
++  tag: string,
++  rates: Rate[] | undefined,
++  grades: Grades,
++  today: string | undefined,
++  floor: Floor,
++  late?: Late,
++): string {
++  if (uncappedDue(claims, rates, grades, today, floor, late) === NA) return format(0n);
++  return dueTotal(claims.filter((c) => counts(c) && c.tags.includes(tag)).map((c) => claimDue(c, rates, grades, floor, late)));
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+index d29e94055..b098c888a 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+@@ -9,5 +9,6 @@ public class ApplyClaim {
+         claim.setNote(input.note());
+         claim.setCorrects(input.corrects());
+         claim.setRef(input.ref());
++        claim.setTags(input.tags());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimAdded.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimAdded.java
+index 9f3cf7c9c..19ba2fc62 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AuditClaimAdded.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimAdded.java
+@@ -7,7 +7,7 @@ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /** Records a stored claim add: CLAIM_ADDED sheet=<id> by=<user> person=<name> amount=<0.00> date=<yyyy-mm-dd>
+- *  (then ref=<reference> when it has one),
++ *  (then ref=<reference> when it has one, then tags=<tags, comma separated, sorted> when it has any),
+  *  followed for a late entry by LATE_ENTRY naming the claim the same way. */
+ public class AuditClaimAdded {
+     public void audit(@Val ClaimInput input, @Val Person person, @Val Claim claim, @Val Rollup before, Audit audit,
+@@ -18,7 +18,8 @@ public class AuditClaimAdded {
+     static void record(ClaimInput input, Person person, Claim claim, Rollup before, Audit audit,
+             RollupService rollups) {
+         audit.record(AuditClaimEdited.line("CLAIM_ADDED", input, person, claim)
+-                + (claim.getRef() == null ? "" : " ref=" + claim.getRef()));
++                + (claim.getRef() == null ? "" : " ref=" + claim.getRef())
++                + (claim.getTags() == null ? "" : " tags=" + claim.getTags()));
+         if (claim.isLateEntry()) {
+             audit.record(AuditClaimEdited.line("LATE_ENTRY", input, person, claim));
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 9eaf500d9..dc4ad9cf7 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -28,6 +28,7 @@ public class Claim {
+     private boolean lateEntry;
+     private LocalDate remindedOn;
+     private String ref;
++    private String tags;
+ 
+     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
+             ClaimStatus status, String number, BigDecimal settledDue, String openedBy, boolean stated,
+@@ -105,6 +106,9 @@ public class Claim {
+     /** The external reference, unique on the sheet without regard to case; null when it has none. */
+     public String getRef() { return ref; }
+     public void setRef(String ref) { this.ref = ref; }
++    /** Its tags (see {@link Tags}): sorted, comma separated; null when it has none. */
++    public String getTags() { return tags; }
++    public void setTags(String tags) { this.tags = tags; }
+     public void setDeferredUntil(LocalDate deferredUntil) { this.deferredUntil = deferredUntil; }
+     public void setPersonId(long personId) { this.personId = personId; }
+     public void setCorrects(String corrects) { this.corrects = corrects; }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimInput.java b/src/main/java/net/officefloor/hq/app/claim/ClaimInput.java
+index 047aa7337..9fb9f52ea 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimInput.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimInput.java
+@@ -5,8 +5,14 @@ import java.time.LocalDate;
+ 
+ /** A validated claim add or edit: the date already defaulted to the sheet's today; {@code corrects}
+  *  the number of the claim a correction (a negative amount) corrects, null for any other claim;
+- *  {@code ref} the external reference, spaces around it removed, null when none was given. */
+-public record ClaimInput(BigDecimal amount, LocalDate date, String note, String user, String corrects, String ref) {
++ *  {@code ref} the external reference, spaces around it removed, null when none was given; {@code tags} its
++ *  tags (see {@link Tags}), null when none were given. */
++public record ClaimInput(BigDecimal amount, LocalDate date, String note, String user, String corrects, String ref,
++        String tags) {
++
++    public ClaimInput(BigDecimal amount, LocalDate date, String note, String user, String corrects, String ref) {
++        this(amount, date, note, user, corrects, ref, null);
++    }
+ 
+     public ClaimInput(BigDecimal amount, LocalDate date, String note, String user, String corrects) {
+         this(amount, date, note, user, corrects, null);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRequest.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRequest.java
+index c7d778b6e..757b8e24c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRequest.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRequest.java
+@@ -2,8 +2,12 @@ package net.officefloor.hq.app.claim;
+ 
+ /** Body of a claim add or edit, as typed: the amount, the date (blank for the sheet's today), the
+  *  note, who makes the change, the number of the claim a correction corrects (blank for none), and
+- *  its external reference (blank for none). */
+-public record ClaimRequest(String amount, String date, String note, String user, String corrects, String ref) {
++ *  its external reference (blank for none), and its tags, comma separated (blank for none). */
++public record ClaimRequest(String amount, String date, String note, String user, String corrects, String ref, String tags) {
++
++    public ClaimRequest(String amount, String date, String note, String user, String corrects, String ref) {
++        this(amount, date, note, user, corrects, ref, null);
++    }
+ 
+     public ClaimRequest(String amount, String date, String note, String user, String corrects) {
+         this(amount, date, note, user, corrects, null);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+index 916cbaaba..2c9acc239 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+@@ -13,11 +13,11 @@ import java.util.List;
+  *  (see {@link ClaimLogStore}), oldest first, and whether it is deferred on the sheet's today (see
+  *  {@link Claim#isDeferredOn}) and the date it was deferred until (null when never deferred), and how many proofs it has, and the number of the claim it was
+  *  split off (null when it was not split off another), and whether it is a late entry (added while its period was soft-closed),
+- *  and the last date it was reminded on (null when never reminded), and its external reference (null when it has none). */
++ *  and the last date it was reminded on (null when never reminded), and its external reference (null when it has none), and its tags, sorted (empty when it has none). */
+ public record ClaimResponse(long id, long personId, String amount, String date, String note, String status, String number,
+         String due, String openedBy, boolean stated, String statedDue, boolean statedNa, String corrects, String roundsBy,
+         String dueBy, List<String> log, boolean deferred, String deferredUntil, int proofs,
+-        String splitFrom, boolean lateEntry, String remindedOn, String ref) {
++        String splitFrom, boolean lateEntry, String remindedOn, String ref, List<String> tags) {
+     public static ClaimResponse from(Claim c) {
+         return from(c, c.getDate());
+     }
+@@ -34,13 +34,14 @@ public record ClaimResponse(long id, long personId, String amount, String date,
+                 c.getStatedDue() == null ? null : c.getStatedDue().setScale(2).toPlainString(), c.isStatedNa(),
+                 c.getCorrects(), roundsBy.toString(), c.getDueBy().toString(), List.of(),
+                 false, c.getDeferredUntil() == null ? null : c.getDeferredUntil().toString(), c.getProofs(),
+-                c.getSplitFrom(), c.isLateEntry(), c.getRemindedOn() == null ? null : c.getRemindedOn().toString(), c.getRef());
++                c.getSplitFrom(), c.isLateEntry(), c.getRemindedOn() == null ? null : c.getRemindedOn().toString(), c.getRef(),
++                Tags.list(c.getTags()));
+     }
+ 
+     /** The same claim with its status log lines, oldest first. */
+     public ClaimResponse withLog(List<String> lines) {
+         return new ClaimResponse(id, personId, amount, date, note, status, number, due, openedBy, stated, statedDue,
+-                statedNa, corrects, roundsBy, dueBy, lines, deferred, deferredUntil, proofs, splitFrom, lateEntry, remindedOn, ref);
++                statedNa, corrects, roundsBy, dueBy, lines, deferred, deferredUntil, proofs, splitFrom, lateEntry, remindedOn, ref, tags);
+     }
+ 
+     /** The same claim, deferred when OPEN and deferred until a date after the sheet's {@code today}. */
+@@ -48,6 +49,6 @@ public record ClaimResponse(long id, long personId, String amount, String date,
+         boolean now = ClaimStatus.OPEN.name().equals(status) && deferredUntil != null && today != null
+                 && today.toString().compareTo(deferredUntil) < 0;
+         return new ClaimResponse(id, personId, amount, date, note, status, number, due, openedBy, stated, statedDue,
+-                statedNa, corrects, roundsBy, dueBy, log, now, deferredUntil, proofs, splitFrom, lateEntry, remindedOn, ref);
++                statedNa, corrects, roundsBy, dueBy, log, now, deferredUntil, proofs, splitFrom, lateEntry, remindedOn, ref, tags);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java
+index 8dc0f8817..0fb33c321 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java
+@@ -30,6 +30,7 @@ public class ClaimStore {
+         claim.setLateEntry(rs.getBoolean("late_entry"));
+         claim.setRemindedOn(rs.getObject("reminded_on", LocalDate.class));
+         claim.setRef(rs.getString("ref"));
++        claim.setTags(rs.getString("tags"));
+         return claim;
+     };
+ 
+@@ -61,6 +62,17 @@ public class ClaimStore {
+         return found.isEmpty() ? null : found.get(0);
+     }
+ 
++    /** Every tag ever carried by a claim on the sheet (by its history, see {@link History}), as stored (see
++     *  {@link Tags}); up to the end of {@code date} when given, else up to now. */
++    public List<String> tagsEverUsed(String sheetId, LocalDate date) {
++        return date == null
++                ? jdbc.queryForList("SELECT DISTINCT tags FROM claim_hist WHERE sheet_id = ? AND tags IS NOT NULL "
++                        + "UNION SELECT DISTINCT tags FROM claim WHERE sheet_id = ? AND tags IS NOT NULL",
++                        String.class, sheetId, sheetId)
++                : jdbc.queryForList("SELECT DISTINCT tags FROM claim_hist WHERE sheet_id = ? AND tags IS NOT NULL "
++                        + "AND hist_made_on <= ?", String.class, sheetId, Date.valueOf(date));
++    }
++
+     /** Whether a claim on the sheet other than {@code exceptId} carries the reference, compared without regard to case. */
+     public boolean refTaken(String sheetId, String ref, long exceptId) {
+         Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND LOWER(ref) = LOWER(?) AND id <> ?",
+@@ -77,10 +89,16 @@ public class ClaimStore {
+     /** Adds a draft claim due by {@code dueBy} with the external reference (null for none). */
+     public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
+             LocalDate dueBy, String ref) {
++        return add(sheetId, personId, amount, date, note, corrects, dueBy, ref, null);
++    }
++
++    /** Adds a draft claim due by {@code dueBy} with the external reference and tags (null for none). */
++    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
++            LocalDate dueBy, String ref, String tags) {
+         GeneratedKeyHolder keys = new GeneratedKeyHolder();
+         jdbc.update(con -> {
+             PreparedStatement ps = con.prepareStatement(
+-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, ref) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
++                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, ref, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                     new String[] { "ID" });
+             ps.setString(1, sheetId);
+             ps.setLong(2, personId);
+@@ -90,11 +108,13 @@ public class ClaimStore {
+             ps.setString(6, corrects);
+             ps.setDate(7, Date.valueOf(dueBy));
+             ps.setString(8, ref);
++            ps.setString(9, tags);
+             return ps;
+         }, keys);
+         Claim added = new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null,
+                 false, null, corrects, dueBy);
+         added.setRef(ref);
++        added.setTags(tags);
+         return added;
+     }
+ 
+@@ -111,10 +131,10 @@ public class ClaimStore {
+                 claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getSheetId(), claim.getId());
+     }
+ 
+-    /** Stores a draft's amount, date, note, the claim it corrects and its reference, releasing its lock; false when the stored claim is no longer a draft. */
++    /** Stores a draft's amount, date, note, the claim it corrects and its reference and its tags, releasing its lock; false when the stored claim is no longer a draft. */
+     public boolean edit(Claim claim) {
+-        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ?, locked_by = NULL WHERE sheet_id = ? AND id = ? AND status = ?",
+-                claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getCorrects(), claim.getRef(), claim.getSheetId(), claim.getId(),
++        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ?, tags = ?, locked_by = NULL WHERE sheet_id = ? AND id = ? AND status = ?",
++                claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getCorrects(), claim.getRef(), claim.getTags(), claim.getSheetId(), claim.getId(),
+                 ClaimStatus.DRAFT.name()) == 1;
+     }
+ 
+@@ -206,14 +226,14 @@ public class ClaimStore {
+         return shrunk;
+     }
+ 
+-    /** Adds an OPEN claim split off {@code from}: its date and note, the given number, opened by the user
++    /** Adds an OPEN claim split off {@code from}: its date, note and tags, the given number, opened by the user
+      *  and due by {@code dueBy}, listed as its person's newest claim. */
+     public Claim addSplit(Claim from, BigDecimal amount, String number, String openedBy, LocalDate dueBy) {
+         GeneratedKeyHolder keys = new GeneratedKeyHolder();
+         jdbc.update(con -> {
+             PreparedStatement ps = con.prepareStatement(
+-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, number, opened_by, due_by, split_from) "
+-                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
++                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, number, opened_by, due_by, split_from, tags) "
++                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                     new String[] { "ID" });
+             ps.setString(1, from.getSheetId());
+             ps.setLong(2, from.getPersonId());
+@@ -225,11 +245,13 @@ public class ClaimStore {
+             ps.setString(8, openedBy);
+             ps.setDate(9, Date.valueOf(dueBy));
+             ps.setString(10, from.getNumber());
++            ps.setString(11, from.getTags());
+             return ps;
+         }, keys);
+         Claim added = new Claim(keys.getKey().longValue(), from.getSheetId(), from.getPersonId(), amount, from.getDate(),
+                 from.getNote(), ClaimStatus.OPEN, number, null, openedBy, false, null, null, dueBy);
+         added.setSplitFrom(from.getNumber());
++        added.setTags(from.getTags());
+         return added;
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RespondWithTags.java b/src/main/java/net/officefloor/hq/app/claim/RespondWithTags.java
+new file mode 100644
+index 000000000..9ed305f7a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/RespondWithTags.java
+@@ -0,0 +1,21 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.List;
++import java.util.TreeSet;
++import net.officefloor.hq.app.history.History;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Every tag ever carried by a claim on the sheet (up to the end of the as-of date when given), sorted. */
++public class RespondWithTags {
++    public void respond(@PathVariable("sheetId") String sheetId,
++            @RequestParam(name = "asOf", required = false) String asOf, ClaimStore store,
++            ObjectResponse<List<String>> response) {
++        TreeSet<String> tags = new TreeSet<>();
++        for (String stored : store.tagsEverUsed(sheetId.trim(), History.date(asOf))) {
++            tags.addAll(Tags.list(stored));
++        }
++        response.send(List.copyOf(tags));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveClaimAdded.java b/src/main/java/net/officefloor/hq/app/claim/SaveClaimAdded.java
+index 6cea071be..263b62348 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveClaimAdded.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveClaimAdded.java
+@@ -20,7 +20,7 @@ public class SaveClaimAdded {
+             PeriodStore periods, HolidayStore holidays) {
+         LocalDate dueBy = ClaimPeriods.dueByOf(person, input.date(), settings, holidays);
+         Claim added = store.add(person.getSheetId(), person.getId(), input.amount(), input.date(), input.note(),
+-                input.corrects(), dueBy, input.ref());
++                input.corrects(), dueBy, input.ref(), input.tags());
+         if (periods.softOn(person.getSheetId(), dueBy)) {
+             store.markLateEntry(added);
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Tags.java b/src/main/java/net/officefloor/hq/app/claim/Tags.java
+new file mode 100644
+index 000000000..45d9a0f58
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/Tags.java
+@@ -0,0 +1,33 @@
++package net.officefloor.hq.app.claim;
++
++import java.util.Arrays;
++import java.util.List;
++import java.util.Locale;
++import java.util.TreeSet;
++
++/** A claim's tags: typed comma separated, each trimmed and lower-cased, blanks and repeats dropped; stored
++ *  sorted and comma separated (no spaces), null when there are none. */
++public final class Tags {
++    private Tags() {
++    }
++
++    /** The typed tags as stored; null when none were given. */
++    public static String normalise(String typed) {
++        if (typed == null) {
++            return null;
++        }
++        TreeSet<String> tags = new TreeSet<>();
++        for (String tag : typed.split(",")) {
++            String t = tag.trim().toLowerCase(Locale.ROOT);
++            if (!t.isEmpty()) {
++                tags.add(t);
++            }
++        }
++        return tags.isEmpty() ? null : String.join(",", tags);
++    }
++
++    /** The stored tags, sorted; empty when there are none. */
++    public static List<String> list(String stored) {
++        return stored == null || stored.isEmpty() ? List.of() : Arrays.asList(stored.split(","));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java b/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
+index f90c149be..2d37f83d0 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
+@@ -50,6 +50,7 @@ public class ValidateClaim {
+             throw new InvalidSheetException("Only a negative amount corrects a claim");
+         }
+         String ref = request.ref() == null ? "" : request.ref().trim();
+-        return new ClaimInput(value, date, note, request.user(), corrects, ref.isEmpty() ? null : ref);
++        return new ClaimInput(value, date, note, request.user(), corrects, ref.isEmpty() ? null : ref,
++                Tags.normalise(request.tags()));
+     }
+ }
+diff --git a/src/main/resources/db/migration/V45__claim_tags.sql b/src/main/resources/db/migration/V45__claim_tags.sql
+new file mode 100644
+index 000000000..0fa03c973
+--- /dev/null
++++ b/src/main/resources/db/migration/V45__claim_tags.sql
+@@ -0,0 +1,8 @@
++-- A claim's tags: each trimmed and lower-cased, repeats dropped, sorted and comma separated (no spaces);
++-- null when it has none. A claim split off another carries the original's. Kept in claim_hist too (see
++-- V39__history.sql); the history trigger is set again afterwards, as in V41__claim_reminded.sql.
++DROP TRIGGER claim_history;
++ALTER TABLE claim ADD COLUMN tags VARCHAR(4000);
++ALTER TABLE claim_hist ADD COLUMN tags VARCHAR(4000);
++CREATE TRIGGER claim_history AFTER INSERT, UPDATE, DELETE ON claim FOR EACH ROW
++    CALL 'net.officefloor.hq.app.history.HistoryTrigger';
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+index 614d55682..07d65ae14 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+@@ -1,4 +1,4 @@
+-# PUT /api/sheets/{sheetId}/claims/{claimId} — edit a draft claim's amount, date, note and the
++# PUT /api/sheets/{sheetId}/claims/{claimId} — edit a draft claim's amount, date, note, ref, tags and the
+ # claim it corrects (body as an add; a correction is checked as on an add). Refused (400) like an add, when the claim is not on the sheet, when it is not a DRAFT
+ # (an open claim is voided and added anew instead), or
+ # when another user has locked it by opening its editor, when its due-by (fixed when it was added, so left as it is by an edit) falls in a closed period, or when its new date is after the date
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/tags.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/tags.GET.yml
+new file mode 100644
+index 000000000..ac775b48a
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/tags.GET.yml
+@@ -0,0 +1,4 @@
++# GET /api/sheets/{sheetId}/tags — every tag ever carried by a claim on the sheet, sorted.
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithTags
++  govern: [ readonly-transaction ]
