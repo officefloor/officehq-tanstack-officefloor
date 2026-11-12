@@ -19,6 +19,7 @@ function PeopleList() {
           <th>Name</th>
           <th>Grade</th>
           <th>Terms</th>
+          <th>Contact</th>
           <PersonColumnHeads.Slot />
           <th />
         </tr>
@@ -38,6 +39,7 @@ function PeopleList() {
             <td data-testid="person-name" style={{ whiteSpace: 'pre' }}>{p.name}</td>
             <td data-testid="person-grade">{p.grade}</td>
             <td data-testid="person-terms">{p.terms ?? ''}</td>
+            <td data-testid="person-contact">{p.contact ?? ''}</td>
             <PersonColumns.Slot person={p} />
             <td>
               <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => setEditing(String(p.id))}>

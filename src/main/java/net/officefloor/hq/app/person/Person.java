@@ -26,6 +26,8 @@ public class Person {
     private LocalDate recordFrom;
     private Integer terms;
     private boolean termsChanged;
+    private String contact;
+    private boolean contactChanged;
 
     public Person(long id, String sheetId, String name, NavigableMap<LocalDate, String> grades, long version) {
         this.id = id;
@@ -83,6 +85,15 @@ public class Person {
     }
     /** Whether the last {@link #setTerms} changed their terms. */
     public boolean isTermsChanged() { return termsChanged; }
+    /** Their contact (trimmed, lower-cased), null when they have none. */
+    public String getContact() { return contact; }
+    /** Sets their contact, noting whether it differs from the one they had. */
+    public void setContact(String contact) {
+        contactChanged = !java.util.Objects.equals(this.contact, contact);
+        this.contact = contact;
+    }
+    /** Whether the last {@link #setContact} changed their contact. */
+    public boolean isContactChanged() { return contactChanged; }
     public void setVersion(long version) { this.version = version; }
     public void setRetiredFrom(LocalDate retiredFrom) { this.retiredFrom = retiredFrom; }
 }

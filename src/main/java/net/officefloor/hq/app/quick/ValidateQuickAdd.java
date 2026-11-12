@@ -29,7 +29,7 @@ public class ValidateQuickAdd {
         if (!AMOUNT.matcher(amount).matches()) {
             throw new InvalidSheetException("The amount must be a number of 0.00 or more with up to two decimals");
         }
-        person.set(new PersonRequest(request.name().trim(), "A", null, request.user(), null, null));
+        person.set(new PersonRequest(request.name().trim(), "A", null, request.user(), null, null, null));
         claim.set(new ClaimInput(new BigDecimal(amount).setScale(2), settings.claimDate(sheetId.trim()), "",
                 request.user()));
     }

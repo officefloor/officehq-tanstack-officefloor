@@ -12,7 +12,8 @@ import { GRADES, type Person, peopleKey, useEditingPerson, usePeople } from './p
 // An edit records the grade from the from-date (the sheet's today when blank), keeping the grades
 // already recorded; leaving the grade as the row shows it with the from-date blank records nothing.
 // An added person's grade applies from the beginning of time. Their own terms (whole days, blank for
-// none) come first when a claim's due-by is fixed. A refused edit closes the editor, keeping its error,
+// none) come first when a claim's due-by is fixed. A contact (stored trimmed and lower-cased, blank
+// for none) another person on the sheet has is refused. A refused edit closes the editor, keeping its error,
 // so the next add is not taken for an edit.
 function PersonForm() {
   const [user] = useCurrentUser();
@@ -23,13 +24,14 @@ function PersonForm() {
   const [grade, setGrade] = useState<string>('A');
   const [gradeFrom, setGradeFrom] = useState('');
   const [terms, setTerms] = useState('');
+  const [contact, setContact] = useState('');
   const keepError = useRef(false);
   const [version, setVersion] = useState<number | undefined>();
   const queryClient = useQueryClient();
   const base = `/api/sheets/${encodeURIComponent(sheet)}/people`;
 
   const save = useMutation({
-    mutationFn: (p: { name: string; grade: string; gradeFrom: string; terms: string }) =>
+    mutationFn: (p: { name: string; grade: string; gradeFrom: string; terms: string; contact: string }) =>
       editing
         ? putJson<Person>(`${base}/${encodeURIComponent(editing)}`, { ...p, user, version })
         : postJson<Person>(base, { ...p, user }),
@@ -58,6 +60,7 @@ function PersonForm() {
     setGrade(p.grade);
     setGradeFrom('');
     setTerms(p.terms === null ? '' : String(p.terms));
+    setContact(p.contact ?? '');
     setVersion(p.version);
   };
   const clear = () => {
@@ -65,6 +68,7 @@ function PersonForm() {
     setGrade('A');
     setGradeFrom('');
     setTerms('');
+    setContact('');
     setVersion(undefined);
     setEditing(undefined);
   };
@@ -83,7 +87,7 @@ function PersonForm() {
       data-testid="person-form"
       onSubmit={(e) => {
         e.preventDefault();
-        submit({ name, grade, gradeFrom, terms });
+        submit({ name, grade, gradeFrom, terms, contact });
       }}
     >
       <h2>{editing ? 'Edit person' : 'Add person'}</h2>
@@ -128,6 +132,16 @@ function PersonForm() {
         value={terms}
         onChange={(e) => {
           setTerms(e.target.value);
+          save.reset();
+        }}
+      />
+      <input
+        data-testid="person-form-contact"
+        placeholder="Contact"
+        aria-label="Contact (blank for none)"
+        value={contact}
+        onChange={(e) => {
+          setContact(e.target.value);
           save.reset();
         }}
       />

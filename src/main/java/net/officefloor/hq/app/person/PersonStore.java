@@ -59,6 +59,7 @@ public class PersonStore {
                     grades.getOrDefault(rs.getLong("id"), new TreeMap<>()), rs.getLong("version"),
                     rs.getObject("retired_from", LocalDate.class), holds.getOrDefault(rs.getLong("id"), List.of()));
             p.setTerms(rs.getObject("terms", Integer.class));
+            p.setContact(rs.getString("contact"));
             return p;
         };
         return jdbc.query(sql, row, args);
@@ -113,13 +114,28 @@ public class PersonStore {
     /** Adds the person with their first grade, which applies from the beginning of time, and their own
      *  terms (null for none). */
     public Person add(String sheetId, String name, String grade, Integer terms) {
+        return add(sheetId, name, grade, terms, null);
+    }
+
+    /** Whether another person on the sheet (not {@code exceptId}) has this contact (trimmed, lower-cased). */
+    public boolean contactTaken(String sheetId, String contact, Long exceptId) {
+        Integer n = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND contact = ? AND id <> ?",
+                Integer.class, sheetId, contact, exceptId == null ? -1L : exceptId);
+        return n != null && n > 0;
+    }
+
+    /** Adds the person with their first grade, which applies from the beginning of time, their own
+     *  terms (null for none) and their contact (null for none). */
+    public Person add(String sheetId, String name, String grade, Integer terms, String contact) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, terms) VALUES (?, ?, ?)", new String[] { "ID" });
+                    "INSERT INTO person (sheet_id, name, terms, contact) VALUES (?, ?, ?, ?)", new String[] { "ID" });
             ps.setString(1, sheetId);
             ps.setString(2, name);
             ps.setObject(3, terms, java.sql.Types.INTEGER);
+            ps.setString(4, contact);
             return ps;
         }, keys);
         long id = keys.getKey().longValue();
@@ -127,6 +143,7 @@ public class PersonStore {
                 id, Person.START, grade);
         Person person = new Person(id, sheetId, name, new TreeMap<>(Map.of(Person.START, grade)), 0);
         person.setTerms(terms);
+        person.setContact(contact);
         return person;
     }
 
@@ -137,8 +154,8 @@ public class PersonStore {
      */
     public boolean save(Person person) {
         int n = jdbc.update(
-                "UPDATE person SET name = ?, terms = ?, version = version + 1 WHERE sheet_id = ? AND id = ? AND version = ?",
-                person.getName(), person.getTerms(), person.getSheetId(), person.getId(), person.getVersion());
+                "UPDATE person SET name = ?, terms = ?, contact = ?, version = version + 1 WHERE sheet_id = ? AND id = ? AND version = ?",
+                person.getName(), person.getTerms(), person.getContact(), person.getSheetId(), person.getId(), person.getVersion());
         if (n == 1) {
             person.setVersion(person.getVersion() + 1);
             LocalDate from = person.getRecordFrom();
