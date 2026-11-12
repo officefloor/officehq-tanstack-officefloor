@@ -1,0 +1,325 @@
+diff --git a/src/main/frontend/features/notes/notes.slot.tsx b/src/main/frontend/features/notes/notes.slot.tsx
+new file mode 100644
+index 000000000..cf77a8610
+--- /dev/null
++++ b/src/main/frontend/features/notes/notes.slot.tsx
+@@ -0,0 +1,66 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { HttpError, postJson } from '../../api/http';
++import { useSubmitOnce } from '../../query/useSubmitOnce';
++import { HomeMain } from '../../slots/defs/homeMain';
++import { useCurrentSheet, useCurrentUser } from '../../session/session';
++import { type Note, notesKey, useNotes } from './notes';
++
++// The sheet's notes, newest first, and the entry a note is added with. A blank note is refused.
++function Notes() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const notes = useNotes(sheet);
++  const [text, setText] = useState('');
++  const queryClient = useQueryClient();
++
++  const add = useMutation({
++    mutationFn: (t: string) => postJson<Note>(`/api/sheets/${encodeURIComponent(sheet)}/notes`, { text: t, user }),
++    onSuccess: async () => {
++      await queryClient.invalidateQueries({ queryKey: notesKey(sheet) });
++      setText('');
++    },
++  });
++  const submit = useSubmitOnce(add);
++
++  return (
++    <section data-testid="notes">
++      <h2>Notes</h2>
++      <ul>
++        {(notes.data ?? []).map((n) => (
++          <li key={n.id} data-testid="note-line">
++            {`${n.date} ${n.user}: ${n.text}`}
++          </li>
++        ))}
++      </ul>
++      <form
++        data-testid="note-form"
++        onSubmit={(e) => {
++          e.preventDefault();
++          submit(text);
++        }}
++      >
++        <input
++          data-testid="note-text"
++          placeholder="Note"
++          value={text}
++          onChange={(e) => {
++            setText(e.target.value);
++            add.reset();
++          }}
++        />
++        <button type="submit" data-testid="note-add" disabled={add.isPending}>
++          Add note
++        </button>
++        {add.isError && (
++          <span data-testid="note-error" role="alert">
++            {' '}
++            {add.error instanceof HttpError && add.error.reason ? `${add.error.reason}.` : 'The note was refused.'}
++          </span>
++        )}
++      </form>
++    </section>
++  );
++}
++
++export const contribution = HomeMain.fill({ order: 47.95, Component: Notes });
+diff --git a/src/main/frontend/features/notes/notes.ts b/src/main/frontend/features/notes/notes.ts
+new file mode 100644
+index 000000000..239700d30
+--- /dev/null
++++ b/src/main/frontend/features/notes/notes.ts
+@@ -0,0 +1,20 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { asOfKey, asOfPath, sheetKey } from '../sheet/sheet';
++import { useAsOf } from '../../session/session';
++
++/** A note on the sheet: the sheet's today when it was added (yyyy-mm-dd), who added it, and its text. */
++export type Note = { id: number; date: string; user: string; text: string };
++
++/** Under the sheet's key, so loading the sheet again re-reads its notes. */
++export const notesKey = (sheet: string) => [...sheetKey(sheet), 'notes'] as const;
++
++/** The sheet's notes, newest first; under an as-of date, those added on or before it. */
++export function useNotes(sheet: string) {
++  const [asOf] = useAsOf();
++  return useQuery({
++    queryKey: asOfKey(notesKey(sheet), asOf),
++    queryFn: () => getJson<Note[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/notes`, asOf)),
++    enabled: sheet !== '',
++  });
++}
+diff --git a/src/main/java/net/officefloor/hq/app/note/AuditNoteAdded.java b/src/main/java/net/officefloor/hq/app/note/AuditNoteAdded.java
+new file mode 100644
+index 000000000..3cea1d1af
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/note/AuditNoteAdded.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.note;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Records a note added: NOTE_ADDED sheet=<id> by=<user> text=<text>. */
++public class AuditNoteAdded {
++    public void audit(@PathVariable("sheetId") String sheetId, @Val NoteInput note, Audit audit) {
++        audit.record("NOTE_ADDED sheet=" + sheetId.trim() + " by=" + note.user() + " text=" + note.text());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/note/NoteInput.java b/src/main/java/net/officefloor/hq/app/note/NoteInput.java
+new file mode 100644
+index 000000000..e08acba98
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/note/NoteInput.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.note;
++
++/** A note to add, validated (its text trimmed), and the user adding it. */
++public record NoteInput(String text, String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/note/NoteRequest.java b/src/main/java/net/officefloor/hq/app/note/NoteRequest.java
+new file mode 100644
+index 000000000..1e3a3e839
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/note/NoteRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.note;
++
++/** Body of POST /api/sheets/{sheetId}/notes: the note's text and the user who adds it. */
++public record NoteRequest(String text, String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/note/NoteResponse.java b/src/main/java/net/officefloor/hq/app/note/NoteResponse.java
+new file mode 100644
+index 000000000..8be18986c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/note/NoteResponse.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.note;
++
++/** A note as the front end reads it: the sheet's today when it was added (yyyy-mm-dd), who added it, its text. */
++public record NoteResponse(long id, String date, String user, String text) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/note/NoteStore.java b/src/main/java/net/officefloor/hq/app/note/NoteStore.java
+new file mode 100644
+index 000000000..411e2eb7f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/note/NoteStore.java
+@@ -0,0 +1,36 @@
++package net.officefloor.hq.app.note;
++
++import java.time.LocalDate;
++import java.util.List;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Repository;
++
++/** The notes per sheet, each dated the sheet's today when it was added. Notes are only ever added. */
++@Repository
++public class NoteStore {
++
++    private final JdbcTemplate jdbc;
++
++    public NoteStore(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /** The sheet's notes, newest first; with a date, only those added while the sheet's today was on or
++     *  before it. */
++    public List<NoteResponse> list(String sheetId, LocalDate asOf) {
++        String sql = "SELECT id, added_on, user_name, note_text FROM sheet_note WHERE sheet_id = ?"
++                + (asOf == null ? "" : " AND added_on <= ?") + " ORDER BY id DESC";
++        Object[] args = asOf == null ? new Object[] { sheetId } : new Object[] { sheetId, asOf };
++        return jdbc.query(sql, (rs, i) -> new NoteResponse(rs.getLong("id"),
++                rs.getObject("added_on", LocalDate.class).toString(), rs.getString("user_name"),
++                rs.getString("note_text")), args);
++    }
++
++    /** Adds the note, dated the given today; returns it. */
++    public NoteResponse add(String sheetId, LocalDate today, String user, String text) {
++        jdbc.update("INSERT INTO sheet_note (sheet_id, added_on, user_name, note_text) VALUES (?, ?, ?, ?)",
++                sheetId, today, user, text);
++        Long id = jdbc.queryForObject("SELECT MAX(id) FROM sheet_note WHERE sheet_id = ?", Long.class, sheetId);
++        return new NoteResponse(id == null ? 0 : id, today.toString(), user, text);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/note/RespondWithNote.java b/src/main/java/net/officefloor/hq/app/note/RespondWithNote.java
+new file mode 100644
+index 000000000..2a3e1dd06
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/note/RespondWithNote.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.note;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithNote {
++    public void respond(@Val NoteResponse note, ObjectResponse<NoteResponse> response) {
++        response.send(note);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/note/RespondWithNotes.java b/src/main/java/net/officefloor/hq/app/note/RespondWithNotes.java
+new file mode 100644
+index 000000000..fd75db129
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/note/RespondWithNotes.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.note;
++
++import java.util.List;
++import net.officefloor.hq.app.history.History;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++public class RespondWithNotes {
++    public void respond(@PathVariable("sheetId") String sheetId,
++            @RequestParam(name = "asOf", required = false) String asOf, NoteStore store,
++            ObjectResponse<List<NoteResponse>> response) {
++        response.send(store.list(sheetId.trim(), History.date(asOf)));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/note/SaveNote.java b/src/main/java/net/officefloor/hq/app/note/SaveNote.java
+new file mode 100644
+index 000000000..349d5439c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/note/SaveNote.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.note;
++
++import net.officefloor.hq.app.sheet.SheetStore;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Adds the note, dated the sheet's today. */
++public class SaveNote {
++    public void save(@PathVariable("sheetId") String sheetId, @Val NoteInput note, NoteStore store,
++            SheetStore sheets, Out<NoteResponse> saved) {
++        String sheet = sheetId.trim();
++        saved.set(store.add(sheet, sheets.today(sheet), note.user(), note.text()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/note/ValidateNote.java b/src/main/java/net/officefloor/hq/app/note/ValidateNote.java
+new file mode 100644
+index 000000000..e424f6f6c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/note/ValidateNote.java
+@@ -0,0 +1,21 @@
++package net.officefloor.hq.app.note;
++
++import net.officefloor.hq.app.role.RoleStore;
++import net.officefloor.hq.app.sheet.InvalidSheetException;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Refuses a note on an archived sheet, by a viewer, or with a blank text. */
++public class ValidateNote {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody NoteRequest request,
++            Out<NoteInput> body, RoleStore roles) throws InvalidSheetException {
++        String user = request == null || request.user() == null ? "" : request.user().trim();
++        roles.refuseChange(sheetId.trim(), user);
++        String text = request == null || request.text() == null ? "" : request.text().trim();
++        if (text.isEmpty()) {
++            throw new InvalidSheetException("A note needs a text");
++        }
++        body.set(new NoteInput(text, user));
++    }
++}
+diff --git a/src/main/resources/db/migration/V83__sheet_note.sql b/src/main/resources/db/migration/V83__sheet_note.sql
+new file mode 100644
+index 000000000..00608a0a7
+--- /dev/null
++++ b/src/main/resources/db/migration/V83__sheet_note.sql
+@@ -0,0 +1,10 @@
++-- The sheet's notes: a text added by a user, kept with the sheet's today when it was added. The id orders
++-- them as they were added; under an as-of date only those added on or before it show.
++CREATE TABLE sheet_note (
++    id         BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id   VARCHAR(255)  NOT NULL,
++    added_on   DATE          NOT NULL,
++    user_name  VARCHAR(255)  NOT NULL,
++    note_text  VARCHAR(4000) NOT NULL
++);
++CREATE INDEX sheet_note_sheet ON sheet_note (sheet_id, id);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/notes.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/notes.GET.yml
+new file mode 100644
+index 000000000..cb4923990
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/notes.GET.yml
+@@ -0,0 +1,5 @@
++# GET /api/sheets/{sheetId}/notes — the sheet's notes, newest first. Under ?asOf only those added while the
++# sheet's today was on or before that date.
++respond:
++  class: net.officefloor.hq.app.note.RespondWithNotes
++  govern: [ readonly-transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/notes.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/notes.POST.yml
+new file mode 100644
+index 000000000..381ad5569
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/notes.POST.yml
+@@ -0,0 +1,16 @@
++# POST /api/sheets/{sheetId}/notes — adds a note to the sheet (body: {text, user}), dated the sheet's today.
++# A blank text, a viewer, or an archived sheet is refused (400) and nothing is stored. Recorded as NOTE_ADDED.
++validate:
++  class: net.officefloor.hq.app.note.ValidateNote
++  next: save
++save:
++  class: net.officefloor.hq.app.note.SaveNote
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.note.AuditNoteAdded
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.note.RespondWithNote
++  govern: [ transaction ]
