@@ -1,0 +1,1013 @@
+diff --git a/src/main/frontend/api/http.ts b/src/main/frontend/api/http.ts
+index f14a7cb26..c75a82690 100644
+--- a/src/main/frontend/api/http.ts
++++ b/src/main/frontend/api/http.ts
+@@ -1,3 +1,5 @@
++import { currentAsOf } from '../session/session';
++
+ // The app's fetch surface. A non-2xx REJECTS, so useQuery/useMutation surface the failure instead
+ // of a silent `if (res.ok)` that leaves the UI showing stale data.
+ /** A refused request; `reason` is the text the server answered with (empty when none). */
+@@ -7,8 +9,15 @@ export class HttpError extends Error {
+   }
+ }
+ 
++/** A change sent from a screen showing the sheet as of a date carries it, so the server refuses it. */
++function withAsOf(init?: RequestInit): RequestInit | undefined {
++  const asOf = currentAsOf();
++  if (init?.method === undefined || asOf === '') return init;
++  return { ...init, headers: { ...(init.headers as Record<string, string>), 'X-As-Of': asOf } };
++}
++
+ async function send<T>(path: string, init?: RequestInit): Promise<T> {
+-  const res = await fetch(path, init);
++  const res = await fetch(path, withAsOf(init));
+   if (!res.ok) {
+     const reason = await res.text().catch(() => '');
+     throw new HttpError(`${init?.method ?? 'GET'} ${path} -> ${res.status}`, reason, res.status);
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index f10bad8ad..a1a98e493 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -1,6 +1,7 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+-import { sheetKey } from '../sheet/sheet';
++import { asOfKey, asOfPath, sheetKey } from '../sheet/sheet';
++import { useAsOf } from '../../session/session';
+ import { asNumber, asString, useSearchParam } from '../../url/useSearchParam';
+ import { type Hold, covers } from '../people/people';
+ 
+@@ -101,9 +102,10 @@ export const claimsKey = (sheet: string) => [...sheetKey(sheet), 'claims'] as co
+ 
+ /** Every claim on the sheet, newest first. */
+ export function useClaims(sheet: string) {
++  const [asOf] = useAsOf();
+   return useQuery({
+-    queryKey: claimsKey(sheet),
+-    queryFn: () => getJson<Claim[]>(`/api/sheets/${encodeURIComponent(sheet)}/claims`),
++    queryKey: asOfKey(claimsKey(sheet), asOf),
++    queryFn: () => getJson<Claim[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/claims`, asOf)),
+     enabled: sheet !== '',
+   });
+ }
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index 213801cc3..abb7830b2 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -1,7 +1,8 @@
+ import { useMutationState, useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ import { asFlag, asString, useSearchParam } from '../../url/useSearchParam';
+-import { sheetKey } from '../sheet/sheet';
++import { asOfKey, asOfPath, sheetKey } from '../sheet/sheet';
++import { useAsOf } from '../../session/session';
+ 
+ /** `version` moves on with each stored edit; an edit is saved only over the version its editor loaded.
+  *  `statementCount` is how many statements were taken of them; `statedTotal` (two decimals, or n/a)
+@@ -59,9 +60,10 @@ export function gradeOn(grades: Grades, on: string | undefined): string {
+ export const peopleKey = (sheet: string) => [...sheetKey(sheet), 'people'] as const;
+ 
+ export function usePeople(sheet: string) {
++  const [asOf] = useAsOf();
+   return useQuery({
+-    queryKey: peopleKey(sheet),
+-    queryFn: () => getJson<Person[]>(`/api/sheets/${encodeURIComponent(sheet)}/people`),
++    queryKey: asOfKey(peopleKey(sheet), asOf),
++    queryFn: () => getJson<Person[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/people`, asOf)),
+     enabled: sheet !== '',
+   });
+ }
+diff --git a/src/main/frontend/features/periods/periods.ts b/src/main/frontend/features/periods/periods.ts
+index 14968d8ad..30af264f8 100644
+--- a/src/main/frontend/features/periods/periods.ts
++++ b/src/main/frontend/features/periods/periods.ts
+@@ -1,6 +1,7 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+-import { sheetKey } from '../sheet/sheet';
++import { asOfKey, asOfPath, sheetKey } from '../sheet/sheet';
++import { useAsOf } from '../../session/session';
+ import { type Claim, type ClaimStatus, isOpen } from '../claims/claims';
+ import { covers } from '../people/people';
+ import type { Person } from '../people/people';
+@@ -28,9 +29,10 @@ export const periodsKey = (sheet: string) => [...sheetKey(sheet), 'periods'] as
+ 
+ /** Every period on the sheet, by from-date. */
+ export function usePeriods(sheet: string) {
++  const [asOf] = useAsOf();
+   return useQuery({
+-    queryKey: periodsKey(sheet),
+-    queryFn: () => getJson<Period[]>(`/api/sheets/${encodeURIComponent(sheet)}/periods`),
++    queryKey: asOfKey(periodsKey(sheet), asOf),
++    queryFn: () => getJson<Period[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/periods`, asOf)),
+     enabled: sheet !== '',
+   });
+ }
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index ed330d91e..49f356bc6 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -1,6 +1,7 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+-import { sheetKey } from '../sheet/sheet';
++import { asOfKey, asOfPath, sheetKey } from '../sheet/sheet';
++import { useAsOf } from '../../session/session';
+ import { type Claim, counts, isBound, isCorrection } from '../claims/claims';
+ import { type Grades, gradeOn } from '../people/people';
+ 
+@@ -13,9 +14,10 @@ export type Rate = { grade: string; pct: string; from: string | null; to: string
+ export const ratesKey = (sheet: string) => [...sheetKey(sheet), 'rates'] as const;
+ 
+ export function useRates(sheet: string) {
++  const [asOf] = useAsOf();
+   return useQuery({
+-    queryKey: ratesKey(sheet),
+-    queryFn: () => getJson<Rate[]>(`/api/sheets/${encodeURIComponent(sheet)}/rates`),
++    queryKey: asOfKey(ratesKey(sheet), asOf),
++    queryFn: () => getJson<Rate[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/rates`, asOf)),
+     enabled: sheet !== '',
+   });
+ }
+diff --git a/src/main/frontend/features/roles/roles.ts b/src/main/frontend/features/roles/roles.ts
+index 56b0d411d..0fa7fc7f7 100644
+--- a/src/main/frontend/features/roles/roles.ts
++++ b/src/main/frontend/features/roles/roles.ts
+@@ -1,6 +1,7 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+-import { sheetKey } from '../sheet/sheet';
++import { asOfKey, asOfPath, sheetKey } from '../sheet/sheet';
++import { useAsOf } from '../../session/session';
+ 
+ /** A user name's role on the sheet. A name with none assigned is a clerk; a viewer may change nothing. */
+ export type Role = { user: string; role: string };
+@@ -11,9 +12,10 @@ export const ROLES = ['clerk', 'steward', 'viewer'] as const;
+ export const rolesKey = (sheet: string) => [...sheetKey(sheet), 'roles'] as const;
+ 
+ export function useRoles(sheet: string) {
++  const [asOf] = useAsOf();
+   return useQuery({
+-    queryKey: rolesKey(sheet),
+-    queryFn: () => getJson<Role[]>(`/api/sheets/${encodeURIComponent(sheet)}/roles`),
++    queryKey: asOfKey(rolesKey(sheet), asOf),
++    queryFn: () => getJson<Role[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/roles`, asOf)),
+     enabled: sheet !== '',
+   });
+ }
+@@ -24,9 +26,10 @@ export type Delegation = { user: string; from: string; to: string; by: string };
+ export const delegationsKey = (sheet: string) => [...sheetKey(sheet), 'delegations'] as const;
+ 
+ export function useDelegations(sheet: string) {
++  const [asOf] = useAsOf();
+   return useQuery({
+-    queryKey: delegationsKey(sheet),
+-    queryFn: () => getJson<Delegation[]>(`/api/sheets/${encodeURIComponent(sheet)}/delegations`),
++    queryKey: asOfKey(delegationsKey(sheet), asOf),
++    queryFn: () => getJson<Delegation[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/delegations`, asOf)),
+     enabled: sheet !== '',
+   });
+ }
+diff --git a/src/main/frontend/features/settings/settings.ts b/src/main/frontend/features/settings/settings.ts
+index 39973cb64..d46dc9042 100644
+--- a/src/main/frontend/features/settings/settings.ts
++++ b/src/main/frontend/features/settings/settings.ts
+@@ -1,6 +1,7 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+-import { sheetKey } from '../sheet/sheet';
++import { asOfKey, asOfPath, sheetKey } from '../sheet/sheet';
++import { useAsOf } from '../../session/session';
+ 
+ /** The sheet's settings: `clerkLimit` (two decimals) is the most due a clerk may settle a claim at,
+  *  null for no limit; `floor` (two decimals) is the least a claim's live due may be; `terms` is the
+@@ -51,9 +52,10 @@ export function latePctOf(settings: Settings | undefined): ((date: string) => st
+ export const settingsKey = (sheet: string) => [...sheetKey(sheet), 'settings'] as const;
+ 
+ export function useSettings(sheet: string) {
++  const [asOf] = useAsOf();
+   return useQuery({
+-    queryKey: settingsKey(sheet),
+-    queryFn: () => getJson<Settings>(`/api/sheets/${encodeURIComponent(sheet)}/settings`),
++    queryKey: asOfKey(settingsKey(sheet), asOf),
++    queryFn: () => getJson<Settings>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/settings`, asOf)),
+     enabled: sheet !== '',
+   });
+ }
+diff --git a/src/main/frontend/features/sheet/asof.slot.tsx b/src/main/frontend/features/sheet/asof.slot.tsx
+new file mode 100644
+index 000000000..f66f5c064
+--- /dev/null
++++ b/src/main/frontend/features/sheet/asof.slot.tsx
+@@ -0,0 +1,37 @@
++import { useState } from 'react';
++import { AppHeader } from '../../slots/defs/appHeader';
++import { useAsOf, useCurrentSheet, useCurrentUser } from '../../session/session';
++import { useSheet } from './sheet';
++
++// The screen's as-of date: while one is set, every cell shows the sheet as it stood at the end of that
++// date (the date standing in for the sheet's today), and every change is refused. Only this screen's.
++function SheetAsOf() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const [, setAsOf] = useAsOf();
++  const loaded = useSheet(sheet);
++  const [input, setInput] = useState('');
++
++  if (!user || sheet === '') return null;
++  return (
++    <form
++      data-testid="asof-form"
++      onSubmit={(e) => {
++        e.preventDefault();
++        const date = input.trim();
++        if (/^\d{4}-\d{2}-\d{2}$/.test(date)) setAsOf(date);
++      }}
++    >
++      As of <strong data-testid="sheet-asof">{loaded.data?.asOf ?? ''}</strong>{' '}
++      <input data-testid="asof-date" type="date" value={input} onChange={(e) => setInput(e.target.value)} />
++      <button type="submit" data-testid="asof-set">
++        Show as of
++      </button>
++      <button type="button" data-testid="asof-clear" onClick={() => setAsOf(undefined)}>
++        Show as now
++      </button>
++    </form>
++  );
++}
++
++export const contribution = AppHeader.fill({ order: 25, Component: SheetAsOf });
+diff --git a/src/main/frontend/features/sheet/sheet.ts b/src/main/frontend/features/sheet/sheet.ts
+index be85829e5..30b2054fb 100644
+--- a/src/main/frontend/features/sheet/sheet.ts
++++ b/src/main/frontend/features/sheet/sheet.ts
+@@ -1,22 +1,37 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
++import { useAsOf } from '../../session/session';
+ 
+ /** `today` (yyyy-MM-dd) is the sheet's own date: every date decision and default uses it, never the clock.
+- *  An `archived` sheet stays visible but the server refuses every change to it. */
+-export type Sheet = { id: string; today: string; archived: boolean };
++ *  An `archived` sheet stays visible but the server refuses every change to it. `asOf` (yyyy-MM-dd) is the
++ *  date this screen shows the sheet as of, null when it shows it as it is now; `archived` is then as it
++ *  stood at the end of that date. */
++export type Sheet = { id: string; today: string; archived: boolean; asOf: string | null };
+ 
+ /** Every per-sheet query key starts with ['sheet', id], so loading a sheet re-reads all of it. */
+ export const sheetKey = (id: string) => ['sheet', id] as const;
+ 
++/** A per-sheet query key as read for the screen's as-of date: the key itself when there is none, so a
++ *  change made (never while one is set) updates the very queries it read. */
++export const asOfKey = <K extends readonly unknown[]>(key: K, asOf: string) =>
++  (asOf === '' ? key : [...key, { asOf }]) as unknown as K;
++
++/** A read path with the screen's as-of date added (as `asOf`), so the server answers as it stood then. */
++export const asOfPath = (path: string, asOf: string) =>
++  asOf === '' ? path : `${path}${path.includes('?') ? '&' : '?'}asOf=${encodeURIComponent(asOf)}`;
++
+ export function useSheet(id: string) {
++  const [asOf] = useAsOf();
+   return useQuery({
+-    queryKey: sheetKey(id),
+-    queryFn: () => getJson<Sheet>(`/api/sheets/${encodeURIComponent(id)}`),
++    queryKey: asOfKey(sheetKey(id), asOf),
++    queryFn: () => getJson<Sheet>(asOfPath(`/api/sheets/${encodeURIComponent(id)}`, asOf)),
+     enabled: id !== '',
+   });
+ }
+ 
+-/** The sheet's today (yyyy-MM-dd), or undefined while the sheet loads. Use it for every default date. */
++/** The sheet's today (yyyy-MM-dd), or undefined while the sheet loads. Use it for every default date.
++ *  While the screen shows the sheet as of a date, that date stands in for it in every figure. */
+ export function useSheetToday(id: string): string | undefined {
+-  return useSheet(id).data?.today;
++  const data = useSheet(id).data;
++  return data?.asOf ?? data?.today;
+ }
+diff --git a/src/main/frontend/features/statements/statement.slot.tsx b/src/main/frontend/features/statements/statement.slot.tsx
+index 84c3a5a72..1903f60f5 100644
+--- a/src/main/frontend/features/statements/statement.slot.tsx
++++ b/src/main/frontend/features/statements/statement.slot.tsx
+@@ -30,7 +30,6 @@ function PersonStatement({ person }: { person: Person }) {
+         queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+         queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+       ]);
+-      setAsOf('');
+     },
+   });
+ 
+@@ -68,6 +67,8 @@ function PersonStatement({ person }: { person: Person }) {
+         onClick={() => {
+           take.reset();
+           take.mutate(asOf);
++          // The date goes with this statement only: a refused one's never carries into the next.
++          setAsOf('');
+         }}
+       >
+         Statement
+diff --git a/src/main/frontend/features/watch/watch.ts b/src/main/frontend/features/watch/watch.ts
+index 438b12155..c2e7b3256 100644
+--- a/src/main/frontend/features/watch/watch.ts
++++ b/src/main/frontend/features/watch/watch.ts
+@@ -1,16 +1,18 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+-import { sheetKey } from '../sheet/sheet';
++import { asOfKey, asOfPath, sheetKey } from '../sheet/sheet';
++import { useAsOf } from '../../session/session';
+ 
+ /** Under the sheet's key, so loading the sheet again re-reads who the user watches. */
+ export const watchesKey = (sheet: string, user: string) => [...sheetKey(sheet), 'watches', user] as const;
+ 
+ /** The ids of the people the signed-in user watches on the sheet. */
+ export function useWatches(sheet: string, user: string) {
++  const [asOf] = useAsOf();
+   return useQuery({
+-    queryKey: watchesKey(sheet, user),
++    queryKey: asOfKey(watchesKey(sheet, user), asOf),
+     queryFn: () =>
+-      getJson<number[]>(`/api/sheets/${encodeURIComponent(sheet)}/watches?user=${encodeURIComponent(user)}`),
++      getJson<number[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/watches?user=${encodeURIComponent(user)}`, asOf)),
+     enabled: sheet !== '',
+   });
+ }
+diff --git a/src/main/frontend/session/session.ts b/src/main/frontend/session/session.ts
+index dcb995107..8fd7f203d 100644
+--- a/src/main/frontend/session/session.ts
++++ b/src/main/frontend/session/session.ts
+@@ -4,3 +4,10 @@ import { asString, useSearchParam } from '../url/useSearchParam';
+ // reads them directly and each browser tab is its own session.
+ export const useCurrentUser = () => useSearchParam('user', asString);
+ export const useCurrentSheet = () => useSearchParam('sheet', asString);
++
++// The date this screen shows the sheet as of (`asOf`, yyyy-MM-dd; '' for as it is now). It belongs to
++// the screen, not the sheet: other users' screens are unaffected, and every change is refused while it is set.
++export const useAsOf = () => useSearchParam('asOf', asString);
++
++/** The screen's as-of date read outside React (by the fetch surface), '' when none is set. */
++export const currentAsOf = (): string => new URLSearchParams(window.location.search).get('asOf') ?? '';
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimLogStore.java b/src/main/java/net/officefloor/hq/app/claim/ClaimLogStore.java
+index f3a40778d..b4c992a66 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimLogStore.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimLogStore.java
+@@ -53,12 +53,18 @@ public class ClaimLogStore {
+ 
+     /** Every claim's log lines on the sheet, by claim id, oldest first. */
+     public Map<Long, List<String>> lines(String sheetId) {
++        return lines(sheetId, null);
++    }
++
++    /** Every claim's log lines on the sheet logged on or before the date (all of them when it is null), by
++     *  claim id, oldest first. */
++    public Map<Long, List<String>> lines(String sheetId, LocalDate until) {
+         Map<Long, List<String>> lines = new HashMap<>();
+-        jdbc.query("SELECT * FROM claim_log WHERE sheet_id = ? ORDER BY id", rs -> {
++        jdbc.query("SELECT * FROM claim_log WHERE sheet_id = ? AND (CAST(? AS DATE) IS NULL OR log_date <= ?) ORDER BY id", rs -> {
+             lines.computeIfAbsent(rs.getLong("claim_id"), id -> new ArrayList<>())
+                     .add(rs.getString("status") + " by " + rs.getString("by_user") + " on "
+                             + rs.getObject("log_date", LocalDate.class) + " due=" + rs.getString("due"));
+-        }, sheetId);
++        }, sheetId, until == null ? null : Date.valueOf(until), until == null ? null : Date.valueOf(until));
+         return lines;
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java
+index 3a1ebf20a..75ec93fbf 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java
+@@ -5,16 +5,22 @@ import java.util.List;
+ import java.util.Map;
+ import net.officefloor.hq.app.sheet.SheetStore;
+ import net.officefloor.web.ObjectResponse;
++import net.officefloor.hq.app.history.History;
+ import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
++/** The sheet's claims as they are now, or, as of a date, as they stood at the end of it (see {@link History}),
++ *  with their log lines logged by then and the date standing in for the sheet's today. */
+ public class RespondWithClaims {
+-    public void respond(@PathVariable("sheetId") String sheetId, ClaimStore store, ClaimLogStore log, SheetStore sheets,
+-            ObjectResponse<List<ClaimResponse>> response) {
+-        List<Claim> claims = store.list(sheetId.trim());
++    public void respond(@PathVariable("sheetId") String sheetId,
++            @RequestParam(name = "asOf", required = false) String asOf, ClaimStore store, ClaimLogStore log,
++            SheetStore sheets, ObjectResponse<List<ClaimResponse>> response) {
++        LocalDate on = History.date(asOf);
++        List<Claim> claims = on == null ? store.list(sheetId.trim()) : store.listAsOf(sheetId.trim(), on);
+         // Only the dates the claims round by are read here, so no policy date is needed.
+         Rounding rounding = new Rounding(null, claims);
+-        LocalDate today = sheets.today(sheetId.trim());
+-        Map<Long, List<String>> lines = log.lines(sheetId.trim());
++        LocalDate today = on == null ? sheets.today(sheetId.trim()) : on;
++        Map<Long, List<String>> lines = log.lines(sheetId.trim(), on);
+         response.send(claims.stream()
+                 .map(c -> ClaimResponse.from(c, rounding).withLog(lines.getOrDefault(c.getId(), List.of())).on(today)).toList());
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/history/History.java b/src/main/java/net/officefloor/hq/app/history/History.java
+index 4638bfe29..97ddb516d 100644
+--- a/src/main/java/net/officefloor/hq/app/history/History.java
++++ b/src/main/java/net/officefloor/hq/app/history/History.java
+@@ -11,6 +11,12 @@ public final class History {
+     private History() {
+     }
+ 
++    /** The date of an {@code asOf} query parameter (yyyy-MM-dd): null when absent or blank, so the store is
++     *  read as it is now. */
++    public static LocalDate date(String asOf) {
++        return asOf == null || asOf.isBlank() ? null : LocalDate.parse(asOf.trim());
++    }
++
+     /** A table expression, named as the table, for use in place of it in a query's FROM: the table's rows
+      *  (each identified by {@code keys}, comma separated) as they stood at the end of {@code date}. */
+     public static String asOf(String table, String keys, LocalDate date) {
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodStore.java b/src/main/java/net/officefloor/hq/app/period/PeriodStore.java
+index 88e0f3434..ae715c280 100644
+--- a/src/main/java/net/officefloor/hq/app/period/PeriodStore.java
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodStore.java
+@@ -5,6 +5,7 @@ import java.time.LocalDate;
+ import java.util.LinkedHashMap;
+ import java.util.List;
+ import java.util.Map;
++import net.officefloor.hq.app.history.History;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.jdbc.core.RowMapper;
+ import org.springframework.stereotype.Repository;
+@@ -31,6 +32,21 @@ public class PeriodStore {
+         return jdbc.query("SELECT * FROM period WHERE sheet_id = ? ORDER BY from_date", ROW, sheetId);
+     }
+ 
++    /** Every period on the sheet as the periods and their fixed figures stood at the end of the date (see
++     *  {@link History}), by from-date. */
++    public List<PeriodResponse> listAsOf(String sheetId, LocalDate date) {
++        String totals = History.asOf("period_person_total", "sheet_id, period_name, person_id", date);
++        return jdbc.query("SELECT * FROM " + History.asOf("period", "id", date) + " WHERE sheet_id = ? ORDER BY from_date",
++                (rs, i) -> PeriodResponse.of(rs.getString("name"), rs.getObject("from_date", LocalDate.class),
++                        rs.getObject("to_date", LocalDate.class), rs.getBoolean("closed"),
++                        rs.getBigDecimal("closed_total"),
++                        rs.getBoolean("closed") || rs.getBoolean("soft")
++                                ? personTotals(rs.getString("sheet_id"), rs.getString("name"), totals)
++                                : Map.of(),
++                        rs.getBoolean("soft")),
++                sheetId);
++    }
++
+     /** The period on the sheet with this name, or null when there is none. */
+     public PeriodResponse find(String sheetId, String name) {
+         List<PeriodResponse> found = jdbc.query("SELECT * FROM period WHERE sheet_id = ? AND name = ?", ROW, sheetId,
+@@ -83,8 +99,12 @@ public class PeriodStore {
+ 
+     /** Each person's due-total fixed when the period was closed, by person id. */
+     private Map<Long, BigDecimal> personTotals(String sheetId, String name) {
++        return personTotals(sheetId, name, "period_person_total");
++    }
++
++    private Map<Long, BigDecimal> personTotals(String sheetId, String name, String table) {
+         Map<Long, BigDecimal> totals = new LinkedHashMap<>();
+-        jdbc.query("SELECT person_id, total FROM period_person_total WHERE sheet_id = ? AND period_name = ? ORDER BY person_id",
++        jdbc.query("SELECT person_id, total FROM " + table + " WHERE sheet_id = ? AND period_name = ? ORDER BY person_id",
+                 rs -> {
+                     totals.put(rs.getLong("person_id"), rs.getBigDecimal("total"));
+                 }, sheetId, name);
+diff --git a/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java b/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java
+index 91dc6d1d9..954f4c879 100644
+--- a/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java
++++ b/src/main/java/net/officefloor/hq/app/period/RespondWithPeriods.java
+@@ -1,12 +1,18 @@
+ package net.officefloor.hq.app.period;
+ 
++import java.time.LocalDate;
+ import java.util.List;
++import net.officefloor.hq.app.history.History;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
++/** The sheet's periods as they are now, or as they stood at the end of the {@code asOf} date. */
+ public class RespondWithPeriods {
+-    public void respond(@PathVariable("sheetId") String sheetId, PeriodStore store,
++    public void respond(@PathVariable("sheetId") String sheetId,
++            @RequestParam(name = "asOf", required = false) String asOf, PeriodStore store,
+             ObjectResponse<List<PeriodResponse>> response) {
+-        response.send(store.list(sheetId.trim()));
++        LocalDate on = History.date(asOf);
++        response.send(on == null ? store.list(sheetId.trim()) : store.listAsOf(sheetId.trim(), on));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PatronStore.java b/src/main/java/net/officefloor/hq/app/person/PatronStore.java
+index 9b8bc07c6..b7813aa37 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PatronStore.java
++++ b/src/main/java/net/officefloor/hq/app/person/PatronStore.java
+@@ -1,9 +1,11 @@
+ package net.officefloor.hq.app.person;
+ 
++import java.time.LocalDate;
+ import java.util.ArrayList;
+ import java.util.HashMap;
+ import java.util.List;
+ import java.util.Map;
++import net.officefloor.hq.app.history.History;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+ 
+@@ -19,8 +21,17 @@ public class PatronStore {
+ 
+     /** The ids of each person's patrons on the sheet, keyed by the person's id. */
+     public Map<Long, List<Long>> all(String sheetId) {
++        return allFrom(sheetId, "patron");
++    }
++
++    /** The ids of each person's patrons on the sheet as they stood at the end of the date (see {@link History}). */
++    public Map<Long, List<Long>> allAsOf(String sheetId, LocalDate date) {
++        return allFrom(sheetId, History.asOf("patron", "sheet_id, person_id, patron_id", date));
++    }
++
++    private Map<Long, List<Long>> allFrom(String sheetId, String table) {
+         Map<Long, List<Long>> found = new HashMap<>();
+-        jdbc.query("SELECT person_id, patron_id FROM patron WHERE sheet_id = ? ORDER BY patron_id",
++        jdbc.query("SELECT person_id, patron_id FROM " + table + " WHERE sheet_id = ? ORDER BY patron_id",
+                 rs -> {
+                     found.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(rs.getLong("patron_id"));
+                 }, sheetId);
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonStore.java b/src/main/java/net/officefloor/hq/app/person/PersonStore.java
+index 3af2b47a3..416ce54c0 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonStore.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonStore.java
+@@ -68,6 +68,14 @@ public class PersonStore {
+         return query(sheetId, null, "SELECT * FROM person WHERE sheet_id = ? ORDER BY id", sheetId);
+     }
+ 
++    /** The people on the sheet as they stood at the end of the date, with their grades and holds then (see
++     *  {@link History}), in the order they were added. */
++    public List<Person> listAsOf(String sheetId, LocalDate date) {
++        return queryFrom(sheetId, null, History.asOf("person_grade", "person_id, from_date", date),
++                History.asOf("person_hold", "id", date),
++                "SELECT * FROM " + History.asOf("person", "id", date) + " WHERE sheet_id = ? ORDER BY id", sheetId);
++    }
++
+     public Person find(String sheetId, long id) {
+         List<Person> found = query(sheetId, id, "SELECT * FROM person WHERE sheet_id = ? AND id = ?", sheetId, id);
+         return found.isEmpty() ? null : found.get(0);
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+index f74d361f4..9901e866f 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+@@ -3,20 +3,27 @@ package net.officefloor.hq.app.person;
+ import java.time.LocalDate;
+ import java.util.List;
+ import java.util.Map;
++import net.officefloor.hq.app.history.History;
+ import net.officefloor.hq.app.sheet.SheetStore;
+ import net.officefloor.hq.app.statement.StatementStore;
+ import net.officefloor.hq.app.statement.StatementSummary;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
++/** The sheet's people as they are now, or, as of a date, as they stood at the end of it (see {@link History})
++ *  with the date standing in for the sheet's today. */
+ public class RespondWithPeople {
+-    public void respond(@PathVariable("sheetId") String sheetId, PersonStore store,
++    public void respond(@PathVariable("sheetId") String sheetId,
++            @RequestParam(name = "asOf", required = false) String asOf, PersonStore store,
+             StatementStore statements, PatronStore patrons, SheetStore sheets,
+             ObjectResponse<List<PersonResponse>> response) {
+-        Map<Long, StatementSummary> stated = statements.summaries(sheetId.trim());
+-        Map<Long, List<Long>> named = patrons.all(sheetId.trim());
+-        LocalDate today = sheets.today(sheetId.trim());
+-        response.send(store.list(sheetId.trim()).stream()
++        String sheet = sheetId.trim();
++        LocalDate on = History.date(asOf);
++        Map<Long, StatementSummary> stated = on == null ? statements.summaries(sheet) : statements.summariesAsOf(sheet, on);
++        Map<Long, List<Long>> named = on == null ? patrons.all(sheet) : patrons.allAsOf(sheet, on);
++        LocalDate today = on == null ? sheets.today(sheet) : on;
++        response.send((on == null ? store.list(sheet) : store.listAsOf(sheet, on)).stream()
+                 .map(p -> PersonResponse.from(p, today, stated.getOrDefault(p.getId(), StatementSummary.NONE),
+                         named.getOrDefault(p.getId(), List.of())))
+                 .toList());
+diff --git a/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java b/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java
+index 236402c0c..756f04158 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java
++++ b/src/main/java/net/officefloor/hq/app/rate/RespondWithRates.java
+@@ -1,12 +1,18 @@
+ package net.officefloor.hq.app.rate;
+ 
++import java.time.LocalDate;
+ import java.util.List;
++import net.officefloor.hq.app.history.History;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
++/** The sheet's rates as they are now, or as they stood at the end of the {@code asOf} date. */
+ public class RespondWithRates {
+-    public void respond(@PathVariable("sheetId") String sheetId, RateStore store,
++    public void respond(@PathVariable("sheetId") String sheetId,
++            @RequestParam(name = "asOf", required = false) String asOf, RateStore store,
+             ObjectResponse<List<RateResponse>> response) {
+-        response.send(store.list(sheetId.trim()));
++        LocalDate on = History.date(asOf);
++        response.send((on == null ? store : store.asOf(on)).list(sheetId.trim()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/role/DelegationStore.java b/src/main/java/net/officefloor/hq/app/role/DelegationStore.java
+index 8451b45f0..5b407f10a 100644
+--- a/src/main/java/net/officefloor/hq/app/role/DelegationStore.java
++++ b/src/main/java/net/officefloor/hq/app/role/DelegationStore.java
+@@ -2,6 +2,7 @@ package net.officefloor.hq.app.role;
+ 
+ import java.time.LocalDate;
+ import java.util.List;
++import net.officefloor.hq.app.history.History;
+ import net.officefloor.hq.app.sheet.SheetStore;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.jdbc.core.RowMapper;
+@@ -30,6 +31,12 @@ public class DelegationStore {
+                 + " ORDER BY id", ROW, sheetId);
+     }
+ 
++    /** Every delegation on the sheet at the end of the date (see {@link History}), in the order they were made. */
++    public List<Delegation> listAsOf(String sheetId, LocalDate date) {
++        return jdbc.query("SELECT user_name, from_date, to_date, delegated_by FROM "
++                + History.asOf("delegation", "id", date) + " WHERE sheet_id = ? ORDER BY id", ROW, sheetId);
++    }
++
+     /** The steward who delegated to the user a delegation in force on the sheet's today (the latest made
+      *  when several are), or null when none is. */
+     public String delegator(String sheetId, String user) {
+diff --git a/src/main/java/net/officefloor/hq/app/role/RespondWithDelegations.java b/src/main/java/net/officefloor/hq/app/role/RespondWithDelegations.java
+index 9f4ee31c2..f8e197bc7 100644
+--- a/src/main/java/net/officefloor/hq/app/role/RespondWithDelegations.java
++++ b/src/main/java/net/officefloor/hq/app/role/RespondWithDelegations.java
+@@ -1,12 +1,17 @@
+ package net.officefloor.hq.app.role;
+ 
++import java.time.LocalDate;
+ import java.util.List;
++import net.officefloor.hq.app.history.History;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
+ public class RespondWithDelegations {
+-    public void respond(@PathVariable("sheetId") String sheetId, DelegationStore store,
++    public void respond(@PathVariable("sheetId") String sheetId,
++            @RequestParam(name = "asOf", required = false) String asOf, DelegationStore store,
+             ObjectResponse<List<DelegationResponse>> response) {
+-        response.send(store.list(sheetId.trim()).stream().map(DelegationResponse::of).toList());
++        LocalDate on = History.date(asOf);
++        response.send((on == null ? store.list(sheetId.trim()) : store.listAsOf(sheetId.trim(), on)).stream().map(DelegationResponse::of).toList());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/role/RespondWithRoles.java b/src/main/java/net/officefloor/hq/app/role/RespondWithRoles.java
+index b85cfd44d..d15983e4c 100644
+--- a/src/main/java/net/officefloor/hq/app/role/RespondWithRoles.java
++++ b/src/main/java/net/officefloor/hq/app/role/RespondWithRoles.java
+@@ -1,12 +1,17 @@
+ package net.officefloor.hq.app.role;
+ 
++import java.time.LocalDate;
+ import java.util.List;
++import net.officefloor.hq.app.history.History;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
+ public class RespondWithRoles {
+-    public void respond(@PathVariable("sheetId") String sheetId, RoleStore store,
++    public void respond(@PathVariable("sheetId") String sheetId,
++            @RequestParam(name = "asOf", required = false) String asOf, RoleStore store,
+             ObjectResponse<List<RoleResponse>> response) {
+-        response.send(store.list(sheetId.trim()));
++        LocalDate on = History.date(asOf);
++        response.send((on == null ? store.list(sheetId.trim()) : store.listAsOf(sheetId.trim(), on)));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/role/RoleStore.java b/src/main/java/net/officefloor/hq/app/role/RoleStore.java
+index 3f8f1ead7..feee5290f 100644
+--- a/src/main/java/net/officefloor/hq/app/role/RoleStore.java
++++ b/src/main/java/net/officefloor/hq/app/role/RoleStore.java
+@@ -1,6 +1,8 @@
+ package net.officefloor.hq.app.role;
+ 
++import java.time.LocalDate;
+ import java.util.List;
++import net.officefloor.hq.app.history.History;
+ import net.officefloor.hq.app.sheet.InvalidSheetException;
+ import net.officefloor.hq.app.sheet.SheetStore;
+ import org.springframework.jdbc.core.JdbcTemplate;
+@@ -23,7 +25,16 @@ public class RoleStore {
+ 
+     /** Every role assigned on the sheet, by user name. */
+     public List<RoleResponse> list(String sheetId) {
+-        return jdbc.query("SELECT user_name, role FROM sheet_role WHERE sheet_id = ? ORDER BY user_name",
++        return listFrom(sheetId, "sheet_role");
++    }
++
++    /** Every role assigned on the sheet at the end of the date (see {@link History}), by user name. */
++    public List<RoleResponse> listAsOf(String sheetId, LocalDate date) {
++        return listFrom(sheetId, History.asOf("sheet_role", "sheet_id, user_name", date));
++    }
++
++    private List<RoleResponse> listFrom(String sheetId, String table) {
++        return jdbc.query("SELECT user_name, role FROM " + table + " WHERE sheet_id = ? ORDER BY user_name",
+                 (rs, i) -> new RoleResponse(rs.getString("user_name"), Role.valueOf(rs.getString("role")).shown()),
+                 sheetId);
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java b/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
+index ccfa94a2d..05c43e087 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
+@@ -5,16 +5,22 @@ import java.util.ArrayList;
+ import java.util.LinkedHashMap;
+ import java.util.List;
+ import java.util.Map;
++import net.officefloor.hq.app.history.History;
+ import net.officefloor.hq.app.sheet.SheetStore;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
+-/** The settings in force on the sheet's today, and the floor and late percent recorded by from-date. */
++/** The settings in force on the sheet's today, and the floor and late percent recorded by from-date; as of a
++ *  date, as they stood at the end of it, in force on that date. */
+ public class RespondWithSettings {
+-    public void respond(@PathVariable("sheetId") String sheetId, SettingStore store, SheetStore sheets,
++    public void respond(@PathVariable("sheetId") String sheetId,
++            @RequestParam(name = "asOf", required = false) String asOf, SettingStore settings, SheetStore sheets,
+             ObjectResponse<SettingsResponse> response) {
+         String sheet = sheetId.trim();
+-        LocalDate today = sheets.today(sheet);
++        LocalDate on = History.date(asOf);
++        SettingStore store = on == null ? settings : settings.asOf(on);
++        LocalDate today = on == null ? sheets.today(sheet) : on;
+         response.send(new SettingsResponse(store.find(sheet, SettingStore.CLERK_LIMIT),
+                 store.floors(sheet).apply(today).setScale(2).toPlainString(),
+                 String.valueOf(store.terms(sheet, today)),
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/AsOfGuard.java b/src/main/java/net/officefloor/hq/app/sheet/AsOfGuard.java
+new file mode 100644
+index 000000000..497f9a17f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/AsOfGuard.java
+@@ -0,0 +1,44 @@
++package net.officefloor.hq.app.sheet;
++
++import jakarta.servlet.FilterChain;
++import jakarta.servlet.ServletException;
++import jakarta.servlet.http.HttpServletRequest;
++import jakarta.servlet.http.HttpServletResponse;
++import java.io.IOException;
++import java.nio.charset.StandardCharsets;
++import org.springframework.http.HttpStatus;
++import org.springframework.stereotype.Component;
++import org.springframework.web.filter.OncePerRequestFilter;
++
++/**
++ * Refuses every change made from a screen showing a sheet as of a date: a request to {@code /api/} other than
++ * a read, sent with the {@value #HEADER} header (the date the screen shows), answers 400 with the reason, and
++ * reaches no endpoint, so it writes nothing to the store or the audit file. The as-of date belongs to the
++ * screen; a change sent without it goes through as usual.
++ */
++@Component
++public class AsOfGuard extends OncePerRequestFilter {
++
++    /** The header a screen showing the sheet as of a date sends with each request. */
++    public static final String HEADER = "X-As-Of";
++
++    @Override
++    protected boolean shouldNotFilter(HttpServletRequest request) {
++        return !request.getRequestURI().startsWith("/api/") || "GET".equals(request.getMethod())
++                || "HEAD".equals(request.getMethod()) || "OPTIONS".equals(request.getMethod());
++    }
++
++    @Override
++    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
++            throws ServletException, IOException {
++        String asOf = request.getHeader(HEADER);
++        if (asOf == null || asOf.isBlank()) {
++            chain.doFilter(request, response);
++            return;
++        }
++        response.setStatus(HttpStatus.BAD_REQUEST.value());
++        response.setContentType("text/plain;charset=UTF-8");
++        response.getOutputStream().write(("The sheet is shown as of " + asOf.trim() + ": clear the as-of date to change it")
++                .getBytes(StandardCharsets.UTF_8));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+index 1ba589e67..a25d947f1 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+@@ -1,12 +1,18 @@
+ package net.officefloor.hq.app.sheet;
+ 
++import java.time.LocalDate;
++import net.officefloor.hq.app.history.History;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
+ public class RespondWithSheet {
+-    public void respond(@PathVariable("sheetId") String sheetId, SheetStore store,
++    public void respond(@PathVariable("sheetId") String sheetId,
++            @RequestParam(name = "asOf", required = false) String asOf, SheetStore store,
+             ObjectResponse<SheetResponse> response) {
+         String id = sheetId.trim();
+-        response.send(new SheetResponse(id, store.today(id).toString(), store.archived(id)));
++        LocalDate on = History.date(asOf);
++        response.send(new SheetResponse(id, store.today(id).toString(),
++                on == null ? store.archived(id) : store.archivedBy(id, on), on == null ? null : on.toString()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java b/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java
+index bea867d34..d6826298d 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.sheet;
+ 
+ /** A sheet as the front end reads it. {@code today} is ISO yyyy-MM-dd; an archived sheet
+- *  refuses every change. */
+-public record SheetResponse(String id, String today, boolean archived) {
++ *  refuses every change. {@code asOf} (yyyy-MM-dd) is the date the screen shows the sheet as of, null when
++ *  it shows it as it is now; {@code archived} is then whether it was archived by the end of that date. */
++public record SheetResponse(String id, String today, boolean archived, String asOf) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetStore.java b/src/main/java/net/officefloor/hq/app/sheet/SheetStore.java
+index 8ea5a417e..9dfb94e30 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetStore.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetStore.java
+@@ -36,9 +36,18 @@ public class SheetStore {
+         return !found.isEmpty() && found.get(0);
+     }
+ 
+-    /** Archives the sheet, keeping its today as it reads now. */
++    /** Whether the sheet was archived while its today was on or before the date. */
++    public boolean archivedBy(String sheetId, LocalDate date) {
++        List<Boolean> found = jdbc.query("SELECT archived AND archived_on <= ? FROM sheet WHERE id = ?",
++                (rs, i) -> rs.getBoolean(1), date, sheetId);
++        return !found.isEmpty() && found.get(0);
++    }
++
++    /** Archives the sheet, keeping its today as it reads now, and recording that today as the day it was archived. */
+     public void archive(String sheetId) {
+-        jdbc.update("MERGE INTO sheet (id, today, archived) KEY (id) VALUES (?, ?, TRUE)", sheetId, today(sheetId));
++        LocalDate today = today(sheetId);
++        jdbc.update("MERGE INTO sheet (id, today, archived, archived_on) KEY (id) VALUES (?, ?, TRUE, ?)", sheetId,
++                today, today);
+     }
+ 
+     /** Refuses any change to an archived sheet. */
+diff --git a/src/main/java/net/officefloor/hq/app/statement/StatementStore.java b/src/main/java/net/officefloor/hq/app/statement/StatementStore.java
+index 85ee3111a..2a0f003f3 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/StatementStore.java
++++ b/src/main/java/net/officefloor/hq/app/statement/StatementStore.java
+@@ -5,6 +5,7 @@ import java.sql.Date;
+ import java.time.LocalDate;
+ import java.util.HashMap;
+ import java.util.Map;
++import net.officefloor.hq.app.history.History;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+ 
+@@ -40,9 +41,19 @@ public class StatementStore {
+ 
+     /** Each person on the sheet with a statement: their count and last statement. */
+     public Map<Long, StatementSummary> summaries(String sheetId) {
++        return summariesFrom(sheetId, "statement");
++    }
++
++    /** Each person on the sheet with a statement as the statements stood at the end of the date (see
++     *  {@link History}): their count and last statement then. */
++    public Map<Long, StatementSummary> summariesAsOf(String sheetId, LocalDate date) {
++        return summariesFrom(sheetId, History.asOf("statement", "id", date));
++    }
++
++    private Map<Long, StatementSummary> summariesFrom(String sheetId, String table) {
+         Map<Long, StatementSummary> found = new HashMap<>();
+-        jdbc.query("SELECT s.person_id, s.taken_on, s.due_total, c.n FROM statement s JOIN "
+-                + "(SELECT person_id, COUNT(*) AS n, MAX(id) AS last_id FROM statement WHERE sheet_id = ? GROUP BY person_id) c "
++        jdbc.query("SELECT s.person_id, s.taken_on, s.due_total, c.n FROM (SELECT * FROM " + table + ") s JOIN "
++                + "(SELECT person_id, COUNT(*) AS n, MAX(id) AS last_id FROM " + table + " WHERE sheet_id = ? GROUP BY person_id) c "
+                 + "ON s.id = c.last_id", rs -> {
+                     BigDecimal total = rs.getBigDecimal("due_total");
+                     found.put(rs.getLong("person_id"), new StatementSummary(rs.getInt("n"),
+diff --git a/src/main/java/net/officefloor/hq/app/watch/RespondWithWatches.java b/src/main/java/net/officefloor/hq/app/watch/RespondWithWatches.java
+index 90d0a7e37..06564e48f 100644
+--- a/src/main/java/net/officefloor/hq/app/watch/RespondWithWatches.java
++++ b/src/main/java/net/officefloor/hq/app/watch/RespondWithWatches.java
+@@ -1,15 +1,21 @@
+ package net.officefloor.hq.app.watch;
+ 
++import java.time.LocalDate;
+ import java.util.List;
++import net.officefloor.hq.app.history.History;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+-/** The ids of the people the user watches on the sheet (none for no user). */
++/** The ids of the people the user watches on the sheet (none for no user); as of a date, those watched at its end. */
+ public class RespondWithWatches {
+     public void respond(@PathVariable("sheetId") String sheetId,
+-            @RequestParam(name = "user", required = false) String user, WatchStore watches,
++            @RequestParam(name = "user", required = false) String user,
++            @RequestParam(name = "asOf", required = false) String asOf, WatchStore watches,
+             ObjectResponse<List<Long>> response) {
+-        response.send(user == null || user.isBlank() ? List.of() : watches.watchedBy(sheetId.trim(), user.trim()));
++        LocalDate on = History.date(asOf);
++        response.send(user == null || user.isBlank() ? List.of()
++                : on == null ? watches.watchedBy(sheetId.trim(), user.trim())
++                : watches.watchedByAsOf(sheetId.trim(), user.trim(), on));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/watch/WatchStore.java b/src/main/java/net/officefloor/hq/app/watch/WatchStore.java
+index 24af7fc93..e3111b344 100644
+--- a/src/main/java/net/officefloor/hq/app/watch/WatchStore.java
++++ b/src/main/java/net/officefloor/hq/app/watch/WatchStore.java
+@@ -1,6 +1,8 @@
+ package net.officefloor.hq.app.watch;
+ 
++import java.time.LocalDate;
+ import java.util.List;
++import net.officefloor.hq.app.history.History;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+ 
+@@ -20,6 +22,12 @@ public class WatchStore {
+                 Long.class, sheetId, user);
+     }
+ 
++    /** The ids of the people the user watched on the sheet at the end of the date (see {@link History}). */
++    public List<Long> watchedByAsOf(String sheetId, String user, LocalDate date) {
++        return jdbc.queryForList("SELECT person_id FROM " + History.asOf("watch", "id", date)
++                + " WHERE sheet_id = ? AND username = ? ORDER BY person_id", Long.class, sheetId, user);
++    }
++
+     /** The users watching the person, in the order they started watching. */
+     public List<String> watchers(String sheetId, long personId) {
+         return jdbc.queryForList("SELECT username FROM watch WHERE sheet_id = ? AND person_id = ? ORDER BY id",
+diff --git a/src/main/resources/db/migration/V40__as_of_view.sql b/src/main/resources/db/migration/V40__as_of_view.sql
+new file mode 100644
+index 000000000..654db4bf6
+--- /dev/null
++++ b/src/main/resources/db/migration/V40__as_of_view.sql
+@@ -0,0 +1,57 @@
++-- The as-of view shows every cell as it stood at the end of a date (see V39__history.sql), so the rest
++-- of what the screen shows is kept by version too: statements, periods and their fixed figures, patrons,
++-- watches, roles and delegations. A sheet records the sheet's today it was archived on.
++CREATE TABLE statement_hist AS SELECT * FROM statement WITH NO DATA;
++CREATE TABLE period_hist AS SELECT * FROM period WITH NO DATA;
++CREATE TABLE period_person_total_hist AS SELECT * FROM period_person_total WITH NO DATA;
++CREATE TABLE patron_hist AS SELECT * FROM patron WITH NO DATA;
++CREATE TABLE watch_hist AS SELECT * FROM watch WITH NO DATA;
++CREATE TABLE sheet_role_hist AS SELECT * FROM sheet_role WITH NO DATA;
++CREATE TABLE delegation_hist AS SELECT * FROM delegation WITH NO DATA;
++
++ALTER TABLE statement_hist ADD COLUMN hist_seq BIGINT NOT NULL;
++ALTER TABLE statement_hist ADD COLUMN hist_made_on DATE NOT NULL;
++ALTER TABLE statement_hist ADD COLUMN hist_gone BOOLEAN DEFAULT FALSE NOT NULL;
++ALTER TABLE period_hist ADD COLUMN hist_seq BIGINT NOT NULL;
++ALTER TABLE period_hist ADD COLUMN hist_made_on DATE NOT NULL;
++ALTER TABLE period_hist ADD COLUMN hist_gone BOOLEAN DEFAULT FALSE NOT NULL;
++ALTER TABLE period_person_total_hist ADD COLUMN hist_seq BIGINT NOT NULL;
++ALTER TABLE period_person_total_hist ADD COLUMN hist_made_on DATE NOT NULL;
++ALTER TABLE period_person_total_hist ADD COLUMN hist_gone BOOLEAN DEFAULT FALSE NOT NULL;
++ALTER TABLE patron_hist ADD COLUMN hist_seq BIGINT NOT NULL;
++ALTER TABLE patron_hist ADD COLUMN hist_made_on DATE NOT NULL;
++ALTER TABLE patron_hist ADD COLUMN hist_gone BOOLEAN DEFAULT FALSE NOT NULL;
++ALTER TABLE watch_hist ADD COLUMN hist_seq BIGINT NOT NULL;
++ALTER TABLE watch_hist ADD COLUMN hist_made_on DATE NOT NULL;
++ALTER TABLE watch_hist ADD COLUMN hist_gone BOOLEAN DEFAULT FALSE NOT NULL;
++ALTER TABLE sheet_role_hist ADD COLUMN hist_seq BIGINT NOT NULL;
++ALTER TABLE sheet_role_hist ADD COLUMN hist_made_on DATE NOT NULL;
++ALTER TABLE sheet_role_hist ADD COLUMN hist_gone BOOLEAN DEFAULT FALSE NOT NULL;
++ALTER TABLE delegation_hist ADD COLUMN hist_seq BIGINT NOT NULL;
++ALTER TABLE delegation_hist ADD COLUMN hist_made_on DATE NOT NULL;
++ALTER TABLE delegation_hist ADD COLUMN hist_gone BOOLEAN DEFAULT FALSE NOT NULL;
++
++CREATE INDEX statement_hist_key ON statement_hist (id, hist_seq);
++CREATE INDEX period_hist_key ON period_hist (id, hist_seq);
++CREATE INDEX period_person_total_hist_key ON period_person_total_hist (sheet_id, period_name, person_id, hist_seq);
++CREATE INDEX patron_hist_key ON patron_hist (sheet_id, person_id, patron_id, hist_seq);
++CREATE INDEX watch_hist_key ON watch_hist (id, hist_seq);
++CREATE INDEX sheet_role_hist_key ON sheet_role_hist (sheet_id, user_name, hist_seq);
++CREATE INDEX delegation_hist_key ON delegation_hist (id, hist_seq);
++
++CREATE TRIGGER statement_history AFTER INSERT, UPDATE, DELETE ON statement FOR EACH ROW
++    CALL 'net.officefloor.hq.app.history.HistoryTrigger';
++CREATE TRIGGER period_history AFTER INSERT, UPDATE, DELETE ON period FOR EACH ROW
++    CALL 'net.officefloor.hq.app.history.HistoryTrigger';
++CREATE TRIGGER period_person_total_history AFTER INSERT, UPDATE, DELETE ON period_person_total FOR EACH ROW
++    CALL 'net.officefloor.hq.app.history.HistoryTrigger';
++CREATE TRIGGER patron_history AFTER INSERT, UPDATE, DELETE ON patron FOR EACH ROW
++    CALL 'net.officefloor.hq.app.history.HistoryTrigger';
++CREATE TRIGGER watch_history AFTER INSERT, UPDATE, DELETE ON watch FOR EACH ROW
++    CALL 'net.officefloor.hq.app.history.HistoryTrigger';
++CREATE TRIGGER sheet_role_history AFTER INSERT, UPDATE, DELETE ON sheet_role FOR EACH ROW
++    CALL 'net.officefloor.hq.app.history.HistoryTrigger';
++CREATE TRIGGER delegation_history AFTER INSERT, UPDATE, DELETE ON delegation FOR EACH ROW
++    CALL 'net.officefloor.hq.app.history.HistoryTrigger';
++
++ALTER TABLE sheet ADD COLUMN archived_on DATE;
