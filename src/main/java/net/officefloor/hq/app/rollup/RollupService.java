@@ -72,7 +72,7 @@ public class RollupService {
                     due = due.add(figure);
                 }
                 // A figure at a grade other than the one in force today does not hang on today's grade's rate.
-                fixed |= claim.getSettledDue() != null || (claim.isStated() && claim.getStatedDue() != null)
+                fixed |= claim.getSettledDue() != null || claim.isBound()
                         || (figure != null && !person.gradeOn(claim.getDate()).equals(person.gradeOn(today)));
             }
             boolean na = rates.find(sheetId, person.gradeOn(today), today) == null && !fixed;
@@ -130,10 +130,10 @@ public class RollupService {
         return policy != null ? policy : sheets.today(sheetId);
     }
 
-    /** Only OPEN and SETTLED claims count, and a held person's OPEN claims do not. */
+    /** Only OPEN, PENDING and SETTLED claims count, and a held person's OPEN or PENDING claims do not. */
     private static boolean counts(Claim claim, Person person) {
         return claim.getStatus() == ClaimStatus.SETTLED
-                || (claim.getStatus() == ClaimStatus.OPEN && !person.isHeld());
+                || (claim.getStatus().isOpen() && !person.isHeld());
     }
 
     private static String shown(BigDecimal value) {

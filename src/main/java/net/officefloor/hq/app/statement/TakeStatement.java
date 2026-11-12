@@ -33,9 +33,9 @@ public class TakeStatement {
         int counted = 0;
         // Locked, so a status change or another statement made at once waits for this one.
         for (Claim claim : claims.listForUpdate(sheetId, person.getId())) {
-            // A held person's OPEN claims count in no live total, so a statement neither counts nor binds them.
+            // A held person's OPEN (or PENDING) claims count in no live total, so a statement neither counts nor binds them.
             boolean counts = claim.getStatus() == ClaimStatus.SETTLED
-                    || (claim.getStatus() == ClaimStatus.OPEN && !person.isHeld());
+                    || (claim.getStatus().isOpen() && !person.isHeld());
             BigDecimal figure = null;
             if (counts) {
                 figure = ClaimFigure.of(claim, rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()), floor, rounding);
@@ -44,7 +44,7 @@ public class TakeStatement {
                     total = total.add(claim.getSettledDue() != null ? figure : figure.add(lateness.charge(claim, figure)));
                 }
                 // A figure at a grade other than the one in force today does not hang on today's grade's rate.
-                fixed |= claim.getSettledDue() != null || (claim.isStated() && claim.getStatedDue() != null)
+                fixed |= claim.getSettledDue() != null || claim.isBound()
                         || (figure != null && !person.gradeOn(claim.getDate()).equals(person.gradeOn(today)));
             }
             claim.setStated(counts);

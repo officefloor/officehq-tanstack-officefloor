@@ -13,7 +13,8 @@ import { dueBy, lateOf, overdue } from '../overdue/overdue';
 import { type Claim, type ClaimStatus, claimsKey, useClaims, useSelectedClaims } from './claims';
 
 type Fields = { amount: string; date: string; note: string; corrects: string };
-type StatusChange = { id: number; status: ClaimStatus };
+/** `review` for a steward approving (SETTLED) or rejecting (OPEN, with a reason) a PENDING claim. */
+type StatusChange = { id: number; status: ClaimStatus; review?: boolean; reason?: string };
 const EMPTY: Fields = { amount: '', date: '', note: '', corrects: '' };
 
 function ClaimsHead() {
@@ -34,6 +35,7 @@ function PersonClaims({ person }: { person: Person }) {
   const periods = usePeriods(sheet);
   const [fields, setFields] = useState<Fields>(EMPTY);
   const [editing, setEditing] = useState<number | undefined>();
+  const [reasons, setReasons] = useState<Record<number, string>>({});
   const [selected, setSelected] = useSelectedClaims();
   const queryClient = useQueryClient();
   const base = `/api/sheets/${encodeURIComponent(sheet)}`;
@@ -54,12 +56,16 @@ function PersonClaims({ person }: { person: Person }) {
 
   // The server refuses a change the claim's status does not allow; the error shows on that claim.
   const move = useMutation({
-    mutationFn: (m: StatusChange) => postJson<Claim>(`${base}/claims/${m.id}/status`, { status: m.status, user }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+    mutationFn: (m: StatusChange) =>
+      postJson<Claim>(`${base}/claims/${m.id}/status`, { status: m.status, user, review: m.review ?? false, reason: m.reason ?? '' }),
+    onSuccess: async (_, m) => {
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+      if (m.review) setReasons((r) => ({ ...r, [m.id]: '' }));
+    },
   });
-  const moveTo = (id: number, status: ClaimStatus) => {
+  const moveTo = (id: number, status: ClaimStatus, review?: { reason: string }) => {
     move.reset();
-    move.mutate({ id, status });
+    move.mutate({ id, status, review: review !== undefined, reason: review?.reason });
   };
 
   const set = (key: keyof Fields) => (e: ChangeEvent<HTMLInputElement>) => {
@@ -112,6 +118,32 @@ function PersonClaims({ person }: { person: Person }) {
               </button>{' '}
               <button type="button" data-testid="claim-void" disabled={move.isPending} onClick={() => moveTo(c.id, 'VOID')}>
                 Void
+              </button>{' '}
+              <button
+                type="button"
+                data-testid="claim-approve"
+                disabled={move.isPending}
+                onClick={() => moveTo(c.id, 'SETTLED', { reason: '' })}
+              >
+                Approve
+              </button>{' '}
+              <input
+                data-testid="claim-reject-reason"
+                placeholder="Reason"
+                aria-label="Reject reason"
+                value={reasons[c.id] ?? ''}
+                onChange={(e) => {
+                  setReasons({ ...reasons, [c.id]: e.target.value });
+                  if (move.variables?.id === c.id) move.reset();
+                }}
+              />{' '}
+              <button
+                type="button"
+                data-testid="claim-reject"
+                disabled={move.isPending}
+                onClick={() => moveTo(c.id, 'OPEN', { reason: reasons[c.id] ?? '' })}
+              >
+                Reject
               </button>{' '}
               <button type="button" data-testid="claim-edit" onClick={() => open(c)}>
                 Edit

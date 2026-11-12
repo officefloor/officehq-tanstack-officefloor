@@ -47,7 +47,7 @@ public class OpenClaims {
                 .thenComparing(Comparator.comparingLong(Claim::getId).reversed()));
         int opened = 0;
         for (Claim claim : selected) {
-            if (!claim.getStatus().canBecome(ClaimStatus.OPEN) || closed(periods, claim)) {
+            if (claim.getStatus() != ClaimStatus.DRAFT || closed(periods, claim)) {
                 refused++;
                 continue;
             }

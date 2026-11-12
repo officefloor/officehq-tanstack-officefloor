@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { sheetKey } from '../sheet/sheet';
-import { type Claim, counts, isCorrection } from '../claims/claims';
+import { type Claim, counts, isBound, isCorrection } from '../claims/claims';
 import { type Grades, gradeOn } from '../people/people';
 
 /** A grade's rate: `pct` is a percent with two decimals; `from` (yyyy-MM-dd) is the date it applies
@@ -84,10 +84,10 @@ function lateCharge(claim: Claim, figure: string, late: Late | undefined): strin
 }
 
 /** Whether the claim keeps a figure whatever the rates: fixed when settled, or bound by a statement. */
-const fixed = (claim: Claim) => claim.due !== null || (claim.stated && claim.statedDue !== null);
+const fixed = (claim: Claim) => claim.due !== null || isBound(claim);
 
 /** A claim's due: the due fixed when it was settled (its late charge frozen in), else its figure — the
- *  figure its person's last statement bound it to, else its live due: its amount at the rate in force
+ *  figure its person's last statement bound it to (not while PENDING), else its live due: its amount at the rate in force
  *  on the claim's date of its person's grade in force on that date, at least the sheet's floor — plus its late charge when overdue.
  *  A correction's live due has no floor and it has no late charge.
  *  A statement never binds the charge: it keeps following the sheet's today. */
@@ -101,7 +101,7 @@ export function claimDue(
   if (claim.due !== null) return claim.due;
   const pct = rateOf(rates, gradeOn(grades, claim.date), claim.date);
   const halfUp = late?.halfUp?.(claim) ?? false;
-  const figure = (claim.stated ? claim.statedDue : null)
+  const figure = (isBound(claim) ? claim.statedDue : null)
     ?? (isCorrection(claim) ? due(claim.amount, pct, halfUp) : liveDue(claim.amount, pct, floor, halfUp));
   const charge = lateCharge(claim, figure, late);
   return charge === undefined ? figure : format(hundredths(figure) + hundredths(charge));

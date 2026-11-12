@@ -1,4 +1,4 @@
-import type { Claim } from '../claims/claims';
+import { type Claim, isOpen } from '../claims/claims';
 import { type Late, type Rate, claimDue, dueTotal } from '../rates/rates';
 import type { Settings } from '../settings/settings';
 import type { Grades } from '../people/people';
@@ -13,9 +13,9 @@ export function dueBy(claim: Claim, terms: string | undefined): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Whether the claim is overdue: it is OPEN and its due-by is before the sheet's today. */
+/** Whether the claim is overdue: it is OPEN (or PENDING) and its due-by is before the sheet's today. */
 export function overdue(claim: Claim, terms: string | undefined, today: string | undefined): boolean {
-  return claim.status === 'OPEN' && today !== undefined && dueBy(claim, terms) < today;
+  return isOpen(claim) && today !== undefined && dueBy(claim, terms) < today;
 }
 
 const DAY = 24 * 60 * 60 * 1000;

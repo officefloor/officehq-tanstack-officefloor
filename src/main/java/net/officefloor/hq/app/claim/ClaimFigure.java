@@ -4,7 +4,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 
 /** A claim's figure: the due fixed when settled, else the figure its person's last statement bound it
- *  to, else its live due: its amount at the grade rate in force on its date, rounded as the sheet's
+ *  to (not while it is PENDING, which a statement does not bind), else its live due: its amount at the grade rate in force on its date, rounded as the sheet's
  *  {@link Rounding} has it, and
  *  at least the sheet's floor, except a correction's, which has no floor (null, n/a, when no rate applies). */
 public final class ClaimFigure {
@@ -27,7 +27,7 @@ public final class ClaimFigure {
         if (claim.getSettledDue() != null) {
             return claim.getSettledDue();
         }
-        if (claim.isStated() && claim.getStatedDue() != null) {
+        if (claim.isBound()) {
             return claim.getStatedDue();
         }
         RoundingMode mode = rounding.mode(claim);

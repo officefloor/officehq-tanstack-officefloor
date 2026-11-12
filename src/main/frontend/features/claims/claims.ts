@@ -3,7 +3,9 @@ import { getJson } from '../../api/http';
 import { sheetKey } from '../sheet/sheet';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 
-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+/** PENDING: settled by a clerk above the clerk limit, awaiting a steward's approval; handled as OPEN,
+ *  except that a statement does not bind it while it is PENDING. */
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
 
 /** `amount` has two decimals; `date` is yyyy-MM-dd; `number` is given when the claim is opened
  *  (null for a draft or a voided claim): the sheet-wide 1, 2, ... or, numbered per period, <period>-<n> / X-<n>. */
@@ -32,13 +34,19 @@ export type Claim = {
 /** A correction: a claim with a negative amount, which has no floor and no late charge. */
 export const isCorrection = (c: Claim) => c.amount.trim().startsWith('-') && Number(c.amount) !== 0;
 
-/** Only OPEN and SETTLED claims count toward claimed and the totals. */
-export const counts = (c: Claim) => c.status === 'OPEN' || c.status === 'SETTLED';
+/** Whether the claim is open: OPEN, or PENDING, which is handled as open. */
+export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING';
 
-/** These claims less the OPEN claims of people on hold, which count in no live total. */
+/** Only OPEN, PENDING and SETTLED claims count toward claimed and the totals. */
+export const counts = (c: Claim) => isOpen(c) || c.status === 'SETTLED';
+
+/** Whether the claim keeps the figure its person's last statement bound it to: not while PENDING. */
+export const isBound = (c: Claim) => c.stated && c.statedDue !== null && c.status !== 'PENDING';
+
+/** These claims less the OPEN (or PENDING) claims of people on hold, which count in no live total. */
 export const live = (claims: Claim[], people: { id: number; held: boolean }[] | undefined) => {
   const held = new Set((people ?? []).filter((p) => p.held).map((p) => p.id));
-  return claims.filter((c) => !(c.status === 'OPEN' && held.has(c.personId)));
+  return claims.filter((c) => !(isOpen(c) && held.has(c.personId)));
 };
 
 /** Under the sheet's key, so loading the sheet again re-reads its claims. */
