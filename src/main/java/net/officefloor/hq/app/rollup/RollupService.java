@@ -7,9 +7,9 @@ import java.util.List;
 import java.util.Map;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.Claim;
-import net.officefloor.hq.app.claim.ClaimFigure;
 import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.ClaimStore;
+import net.officefloor.hq.app.claim.Lateness;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonStore;
 import net.officefloor.hq.app.rate.RateStore;
@@ -51,6 +51,7 @@ public class RollupService {
         LocalDate today = sheets.today(sheetId);
         List<Claim> all = claims.list(sheetId);
         BigDecimal floor = settings.floor(sheetId);
+        Lateness lateness = Lateness.of(sheetId, settings, sheets);
         Map<Long, Rollup.Figures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
         BigDecimal dueTotal = BigDecimal.ZERO.setScale(2);
@@ -64,7 +65,7 @@ public class RollupService {
                     continue;
                 }
                 claimed = claimed.add(claim.getAmount());
-                BigDecimal figure = ClaimFigure.of(claim, rates.find(sheetId, person.getGrade(), claim.getDate()), floor);
+                BigDecimal figure = lateness.due(claim, rates.find(sheetId, person.getGrade(), claim.getDate()), floor);
                 if (figure != null) {
                     due = due.add(figure);
                 }
@@ -85,6 +86,7 @@ public class RollupService {
     public BigDecimal dueBetween(String sheetId, LocalDate from, LocalDate to) {
         List<Claim> all = claims.list(sheetId);
         BigDecimal floor = settings.floor(sheetId);
+        Lateness lateness = Lateness.of(sheetId, settings, sheets);
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         for (Person person : people.list(sheetId)) {
             for (Claim claim : all) {
@@ -93,7 +95,7 @@ public class RollupService {
                         || claim.getDate().isBefore(from) || claim.getDate().isAfter(to)) {
                     continue;
                 }
-                BigDecimal figure = ClaimFigure.of(claim, rates.find(sheetId, person.getGrade(), claim.getDate()), floor);
+                BigDecimal figure = lateness.due(claim, rates.find(sheetId, person.getGrade(), claim.getDate()), floor);
                 if (figure != null) {
                     total = total.add(figure);
                 }

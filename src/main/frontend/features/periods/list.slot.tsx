@@ -8,6 +8,8 @@ import { counts, live, useClaims } from '../claims/claims';
 import { usePeople } from '../people/people';
 import { claimDue, dueTotal, useRates } from '../rates/rates';
 import { useSettings } from '../settings/settings';
+import { useSheetToday } from '../sheet/sheet';
+import { lateOf } from '../overdue/overdue';
 import { type Period, contains, periodsKey, usePeriods } from './periods';
 
 type Fields = { name: string; from: string; to: string };
@@ -23,7 +25,9 @@ function Periods() {
   const people = usePeople(sheet);
   const claims = useClaims(sheet);
   const rates = useRates(sheet);
-  const floor = useSettings(sheet).data?.floor;
+  const settings = useSettings(sheet).data;
+  const floor = settings?.floor;
+  const today = useSheetToday(sheet);
   const [fields, setFields] = useState<Fields>(EMPTY);
   const queryClient = useQueryClient();
 
@@ -57,7 +61,7 @@ function Periods() {
     dueTotal(
       live(claims.data ?? [], people.data)
         .filter((c) => counts(c) && contains(period, c.date) && gradeOf.has(c.personId))
-        .map((c) => claimDue(c, rates.data, gradeOf.get(c.personId)!, floor)),
+        .map((c) => claimDue(c, rates.data, gradeOf.get(c.personId)!, floor, lateOf(settings, today))),
     );
 
   return (

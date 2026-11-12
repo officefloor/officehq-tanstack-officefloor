@@ -71,18 +71,35 @@ export function dueTotal(dues: string[]): string {
   return format(dues.filter((d) => d !== NA).reduce((sum, d) => sum + hundredths(d), 0n));
 }
 
+/** What a claim's late charge follows: the sheet's late percent (two decimals) and how many full
+ *  30 days the claim is overdue. */
+export type Late = { pct: string | undefined; periods: (claim: Claim) => number };
+
+/** The late charge on a figure: the late percent of it for every full 30 days overdue, rounded like due. */
+function lateCharge(claim: Claim, figure: string, late: Late | undefined): string | undefined {
+  const periods = late?.pct === undefined ? 0 : late.periods(claim);
+  if (periods <= 0 || figure === NA) return undefined;
+  return due(figure, format(hundredths(late!.pct!) * BigInt(periods)));
+}
+
 /** Whether the claim keeps a figure whatever the rates: fixed when settled, or bound by a statement. */
 const fixed = (claim: Claim) => claim.due !== null || (claim.stated && claim.statedDue !== null);
 
-/** A claim's figure: the due fixed when it was settled, else the figure its person's last statement
- *  bound it to, else its live due: its amount at its person's grade rate in force on the claim's date,
- *  at least the sheet's floor. */
-export function claimDue(claim: Claim, rates: Rate[] | undefined, grade: string, floor: string | undefined): string {
-  return (
-    claim.due ??
-    (claim.stated ? claim.statedDue : null) ??
-    liveDue(claim.amount, rateOf(rates, grade, claim.date), floor)
-  );
+/** A claim's due: the due fixed when it was settled (its late charge frozen in), else its figure — the
+ *  figure its person's last statement bound it to, else its live due: its amount at its person's grade
+ *  rate in force on the claim's date, at least the sheet's floor — plus its late charge when overdue.
+ *  A statement never binds the charge: it keeps following the sheet's today. */
+export function claimDue(
+  claim: Claim,
+  rates: Rate[] | undefined,
+  grade: string,
+  floor: string | undefined,
+  late?: Late,
+): string {
+  if (claim.due !== null) return claim.due;
+  const figure = (claim.stated ? claim.statedDue : null) ?? liveDue(claim.amount, rateOf(rates, grade, claim.date), floor);
+  const charge = lateCharge(claim, figure, late);
+  return charge === undefined ? figure : format(hundredths(figure) + hundredths(charge));
 }
 
 /** A person's due-total: the sum of the figures of their claims that count. n/a when their grade has
@@ -93,10 +110,11 @@ export function personDue(
   grade: string,
   today: string | undefined,
   floor: string | undefined,
+  late?: Late,
 ): string {
   const mine = claims.filter(counts);
   if (rateOf(rates, grade, today) === undefined && !mine.some(fixed)) {
     return NA;
   }
-  return dueTotal(mine.map((c) => claimDue(c, rates, grade, floor)));
+  return dueTotal(mine.map((c) => claimDue(c, rates, grade, floor, late)));
 }

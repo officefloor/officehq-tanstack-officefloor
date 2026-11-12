@@ -6,6 +6,7 @@ import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimFigure;
 import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.ClaimStore;
+import net.officefloor.hq.app.claim.Lateness;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rate.RateStore;
 import net.officefloor.hq.app.setting.SettingStore;
@@ -16,25 +17,29 @@ import net.officefloor.plugin.variable.Val;
 /** Takes a statement of the person on the sheet's today: their due-total (the sum of the figures of
  *  their claims that count; n/a when their grade has no rate today and no counting claim keeps a
  *  fixed figure), binding each counting claim to its figure now (its floored live due when not fixed) and unbinding the rest. A settled
- *  claim keeps its fixed figure. */
+ *  claim keeps its fixed figure. The due-total includes the late charges of overdue claims, but a
+ *  claim is bound to its figure without its charge, which keeps following the sheet's today. */
 public class TakeStatement {
     public void take(@Val StatementRequest request, @Val Person person, ClaimStore claims, RateStore rates,
             SheetStore sheets, SettingStore settings, StatementStore statements, Out<Statement> statementOut) {
         String sheetId = person.getSheetId();
         LocalDate today = sheets.today(sheetId);
         BigDecimal floor = settings.floor(sheetId);
+        Lateness lateness = new Lateness(settings.terms(sheetId), settings.latePct(sheetId), today);
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         boolean fixed = false;
         int counted = 0;
         // Locked, so a status change or another statement made at once waits for this one.
         for (Claim claim : claims.listForUpdate(sheetId, person.getId())) {
-            boolean counts = claim.getStatus() == ClaimStatus.OPEN || claim.getStatus() == ClaimStatus.SETTLED;
+            // A held person's OPEN claims count in no live total, so a statement neither counts nor binds them.
+            boolean counts = claim.getStatus() == ClaimStatus.SETTLED
+                    || (claim.getStatus() == ClaimStatus.OPEN && !person.isHeld());
             BigDecimal figure = null;
             if (counts) {
                 figure = ClaimFigure.of(claim, rates.find(sheetId, person.getGrade(), claim.getDate()), floor);
                 counted++;
                 if (figure != null) {
-                    total = total.add(figure);
+                    total = total.add(claim.getSettledDue() != null ? figure : figure.add(lateness.charge(claim, figure)));
                 }
                 fixed |= claim.getSettledDue() != null || (claim.isStated() && claim.getStatedDue() != null);
             }

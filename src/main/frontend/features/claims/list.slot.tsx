@@ -9,7 +9,7 @@ import { claimDue, useRates } from '../rates/rates';
 import { useSettings } from '../settings/settings';
 import { periodOf, usePeriods } from '../periods/periods';
 import { useSheetToday } from '../sheet/sheet';
-import { dueBy, overdue } from '../overdue/overdue';
+import { dueBy, lateOf, overdue } from '../overdue/overdue';
 import { type Claim, type ClaimStatus, claimsKey, useClaims } from './claims';
 
 type Fields = { amount: string; date: string; note: string };
@@ -89,7 +89,7 @@ function PersonClaims({ person }: { person: Person }) {
               <span data-testid="claim-date">{c.date}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}
               <span data-testid="claim-period">{periodOf(periods.data, c.date)?.name ?? ''}</span>{' '}
-              <span data-testid="claim-due">{claimDue(c, rates.data, person.grade, floor)}</span>{' '}
+              <span data-testid="claim-due">{claimDue(c, rates.data, person.grade, floor, lateOf(settings, today))}</span>{' '}
               <span data-testid="claim-due-by">{dueBy(c, terms)}</span>{' '}
               <span data-testid="claim-overdue">{overdue(c, terms, today) ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-status">{c.status}</span>{' '}

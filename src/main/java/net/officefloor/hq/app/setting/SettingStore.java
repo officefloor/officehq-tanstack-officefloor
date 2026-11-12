@@ -15,6 +15,11 @@ public class SettingStore {
 
     public static final String TERMS = "terms";
 
+    public static final String LATE_PCT = "late-pct";
+
+    /** The late percent a sheet has until one is set. */
+    public static final BigDecimal DEFAULT_LATE_PCT = new BigDecimal("0.00");
+
     /** The terms (days) a sheet has until they are set. */
     public static final int DEFAULT_TERMS = 14;
 
@@ -51,6 +56,12 @@ public class SettingStore {
     public int terms(String sheetId) {
         String value = find(sheetId, TERMS);
         return value == null ? DEFAULT_TERMS : Integer.parseInt(value);
+    }
+
+    /** The percent of an overdue claim's figure charged for every full 30 days overdue: the one set, else 0.00. */
+    public BigDecimal latePct(String sheetId) {
+        String value = find(sheetId, LATE_PCT);
+        return value == null ? DEFAULT_LATE_PCT : new BigDecimal(value);
     }
 
     public void set(String sheetId, String key, String value) {

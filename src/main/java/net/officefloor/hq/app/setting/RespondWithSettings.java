@@ -8,6 +8,7 @@ public class RespondWithSettings {
             ObjectResponse<SettingsResponse> response) {
         response.send(new SettingsResponse(store.find(sheetId.trim(), SettingStore.CLERK_LIMIT),
                 store.floor(sheetId.trim()).setScale(2).toPlainString(),
-                String.valueOf(store.terms(sheetId.trim()))));
+                String.valueOf(store.terms(sheetId.trim())),
+                store.latePct(sheetId.trim()).setScale(2).toPlainString()));
     }
 }

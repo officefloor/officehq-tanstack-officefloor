@@ -6,7 +6,7 @@ import { useSheetToday } from '../sheet/sheet';
 import { counts, live, useClaims } from '../claims/claims';
 import { useSettings } from '../settings/settings';
 import { dueTotal, useRates } from '../rates/rates';
-import { overdueFigures } from './overdue';
+import { lateOf, overdueFigures } from './overdue';
 
 // A person's overdue count and overdue-total (the due of their overdue claims that count), and the sheet's.
 function OverdueHead() {
@@ -32,6 +32,7 @@ function useOverdue() {
       settings?.floor,
       settings?.terms,
       today,
+      lateOf(settings, today),
     );
 }
 
