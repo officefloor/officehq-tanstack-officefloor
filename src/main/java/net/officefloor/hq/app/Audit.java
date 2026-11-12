@@ -130,6 +130,23 @@ public class Audit {
         return found;
     }
 
+    /** A claim's timeline on the sheet, newest first, exactly as the file holds them: with a number, the lines carrying
+     *  number=<it>; without, the lines carrying no number that name its person, amount and date together. */
+    public synchronized List<String> timeline(String sheet, String number, String person, String amount, String date) {
+        List<String> found = new ArrayList<>();
+        String naming = " person=" + person + " amount=" + amount + " date=" + date + " ";
+        for (String line : lines(sheet, null)) {
+            String padded = line + " ";
+            boolean ours = number != null
+                    ? padded.contains(" number=" + number + " ")
+                    : padded.contains(naming) && !padded.contains(" number=");
+            if (ours) {
+                found.add(line);
+            }
+        }
+        return found;
+    }
+
     /** The lines about the person on the sheet they were transferred from to {@code to}, newest first, exactly as
      *  the file holds them: from the latest record of their transfer to it, back (all of them when there is none). */
     public synchronized List<String> linesBefore(String from, String to, String person) {

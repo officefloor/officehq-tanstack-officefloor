@@ -1,6 +1,6 @@
 import { type ChangeEvent, useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { HttpError, postJson, putJson } from '../../api/http';
+import { HttpError, getJson, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
 import { type Person, peopleKey, usePeople } from '../people/people';
@@ -24,6 +24,34 @@ const EMPTY: Fields = { amount: '', date: '', note: '', corrects: '', ref: '', t
 
 function ClaimsHead() {
   return <th>Claims</th>;
+}
+
+// A claim's timeline: the audit lines about it, newest first, as the file holds them. It reads the file
+// each time the button is pressed (the old lines are gone while it does); it keeps no record of its own.
+function ClaimTimeline({ base, id }: { base: string; id: number }) {
+  const show = useMutation({
+    mutationFn: () => getJson<string[]>(`${base}/claims/${id}/timeline`),
+  });
+  return (
+    <>
+      <button type="button" data-testid="claim-timeline" disabled={show.isPending} onClick={() => show.mutate()}>
+        Timeline
+      </button>
+      {show.isError && (
+        <span data-testid="claim-timeline-error" role="alert">
+          {' '}
+          The timeline could not be read.
+        </span>
+      )}
+      <ol data-testid="claim-timeline-lines">
+        {(show.data ?? []).map((line, i) => (
+          <li key={i} data-testid="claim-timeline-line">
+            <code>{line}</code>
+          </li>
+        ))}
+      </ol>
+    </>
+  );
 }
 
 // A person's claims, newest first, each with its status and the buttons that move it on, and the
@@ -757,6 +785,7 @@ function PersonClaims({ person }: { person: Person }) {
                   </li>
                 ))}
               </ol>
+              <ClaimTimeline base={base} id={c.id} />
               <ol data-testid="claim-log">
                 {(c.log ?? []).map((line, i) => (
                   <li key={i} data-testid="claim-log-line">
