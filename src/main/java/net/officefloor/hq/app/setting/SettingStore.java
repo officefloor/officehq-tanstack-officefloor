@@ -183,6 +183,10 @@ public class SettingStore {
     /** The whole days after its to-date an open period is closed by a new today; blank for off. */
     public static final String GRACE_DAYS = "grace-days";
 
+    /** The whole days at least between a claim's previous reminder and the sheet's today for a reminder to
+     *  escalate it; blank for off (not dated). */
+    public static final String ESCALATE_AFTER = "escalate-after";
+
     /** The key of a grade's grace days: grace-A, grace-B or grace-C (dated; blank for none). */
     public static final String GRACE_PREFIX = "grace-";
 
@@ -251,7 +255,7 @@ public class SettingStore {
 
     /** Whether the key's values are recorded from a from-date. */
     public static boolean isDated(String key) {
-        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key)
+        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key)
                 && !ENTRY_DATE.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
                 && !key.startsWith(PERM_PREFIX);
     }
@@ -433,6 +437,13 @@ public class SettingStore {
     /** The whole days after its to-date an open period is closed by a new today, or null when blank (off). */
     public Integer graceDays(String sheetId) {
         String value = find(sheetId, GRACE_DAYS);
+        return value == null ? null : Integer.valueOf(value);
+    }
+
+    /** The whole days at least between a claim's previous reminder and the sheet's today for a reminder to
+     *  escalate it, or null when blank (off). */
+    public Integer escalateAfter(String sheetId) {
+        String value = find(sheetId, ESCALATE_AFTER);
         return value == null ? null : Integer.valueOf(value);
     }
 
