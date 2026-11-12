@@ -6,6 +6,7 @@ import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns
 import { type Person, peopleKey, personActionKey, useLatestPersonAction, useShowRetired } from '../people/people';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { poolsKey } from '../pools/pools';
+import { useColumnShown } from '../columns/columns';
 
 // The "show retired" toggle: the people list leaves retired people out unless it is on. It belongs
 // to the screen, so loading a sheet leaves it as it is.
@@ -29,6 +30,7 @@ function ShowRetired() {
 }
 
 function RetiredHead() {
+  if (!useColumnShown()('retired')) return null;
   return <th>Retired</th>;
 }
 
@@ -67,7 +69,9 @@ function PersonRetired({ person }: { person: Person }) {
   });
 
   const latest = useLatestPersonAction(sheet, person.id);
+  const shown = useColumnShown();
 
+  if (!shown('retired')) return null;
   return (
     <td>
       <span data-testid="person-retired">{person.retired ? 'yes' : 'no'}</span>{' '}

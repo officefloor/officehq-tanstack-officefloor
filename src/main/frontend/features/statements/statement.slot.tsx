@@ -6,8 +6,11 @@ import { type Person, peopleKey, personActionKey, useLatestPersonAction } from '
 import { claimsKey } from '../claims/claims';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { useFigure } from '../locale/locale';
+import { useColumnShown } from '../columns/columns';
 
 function StatementHead() {
+  const shown = useColumnShown();
+  if (!shown('statement-count') && !shown('stated-total') && !shown('statement-date')) return null;
   return <th>Statements</th>;
 }
 
@@ -47,12 +50,14 @@ function PersonStatement({ person }: { person: Person }) {
   });
 
   const latest = useLatestPersonAction(sheet, person.id);
+  const shown = useColumnShown();
 
+  if (!shown('statement-count') && !shown('stated-total') && !shown('statement-date')) return null;
   return (
     <td>
-      <span data-testid="person-statement-count">{person.statementCount}</span>{' '}
-      <span data-testid="person-stated-total">{fig(person.statedTotal ?? '')}</span>{' '}
-      <span data-testid="person-statement-date">{person.statementDate ?? ''}</span>{' '}
+      {shown('statement-count') && <><span data-testid="person-statement-count">{person.statementCount}</span>{' '}</>}
+      {shown('stated-total') && <><span data-testid="person-stated-total">{fig(person.statedTotal ?? '')}</span>{' '}</>}
+      {shown('statement-date') && <><span data-testid="person-statement-date">{person.statementDate ?? ''}</span>{' '}</>}
       <input
         type="date"
         data-testid="person-statement-asof"

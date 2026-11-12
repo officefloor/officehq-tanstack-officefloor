@@ -5,8 +5,10 @@ import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns
 import { type Person, peopleKey, personActionKey, useLatestPersonAction } from '../people/people';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { poolsKey } from '../pools/pools';
+import { useColumnShown } from '../columns/columns';
 
 function HoldHead() {
+  if (!useColumnShown()('hold')) return null;
   return <th>Hold</th>;
 }
 
@@ -38,7 +40,9 @@ function PersonHold({ person }: { person: Person }) {
   };
 
   const latest = useLatestPersonAction(sheet, person.id);
+  const shown = useColumnShown();
 
+  if (!shown('hold')) return null;
   return (
     <td>
       <span data-testid="person-hold">{person.held ? 'yes' : 'no'}</span>

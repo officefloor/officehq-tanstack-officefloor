@@ -8,8 +8,11 @@ import { useSheetToday } from '../sheet/sheet';
 import { isRecentSettled, useClaims } from '../claims/claims';
 import { NA, dueTotal, patronShares, sharedTotal } from '../rates/rates';
 import { useFigure } from '../locale/locale';
+import { useColumnShown } from '../columns/columns';
 
 function PatronsHead() {
+  const shown = useColumnShown();
+  if (!shown('patrons') && !shown('backing')) return null;
   return <th>Patrons</th>;
 }
 
@@ -20,6 +23,7 @@ function PatronsHead() {
 // Another person on the sheet is named as a patron one at a time; a refusal shows its error until the
 // next is tried.
 function PersonPatrons({ person }: { person: Person }) {
+  const shown = useColumnShown();
   const fig = useFigure();
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -43,7 +47,7 @@ function PersonPatrons({ person }: { person: Person }) {
     const p = people.find((q) => q.id === id);
     return p ? [{ person: p, share: shares[i] }] : [];
   });
-  const shown = patrons
+  const named = patrons
     .map((p) => ({ name: p.person.name, share: p.share }))
     .sort((a, b) => a.name.localeCompare(b.name))
     .map((p) => `${p.name} ${p.share}`);
@@ -59,10 +63,11 @@ function PersonPatrons({ person }: { person: Person }) {
   );
   const candidates = people.filter((p) => p.id !== person.id && !person.patronIds.includes(p.id));
 
+  if (!shown('patrons') && !shown('backing')) return null;
   return (
     <td>
-      <span data-testid="person-patrons">{shown.join(', ')}</span>{' '}
-      <span data-testid="person-backing">{fig(backing)}</span>{' '}
+      {shown('patrons') && <><span data-testid="person-patrons">{named.join(', ')}</span>{' '}</>}
+      {shown('backing') && <><span data-testid="person-backing">{fig(backing)}</span>{' '}</>}
       <select
         data-testid="person-patron-select"
         value={chosen}

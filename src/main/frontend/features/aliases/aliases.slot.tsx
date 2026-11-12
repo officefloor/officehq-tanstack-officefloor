@@ -4,8 +4,10 @@ import { HttpError, postJson } from '../../api/http';
 import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
 import { type Person, peopleKey, personActionKey, useLatestPersonAction } from '../people/people';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
+import { useColumnShown } from '../columns/columns';
 
 function AliasesHead() {
+  if (!useColumnShown()('aliases')) return null;
   return <th>Aliases</th>;
 }
 
@@ -29,7 +31,9 @@ function PersonAliases({ person }: { person: Person }) {
   });
 
   const latest = useLatestPersonAction(sheet, person.id);
+  const shown = useColumnShown();
 
+  if (!shown('aliases')) return null;
   return (
     <td>
       <span data-testid="person-aliases">{person.aliases.join(', ')}</span>

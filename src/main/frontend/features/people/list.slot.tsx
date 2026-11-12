@@ -4,6 +4,7 @@ import { useCurrentSheet } from '../../session/session';
 import { usePersonDue } from '../rates/due.slot';
 import { type Person, useEditingPerson, usePeople, useSelectedPeople, useShowRetired } from './people';
 import { asString, useSearchParam } from '../../url/useSearchParam';
+import { useColumnShown } from '../columns/columns';
 
 const SORTS = ['added', 'name', 'grade', 'due-total'] as const;
 type Sort = (typeof SORTS)[number];
@@ -60,6 +61,7 @@ function PeopleList() {
   const [selected, setSelected] = useSelectedPeople();
   const [sortBy] = useSortBy();
   const dueOf = usePersonDue(sheet);
+  const shown = useColumnShown();
 
   return (
     <>
@@ -70,8 +72,8 @@ function PeopleList() {
           <th />
           <th>Name</th>
           <th>Grade</th>
-          <th>Terms</th>
-          <th>Contact</th>
+          {shown('terms') && <th>Terms</th>}
+          {shown('contact') && <th>Contact</th>}
           <th>Tags</th>
           <th>Snapshots</th>
           <th>Clashing</th>
@@ -93,8 +95,8 @@ function PeopleList() {
             </td>
             <td data-testid="person-name" style={{ whiteSpace: 'pre' }}>{p.name}</td>
             <td data-testid="person-grade">{p.grade}</td>
-            <td data-testid="person-terms">{p.terms ?? ''}</td>
-            <td data-testid="person-contact">{p.contact ?? ''}</td>
+            {shown('terms') && <td data-testid="person-terms">{p.terms ?? ''}</td>}
+            {shown('contact') && <td data-testid="person-contact">{p.contact ?? ''}</td>}
             <td data-testid="person-tags">{p.tags.join(', ')}</td>
             <td>
               {p.snapshots.map((n, i) => (

@@ -8,14 +8,17 @@ import { floorOf, useSettings } from '../settings/settings';
 import { lateOf } from '../overdue/overdue';
 import { personDue, personExcess, trimmedTotal, useRates } from './rates';
 import { useFigure } from '../locale/locale';
+import { useColumnShown } from '../columns/columns';
 
 // A person's due-total (the sum of their counting claims' rounded figures, at most the sheet's cap), their
 // excess over the cap, and the sheet's due-total (everyone's, skipping n/a, trimmed).
 function DueHead() {
+  if (!useColumnShown()('due-total')) return null;
   return <th>Due total</th>;
 }
 
 function PersonDue({ person }: { person: Person }) {
+  const shown = useColumnShown();
   const fig = useFigure();
   const [sheet] = useCurrentSheet();
   const claims = useClaims(sheet);
@@ -24,14 +27,17 @@ function PersonDue({ person }: { person: Person }) {
   const settings = useSettings(sheet).data;
   const floor = floorOf(settings);
   const mine = live((claims.data ?? []).filter((c) => c.personId === person.id), [person]);
+  if (!shown('due-total')) return null;
   return <td data-testid="person-due-total">{fig(personDue(mine, rates.data, person.grades, today, floor, lateOf(settings, today, [person]), settings?.cap))}</td>;
 }
 
 function ExcessHead() {
+  if (!useColumnShown()('excess')) return null;
   return <th>Excess</th>;
 }
 
 function PersonExcess({ person }: { person: Person }) {
+  const shown = useColumnShown();
   const fig = useFigure();
   const [sheet] = useCurrentSheet();
   const claims = useClaims(sheet);
@@ -39,6 +45,7 @@ function PersonExcess({ person }: { person: Person }) {
   const today = useSheetToday(sheet);
   const settings = useSettings(sheet).data;
   const mine = live((claims.data ?? []).filter((c) => c.personId === person.id), [person]);
+  if (!shown('excess')) return null;
   return (
     <td data-testid="person-excess">
       {fig(personExcess(mine, rates.data, person.grades, today, floorOf(settings), lateOf(settings, today, [person]), settings?.cap))}
