@@ -23,6 +23,7 @@ public class ClaimStore {
             rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
             rs.getString("corrects"), rs.getObject("due_by", LocalDate.class));
         claim.setStatedNa(rs.getBoolean("stated_na"));
+        claim.setDeferredUntil(rs.getObject("deferred_until", LocalDate.class));
         return claim;
     };
 
@@ -93,6 +94,16 @@ public class ClaimStore {
     public void bind(Claim claim) {
         jdbc.update("UPDATE claim SET stated = ?, stated_due = ?, stated_na = ? WHERE sheet_id = ? AND id = ?",
                 claim.isStated(), claim.getStatedDue(), claim.isStatedNa(), claim.getSheetId(), claim.getId());
+    }
+
+    /** Defers the stored OPEN claim until the date; false when it is no longer OPEN (another user moved it on). */
+    public boolean defer(Claim claim, LocalDate until) {
+        boolean deferred = jdbc.update("UPDATE claim SET deferred_until = ? WHERE sheet_id = ? AND id = ? AND status = ?",
+                Date.valueOf(until), claim.getSheetId(), claim.getId(), ClaimStatus.OPEN.name()) == 1;
+        if (deferred) {
+            claim.setDeferredUntil(until);
+        }
+        return deferred;
     }
 
     /** Moves the stored DRAFT, OPEN or PENDING claim to the person, unbound from any statement figure and

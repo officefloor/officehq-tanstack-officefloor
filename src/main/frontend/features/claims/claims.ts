@@ -43,6 +43,11 @@ export type Claim = {
   dueBy: string;
   /** Its status log, oldest first: `<STATUS> by <user> on <date> due=<due>`, one line per status it has had. */
   log: string[];
+  /** Whether it is deferred on the sheet's today: OPEN and deferred until a date after it. Until then it
+   *  counts in no total, is not overdue, cannot be settled and is left unbound by a statement. */
+  deferred: boolean;
+  /** The date (yyyy-MM-dd) it was last deferred until; null when it was never deferred. */
+  deferredUntil: string | null;
 };
 
 /** A correction: a claim with a negative amount, which has no floor and no late charge. */
@@ -51,8 +56,8 @@ export const isCorrection = (c: Claim) => c.amount.trim().startsWith('-') && Num
 /** Whether the claim is open: OPEN, or PENDING, which is handled as open. */
 export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING';
 
-/** Only OPEN, PENDING and SETTLED claims count toward claimed and the totals. */
-export const counts = (c: Claim) => isOpen(c) || c.status === 'SETTLED';
+/** Only OPEN, PENDING and SETTLED claims count toward claimed and the totals; a deferred claim does not. */
+export const counts = (c: Claim) => (isOpen(c) && !c.deferred) || c.status === 'SETTLED';
 
 /** Whether the claim keeps the figure (or n/a) its person's last statement bound it to: not while PENDING. */
 export const isBound = (c: Claim) => c.stated && (c.statedDue !== null || c.statedNa) && c.status !== 'PENDING';

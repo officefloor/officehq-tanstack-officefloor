@@ -34,8 +34,9 @@ public class TakeStatement {
         // Locked, so a status change or another statement made at once waits for this one.
         for (Claim claim : claims.listForUpdate(sheetId, person.getId())) {
             // An OPEN (or PENDING) claim dated within a hold counts in no live total unless a statement bound
-            // it, so a statement neither counts nor binds it; one it bound before stays counted.
-            boolean counts = RollupService.counts(claim, person);
+            // it, so a statement neither counts nor binds it; one it bound before stays counted. A deferred
+            // claim counts in no total until the sheet's today reaches its date: a statement leaves it unbound.
+            boolean counts = RollupService.counts(claim, person, today);
             BigDecimal figure = null;
             if (counts) {
                 figure = ClaimFigure.of(claim, rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()), lateness.floor(claim), rounding);

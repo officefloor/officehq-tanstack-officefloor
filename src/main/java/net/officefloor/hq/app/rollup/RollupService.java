@@ -66,7 +66,7 @@ public class RollupService {
             boolean fixed = false;
             for (Claim claim : all) {
                 if (claim.getPersonId() != person.getId()
-                        || !counts(claim, person)) {
+                        || !counts(claim, person, today)) {
                     continue;
                 }
                 claimed = claimed.add(claim.getAmount());
@@ -100,15 +100,16 @@ public class RollupService {
      *  the order they were added: the sum of their figures, skipping n/a, as the screen shows a person's
      *  due-total for a period. A period's due-total is the sum of these. */
     public Map<Long, BigDecimal> dueBetweenByPerson(String sheetId, LocalDate from, LocalDate to) {
+        LocalDate today = sheets.today(sheetId);
         List<Claim> all = claims.list(sheetId);
-        Lateness lateness = new Lateness(settings.latePcts(sheetId), settings.floors(sheetId), sheets.today(sheetId),
+        Lateness lateness = new Lateness(settings.latePcts(sheetId), settings.floors(sheetId), today,
                 new Rounding(policyDate(sheetId), all));
         Map<Long, BigDecimal> totals = new LinkedHashMap<>();
         for (Person person : people.list(sheetId)) {
             BigDecimal total = BigDecimal.ZERO.setScale(2);
             for (Claim claim : all) {
                 if (claim.getPersonId() != person.getId()
-                        || !counts(claim, person)
+                        || !counts(claim, person, today)
                         || claim.getDate().isBefore(from) || claim.getDate().isAfter(to)) {
                     continue;
                 }
@@ -139,9 +140,9 @@ public class RollupService {
         }
     }
 
-    /** Whether the claim is overdue: OPEN (or PENDING) with its due-by before the sheet's today. */
+    /** Whether the claim is overdue: OPEN (or PENDING), not deferred, with its due-by before the sheet's today. */
     private static boolean overdue(Claim claim, LocalDate today) {
-        return claim.getStatus().isOpen() && today != null && claim.getDueBy() != null
+        return claim.getStatus().isOpen() && !claim.isDeferredOn(today) && today != null && claim.getDueBy() != null
                 && claim.getDueBy().isBefore(today);
     }
 
@@ -152,10 +153,11 @@ public class RollupService {
     }
 
     /** Only OPEN, PENDING and SETTLED claims count, and an OPEN or PENDING claim dated within one of its
-     *  person's holds does not, unless a statement bound it. */
-    public static boolean counts(Claim claim, Person person) {
+     *  person's holds does not, unless a statement bound it; nor does an OPEN claim deferred on the sheet's today. */
+    public static boolean counts(Claim claim, Person person, LocalDate today) {
         return claim.getStatus() == ClaimStatus.SETTLED
-                || (claim.getStatus().isOpen() && (claim.isStated() || !person.heldOn(claim.getDate())));
+                || (claim.getStatus().isOpen() && !claim.isDeferredOn(today)
+                        && (claim.isStated() || !person.heldOn(claim.getDate())));
     }
 
     private static String shown(BigDecimal value) {

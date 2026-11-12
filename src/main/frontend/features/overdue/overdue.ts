@@ -6,9 +6,9 @@ import type { Grades } from '../people/people';
 /** The claim's due-by (yyyy-MM-dd): fixed when it was added, from the terms of its person's grade then. */
 export const dueBy = (claim: Claim): string => claim.dueBy;
 
-/** Whether the claim is overdue: it is OPEN (or PENDING) and its due-by is before the sheet's today. */
+/** Whether the claim is overdue: it is OPEN (or PENDING), not deferred, and its due-by is before the sheet's today. */
 export function overdue(claim: Claim, today: string | undefined): boolean {
-  return isOpen(claim) && today !== undefined && dueBy(claim) < today;
+  return isOpen(claim) && !claim.deferred && today !== undefined && dueBy(claim) < today;
 }
 
 const DAY = 24 * 60 * 60 * 1000;

@@ -22,6 +22,7 @@ public class Claim {
     private boolean statedNa;
     private String corrects;
     private final LocalDate dueBy;
+    private LocalDate deferredUntil;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue, String openedBy, boolean stated,
@@ -76,6 +77,14 @@ public class Claim {
      *  leave it as it is. */
     public LocalDate getDueBy() { return dueBy; }
     public boolean isCorrection() { return amount.signum() < 0; }
+    /** The date the claim was last deferred until; null when it was never deferred. */
+    public LocalDate getDeferredUntil() { return deferredUntil; }
+    /** Whether the claim is deferred on {@code today}: OPEN and deferred until a date after it. Until
+     *  then it counts in no total, is not overdue, cannot be settled and is left unbound by a statement. */
+    public boolean isDeferredOn(LocalDate today) {
+        return status == ClaimStatus.OPEN && deferredUntil != null && today != null && today.isBefore(deferredUntil);
+    }
+    public void setDeferredUntil(LocalDate deferredUntil) { this.deferredUntil = deferredUntil; }
     public void setPersonId(long personId) { this.personId = personId; }
     public void setCorrects(String corrects) { this.corrects = corrects; }
     public void setAmount(BigDecimal amount) { this.amount = amount; }

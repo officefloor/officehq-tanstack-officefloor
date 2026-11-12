@@ -38,6 +38,7 @@ function PersonClaims({ person }: { person: Person }) {
   const [editing, setEditing] = useState<number | undefined>();
   const [reasons, setReasons] = useState<Record<number, string>>({});
   const [targets, setTargets] = useState<Record<number, string>>({});
+  const [deferDates, setDeferDates] = useState<Record<number, string>>({});
   const people = usePeople(sheet);
   const [selected, setSelected] = useSelectedClaims();
   const queryClient = useQueryClient();
@@ -70,6 +71,7 @@ function PersonClaims({ person }: { person: Person }) {
     move.reset();
     reassign.reset();
     resettle.reset();
+    defer.reset();
     move.mutate({ id, status, review: review !== undefined, reason: review?.reason });
   };
 
@@ -88,6 +90,7 @@ function PersonClaims({ person }: { person: Person }) {
     move.reset();
     reassign.reset();
     resettle.reset();
+    defer.reset();
     reassign.mutate({ id, to: targets[id] ?? '' });
   };
   // A steward re-settling a SETTLED claim freezes it again at today's figure.
@@ -104,9 +107,28 @@ function PersonClaims({ person }: { person: Person }) {
     move.reset();
     reassign.reset();
     resettle.reset();
+    defer.reset();
     resettle.mutate(id);
   };
-  // The refusal of the last status change, move or re-settle of the claim, as the server gave it; null when none.
+  // Deferring an OPEN claim until a date after today takes it out of every figure until then.
+  const defer = useMutation({
+    mutationFn: (d: { id: number; until: string }) =>
+      postJson<Claim>(`${base}/claims/${d.id}/defer`, { until: d.until, user }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+      ]);
+    },
+  });
+  const deferClaim = (id: number) => {
+    move.reset();
+    reassign.reset();
+    resettle.reset();
+    defer.reset();
+    defer.mutate({ id, until: (deferDates[id] ?? '').trim() });
+  };
+  // The refusal of the last status change, move, re-settle or deferral of the claim, as the server gave it; null when none.
   const refusal = (id: number) => {
     const error =
       move.isError && move.variables?.id === id
@@ -115,7 +137,9 @@ function PersonClaims({ person }: { person: Person }) {
           ? reassign.error
           : resettle.isError && resettle.variables === id
             ? resettle.error
-            : null;
+            : defer.isError && defer.variables?.id === id
+              ? defer.error
+              : null;
     if (error === null) return null;
     return error instanceof HttpError && error.reason ? `${error.reason}.` : 'The change was refused.';
   };
@@ -129,6 +153,7 @@ function PersonClaims({ person }: { person: Person }) {
     move.reset();
     reassign.reset();
     resettle.reset();
+    defer.reset();
     setEditing(c.id);
     setFields({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects ?? '' });
   };
@@ -164,6 +189,8 @@ function PersonClaims({ person }: { person: Person }) {
               <span data-testid="claim-status">{c.status}</span>{' '}
               <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
               <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
+              <span data-testid="claim-deferred">{c.deferred ? 'yes' : 'no'}</span>{' '}
+              <span data-testid="claim-deferred-until">{c.deferred ? (c.deferredUntil ?? '') : ''}</span>{' '}
               <button type="button" data-testid="claim-open" disabled={move.isPending} onClick={() => moveTo(c.id, 'OPEN')}>
                 Open
               </button>{' '}
@@ -232,6 +259,19 @@ function PersonClaims({ person }: { person: Person }) {
                 onClick={() => reassignTo(c.id)}
               >
                 Move
+              </button>{' '}
+              <input
+                data-testid="claim-defer-date"
+                type="date"
+                aria-label="Defer until"
+                value={deferDates[c.id] ?? ''}
+                onChange={(e) => {
+                  setDeferDates({ ...deferDates, [c.id]: e.target.value });
+                  if (defer.variables?.id === c.id) defer.reset();
+                }}
+              />{' '}
+              <button type="button" data-testid="claim-defer" disabled={defer.isPending} onClick={() => deferClaim(c.id)}>
+                Defer
               </button>{' '}
               <button type="button" data-testid="claim-edit" onClick={() => open(c)}>
                 Edit

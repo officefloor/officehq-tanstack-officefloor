@@ -1,0 +1,23 @@
+package net.officefloor.hq.app.claim;
+
+import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.person.PersonStore;
+import net.officefloor.hq.app.rollup.Rollup;
+import net.officefloor.hq.app.rollup.RollupService;
+import net.officefloor.plugin.variable.Val;
+
+/** Records a stored deferral: CLAIM_DEFERRED sheet=<id> by=<user> person=<name> amount=<0.00>
+ *  date=<yyyy-mm-dd> number=<n> until=<yyyy-mm-dd>. */
+public class AuditClaimDeferred {
+    public void audit(@Val DeferInput input, @Val Claim claim, @Val Rollup before, PersonStore people, Audit audit,
+            RollupService rollups) {
+        Person person = people.find(claim.getSheetId(), claim.getPersonId());
+        ClaimResponse shown = ClaimResponse.from(claim);
+        audit.record("CLAIM_DEFERRED sheet=" + claim.getSheetId() + " by=" + input.user() + " person="
+                + person.getName() + " amount=" + shown.amount() + " date=" + shown.date()
+                + (claim.getNumber() == null ? "" : " number=" + claim.getNumber())
+                + " until=" + input.until());
+        rollups.record(claim.getSheetId(), input.user(), before);
+    }
+}

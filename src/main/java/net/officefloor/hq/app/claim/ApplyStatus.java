@@ -18,7 +18,7 @@ import net.officefloor.plugin.variable.Val;
  *  A clerk's settle above the clerk limit makes it PENDING instead (see {@link CheckClerkLimit}); a steward's
  *  approval settles a PENDING claim, frozen then at its live figure (a statement does not bind it while
  *  PENDING), and a rejection moves it back to OPEN, bound again by its person's last statement if that included it.
- *  The user who opened a claim may not settle or approve it. */
+ *  The user who opened a claim may not settle or approve it, and a claim deferred on the sheet's today may not be settled. */
 public class ApplyStatus {
     public void apply(@Val StatusInput input, @Val StatusMove move, @Val Claim claim, ClaimStore store, PersonStore people,
             RateStore rates, SettingStore settings, SheetStore sheets, PeriodStore periods,
@@ -30,6 +30,9 @@ public class ApplyStatus {
                 && claim.getOpenedBy().equals(input.user())) {
             throw new InvalidSheetException("The user who opened a claim cannot "
                     + (input.review() ? "approve" : "settle") + " it");
+        }
+        if (input.status() == ClaimStatus.SETTLED && claim.isDeferredOn(sheets.today(claim.getSheetId()))) {
+            throw new InvalidSheetException("A deferred claim cannot be settled until " + claim.getDeferredUntil());
         }
         if (!from.canBecome(to) || !store.move(claim, from, to)) {
             throw new InvalidSheetException("A " + from + " claim cannot become " + to);
