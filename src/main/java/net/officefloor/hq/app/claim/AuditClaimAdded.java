@@ -10,6 +10,11 @@ import net.officefloor.plugin.variable.Val;
 public class AuditClaimAdded {
     public void audit(@Val ClaimInput input, @Val Person person, @Val Claim claim, @Val Rollup before, Audit audit,
             RollupService rollups) {
+        record(input, person, claim, before, audit, rollups);
+    }
+
+    static void record(ClaimInput input, Person person, Claim claim, Rollup before, Audit audit,
+            RollupService rollups) {
         audit.record(AuditClaimEdited.line("CLAIM_ADDED", input, person, claim));
         rollups.record(claim.getSheetId(), input.user(), before);
     }

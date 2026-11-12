@@ -18,6 +18,11 @@ public class ValidateClaim {
 
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ClaimRequest request,
             SheetStore sheets, Out<ClaimInput> body) throws InvalidSheetException {
+        body.set(check(sheetId, request, sheets));
+    }
+
+    /** The claim form's rules on a typed claim, before anything is stored: the claim as it would be stored. */
+    static ClaimInput check(String sheetId, ClaimRequest request, SheetStore sheets) throws InvalidSheetException {
         String amount = request == null || request.amount() == null ? "" : request.amount().trim();
         if (!AMOUNT.matcher(amount).matches()) {
             throw new InvalidSheetException("The amount must be a number with up to two decimals");
@@ -41,6 +46,6 @@ public class ValidateClaim {
         } else if (!correctsText.isEmpty()) {
             throw new InvalidSheetException("Only a negative amount corrects a claim");
         }
-        body.set(new ClaimInput(value, date, note, request.user(), corrects));
+        return new ClaimInput(value, date, note, request.user(), corrects);
     }
 }

@@ -10,10 +10,14 @@ import net.officefloor.plugin.variable.Val;
 public class SaveClaimAdded {
     public void save(@Val ClaimInput input, @Val Person person, ClaimStore store, SettingStore settings,
             ClaimLogStore log, Out<Claim> claim) {
+        claim.set(add(input, person, store, settings, log));
+    }
+
+    static Claim add(ClaimInput input, Person person, ClaimStore store, SettingStore settings, ClaimLogStore log) {
         int terms = settings.terms(person.getSheetId(), person.gradeOn(input.date()), input.date());
         Claim added = store.add(person.getSheetId(), person.getId(), input.amount(), input.date(), input.note(),
                 input.corrects(), input.date().plusDays(terms));
         log.record(added, input.user());
-        claim.set(added);
+        return added;
     }
 }
