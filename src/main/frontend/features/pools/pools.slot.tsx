@@ -56,82 +56,85 @@ function PoolRow({ pool, pools }: { pool: Pool; pools: Pool[] }) {
           </li>
         ))}
       </ul>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          submit({
-            personId: personId === '' || personId.startsWith('pool:') ? null : Number(personId),
-            memberPoolId: personId.startsWith('pool:') ? Number(personId.slice(5)) : null,
-            share,
-            from,
-            to,
-          });
-        }}
-      >
-        <select
-          data-testid="pool-member-select"
-          value={personId}
-          onChange={(e) => {
-            setPersonId(e.target.value);
-            add.reset();
+      {!pool.crew && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            submit({
+              personId: personId === '' || personId.startsWith('pool:') ? null : Number(personId),
+              memberPoolId: personId.startsWith('pool:') ? Number(personId.slice(5)) : null,
+              share,
+              from,
+              to,
+            });
           }}
         >
-          <option value="">Person…</option>
-          {people.map((p) => (
-            <option key={p.id} value={String(p.id)}>
-              {p.name}
-            </option>
-          ))}
-          {pools.map((p) => (
-            <option key={`pool:${p.id}`} value={`pool:${p.id}`}>
-              pool:{p.name}
-            </option>
-          ))}
-        </select>
-        <input
-          data-testid="pool-member-share"
-          placeholder="Share %"
-          value={share}
-          onChange={(e) => {
-            setShare(e.target.value);
-            add.reset();
-          }}
-        />
-        <input
-          type="date"
-          data-testid="pool-member-from"
-          aria-label="Member from"
-          value={from}
-          onChange={(e) => {
-            setFrom(e.target.value);
-            add.reset();
-          }}
-        />
-        <input
-          type="date"
-          data-testid="pool-member-to"
-          aria-label="Member to"
-          value={to}
-          onChange={(e) => {
-            setTo(e.target.value);
-            add.reset();
-          }}
-        />
-        <button type="submit" data-testid="pool-member-add" disabled={add.isPending}>
-          Add member
-        </button>
-        {add.isError && (
-          <span data-testid="pool-error" role="alert">
-            {' '}
-            {refusal(add.error, 'The member was refused.')}
-          </span>
-        )}
-      </form>
+          <select
+            data-testid="pool-member-select"
+            value={personId}
+            onChange={(e) => {
+              setPersonId(e.target.value);
+              add.reset();
+            }}
+          >
+            <option value="">Person…</option>
+            {people.map((p) => (
+              <option key={p.id} value={String(p.id)}>
+                {p.name}
+              </option>
+            ))}
+            {pools.filter((p) => !p.crew).map((p) => (
+              <option key={`pool:${p.id}`} value={`pool:${p.id}`}>
+                pool:{p.name}
+              </option>
+            ))}
+          </select>
+          <input
+            data-testid="pool-member-share"
+            placeholder="Share %"
+            value={share}
+            onChange={(e) => {
+              setShare(e.target.value);
+              add.reset();
+            }}
+          />
+          <input
+            type="date"
+            data-testid="pool-member-from"
+            aria-label="Member from"
+            value={from}
+            onChange={(e) => {
+              setFrom(e.target.value);
+              add.reset();
+            }}
+          />
+          <input
+            type="date"
+            data-testid="pool-member-to"
+            aria-label="Member to"
+            value={to}
+            onChange={(e) => {
+              setTo(e.target.value);
+              add.reset();
+            }}
+          />
+          <button type="submit" data-testid="pool-member-add" disabled={add.isPending}>
+            Add member
+          </button>
+          {add.isError && (
+            <span data-testid="pool-error" role="alert">
+              {' '}
+              {refusal(add.error, 'The member was refused.')}
+            </span>
+          )}
+        </form>
+      )}
     </li>
   );
 }
 
-// The sheet's pools, and the form a pool is added with. A blank name, or one already a pool, is refused.
+// The sheet's pools (each crew among them, after the others), and the form a pool is added with. A blank name, or
+// one already a pool or a crew, is refused.
 function Pools() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();

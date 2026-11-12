@@ -22,8 +22,10 @@ export type PoolMember = {
   to: string | null;
 };
 
-/** A pool on the sheet: its members, the total of their shares (two decimals) and whether it is exactly 100.00. */
-export type Pool = { id: number; name: string; members: PoolMember[]; totalShare: string; balanced: boolean };
+/** A pool on the sheet: its members, the total of their shares (two decimals) and whether it is exactly 100.00.
+ *  `crew` for a crew shown as a pool (its id the negated crew id): its members are the crew's lead and members at
+ *  equal shares, and no member is added to it here. */
+export type Pool = { id: number; name: string; members: PoolMember[]; totalShare: string; balanced: boolean; crew: boolean };
 
 /** Under the sheet's key, so loading the sheet again re-reads its pools. */
 export const poolsKey = (sheet: string) => [...sheetKey(sheet), 'pools'] as const;

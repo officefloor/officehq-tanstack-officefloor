@@ -7,6 +7,7 @@ import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { type Person, usePeople } from '../people/people';
 import { usePersonDue } from '../rates/due.slot';
 import { type Crew, crewDue, crewsKey, useCrews } from './crews';
+import { poolsKey } from '../pools/pools';
 import { useFigure } from '../locale/locale';
 
 const refusal = (e: unknown, fallback: string) =>
@@ -27,6 +28,7 @@ function CrewRow({ crew, people, due }: { crew: Crew; people: Person[]; due: (p:
       postJson(`/api/sheets/${encodeURIComponent(sheet)}/crews/${crew.id}/members`, { personId: id, user }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: crewsKey(sheet) });
+      await queryClient.invalidateQueries({ queryKey: poolsKey(sheet) });
       setPersonId('');
     },
   });
@@ -97,6 +99,7 @@ function Crews() {
       postJson(`/api/sheets/${encodeURIComponent(sheet)}/crews`, { ...c, user }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: crewsKey(sheet) });
+      await queryClient.invalidateQueries({ queryKey: poolsKey(sheet) });
       setName('');
       setLeadId('');
     },

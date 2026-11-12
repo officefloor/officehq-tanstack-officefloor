@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import net.officefloor.hq.app.crew.CrewStore;
 import net.officefloor.hq.app.history.History;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonStore;
@@ -21,20 +22,25 @@ import org.springframework.web.bind.annotation.RequestParam;
 /** The sheet's pools with their members, total share and whether they are balanced, and each member's cut
  *  of the pool's pot: the sheet's pot for a pool that is a member of none, else its cut in the pool above. A
  *  person with a hold in force on the sheet's today (the as-of date when one is given) gets no cut. A member
- *  whose dates do not include that day is left out entirely: not in the total share, not in the balance, no cut. */
+ *  whose dates do not include that day is left out entirely: not in the total share, not in the balance, no cut.
+ *  Each crew is a pool too, after the stored pools in the order the crews were added: under the crew's name (and
+ *  the negated crew id), its lead then its members each with an equal share of 100.00 (split as patrons' shares
+ *  are, the remainder on the lead), and no dates. */
 public class RespondWithPools {
     private static final BigDecimal HUNDRED = new BigDecimal("100.00");
 
     public void respond(@PathVariable("sheetId") String sheetId,
             @RequestParam(name = "asOf", required = false) String asOf, PoolStore store, SettingStore settings,
-            PersonStore people, SheetStore sheets, ObjectResponse<List<PoolResponse>> response) {
+            PersonStore people, SheetStore sheets, CrewStore crews, ObjectResponse<List<PoolResponse>> response) {
         String sheet = sheetId.trim();
         LocalDate on = History.date(asOf);
         BigDecimal sheetPot = (on == null ? settings : settings.asOf(on)).pot(sheet);
         Map<Long, List<PoolStore.Member>> members = store.members(sheet, on);
-        List<PoolStore.Pool> pools = store.list(sheet, on);
+        List<PoolStore.Pool> pools = new ArrayList<>(store.list(sheet, on));
         LocalDate today = on == null ? sheets.today(sheet) : on;
-        Set<Long> held = (on == null ? people.list(sheet) : people.listAsOf(sheet, on)).stream()
+        List<Person> everyone = on == null ? people.list(sheet) : people.listAsOf(sheet, on);
+        Set<Long> crewPools = addCrews(sheet, on, crews, everyone, pools, members);
+        Set<Long> held = everyone.stream()
                 .filter(p -> p.getHolds().stream().anyMatch(h -> h.covers(today))).map(Person::getId)
                 .collect(Collectors.toSet());
         // each member pool to the pool it is a member of, and its share there
@@ -57,8 +63,52 @@ public class RespondWithPools {
                         m.from() == null ? null : m.from().toString(), m.to() == null ? null : m.to().toString()));
             }
             BigDecimal total = total(ms, today);
-            return new PoolResponse(p.id(), p.name(), shown, total.toPlainString(), total.compareTo(HUNDRED) == 0);
+            return new PoolResponse(p.id(), p.name(), shown, total.toPlainString(), total.compareTo(HUNDRED) == 0,
+                    crewPools.contains(p.id()));
         }).toList());
+    }
+
+    /** Adds each crew as a pool (id the negated crew id) with its lead and members still on the sheet at equal
+     *  shares; the ids of the pools added. */
+    private static Set<Long> addCrews(String sheet, LocalDate on, CrewStore crews, List<Person> everyone,
+            List<PoolStore.Pool> pools, Map<Long, List<PoolStore.Member>> members) {
+        Map<Long, Person> byId = new HashMap<>();
+        everyone.forEach(p -> byId.put(p.getId(), p));
+        Map<Long, List<CrewStore.Member>> crewMembers = crews.members(sheet, on);
+        Set<Long> added = new java.util.HashSet<>();
+        for (CrewStore.Crew c : crews.list(sheet, on)) {
+            long id = -c.id();
+            List<Long> ids = new ArrayList<>();
+            ids.add(c.leadId());
+            crewMembers.getOrDefault(c.id(), List.of()).forEach(m -> ids.add(m.personId()));
+            List<Person> in = ids.stream().map(byId::get).filter(java.util.Objects::nonNull).toList();
+            List<BigDecimal> shares = equalShares(in.size());
+            List<PoolStore.Member> ms = new ArrayList<>();
+            for (int i = 0; i < in.size(); i++) {
+                Person p = in.get(i);
+                ms.add(new PoolStore.Member(id, p.getId(), null, p.getName(), shares.get(i), p.isRetired(), null,
+                        null));
+            }
+            pools.add(new PoolStore.Pool(id, c.name()));
+            members.put(id, ms);
+            added.add(id);
+        }
+        return added;
+    }
+
+    /** 100.00 split equally over {@code count}, as patrons' shares are: each the even split rounded half to even
+     *  to two decimals, the remainder on the first. */
+    private static List<BigDecimal> equalShares(int count) {
+        List<BigDecimal> shares = new ArrayList<>();
+        if (count == 0) {
+            return shares;
+        }
+        BigDecimal each = HUNDRED.divide(BigDecimal.valueOf(count), 2, RoundingMode.HALF_EVEN);
+        for (int i = 0; i < count; i++) {
+            shares.add(each);
+        }
+        shares.set(0, HUNDRED.subtract(each.multiply(BigDecimal.valueOf(count - 1))).setScale(2));
+        return shares;
     }
 
     /** The total of the members' shares, a retired member's counting as given, one whose dates do not include

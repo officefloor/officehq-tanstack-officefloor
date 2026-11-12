@@ -3,8 +3,10 @@ package net.officefloor.hq.app.pool;
 import java.util.List;
 
 /** A pool as the front end reads it: its members, the total of their shares (a retired member's counts as
- *  given) and whether that total is exactly 100.00. Shares and the total have two decimals. */
-public record PoolResponse(long id, String name, List<MemberResponse> members, String totalShare, boolean balanced) {
+ *  given) and whether that total is exactly 100.00. Shares and the total have two decimals. {@code crew} for a
+ *  crew shown as a pool (its id the negated crew id): its members are the crew's, and none is added to it here. */
+public record PoolResponse(long id, String name, List<MemberResponse> members, String totalShare, boolean balanced,
+        boolean crew) {
 
     /** A member of a pool: the person or the member pool (the other null), its name, its share, and its cut of
      *  the pool's pot (two decimals), null when the pool is not balanced, has no pot or every member is retired. A pool that is a member
