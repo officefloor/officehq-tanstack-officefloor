@@ -5,7 +5,7 @@ import { useCurrentSheet } from '../../session/session';
 import { useSheetToday } from '../sheet/sheet';
 import { counts, live, useClaims } from '../claims/claims';
 import { floorOf, useSettings } from '../settings/settings';
-import { dueTotal, useRates } from '../rates/rates';
+import { trimmedTotal, useRates } from '../rates/rates';
 import { lateOf, overdueFigures } from './overdue';
 
 // A person's overdue count and overdue-total (the due of their overdue claims that count), and the sheet's.
@@ -45,12 +45,13 @@ function PersonOverdue({ person }: { person: Person }) {
   );
 }
 
-/** The sheet's overdue figures: everyone's overdue counts and overdue-totals added up. */
+/** The sheet's overdue figures: everyone's overdue counts added up, and their overdue-totals
+ *  added up trimmed of the single highest and lowest when three or more people have one. */
 export function useSheetOverdue(): { count: number; total: string } {
   const [sheet] = useCurrentSheet();
   const people = usePeople(sheet);
   const figures = (people.data ?? []).map(useOverdue());
-  return { count: figures.reduce((n, f) => n + f.count, 0), total: dueTotal(figures.map((f) => f.total)) };
+  return { count: figures.reduce((n, f) => n + f.count, 0), total: trimmedTotal(figures.map((f) => f.total)) };
 }
 
 function OverdueTotal() {

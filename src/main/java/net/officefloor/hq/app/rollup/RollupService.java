@@ -2,6 +2,7 @@ package net.officefloor.hq.app.rollup;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,7 +25,8 @@ import org.springframework.stereotype.Service;
  * moved them: ROLLUP sheet=<id> by=<user> person=<name> claimed=<0.00> due-total=<0.00 or n/a>
  * overdue-total=<0.00> for each person whose figures changed (a person new to the sheet counts as changed), in
  * the order they were added, then TOTALS sheet=<id> by=<user> claimed-total=<0.00> due-total=<0.00>
- * overdue-total=<0.00> when any of the sheet's totals changed. A person's overdue-total is the due (late charge
+ * overdue-total=<0.00> when any of the sheet's totals changed; the sheet's due-total and overdue-total leave out
+ * the single highest and the single lowest person's figure when three or more people have one (n/a is no figure). A person's overdue-total is the due (late charge
  * included, skipping n/a) of their counting claims that are OPEN or PENDING with a due-by before today. A person's due-total is at most the sheet's cap. A change that moves no figure records nothing here.
  */
 @Service
@@ -60,8 +62,8 @@ public class RollupService {
                 new Rounding(policyDate(sheetId), all));
         Map<Long, Rollup.Figures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
-        BigDecimal dueTotal = BigDecimal.ZERO.setScale(2);
-        BigDecimal overdueTotal = BigDecimal.ZERO.setScale(2);
+        List<BigDecimal> dues = new ArrayList<>();
+        List<BigDecimal> overdues = new ArrayList<>();
         for (Person person : people.list(sheetId)) {
             BigDecimal claimed = BigDecimal.ZERO.setScale(2);
             BigDecimal due = BigDecimal.ZERO.setScale(2);
@@ -88,15 +90,26 @@ public class RollupService {
             }
             boolean na = rates.find(sheetId, person.gradeOn(today), today) == null && !fixed;
             claimedTotal = claimedTotal.add(claimed);
-            overdueTotal = overdueTotal.add(overdue);
+            overdues.add(overdue);
             due = SettingStore.capped(due, cap);
             if (!na) {
-                dueTotal = dueTotal.add(due);
+                dues.add(due);
             }
             figures.put(person.getId(), new Rollup.Figures(person.getName(), shown(claimed), na ? NA : shown(due),
                     shown(overdue)));
         }
-        return new Rollup(figures, shown(claimedTotal), shown(dueTotal), shown(overdueTotal));
+        return new Rollup(figures, shown(claimedTotal), shown(trimmed(dues)), shown(trimmed(overdues)));
+    }
+
+    /** The sum of people's figures, leaving out the single highest and the single lowest when three or more
+     *  people have one. */
+    private static BigDecimal trimmed(List<BigDecimal> figures) {
+        List<BigDecimal> sorted = new ArrayList<>(figures);
+        sorted.sort(null);
+        if (sorted.size() >= 3) {
+            sorted = sorted.subList(1, sorted.size() - 1);
+        }
+        return sorted.stream().reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
     }
 
     /** Each person's due-total of their claims dated from..to (inclusive) that count by the status they

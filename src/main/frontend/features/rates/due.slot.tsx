@@ -6,10 +6,10 @@ import { useSheetToday } from '../sheet/sheet';
 import { live, useClaims } from '../claims/claims';
 import { floorOf, useSettings } from '../settings/settings';
 import { lateOf } from '../overdue/overdue';
-import { dueTotal, personDue, personExcess, useRates } from './rates';
+import { personDue, personExcess, trimmedTotal, useRates } from './rates';
 
 // A person's due-total (the sum of their counting claims' rounded figures, at most the sheet's cap), their
-// excess over the cap, and the sheet's due-total (everyone's, skipping n/a).
+// excess over the cap, and the sheet's due-total (everyone's, skipping n/a, trimmed).
 function DueHead() {
   return <th>Due total</th>;
 }
@@ -43,7 +43,8 @@ function PersonExcess({ person }: { person: Person }) {
   );
 }
 
-/** The sheet's due-total: everyone's (retired people included) due-totals added up, skipping n/a. */
+/** The sheet's due-total: everyone's (retired people included) due-totals added up, skipping n/a, trimmed
+ *  of the single highest and lowest when three or more people have one. */
 export function useSheetDueTotal(): string {
   const [sheet] = useCurrentSheet();
   const people = usePeople(sheet);
@@ -55,7 +56,7 @@ export function useSheetDueTotal(): string {
   const dues = (people.data ?? []).map((p) =>
     personDue(live((claims.data ?? []).filter((c) => c.personId === p.id), [p]), rates.data, p.grades, today, floor, lateOf(settings, today), settings?.cap),
   );
-  return dueTotal(dues);
+  return trimmedTotal(dues);
 }
 
 function DueTotal() {

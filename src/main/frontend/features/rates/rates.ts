@@ -90,6 +90,14 @@ export function dueTotal(dues: string[]): string {
   return format(dues.filter((d) => d !== NA).reduce((sum, d) => sum + hundredths(d), 0n));
 }
 
+/** A sheet total of people's figures: their sum, skipping n/a, leaving out the single highest and the
+ *  single lowest when three or more people have a figure. */
+export function trimmedTotal(dues: string[]): string {
+  const figures = dues.filter((d) => d !== NA).map(hundredths).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const kept = figures.length >= 3 ? figures.slice(1, -1) : figures;
+  return format(kept.reduce((sum, d) => sum + d, 0n));
+}
+
 /** What a claim's late charge follows: the sheet's late percent (two decimals) in force on a date and the
  *  30-day boundaries (yyyy-MM-dd) the claim is overdue past; and whether the claim's live figures round half up (else half to even). */
 export type Late = { pct: ((date: string) => string) | undefined; boundaries: (claim: Claim) => string[]; halfUp?: (claim: Claim) => boolean };
