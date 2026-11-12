@@ -80,6 +80,24 @@ public class ValidateSetting {
             body.set(new SettingInput(key, perm(request.value()), null, request.user()));
             return;
         }
+        if (SettingStore.ROUNDING.equals(key)) {
+            String value = request.value() == null ? "" : request.value().trim();
+            String fromValue = request.from() == null ? "" : request.from().trim();
+            if (!value.isEmpty() && !SettingStore.ROUNDING_HALF_UP.equals(value)
+                    && !SettingStore.ROUNDING_HALF_EVEN.equals(value)) {
+                throw new InvalidSheetException("The rounding must be half-up or half-even, or blank");
+            }
+            LocalDate from = null;
+            if (!fromValue.isEmpty()) {
+                try {
+                    from = LocalDate.parse(fromValue);
+                } catch (DateTimeParseException e) {
+                    throw new InvalidSheetException("The from-date must be a date (YYYY-MM-DD), or blank");
+                }
+            }
+            body.set(new SettingInput(key, value.isEmpty() ? null : value, from, request.user()));
+            return;
+        }
         if (!SettingStore.CLERK_LIMIT.equals(key) && !cap && !proof && !note && !pot && !alert && !floor && !terms && !gradeTerms && !gradeGrace && !late && !dated) {
             throw new InvalidSheetException("Not a setting: " + key);
         }

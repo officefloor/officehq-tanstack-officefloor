@@ -16,6 +16,9 @@ public class SaveToday {
             @Val Rollup before, SheetStore store, ClaimStore claims, PersonStore people, Audit audit) {
         String id = sheetId.trim();
         LocalDate leaving = store.today(id);
+        // The new today is stored first, so the snapshots are kept as made on it (a sheet read as of the day
+        // being left does not show them yet).
+        store.setToday(id, today);
         if (!today.equals(leaving)) {
             before.people().forEach((personId, figures) -> {
                 people.snapshot(id, personId, leaving, figures.dueTotal());
@@ -24,6 +27,5 @@ public class SaveToday {
             });
             claims.unlockAll(id);
         }
-        store.setToday(id, today);
     }
 }

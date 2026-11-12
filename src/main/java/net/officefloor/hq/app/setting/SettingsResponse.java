@@ -29,13 +29,17 @@ import java.util.Map;
  *  the one named now, also as of a date).
  *  {@code fiscalStartMonth} is the month (1 to 12) a fiscal year starts in, 1 unless set (not dated).
  *  {@code alertThreshold} has two decimals, the due-total above which a person crossing it raises an ALERT, null for
- *  off (not dated). */
+ *  off (not dated).
+ *  {@code rounding} is the rounding mode in force on the sheet's today (half-up or half-even), null when none;
+ *  {@code roundingFrom} is the rounding modes recorded, oldest from-date first (a claim rounds by the one in force on
+ *  its date, else by the policy date). */
 public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
         String periodNumberingFrom, Map<String, String> gradeTerms, String cap, String proofThreshold, List<Dated> floorFrom,
         List<Dated> latePctFrom, Map<String, String> perms, String graceDays,
         String noteThreshold, String entryDate, Map<String, String> gradeGrace,
         Map<String, List<Dated>> gradeGraceFrom, Map<String, String> gradeProofThreshold,
-        String pot, String parent, String fiscalStartMonth, String alertThreshold) {
+        String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding,
+        List<Dated> roundingFrom) {
 
     /** A value recorded from a date (yyyy-MM-dd). */
     public record Dated(String from, String value) {

@@ -1,6 +1,6 @@
 import { type Claim, isOpen } from '../claims/claims';
 import { type Floor, type Late, type Rate, claimDue, dueTotal } from '../rates/rates';
-import { type Settings, graceOf, latePctOf } from '../settings/settings';
+import { type Settings, graceOf, latePctOf, roundingOf } from '../settings/settings';
 import { type Grades, type Person, gradeOn } from '../people/people';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -37,15 +37,21 @@ export function lateBoundaries(claim: Claim, today: string | undefined, late?: L
 
 /** What the sheet's late charge follows: its late percent in force on each boundary date, each claim's due-by plus
  *  the grace days in force on its date for its person's grade then (of these people), and its today; and how it rounds:
- *  a claim rounding by a date before the policy date (else the sheet's today) rounds half up. */
+ *  a claim rounding by a date with a rounding mode in force rounds by it, else one rounding by a date before the policy
+ *  date (else the sheet's today) rounds half up. */
 export function lateOf(settings: Settings | undefined, today: string | undefined, people: Person[] | undefined): Late {
   const policy = settings?.policyDate ?? today;
   const pcts = latePctOf(settings);
+  const roundings = roundingOf(settings);
   const graces = graceOf(settings);
   const late: Late = {
     pct: pcts,
     boundaries: (c) => lateBoundaries(c, today, late),
-    halfUp: (c) => policy !== undefined && (c.roundsBy ?? c.date) < policy,
+    halfUp: (c) => {
+      const mode = roundings?.(c.roundsBy ?? c.date);
+      if (mode === 'half-up' || mode === 'half-even') return mode === 'half-up';
+      return policy !== undefined && (c.roundsBy ?? c.date) < policy;
+    },
     graceBy: (c) => {
       const person = people?.find((p) => p.id === c.personId);
       const grace = person && graces?.(gradeOn(person.grades, c.date), c.date);

@@ -200,7 +200,7 @@ public class RollupService {
         Map<Long, Person> byId = new HashMap<>();
         people.list(sheetId).forEach(person -> byId.put(person.getId(), person));
         return new Lateness(settings.latePcts(sheetId), settings.floors(sheetId), today,
-                new Rounding(policyDate(sheetId), all), Lateness.graced(settings.graces(sheetId), byId::get));
+                new Rounding(policyDate(sheetId), settings.roundings(sheetId), all), Lateness.graced(settings.graces(sheetId), byId::get));
     }
 
     /** The date the sheet's rounding turns on: the policy date set, else the sheet's today. */

@@ -64,7 +64,7 @@ public class TakeStatement {
             all.stream().filter(claim -> claim.getPersonId() == person.getId()).forEach(claim -> was.put(claim.getId(), claim));
         }
         LocalDate policy = settings.policyDate(sheetId);
-        Rounding rounding = new Rounding(policy != null ? policy : on, all);
+        Rounding rounding = new Rounding(policy != null ? policy : on, settings.roundings(sheetId), all);
         Person whose = then;
         Lateness lateness = new Lateness(settings.latePcts(sheetId), settings.floors(sheetId), on, rounding,
                 Lateness.graced(settings.graces(sheetId), id -> id == whose.getId() ? whose : null));

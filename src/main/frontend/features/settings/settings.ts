@@ -26,14 +26,16 @@ import { useAsOf } from '../../session/session';
  *  `parent` is the id of the sheet whose rates a grade with no rate in force on a date takes (then its parent's, up
  *  to three levels up), null for none; it is not dated. `fiscalStartMonth` is the month (1 to 12) a fiscal year starts in,
  *  1 unless set; it is not dated. `alertThreshold` (two decimals) is the due-total above which a person
- *  crossing it raises an ALERT, null for off; it is not dated. */
+ *  crossing it raises an ALERT, null for off; it is not dated. `rounding` is the rounding mode in force on
+ *  the sheet's today (half-up or half-even), null for none; `roundingFrom` is the modes recorded, oldest from-date
+ *  first (a claim rounds by the one in force on its date, else by the policy date). */
 export type Settings = { clerkLimit: string | null; floor: string; terms: string; latePct: string; policyDate: string | null;
   periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; proofThreshold: string | null;
   floorFrom: Dated[]; latePctFrom: Dated[]; perms: Record<string, string | null>;
   graceDays: string | null; noteThreshold: string | null; entryDate: string | null;
   gradeGrace: Record<string, string | null>; gradeGraceFrom: Record<string, Dated[]>;
   gradeProofThreshold: Record<string, string | null>; pot: string | null; parent: string | null; fiscalStartMonth: string;
-  alertThreshold: string | null };
+  alertThreshold: string | null; rounding: string | null; roundingFrom: Dated[] };
 
 /** A setting's value recorded from a date (yyyy-MM-dd); a null value is blank. */
 export type Dated = { from: string; value: string | null };
@@ -59,6 +61,11 @@ export function floorOf(settings: Settings | undefined): ((date: string) => stri
 /** The late percent in force on each date; undefined until the settings are read. */
 export function latePctOf(settings: Settings | undefined): ((date: string) => string) | undefined {
   return settings && ((date) => valueOn(settings.latePctFrom, date, STARTING_LATE_PCT));
+}
+
+/** The rounding mode in force on each date ('half-up', 'half-even', or '' for none); undefined until the settings are read. */
+export function roundingOf(settings: Settings | undefined): ((date: string) => string) | undefined {
+  return settings && ((date) => valueOn(settings.roundingFrom ?? [], date, ''));
 }
 
 /** The grace days of a grade in force on each date (null for none); undefined until the settings are read. */

@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.setting;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -57,6 +58,13 @@ public class SettingStore {
     public static final String LATE_PCT = "late-pct";
 
     public static final String POLICY_DATE = "policy-date";
+
+    /** The rounding mode of a claim's live figures, dated: half-up or half-even, blank for none. */
+    public static final String ROUNDING = "rounding";
+
+    public static final String ROUNDING_HALF_UP = "half-up";
+
+    public static final String ROUNDING_HALF_EVEN = "half-even";
 
     public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
 
@@ -386,6 +394,17 @@ public class SettingStore {
             NavigableMap<LocalDate, String> history = histories.get(grade);
             String value = history == null ? null : on(history, date);
             return value == null ? null : Integer.valueOf(value);
+        };
+    }
+
+    /** The rounding mode in force on each date (half-up or half-even), or null when none is (blank): then a
+     *  claim rounds by the policy date. Read once, for many claims. */
+    public Function<LocalDate, RoundingMode> roundings(String sheetId) {
+        NavigableMap<LocalDate, String> history = history(sheetId, ROUNDING);
+        return date -> {
+            String value = on(history, date);
+            return ROUNDING_HALF_UP.equals(value) ? RoundingMode.HALF_UP
+                    : ROUNDING_HALF_EVEN.equals(value) ? RoundingMode.HALF_EVEN : null;
         };
     }
 
