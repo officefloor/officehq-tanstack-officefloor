@@ -72,6 +72,14 @@ public class ClaimLogStore {
         return statuses;
     }
 
+    /** The sheet's today on which the claim was last logged SETTLED; null when it never was. */
+    public LocalDate settledOn(Claim claim) {
+        List<LocalDate> dates = jdbc.query("SELECT log_date FROM claim_log WHERE sheet_id = ? AND claim_id = ? "
+                + "AND status = ? ORDER BY id DESC LIMIT 1", (rs, n) -> rs.getObject("log_date", LocalDate.class),
+                claim.getSheetId(), claim.getId(), ClaimStatus.SETTLED.name());
+        return dates.isEmpty() ? null : dates.get(0);
+    }
+
     /** The claim's log lines, oldest first. */
     public List<String> lines(Claim claim) {
         return lines(claim.getSheetId()).getOrDefault(claim.getId(), List.of());

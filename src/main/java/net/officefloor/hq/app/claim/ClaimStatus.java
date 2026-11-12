@@ -7,14 +7,15 @@ public enum ClaimStatus {
     DRAFT, OPEN, PENDING, SETTLED, VOID;
 
     /** Whether a claim may move from this status to {@code next}: DRAFT to OPEN, OPEN to PENDING or
-     *  SETTLED, PENDING to SETTLED (approved) or OPEN (rejected), and DRAFT, OPEN or PENDING to VOID.
-     *  SETTLED and VOID are final. */
+     *  SETTLED, PENDING to SETTLED (approved) or OPEN (rejected), and DRAFT, OPEN or PENDING to VOID;
+     *  SETTLED to VOID too, though only a steward within days of settling it (see {@link CheckClerkLimit}).
+     *  VOID is final. */
     public boolean canBecome(ClaimStatus next) {
         return switch (next) {
             case OPEN -> this == DRAFT || this == PENDING;
             case PENDING -> this == OPEN;
             case SETTLED -> this == OPEN || this == PENDING;
-            case VOID -> this == DRAFT || this == OPEN || this == PENDING;
+            case VOID -> this == DRAFT || this == OPEN || this == PENDING || this == SETTLED;
             case DRAFT -> false;
         };
     }

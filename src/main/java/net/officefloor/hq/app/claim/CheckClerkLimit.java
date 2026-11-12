@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonStore;
 import net.officefloor.hq.app.rate.RateStore;
@@ -18,10 +19,16 @@ import net.officefloor.plugin.variable.Val;
  *  only a review moves it to SETTLED or back to OPEN; a review of a claim that is not PENDING is refused.
  *  Before the limit is considered, settling or approving a claim with no proofs whose due is above the
  *  proof threshold is refused (see {@link CheckProofs}), so it never goes to PENDING. Opening, settling
- *  and voiding are refused to a role the sheet's permission matrix does not allow it. */
+ *  and voiding are refused to a role the sheet's permission matrix does not allow it. A SETTLED claim
+ *  may be voided only by a steward, and only within {@link #VOID_SETTLED_DAYS} days of the sheet's today
+ *  it was settled on (its status log's SETTLED date). */
 public class CheckClerkLimit {
+    /** How many days after settling a claim a steward may still void it. */
+    static final int VOID_SETTLED_DAYS = 7;
+
     public void check(@Val StatusInput input, @Val Claim claim, RoleStore roles, SettingStore settings,
-            PersonStore people, RateStore rates, SheetStore sheets, ClaimStore claims, Out<StatusMove> move)
+            PersonStore people, RateStore rates, SheetStore sheets, ClaimStore claims, ClaimLogStore log,
+            Out<StatusMove> move)
             throws InvalidSheetException {
         ClaimStatus from = claim.getStatus();
         Role role = roles.find(claim.getSheetId(), input.user());
@@ -41,9 +48,27 @@ public class CheckClerkLimit {
             throw new InvalidSheetException("A PENDING claim waits for a steward to approve or reject it");
         }
         refuseUnpermitted(input.status(), claim.getSheetId(), role, settings);
+        if (from == ClaimStatus.SETTLED && input.status() == ClaimStatus.VOID) {
+            refuseLateVoid(claim, steward, log, sheets);
+        }
         CheckProofs.refuseUnproved(input, claim, settings, people, rates, sheets, claims);
         move.set(new StatusMove(from, overLimit(input, claim, steward, settings, people, rates, sheets, claims)
                 ? ClaimStatus.PENDING : input.status()));
+    }
+
+    /** Refuses voiding a SETTLED claim by anyone but a steward, or later than {@link #VOID_SETTLED_DAYS}
+     *  days after it was settled. */
+    static void refuseLateVoid(Claim claim, boolean steward, ClaimLogStore log, SheetStore sheets)
+            throws InvalidSheetException {
+        if (!steward) {
+            throw new InvalidSheetException("Only a steward can void a SETTLED claim");
+        }
+        LocalDate settled = log.settledOn(claim);
+        LocalDate today = sheets.today(claim.getSheetId());
+        if (settled == null || today == null || today.isAfter(settled.plusDays(VOID_SETTLED_DAYS))) {
+            throw new InvalidSheetException("A SETTLED claim can be voided only within " + VOID_SETTLED_DAYS
+                    + " days of settling it");
+        }
     }
 
     /** Refuses opening, settling or voiding a claim by a role the sheet's permission matrix does not allow it. */

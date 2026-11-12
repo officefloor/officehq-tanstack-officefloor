@@ -55,7 +55,8 @@ public class SettleClaims {
                 sheets.refuseArchived(sheet);
                 new CheckClaimPeriod().check(claim, periods);
                 StatusMove[] move = new StatusMove[1];
-                new CheckClerkLimit().check(status, claim, roles, settings, people, rates, sheets, store, m -> move[0] = m);
+                new CheckClerkLimit().check(status, claim, roles, settings, people, rates, sheets, store, log,
+                        m -> move[0] = m);
                 Rollup before = rollups.snapshot(sheet);
                 StatusChange[] change = new StatusChange[1];
                 new ApplyStatus().apply(status, move[0], claim, store, people, rates, settings, sheets, periods,
