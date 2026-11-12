@@ -7,6 +7,7 @@ import { live, useClaims } from '../claims/claims';
 import { floorOf, useSettings } from '../settings/settings';
 import { lateOf } from '../overdue/overdue';
 import { personDue, personExcess, trimmedTotal, useRates } from './rates';
+import { useFigure } from '../locale/locale';
 
 // A person's due-total (the sum of their counting claims' rounded figures, at most the sheet's cap), their
 // excess over the cap, and the sheet's due-total (everyone's, skipping n/a, trimmed).
@@ -15,6 +16,7 @@ function DueHead() {
 }
 
 function PersonDue({ person }: { person: Person }) {
+  const fig = useFigure();
   const [sheet] = useCurrentSheet();
   const claims = useClaims(sheet);
   const rates = useRates(sheet);
@@ -22,7 +24,7 @@ function PersonDue({ person }: { person: Person }) {
   const settings = useSettings(sheet).data;
   const floor = floorOf(settings);
   const mine = live((claims.data ?? []).filter((c) => c.personId === person.id), [person]);
-  return <td data-testid="person-due-total">{personDue(mine, rates.data, person.grades, today, floor, lateOf(settings, today, [person]), settings?.cap)}</td>;
+  return <td data-testid="person-due-total">{fig(personDue(mine, rates.data, person.grades, today, floor, lateOf(settings, today, [person]), settings?.cap))}</td>;
 }
 
 function ExcessHead() {
@@ -30,6 +32,7 @@ function ExcessHead() {
 }
 
 function PersonExcess({ person }: { person: Person }) {
+  const fig = useFigure();
   const [sheet] = useCurrentSheet();
   const claims = useClaims(sheet);
   const rates = useRates(sheet);
@@ -38,7 +41,7 @@ function PersonExcess({ person }: { person: Person }) {
   const mine = live((claims.data ?? []).filter((c) => c.personId === person.id), [person]);
   return (
     <td data-testid="person-excess">
-      {personExcess(mine, rates.data, person.grades, today, floorOf(settings), lateOf(settings, today, [person]), settings?.cap)}
+      {fig(personExcess(mine, rates.data, person.grades, today, floorOf(settings), lateOf(settings, today, [person]), settings?.cap))}
     </td>
   );
 }
@@ -66,9 +69,10 @@ export function usePersonDue(of?: string): (person: Person) => string {
 }
 
 function DueTotal() {
+  const fig = useFigure();
   return (
     <p>
-      Due total <strong data-testid="rollup-due-total">{useSheetDueTotal()}</strong>
+      Due total <strong data-testid="rollup-due-total">{fig(useSheetDueTotal())}</strong>
     </p>
   );
 }

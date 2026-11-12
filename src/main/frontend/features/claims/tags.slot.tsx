@@ -6,11 +6,13 @@ import { floorOf, useSettings } from '../settings/settings';
 import { lateOf } from '../overdue/overdue';
 import { dueTotal, personTagged, useRates } from '../rates/rates';
 import { live, useClaims, useTags } from './claims';
+import { useFigure } from '../locale/locale';
 
 // For every tag ever used on the sheet, its due-total: the dues of the claims that count which carry it,
 // everyone's added up, not capped or trimmed (a claim with two tags counts in both). A claim counts for a tag
 // when it or its person carries it, once.
 function TagTotals() {
+  const fig = useFigure();
   const [sheet] = useCurrentSheet();
   const tags = useTags(sheet);
   const people = usePeople(sheet);
@@ -32,7 +34,7 @@ function TagTotals() {
       Due by tag{' '}
       {(tags.data ?? []).map((tag) => (
         <span key={tag}>
-          {tag} <strong data-testid={`tag-${tag}-due-total`}>{total(tag)}</strong>{' '}
+          {tag} <strong data-testid={`tag-${tag}-due-total`}>{fig(total(tag))}</strong>{' '}
         </span>
       ))}
     </p>

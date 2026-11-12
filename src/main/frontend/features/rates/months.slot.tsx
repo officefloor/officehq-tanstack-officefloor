@@ -6,10 +6,12 @@ import { live, useClaims } from '../claims/claims';
 import { floorOf, useSettings } from '../settings/settings';
 import { lateOf } from '../overdue/overdue';
 import { dueTotal, personMonthDue, useRates } from './rates';
+import { useFigure } from '../locale/locale';
 
 // For every calendar month (yyyy-mm) any claim on the sheet is dated in, its due-total: the dues of the
 // claims that count dated in it, everyone's added up, not capped or trimmed.
 function MonthTotals() {
+  const fig = useFigure();
   const [sheet] = useCurrentSheet();
   const people = usePeople(sheet);
   const claims = useClaims(sheet);
@@ -31,7 +33,7 @@ function MonthTotals() {
       Due by month{' '}
       {months.map((month) => (
         <span key={month}>
-          {month} <strong data-testid={`month-${month}-due-total`}>{total(month)}</strong>{' '}
+          {month} <strong data-testid={`month-${month}-due-total`}>{fig(total(month))}</strong>{' '}
         </span>
       ))}
     </p>

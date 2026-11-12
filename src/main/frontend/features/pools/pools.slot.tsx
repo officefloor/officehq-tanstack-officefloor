@@ -6,6 +6,7 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { usePeople } from '../people/people';
 import { type Pool, poolsKey, usePools } from './pools';
+import { useFigure } from '../locale/locale';
 
 const refusal = (e: unknown, fallback: string) =>
   e instanceof HttpError && e.reason ? `${e.reason}.` : fallback;
@@ -16,6 +17,7 @@ const refusal = (e: unknown, fallback: string) =>
 // may carry a from- and a to-date (blank for no bound; a to-date before the from-date is refused): a member whose
 // dates do not include the sheet's today counts in neither the total nor the balance, and has no cut.
 function PoolRow({ pool, pools }: { pool: Pool; pools: Pool[] }) {
+  const fig = useFigure();
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const people = usePeople(sheet).data ?? [];
@@ -40,7 +42,7 @@ function PoolRow({ pool, pools }: { pool: Pool; pools: Pool[] }) {
 
   return (
     <li data-testid={`pool-row-${pool.name}`}>
-      <strong>{pool.name}</strong> — total <span data-testid="pool-total-share">{pool.totalShare}</span>, balanced{' '}
+      <strong>{pool.name}</strong> — total <span data-testid="pool-total-share">{fig(pool.totalShare)}</span>, balanced{' '}
       <span data-testid="pool-balanced">{pool.balanced ? 'yes' : 'no'}</span>
       <ul>
         {pool.members.map((m) => (
@@ -48,9 +50,9 @@ function PoolRow({ pool, pools }: { pool: Pool; pools: Pool[] }) {
             key={m.memberPoolId !== null ? `pool-${m.memberPoolId}` : m.personId}
             data-testid={`pool-member-${pool.name}-${m.memberPoolId !== null ? `pool-${m.name}` : m.personId}`}
           >
-            {m.name}: <span data-testid="pool-share">{m.share}</span>%{m.retired ? ' (retired)' : ''}
+            {m.name}: <span data-testid="pool-share">{fig(m.share)}</span>%{m.retired ? ' (retired)' : ''}
             {m.from !== null || m.to !== null ? ` (${m.from ?? '…'} – ${m.to ?? '…'})` : ''}, cut{' '}
-            <span data-testid="pool-cut">{m.cut ?? ''}</span>
+            <span data-testid="pool-cut">{fig(m.cut ?? '')}</span>
           </li>
         ))}
       </ul>

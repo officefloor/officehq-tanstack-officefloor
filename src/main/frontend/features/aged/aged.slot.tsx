@@ -6,6 +6,7 @@ import { type Claim, counts, isOpen, live, useClaims } from '../claims/claims';
 import { floorOf, useSettings } from '../settings/settings';
 import { lateOf } from '../overdue/overdue';
 import { claimDue, dueTotal, useRates } from '../rates/rates';
+import { useFigure } from '../locale/locale';
 
 // A person's due of their OPEN (and PENDING) claims that count, split by the claim's age on the sheet's
 // today (the days from its date): 0 to 30, 31 to 60, 61 or more. A claim dated after today is 0 to 30.
@@ -28,6 +29,7 @@ function AgedHead() {
 }
 
 function PersonAged({ person }: { person: Person }) {
+  const fig = useFigure();
   const [sheet] = useCurrentSheet();
   const claims = useClaims(sheet);
   const rates = useRates(sheet);
@@ -47,9 +49,9 @@ function PersonAged({ person }: { person: Person }) {
     );
   return (
     <>
-      <td data-testid="person-aged-0-30">{bucket(0, 30)}</td>
-      <td data-testid="person-aged-31-60">{bucket(31, 60)}</td>
-      <td data-testid="person-aged-61">{bucket(61, Infinity)}</td>
+      <td data-testid="person-aged-0-30">{fig(bucket(0, 30))}</td>
+      <td data-testid="person-aged-31-60">{fig(bucket(31, 60))}</td>
+      <td data-testid="person-aged-61">{fig(bucket(61, Infinity))}</td>
     </>
   );
 }

@@ -11,6 +11,7 @@ import { fiscalYearOf, floorOf, useSettings } from '../settings/settings';
 import { useSheetToday } from '../sheet/sheet';
 import { lateOf } from '../overdue/overdue';
 import { type Period, periodDue, periodsKey, usePeriods } from './periods';
+import { useFigure } from '../locale/locale';
 
 type Fields = { name: string; from: string; to: string; cap: string };
 const EMPTY: Fields = { name: '', from: '', to: '', cap: '' };
@@ -26,6 +27,7 @@ type Generate = { range: Range } | { year: string };
 // close it, soft-close it and reopen it (as the sheet's permission matrix allows), its cap on each person's open
 // claims (blank for none), and the form that adds one.
 function Periods() {
+  const fig = useFigure();
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const periods = usePeriods(sheet);
@@ -109,10 +111,10 @@ function Periods() {
               <td data-testid="period-name">{p.name}</td>
               <td data-testid="period-from">{p.from}</td>
               <td data-testid="period-to">{p.to}</td>
-              <td data-testid="period-due-total">{periodDue(p, claims.data, people.data, rates.data, floor, lateOf(settings, today, people.data))}</td>
+              <td data-testid="period-due-total">{fig(periodDue(p, claims.data, people.data, rates.data, floor, lateOf(settings, today, people.data)))}</td>
               <td data-testid="period-closed">{p.closed ? 'yes' : p.soft ? 'soft' : 'no'}</td>
               <td data-testid="period-fy">{settings ? fiscalYearOf(p.from, fiscalStart) : ''}</td>
-              <td data-testid="period-cap">{p.cap ?? ''}</td>
+              <td data-testid="period-cap">{fig(p.cap ?? '')}</td>
               <td>
                 <button type="button" data-testid="period-close" disabled={act.isPending} onClick={() => periodAction(p.name, 'close')}>
                   Close

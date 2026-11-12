@@ -7,6 +7,7 @@ import { useClaims } from '../claims/claims';
 import { floorOf, useSettings } from '../settings/settings';
 import { lateOf } from '../overdue/overdue';
 import { ratePreview, useRates } from './rates';
+import { useFigure } from '../locale/locale';
 
 /** 0.00 or more, with up to two decimals — as a rate is set. */
 const PCT = /^\d+(\.\d{1,2})?$/;
@@ -15,6 +16,7 @@ const PCT = /^\d+(\.\d{1,2})?$/;
 // would show a different due were a candidate percent the grade's rate on every date (a retired or held
 // person's claims too), and the sum of the differences. Worked out on the screen; nothing is saved.
 function RatePreview() {
+  const fig = useFigure();
   const [sheet] = useCurrentSheet();
   const people = usePeople(sheet);
   const claims = useClaims(sheet);
@@ -86,7 +88,7 @@ function RatePreview() {
           <span>
             {' '}
             Would change <strong data-testid="rate-preview-count">{result.count}</strong> claims by{' '}
-            <strong data-testid="rate-preview-diff">{result.diff}</strong>
+            <strong data-testid="rate-preview-diff">{fig(result.diff)}</strong>
           </span>
         )}
         {error && (

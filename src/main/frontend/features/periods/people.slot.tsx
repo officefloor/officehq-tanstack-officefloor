@@ -7,6 +7,7 @@ import { useRates } from '../rates/rates';
 import { floorOf, useSettings } from '../settings/settings';
 import { lateOf } from '../overdue/overdue';
 import { personPeriodDue, usePeriods } from './periods';
+import { useFigure } from '../locale/locale';
 
 // For every period on the sheet, a person's due-total for it: live while the period is open, fixed
 // when it was closed.
@@ -23,6 +24,7 @@ function PeriodHeads() {
 }
 
 function PersonPeriods({ person }: { person: Person }) {
+  const fig = useFigure();
   const [sheet] = useCurrentSheet();
   const periods = usePeriods(sheet);
   const claims = useClaims(sheet);
@@ -34,7 +36,7 @@ function PersonPeriods({ person }: { person: Person }) {
     <>
       {(periods.data ?? []).map((p) => (
         <td key={p.name} data-testid={`person-period-${p.name}-due-total`}>
-          {personPeriodDue(p, person, claims.data, rates.data, floorOf(settings), late)}
+          {fig(personPeriodDue(p, person, claims.data, rates.data, floorOf(settings), late))}
         </td>
       ))}
     </>

@@ -8,6 +8,7 @@ import { type Person, peopleKey, personActionKey, useLatestPersonAction } from '
 import { claimsKey } from '../claims/claims';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { type Plan, plansKey, usePlans } from './plans';
+import { useFigure } from '../locale/locale';
 
 type Fields = { amount: string; start: string; every: string; day: string; end: string };
 const EMPTY: Fields = { amount: '', start: '', every: '', day: '', end: '' };
@@ -20,6 +21,7 @@ function PlansHead() {
 // amount, interval or day of the month, or an end before the start, is refused with an error on the row until the form is
 // changed or the next action on the row is taken.
 function PersonPlans({ person }: { person: Person }) {
+  const fig = useFigure();
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const plans = usePlans(sheet);
@@ -49,7 +51,7 @@ function PersonPlans({ person }: { person: Person }) {
           .filter((p) => p.personId === person.id)
           .map((p) => (
             <li key={p.id} data-testid={`plan-row-${p.id}`}>
-              <span data-testid="plan-amount-shown">{p.amount}</span> from {p.start}{' '}
+              <span data-testid="plan-amount-shown">{fig(p.amount)}</span> from {p.start}{' '}
               {p.day !== null ? `monthly on day ${p.day}` : `every ${p.every} days`} to {p.end}
               {' — made '}
               <span data-testid="plan-generated">{p.generated}</span>

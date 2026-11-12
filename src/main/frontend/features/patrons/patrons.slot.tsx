@@ -7,6 +7,7 @@ import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { useSheetToday } from '../sheet/sheet';
 import { isRecentSettled, useClaims } from '../claims/claims';
 import { NA, dueTotal, patronShares, sharedTotal } from '../rates/rates';
+import { useFigure } from '../locale/locale';
 
 function PatronsHead() {
   return <th>Patrons</th>;
@@ -19,6 +20,7 @@ function PatronsHead() {
 // Another person on the sheet is named as a patron one at a time; a refusal shows its error until the
 // next is tried.
 function PersonPatrons({ person }: { person: Person }) {
+  const fig = useFigure();
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const people = usePeople(sheet).data ?? [];
@@ -60,7 +62,7 @@ function PersonPatrons({ person }: { person: Person }) {
   return (
     <td>
       <span data-testid="person-patrons">{shown.join(', ')}</span>{' '}
-      <span data-testid="person-backing">{backing}</span>{' '}
+      <span data-testid="person-backing">{fig(backing)}</span>{' '}
       <select
         data-testid="person-patron-select"
         value={chosen}

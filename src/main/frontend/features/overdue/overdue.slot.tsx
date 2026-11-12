@@ -7,6 +7,7 @@ import { counts, live, useClaims } from '../claims/claims';
 import { floorOf, useSettings } from '../settings/settings';
 import { trimmedTotal, useRates } from '../rates/rates';
 import { lateOf, overdueFigures } from './overdue';
+import { useFigure } from '../locale/locale';
 
 // A person's overdue count and overdue-total (the due of their overdue claims that count), and the sheet's.
 function OverdueHead() {
@@ -38,11 +39,12 @@ export function useOverdue(of?: string) {
 }
 
 function PersonOverdue({ person }: { person: Person }) {
+  const fig = useFigure();
   const { count, total } = useOverdue()(person);
   return (
     <>
       <td data-testid="person-overdue-count">{count}</td>
-      <td data-testid="person-overdue-total">{total}</td>
+      <td data-testid="person-overdue-total">{fig(total)}</td>
     </>
   );
 }
@@ -59,11 +61,12 @@ export function useSheetOverdue(of?: string): { count: number; total: string } {
 }
 
 function OverdueTotal() {
+  const fig = useFigure();
   const { count, total } = useSheetOverdue();
   return (
     <p>
       Overdue <strong data-testid="rollup-overdue-count">{count}</strong>{' '}
-      Overdue total <strong data-testid="rollup-overdue-total">{total}</strong>
+      Overdue total <strong data-testid="rollup-overdue-total">{fig(total)}</strong>
     </p>
   );
 }

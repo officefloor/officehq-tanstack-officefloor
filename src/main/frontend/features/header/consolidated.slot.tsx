@@ -7,6 +7,7 @@ import { usePeople } from '../people/people';
 import { dueTotal } from '../rates/rates';
 import { useSheetDueTotal } from '../rates/due.slot';
 import { useSheetOverdue } from '../overdue/overdue.slot';
+import { useFigure } from '../locale/locale';
 
 /** Under the sheet's key, so loading the sheet again re-reads its descendants. */
 const descendantsKey = (sheet: string) => [...sheetKey(sheet), 'descendants'] as const;
@@ -25,6 +26,7 @@ type Figures = { people: number; due: string[]; overdue: string[] };
 /** Adds the first sheet's figures (as that sheet shows them) to those so far, then the rest's, one sheet per
  *  component so each reads its sheet with the same hooks; shows the sums once every sheet is added. */
 function Consolidate({ sheets, sofar }: { sheets: string[]; sofar: Figures }) {
+  const fig = useFigure();
   const [first, ...rest] = sheets;
   const people = usePeople(first);
   const due = useSheetDueTotal(first);
@@ -38,8 +40,8 @@ function Consolidate({ sheets, sofar }: { sheets: string[]; sofar: Figures }) {
   return (
     <>
       People <strong data-testid="consolidated-people-count">{figures.people}</strong>{' '}
-      Due total <strong data-testid="consolidated-due-total">{dueTotal(figures.due)}</strong>{' '}
-      Overdue total <strong data-testid="consolidated-overdue-total">{dueTotal(figures.overdue)}</strong>
+      Due total <strong data-testid="consolidated-due-total">{fig(dueTotal(figures.due))}</strong>{' '}
+      Overdue total <strong data-testid="consolidated-overdue-total">{fig(dueTotal(figures.overdue))}</strong>
     </>
   );
 }

@@ -13,6 +13,7 @@ import { dueBy, lateOf, overdue } from '../overdue/overdue';
 import { useVoidReasons } from '../voidreasons/voidreasons';
 import { useTemplates } from '../templates/templates';
 import { type Claim, type ClaimStatus, claimsKey, useClaims, useEditingClaim, useSelectedClaims } from './claims';
+import { useFigure } from '../locale/locale';
 
 type Fields = { amount: string; date: string; note: string; corrects: string; ref: string; tags: string };
 /** `review` for a steward approving (SETTLED) or rejecting (OPEN, with a reason) a PENDING claim. */
@@ -28,6 +29,7 @@ function ClaimsHead() {
 // A person's claims, newest first, each with its status and the buttons that move it on, and the
 // form that adds one or edits the one whose editor is open.
 function PersonClaims({ person }: { person: Person }) {
+  const fig = useFigure();
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const claims = useClaims(sheet);
@@ -501,14 +503,14 @@ function PersonClaims({ person }: { person: Person }) {
                 onChange={(e) => setSelected(e.target.checked ? [...selected, c.id] : selected.filter((id) => id !== c.id))}
               />{' '}
               <span data-testid="claim-number">{c.number ?? ''}</span>{' '}
-              <span data-testid="claim-amount">{c.amount}</span>{' '}
+              <span data-testid="claim-amount">{fig(c.amount)}</span>{' '}
               <span data-testid="claim-date">{c.date}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}
               <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}
               <span data-testid="claim-ref">{c.ref ?? ''}</span>{' '}
               <span data-testid="claim-tags">{c.tags.join(', ')}</span>{' '}
               <span data-testid="claim-period">{periodOf(periods.data, c.dueBy)?.name ?? ''}</span>{' '}
-              <span data-testid="claim-due">{claimDue(c, rates.data, person.grades, floor, lateOf(settings, today, [person]))}</span>{' '}
+              <span data-testid="claim-due">{fig(claimDue(c, rates.data, person.grades, floor, lateOf(settings, today, [person])))}</span>{' '}
               <span data-testid="claim-due-by">{dueBy(c)}</span>{' '}
               <span data-testid="claim-overdue">{overdue(c, today, lateOf(settings, today, [person])) ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-status">{c.status}</span>{' '}

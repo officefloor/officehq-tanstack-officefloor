@@ -7,6 +7,7 @@ import { live, useClaims } from '../claims/claims';
 import { floorOf, useSettings } from '../settings/settings';
 import { lateOf } from '../overdue/overdue';
 import { dueTotal, personSplit, useRates } from './rates';
+import { useFigure } from '../locale/locale';
 
 // A person's settled-total and open-total (their due-total before the cap, split by status), and the
 // sheet's: everyone's added up, not trimmed.
@@ -37,23 +38,25 @@ function useSplit() {
 }
 
 function PersonSplit({ person }: { person: Person }) {
+  const fig = useFigure();
   const { settled, open } = useSplit()(person);
   return (
     <>
-      <td data-testid="person-settled-total">{settled}</td>
-      <td data-testid="person-open-total">{open}</td>
+      <td data-testid="person-settled-total">{fig(settled)}</td>
+      <td data-testid="person-open-total">{fig(open)}</td>
     </>
   );
 }
 
 function SplitTotal() {
+  const fig = useFigure();
   const [sheet] = useCurrentSheet();
   const people = usePeople(sheet);
   const figures = (people.data ?? []).map(useSplit());
   return (
     <p>
-      Settled total <strong data-testid="rollup-settled-total">{dueTotal(figures.map((f) => f.settled))}</strong>{' '}
-      Open total <strong data-testid="rollup-open-total">{dueTotal(figures.map((f) => f.open))}</strong>
+      Settled total <strong data-testid="rollup-settled-total">{fig(dueTotal(figures.map((f) => f.settled)))}</strong>{' '}
+      Open total <strong data-testid="rollup-open-total">{fig(dueTotal(figures.map((f) => f.open)))}</strong>
     </p>
   );
 }

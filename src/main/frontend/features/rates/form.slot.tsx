@@ -7,11 +7,13 @@ import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { GRADES } from '../people/people';
 import { useSheetToday } from '../sheet/sheet';
 import { NA, type Rate, rateOf, ratesKey, useRates } from './rates';
+import { useFigure } from '../locale/locale';
 
 // The rate in force for each grade on the sheet's today (its parent sheets' when it has none), every own rate with the dates it applies from and
 // through, and the form that sets one (a blank from-date applies from the beginning of time, a blank
 // to-date has no end).
 function Rates() {
+  const fig = useFigure();
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const rates = useRates(sheet);
@@ -48,7 +50,7 @@ function Rates() {
           {GRADES.map((g) => (
             <tr key={g}>
               <td>{g}</td>
-              <td data-testid={`rate-current-${g}`}>{rateOf(rates.data, g, today) ?? NA}</td>
+              <td data-testid={`rate-current-${g}`}>{fig(rateOf(rates.data, g, today) ?? NA)}</td>
             </tr>
           ))}
         </tbody>
@@ -69,7 +71,7 @@ function Rates() {
               <td>{r.grade}</td>
               <td data-testid="rate-from">{r.from ?? ''}</td>
               <td data-testid="rate-to">{r.to ?? ''}</td>
-              <td data-testid="rate-pct">{r.pct}</td>
+              <td data-testid="rate-pct">{fig(r.pct)}</td>
               <td data-testid="rate-version">{r.version ?? 1}</td>
             </tr>
           ))}

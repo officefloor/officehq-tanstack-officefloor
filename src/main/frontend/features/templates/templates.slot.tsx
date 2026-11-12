@@ -5,6 +5,7 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { type Template, templatesKey, useTemplates } from './templates';
+import { useFigure } from '../locale/locale';
 
 type Fields = { name: string; amount: string; note: string };
 const EMPTY: Fields = { name: '', amount: '', note: '' };
@@ -12,6 +13,7 @@ const EMPTY: Fields = { name: '', amount: '', note: '' };
 // The sheet's claim templates, and the form a template is saved with. A blank name, or an amount the
 // claim form would refuse, is refused; saving a name again replaces that template.
 function Templates() {
+  const fig = useFigure();
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const templates = useTemplates(sheet);
@@ -39,7 +41,7 @@ function Templates() {
         {(templates.data ?? []).map((t) => (
           <li key={t.name} data-testid={`template-row-${t.name}`}>
             <span data-testid="template-name">{t.name}</span>{' '}
-            <span data-testid="template-amount">{t.amount}</span>{' '}
+            <span data-testid="template-amount">{fig(t.amount)}</span>{' '}
             <span data-testid="template-note">{t.note}</span>
           </li>
         ))}

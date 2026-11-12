@@ -4,6 +4,7 @@ import { useCurrentSheet } from '../../session/session';
 import { type Person, usePeople } from '../people/people';
 import { dueTotal } from '../rates/rates';
 import { type Pool, usePools } from './pools';
+import { useFigure } from '../locale/locale';
 
 // A person's cut total (their cuts across every pool they are a member of, a pool showing no cut adding
 // nothing) and the sheet's cut total (everyone's added up).
@@ -15,19 +16,21 @@ function CutHead() {
 }
 
 function PersonCut({ person }: { person: Person }) {
+  const fig = useFigure();
   const [sheet] = useCurrentSheet();
   const pools = usePools(sheet);
-  return <td data-testid="person-cut-total">{cutTotal(pools.data ?? [], person.id)}</td>;
+  return <td data-testid="person-cut-total">{fig(cutTotal(pools.data ?? [], person.id))}</td>;
 }
 
 function CutTotal() {
+  const fig = useFigure();
   const [sheet] = useCurrentSheet();
   const people = usePeople(sheet);
   const pools = usePools(sheet);
   return (
     <p>
       Cut total{' '}
-      <strong data-testid="rollup-cut-total">{dueTotal((people.data ?? []).map((p) => cutTotal(pools.data ?? [], p.id)))}</strong>
+      <strong data-testid="rollup-cut-total">{fig(dueTotal((people.data ?? []).map((p) => cutTotal(pools.data ?? [], p.id))))}</strong>
     </p>
   );
 }

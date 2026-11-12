@@ -5,6 +5,7 @@ import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns
 import { type Person, peopleKey, personActionKey, useLatestPersonAction } from '../people/people';
 import { claimsKey } from '../claims/claims';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
+import { useFigure } from '../locale/locale';
 
 function StatementHead() {
   return <th>Statements</th>;
@@ -16,6 +17,7 @@ function StatementHead() {
 // (a steward only; its claims follow their live figures again). A refused action shows its error until
 // the next action on the person is taken.
 function PersonStatement({ person }: { person: Person }) {
+  const fig = useFigure();
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const [asOf, setAsOf] = useState('');
@@ -49,7 +51,7 @@ function PersonStatement({ person }: { person: Person }) {
   return (
     <td>
       <span data-testid="person-statement-count">{person.statementCount}</span>{' '}
-      <span data-testid="person-stated-total">{person.statedTotal ?? ''}</span>{' '}
+      <span data-testid="person-stated-total">{fig(person.statedTotal ?? '')}</span>{' '}
       <span data-testid="person-statement-date">{person.statementDate ?? ''}</span>{' '}
       <input
         type="date"

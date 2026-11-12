@@ -8,6 +8,7 @@ import { floorOf, useSettings } from '../settings/settings';
 import { useSheetToday } from '../sheet/sheet';
 import { lateOf } from '../overdue/overdue';
 import { useVoidReasons } from '../voidreasons/voidreasons';
+import { useFigure } from '../locale/locale';
 
 // The sheet at a glance, worked out from the same figures the lists show: per grade, the people on it
 // today (retired people excluded), their due-totals added up (skipping n/a) and how many of them are
@@ -15,6 +16,7 @@ import { useVoidReasons } from '../voidreasons/voidreasons';
 // the earliest); per status, how many claims have it; per void reason on the list,
 // how many VOID claims were voided with it.
 function Summary() {
+  const fig = useFigure();
   const [sheet] = useCurrentSheet();
   const people = usePeople(sheet);
   const claims = useClaims(sheet);
@@ -59,7 +61,7 @@ function Summary() {
             <tr key={g}>
               <td>{g}</td>
               <td data-testid={`summary-grade-${g}-count`}>{onGrade(g).length}</td>
-              <td data-testid={`summary-grade-${g}-due-total`}>{dueTotal(onGrade(g).map(dueOf))}</td>
+              <td data-testid={`summary-grade-${g}-due-total`}>{fig(dueTotal(onGrade(g).map(dueOf)))}</td>
               <td data-testid={`summary-grade-${g}-active`}>{onGrade(g).filter(isActiveOn).length}</td>
             </tr>
           ))}
@@ -78,9 +80,9 @@ function Summary() {
             <tr key={p.name}>
               <td>{p.name}</td>
               <td data-testid={`summary-period-${p.name}-due-total`}>
-                {periodTotal(p)}
+                {fig(periodTotal(p))}
               </td>
-              <td data-testid={`summary-period-${p.name}-change`}>{changeOf(p)}</td>
+              <td data-testid={`summary-period-${p.name}-change`}>{fig(changeOf(p))}</td>
             </tr>
           ))}
         </tbody>

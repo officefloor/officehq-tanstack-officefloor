@@ -7,6 +7,7 @@ import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { poolsKey } from '../pools/pools';
 import { ratesKey } from '../rates/rates';
 import { type Settings, settingsKey, useSettings } from './settings';
+import { useFigure } from '../locale/locale';
 
 const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'] as const;
 
@@ -49,6 +50,7 @@ const isDated = (k: Key): k is DatedKey => k in NO_FROM;
 // one in force rounds its live figures by it, else by the policy date.
 // The fiscal start month (1 to 12, not dated) is the month a fiscal year starts in; 1 unless set.
 function SheetSettings() {
+  const fig = useFigure();
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const settings = useSettings(sheet);
@@ -110,9 +112,9 @@ function SheetSettings() {
           submit({ key, value: values[key], from: isDated(key) ? froms[key] : '' });
         }}
       >
-        Clerk limit <strong data-testid="setting-clerk-limit-current">{settings.data?.clerkLimit ?? ''}</strong>{' '}
+        Clerk limit <strong data-testid="setting-clerk-limit-current">{fig(settings.data?.clerkLimit ?? '')}</strong>{' '}
         {field('clerk-limit', 'Clerk limit (blank for none)')}{' '}{from('clerk-limit')}{' '}
-        Floor <strong data-testid="setting-floor-current">{settings.data?.floor ?? ''}</strong>{' '}
+        Floor <strong data-testid="setting-floor-current">{fig(settings.data?.floor ?? '')}</strong>{' '}
         {field('floor', 'Floor (blank for 1.00)')}{' '}{from('floor')}{' '}
         Terms <strong data-testid="setting-terms-current">{settings.data?.terms ?? ''}</strong>{' '}
         {field('terms', 'Terms in days (blank for 14)')}{' '}{from('terms')}{' '}
@@ -128,35 +130,35 @@ function SheetSettings() {
             {field(`grace-${g}`, `Grace days for grade ${g} (blank for none)`)}{' '}{from(`grace-${g}`)}{' '}
           </span>
         ))}
-        Late percent <strong data-testid="setting-late-pct-current">{settings.data?.latePct ?? ''}</strong>{' '}
+        Late percent <strong data-testid="setting-late-pct-current">{fig(settings.data?.latePct ?? '')}</strong>{' '}
         {field('late-pct', 'Late percent (blank for 0.00)')}{' '}{from('late-pct')}{' '}
         Policy date <strong data-testid="setting-policy-date-current">{settings.data?.policyDate ?? ''}</strong>{' '}
         {field('policy-date', 'Policy date YYYY-MM-DD (blank for today)', 'text')}{' '}
-        Rounding <strong data-testid="setting-rounding-current">{settings.data?.rounding ?? ''}</strong>{' '}
+        Rounding <strong data-testid="setting-rounding-current">{fig(settings.data?.rounding ?? '')}</strong>{' '}
         {field('rounding', 'Rounding: half-up or half-even (blank for none)', 'text')}{' '}{from('rounding')}{' '}
         Period numbering from <strong data-testid="setting-period-numbering-from-current">{settings.data?.periodNumberingFrom ?? ''}</strong>{' '}
         {field('period-numbering-from', 'Period numbering from YYYY-MM-DD (blank for off)', 'text')}{' '}
-        Cap <strong data-testid="setting-cap-current">{settings.data?.cap ?? ''}</strong>{' '}
+        Cap <strong data-testid="setting-cap-current">{fig(settings.data?.cap ?? '')}</strong>{' '}
         {field('cap', 'Cap (blank for none)')}{' '}{from('cap')}{' '}
-        Proof threshold <strong data-testid="setting-proof-threshold-current">{settings.data?.proofThreshold ?? ''}</strong>{' '}
+        Proof threshold <strong data-testid="setting-proof-threshold-current">{fig(settings.data?.proofThreshold ?? '')}</strong>{' '}
         {field('proof-threshold', 'Proof threshold (blank for none)')}{' '}{from('proof-threshold')}{' '}
         {GRADES.map((g) => (
           <span key={g}>
-            Proof threshold {g} <strong data-testid={`setting-proof-threshold-${g}-current`}>{settings.data?.gradeProofThreshold?.[g] ?? ''}</strong>{' '}
+            Proof threshold {g} <strong data-testid={`setting-proof-threshold-${g}-current`}>{fig(settings.data?.gradeProofThreshold?.[g] ?? '')}</strong>{' '}
             {field(`proof-threshold-${g}`, `Proof threshold for grade ${g} (blank for the sheet's)`)}{' '}{from(`proof-threshold-${g}`)}{' '}
           </span>
         ))}
-        Note threshold <strong data-testid="setting-note-threshold-current">{settings.data?.noteThreshold ?? ''}</strong>{' '}
+        Note threshold <strong data-testid="setting-note-threshold-current">{fig(settings.data?.noteThreshold ?? '')}</strong>{' '}
         {field('note-threshold', 'Note threshold (blank for none)')}{' '}{from('note-threshold')}{' '}
-        Review threshold <strong data-testid="setting-review-threshold-current">{settings.data?.reviewThreshold ?? ''}</strong>{' '}
+        Review threshold <strong data-testid="setting-review-threshold-current">{fig(settings.data?.reviewThreshold ?? '')}</strong>{' '}
         {field('review-threshold', 'Review threshold (blank for none)')}{' '}{from('review-threshold')}{' '}
         Grace days <strong data-testid="setting-grace-days-current">{settings.data?.graceDays ?? ''}</strong>{' '}
         {field('grace-days', 'Grace days (blank for off)')}{' '}
         Entry date <strong data-testid="setting-entry-date-current">{settings.data?.entryDate ?? ''}</strong>{' '}
         {field('entry-date', 'Entry date YYYY-MM-DD (blank for off)', 'text')}{' '}
-        Pot <strong data-testid="setting-pot-current">{settings.data?.pot ?? ''}</strong>{' '}
+        Pot <strong data-testid="setting-pot-current">{fig(settings.data?.pot ?? '')}</strong>{' '}
         {field('pot', 'Pot (blank for none)')}{' '}
-        Alert threshold <strong data-testid="setting-alert-threshold-current">{settings.data?.alertThreshold ?? ''}</strong>{' '}
+        Alert threshold <strong data-testid="setting-alert-threshold-current">{fig(settings.data?.alertThreshold ?? '')}</strong>{' '}
         {field('alert-threshold', 'Alert threshold (blank for off)')}{' '}
         Parent <strong data-testid="setting-parent-current">{settings.data?.parent ?? ''}</strong>{' '}
         {field('parent', 'Parent sheet id (blank for none)', 'text')}{' '}

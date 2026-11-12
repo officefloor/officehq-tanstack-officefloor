@@ -8,11 +8,13 @@ import { floorOf, useSettings } from '../settings/settings';
 import { useSheetToday } from '../sheet/sheet';
 import { lateOf } from '../overdue/overdue';
 import { usePersonDue } from '../rates/due.slot';
+import { useFigure } from '../locale/locale';
 
 // The classic summary, shown beside the summary: per period, its due-total counting each claim by its
 // status now (OPEN, SETTLED and PENDING count, by the live rules), a closed period showing the figure fixed
 // when it closed; and the sheet's due-total untrimmed, everyone's due-totals added up (skipping n/a).
 function ClassicSummary() {
+  const fig = useFigure();
   const [sheet] = useCurrentSheet();
   const people = usePeople(sheet);
   const claims = useClaims(sheet);
@@ -48,13 +50,13 @@ function ClassicSummary() {
           {(periods.data ?? []).map((p) => (
             <tr key={p.name}>
               <td>{p.name}</td>
-              <td data-testid={`classic-period-${p.name}-due-total`}>{periodTotal(p)}</td>
+              <td data-testid={`classic-period-${p.name}-due-total`}>{fig(periodTotal(p))}</td>
             </tr>
           ))}
         </tbody>
       </table>
       <p>
-        Sheet due total: <span data-testid="classic-due-total">{dueTotal((people.data ?? []).map(personDue))}</span>
+        Sheet due total: <span data-testid="classic-due-total">{fig(dueTotal((people.data ?? []).map(personDue)))}</span>
       </p>
     </section>
   );

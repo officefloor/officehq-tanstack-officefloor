@@ -14,7 +14,8 @@ import org.springframework.web.filter.OncePerRequestFilter;
  * Refuses every change made from a screen showing a sheet as of a date: a request to {@code /api/} other than
  * a read, sent with the {@value #HEADER} header (the date the screen shows), answers 400 with the reason, and
  * reaches no endpoint, so it writes nothing to the store or the audit file. The as-of date belongs to the
- * screen; a change sent without it goes through as usual.
+ * screen; a change sent without it goes through as usual. A user's choice of locale changes no sheet, so
+ * it goes through either way.
  */
 @Component
 public class AsOfGuard extends OncePerRequestFilter {
@@ -24,7 +25,8 @@ public class AsOfGuard extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !request.getRequestURI().startsWith("/api/") || "GET".equals(request.getMethod())
+        return !request.getRequestURI().startsWith("/api/") || request.getRequestURI().endsWith("/locale")
+                || "GET".equals(request.getMethod())
                 || "HEAD".equals(request.getMethod()) || "OPTIONS".equals(request.getMethod());
     }
 
