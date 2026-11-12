@@ -4,12 +4,14 @@ import { HttpError, postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { AppHeader } from '../../slots/defs/appHeader';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
+import { useSettings } from '../settings/settings';
 import { type Sheet, sheetKey, useSheet } from './sheet';
 
 function SheetToday() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const loaded = useSheet(sheet);
+  const settings = useSettings(sheet);
   const [input, setInput] = useState('');
   const queryClient = useQueryClient();
   const save = useMutation({
@@ -51,6 +53,7 @@ function SheetToday() {
       <button type="submit" data-testid="sheet-today-save">
         Set today
       </button>
+      {' '}Parent <strong data-testid="sheet-parent">{settings.data?.parent ?? ''}</strong>
       {' '}Archived <strong data-testid="sheet-archived">{loaded.data.archived ? 'yes' : 'no'}</strong>{' '}
       <button
         type="button"

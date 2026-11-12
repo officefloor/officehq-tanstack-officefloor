@@ -24,13 +24,15 @@ import java.util.Map;
  *  one in force on its date for its person's grade then).
  *  {@code gradeProofThreshold} is each grade's proof threshold in force on the sheet's today, by grade, null when it has
  *  none (a claim's proof threshold is its person's grade's in force on its date when one is set, else the sheet's).
- *  {@code pot} has two decimals, the sum shared out among a balanced pool's members, null for none (not dated). */
+ *  {@code pot} has two decimals, the sum shared out among a balanced pool's members, null for none (not dated).
+ *  {@code parent} is the id of the sheet whose rates a grade with no rate in force on a date takes, null for none (not dated;
+ *  the one named now, also as of a date). */
 public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
         String periodNumberingFrom, Map<String, String> gradeTerms, String cap, String proofThreshold, List<Dated> floorFrom,
         List<Dated> latePctFrom, Map<String, String> perms, String graceDays,
         String noteThreshold, String entryDate, Map<String, String> gradeGrace,
         Map<String, List<Dated>> gradeGraceFrom, Map<String, String> gradeProofThreshold,
-        String pot) {
+        String pot, String parent) {
 
     /** A value recorded from a date (yyyy-MM-dd). */
     public record Dated(String from, String value) {

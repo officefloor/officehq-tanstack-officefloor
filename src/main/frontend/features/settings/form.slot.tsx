@@ -5,6 +5,7 @@ import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { poolsKey } from '../pools/pools';
+import { ratesKey } from '../rates/rates';
 import { type Settings, settingsKey, useSettings } from './settings';
 
 const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'] as const;
@@ -16,12 +17,12 @@ const STANDING_PERMS: Record<(typeof PERM_ACTIONS)[number], string> = {
 
 type PermKey = `perm-${(typeof PERM_ACTIONS)[number]}`;
 
-type Key = 'clerk-limit' | 'floor' | 'terms' | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'late-pct' | 'policy-date' | 'period-numbering-from' | 'cap' | 'proof-threshold' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'note-threshold' | 'grace-days' | 'entry-date' | 'pot' | PermKey;
+type Key = 'clerk-limit' | 'floor' | 'terms' | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'late-pct' | 'policy-date' | 'period-numbering-from' | 'cap' | 'proof-threshold' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'note-threshold' | 'grace-days' | 'entry-date' | 'pot' | 'parent' | PermKey;
 
 const GRADES = ['A', 'B', 'C'] as const;
 
 /** The settings that carry a figure: each is saved from a from-date (blank for the sheet's today). */
-type DatedKey = Exclude<Key, 'policy-date' | 'period-numbering-from' | 'grace-days' | 'entry-date' | 'pot' | PermKey>;
+type DatedKey = Exclude<Key, 'policy-date' | 'period-numbering-from' | 'grace-days' | 'entry-date' | 'pot' | 'parent' | PermKey>;
 
 const NO_FROM: Record<DatedKey, string> = { 'clerk-limit': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'late-pct': '', cap: '', 'proof-threshold': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'note-threshold': '' };
 
@@ -40,11 +41,13 @@ const isDated = (k: Key): k is DatedKey => k in NO_FROM;
 // dated) are the whole days after its to-date an open period is closed when the sheet's today moves.
 // The entry date (blank for off, not dated) is the default date of a new claim in place of the sheet's today.
 // The pot (blank for none, not dated) is shared out among each balanced pool's members by their shares.
+// The parent (a sheet id, blank for none, not dated) is the sheet whose rates a grade with no rate in force on a
+// date takes, then its parent's, up to three levels up.
 function SheetSettings() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const settings = useSettings(sheet);
-  const [values, setValues] = useState<Record<Key, string>>({ 'clerk-limit': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '', cap: '', 'proof-threshold': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'note-threshold': '', 'grace-days': '', 'entry-date': '', pot: '',
+  const [values, setValues] = useState<Record<Key, string>>({ 'clerk-limit': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '', cap: '', 'proof-threshold': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'note-threshold': '', 'grace-days': '', 'entry-date': '', pot: '', parent: '',
     'perm-open': '', 'perm-settle': '', 'perm-void': '', 'perm-reassign': '', 'perm-close': '', 'perm-reopen': '' });
   const [froms, setFroms] = useState<Record<DatedKey, string>>(NO_FROM);
   const [key, setKey] = useState<Key>('clerk-limit');
@@ -56,6 +59,7 @@ function SheetSettings() {
     onSuccess: async (_, { key }) => {
       await queryClient.invalidateQueries({ queryKey: settingsKey(sheet) });
       if (key === 'pot') await queryClient.invalidateQueries({ queryKey: poolsKey(sheet) });
+      if (key === 'parent') await queryClient.invalidateQueries({ queryKey: ratesKey(sheet) });
       setValues((v) => ({ ...v, [key]: '' }));
       if (isDated(key)) setFroms((f) => ({ ...f, [key]: '' }));
     },
@@ -143,6 +147,8 @@ function SheetSettings() {
         {field('entry-date', 'Entry date YYYY-MM-DD (blank for off)', 'text')}{' '}
         Pot <strong data-testid="setting-pot-current">{settings.data?.pot ?? ''}</strong>{' '}
         {field('pot', 'Pot (blank for none)')}{' '}
+        Parent <strong data-testid="setting-parent-current">{settings.data?.parent ?? ''}</strong>{' '}
+        {field('parent', 'Parent sheet id (blank for none)', 'text')}{' '}
         {PERM_ACTIONS.map((a) => (
           <span key={a}>
             May {a} <strong data-testid={`setting-perm-${a}-current`}>{settings.data?.perms?.[a] ?? ''}</strong>{' '}

@@ -8,7 +8,7 @@ import { GRADES } from '../people/people';
 import { useSheetToday } from '../sheet/sheet';
 import { NA, type Rate, rateOf, ratesKey, useRates } from './rates';
 
-// The rate in force for each grade on the sheet's today, every rate with the dates it applies from and
+// The rate in force for each grade on the sheet's today (its parent sheets' when it has none), every own rate with the dates it applies from and
 // through, and the form that sets one (a blank from-date applies from the beginning of time, a blank
 // to-date has no end).
 function Rates() {
@@ -63,7 +63,7 @@ function Rates() {
           </tr>
         </thead>
         <tbody>
-          {(rates.data ?? []).map((r) => (
+          {(rates.data ?? []).filter((r) => (r.level ?? 0) === 0).map((r) => (
             <tr key={`${r.grade}-${r.from ?? 'start'}`} data-testid={`rate-row-${r.grade}-${r.from ?? 'start'}`}>
               <td>{r.grade}</td>
               <td data-testid="rate-from">{r.from ?? ''}</td>

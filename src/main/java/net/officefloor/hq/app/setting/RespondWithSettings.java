@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /** The settings in force on the sheet's today, and the floor and late percent recorded by from-date; as of a
- *  date, as they stood at the end of it, in force on that date. */
+ *  date, as they stood at the end of it, in force on that date. The parent sheet is the one named now. */
 public class RespondWithSettings {
     public void respond(@PathVariable("sheetId") String sheetId,
             @RequestParam(name = "asOf", required = false) String asOf, SettingStore settings, SheetStore sheets,
@@ -32,7 +32,7 @@ public class RespondWithSettings {
                 store.perms(sheet), store.find(sheet, SettingStore.GRACE_DAYS),
                 store.find(sheet, SettingStore.NOTE_THRESHOLD), store.find(sheet, SettingStore.ENTRY_DATE),
                 gradeGrace(sheet, today, store), gradeGraceFrom(sheet, store), gradeProofThreshold(sheet, today, store),
-                store.find(sheet, SettingStore.POT)));
+                store.find(sheet, SettingStore.POT), settings.parent(sheet)));
     }
 
     private static Map<String, String> gradeTerms(String sheetId, LocalDate today, SettingStore store) {

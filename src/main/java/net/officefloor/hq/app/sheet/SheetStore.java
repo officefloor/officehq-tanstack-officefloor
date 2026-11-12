@@ -29,6 +29,18 @@ public class SheetStore {
         jdbc.update("MERGE INTO sheet (id, today) KEY (id) VALUES (?, ?)", sheetId, today);
     }
 
+    /** Records that the sheet has been loaded: from then on it exists. */
+    public void markLoaded(String sheetId) {
+        jdbc.update("MERGE INTO sheet_loaded (id) KEY (id) VALUES (?)", sheetId);
+    }
+
+    /** Whether the sheet exists: it has been loaded (or changed). */
+    public boolean exists(String sheetId) {
+        Integer found = jdbc.queryForObject("SELECT (SELECT COUNT(*) FROM sheet_loaded WHERE id = ?)"
+                + " + (SELECT COUNT(*) FROM sheet WHERE id = ?)", Integer.class, sheetId, sheetId);
+        return found != null && found > 0;
+    }
+
     /** Whether the sheet is archived: visible, but every change to it is refused. */
     public boolean archived(String sheetId) {
         List<Boolean> found = jdbc.query("SELECT archived FROM sheet WHERE id = ?",

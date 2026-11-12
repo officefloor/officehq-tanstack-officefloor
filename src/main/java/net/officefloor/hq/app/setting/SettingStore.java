@@ -21,7 +21,7 @@ import org.springframework.stereotype.Repository;
  *  that carry a figure (the clerk limit, the floor, the cap, the proof threshold, a grade's proof threshold, the note threshold, the terms, a grade's terms, a grade's grace days and the late
  *  percent) are dated: each value is recorded from a from-date, and the value in force on a date is the
  *  one with the latest from-date on or before it (none before every from-date, then the sheet's starting
- *  value). The policy date, the period numbering date, the entry date, the grace days, the pot and the permission matrix are not dated. */
+ *  value). The policy date, the period numbering date, the entry date, the grace days, the pot, the parent sheet and the permission matrix are not dated. */
 @Repository
 public class SettingStore {
 
@@ -82,6 +82,27 @@ public class SettingStore {
     public BigDecimal pot(String sheetId) {
         String value = find(sheetId, POT);
         return value == null ? null : new BigDecimal(value);
+    }
+
+    /** The sheet whose rates a grade with no rate in force on a date takes (then its parent's, up to three levels
+     *  up); blank for none, not dated. */
+    public static final String PARENT = "parent";
+
+    /** The parent sheet's id, or null when blank (none). */
+    public String parent(String sheetId) {
+        return find(sheetId, PARENT);
+    }
+
+    /** Whether naming the parent for the sheet would make the sheet its own ancestor: the parent is the sheet,
+     *  or has it among its ancestors. */
+    public boolean cyclic(String sheetId, String parent) {
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (String at = parent; at != null && seen.add(at); at = parent(at)) {
+            if (at.equals(sheetId)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** The whole days after its to-date an open period is closed by a new today; blank for off. */
@@ -156,7 +177,7 @@ public class SettingStore {
     /** Whether the key's values are recorded from a from-date. */
     public static boolean isDated(String key) {
         return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key)
-                && !ENTRY_DATE.equals(key) && !POT.equals(key)
+                && !ENTRY_DATE.equals(key) && !POT.equals(key) && !PARENT.equals(key)
                 && !key.startsWith(PERM_PREFIX);
     }
 

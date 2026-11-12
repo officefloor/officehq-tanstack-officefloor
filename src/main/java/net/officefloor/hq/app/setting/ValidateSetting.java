@@ -9,6 +9,7 @@ import java.util.regex.Pattern;
 import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.role.RoleStore;
 import net.officefloor.hq.app.sheet.InvalidSheetException;
+import net.officefloor.hq.app.sheet.SheetStore;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -19,7 +20,8 @@ public class ValidateSetting {
     /** A whole number of days, 0 or more. */
     private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
 
-    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SettingRequest request, Out<SettingInput> body, RoleStore roles) throws InvalidSheetException {
+    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SettingRequest request, Out<SettingInput> body, RoleStore roles,
+            SettingStore settings, SheetStore sheets) throws InvalidSheetException {
         roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
         String key = request == null || request.key() == null ? "" : request.key().trim();
         boolean floor = SettingStore.FLOOR.equals(key);
@@ -43,6 +45,24 @@ public class ValidateSetting {
             }
             body.set(new SettingInput(key, value.isEmpty() ? null : String.valueOf(Integer.parseInt(value)), null,
                     request.user()));
+            return;
+        }
+        if (SettingStore.PARENT.equals(key)) {
+            String value = request.value() == null ? "" : request.value().trim();
+            if (value.isEmpty()) {
+                body.set(new SettingInput(key, null, null, request.user()));
+                return;
+            }
+            if (value.equals(sheetId.trim())) {
+                throw new InvalidSheetException("A sheet cannot be its own parent");
+            }
+            if (!sheets.exists(value)) {
+                throw new InvalidSheetException("The parent must be a sheet that exists: " + value);
+            }
+            if (settings.cyclic(sheetId.trim(), value)) {
+                throw new InvalidSheetException("The parent cannot be a sheet that has this sheet as an ancestor");
+            }
+            body.set(new SettingInput(key, value, null, request.user()));
             return;
         }
         if (key.startsWith(SettingStore.PERM_PREFIX)

@@ -7,8 +7,17 @@ import { type Grades, gradeOn } from '../people/people';
 
 /** A grade's rate: `pct` is a percent with two decimals; `from` (yyyy-MM-dd) is the date it applies
  *  from, null for from the beginning of time; `to` the date it applies through, null for no end. A
- *  grade may have several; one with no rate has none. */
-export type Rate = { grade: string; pct: string; from: string | null; to: string | null };
+ *  grade may have several; one with no rate has none. `level` is the sheet it is on: 0 (or absent) for the
+ *  sheet's own, 1 for its parent's, and so on up; a grade with no rate in force on a date on the sheet takes
+ *  the first level up that has one. */
+export type Rate = { grade: string; pct: string; from: string | null; to: string | null; level?: number };
+
+/** The rates of each level, the sheet's own first. */
+function levels(rates: Rate[] | undefined): Rate[][] {
+  const by: Rate[][] = [];
+  for (const r of rates ?? []) (by[r.level ?? 0] ??= []).push(r);
+  return Array.from(by, (l) => l ?? []);
+}
 
 /** Under the sheet's key, so loading the sheet again re-reads its rates. */
 export const ratesKey = (sheet: string) => [...sheetKey(sheet), 'rates'] as const;
@@ -23,8 +32,17 @@ export function useRates(sheet: string) {
 }
 
 /** The grade's percent in force on the date (yyyy-MM-dd): the rate with the latest from-date on or
- *  before it, or undefined when none of the grade's rates applies then, or that rate ended (its to-date) before it. */
+ *  before it on the sheet, else on the first parent sheet up that has one, or undefined when none of the grade's rates applies then, or that rate ended (its to-date) before it. */
 export function rateOf(rates: Rate[] | undefined, grade: string, on: string | undefined): string | undefined {
+  for (const level of levels(rates)) {
+    const pct = ownRateOf(level, grade, on);
+    if (pct !== undefined) return pct;
+  }
+  return undefined;
+}
+
+/** The grade's percent in force on the date among these rates of one sheet (see `rateOf`). */
+function ownRateOf(rates: Rate[], grade: string, on: string | undefined): string | undefined {
   if (on === undefined) return undefined;
   let best: Rate | undefined;
   for (const r of rates ?? []) {
@@ -35,8 +53,19 @@ export function rateOf(rates: Rate[] | undefined, grade: string, on: string | un
 }
 
 /** Whether the grade's rate in force on the date ends before `today`: its to-date, or the day before the
- *  grade's next rate starts, whichever is first, is before it. */
+ *  grade's next rate starts, whichever is first, is before it. The rate is that of the sheet that provides it
+ *  (see `rateOf`). */
 export function endsBefore(rates: Rate[] | undefined, grade: string, on: string, today: string): boolean {
+  for (const level of levels(rates)) {
+    if (ownRateOf(level, grade, on) !== undefined) return ownEndsBefore(level, grade, on, today);
+    // a rate starting on a sheet nearer down the chain ends the one a sheet further up provides
+    if (level.some((r) => r.grade === grade && r.from !== null && r.from > on && r.from <= today)) return true;
+  }
+  return false;
+}
+
+/** Whether the grade's rate in force on the date among these rates of one sheet ends before `today`. */
+function ownEndsBefore(rates: Rate[], grade: string, on: string, today: string): boolean {
   let best: Rate | undefined;
   let next: string | undefined;
   for (const r of rates ?? []) {
@@ -299,7 +328,7 @@ export function ratePreview(
   pct: string,
   floor: Floor,
 ): { count: number; diff: string } {
-  const candidate: Rate[] = [...(rates ?? []).filter((r) => r.grade !== grade), { grade, pct, from: null, to: null }];
+  const candidate: Rate[] = [...(rates ?? []).filter((r) => r.grade !== grade || (r.level ?? 0) > 0), { grade, pct, from: null, to: null }];
   const figure = (d: string) => (d === NA ? 0n : hundredths(d));
   let count = 0;
   let diff = 0n;

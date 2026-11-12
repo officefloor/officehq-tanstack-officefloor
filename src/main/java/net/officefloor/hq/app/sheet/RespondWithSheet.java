@@ -12,6 +12,7 @@ public class RespondWithSheet {
             ObjectResponse<SheetResponse> response) {
         String id = sheetId.trim();
         LocalDate on = History.date(asOf);
+        store.markLoaded(id);
         response.send(new SheetResponse(id, store.today(id).toString(),
                 on == null ? store.archived(id) : store.archivedBy(id, on), on == null ? null : on.toString()));
     }
