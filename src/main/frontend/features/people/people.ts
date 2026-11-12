@@ -1,11 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { asString, useSearchParam } from '../../url/useSearchParam';
+import { asFlag, asString, useSearchParam } from '../../url/useSearchParam';
 import { sheetKey } from '../sheet/sheet';
 
 /** `version` moves on with each stored edit; an edit is saved only over the version its editor loaded.
  *  `statementCount` is how many statements were taken of them; `statedTotal` (two decimals, or n/a)
- *  and `statementDate` (yyyy-MM-dd) are the last one's, null when none was taken. */
+ *  and `statementDate` (yyyy-MM-dd) are the last one's, null when none was taken. `retired` is set
+ *  as soon as a `retiredFrom` date (yyyy-MM-dd, null when not retired) is, whatever the date. */
 export type Person = {
   id: number;
   name: string;
@@ -14,6 +15,8 @@ export type Person = {
   statementCount: number;
   statedTotal: string | null;
   statementDate: string | null;
+  retired: boolean;
+  retiredFrom: string | null;
 };
 
 export const GRADES = ['A', 'B', 'C'] as const;
@@ -31,3 +34,6 @@ export function usePeople(sheet: string) {
 
 /** The id of the person whose editor is open in the person form ('' when it adds). */
 export const useEditingPerson = () => useSearchParam('editPerson', asString);
+
+/** Whether the people list shows retired people too; off when the screen is first opened. */
+export const useShowRetired = () => useSearchParam('showRetired', asFlag);
