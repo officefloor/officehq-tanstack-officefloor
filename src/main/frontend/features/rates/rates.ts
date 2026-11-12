@@ -126,10 +126,43 @@ export function claimDue(
   return charge === undefined ? figure : format(hundredths(figure) + hundredths(charge));
 }
 
-/** A person's due-total: the sum of the figures of their claims that count. n/a when their grade
+/** A person's due-total: the sum of the figures of their claims that count, at most the sheet's cap
+ *  (two decimals; null or undefined for none). n/a when their grade
  *  in force on the sheet's today has no rate then, unless a claim that counts keeps a fixed (settled or
- *  stated) figure, or a figure at another grade (the one in force on its date), or at a rate that ended before today. */
+ *  stated) figure, or a figure at another grade (the one in force on its date), or at a rate that ended before today;
+ *  n/a is not capped. */
 export function personDue(
+  claims: Claim[],
+  rates: Rate[] | undefined,
+  grades: Grades,
+  today: string | undefined,
+  floor: string | undefined,
+  late?: Late,
+  cap?: string | null,
+): string {
+  const total = uncappedDue(claims, rates, grades, today, floor, late);
+  return total === NA || cap == null || hundredths(total) <= hundredths(cap) ? total : format(hundredths(cap));
+}
+
+/** A person's excess: how far the sum of their figures is above the sheet's cap; 0.00 when it is not, or
+ *  there is no cap, or their due-total is n/a. */
+export function personExcess(
+  claims: Claim[],
+  rates: Rate[] | undefined,
+  grades: Grades,
+  today: string | undefined,
+  floor: string | undefined,
+  late?: Late,
+  cap?: string | null,
+): string {
+  const total = uncappedDue(claims, rates, grades, today, floor, late);
+  return total === NA || cap == null || hundredths(total) <= hundredths(cap)
+    ? format(0n)
+    : format(hundredths(total) - hundredths(cap));
+}
+
+/** A person's due-total before the cap (see `personDue`). */
+function uncappedDue(
   claims: Claim[],
   rates: Rate[] | undefined,
   grades: Grades,

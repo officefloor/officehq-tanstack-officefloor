@@ -19,7 +19,8 @@ import net.officefloor.plugin.variable.Val;
  *  their claims that count; n/a when their grade in force today has no rate today and no counting claim
  *  keeps a fixed figure or a figure at another grade, the one in force on its date), binding each counting claim to its figure now (its floored live due when not fixed) and unbinding the rest. A settled
  *  claim keeps its fixed figure. The due-total includes the late charges of overdue claims, but a
- *  claim is bound to its figure without its charge, which keeps following the sheet's today. */
+ *  claim is bound to its figure without its charge, which keeps following the sheet's today. The
+ *  due-total is at most the sheet's cap. */
 public class TakeStatement {
     public void take(@Val StatementRequest request, @Val Person person, ClaimStore claims, RateStore rates,
             SheetStore sheets, SettingStore settings, StatementStore statements, Out<Statement> statementOut) {
@@ -58,7 +59,8 @@ public class TakeStatement {
             claims.bind(claim);
         }
         boolean na = rates.find(sheetId, person.gradeOn(today), today) == null && !fixed;
-        Statement statement = new Statement(person.getId(), today, na ? null : total, counted);
+        Statement statement = new Statement(person.getId(), today,
+                na ? null : SettingStore.capped(total, settings.cap(sheetId)), counted);
         statements.add(sheetId, statement, request.user());
         statementOut.set(statement);
     }

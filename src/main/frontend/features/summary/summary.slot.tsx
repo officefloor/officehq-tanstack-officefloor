@@ -25,7 +25,7 @@ function Summary() {
   const active = (people.data ?? []).filter((p) => !p.retired);
   const onGrade = (grade: string) => active.filter((p) => gradeOn(p.grades, today) === grade);
   const dueOf = (p: (typeof active)[number]) =>
-    personDue(live((claims.data ?? []).filter((c) => c.personId === p.id), [p]), rates.data, p.grades, today, floor, late);
+    personDue(live((claims.data ?? []).filter((c) => c.personId === p.id), [p]), rates.data, p.grades, today, floor, late, settings?.cap);
 
   return (
     <section data-testid="summary">

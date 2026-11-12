@@ -8,7 +8,8 @@ import java.util.Map;
  *  {@code latePct} has two decimals; {@code policyDate} is the date rounding turns on, null when blank
  *  (then the sheet's today); {@code periodNumberingFrom} is the date from which claims opened are
  *  numbered per period, null when blank (off); {@code gradeTerms} is the terms in force for each grade
- *  (its own, else the sheet's), by grade. */
+ *  (its own, else the sheet's), by grade; {@code cap} has two decimals, the most a person's due-total may
+ *  be, null for no cap. */
 public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
-        String periodNumberingFrom, Map<String, String> gradeTerms) {
+        String periodNumberingFrom, Map<String, String> gradeTerms, String cap) {
 }

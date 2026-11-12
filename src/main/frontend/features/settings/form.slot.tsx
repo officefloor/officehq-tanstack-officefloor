@@ -6,7 +6,7 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { type Settings, settingsKey, useSettings } from './settings';
 
-type Key = 'clerk-limit' | 'floor' | 'terms' | 'terms-A' | 'terms-B' | 'terms-C' | 'late-pct' | 'policy-date' | 'period-numbering-from';
+type Key = 'clerk-limit' | 'floor' | 'terms' | 'terms-A' | 'terms-B' | 'terms-C' | 'late-pct' | 'policy-date' | 'period-numbering-from' | 'cap';
 
 const GRADES = ['A', 'B', 'C'] as const;
 
@@ -14,12 +14,12 @@ const GRADES = ['A', 'B', 'C'] as const;
 // the floor (blank for its default), the terms in days (blank for 14), each grade's own terms (blank
 // for the sheet's terms) and the late percent (blank for
 // 0.00), the policy date rounding turns on (blank for the sheet's today) and the date claims opened
-// are numbered per period from (blank for off). Saving changes the setting last touched, so a field left blank does not clear the others.
+// are numbered per period from (blank for off), and the cap on a person's due-total (blank for none). Saving changes the setting last touched, so a field left blank does not clear the others.
 function SheetSettings() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const settings = useSettings(sheet);
-  const [values, setValues] = useState<Record<Key, string>>({ 'clerk-limit': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '' });
+  const [values, setValues] = useState<Record<Key, string>>({ 'clerk-limit': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '', cap: '' });
   const [key, setKey] = useState<Key>('clerk-limit');
   const queryClient = useQueryClient();
 
@@ -75,7 +75,9 @@ function SheetSettings() {
         Policy date <strong data-testid="setting-policy-date-current">{settings.data?.policyDate ?? ''}</strong>{' '}
         {field('policy-date', 'Policy date YYYY-MM-DD (blank for today)', 'text')}{' '}
         Period numbering from <strong data-testid="setting-period-numbering-from-current">{settings.data?.periodNumberingFrom ?? ''}</strong>{' '}
-        {field('period-numbering-from', 'Period numbering from YYYY-MM-DD (blank for off)', 'text')}
+        {field('period-numbering-from', 'Period numbering from YYYY-MM-DD (blank for off)', 'text')}{' '}
+        Cap <strong data-testid="setting-cap-current">{settings.data?.cap ?? ''}</strong>{' '}
+        {field('cap', 'Cap (blank for none)')}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>

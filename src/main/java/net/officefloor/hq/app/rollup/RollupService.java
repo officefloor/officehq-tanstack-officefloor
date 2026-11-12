@@ -23,7 +23,7 @@ import org.springframework.stereotype.Service;
  * moved them: ROLLUP sheet=<id> by=<user> person=<name> claimed=<0.00> due-total=<0.00 or n/a> for each
  * person whose figures changed (a person new to the sheet counts as changed), in the order they were
  * added, then TOTALS sheet=<id> by=<user> claimed-total=<0.00> due-total=<0.00> when the sheet's totals
- * changed. A change that moves no figure records nothing here.
+ * changed. A person's due-total is at most the sheet's cap. A change that moves no figure records nothing here.
  */
 @Service
 public class RollupService {
@@ -52,6 +52,7 @@ public class RollupService {
         LocalDate today = sheets.today(sheetId);
         List<Claim> all = claims.list(sheetId);
         BigDecimal floor = settings.floor(sheetId);
+        BigDecimal cap = settings.cap(sheetId);
         Lateness lateness = new Lateness(settings.latePct(sheetId), sheets.today(sheetId),
                 new Rounding(policyDate(sheetId), all));
         Map<Long, Rollup.Figures> figures = new LinkedHashMap<>();
@@ -79,6 +80,7 @@ public class RollupService {
             }
             boolean na = rates.find(sheetId, person.gradeOn(today), today) == null && !fixed;
             claimedTotal = claimedTotal.add(claimed);
+            due = SettingStore.capped(due, cap);
             if (!na) {
                 dueTotal = dueTotal.add(due);
             }

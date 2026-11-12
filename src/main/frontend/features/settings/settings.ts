@@ -8,9 +8,10 @@ import { sheetKey } from '../sheet/sheet';
  *  claim's figure charged for every full 30 days it is overdue; `policyDate` (yyyy-MM-dd) is the date
  *  rounding turns on, null when blank (then the sheet's today); `periodNumberingFrom` (yyyy-MM-dd) is the
  *  date from which claims opened are numbered per period, null when blank (off); `gradeTerms` is the terms
- *  in force for each grade (its own, else the sheet's), by grade. */
+ *  in force for each grade (its own, else the sheet's), by grade; `cap` (two decimals) is the most a person's
+ *  due-total may be, null for no cap. */
 export type Settings = { clerkLimit: string | null; floor: string; terms: string; latePct: string; policyDate: string | null;
-  periodNumberingFrom: string | null; gradeTerms: Record<string, string> };
+  periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null };
 
 /** Under the sheet's key, so loading the sheet again re-reads its settings. */
 export const settingsKey = (sheet: string) => [...sheetKey(sheet), 'settings'] as const;

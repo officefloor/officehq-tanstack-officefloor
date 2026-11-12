@@ -13,7 +13,8 @@ public class RespondWithSettings {
                 String.valueOf(store.terms(sheetId.trim())),
                 store.latePct(sheetId.trim()).setScale(2).toPlainString(),
                 store.find(sheetId.trim(), SettingStore.POLICY_DATE),
-                store.find(sheetId.trim(), SettingStore.PERIOD_NUMBERING_FROM), gradeTerms(sheetId.trim(), store)));
+                store.find(sheetId.trim(), SettingStore.PERIOD_NUMBERING_FROM), gradeTerms(sheetId.trim(), store),
+                store.find(sheetId.trim(), SettingStore.CAP)));
     }
 
     private static Map<String, String> gradeTerms(String sheetId, SettingStore store) {

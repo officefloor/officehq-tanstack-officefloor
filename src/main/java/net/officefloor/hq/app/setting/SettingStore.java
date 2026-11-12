@@ -14,6 +14,8 @@ public class SettingStore {
 
     public static final String FLOOR = "floor";
 
+    public static final String CAP = "cap";
+
     public static final String TERMS = "terms";
 
     /** The key of a grade's own terms: terms-A, terms-B or terms-C. */
@@ -55,6 +57,17 @@ public class SettingStore {
     public BigDecimal clerkLimit(String sheetId) {
         String value = find(sheetId, CLERK_LIMIT);
         return value == null ? null : new BigDecimal(value);
+    }
+
+    /** The most a person's due-total may be, or null for no cap. */
+    public BigDecimal cap(String sheetId) {
+        String value = find(sheetId, CAP);
+        return value == null ? null : new BigDecimal(value);
+    }
+
+    /** The due-total at most the cap (none when null). */
+    public static BigDecimal capped(BigDecimal dueTotal, BigDecimal cap) {
+        return cap != null && dueTotal.compareTo(cap) > 0 ? cap.setScale(2) : dueTotal;
     }
 
     /** The least a claim's live due may be: the floor set, else 1.00. */

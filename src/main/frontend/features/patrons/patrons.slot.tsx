@@ -48,6 +48,7 @@ function PersonPatrons({ person }: { person: Person }) {
         today,
         settings?.floor,
         lateOf(settings, today),
+        settings?.cap,
       ),
     ),
   );
