@@ -7,7 +7,7 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
 
-/** The plans per sheet, in the order they were added, and the plan dates each has made a claim for. */
+/** The plans per sheet, in the order they were added, the plan dates each has made a claim for, and their pauses. */
 @Repository
 public class PlanStore {
 
@@ -17,7 +17,7 @@ public class PlanStore {
     private static final RowMapper<Plan> ROW = (rs, n) -> new Plan(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getLong("person_id"), rs.getBigDecimal("amount").setScale(2), rs.getObject("start_date", LocalDate.class),
             rs.getObject("every_days", Integer.class), rs.getObject("month_day", Integer.class),
-            rs.getObject("end_date", LocalDate.class), rs.getInt("generated"));
+            rs.getObject("end_date", LocalDate.class), rs.getInt("generated"), List.of());
 
     private final JdbcTemplate jdbc;
 
@@ -27,12 +27,30 @@ public class PlanStore {
 
     /** The sheet's plans, in the order they were added. */
     public List<Plan> list(String sheetId) {
-        return jdbc.query(SELECT + " WHERE p.sheet_id = ? ORDER BY p.id", ROW, sheetId);
+        return jdbc.query(SELECT + " WHERE p.sheet_id = ? ORDER BY p.id", ROW, sheetId).stream().map(this::withPauses).toList();
     }
 
     public Plan find(long id) {
         List<Plan> found = jdbc.query(SELECT + " WHERE p.id = ?", ROW, id);
-        return found.isEmpty() ? null : found.get(0);
+        return found.isEmpty() ? null : withPauses(found.get(0));
+    }
+
+    private Plan withPauses(Plan p) {
+        List<PlanPause> pauses = jdbc.query("SELECT paused_on, resumed_on FROM plan_pause WHERE plan_id = ? ORDER BY paused_on",
+                (rs, n) -> new PlanPause(rs.getObject("paused_on", LocalDate.class), rs.getObject("resumed_on", LocalDate.class)),
+                p.id());
+        return new Plan(p.id(), p.sheetId(), p.personId(), p.amount(), p.start(), p.every(), p.day(), p.end(),
+                p.generated(), pauses);
+    }
+
+    /** Pauses the plan from the date. */
+    public void pause(long planId, LocalDate date) {
+        jdbc.update("INSERT INTO plan_pause (plan_id, paused_on) VALUES (?, ?)", planId, date);
+    }
+
+    /** Resumes the plan's pause on the date. */
+    public void resume(long planId, LocalDate date) {
+        jdbc.update("UPDATE plan_pause SET resumed_on = ? WHERE plan_id = ? AND resumed_on IS NULL", date, planId);
     }
 
     public Plan add(String sheetId, long personId, PlanInput input) {

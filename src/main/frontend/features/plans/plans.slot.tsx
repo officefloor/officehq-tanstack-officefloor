@@ -17,11 +17,55 @@ function PlansHead() {
   return <th>Plans</th>;
 }
 
+// A plan, with how many claims it has made so far, its next five dates, whether it is paused and the buttons that pause
+// and resume it (on the sheet's today). A refused pause or resume shows its error on the plan until the next action on the
+// person's row is taken.
+function PlanRow({ plan: p, latest }: { plan: Plan; latest: number }) {
+  const fig = useFigure();
+  const [user] = useCurrentUser();
+  const [sheet] = useCurrentSheet();
+  const queryClient = useQueryClient();
+
+  const pause = useMutation({
+    mutationKey: personActionKey(sheet, p.personId),
+    mutationFn: (on: boolean) =>
+      postJson<Plan>(`/api/sheets/${encodeURIComponent(sheet)}/plans/${p.id}/pause`, { on, user }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: plansKey(sheet) });
+    },
+  });
+  const submit = useSubmitOnce(pause);
+
+  return (
+    <li data-testid={`plan-row-${p.id}`}>
+      <span data-testid="plan-amount-shown">{fig(p.amount)}</span> from {p.start}{' '}
+      {p.day !== null ? `monthly on day ${p.day}` : `every ${p.every} days`} to {p.end}
+      {' — made '}
+      <span data-testid="plan-generated">{p.generated}</span>
+      {' — next '}
+      <span data-testid="plan-next-dates">{p.nextDates}</span>
+      {' — paused '}
+      <span data-testid="plan-paused">{p.paused ? 'yes' : 'no'}</span>{' '}
+      <button type="button" data-testid="plan-pause" disabled={pause.isPending} onClick={() => submit(true)}>
+        Pause
+      </button>
+      <button type="button" data-testid="plan-resume" disabled={pause.isPending} onClick={() => submit(false)}>
+        Resume
+      </button>
+      {pause.isError && pause.submittedAt >= latest && (
+        <span data-testid="plan-error" role="alert">
+          {' '}
+          {pause.error instanceof HttpError && pause.error.reason ? `${pause.error.reason}.` : 'The plan change was refused.'}
+        </span>
+      )}
+    </li>
+  );
+}
+
 // The person's plans, each with how many claims it has made so far and its next five dates, and the form that adds one. A bad
 // amount, interval or day of the month, or an end before the start, is refused with an error on the row until the form is
 // changed or the next action on the row is taken.
 function PersonPlans({ person }: { person: Person }) {
-  const fig = useFigure();
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const plans = usePlans(sheet);
@@ -50,14 +94,7 @@ function PersonPlans({ person }: { person: Person }) {
         {(plans.data ?? [])
           .filter((p) => p.personId === person.id)
           .map((p) => (
-            <li key={p.id} data-testid={`plan-row-${p.id}`}>
-              <span data-testid="plan-amount-shown">{fig(p.amount)}</span> from {p.start}{' '}
-              {p.day !== null ? `monthly on day ${p.day}` : `every ${p.every} days`} to {p.end}
-              {' — made '}
-              <span data-testid="plan-generated">{p.generated}</span>
-              {' — next '}
-              <span data-testid="plan-next-dates">{p.nextDates}</span>
-            </li>
+            <PlanRow key={p.id} plan={p} latest={latest} />
           ))}
       </ul>
       <form
