@@ -26,8 +26,14 @@ function SheetToday() {
     onSuccess: (archived) => queryClient.setQueryData(sheetKey(sheet), archived),
   });
   const submitArchive = useSubmitOnce(archive);
-  // The sheet's one error element: a refused today or a refused archive, whichever was tried last.
-  const failed = save.isError ? save.error : archive.isError ? archive.error : null;
+  const [cloneTo, setCloneTo] = useState('');
+  const clone = useMutation({
+    mutationFn: (to: string) =>
+      postJson<{ to: string }>(`/api/sheets/${encodeURIComponent(sheet)}/clone`, { to, user }),
+  });
+  const submitClone = useSubmitOnce(clone);
+  // The sheet's one error element: a refused today, archive or clone, whichever was tried last.
+  const failed = save.isError ? save.error : archive.isError ? archive.error : clone.isError ? clone.error : null;
 
   if (!user || !loaded.data) return null;
   return (
@@ -36,6 +42,7 @@ function SheetToday() {
       onSubmit={(e) => {
         e.preventDefault();
         archive.reset();
+        clone.reset();
         submit(input.trim());
       }}
     >
@@ -48,6 +55,7 @@ function SheetToday() {
           setInput(e.target.value);
           save.reset();
           archive.reset();
+          clone.reset();
         }}
       />
       <button type="submit" data-testid="sheet-today-save">
@@ -60,11 +68,36 @@ function SheetToday() {
         data-testid="sheet-archive"
         onClick={() => {
           save.reset();
+          clone.reset();
           submitArchive();
         }}
       >
         Archive sheet
       </button>
+      {' '}Clone to{' '}
+      <input
+        data-testid="sheet-clone-to"
+        value={cloneTo}
+        onChange={(e) => {
+          setCloneTo(e.target.value);
+          save.reset();
+          archive.reset();
+          clone.reset();
+        }}
+      />
+      <button
+        type="button"
+        data-testid="sheet-clone"
+        onClick={() => {
+          save.reset();
+          archive.reset();
+          clone.reset();
+          submitClone(cloneTo.trim());
+        }}
+      >
+        Clone sheet
+      </button>
+      {' '}Cloned to <strong data-testid="sheet-cloned-to">{clone.isSuccess ? clone.data.to : ''}</strong>
       {failed && (
         <span data-testid="sheet-error" role="alert">
           {' '}{failed instanceof HttpError && failed.reason ? failed.reason : 'Not a valid date.'}

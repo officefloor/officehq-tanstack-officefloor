@@ -157,6 +157,17 @@ public class RollupService {
         }
     }
 
+    /** Records the sheet's figures as they stand, the change made by {@code user}: a ROLLUP line for every
+     *  person, then its TOTALS. */
+    public void recordAll(String sheetId, String user) {
+        Rollup now = snapshot(sheetId);
+        String who = " sheet=" + sheetId + " by=" + user;
+        now.people().values().forEach(p -> audit.record("ROLLUP" + who + " person=" + p.name() + " claimed="
+                + p.claimed() + " due-total=" + p.dueTotal() + " overdue-total=" + p.overdueTotal()));
+        audit.record("TOTALS" + who + " claimed-total=" + now.claimedTotal() + " due-total=" + now.dueTotal()
+                + " overdue-total=" + now.overdueTotal());
+    }
+
     /** What the sheet's late charge follows on the date, for these claims (see {@link Lateness}). */
     private Lateness lateness(String sheetId, LocalDate today, List<Claim> all) {
         Map<Long, Person> byId = new HashMap<>();
