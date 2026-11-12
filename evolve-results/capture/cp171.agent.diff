@@ -1,0 +1,429 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 207b60227..dbe5450df 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -74,6 +74,8 @@ export type Claim = {
+   lines: string[];
+   /** When it was added, in the order forward-only rates are saved in (see `Rate`); a copy keeps its original's. */
+   added: number;
++  /** The date (yyyy-MM-dd) it went to REVIEW on, the sheet's today then (its review day); null when it never went to REVIEW. */
++  reviewOn: string | null;
+ };
+ 
+ /** A correction: a claim with a negative amount, which has no floor and no late charge. */
+diff --git a/src/main/frontend/features/claims/list.slot.tsx b/src/main/frontend/features/claims/list.slot.tsx
+index 837098739..f01862ce5 100644
+--- a/src/main/frontend/features/claims/list.slot.tsx
++++ b/src/main/frontend/features/claims/list.slot.tsx
+@@ -9,7 +9,7 @@ import { claimDue, useRates } from '../rates/rates';
+ import { floorOf, useSettings } from '../settings/settings';
+ import { periodOf, usePeriods } from '../periods/periods';
+ import { useSheetToday } from '../sheet/sheet';
+-import { dueBy, lateOf, overdue } from '../overdue/overdue';
++import { dueBy, lateOf, overdue, reviewLate } from '../overdue/overdue';
+ import { useVoidReasons } from '../voidreasons/voidreasons';
+ import { useTemplates } from '../templates/templates';
+ import { type Claim, type ClaimStatus, claimsKey, useClaims, useEditingClaim, useSelectedClaims } from './claims';
+@@ -542,6 +542,7 @@ function PersonClaims({ person }: { person: Person }) {
+               <span data-testid="claim-due-by">{dueBy(c)}</span>{' '}
+               <span data-testid="claim-overdue">{overdue(c, today, lateOf(settings, today, [person])) ? 'yes' : 'no'}</span>{' '}
+               <span data-testid="claim-status">{c.status}</span>{' '}
++              <span data-testid="claim-review-late">{reviewLate(c, today, settings?.reviewSla) ? 'yes' : 'no'}</span>{' '}
+               <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
+               <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
+               <span data-testid="claim-deferred">{c.deferred ? 'yes' : 'no'}</span>{' '}
+diff --git a/src/main/frontend/features/overdue/overdue.ts b/src/main/frontend/features/overdue/overdue.ts
+index 6118fadf1..20666a955 100644
+--- a/src/main/frontend/features/overdue/overdue.ts
++++ b/src/main/frontend/features/overdue/overdue.ts
+@@ -21,6 +21,13 @@ export function overdue(claim: Claim, today: string | undefined, late?: Late): b
+ const plusDays = (date: string, days: number): string =>
+   new Date(Date.parse(`${date}T00:00:00Z`) + days * DAY).toISOString().slice(0, 10);
+ 
++/** Whether the claim is review-late: it is REVIEW and its review day plus the sheet's review SLA (whole days; null or
++ *  blank for none) is before the sheet's today. */
++export function reviewLate(claim: Claim, today: string | undefined, sla: string | null | undefined): boolean {
++  return claim.status === 'REVIEW' && claim.reviewOn !== null && today !== undefined && sla != null && sla !== ''
++    && plusDays(claim.reviewOn, Number(sla)) < today;
++}
++
+ /** How many full 30 days the claim is overdue on the sheet's today, counted from its due-by plus any grace (0 when it is not overdue). */
+ export function latePeriods(claim: Claim, today: string | undefined, late?: Late): number {
+   if (today === undefined || !overdue(claim, today, late)) return 0;
+diff --git a/src/main/frontend/features/settings/form.slot.tsx b/src/main/frontend/features/settings/form.slot.tsx
+index e1742a183..46d71163a 100644
+--- a/src/main/frontend/features/settings/form.slot.tsx
++++ b/src/main/frontend/features/settings/form.slot.tsx
+@@ -18,12 +18,12 @@ const STANDING_PERMS: Record<(typeof PERM_ACTIONS)[number], string> = {
+ 
+ type PermKey = `perm-${(typeof PERM_ACTIONS)[number]}`;
+ 
+-type Key = 'clerk-limit' | 'floor' | 'terms' | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'late-pct' | 'policy-date' | 'period-numbering-from' | 'cap' | 'proof-threshold' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'note-threshold' | 'review-threshold' | 'grace-days' | 'escalate-after' | 'entry-date' | 'pot' | 'alert-threshold' | 'parent' | 'fiscal-start-month' | 'rounding' | PermKey;
++type Key = 'clerk-limit' | 'floor' | 'terms' | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'late-pct' | 'policy-date' | 'period-numbering-from' | 'cap' | 'proof-threshold' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'note-threshold' | 'review-threshold' | 'grace-days' | 'escalate-after' | 'review-sla' | 'entry-date' | 'pot' | 'alert-threshold' | 'parent' | 'fiscal-start-month' | 'rounding' | PermKey;
+ 
+ const GRADES = ['A', 'B', 'C'] as const;
+ 
+ /** The settings that carry a figure: each is saved from a from-date (blank for the sheet's today). */
+-type DatedKey = Exclude<Key, 'policy-date' | 'period-numbering-from' | 'grace-days' | 'escalate-after' | 'entry-date' | 'pot' | 'alert-threshold' | 'parent' | 'fiscal-start-month' | PermKey>;
++type DatedKey = Exclude<Key, 'policy-date' | 'period-numbering-from' | 'grace-days' | 'escalate-after' | 'review-sla' | 'entry-date' | 'pot' | 'alert-threshold' | 'parent' | 'fiscal-start-month' | PermKey>;
+ 
+ const NO_FROM: Record<DatedKey, string> = { 'clerk-limit': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'late-pct': '', cap: '', 'proof-threshold': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'note-threshold': '', 'review-threshold': '', rounding: '' };
+ 
+@@ -42,6 +42,8 @@ const isDated = (k: Key): k is DatedKey => k in NO_FROM;
+ // dated) are the whole days after its to-date an open period is closed when the sheet's today moves.
+ // The escalation gap (blank for off, not dated) is the whole days at least between a claim's previous reminder
+ // and the sheet's today for a reminder to escalate it, once per claim.
++// The review SLA (blank for none, not dated) is the whole days after its review day a claim in REVIEW may stay
++// there; past them it shows as review-late.
+ // The entry date (blank for off, not dated) is the default date of a new claim in place of the sheet's today.
+ // The pot (blank for none, not dated) is shared out among each balanced pool's members by their shares.
+ // The alert threshold (blank for off, not dated) is the due-total above which a person a change takes there
+@@ -56,7 +58,7 @@ function SheetSettings() {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+   const settings = useSettings(sheet);
+-  const [values, setValues] = useState<Record<Key, string>>({ 'clerk-limit': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '', cap: '', 'proof-threshold': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'note-threshold': '', 'review-threshold': '', 'grace-days': '', 'escalate-after': '', 'entry-date': '', pot: '', 'alert-threshold': '', parent: '', 'fiscal-start-month': '', rounding: '',
++  const [values, setValues] = useState<Record<Key, string>>({ 'clerk-limit': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '', cap: '', 'proof-threshold': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'note-threshold': '', 'review-threshold': '', 'grace-days': '', 'escalate-after': '', 'review-sla': '', 'entry-date': '', pot: '', 'alert-threshold': '', parent: '', 'fiscal-start-month': '', rounding: '',
+     'perm-open': '', 'perm-settle': '', 'perm-void': '', 'perm-reassign': '', 'perm-close': '', 'perm-reopen': '' });
+   const [froms, setFroms] = useState<Record<DatedKey, string>>(NO_FROM);
+   const [key, setKey] = useState<Key>('clerk-limit');
+@@ -158,6 +160,8 @@ function SheetSettings() {
+         {field('grace-days', 'Grace days (blank for off)')}{' '}
+         Escalate after <strong data-testid="setting-escalate-after-current">{settings.data?.escalateAfter ?? ''}</strong>{' '}
+         {field('escalate-after', 'Escalate after days (blank for off)')}{' '}
++        Review SLA <strong data-testid="setting-review-sla-current">{settings.data?.reviewSla ?? ''}</strong>{' '}
++        {field('review-sla', 'Review SLA days (blank for none)')}{' '}
+         Entry date <strong data-testid="setting-entry-date-current">{settings.data?.entryDate ?? ''}</strong>{' '}
+         {field('entry-date', 'Entry date YYYY-MM-DD (blank for off)', 'text')}{' '}
+         Pot <strong data-testid="setting-pot-current">{fig(settings.data?.pot ?? '')}</strong>{' '}
+diff --git a/src/main/frontend/features/settings/settings.ts b/src/main/frontend/features/settings/settings.ts
+index f70cef468..c05b6a0e7 100644
+--- a/src/main/frontend/features/settings/settings.ts
++++ b/src/main/frontend/features/settings/settings.ts
+@@ -31,7 +31,8 @@ import { useAsOf } from '../../session/session';
+  *  first (a claim rounds by the one in force on its date, else by the policy date). `reviewThreshold` (two decimals)
+  *  is the due above which a claim goes to REVIEW when opened, in force on the sheet's today, null for none.
+  *  `escalateAfter` is the whole days at least between a claim's previous reminder and the sheet's today for a reminder
+- *  to escalate it (once per claim), null for off; it is not dated. */
++ *  to escalate it (once per claim), null for off; it is not dated. `reviewSla` is the whole days after its review day
++ *  a claim in REVIEW may stay there before it is late, null for none; it is not dated. */
+ export type Settings = { clerkLimit: string | null; floor: string; terms: string; latePct: string; policyDate: string | null;
+   periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; proofThreshold: string | null;
+   floorFrom: Dated[]; latePctFrom: Dated[]; perms: Record<string, string | null>;
+@@ -39,7 +40,7 @@ export type Settings = { clerkLimit: string | null; floor: string; terms: string
+   gradeGrace: Record<string, string | null>; gradeGraceFrom: Record<string, Dated[]>;
+   gradeProofThreshold: Record<string, string | null>; pot: string | null; parent: string | null; fiscalStartMonth: string;
+   alertThreshold: string | null; rounding: string | null; roundingFrom: Dated[]; reviewThreshold: string | null;
+-  escalateAfter: string | null };
++  escalateAfter: string | null; reviewSla: string | null };
+ 
+ /** A setting's value recorded from a date (yyyy-MM-dd); a null value is blank. */
+ export type Dated = { from: string; value: string | null };
+diff --git a/src/main/frontend/features/summary/summary.slot.tsx b/src/main/frontend/features/summary/summary.slot.tsx
+index bc251f0ae..72bf1ea67 100644
+--- a/src/main/frontend/features/summary/summary.slot.tsx
++++ b/src/main/frontend/features/summary/summary.slot.tsx
+@@ -6,7 +6,7 @@ import { periodDue, usePeriods } from '../periods/periods';
+ import { difference, dueTotal, personDue, useRates } from '../rates/rates';
+ import { floorOf, useSettings } from '../settings/settings';
+ import { useSheetToday } from '../sheet/sheet';
+-import { lateOf } from '../overdue/overdue';
++import { lateOf, reviewLate } from '../overdue/overdue';
+ import { useVoidReasons } from '../voidreasons/voidreasons';
+ import { useFigure } from '../locale/locale';
+ 
+@@ -14,7 +14,7 @@ import { useFigure } from '../locale/locale';
+ // today (retired people excluded), their due-totals added up (skipping n/a) and how many of them are
+ // active; per period, its due-total and its change from the period before it by start date (none for
+ // the earliest); per status, how many claims have it; per void reason on the list,
+-// how many VOID claims were voided with it.
++// how many VOID claims were voided with it; and how many REVIEW claims are past the review SLA (review-late).
+ function Summary() {
+   const fig = useFigure();
+   const [sheet] = useCurrentSheet();
+@@ -101,6 +101,12 @@ function Summary() {
+               <td data-testid={`summary-status-${s}-count`}>{statusCount(claims.data, s)}</td>
+             </tr>
+           ))}
++          <tr>
++            <td>Review late</td>
++            <td data-testid="summary-review-late-count">
++              {(claims.data ?? []).filter((c) => reviewLate(c, today, settings?.reviewSla)).length}
++            </td>
++          </tr>
+         </tbody>
+       </table>
+       <table>
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyStatus.java
+index 53ce573e1..b1a18f9d1 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyStatus.java
+@@ -80,6 +80,9 @@ public class ApplyStatus {
+         if (from == ClaimStatus.DRAFT && (to == ClaimStatus.OPEN || to == ClaimStatus.REVIEW)) {
+             claim.setOpenedBy(input.user());
+         }
++        if (to == ClaimStatus.REVIEW) {
++            store.markReview(claim, sheets.today(claim.getSheetId()));
++        }
+         if (to == ClaimStatus.SETTLED) {
+             claim.setSettledDue(settledDue);
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 14d377eda..bd2be4dc6 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -28,6 +28,7 @@ public class Claim {
+     private boolean lateEntry;
+     private LocalDate remindedOn;
+     private boolean escalated;
++    private LocalDate reviewOn;
+     private String ref;
+     private String tags;
+     private String voidReason;
+@@ -112,6 +113,9 @@ public class Claim {
+     /** Whether a reminder ever escalated the claim (it is escalated once only). */
+     public boolean isEscalated() { return escalated; }
+     public void setEscalated(boolean escalated) { this.escalated = escalated; }
++    /** The sheet's today the claim went to REVIEW on (its review day); null when it never went to REVIEW. */
++    public LocalDate getReviewOn() { return reviewOn; }
++    public void setReviewOn(LocalDate reviewOn) { this.reviewOn = reviewOn; }
+     /** The external reference, unique on the sheet without regard to case; null when it has none. */
+     public String getRef() { return ref; }
+     public void setRef(String ref) { this.ref = ref; }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+index 2c9ef630e..05818bf03 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+@@ -16,12 +16,13 @@ import java.util.List;
+  *  and the last date it was reminded on (null when never reminded), and its external reference (null when it has none), and its tags, sorted (empty when it has none),
+  *  and the reason it was voided with (null when none), and its comments (see {@link ClaimCommentStore}), oldest first,
+  *  and the bulk settle batch it was settled in (null when settled one at a time, or not settled), and its lines
+- *  (see {@link ClaimLineStore}), in the order added, and when it was added (see {@link Claim#getAddedSeq}). */
++ *  (see {@link ClaimLineStore}), in the order added, and when it was added (see {@link Claim#getAddedSeq}), and its
++ *  review day, the sheet's today it went to REVIEW on (null when it never went to REVIEW). */
+ public record ClaimResponse(long id, long personId, String amount, String date, String note, String status, String number,
+         String due, String openedBy, boolean stated, String statedDue, boolean statedNa, String corrects, String roundsBy,
+         String dueBy, List<String> log, boolean deferred, String deferredUntil, int proofs,
+         String splitFrom, boolean lateEntry, String remindedOn, String ref, List<String> tags, String voidReason,
+-        List<String> comments, Long batch, List<String> lines, long added) {
++        List<String> comments, Long batch, List<String> lines, long added, String reviewOn) {
+     public static ClaimResponse from(Claim c) {
+         return from(c, c.getDate());
+     }
+@@ -39,25 +40,26 @@ public record ClaimResponse(long id, long personId, String amount, String date,
+                 c.getCorrects(), roundsBy.toString(), c.getDueBy().toString(), List.of(),
+                 false, c.getDeferredUntil() == null ? null : c.getDeferredUntil().toString(), c.getProofs(),
+                 c.getSplitFrom(), c.isLateEntry(), c.getRemindedOn() == null ? null : c.getRemindedOn().toString(), c.getRef(),
+-                Tags.list(c.getTags()), c.getVoidReason(), List.of(), c.getBatch(), List.of(), c.getAddedSeq());
++                Tags.list(c.getTags()), c.getVoidReason(), List.of(), c.getBatch(), List.of(), c.getAddedSeq(),
++                c.getReviewOn() == null ? null : c.getReviewOn().toString());
+     }
+ 
+     /** The same claim with its status log lines, oldest first. */
+     public ClaimResponse withLog(List<String> lines) {
+         return new ClaimResponse(id, personId, amount, date, note, status, number, due, openedBy, stated, statedDue,
+-                statedNa, corrects, roundsBy, dueBy, lines, deferred, deferredUntil, proofs, splitFrom, lateEntry, remindedOn, ref, tags, voidReason, comments, batch, this.lines, added);
++                statedNa, corrects, roundsBy, dueBy, lines, deferred, deferredUntil, proofs, splitFrom, lateEntry, remindedOn, ref, tags, voidReason, comments, batch, this.lines, added, reviewOn);
+     }
+ 
+     /** The same claim with its comment lines, oldest first. */
+     public ClaimResponse withComments(List<String> lines) {
+         return new ClaimResponse(id, personId, amount, date, note, status, number, due, openedBy, stated, statedDue,
+-                statedNa, corrects, roundsBy, dueBy, log, deferred, deferredUntil, proofs, splitFrom, lateEntry, remindedOn, ref, tags, voidReason, lines, batch, this.lines, added);
++                statedNa, corrects, roundsBy, dueBy, log, deferred, deferredUntil, proofs, splitFrom, lateEntry, remindedOn, ref, tags, voidReason, lines, batch, this.lines, added, reviewOn);
+     }
+ 
+     /** The same claim with its lines, in the order added. */
+     public ClaimResponse withLines(List<String> lines) {
+         return new ClaimResponse(id, personId, amount, date, note, status, number, due, openedBy, stated, statedDue,
+-                statedNa, corrects, roundsBy, dueBy, log, deferred, deferredUntil, proofs, splitFrom, lateEntry, remindedOn, ref, tags, voidReason, comments, batch, lines, added);
++                statedNa, corrects, roundsBy, dueBy, log, deferred, deferredUntil, proofs, splitFrom, lateEntry, remindedOn, ref, tags, voidReason, comments, batch, lines, added, reviewOn);
+     }
+ 
+     /** The same claim, deferred when OPEN, or VOID (a voided claim still shows its deferral, though it counts
+@@ -67,6 +69,6 @@ public record ClaimResponse(long id, long personId, String amount, String date,
+                 && deferredUntil != null && today != null
+                 && today.toString().compareTo(deferredUntil) < 0;
+         return new ClaimResponse(id, personId, amount, date, note, status, number, due, openedBy, stated, statedDue,
+-                statedNa, corrects, roundsBy, dueBy, log, now, deferredUntil, proofs, splitFrom, lateEntry, remindedOn, ref, tags, voidReason, comments, batch, lines, added);
++                statedNa, corrects, roundsBy, dueBy, log, now, deferredUntil, proofs, splitFrom, lateEntry, remindedOn, ref, tags, voidReason, comments, batch, lines, added, reviewOn);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java
+index 2c36a08d2..db6430e60 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java
+@@ -32,6 +32,7 @@ public class ClaimStore {
+         claim.setLateEntry(rs.getBoolean("late_entry"));
+         claim.setRemindedOn(rs.getObject("reminded_on", LocalDate.class));
+         claim.setEscalated(rs.getBoolean("escalated"));
++        claim.setReviewOn(rs.getObject("review_on", LocalDate.class));
+         claim.setRef(rs.getString("ref"));
+         claim.setTags(rs.getString("tags"));
+         claim.setVoidReason(rs.getString("void_reason"));
+@@ -352,6 +353,13 @@ public class ClaimStore {
+                 claim.getSheetId(), claim.getId(), from.name()) == 1;
+     }
+ 
++    /** Records the sheet's today as the day the claim went to REVIEW on (its review day). */
++    public void markReview(Claim claim, LocalDate today) {
++        jdbc.update("UPDATE claim SET review_on = ? WHERE sheet_id = ? AND id = ?", today == null ? null : Date.valueOf(today),
++                claim.getSheetId(), claim.getId());
++        claim.setReviewOn(today);
++    }
++
+     /** Records the bulk settle batch the claim was settled in. */
+     public void markBatch(Claim claim, long batch) {
+         jdbc.update("UPDATE claim SET settle_batch = ? WHERE sheet_id = ? AND id = ?", batch, claim.getSheetId(), claim.getId());
+@@ -463,7 +471,7 @@ public class ClaimStore {
+ 
+     /** Adds a copy of the claim to the person on the other sheet under {@code number} (null for none), correcting
+      *  and split off the numbers given: its amount, date, note, status, frozen settled figure, opener, due-by and
+-     *  the terms it was fixed with, deferral, proofs, late entry, reminder and escalation, tags, void reason and editor, with its
++     *  the terms it was fixed with, deferral, proofs, late entry, reminder and escalation, review day, tags, void reason and editor, with its
+      *  status log, comments and lines, listed as the person's newest claim, keeping any figure a statement bound it to.
+      *  Its reference, lock and bulk settle batch are not carried. The id of the copy. */
+     public long copyTo(Claim claim, String toSheet, long toPerson, String number, String corrects, String splitFrom) {
+@@ -503,8 +511,9 @@ public class ClaimStore {
+             return ps;
+         }, keys);
+         long id = keys.getKey().longValue();
+-        jdbc.update("UPDATE claim SET added_seq = ?, escalated = ? WHERE sheet_id = ? AND id = ?", claim.getAddedSeq(),
+-                claim.isEscalated(), toSheet, id);
++        jdbc.update("UPDATE claim SET added_seq = ?, escalated = ?, review_on = ? WHERE sheet_id = ? AND id = ?",
++                claim.getAddedSeq(), claim.isEscalated(), claim.getReviewOn() == null ? null : Date.valueOf(claim.getReviewOn()),
++                toSheet, id);
+         jdbc.update("INSERT INTO claim_log (sheet_id, claim_id, status, by_user, log_date, due) "
+                 + "SELECT ?, ?, status, by_user, log_date, due FROM claim_log WHERE sheet_id = ? AND claim_id = ? ORDER BY id",
+                 toSheet, id, claim.getSheetId(), claim.getId());
+diff --git a/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java b/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java
+index 96b33fabf..c68d6ace4 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java
+@@ -78,6 +78,9 @@ public class OpenClaims {
+             }
+             claim.setOpenedBy(input.user());
+             store.save(claim);
++            if (to == ClaimStatus.REVIEW) {
++                store.markReview(claim, sheets.today(sheet));
++            }
+             log.record(claim, input.user());
+             Person person = persons.get(claim.getPersonId());
+             ClaimResponse shown = ClaimResponse.from(claim);
+diff --git a/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java b/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
+index 619a7cb2f..89b647836 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
+@@ -35,7 +35,8 @@ public class RespondWithSettings {
+                 store.find(sheet, SettingStore.POT), settings.parent(sheet),
+                 String.valueOf(store.fiscalStartMonth(sheet)), store.find(sheet, SettingStore.ALERT_THRESHOLD),
+                 store.find(sheet, SettingStore.ROUNDING), history(sheet, SettingStore.ROUNDING, store),
+-                store.find(sheet, SettingStore.REVIEW_THRESHOLD), store.find(sheet, SettingStore.ESCALATE_AFTER)));
++                store.find(sheet, SettingStore.REVIEW_THRESHOLD), store.find(sheet, SettingStore.ESCALATE_AFTER),
++                store.find(sheet, SettingStore.REVIEW_SLA)));
+     }
+ 
+     private static Map<String, String> gradeTerms(String sheetId, LocalDate today, SettingStore store) {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingStore.java b/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
+index 0f65fb2cd..c18c15b29 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
+@@ -22,7 +22,7 @@ import org.springframework.stereotype.Repository;
+  *  that carry a figure (the clerk limit, the floor, the cap, the proof threshold, a grade's proof threshold, the note threshold, the review threshold, the terms, a grade's terms, a grade's grace days and the late
+  *  percent) are dated: each value is recorded from a from-date, and the value in force on a date is the
+  *  one with the latest from-date on or before it (none before every from-date, then the sheet's starting
+- *  value). The policy date, the period numbering date, the entry date, the grace days, the pot, the alert threshold, the parent sheet, the fiscal start month and the permission matrix are not dated. */
++ *  value). The policy date, the period numbering date, the entry date, the grace days, the escalation gap, the review SLA, the pot, the alert threshold, the parent sheet, the fiscal start month and the permission matrix are not dated. */
+ @Repository
+ public class SettingStore {
+ 
+@@ -187,6 +187,10 @@ public class SettingStore {
+      *  escalate it; blank for off (not dated). */
+     public static final String ESCALATE_AFTER = "escalate-after";
+ 
++    /** The whole days after its review day a claim in REVIEW may stay there before it is late; blank for none
++     *  (not dated). */
++    public static final String REVIEW_SLA = "review-sla";
++
+     /** The key of a grade's grace days: grace-A, grace-B or grace-C (dated; blank for none). */
+     public static final String GRACE_PREFIX = "grace-";
+ 
+@@ -255,7 +259,7 @@ public class SettingStore {
+ 
+     /** Whether the key's values are recorded from a from-date. */
+     public static boolean isDated(String key) {
+-        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key)
++        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key)
+                 && !ENTRY_DATE.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
+                 && !key.startsWith(PERM_PREFIX);
+     }
+@@ -447,6 +451,13 @@ public class SettingStore {
+         return value == null ? null : Integer.valueOf(value);
+     }
+ 
++    /** The whole days after its review day a claim in REVIEW may stay there before it is late, or null when
++     *  blank (none). */
++    public Integer reviewSla(String sheetId) {
++        String value = find(sheetId, REVIEW_SLA);
++        return value == null ? null : Integer.valueOf(value);
++    }
++
+     /** Records the setting's value; a dated one's from the date (replacing a value recorded from it). */
+     public void set(String sheetId, String key, String value, LocalDate from) {
+         if (isDated(key)) {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+index f11c5e874..ff320ff32 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+@@ -36,14 +36,16 @@ import java.util.Map;
+  *  {@code reviewThreshold} has two decimals, the due above which a claim goes to REVIEW when opened, in force on the
+  *  sheet's today, null for none.
+  *  {@code escalateAfter} is the whole days at least between a claim's previous reminder and the sheet's today for a
+- *  reminder to escalate it (once per claim), null for off (not dated). */
++ *  reminder to escalate it (once per claim), null for off (not dated).
++ *  {@code reviewSla} is the whole days after its review day a claim in REVIEW may stay there before it is late, null
++ *  for none (not dated). */
+ public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
+         String periodNumberingFrom, Map<String, String> gradeTerms, String cap, String proofThreshold, List<Dated> floorFrom,
+         List<Dated> latePctFrom, Map<String, String> perms, String graceDays,
+         String noteThreshold, String entryDate, Map<String, String> gradeGrace,
+         Map<String, List<Dated>> gradeGraceFrom, Map<String, String> gradeProofThreshold,
+         String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding,
+-        List<Dated> roundingFrom, String reviewThreshold, String escalateAfter) {
++        List<Dated> roundingFrom, String reviewThreshold, String escalateAfter, String reviewSla) {
+ 
+     /** A value recorded from a date (yyyy-MM-dd). */
+     public record Dated(String from, String value) {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+index 6a82d2e14..685d31dd0 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+@@ -40,10 +40,12 @@ public class ValidateSetting {
+         boolean review = SettingStore.REVIEW_THRESHOLD.equals(key);
+         boolean pot = SettingStore.POT.equals(key);
+         boolean alert = SettingStore.ALERT_THRESHOLD.equals(key);
+-        if (SettingStore.GRACE_DAYS.equals(key) || SettingStore.ESCALATE_AFTER.equals(key)) {
++        if (SettingStore.GRACE_DAYS.equals(key) || SettingStore.ESCALATE_AFTER.equals(key)
++                || SettingStore.REVIEW_SLA.equals(key)) {
+             String value = request.value() == null ? "" : request.value().trim();
+             if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
+-                throw new InvalidSheetException((SettingStore.GRACE_DAYS.equals(key) ? "The grace days" : "The escalation gap")
++                throw new InvalidSheetException((SettingStore.GRACE_DAYS.equals(key) ? "The grace days"
++                        : SettingStore.REVIEW_SLA.equals(key) ? "The review SLA" : "The escalation gap")
+                         + " must be a whole number of days, 0 or more, or blank");
+             }
+             body.set(new SettingInput(key, value.isEmpty() ? null : String.valueOf(Integer.parseInt(value)), null,
+diff --git a/src/main/resources/db/migration/V77__claim_review_on.sql b/src/main/resources/db/migration/V77__claim_review_on.sql
+new file mode 100644
+index 000000000..a5dc92731
+--- /dev/null
++++ b/src/main/resources/db/migration/V77__claim_review_on.sql
+@@ -0,0 +1,8 @@
++-- The sheet's today a claim went to REVIEW on (its review day); null when it never went to REVIEW. With the
++-- sheet's review-sla it tells whether a REVIEW claim is late. Kept in claim_hist too; the history trigger is
++-- set again afterwards, as in V48__claim_edited_by.sql.
++DROP TRIGGER claim_history;
++ALTER TABLE claim ADD COLUMN review_on DATE;
++ALTER TABLE claim_hist ADD COLUMN review_on DATE;
++CREATE TRIGGER claim_history AFTER INSERT, UPDATE, DELETE ON claim FOR EACH ROW
++    CALL 'net.officefloor.hq.app.history.HistoryTrigger';
