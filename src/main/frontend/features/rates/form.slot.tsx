@@ -4,23 +4,28 @@ import { HttpError, postJson } from '../../api/http';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { GRADES } from '../people/people';
+import { useSheetToday } from '../sheet/sheet';
 import { NA, type Rate, rateOf, ratesKey, useRates } from './rates';
 
-// The sheet's rate for each grade, and the form that sets one.
+// The rate in force for each grade on the sheet's today, every rate with the date it applies from,
+// and the form that sets one (a blank from-date applies from the beginning of time).
 function Rates() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const rates = useRates(sheet);
+  const today = useSheetToday(sheet);
   const [grade, setGrade] = useState<string>('A');
   const [pct, setPct] = useState('');
+  const [from, setFrom] = useState('');
   const queryClient = useQueryClient();
 
   const save = useMutation({
-    mutationFn: (r: { grade: string; pct: string }) =>
+    mutationFn: (r: { grade: string; pct: string; from: string }) =>
       postJson<Rate>(`/api/sheets/${encodeURIComponent(sheet)}/rates`, { ...r, user }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: ratesKey(sheet) });
       setPct('');
+      setFrom('');
     },
   });
 
@@ -31,21 +36,34 @@ function Rates() {
         <thead>
           <tr>
             <th>Grade</th>
+            <th>Rate % today</th>
+          </tr>
+        </thead>
+        <tbody>
+          {GRADES.map((g) => (
+            <tr key={g}>
+              <td>{g}</td>
+              <td data-testid={`rate-current-${g}`}>{rateOf(rates.data, g, today) ?? NA}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <table>
+        <thead>
+          <tr>
+            <th>Grade</th>
+            <th>From</th>
             <th>Rate %</th>
           </tr>
         </thead>
         <tbody>
-          {GRADES.map((g) => {
-            const current = rateOf(rates.data, g);
-            return (
-              <tr key={g} data-testid={current === undefined ? undefined : `rate-row-${g}-start`}>
-                <td>{g}</td>
-                <td data-testid={`rate-current-${g}`}>
-                  {current === undefined ? NA : <span data-testid="rate-pct">{current}</span>}
-                </td>
-              </tr>
-            );
-          })}
+          {(rates.data ?? []).map((r) => (
+            <tr key={`${r.grade}-${r.from ?? 'start'}`} data-testid={`rate-row-${r.grade}-${r.from ?? 'start'}`}>
+              <td>{r.grade}</td>
+              <td data-testid="rate-from">{r.from ?? ''}</td>
+              <td data-testid="rate-pct">{r.pct}</td>
+            </tr>
+          ))}
         </tbody>
       </table>
       <form
@@ -53,7 +71,7 @@ function Rates() {
         onSubmit={(e) => {
           e.preventDefault();
           save.reset();
-          save.mutate({ grade, pct });
+          save.mutate({ grade, pct, from });
         }}
       >
         <select
@@ -77,6 +95,15 @@ function Rates() {
           value={pct}
           onChange={(e) => {
             setPct(e.target.value);
+            save.reset();
+          }}
+        />
+        <input
+          data-testid="rate-form-from"
+          placeholder="From (yyyy-mm-dd)"
+          value={from}
+          onChange={(e) => {
+            setFrom(e.target.value);
             save.reset();
           }}
         />

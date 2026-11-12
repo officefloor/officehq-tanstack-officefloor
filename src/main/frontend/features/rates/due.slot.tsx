@@ -2,10 +2,11 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
 import { type Person, usePeople } from '../people/people';
 import { useCurrentSheet } from '../../session/session';
+import { useSheetToday } from '../sheet/sheet';
 import { claimed, useClaims } from '../claims/claims';
 import { due, dueTotal, rateOf, useRates } from './rates';
 
-// A person's due-total (their claimed at their grade's rate) and the sheet's (everyone's, skipping n/a).
+// A person's due-total (their claimed at their grade's rate in force on the sheet's today) and the sheet's (everyone's, skipping n/a).
 function DueHead() {
   return <th>Due total</th>;
 }
@@ -14,8 +15,9 @@ function PersonDue({ person }: { person: Person }) {
   const [sheet] = useCurrentSheet();
   const claims = useClaims(sheet);
   const rates = useRates(sheet);
+  const today = useSheetToday(sheet);
   const mine = (claims.data ?? []).filter((c) => c.personId === person.id);
-  return <td data-testid="person-due-total">{due(claimed(mine), rateOf(rates.data, person.grade))}</td>;
+  return <td data-testid="person-due-total">{due(claimed(mine), rateOf(rates.data, person.grade, today))}</td>;
 }
 
 function DueTotal() {
@@ -23,8 +25,9 @@ function DueTotal() {
   const people = usePeople(sheet);
   const claims = useClaims(sheet);
   const rates = useRates(sheet);
+  const today = useSheetToday(sheet);
   const dues = (people.data ?? []).map((p) =>
-    due(claimed((claims.data ?? []).filter((c) => c.personId === p.id)), rateOf(rates.data, p.grade)),
+    due(claimed((claims.data ?? []).filter((c) => c.personId === p.id)), rateOf(rates.data, p.grade, today)),
   );
   return (
     <p>
