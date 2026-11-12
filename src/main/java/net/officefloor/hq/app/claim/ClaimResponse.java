@@ -4,7 +4,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 /** A claim as the front end reads it: the amount with two decimals, the date as yyyy-MM-dd,
- *  the status by name, the number as given when opened (1, 2, ... or <period>-<n> / X-<n>; null when it has none), the due fixed when
+ *  the status by name, the number as given when opened (FY<yyyy>-<n>, 1, 2, ... given before, or <period>-<n> / X-<n>; null when it has none), the due fixed when
  *  settled with two decimals (null when it has none, so its due is worked out from the current rate), and who opened it
  *  (null until opened), whether its person's last statement bound it, and the figure it was bound to
  *  (null when not bound, or bound while it had none), whether it was bound to n/a (its rate had ended), and the number of the claim a correction corrects

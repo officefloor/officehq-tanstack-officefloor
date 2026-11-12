@@ -371,6 +371,34 @@ public class ClaimStore {
         return last + 1;
     }
 
+    /** Takes the next claim number in the fiscal year's sequence the sheets of a tree share: one after the last
+     *  number given in that fiscal year on any of them (the sheet is among {@code tree}), 1 for the first. Each sheet
+     *  keeps its own counter per fiscal year, locked in id order until the transaction ends, as
+     *  {@link #nextNumber(String, java.util.Collection)} does. */
+    public long nextFiscalNumber(String sheetId, java.util.Collection<String> tree, int fiscalYear) {
+        String sequence = "FY:" + fiscalYear;
+        java.util.SortedSet<String> ids = new java.util.TreeSet<>(tree);
+        ids.add(sheetId);
+        long last = 0;
+        for (String id : ids) {
+            try {
+                jdbc.update("INSERT INTO claim_period_number (sheet_id, sequence, last_number) SELECT ?, ?, 0 FROM DUAL "
+                        + "WHERE NOT EXISTS (SELECT 1 FROM claim_period_number WHERE sheet_id = ? AND sequence = ?)",
+                        id, sequence, id, sequence);
+            } catch (DataAccessException e) {
+                // another transaction added the sequence's counter first
+            }
+            jdbc.update("UPDATE claim_period_number SET last_number = last_number WHERE sheet_id = ? AND sequence = ?",
+                    id, sequence);
+            last = Math.max(last, jdbc.queryForObject(
+                    "SELECT last_number FROM claim_period_number WHERE sheet_id = ? AND sequence = ?", Long.class, id,
+                    sequence));
+        }
+        jdbc.update("UPDATE claim_period_number SET last_number = ? WHERE sheet_id = ? AND sequence = ?", last + 1,
+                sheetId, sequence);
+        return last + 1;
+    }
+
     /** Takes the next number in one of the sheet's per-period sequences: 1, then 2, and so on, locked
      *  as {@link #nextNumber(String)} is. */
     public long nextNumber(String sheetId, String sequence) {
