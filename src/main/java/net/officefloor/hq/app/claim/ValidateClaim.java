@@ -49,6 +49,7 @@ public class ValidateClaim {
         } else if (!correctsText.isEmpty()) {
             throw new InvalidSheetException("Only a negative amount corrects a claim");
         }
-        return new ClaimInput(value, date, note, request.user(), corrects);
+        String ref = request.ref() == null ? "" : request.ref().trim();
+        return new ClaimInput(value, date, note, request.user(), corrects, ref.isEmpty() ? null : ref);
     }
 }

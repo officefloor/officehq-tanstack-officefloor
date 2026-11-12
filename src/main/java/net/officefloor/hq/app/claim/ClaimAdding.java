@@ -22,6 +22,7 @@ public final class ClaimAdding {
         ClaimPeriods.refuseClosed(periods, sheetId, ClaimPeriods.dueByOf(person, input.date(), settings, holidays));
         Retirement.refuseClaimDate(person, input.date());
         CheckCorrection.refuseUnsettled(claims, sheetId, person.getId(), input);
+        CheckRef.refuseTaken(claims, sheetId, input, 0);
         return input;
     }
 

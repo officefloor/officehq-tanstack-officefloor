@@ -8,5 +8,6 @@ public class ApplyClaim {
         claim.setDate(input.date());
         claim.setNote(input.note());
         claim.setCorrects(input.corrects());
+        claim.setRef(input.ref());
     }
 }

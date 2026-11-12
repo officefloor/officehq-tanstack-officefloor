@@ -57,6 +57,8 @@ export type Claim = {
   lateEntry: boolean;
   /** The date (yyyy-MM-dd) a reminder was last written for it; null when it was never reminded. */
   remindedOn: string | null;
+  /** Its external reference, unique on the sheet without regard to case; null when it has none. */
+  ref: string | null;
 };
 
 /** A correction: a claim with a negative amount, which has no floor and no late charge. */

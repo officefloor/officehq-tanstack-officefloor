@@ -12,12 +12,12 @@ import { useSheetToday } from '../sheet/sheet';
 import { dueBy, lateOf, overdue } from '../overdue/overdue';
 import { type Claim, type ClaimStatus, claimsKey, useClaims, useEditingClaim, useSelectedClaims } from './claims';
 
-type Fields = { amount: string; date: string; note: string; corrects: string };
+type Fields = { amount: string; date: string; note: string; corrects: string; ref: string };
 /** `review` for a steward approving (SETTLED) or rejecting (OPEN, with a reason) a PENDING claim. */
 type StatusChange = { id: number; status: ClaimStatus; review?: boolean; reason?: string };
 /** A steward moving a claim to another person (`to`, their id). */
 type Reassign = { id: number; to: string };
-const EMPTY: Fields = { amount: '', date: '', note: '', corrects: '' };
+const EMPTY: Fields = { amount: '', date: '', note: '', corrects: '', ref: '' };
 
 function ClaimsHead() {
   return <th>Claims</th>;
@@ -72,7 +72,7 @@ function PersonClaims({ person }: { person: Person }) {
     onSuccess: (_, c) => {
       if (editingId !== undefined && editingId !== c.id) release(editingId);
       setEditing(c.id);
-      setFields({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects ?? '' });
+      setFields({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects ?? '', ref: c.ref ?? '' });
     },
   });
   // Cancelling an editor releases its lock.
@@ -262,8 +262,8 @@ function PersonClaims({ person }: { person: Person }) {
     split.reset();
     redate.mutate({ id, date: (redates[id] ?? '').trim() });
   };
-  // A draft's amount changed in its row: an edit as the claim form makes it, keeping the claim's date, note
-  // and the claim it corrects, so the server applies the form's rules and records CLAIM_EDITED.
+  // A draft's amount changed in its row: an edit as the claim form makes it, keeping the claim's date, note,
+  // the claim it corrects and its reference, so the server applies the form's rules and records CLAIM_EDITED.
   const inline = useMutation({
     mutationFn: (d: { claim: Claim; amount: string }) =>
       putJson<Claim>(`${base}/claims/${d.claim.id}`, {
@@ -271,6 +271,7 @@ function PersonClaims({ person }: { person: Person }) {
         date: d.claim.date,
         note: d.claim.note,
         corrects: d.claim.corrects ?? '',
+        ref: d.claim.ref ?? '',
         user,
       }),
     onSuccess: async (_, d) => {
@@ -351,7 +352,13 @@ function PersonClaims({ person }: { person: Person }) {
   // An editor still open when the sheet is shown again fills the form with its claim.
   useEffect(() => {
     if (editingClaim) {
-      setFields({ amount: editingClaim.amount, date: editingClaim.date, note: editingClaim.note, corrects: editingClaim.corrects ?? '' });
+      setFields({
+        amount: editingClaim.amount,
+        date: editingClaim.date,
+        note: editingClaim.note,
+        corrects: editingClaim.corrects ?? '',
+        ref: editingClaim.ref ?? '',
+      });
     }
   }, [editing]);
 
@@ -374,6 +381,7 @@ function PersonClaims({ person }: { person: Person }) {
               <span data-testid="claim-date">{c.date}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}
               <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}
+              <span data-testid="claim-ref">{c.ref ?? ''}</span>{' '}
               <span data-testid="claim-period">{periodOf(periods.data, c.dueBy)?.name ?? ''}</span>{' '}
               <span data-testid="claim-due">{claimDue(c, rates.data, person.grades, floor, lateOf(settings, today, [person]))}</span>{' '}
               <span data-testid="claim-due-by">{dueBy(c)}</span>{' '}
@@ -557,6 +565,7 @@ function PersonClaims({ person }: { person: Person }) {
           value={fields.corrects}
           onChange={set('corrects')}
         />
+        <input data-testid="claim-form-ref" placeholder="Reference" value={fields.ref} onChange={set('ref')} />
         <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
           {editing !== undefined ? 'Save claim' : 'Add claim'}
         </button>

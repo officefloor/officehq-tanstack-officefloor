@@ -1,7 +1,10 @@
 package net.officefloor.hq.app.paste;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import net.officefloor.hq.app.claim.ClaimAdding;
 import net.officefloor.hq.app.claim.ClaimInput;
 import net.officefloor.hq.app.claim.ClaimRequest;
@@ -22,7 +25,8 @@ import org.springframework.web.bind.annotation.RequestBody;
  * must be on the sheet (ignoring case and the spaces around it), the amount a number with up to two
  * decimals (a negative one names no claim it corrects, so is refused), the date (blank for the
  * entry date while it is set, else the sheet's today) due by (with the terms it would get) a date in no closed period and not after the person is retired from. The note is the rest
- * of the line, commas and all. Blank lines are skipped; a paste with no line is refused.
+ * of the line, commas and all, less a closing " #<reference>", which is the claim's external reference: one
+ * already on the sheet or given by an earlier line, compared without regard to case, is refused. Blank lines are skipped; a paste with no line is refused.
  */
 public class ValidatePaste {
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PasteRequest request,
@@ -32,6 +36,7 @@ public class ValidatePaste {
         String text = request == null || request.text() == null ? "" : request.text();
         List<PastedClaim> pastedClaims = new ArrayList<>();
         String[] lines = text.split("\\r?\\n");
+        Set<String> refs = new HashSet<>();
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i];
             if (line.trim().isEmpty()) {
@@ -46,9 +51,19 @@ public class ValidatePaste {
                 if (person == null) {
                     throw new InvalidSheetException("No such person: " + fields[0].trim());
                 }
+                String note = fields.length > 3 ? fields[3].trim() : "";
+                String ref = "";
+                int hash = note.lastIndexOf(" #");
+                if (hash >= 0 && !note.substring(hash + 2).trim().isEmpty()) {
+                    ref = note.substring(hash + 2).trim();
+                    note = note.substring(0, hash);
+                }
                 ClaimInput claim = ClaimAdding.check(sheet, person, new ClaimRequest(fields[1],
-                        fields.length > 2 ? fields[2] : "", fields.length > 3 ? fields[3] : "", request.user(), ""),
+                        fields.length > 2 ? fields[2] : "", note, request.user(), "", ref),
                         settings, periods, claims, holidays);
+                if (claim.ref() != null && !refs.add(claim.ref().toLowerCase(Locale.ROOT))) {
+                    throw new InvalidSheetException("The reference " + claim.ref() + " is given twice");
+                }
                 pastedClaims.add(new PastedClaim(person, claim));
             } catch (InvalidSheetException e) {
                 throw new InvalidSheetException("Line " + (i + 1) + ": " + e.getMessage());

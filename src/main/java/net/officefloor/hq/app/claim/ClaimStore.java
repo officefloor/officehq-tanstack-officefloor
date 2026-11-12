@@ -29,6 +29,7 @@ public class ClaimStore {
         claim.setSplitFrom(rs.getString("split_from"));
         claim.setLateEntry(rs.getBoolean("late_entry"));
         claim.setRemindedOn(rs.getObject("reminded_on", LocalDate.class));
+        claim.setRef(rs.getString("ref"));
         return claim;
     };
 
@@ -60,13 +61,26 @@ public class ClaimStore {
         return found.isEmpty() ? null : found.get(0);
     }
 
+    /** Whether a claim on the sheet other than {@code exceptId} carries the reference, compared without regard to case. */
+    public boolean refTaken(String sheetId, String ref, long exceptId) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND LOWER(ref) = LOWER(?) AND id <> ?",
+                Integer.class, sheetId, ref, exceptId);
+        return n != null && n > 0;
+    }
+
     /** Adds a draft claim due by {@code dueBy}, which stays as it is whatever later changes. */
     public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
             LocalDate dueBy) {
+        return add(sheetId, personId, amount, date, note, corrects, dueBy, null);
+    }
+
+    /** Adds a draft claim due by {@code dueBy} with the external reference (null for none). */
+    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
+            LocalDate dueBy, String ref) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, ref) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "ID" });
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
@@ -75,10 +89,13 @@ public class ClaimStore {
             ps.setString(5, note);
             ps.setString(6, corrects);
             ps.setDate(7, Date.valueOf(dueBy));
+            ps.setString(8, ref);
             return ps;
         }, keys);
-        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null,
-                corrects, dueBy);
+        Claim added = new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null,
+                false, null, corrects, dueBy);
+        added.setRef(ref);
+        return added;
     }
 
     /** Marks the added claim a late entry: added while the period its due-by falls in was soft-closed. */
@@ -94,10 +111,10 @@ public class ClaimStore {
                 claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getSheetId(), claim.getId());
     }
 
-    /** Stores a draft's amount, date, note and the claim it corrects, releasing its lock; false when the stored claim is no longer a draft. */
+    /** Stores a draft's amount, date, note, the claim it corrects and its reference, releasing its lock; false when the stored claim is no longer a draft. */
     public boolean edit(Claim claim) {
-        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, locked_by = NULL WHERE sheet_id = ? AND id = ? AND status = ?",
-                claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getCorrects(), claim.getSheetId(), claim.getId(),
+        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ?, locked_by = NULL WHERE sheet_id = ? AND id = ? AND status = ?",
+                claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getCorrects(), claim.getRef(), claim.getSheetId(), claim.getId(),
                 ClaimStatus.DRAFT.name()) == 1;
     }
 
