@@ -10,7 +10,8 @@ import { sheetKey } from '../sheet/sheet';
  *  `holds` are their holds, oldest first; `held` whether they have any. Their OPEN claims dated within
  *  a hold count in no live total unless a statement bound them; their SETTLED ones still do.
  *  `patronIds` are the ids of the other people on the sheet they named as their patrons.
- *  `grade` is the grade in force on the sheet's today; `grades` every grade with the date it applies from. */
+ *  `grade` is the grade in force on the sheet's today; `grades` every grade with the date it applies from.
+ *  `terms` are their own terms in whole days (null when none), ahead of their grade's and the sheet's. */
 export type Person = {
   id: number;
   name: string;
@@ -25,6 +26,7 @@ export type Person = {
   held: boolean;
   holds: Hold[];
   patronIds: number[];
+  terms: number | null;
 };
 
 /** A hold from its from-date to its to-date (yyyy-MM-dd, both inclusive; null for no end). */

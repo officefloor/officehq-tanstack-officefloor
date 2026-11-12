@@ -48,9 +48,13 @@ public class PersonStore {
     private List<Person> query(String sheetId, Long personId, String sql, Object... args) {
         Map<Long, NavigableMap<LocalDate, String>> grades = grades(sheetId, personId);
         Map<Long, List<Hold>> holds = holds(sheetId, personId);
-        RowMapper<Person> row = (rs, i) -> new Person(rs.getLong("id"), rs.getString("sheet_id"),
-                rs.getString("name"), grades.getOrDefault(rs.getLong("id"), new TreeMap<>()), rs.getLong("version"),
-                rs.getObject("retired_from", LocalDate.class), holds.getOrDefault(rs.getLong("id"), List.of()));
+        RowMapper<Person> row = (rs, i) -> {
+            Person p = new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
+                    grades.getOrDefault(rs.getLong("id"), new TreeMap<>()), rs.getLong("version"),
+                    rs.getObject("retired_from", LocalDate.class), holds.getOrDefault(rs.getLong("id"), List.of()));
+            p.setTerms(rs.getObject("terms", Integer.class));
+            return p;
+        };
         return jdbc.query(sql, row, args);
     }
 
@@ -78,20 +82,29 @@ public class PersonStore {
         return n != null && n > 0;
     }
 
-    /** Adds the person with their first grade, which applies from the beginning of time. */
+    /** Adds the person with their first grade, which applies from the beginning of time, and no terms of their own. */
     public Person add(String sheetId, String name, String grade) {
+        return add(sheetId, name, grade, null);
+    }
+
+    /** Adds the person with their first grade, which applies from the beginning of time, and their own
+     *  terms (null for none). */
+    public Person add(String sheetId, String name, String grade, Integer terms) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name) VALUES (?, ?)", new String[] { "ID" });
+                    "INSERT INTO person (sheet_id, name, terms) VALUES (?, ?, ?)", new String[] { "ID" });
             ps.setString(1, sheetId);
             ps.setString(2, name);
+            ps.setObject(3, terms, java.sql.Types.INTEGER);
             return ps;
         }, keys);
         long id = keys.getKey().longValue();
         jdbc.update("INSERT INTO person_grade (sheet_id, person_id, from_date, grade) VALUES (?, ?, ?, ?)", sheetId,
                 id, Person.START, grade);
-        return new Person(id, sheetId, name, new TreeMap<>(Map.of(Person.START, grade)), 0);
+        Person person = new Person(id, sheetId, name, new TreeMap<>(Map.of(Person.START, grade)), 0);
+        person.setTerms(terms);
+        return person;
     }
 
     /**
@@ -101,8 +114,8 @@ public class PersonStore {
      */
     public boolean save(Person person) {
         int n = jdbc.update(
-                "UPDATE person SET name = ?, version = version + 1 WHERE sheet_id = ? AND id = ? AND version = ?",
-                person.getName(), person.getSheetId(), person.getId(), person.getVersion());
+                "UPDATE person SET name = ?, terms = ?, version = version + 1 WHERE sheet_id = ? AND id = ? AND version = ?",
+                person.getName(), person.getTerms(), person.getSheetId(), person.getId(), person.getVersion());
         if (n == 1) {
             person.setVersion(person.getVersion() + 1);
             LocalDate from = person.getRecordFrom();

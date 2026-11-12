@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
@@ -11,7 +11,9 @@ import { GRADES, type Person, peopleKey, useEditingPerson, usePeople } from './p
 // refused; the form then shows the person's current values and version, so saving again works.
 // An edit records the grade from the from-date (the sheet's today when blank), keeping the grades
 // already recorded; leaving the grade as the row shows it with the from-date blank records nothing.
-// An added person's grade applies from the beginning of time.
+// An added person's grade applies from the beginning of time. Their own terms (whole days, blank for
+// none) come first when a claim's due-by is fixed. A refused edit closes the editor, keeping its error,
+// so the next add is not taken for an edit.
 function PersonForm() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -20,12 +22,14 @@ function PersonForm() {
   const [name, setName] = useState('');
   const [grade, setGrade] = useState<string>('A');
   const [gradeFrom, setGradeFrom] = useState('');
+  const [terms, setTerms] = useState('');
+  const keepError = useRef(false);
   const [version, setVersion] = useState<number | undefined>();
   const queryClient = useQueryClient();
   const base = `/api/sheets/${encodeURIComponent(sheet)}/people`;
 
   const save = useMutation({
-    mutationFn: (p: { name: string; grade: string; gradeFrom: string }) =>
+    mutationFn: (p: { name: string; grade: string; gradeFrom: string; terms: string }) =>
       editing
         ? putJson<Person>(`${base}/${encodeURIComponent(editing)}`, { ...p, user, version })
         : postJson<Person>(base, { ...p, user }),
@@ -33,12 +37,16 @@ function PersonForm() {
       await queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
       setName('');
       setGrade('A');
-      setGradeFrom('');
-      setVersion(undefined);
-      setEditing(undefined);
+      clear();
     },
     onError: async (error) => {
-      if (!(error instanceof HttpError && error.status === 409)) return;
+      if (!(error instanceof HttpError && error.status === 409)) {
+        if (editing) {
+          keepError.current = true;
+          clear();
+        }
+        return;
+      }
       await queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
       const current = queryClient.getQueryData<Person[]>(peopleKey(sheet))?.find((p) => String(p.id) === editing);
       if (current) fill(current);
@@ -49,12 +57,22 @@ function PersonForm() {
     setName(p.name);
     setGrade(p.grade);
     setGradeFrom('');
+    setTerms(p.terms === null ? '' : String(p.terms));
     setVersion(p.version);
+  };
+  const clear = () => {
+    setName('');
+    setGrade('A');
+    setGradeFrom('');
+    setTerms('');
+    setVersion(undefined);
+    setEditing(undefined);
   };
 
   const editingPerson = people.data?.find((p) => String(p.id) === editing);
   useEffect(() => {
-    save.reset();
+    if (keepError.current) keepError.current = false;
+    else save.reset();
     if (editingPerson) fill(editingPerson);
     // Fill only when a different editor opens, not on every re-read of the list.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -65,7 +83,7 @@ function PersonForm() {
       data-testid="person-form"
       onSubmit={(e) => {
         e.preventDefault();
-        submit({ name, grade, gradeFrom });
+        submit({ name, grade, gradeFrom, terms });
       }}
     >
       <h2>{editing ? 'Edit person' : 'Add person'}</h2>
@@ -102,6 +120,17 @@ function PersonForm() {
           save.reset();
         }}
       />
+      <input
+        data-testid="person-form-terms"
+        inputMode="numeric"
+        placeholder="Terms (days)"
+        aria-label="Own terms in days (blank for none)"
+        value={terms}
+        onChange={(e) => {
+          setTerms(e.target.value);
+          save.reset();
+        }}
+      />
       <button type="submit" data-testid="person-form-submit" disabled={save.isPending}>
         {editing ? 'Save' : 'Add'}
       </button>
@@ -110,11 +139,8 @@ function PersonForm() {
           type="button"
           data-testid="person-form-cancel"
           onClick={() => {
-            setEditing(undefined);
-            setVersion(undefined);
-            setName('');
-            setGrade('A');
-            setGradeFrom('');
+            save.reset();
+            clear();
           }}
         >
           Cancel

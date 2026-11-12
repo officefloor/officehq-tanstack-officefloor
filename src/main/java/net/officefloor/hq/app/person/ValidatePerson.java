@@ -28,8 +28,13 @@ public class ValidatePerson {
         } catch (DateTimeParseException e) {
             throw new InvalidSheetException("Not a date: " + from);
         }
+        String terms = request.terms() == null ? "" : request.terms().trim();
+        if (!terms.isEmpty() && !terms.matches("\\d{1,6}")) {
+            throw new InvalidSheetException("The terms must be a whole number of days, 0 or more, or blank");
+        }
         // Stored and compared without the spaces around the name; a blank from-date as none.
         body.set(new PersonRequest(request.name().trim(), request.grade(), from.isEmpty() ? null : from,
-                request.user(), request.version()));
+                request.user(), request.version(),
+                terms.isEmpty() ? null : String.valueOf(Integer.parseInt(terms))));
     }
 }

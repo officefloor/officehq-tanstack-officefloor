@@ -23,6 +23,8 @@ public class Person {
     private LocalDate retiredFrom;
     private final List<Hold> holds = new ArrayList<>();
     private LocalDate recordFrom;
+    private Integer terms;
+    private boolean termsChanged;
 
     public Person(long id, String sheetId, String name, NavigableMap<LocalDate, String> grades, long version) {
         this.id = id;
@@ -68,6 +70,15 @@ public class Person {
         grades.put(from, grade);
         recordFrom = from;
     }
+    /** Their own terms (whole days), null when they have none. */
+    public Integer getTerms() { return terms; }
+    /** Sets their own terms, noting whether they differ from the ones they had. */
+    public void setTerms(Integer terms) {
+        termsChanged = !java.util.Objects.equals(this.terms, terms);
+        this.terms = terms;
+    }
+    /** Whether the last {@link #setTerms} changed their terms. */
+    public boolean isTermsChanged() { return termsChanged; }
     public void setVersion(long version) { this.version = version; }
     public void setRetiredFrom(LocalDate retiredFrom) { this.retiredFrom = retiredFrom; }
 }
