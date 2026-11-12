@@ -90,18 +90,20 @@ export function dueTotal(dues: string[]): string {
   return format(dues.filter((d) => d !== NA).reduce((sum, d) => sum + hundredths(d), 0n));
 }
 
-/** What a claim's late charge follows: the sheet's late percent (two decimals) in force on the claim's date
- *  and how many full 30 days the claim is overdue; and whether the claim's live figures round half up (else half to even). */
-export type Late = { pct: ((claim: Claim) => string) | undefined; periods: (claim: Claim) => number; halfUp?: (claim: Claim) => boolean };
+/** What a claim's late charge follows: the sheet's late percent (two decimals) in force on a date and the
+ *  30-day boundaries (yyyy-MM-dd) the claim is overdue past; and whether the claim's live figures round half up (else half to even). */
+export type Late = { pct: ((date: string) => string) | undefined; boundaries: (claim: Claim) => string[]; halfUp?: (claim: Claim) => boolean };
 
 /** The sheet's floor (two decimals) in force on a date; undefined for none known. */
 export type Floor = ((date: string) => string) | undefined;
 
-/** The late charge on a figure: the late percent of it for every full 30 days overdue, rounded like due. */
+/** The late charge on a figure: for every full 30 days overdue, the late percent in force on that boundary
+ *  of it, rounded like due, added up (a boundary at 0.00 adds nothing). */
 function lateCharge(claim: Claim, figure: string, late: Late | undefined): string | undefined {
-  const periods = late?.pct === undefined || isCorrection(claim) ? 0 : late.periods(claim);
-  if (periods <= 0 || figure === NA) return undefined;
-  return due(figure, format(hundredths(late!.pct!(claim)) * BigInt(periods)), late?.halfUp?.(claim) ?? false);
+  const boundaries = late?.pct === undefined || isCorrection(claim) ? [] : late.boundaries(claim);
+  if (boundaries.length === 0 || figure === NA) return undefined;
+  const halfUp = late?.halfUp?.(claim) ?? false;
+  return format(boundaries.reduce((sum, b) => sum + hundredths(due(figure, late!.pct!(b), halfUp)), 0n));
 }
 
 /** Whether the claim keeps a figure whatever the rates: fixed when settled, or bound by a statement to a

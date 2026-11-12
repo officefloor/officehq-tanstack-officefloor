@@ -20,14 +20,21 @@ export function latePeriods(claim: Claim, today: string | undefined): number {
   return Math.floor(days / 30);
 }
 
-/** What the sheet's late charge follows: its late percent in force on each claim's date, each claim's due-by and its today; and how it rounds:
+/** The 30-day boundaries (yyyy-MM-dd) the claim is overdue past on the sheet's today: its due-by plus 30, 60, 90 ... days. */
+export function lateBoundaries(claim: Claim, today: string | undefined): string[] {
+  const start = Date.parse(`${dueBy(claim)}T00:00:00Z`);
+  return Array.from({ length: latePeriods(claim, today) }, (_, i) =>
+    new Date(start + (i + 1) * 30 * DAY).toISOString().slice(0, 10));
+}
+
+/** What the sheet's late charge follows: its late percent in force on each boundary date, each claim's due-by and its today; and how it rounds:
  *  a claim rounding by a date before the policy date (else the sheet's today) rounds half up. */
 export function lateOf(settings: Settings | undefined, today: string | undefined): Late {
   const policy = settings?.policyDate ?? today;
   const pcts = latePctOf(settings);
   return {
-    pct: pcts && ((c) => pcts(c.date)),
-    periods: (c) => latePeriods(c, today),
+    pct: pcts,
+    boundaries: (c) => lateBoundaries(c, today),
     halfUp: (c) => policy !== undefined && (c.roundsBy ?? c.date) < policy,
   };
 }

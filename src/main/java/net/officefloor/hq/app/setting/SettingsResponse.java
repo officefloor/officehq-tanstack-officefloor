@@ -13,7 +13,7 @@ import java.util.Map;
  *  be, null for no cap; {@code proofThreshold} has two decimals, the due above which a claim needs a proof
  *  before it is settled or approved, null for none. Each of these that carries a figure is the one in force on the sheet's today.
  *  {@code floorFrom} and {@code latePctFrom} are the floor and late percent recorded, oldest from-date
- *  first (a claim's floor and late percent are those in force on its date). {@code perms} is the permission
+ *  first (a claim's floor is the one in force on its date, its late percent the one in force on each 30-day boundary). {@code perms} is the permission
  *  matrix: the roles that may take each action (open, settle, void, reassign, close, reopen), comma
  *  separated, by action; null when blank (the standing rule).
  *  {@code graceDays} is the whole days after its to-date an open period is closed by a new today, null when blank (off). */

@@ -161,7 +161,7 @@ public class SettingStore {
         return amounts(history(sheetId, FLOOR), DEFAULT_FLOOR);
     }
 
-    /** The percent of an overdue claim's figure charged for every full 30 days overdue, in force on each
+    /** The percent of an overdue claim's figure charged at each 30-day boundary it is overdue past, in force on each
      *  date: the one recorded then, else 0.00. Read once, for many claims. */
     public Function<LocalDate, BigDecimal> latePcts(String sheetId) {
         return amounts(history(sheetId, LATE_PCT), DEFAULT_LATE_PCT);

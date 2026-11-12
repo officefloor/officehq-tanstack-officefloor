@@ -8,8 +8,9 @@ import net.officefloor.hq.app.setting.SettingStore;
 import net.officefloor.hq.app.sheet.SheetStore;
 
 /** What a sheet's late charge follows: each claim's due-by (fixed when it was added), the sheet's late
- *  percent in force on the claim's date and its today; and the sheet's floor in force on each claim's date. An overdue claim (OPEN or PENDING, not deferred, due-by before today) gains the late percent of its
- *  figure for every full 30 days it is overdue, rounded as the sheet's {@link Rounding} has the claim. The charge is never bound by a
+ *  percent in force on each date and its today; and the sheet's floor in force on each claim's date. An overdue claim (OPEN or PENDING, not deferred, due-by before today) gains, for every full 30 days it is
+ *  overdue, the late percent in force on that boundary (its due-by plus 30, 60, 90 ... days) of its figure, rounded as the
+ *  sheet's {@link Rounding} has the claim, the charges added up (a boundary at 0.00 adds nothing). The charge is never bound by a
  *  statement; settling freezes it into the settled due. */
 public record Lateness(Function<LocalDate, BigDecimal> latePcts, Function<LocalDate, BigDecimal> floors,
         LocalDate today, Rounding rounding) {
@@ -31,7 +32,12 @@ public record Lateness(Function<LocalDate, BigDecimal> latePcts, Function<LocalD
         }
         long overdue = ChronoUnit.DAYS.between(claim.getDueBy(), today);
         long periods = overdue <= 0 ? 0 : overdue / PERIOD_DAYS;
-        return ClaimFigure.of(figure, latePcts.apply(claim.getDate()).multiply(BigDecimal.valueOf(periods)), rounding.mode(claim));
+        BigDecimal total = BigDecimal.ZERO.setScale(2);
+        for (long n = 1; n <= periods; n++) {
+            BigDecimal pct = latePcts.apply(claim.getDueBy().plusDays(n * PERIOD_DAYS));
+            total = total.add(ClaimFigure.of(figure, pct, rounding.mode(claim)));
+        }
+        return total;
     }
 
     /** The floor in force on the claim's date. */
