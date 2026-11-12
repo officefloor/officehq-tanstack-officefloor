@@ -4,13 +4,13 @@ import { HttpError, postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
-import { counts, live, useClaims } from '../claims/claims';
+import { useClaims } from '../claims/claims';
 import { usePeople } from '../people/people';
-import { claimDue, dueTotal, useRates } from '../rates/rates';
+import { useRates } from '../rates/rates';
 import { useSettings } from '../settings/settings';
 import { useSheetToday } from '../sheet/sheet';
 import { lateOf } from '../overdue/overdue';
-import { type Period, contains, periodsKey, usePeriods } from './periods';
+import { type Period, periodDue, periodsKey, usePeriods } from './periods';
 
 type Fields = { name: string; from: string; to: string };
 const EMPTY: Fields = { name: '', from: '', to: '' };
@@ -58,13 +58,6 @@ function Periods() {
     save.reset();
   };
 
-  const gradesOf = new Map((people.data ?? []).map((p) => [p.id, p.grades]));
-  const periodDue = (period: Period) =>
-    dueTotal(
-      live(claims.data ?? [], people.data)
-        .filter((c) => counts(c) && contains(period, c.date) && gradesOf.has(c.personId))
-        .map((c) => claimDue(c, rates.data, gradesOf.get(c.personId)!, floor, lateOf(settings, today))),
-    );
 
   return (
     <section data-testid="periods">
@@ -86,7 +79,7 @@ function Periods() {
               <td data-testid="period-name">{p.name}</td>
               <td data-testid="period-from">{p.from}</td>
               <td data-testid="period-to">{p.to}</td>
-              <td data-testid="period-due-total">{p.closed && p.total !== null ? p.total : periodDue(p)}</td>
+              <td data-testid="period-due-total">{periodDue(p, claims.data, people.data, rates.data, floor, lateOf(settings, today))}</td>
               <td data-testid="period-closed">{p.closed ? 'yes' : 'no'}</td>
               <td>
                 <button type="button" data-testid="period-close" disabled={act.isPending} onClick={() => periodAction(p.name, 'close')}>
