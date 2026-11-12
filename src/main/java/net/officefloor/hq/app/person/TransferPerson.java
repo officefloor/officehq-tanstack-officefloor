@@ -16,18 +16,19 @@ import net.officefloor.hq.app.rollup.RollupService;
 import net.officefloor.hq.app.setting.SettingStore;
 import net.officefloor.hq.app.sheet.InvalidSheetException;
 import net.officefloor.hq.app.sheet.SheetStore;
+import net.officefloor.hq.app.statement.StatementStore;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /** Transfers the person to another sheet, refusing a retired person, an archived sheet, or a name, alias or
- *  contact of theirs already on it (a name or alias also when on another sheet of its tree). They arrive with their grades, terms, contact, aliases and claims; each claim
+ *  contact of theirs already on it (a name or alias also when on another sheet of its tree). They arrive with their grades, terms, contact, aliases, statements and claims (keeping any figure a statement bound them to); each claim
  *  that had a number takes the other sheet's next, in the order they were opened (by the sheet's today when each
  *  was opened, then the order they were added). They leave this sheet entirely. When the other sheet already has someone with their name or an alias
  *  of theirs, they merge into that person instead, as a merge does. */
 public class TransferPerson {
     public void transfer(@Val TransferRequest request, @Val Person person, PersonStore people, ClaimStore claims,
             ClaimLogStore log, PatronStore patrons, PoolStore pools, SheetStore sheets, SettingStore settings,
-            PeriodStore periods, RollupService rollups, Out<Transferred> transferred) throws InvalidSheetException {
+            PeriodStore periods, RollupService rollups, StatementStore statements, Out<Transferred> transferred) throws InvalidSheetException {
         String from = person.getSheetId();
         String to = request.to();
         if (person.isRetired()) {
@@ -76,7 +77,7 @@ public class TransferPerson {
         }
 
         if (into != null) {
-            // merged as a merge does: their claims after the other's (copied without bound figures above), their
+            // merged as a merge does: their claims after the other's (copied with their bound figures above), their
             // name and aliases the other's aliases, the rest of them dropped
             for (String alias : person.getAliases()) {
                 people.addAlias(into, alias);
@@ -85,6 +86,7 @@ public class TransferPerson {
             copy = people.find(to, into.getId());
         }
 
+        statements.moveAll(from, person.getId(), to, copy.getId());
         claims.removeAll(from, person.getId());
         patrons.drop(from, person.getId());
         pools.drop(from, person.getId());

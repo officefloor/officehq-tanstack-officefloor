@@ -323,7 +323,7 @@ public class PersonStore {
 
     /** Adds a copy of the person to the other sheet: their name, every grade with its from-date, their terms,
      *  contact, tags and aliases, noting this sheet as the one they came from. Their holds, statements and watchers
-     *  are not carried. */
+     *  are not carried (a transfer gives them their statements, see StatementStore). */
     public Person copyTo(Person person, String toSheet) {
         Person copy = add(toSheet, person.getName(), person.gradeOn(Person.START), person.getTerms(), person.getContact(),
                 person.getTags());

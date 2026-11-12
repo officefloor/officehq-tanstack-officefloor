@@ -25,6 +25,25 @@ public class StatementStore {
                 statement.claims(), user);
     }
 
+    /** Gives the statements of {@code fromId} on {@code fromSheet} to {@code intoId} on {@code toSheet}, after the
+     *  ones {@code intoId} has, but keeps the last of {@code intoId}'s statements their last (when they have none,
+     *  the last of the others becomes theirs). The statements of {@code fromId} are dropped with them (see
+     *  PersonStore). */
+    public void moveAll(String fromSheet, long fromId, String toSheet, long intoId) {
+        var last = jdbc.queryForList("SELECT id FROM statement WHERE sheet_id = ? AND person_id = ? ORDER BY id DESC LIMIT 1",
+                Long.class, toSheet, intoId);
+        jdbc.update("INSERT INTO statement (sheet_id, person_id, taken_on, due_total, claims, taken_by) "
+                + "SELECT ?, ?, taken_on, due_total, claims, taken_by FROM statement WHERE sheet_id = ? AND person_id = ? "
+                + "ORDER BY id", toSheet, intoId, fromSheet, fromId);
+        if (!last.isEmpty()) {
+            // listed by id: taken again after the others, so it stays their last
+            jdbc.update("INSERT INTO statement (sheet_id, person_id, taken_on, due_total, claims, taken_by) "
+                    + "SELECT sheet_id, person_id, taken_on, due_total, claims, taken_by FROM statement WHERE id = ?",
+                    last.get(0));
+            jdbc.update("DELETE FROM statement WHERE id = ?", last.get(0));
+        }
+    }
+
     /** Removes the person's last statement and returns it, or null when they have none. */
     public Statement removeLast(String sheetId, long personId) {
         var ids = jdbc.queryForList("SELECT id FROM statement WHERE sheet_id = ? AND person_id = ? ORDER BY id DESC LIMIT 1 FOR UPDATE",
