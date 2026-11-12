@@ -5,7 +5,9 @@ import net.officefloor.plugin.variable.Val;
 import net.officefloor.web.ObjectResponse;
 
 public class RespondWithPerson {
-    public void respond(@Val Person person, StatementStore statements, ObjectResponse<PersonResponse> response) {
-        response.send(PersonResponse.from(person, statements.summary(person.getSheetId(), person.getId())));
+    public void respond(@Val Person person, StatementStore statements, PatronStore patrons,
+            ObjectResponse<PersonResponse> response) {
+        response.send(PersonResponse.from(person, statements.summary(person.getSheetId(), person.getId()),
+                patrons.of(person.getSheetId(), person.getId())));
     }
 }
