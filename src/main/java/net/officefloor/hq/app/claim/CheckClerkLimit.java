@@ -51,6 +51,9 @@ public class CheckClerkLimit {
         if (from == ClaimStatus.SETTLED && input.status() == ClaimStatus.VOID) {
             refuseLateVoid(claim, steward, log, sheets);
         }
+        if (from == ClaimStatus.DRAFT && input.status() == ClaimStatus.OPEN) {
+            CheckProofs.refuseUnnoted(claim, settings, people, rates, sheets, claims);
+        }
         CheckProofs.refuseUnproved(input, claim, settings, people, rates, sheets, claims);
         move.set(new StatusMove(from, overLimit(input, claim, steward, settings, people, rates, sheets, claims)
                 ? ClaimStatus.PENDING : input.status()));

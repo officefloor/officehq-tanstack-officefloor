@@ -11,7 +11,8 @@ import { useAsOf } from '../../session/session';
  *  date from which claims opened are numbered per period, null when blank (off); `gradeTerms` is the terms
  *  in force for each grade (its own, else the sheet's), by grade; `cap` (two decimals) is the most a person's
  *  due-total may be, null for no cap; `proofThreshold` (two decimals) is the due above which a claim needs a proof
- *  before it is settled or approved, null for none. Each of these that carries a figure is the one in force on the sheet's today.
+ *  before it is settled or approved, null for none; `noteThreshold` (two decimals) is the due above which a
+ *  claim needs a note before it is opened, null for none. Each of these that carries a figure is the one in force on the sheet's today.
  *  `floorFrom` and `latePctFrom` are the floor and late percent recorded, oldest from-date (yyyy-MM-dd) first:
  *  a claim's floor and late percent are those in force on its date. `perms` is the permission matrix: the roles
  *  that may take each action (open, settle, void, reassign, close, reopen), comma separated, by action; null when
@@ -20,7 +21,7 @@ import { useAsOf } from '../../session/session';
 export type Settings = { clerkLimit: string | null; floor: string; terms: string; latePct: string; policyDate: string | null;
   periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; proofThreshold: string | null;
   floorFrom: Dated[]; latePctFrom: Dated[]; perms: Record<string, string | null>;
-  graceDays: string | null };
+  graceDays: string | null; noteThreshold: string | null };
 
 /** A setting's value recorded from a date (yyyy-MM-dd); a null value is blank. */
 export type Dated = { from: string; value: string | null };

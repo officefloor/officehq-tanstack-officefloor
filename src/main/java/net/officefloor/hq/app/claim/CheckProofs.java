@@ -34,4 +34,24 @@ final class CheckProofs {
                     + " needs a proof before it can be " + (input.review() ? "approved" : "settled"));
         }
     }
+
+    /** Refuses opening a DRAFT claim with an empty note while its due is above the note threshold in force on
+     *  its date. A sheet with no threshold then, and a claim whose due is n/a, need no note. */
+    static void refuseUnnoted(Claim claim, SettingStore settings, PersonStore people, RateStore rates,
+            SheetStore sheets, ClaimStore claims) throws InvalidSheetException {
+        if (claim.getNote() != null && !claim.getNote().isBlank()) {
+            return;
+        }
+        BigDecimal threshold = settings.noteThreshold(claim.getSheetId(), claim.getDate());
+        if (threshold == null) {
+            return;
+        }
+        Person person = people.find(claim.getSheetId(), claim.getPersonId());
+        BigDecimal pct = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
+        BigDecimal due = Lateness.of(claim.getSheetId(), settings, sheets, claims).due(claim, pct);
+        if (due != null && due.compareTo(threshold) > 0) {
+            throw new InvalidSheetException("A claim due above the note threshold of " + threshold.setScale(2)
+                    + " needs a note before it can be opened");
+        }
+    }
 }

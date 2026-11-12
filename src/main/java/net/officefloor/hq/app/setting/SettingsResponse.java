@@ -11,7 +11,8 @@ import java.util.Map;
  *  numbered per period, null when blank (off); {@code gradeTerms} is the terms in force for each grade
  *  (its own, else the sheet's), by grade; {@code cap} has two decimals, the most a person's due-total may
  *  be, null for no cap; {@code proofThreshold} has two decimals, the due above which a claim needs a proof
- *  before it is settled or approved, null for none. Each of these that carries a figure is the one in force on the sheet's today.
+ *  before it is settled or approved, null for none; {@code noteThreshold} has two decimals, the due above
+ *  which a claim needs a note before it is opened, null for none. Each of these that carries a figure is the one in force on the sheet's today.
  *  {@code floorFrom} and {@code latePctFrom} are the floor and late percent recorded, oldest from-date
  *  first (a claim's floor is the one in force on its date, its late percent the one in force on each 30-day boundary). {@code perms} is the permission
  *  matrix: the roles that may take each action (open, settle, void, reassign, close, reopen), comma
@@ -19,7 +20,8 @@ import java.util.Map;
  *  {@code graceDays} is the whole days after its to-date an open period is closed by a new today, null when blank (off). */
 public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
         String periodNumberingFrom, Map<String, String> gradeTerms, String cap, String proofThreshold, List<Dated> floorFrom,
-        List<Dated> latePctFrom, Map<String, String> perms, String graceDays) {
+        List<Dated> latePctFrom, Map<String, String> perms, String graceDays,
+        String noteThreshold) {
 
     /** A value recorded from a date (yyyy-MM-dd). */
     public record Dated(String from, String value) {
