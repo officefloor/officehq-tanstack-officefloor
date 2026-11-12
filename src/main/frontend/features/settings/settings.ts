@@ -34,7 +34,8 @@ import { useAsOf } from '../../session/session';
  *  to escalate it (once per claim), null for off; it is not dated. `reviewSla` is the whole days after its review day
  *  a claim in REVIEW may stay there before it is late, null for none; it is not dated. `proofKinds` is the kinds of proof
  *  (receipt, photo), comma separated, a claim above its proof threshold needs one of each of before it is settled or
- *  approved, null for none; it is not dated. */
+ *  approved, null for none; it is not dated. `defaultGrade` is the grade the quick-add bar and an import line with a
+ *  blank grade give a new person, null when blank (then A); it is not dated. */
 export type Settings = { clerkLimit: string | null; floor: string; terms: string; latePct: string; policyDate: string | null;
   periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; proofThreshold: string | null;
   floorFrom: Dated[]; latePctFrom: Dated[]; perms: Record<string, string | null>;
@@ -42,7 +43,7 @@ export type Settings = { clerkLimit: string | null; floor: string; terms: string
   gradeGrace: Record<string, string | null>; gradeGraceFrom: Record<string, Dated[]>;
   gradeProofThreshold: Record<string, string | null>; pot: string | null; parent: string | null; fiscalStartMonth: string;
   alertThreshold: string | null; rounding: string | null; roundingFrom: Dated[]; reviewThreshold: string | null;
-  escalateAfter: string | null; reviewSla: string | null; proofKinds: string | null };
+  escalateAfter: string | null; reviewSla: string | null; proofKinds: string | null; defaultGrade: string | null };
 
 /** A setting's value recorded from a date (yyyy-MM-dd); a null value is blank. */
 export type Dated = { from: string; value: string | null };

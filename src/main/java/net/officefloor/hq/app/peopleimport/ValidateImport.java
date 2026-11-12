@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 /**
  * Checks every pasted line with exactly the person form's rules before anything is stored: each line
- * is name,grade,terms,contact (terms and contact may be absent or blank). A line whose name is a person's
+ * is name,grade,terms,contact (terms and contact may be absent or blank; a blank grade is the sheet's default grade). A line whose name is a person's
  * name or alias on the sheet (as names are compared) updates that person, its contact free of anyone else on
  * the sheet; any other line adds, its name and contact free on the sheet (and the name on its tree) as the form
  * requires. No name (ignoring case and the spaces around it), person or contact may be given by an earlier
@@ -37,6 +37,7 @@ public class ValidateImport {
         Set<String> names = new HashSet<>();
         Set<Long> updated = new HashSet<>();
         Set<String> contacts = new HashSet<>();
+        String defaultGrade = settings.defaultGrade(sheet);
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i];
             if (line.trim().isEmpty()) {
@@ -47,7 +48,8 @@ public class ValidateImport {
                 throw new InvalidSheetException("Line " + (i + 1) + " must be name,grade,terms,contact");
             }
             try {
-                PersonRequest person = PersonRules.check(new PersonRequest(fields[0], fields[1].trim(), null,
+                PersonRequest person = PersonRules.check(new PersonRequest(fields[0],
+                        fields[1].trim().isEmpty() ? defaultGrade : fields[1].trim(), null,
                         request.user(), null, fields.length > 2 ? fields[2] : "", fields.length > 3 ? fields[3] : "", null, null));
                 Person existing = store.findByName(sheet, person.name());
                 if (existing == null) {

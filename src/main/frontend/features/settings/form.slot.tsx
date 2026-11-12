@@ -18,12 +18,12 @@ const STANDING_PERMS: Record<(typeof PERM_ACTIONS)[number], string> = {
 
 type PermKey = `perm-${(typeof PERM_ACTIONS)[number]}`;
 
-type Key = 'clerk-limit' | 'floor' | 'terms' | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'late-pct' | 'policy-date' | 'period-numbering-from' | 'cap' | 'proof-threshold' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'note-threshold' | 'review-threshold' | 'grace-days' | 'escalate-after' | 'review-sla' | 'entry-date' | 'pot' | 'alert-threshold' | 'parent' | 'fiscal-start-month' | 'rounding' | 'proof-kinds' | PermKey;
+type Key = 'clerk-limit' | 'floor' | 'terms' | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'late-pct' | 'policy-date' | 'period-numbering-from' | 'cap' | 'proof-threshold' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'note-threshold' | 'review-threshold' | 'grace-days' | 'escalate-after' | 'review-sla' | 'entry-date' | 'pot' | 'alert-threshold' | 'parent' | 'fiscal-start-month' | 'rounding' | 'proof-kinds' | 'default-grade' | PermKey;
 
 const GRADES = ['A', 'B', 'C'] as const;
 
 /** The settings that carry a figure: each is saved from a from-date (blank for the sheet's today). */
-type DatedKey = Exclude<Key, 'policy-date' | 'period-numbering-from' | 'grace-days' | 'escalate-after' | 'review-sla' | 'entry-date' | 'pot' | 'alert-threshold' | 'parent' | 'fiscal-start-month' | 'proof-kinds' | PermKey>;
+type DatedKey = Exclude<Key, 'policy-date' | 'period-numbering-from' | 'grace-days' | 'escalate-after' | 'review-sla' | 'entry-date' | 'pot' | 'alert-threshold' | 'parent' | 'fiscal-start-month' | 'proof-kinds' | 'default-grade' | PermKey>;
 
 const NO_FROM: Record<DatedKey, string> = { 'clerk-limit': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'late-pct': '', cap: '', 'proof-threshold': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'note-threshold': '', 'review-threshold': '', rounding: '' };
 
@@ -52,6 +52,8 @@ const isDated = (k: Key): k is DatedKey => k in NO_FROM;
 // date takes, then its parent's, up to three levels up.
 // The rounding mode (half-up or half-even, blank for none) is saved from its from-date; a claim whose date has
 // one in force rounds its live figures by it, else by the policy date.
+// The default grade (A, B or C, blank for A, not dated) is the grade the quick-add bar and an import line with a
+// blank grade give a new person.
 // The fiscal start month (1 to 12, not dated) is the month a fiscal year starts in; 1 unless set.
 // The proof kinds (receipt, photo; comma separated, blank for none, not dated) are the kinds a claim above its proof
 // threshold needs at least one proof of each of before it is settled or approved.
@@ -60,7 +62,7 @@ function SheetSettings() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const settings = useSettings(sheet);
-  const [values, setValues] = useState<Record<Key, string>>({ 'clerk-limit': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '', cap: '', 'proof-threshold': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'note-threshold': '', 'review-threshold': '', 'grace-days': '', 'escalate-after': '', 'review-sla': '', 'entry-date': '', pot: '', 'alert-threshold': '', parent: '', 'fiscal-start-month': '', rounding: '', 'proof-kinds': '',
+  const [values, setValues] = useState<Record<Key, string>>({ 'clerk-limit': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '', cap: '', 'proof-threshold': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'note-threshold': '', 'review-threshold': '', 'grace-days': '', 'escalate-after': '', 'review-sla': '', 'entry-date': '', pot: '', 'alert-threshold': '', parent: '', 'fiscal-start-month': '', rounding: '', 'proof-kinds': '', 'default-grade': '',
     'perm-open': '', 'perm-settle': '', 'perm-void': '', 'perm-reassign': '', 'perm-close': '', 'perm-reopen': '' });
   const [froms, setFroms] = useState<Record<DatedKey, string>>(NO_FROM);
   const [key, setKey] = useState<Key>('clerk-limit');
@@ -174,6 +176,8 @@ function SheetSettings() {
         {field('alert-threshold', 'Alert threshold (blank for off)')}{' '}
         Parent <strong data-testid="setting-parent-current">{settings.data?.parent ?? ''}</strong>{' '}
         {field('parent', 'Parent sheet id (blank for none)', 'text')}{' '}
+        Default grade <strong data-testid="setting-default-grade-current">{settings.data?.defaultGrade ?? ''}</strong>{' '}
+        {field('default-grade', 'Default grade: A, B or C (blank for A)', 'text')}{' '}
         Fiscal start month <strong data-testid="setting-fiscal-start-month-current">{settings.data?.fiscalStartMonth ?? ''}</strong>{' '}
         {field('fiscal-start-month', 'Fiscal start month (1 to 12)')}{' '}
         {PERM_ACTIONS.map((a) => (

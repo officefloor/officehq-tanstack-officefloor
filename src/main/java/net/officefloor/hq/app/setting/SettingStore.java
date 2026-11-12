@@ -22,7 +22,7 @@ import org.springframework.stereotype.Repository;
  *  that carry a figure (the clerk limit, the floor, the cap, the proof threshold, a grade's proof threshold, the note threshold, the review threshold, the terms, a grade's terms, a grade's grace days and the late
  *  percent) are dated: each value is recorded from a from-date, and the value in force on a date is the
  *  one with the latest from-date on or before it (none before every from-date, then the sheet's starting
- *  value). The policy date, the period numbering date, the entry date, the grace days, the escalation gap, the review SLA, the pot, the alert threshold, the parent sheet, the fiscal start month, the proof kinds and the permission matrix are not dated. */
+ *  value). The policy date, the period numbering date, the entry date, the grace days, the escalation gap, the review SLA, the pot, the alert threshold, the parent sheet, the fiscal start month, the default grade, the proof kinds and the permission matrix are not dated. */
 @Repository
 public class SettingStore {
 
@@ -116,6 +116,16 @@ public class SettingStore {
     public BigDecimal alertThreshold(String sheetId) {
         String value = find(sheetId, ALERT_THRESHOLD);
         return value == null ? null : new BigDecimal(value);
+    }
+
+    /** The grade a person added by the quick-add bar, or by an import line with a blank grade, takes: one of
+     *  {@link #GRADES}; blank for A, not dated. */
+    public static final String DEFAULT_GRADE = "default-grade";
+
+    /** The sheet's default grade: the one set, else A. */
+    public String defaultGrade(String sheetId) {
+        String value = find(sheetId, DEFAULT_GRADE);
+        return value == null ? "A" : value;
     }
 
     /** The month (1 to 12) a fiscal year starts in; 1 unless set, not dated. */
@@ -279,6 +289,7 @@ public class SettingStore {
     public static boolean isDated(String key) {
         return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key)
                 && !ENTRY_DATE.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
+                && !DEFAULT_GRADE.equals(key)
                 && !PROOF_KINDS.equals(key) && !key.startsWith(PERM_PREFIX);
     }
 

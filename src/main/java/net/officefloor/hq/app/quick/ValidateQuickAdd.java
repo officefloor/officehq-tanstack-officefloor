@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 /**
  * Applies the person form's and the claim form's rules to a quick add, before anything is stored:
  * the name is required (and trimmed), the amount is 0.00 or more with up to two decimals. Publishes
- * the person as it would be added (grade A) and the draft claim (the entry date while it is set, else the sheet's today, an empty note).
+ * the person as it would be added (the sheet's default grade) and the draft claim (the entry date while it is set, else the sheet's today, an empty note).
  */
 public class ValidateQuickAdd {
     private static final Pattern AMOUNT = Pattern.compile("\\d+(\\.\\d{1,2})?");
@@ -29,7 +29,7 @@ public class ValidateQuickAdd {
         if (!AMOUNT.matcher(amount).matches()) {
             throw new InvalidSheetException("The amount must be a number of 0.00 or more with up to two decimals");
         }
-        person.set(new PersonRequest(request.name().trim(), "A", null, request.user(), null, null, null, null, null));
+        person.set(new PersonRequest(request.name().trim(), settings.defaultGrade(sheetId.trim()), null, request.user(), null, null, null, null, null));
         claim.set(new ClaimInput(new BigDecimal(amount).setScale(2), settings.claimDate(sheetId.trim()), "",
                 request.user()));
     }

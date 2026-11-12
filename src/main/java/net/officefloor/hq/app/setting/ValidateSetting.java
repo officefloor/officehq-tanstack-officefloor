@@ -61,6 +61,14 @@ public class ValidateSetting {
             body.set(new SettingInput(key, String.valueOf(month), null, request.user()));
             return;
         }
+        if (SettingStore.DEFAULT_GRADE.equals(key)) {
+            String value = request.value() == null ? "" : request.value().trim();
+            if (!value.isEmpty() && !SettingStore.GRADES.contains(value)) {
+                throw new InvalidSheetException("The default grade must be A, B or C, or blank");
+            }
+            body.set(new SettingInput(key, value.isEmpty() ? null : value, null, request.user()));
+            return;
+        }
         if (SettingStore.PROOF_KINDS.equals(key)) {
             body.set(new SettingInput(key, kinds(request.value()), null, request.user()));
             return;

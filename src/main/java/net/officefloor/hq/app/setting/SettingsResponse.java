@@ -40,7 +40,9 @@ import java.util.Map;
  *  {@code reviewSla} is the whole days after its review day a claim in REVIEW may stay there before it is late, null
  *  for none (not dated).
  *  {@code proofKinds} is the kinds of proof a claim above its proof threshold needs one of each of before it is settled
- *  or approved, comma separated, null for none (not dated). */
+ *  or approved, comma separated, null for none (not dated).
+ *  {@code defaultGrade} is the grade the quick-add bar and an import line with a blank grade give a new person, null
+ *  when blank (then A; not dated). */
 public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
         String periodNumberingFrom, Map<String, String> gradeTerms, String cap, String proofThreshold, List<Dated> floorFrom,
         List<Dated> latePctFrom, Map<String, String> perms, String graceDays,
@@ -48,7 +50,7 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
         Map<String, List<Dated>> gradeGraceFrom, Map<String, String> gradeProofThreshold,
         String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding,
         List<Dated> roundingFrom, String reviewThreshold, String escalateAfter, String reviewSla,
-        String proofKinds) {
+        String proofKinds, String defaultGrade) {
 
     /** A value recorded from a date (yyyy-MM-dd). */
     public record Dated(String from, String value) {

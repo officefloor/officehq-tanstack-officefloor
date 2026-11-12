@@ -36,7 +36,8 @@ public class RespondWithSettings {
                 String.valueOf(store.fiscalStartMonth(sheet)), store.find(sheet, SettingStore.ALERT_THRESHOLD),
                 store.find(sheet, SettingStore.ROUNDING), history(sheet, SettingStore.ROUNDING, store),
                 store.find(sheet, SettingStore.REVIEW_THRESHOLD), store.find(sheet, SettingStore.ESCALATE_AFTER),
-                store.find(sheet, SettingStore.REVIEW_SLA), store.find(sheet, SettingStore.PROOF_KINDS)));
+                store.find(sheet, SettingStore.REVIEW_SLA), store.find(sheet, SettingStore.PROOF_KINDS),
+                store.find(sheet, SettingStore.DEFAULT_GRADE)));
     }
 
     private static Map<String, String> gradeTerms(String sheetId, LocalDate today, SettingStore store) {

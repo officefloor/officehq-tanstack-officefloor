@@ -77,4 +77,17 @@ public class CrewStore {
         jdbc.update("INSERT INTO crew_member (sheet_id, crew_id, person_id) VALUES (?, ?, ?)", sheetId, crewId,
                 personId);
     }
+
+    /** Moves {@code fromId}'s crews to {@code intoId}: the crews they lead are led by the other (who stops being
+     *  a member of them), and their memberships move to the other, dropped where the other is already in the crew. */
+    public void merge(String sheetId, long fromId, long intoId) {
+        jdbc.update("UPDATE crew SET lead_id = ? WHERE sheet_id = ? AND lead_id = ?", intoId, sheetId, fromId);
+        jdbc.update("DELETE FROM crew_member WHERE sheet_id = ? AND person_id = ? AND crew_id IN"
+                + " (SELECT id FROM crew WHERE lead_id = ?)", sheetId, intoId, intoId);
+        jdbc.update("DELETE FROM crew_member WHERE sheet_id = ? AND person_id = ? AND (crew_id IN"
+                + " (SELECT id FROM crew WHERE lead_id = ?) OR crew_id IN (SELECT crew_id FROM crew_member WHERE person_id = ?))",
+                sheetId, fromId, intoId, intoId);
+        jdbc.update("UPDATE crew_member SET person_id = ? WHERE sheet_id = ? AND person_id = ?", intoId, sheetId,
+                fromId);
+    }
 }
