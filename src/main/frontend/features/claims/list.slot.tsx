@@ -50,6 +50,7 @@ function PersonClaims({ person }: { person: Person }) {
   const [redates, setRedates] = useState<Record<number, string>>({});
   const [splitAmounts, setSplitAmounts] = useState<Record<number, string>>({});
   const [inlineAmounts, setInlineAmounts] = useState<Record<number, string>>({});
+  const [commentTexts, setCommentTexts] = useState<Record<number, string>>({});
   const people = usePeople(sheet);
   const [selected, setSelected] = useSelectedClaims();
   const queryClient = useQueryClient();
@@ -100,6 +101,7 @@ function PersonClaims({ person }: { person: Person }) {
     resettle.reset();
     defer.reset();
     remind.reset();
+    comment.reset();
     proof.reset();
     split.reset();
     redate.reset();
@@ -125,6 +127,7 @@ function PersonClaims({ person }: { person: Person }) {
     resettle.reset();
     defer.reset();
     remind.reset();
+    comment.reset();
     proof.reset();
     split.reset();
     redate.reset();
@@ -148,6 +151,7 @@ function PersonClaims({ person }: { person: Person }) {
     resettle.reset();
     defer.reset();
     remind.reset();
+    comment.reset();
     proof.reset();
     split.reset();
     redate.reset();
@@ -172,6 +176,7 @@ function PersonClaims({ person }: { person: Person }) {
     resettle.reset();
     defer.reset();
     remind.reset();
+    comment.reset();
     proof.reset();
     split.reset();
     redate.reset();
@@ -192,11 +197,35 @@ function PersonClaims({ person }: { person: Person }) {
     resettle.reset();
     defer.reset();
     remind.reset();
+    comment.reset();
     proof.reset();
     split.reset();
     redate.reset();
     inline.reset();
     remind.mutate(id);
+  };
+  // A comment is kept on the claim, in any status, with its writer and the sheet's today; not an empty one.
+  const comment = useMutation({
+    mutationFn: (d: { id: number; text: string }) =>
+      postJson<Claim>(`${base}/claims/${d.id}/comment`, { text: d.text, user }),
+    onSuccess: async (_, d) => {
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+      setCommentTexts((t) => ({ ...t, [d.id]: '' }));
+    },
+  });
+  const addComment = (id: number) => {
+    move.reset();
+    lock.reset();
+    reassign.reset();
+    resettle.reset();
+    defer.reset();
+    remind.reset();
+    comment.reset();
+    proof.reset();
+    split.reset();
+    redate.reset();
+    inline.reset();
+    comment.mutate({ id, text: commentTexts[id] ?? '' });
   };
   // A proof raises the claim's proofs count by one; not on a SETTLED or VOID claim.
   const proof = useMutation({
@@ -212,6 +241,7 @@ function PersonClaims({ person }: { person: Person }) {
     resettle.reset();
     defer.reset();
     remind.reset();
+    comment.reset();
     proof.reset();
     split.reset();
     redate.reset();
@@ -237,6 +267,7 @@ function PersonClaims({ person }: { person: Person }) {
     resettle.reset();
     defer.reset();
     remind.reset();
+    comment.reset();
     proof.reset();
     split.reset();
     redate.reset();
@@ -262,6 +293,7 @@ function PersonClaims({ person }: { person: Person }) {
     resettle.reset();
     defer.reset();
     remind.reset();
+    comment.reset();
     proof.reset();
     split.reset();
     redate.mutate({ id, date: (redates[id] ?? '').trim() });
@@ -294,13 +326,14 @@ function PersonClaims({ person }: { person: Person }) {
     resettle.reset();
     defer.reset();
     remind.reset();
+    comment.reset();
     proof.reset();
     split.reset();
     redate.reset();
     inline.reset();
     inline.mutate({ claim: c, amount: (inlineAmounts[c.id] ?? '').trim() });
   };
-  // The refusal of the last status change, move, re-settle, deferral, reminder, proof, split or re-dating of the claim, as the server gave it; null when none.
+  // The refusal of the last status change, move, re-settle, deferral, reminder, comment, proof, split or re-dating of the claim, as the server gave it; null when none.
   const refusal = (id: number) => {
     const error =
       move.isError && move.variables?.id === id
@@ -313,6 +346,8 @@ function PersonClaims({ person }: { person: Person }) {
               ? defer.error
               : remind.isError && remind.variables === id
                 ? remind.error
+                : comment.isError && comment.variables?.id === id
+                  ? comment.error
                 : proof.isError && proof.variables === id
                   ? proof.error
                   : split.isError && split.variables?.id === id
@@ -340,6 +375,7 @@ function PersonClaims({ person }: { person: Person }) {
     resettle.reset();
     defer.reset();
     remind.reset();
+    comment.reset();
     proof.reset();
     split.reset();
     redate.reset();
@@ -568,6 +604,26 @@ function PersonClaims({ person }: { person: Person }) {
                   {refusal(c.id)}
                 </span>
               )}
+              <input
+                data-testid="claim-comment-text"
+                placeholder="Comment"
+                aria-label="Comment"
+                value={commentTexts[c.id] ?? ''}
+                onChange={(e) => {
+                  setCommentTexts({ ...commentTexts, [c.id]: e.target.value });
+                  if (comment.variables?.id === c.id) comment.reset();
+                }}
+              />{' '}
+              <button type="button" data-testid="claim-comment-add" disabled={comment.isPending} onClick={() => addComment(c.id)}>
+                Comment
+              </button>
+              <ol data-testid="claim-comments">
+                {(c.comments ?? []).map((line, i) => (
+                  <li key={i} data-testid="claim-comments-line">
+                    {line}
+                  </li>
+                ))}
+              </ol>
               <ol data-testid="claim-log">
                 {(c.log ?? []).map((line, i) => (
                   <li key={i} data-testid="claim-log-line">

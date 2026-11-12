@@ -63,6 +63,8 @@ export type Claim = {
   tags: string[];
   /** The reason it was voided with, from the sheet's list then; null when none. */
   voidReason: string | null;
+  /** Its comments, oldest first: `<user> on <date>: <text>`, the date the sheet's today when it was written. */
+  comments: string[];
 };
 
 /** A correction: a claim with a negative amount, which has no floor and no late charge. */

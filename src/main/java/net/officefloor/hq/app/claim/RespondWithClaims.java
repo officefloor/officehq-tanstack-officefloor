@@ -10,10 +10,10 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /** The sheet's claims as they are now, or, as of a date, as they stood at the end of it (see {@link History}),
- *  with their log lines logged by then and the date standing in for the sheet's today. */
+ *  with their log lines logged and comments written by then and the date standing in for the sheet's today. */
 public class RespondWithClaims {
     public void respond(@PathVariable("sheetId") String sheetId,
-            @RequestParam(name = "asOf", required = false) String asOf, ClaimStore store, ClaimLogStore log,
+            @RequestParam(name = "asOf", required = false) String asOf, ClaimStore store, ClaimLogStore log, ClaimCommentStore comments,
             SheetStore sheets, ObjectResponse<List<ClaimResponse>> response) {
         LocalDate on = History.date(asOf);
         List<Claim> claims = on == null ? store.list(sheetId.trim()) : store.listAsOf(sheetId.trim(), on);
@@ -21,7 +21,9 @@ public class RespondWithClaims {
         Rounding rounding = new Rounding(null, claims);
         LocalDate today = on == null ? sheets.today(sheetId.trim()) : on;
         Map<Long, List<String>> lines = log.lines(sheetId.trim(), on);
+        Map<Long, List<String>> commented = comments.lines(sheetId.trim(), on);
         response.send(claims.stream()
-                .map(c -> ClaimResponse.from(c, rounding).withLog(lines.getOrDefault(c.getId(), List.of())).on(today)).toList());
+                .map(c -> ClaimResponse.from(c, rounding).withLog(lines.getOrDefault(c.getId(), List.of()))
+                        .withComments(commented.getOrDefault(c.getId(), List.of())).on(today)).toList());
     }
 }
