@@ -85,6 +85,7 @@ function PersonClaims({ person }: { person: Person }) {
   const [deferDates, setDeferDates] = useState<Record<number, string>>({});
   const [redates, setRedates] = useState<Record<number, string>>({});
   const [splitAmounts, setSplitAmounts] = useState<Record<number, string>>({});
+  const [partAmounts, setPartAmounts] = useState<Record<number, string>>({});
   const [inlineAmounts, setInlineAmounts] = useState<Record<number, string>>({});
   const [commentTexts, setCommentTexts] = useState<Record<number, string>>({});
   const [lineFields, setLineFields] = useState<Record<number, { label: string; qty: string; unit: string }>>({});
@@ -157,6 +158,7 @@ function PersonClaims({ person }: { person: Person }) {
     line.reset();
     proof.reset();
     split.reset();
+    partSettle.reset();
     redate.reset();
     inline.reset();
     move.mutate({ id, status, review: review !== undefined, reason: review?.reason ?? voidReason });
@@ -187,6 +189,7 @@ function PersonClaims({ person }: { person: Person }) {
     line.reset();
     proof.reset();
     split.reset();
+    partSettle.reset();
     redate.reset();
     inline.reset();
     reassign.mutate({ id, to: targets[id] ?? '' });
@@ -215,6 +218,7 @@ function PersonClaims({ person }: { person: Person }) {
     line.reset();
     proof.reset();
     split.reset();
+    partSettle.reset();
     redate.reset();
     inline.reset();
     resettle.mutate(id);
@@ -244,6 +248,7 @@ function PersonClaims({ person }: { person: Person }) {
     line.reset();
     proof.reset();
     split.reset();
+    partSettle.reset();
     redate.reset();
     inline.reset();
     defer.mutate({ id, until: (deferDates[id] ?? '').trim() });
@@ -269,6 +274,7 @@ function PersonClaims({ person }: { person: Person }) {
     line.reset();
     proof.reset();
     split.reset();
+    partSettle.reset();
     redate.reset();
     inline.reset();
     remind.mutate(id);
@@ -297,6 +303,7 @@ function PersonClaims({ person }: { person: Person }) {
     line.reset();
     proof.reset();
     split.reset();
+    partSettle.reset();
     redate.reset();
     inline.reset();
     waive.mutate(id);
@@ -326,6 +333,7 @@ function PersonClaims({ person }: { person: Person }) {
     line.reset();
     proof.reset();
     split.reset();
+    partSettle.reset();
     redate.reset();
     inline.reset();
     hold.mutate(id);
@@ -353,6 +361,7 @@ function PersonClaims({ person }: { person: Person }) {
     line.reset();
     proof.reset();
     split.reset();
+    partSettle.reset();
     redate.reset();
     inline.reset();
     comment.mutate({ id, text: commentTexts[id] ?? '' });
@@ -383,6 +392,7 @@ function PersonClaims({ person }: { person: Person }) {
     line.reset();
     proof.reset();
     split.reset();
+    partSettle.reset();
     redate.reset();
     inline.reset();
     const f = lineFields[id] ?? { label: '', qty: '', unit: '' };
@@ -416,6 +426,7 @@ function PersonClaims({ person }: { person: Person }) {
     line.reset();
     proof.reset();
     split.reset();
+    partSettle.reset();
     redate.reset();
     inline.reset();
     proof.mutate(id);
@@ -446,9 +457,41 @@ function PersonClaims({ person }: { person: Person }) {
     line.reset();
     proof.reset();
     split.reset();
+    partSettle.reset();
     redate.reset();
     inline.reset();
     split.mutate({ id, amount: (splitAmounts[id] ?? '').trim() });
+  };
+  // Part-settling an OPEN claim splits the amount off it and settles the new claim at once; both people's figures follow.
+  const partSettle = useMutation({
+    mutationFn: (d: { id: number; amount: string }) =>
+      postJson<Claim>(`${base}/claims/${d.id}/settle-part`, { amount: d.amount, user }),
+    onSuccess: async (_, d) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+      ]);
+      setPartAmounts((a) => ({ ...a, [d.id]: '' }));
+    },
+  });
+  const settlePartClaim = (id: number) => {
+    move.reset();
+    lock.reset();
+    setUneditable(undefined);
+    reassign.reset();
+    resettle.reset();
+    defer.reset();
+    remind.reset();
+    waive.reset();
+    hold.reset();
+    comment.reset();
+    line.reset();
+    proof.reset();
+    split.reset();
+    partSettle.reset();
+    redate.reset();
+    inline.reset();
+    partSettle.mutate({ id, amount: (partAmounts[id] ?? '').trim() });
   };
   // A steward re-dates an OPEN or PENDING claim; its due-by, and so its period (and per-period number), stay as they are.
   const redate = useMutation({
@@ -476,6 +519,7 @@ function PersonClaims({ person }: { person: Person }) {
     line.reset();
     proof.reset();
     split.reset();
+    partSettle.reset();
     redate.mutate({ id, date: (redates[id] ?? '').trim() });
   };
   // A draft's amount changed in its row: an edit as the claim form makes it, keeping the claim's date, note,
@@ -513,6 +557,7 @@ function PersonClaims({ person }: { person: Person }) {
     line.reset();
     proof.reset();
     split.reset();
+    partSettle.reset();
     redate.reset();
     inline.reset();
     inline.mutate({ claim: c, amount: (inlineAmounts[c.id] ?? '').trim() });
@@ -542,6 +587,8 @@ function PersonClaims({ person }: { person: Person }) {
                   ? proof.error
                   : split.isError && split.variables?.id === id
                     ? split.error
+                  : partSettle.isError && partSettle.variables?.id === id
+                    ? partSettle.error
                     : redate.isError && redate.variables?.id === id
                       ? redate.error
                       : inline.isError && inline.variables?.claim.id === id
@@ -574,6 +621,7 @@ function PersonClaims({ person }: { person: Person }) {
     line.reset();
     proof.reset();
     split.reset();
+    partSettle.reset();
     redate.reset();
     inline.reset();
     // Only a DRAFT can be edited: any other claim is refused at once, as the server would refuse it.
@@ -822,6 +870,20 @@ function PersonClaims({ person }: { person: Person }) {
               />{' '}
               <button type="button" data-testid="claim-split" disabled={split.isPending} onClick={() => splitClaim(c.id)}>
                 Split
+              </button>{' '}
+              <input
+                data-testid="claim-settle-part-amount"
+                placeholder="Settle part"
+                aria-label="Amount to settle"
+                inputMode="decimal"
+                value={partAmounts[c.id] ?? ''}
+                onChange={(e) => {
+                  setPartAmounts({ ...partAmounts, [c.id]: e.target.value });
+                  if (partSettle.variables?.id === c.id) partSettle.reset();
+                }}
+              />{' '}
+              <button type="button" data-testid="claim-settle-part" disabled={partSettle.isPending} onClick={() => settlePartClaim(c.id)}>
+                Settle part
               </button>{' '}
               <input
                 data-testid="claim-inline-amount"

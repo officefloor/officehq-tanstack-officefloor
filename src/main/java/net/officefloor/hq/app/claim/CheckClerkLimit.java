@@ -151,7 +151,7 @@ public class CheckClerkLimit {
         }
     }
 
-    private static boolean overLimit(StatusInput input, Claim claim, boolean steward, SettingStore settings,
+    static boolean overLimit(StatusInput input, Claim claim, boolean steward, SettingStore settings,
             PersonStore people, RateStore rates, SheetStore sheets, ClaimStore claims) {
         if (input.status() != ClaimStatus.SETTLED || claim.getStatus() != ClaimStatus.OPEN || steward) {
             return false;
