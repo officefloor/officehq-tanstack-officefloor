@@ -53,4 +53,13 @@ public final class PersonRules {
             throw new DuplicateContactException(request.contact());
         }
     }
+
+    /** Records the grade from the from-date (yyyy-MM-dd, null for the sheet's today), as an edit does: nothing
+     *  when the from-date is null and the grade is the one in force on the sheet's today. */
+    public static void applyGrade(Person person, String grade, String gradeFrom, LocalDate today) {
+        if (gradeFrom == null && grade.equals(person.gradeOn(today))) {
+            return;
+        }
+        person.recordGrade(gradeFrom == null ? today : LocalDate.parse(gradeFrom), grade);
+    }
 }

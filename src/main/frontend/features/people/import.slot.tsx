@@ -6,11 +6,12 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { peopleKey } from './people';
 
-type ImportResult = { added: number };
+type ImportResult = { added: number; updated: number };
 
-// The import box: lines of name,grade,terms,contact each add a person. The server checks every line
-// with the person form's rules first and refuses the whole import if any fails; the count added
-// shows once it answers (gone while it runs).
+// The import box: lines of name,grade,terms,contact each add a person, or update the person on the
+// sheet the name (or alias) matches. The server checks every line with the person form's rules first
+// and refuses the whole import if any fails; the counts added and updated show once it answers (gone
+// while it runs).
 function ImportPeople() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -51,7 +52,8 @@ function ImportPeople() {
       {importing.isSuccess && (
         <>
           {' '}
-          Added <strong data-testid="import-added">{importing.data.added}</strong>
+          Added <strong data-testid="import-added">{importing.data.added}</strong>, updated{' '}
+          <strong data-testid="import-updated">{importing.data.updated}</strong>
         </>
       )}
       {importing.isError && (

@@ -39,7 +39,7 @@ public class GradePeople {
         LocalDate today = sheets.today(sheet);
         for (Person person : selected) {
             Rollup before = rollups.snapshot(sheet);
-            ApplyPerson.applyGrade(person, input.grade(), input.gradeFrom(), today);
+            PersonRules.applyGrade(person, input.grade(), input.gradeFrom(), today);
             if (!store.save(person)) {
                 throw new StalePersonException();
             }

@@ -1,6 +1,5 @@
 package net.officefloor.hq.app.person;
 
-import java.time.LocalDate;
 import net.officefloor.hq.app.sheet.SheetStore;
 import net.officefloor.plugin.variable.Val;
 
@@ -13,15 +12,6 @@ public class ApplyPerson {
         person.setName(request.name());
         person.setContact(request.contact());
         person.setTerms(request.terms() == null ? null : Integer.valueOf(request.terms()));
-        applyGrade(person, request.grade(), request.gradeFrom(), sheets.today(person.getSheetId()));
-    }
-
-    /** Records the grade from the from-date (yyyy-MM-dd, null for the sheet's today), as an edit does: nothing
-     *  when the from-date is null and the grade is the one in force on the sheet's today. */
-    static void applyGrade(Person person, String grade, String gradeFrom, LocalDate today) {
-        if (gradeFrom == null && grade.equals(person.gradeOn(today))) {
-            return;
-        }
-        person.recordGrade(gradeFrom == null ? today : LocalDate.parse(gradeFrom), grade);
+        PersonRules.applyGrade(person, request.grade(), request.gradeFrom(), sheets.today(person.getSheetId()));
     }
 }
