@@ -1,0 +1,321 @@
+diff --git a/src/main/frontend/features/holidays/holidays.slot.tsx b/src/main/frontend/features/holidays/holidays.slot.tsx
+index 46085fa0d..756b598b2 100644
+--- a/src/main/frontend/features/holidays/holidays.slot.tsx
++++ b/src/main/frontend/features/holidays/holidays.slot.tsx
+@@ -4,6 +4,7 @@ import { HttpError, postJson } from '../../api/http';
+ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { HomeMain } from '../../slots/defs/homeMain';
+ import { useCurrentSheet, useCurrentUser } from '../../session/session';
++import { claimsKey } from '../claims/claims';
+ import { type Holiday, holidaysKey, useHolidays } from './holidays';
+ 
+ // The sheet's holidays, and the entry a date is added with. A date already on the list is refused.
+@@ -18,7 +19,11 @@ function Holidays() {
+     mutationFn: (d: string) =>
+       postJson<Holiday>(`/api/sheets/${encodeURIComponent(sheet)}/holidays`, { date: d, user }),
+     onSuccess: async () => {
+-      await queryClient.invalidateQueries({ queryKey: holidaysKey(sheet) });
++      // A holiday re-fixes the due-by of the claims due on or after it.
++      await Promise.all([
++        queryClient.invalidateQueries({ queryKey: holidaysKey(sheet) }),
++        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
++      ]);
+       setDate('');
+     },
+   });
+diff --git a/src/main/java/db/migration/V49__claim_due_terms.java b/src/main/java/db/migration/V49__claim_due_terms.java
+new file mode 100644
+index 000000000..c63f4ec6e
+--- /dev/null
++++ b/src/main/java/db/migration/V49__claim_due_terms.java
+@@ -0,0 +1,61 @@
++package db.migration;
++
++import java.sql.Connection;
++import java.sql.PreparedStatement;
++import java.sql.ResultSet;
++import java.sql.Statement;
++import java.time.DayOfWeek;
++import java.time.LocalDate;
++import java.util.HashMap;
++import java.util.HashSet;
++import java.util.Map;
++import java.util.Set;
++import org.flywaydb.core.api.migration.BaseJavaMigration;
++import org.flywaydb.core.api.migration.Context;
++
++/** Keeps the terms each claim's due-by was fixed with, so that adding a holiday can work its due-by out again
++ *  (see {@code HolidayStore}). Every claim kept takes the business days from its date to its due-by, over the
++ *  sheet's holidays now (its due-by counts them since V43). Kept in claim_hist too; the history trigger is
++ *  set again afterwards, as in V45__claim_tags.sql. */
++public class V49__claim_due_terms extends BaseJavaMigration {
++
++    @Override
++    public void migrate(Context context) throws Exception {
++        Connection conn = context.getConnection();
++        try (Statement st = conn.createStatement()) {
++            st.execute("DROP TRIGGER claim_history");
++            st.execute("ALTER TABLE claim ADD COLUMN due_terms INT");
++            st.execute("ALTER TABLE claim_hist ADD COLUMN due_terms INT");
++        }
++        Map<String, Set<LocalDate>> holidays = new HashMap<>();
++        try (PreparedStatement ps = conn.prepareStatement("SELECT sheet_id, holiday_date FROM holiday");
++                ResultSet rs = ps.executeQuery()) {
++            while (rs.next()) {
++                holidays.computeIfAbsent(rs.getString(1), k -> new HashSet<>()).add(rs.getObject(2, LocalDate.class));
++            }
++        }
++        try (PreparedStatement select = conn.prepareStatement("SELECT id, sheet_id, claim_date, due_by FROM claim");
++                PreparedStatement update = conn.prepareStatement("UPDATE claim SET due_terms = ? WHERE id = ?");
++                ResultSet rs = select.executeQuery()) {
++            while (rs.next()) {
++                Set<LocalDate> sheetHolidays = holidays.getOrDefault(rs.getString(2), Set.of());
++                LocalDate date = rs.getObject(3, LocalDate.class);
++                LocalDate dueBy = rs.getObject(4, LocalDate.class);
++                int terms = 0;
++                for (LocalDate d = date.plusDays(1); !d.isAfter(dueBy); d = d.plusDays(1)) {
++                    if (d.getDayOfWeek() != DayOfWeek.SATURDAY && d.getDayOfWeek() != DayOfWeek.SUNDAY
++                            && !sheetHolidays.contains(d)) {
++                        terms++;
++                    }
++                }
++                update.setInt(1, terms);
++                update.setLong(2, rs.getLong(1));
++                update.executeUpdate();
++            }
++        }
++        try (Statement st = conn.createStatement()) {
++            st.execute("CREATE TRIGGER claim_history AFTER INSERT, UPDATE, DELETE ON claim FOR EACH ROW "
++                    + "CALL 'net.officefloor.hq.app.history.HistoryTrigger'");
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplySplit.java b/src/main/java/net/officefloor/hq/app/claim/ApplySplit.java
+index a2f6d4df3..a418304c7 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplySplit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplySplit.java
+@@ -24,9 +24,10 @@ public class ApplySplit {
+         }
+         String sheetId = claim.getSheetId();
+         Person person = people.find(sheetId, claim.getPersonId());
+-        LocalDate dueBy = ClaimPeriods.dueByOf(person, claim.getDate(), settings, holidays);
++        int terms = SaveClaimAdded.termsOf(person, claim.getDate(), settings);
++        LocalDate dueBy = holidays.businessDaysAfter(sheetId, claim.getDate(), terms);
+         String number = Numbering.next(sheetId, dueBy, store, settings, sheets, periods);
+-        Claim into = store.addSplit(claim, input.amount(), number, input.user(), dueBy);
++        Claim into = store.addSplit(claim, input.amount(), number, input.user(), dueBy, terms);
+         if (periods.softOn(sheetId, dueBy)) {
+             store.markLateEntry(into);
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimPeriods.java b/src/main/java/net/officefloor/hq/app/claim/ClaimPeriods.java
+index 0c1709da4..e193bea36 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimPeriods.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimPeriods.java
+@@ -9,7 +9,7 @@ import net.officefloor.hq.app.setting.SettingStore;
+ import net.officefloor.hq.app.sheet.InvalidSheetException;
+ 
+ /** A claim belongs to the period its due-by falls in: the due-by fixed when it was added, which an edit, a
+- *  re-dating or a move to another person leaves as it is. */
++ *  re-dating or a move to another person leaves as it is (only a holiday added later re-fixes it). */
+ public final class ClaimPeriods {
+     private ClaimPeriods() {
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java
+index 662cf00b3..4e9fa6b35 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java
+@@ -5,7 +5,9 @@ import java.sql.Date;
+ import java.sql.PreparedStatement;
+ import java.time.LocalDate;
+ import java.util.List;
++import java.util.Set;
+ import net.officefloor.hq.app.history.History;
++import net.officefloor.hq.app.holiday.HolidayStore;
+ import org.springframework.dao.DataAccessException;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.jdbc.core.RowMapper;
+@@ -82,25 +84,14 @@ public class ClaimStore {
+         return n != null && n > 0;
+     }
+ 
+-    /** Adds a draft claim due by {@code dueBy}, which stays as it is whatever later changes. */
++    /** Adds a draft claim due by {@code dueBy}, fixed for {@code terms} business days after its date (see
++     *  {@link #refixDueBy}), with the external reference and tags (null for none). */
+     public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
+-            LocalDate dueBy) {
+-        return add(sheetId, personId, amount, date, note, corrects, dueBy, null);
+-    }
+-
+-    /** Adds a draft claim due by {@code dueBy} with the external reference (null for none). */
+-    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
+-            LocalDate dueBy, String ref) {
+-        return add(sheetId, personId, amount, date, note, corrects, dueBy, ref, null);
+-    }
+-
+-    /** Adds a draft claim due by {@code dueBy} with the external reference and tags (null for none). */
+-    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
+-            LocalDate dueBy, String ref, String tags) {
++            LocalDate dueBy, int terms, String ref, String tags) {
+         GeneratedKeyHolder keys = new GeneratedKeyHolder();
+         jdbc.update(con -> {
+             PreparedStatement ps = con.prepareStatement(
+-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, ref, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
++                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, ref, tags, due_terms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                     new String[] { "ID" });
+             ps.setString(1, sheetId);
+             ps.setLong(2, personId);
+@@ -111,6 +102,7 @@ public class ClaimStore {
+             ps.setDate(7, Date.valueOf(dueBy));
+             ps.setString(8, ref);
+             ps.setString(9, tags);
++            ps.setInt(10, terms);
+             return ps;
+         }, keys);
+         Claim added = new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null,
+@@ -229,13 +221,13 @@ public class ClaimStore {
+     }
+ 
+     /** Adds an OPEN claim split off {@code from}: its date, note and tags, the given number, opened by the user
+-     *  and due by {@code dueBy}, listed as its person's newest claim. */
+-    public Claim addSplit(Claim from, BigDecimal amount, String number, String openedBy, LocalDate dueBy) {
++     *  and due by {@code dueBy}, fixed for {@code terms} business days after its date, listed as its person's newest claim. */
++    public Claim addSplit(Claim from, BigDecimal amount, String number, String openedBy, LocalDate dueBy, int terms) {
+         GeneratedKeyHolder keys = new GeneratedKeyHolder();
+         jdbc.update(con -> {
+             PreparedStatement ps = con.prepareStatement(
+-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, number, opened_by, due_by, split_from, tags) "
+-                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
++                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, number, opened_by, due_by, split_from, tags, due_terms) "
++                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                     new String[] { "ID" });
+             ps.setString(1, from.getSheetId());
+             ps.setLong(2, from.getPersonId());
+@@ -248,6 +240,7 @@ public class ClaimStore {
+             ps.setDate(9, Date.valueOf(dueBy));
+             ps.setString(10, from.getNumber());
+             ps.setString(11, from.getTags());
++            ps.setInt(12, terms);
+             return ps;
+         }, keys);
+         Claim added = new Claim(keys.getKey().longValue(), from.getSheetId(), from.getPersonId(), amount, from.getDate(),
+@@ -257,6 +250,21 @@ public class ClaimStore {
+         return added;
+     }
+ 
++    /** Works out again the due-by of every claim on the sheet that is not SETTLED or VOID and is due by
++     *  {@code from} or later: the business day the terms it was fixed with after its date, skipping weekends
++     *  and the given holidays (see {@link HolidayStore#businessDaysAfter}). */
++    public void refixDueBy(String sheetId, LocalDate from, Set<LocalDate> holidays) {
++        jdbc.query("SELECT id, claim_date, due_by, due_terms FROM claim WHERE sheet_id = ? AND status NOT IN (?, ?) "
++                + "AND due_by >= ? AND due_terms IS NOT NULL ORDER BY id", rs -> {
++                    LocalDate dueBy = HolidayStore.businessDaysAfter(holidays, rs.getObject("claim_date", LocalDate.class),
++                            rs.getInt("due_terms"));
++                    if (!dueBy.equals(rs.getObject("due_by", LocalDate.class))) {
++                        jdbc.update("UPDATE claim SET due_by = ? WHERE sheet_id = ? AND id = ?", Date.valueOf(dueBy),
++                                sheetId, rs.getLong("id"));
++                    }
++                }, sheetId, ClaimStatus.SETTLED.name(), ClaimStatus.VOID.name(), Date.valueOf(from));
++    }
++
+     /** Raises the stored DRAFT, OPEN or PENDING claim's proofs count by one; false when it is no longer one of
+      *  those (another user moved it on). */
+     public boolean addProof(Claim claim) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SaveClaimAdded.java b/src/main/java/net/officefloor/hq/app/claim/SaveClaimAdded.java
+index 263b62348..be4262995 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SaveClaimAdded.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SaveClaimAdded.java
+@@ -18,9 +18,10 @@ public class SaveClaimAdded {
+ 
+     static Claim add(ClaimInput input, Person person, ClaimStore store, SettingStore settings, ClaimLogStore log,
+             PeriodStore periods, HolidayStore holidays) {
+-        LocalDate dueBy = ClaimPeriods.dueByOf(person, input.date(), settings, holidays);
++        int terms = termsOf(person, input.date(), settings);
++        LocalDate dueBy = holidays.businessDaysAfter(person.getSheetId(), input.date(), terms);
+         Claim added = store.add(person.getSheetId(), person.getId(), input.amount(), input.date(), input.note(),
+-                input.corrects(), dueBy, input.ref(), input.tags());
++                input.corrects(), dueBy, terms, input.ref(), input.tags());
+         if (periods.softOn(person.getSheetId(), dueBy)) {
+             store.markLateEntry(added);
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/holiday/AuditHolidayAdded.java b/src/main/java/net/officefloor/hq/app/holiday/AuditHolidayAdded.java
+index 5f6dd84e6..ba7e618b2 100644
+--- a/src/main/java/net/officefloor/hq/app/holiday/AuditHolidayAdded.java
++++ b/src/main/java/net/officefloor/hq/app/holiday/AuditHolidayAdded.java
+@@ -1,12 +1,17 @@
+ package net.officefloor.hq.app.holiday;
+ 
+ import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.rollup.RollupService;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+-/** Records a holiday added: HOLIDAY_ADDED sheet=<id> by=<user> date=<date>. */
++/** Records a holiday added: HOLIDAY_ADDED sheet=<id> by=<user> date=<date>, then how the due-by dates it
++ *  moved moved the sheet's figures. */
+ public class AuditHolidayAdded {
+-    public void audit(@PathVariable("sheetId") String sheetId, @Val HolidayInput holiday, Audit audit) {
++    public void audit(@PathVariable("sheetId") String sheetId, @Val HolidayInput holiday, @Val Rollup before,
++            Audit audit, RollupService rollups) {
+         audit.record("HOLIDAY_ADDED sheet=" + sheetId.trim() + " by=" + holiday.user() + " date=" + holiday.date());
++        rollups.record(sheetId.trim(), holiday.user(), before);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/holiday/HolidayStore.java b/src/main/java/net/officefloor/hq/app/holiday/HolidayStore.java
+index f2416873d..ea1eb50b7 100644
+--- a/src/main/java/net/officefloor/hq/app/holiday/HolidayStore.java
++++ b/src/main/java/net/officefloor/hq/app/holiday/HolidayStore.java
+@@ -10,7 +10,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+ 
+ /** The holidays per sheet. A claim's due-by, fixed when it is added, counts business days past those on the
+- *  sheet then (see {@link #businessDaysAfter}); a holiday added later leaves existing due-by dates as they are. */
++ *  sheet then (see {@link #businessDaysAfter}); a holiday added later re-fixes the due-by of every claim not
++ *  SETTLED or VOID due on or after it, for the terms it was fixed with (see {@code ClaimStore#refixDueBy}). */
+ @Repository
+ public class HolidayStore {
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/holiday/SaveHoliday.java b/src/main/java/net/officefloor/hq/app/holiday/SaveHoliday.java
+index 262da3fe9..3fa0aafb8 100644
+--- a/src/main/java/net/officefloor/hq/app/holiday/SaveHoliday.java
++++ b/src/main/java/net/officefloor/hq/app/holiday/SaveHoliday.java
+@@ -1,10 +1,17 @@
+ package net.officefloor.hq.app.holiday;
+ 
++import java.util.HashSet;
++import net.officefloor.hq.app.claim.ClaimStore;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
++/** Adds the holiday, then works out again the due-by of every claim not SETTLED or VOID due on or after it,
++ *  over the holidays now on the sheet (see {@link ClaimStore#refixDueBy}). */
+ public class SaveHoliday {
+-    public void save(@PathVariable("sheetId") String sheetId, @Val HolidayInput holiday, HolidayStore store) {
+-        store.add(sheetId.trim(), holiday.date());
++    public void save(@PathVariable("sheetId") String sheetId, @Val HolidayInput holiday, HolidayStore store,
++            ClaimStore claims) {
++        String sheet = sheetId.trim();
++        store.add(sheet, holiday.date());
++        claims.refixDueBy(sheet, holiday.date(), new HashSet<>(store.list(sheet)));
+     }
+ }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/holidays.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/holidays.POST.yml
+index 47c53f0cb..1ffd5dafd 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/holidays.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/holidays.POST.yml
+@@ -1,8 +1,14 @@
+ # POST /api/sheets/{sheetId}/holidays — adds a holiday to the sheet (body: {date, user}). A date not given
+ # as yyyy-mm-dd, a date already on the list, or a viewer is refused (400) and nothing is stored. Recorded
+-# as HOLIDAY_ADDED.
++# as HOLIDAY_ADDED. Adding one works out again the due-by of every claim not SETTLED or VOID due on or after
++# it, from its date for the terms it was fixed with over the holidays now on the sheet; HOLIDAY_ADDED is then
++# followed by ROLLUP/TOTALS for the figures that moved.
+ validate:
+   class: net.officefloor.hq.app.holiday.ValidateHoliday
++  next: snapshot
++snapshot:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  govern: [ transaction ]
+   next: save
+ save:
+   class: net.officefloor.hq.app.holiday.SaveHoliday
