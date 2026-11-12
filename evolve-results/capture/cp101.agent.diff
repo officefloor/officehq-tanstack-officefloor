@@ -1,0 +1,148 @@
+diff --git a/src/main/frontend/features/audit/audit.slot.tsx b/src/main/frontend/features/audit/audit.slot.tsx
+new file mode 100644
+index 000000000..9d114eb23
+--- /dev/null
++++ b/src/main/frontend/features/audit/audit.slot.tsx
+@@ -0,0 +1,57 @@
++import { useState } from 'react';
++import { useMutation } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { HomeMain } from '../../slots/defs/homeMain';
++import { useCurrentSheet } from '../../session/session';
++
++// The audit viewer: the sheet's lines exactly as the audit file holds them, newest first. A name in the
++// filter shows only the lines about that person (name=/person=, compared as names are). It reads the
++// file each time Show is pressed; it keeps no record of its own.
++function AuditViewer() {
++  const [sheet] = useCurrentSheet();
++  const [filter, setFilter] = useState('');
++
++  const show = useMutation({
++    mutationFn: (person: string) =>
++      getJson<string[]>(
++        `/api/sheets/${encodeURIComponent(sheet)}/audit?person=${encodeURIComponent(person.trim())}`,
++      ),
++  });
++
++  return (
++    <section data-testid="audit-viewer">
++      <h2>Audit</h2>
++      <form
++        onSubmit={(e) => {
++          e.preventDefault();
++          show.mutate(filter);
++        }}
++      >
++        <input
++          data-testid="audit-filter"
++          placeholder="Person (blank for all)"
++          value={filter}
++          onChange={(e) => setFilter(e.target.value)}
++        />
++        <button type="submit" data-testid="audit-show" disabled={sheet === ''}>
++          Show
++        </button>
++        {show.isError && (
++          <span data-testid="audit-error" role="alert">
++            {' '}
++            The audit could not be read.
++          </span>
++        )}
++      </form>
++      <ul>
++        {(show.data ?? []).map((line, i) => (
++          <li key={i} data-testid="audit-line">
++            <code>{line}</code>
++          </li>
++        ))}
++      </ul>
++    </section>
++  );
++}
++
++export const contribution = HomeMain.fill({ order: 52, Component: AuditViewer });
+diff --git a/src/main/java/net/officefloor/hq/app/Audit.java b/src/main/java/net/officefloor/hq/app/Audit.java
+index 7a5f54f8f..0679f163b 100644
+--- a/src/main/java/net/officefloor/hq/app/Audit.java
++++ b/src/main/java/net/officefloor/hq/app/Audit.java
+@@ -106,6 +106,49 @@ public class Audit {
+         return sheet == null || by == null ? null : delegations.delegator(sheet, by);
+     }
+ 
++    /** The sheet's lines exactly as the file holds them, newest first; with a person's name, only the lines
++     *  carrying name=<it> or person=<it>, compared as names are (case and surrounding spaces ignored). */
++    public synchronized List<String> lines(String sheet, String person) {
++        if (!Files.exists(file)) {
++            return List.of();
++        }
++        List<String> all;
++        try {
++            all = Files.readAllLines(file, StandardCharsets.UTF_8);
++        } catch (IOException e) {
++            throw new UncheckedIOException(e);
++        }
++        String marker = " sheet=" + sheet + " ";
++        String name = person == null ? "" : person.trim().toLowerCase(java.util.Locale.ROOT);
++        List<String> found = new ArrayList<>();
++        for (int i = all.size() - 1; i >= 0; i--) {
++            String line = all.get(i);
++            if ((line + " ").contains(marker) && (name.isEmpty() || about(line, name))) {
++                found.add(line);
++            }
++        }
++        return found;
++    }
++
++    /** Whether the line carries name=<name> or person=<name>: the value runs to the line's end or to the next field. */
++    private static boolean about(String line, String name) {
++        String lower = line.toLowerCase(java.util.Locale.ROOT);
++        for (String key : List.of(" name=", " person=")) {
++            int at = lower.indexOf(key);
++            while (at >= 0) {
++                int start = at + key.length();
++                if (lower.startsWith(name, start)) {
++                    String rest = lower.substring(start + name.length());
++                    if (rest.isEmpty() || rest.matches(" [a-z][a-z0-9-]*=.*")) {
++                        return true;
++                    }
++                }
++                at = lower.indexOf(key, at + 1);
++            }
++        }
++        return false;
++    }
++
+     /** Remove the audit file. */
+     public synchronized void clear() {
+         try {
+diff --git a/src/main/java/net/officefloor/hq/app/audit/RespondWithAuditLines.java b/src/main/java/net/officefloor/hq/app/audit/RespondWithAuditLines.java
+new file mode 100644
+index 000000000..99518e594
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/audit/RespondWithAuditLines.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.audit;
++
++import java.util.List;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** The sheet's audit lines as the audit file holds them, newest first, optionally only those about a person. */
++public class RespondWithAuditLines {
++    public void respond(@PathVariable("sheetId") String sheetId,
++            @RequestParam(name = "person", required = false) String person, Audit audit,
++            ObjectResponse<List<String>> response) {
++        response.send(audit.lines(sheetId.trim(), person));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/audit.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/audit.GET.yml
+new file mode 100644
+index 000000000..9ecd49e3a
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/audit.GET.yml
+@@ -0,0 +1,3 @@
++# GET /api/sheets/{sheetId}/audit?person= — the sheet's audit lines, newest first, read from the audit file.
++respond:
++  class: net.officefloor.hq.app.audit.RespondWithAuditLines
