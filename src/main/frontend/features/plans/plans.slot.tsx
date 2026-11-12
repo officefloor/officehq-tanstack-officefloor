@@ -16,7 +16,7 @@ function PlansHead() {
   return <th>Plans</th>;
 }
 
-// The person's plans, each with how many claims it has made so far, and the form that adds one. A bad
+// The person's plans, each with how many claims it has made so far and its next five dates, and the form that adds one. A bad
 // amount, interval or day of the month, or an end before the start, is refused with an error on the row until the form is
 // changed or the next action on the row is taken.
 function PersonPlans({ person }: { person: Person }) {
@@ -53,6 +53,8 @@ function PersonPlans({ person }: { person: Person }) {
               {p.day !== null ? `monthly on day ${p.day}` : `every ${p.every} days`} to {p.end}
               {' — made '}
               <span data-testid="plan-generated">{p.generated}</span>
+              {' — next '}
+              <span data-testid="plan-next-dates">{p.nextDates}</span>
             </li>
           ))}
       </ul>

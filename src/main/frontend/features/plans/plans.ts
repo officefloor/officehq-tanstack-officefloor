@@ -4,7 +4,8 @@ import { sheetKey } from '../sheet/sheet';
 
 /** A person's plan: a DRAFT claim of `amount` on every plan date, `start` then every `every` days, or for a
  *  monthly plan (`day` set, `every` null) that day of every month from the start, up to `end` (yyyy-MM-dd);
- *  `generated` is how many claims it has made so far. */
+ *  `generated` is how many claims it has made so far; `nextDates` its first five plan dates after the sheet's today and on or before
+ *  the end, comma and space separated. */
 export type Plan = {
   id: number;
   personId: number;
@@ -14,6 +15,7 @@ export type Plan = {
   day: number | null;
   end: string;
   generated: number;
+  nextDates: string;
 };
 
 /** Under the sheet's key, so loading the sheet again re-reads its plans. */
