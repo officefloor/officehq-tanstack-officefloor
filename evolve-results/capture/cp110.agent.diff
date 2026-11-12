@@ -1,0 +1,184 @@
+diff --git a/src/main/frontend/features/header/consolidated.slot.tsx b/src/main/frontend/features/header/consolidated.slot.tsx
+new file mode 100644
+index 000000000..caa14c4c8
+--- /dev/null
++++ b/src/main/frontend/features/header/consolidated.slot.tsx
+@@ -0,0 +1,61 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { AppHeader } from '../../slots/defs/appHeader';
++import { useCurrentSheet } from '../../session/session';
++import { sheetKey } from '../sheet/sheet';
++import { usePeople } from '../people/people';
++import { dueTotal } from '../rates/rates';
++import { useSheetDueTotal } from '../rates/due.slot';
++import { useSheetOverdue } from '../overdue/overdue.slot';
++
++/** Under the sheet's key, so loading the sheet again re-reads its descendants. */
++const descendantsKey = (sheet: string) => [...sheetKey(sheet), 'descendants'] as const;
++
++/** The ids of the sheets naming the sheet as their parent, their children, and so on. */
++function useDescendants(sheet: string) {
++  return useQuery({
++    queryKey: descendantsKey(sheet),
++    queryFn: () => getJson<string[]>(`/api/sheets/${encodeURIComponent(sheet)}/descendants`),
++    enabled: sheet !== '',
++  });
++}
++
++type Figures = { people: number; due: string[]; overdue: string[] };
++
++/** Adds the first sheet's figures (as that sheet shows them) to those so far, then the rest's, one sheet per
++ *  component so each reads its sheet with the same hooks; shows the sums once every sheet is added. */
++function Consolidate({ sheets, sofar }: { sheets: string[]; sofar: Figures }) {
++  const [first, ...rest] = sheets;
++  const people = usePeople(first);
++  const due = useSheetDueTotal(first);
++  const overdue = useSheetOverdue(first);
++  const figures = {
++    people: sofar.people + (people.data ?? []).length,
++    due: [...sofar.due, due],
++    overdue: [...sofar.overdue, overdue.total],
++  };
++  if (rest.length > 0) return <Consolidate sheets={rest} sofar={figures} />;
++  return (
++    <>
++      People <strong data-testid="consolidated-people-count">{figures.people}</strong>{' '}
++      Due total <strong data-testid="consolidated-due-total">{dueTotal(figures.due)}</strong>{' '}
++      Overdue total <strong data-testid="consolidated-overdue-total">{dueTotal(figures.overdue)}</strong>
++    </>
++  );
++}
++
++// The consolidated figures over the sheet and all its descendants: their people, and each sheet's due- and
++// overdue-totals (the header's) added up. A sheet with no children shows its own.
++function ConsolidatedFigures() {
++  const [sheet] = useCurrentSheet();
++  const descendants = useDescendants(sheet);
++  if (sheet === '' || !descendants.data) return null;
++  return (
++    <p data-testid="consolidated-figures">
++      Consolidated{' '}
++      <Consolidate key={descendants.data.join(',')} sheets={[sheet, ...descendants.data]} sofar={{ people: 0, due: [], overdue: [] }} />
++    </p>
++  );
++}
++
++export const contribution = AppHeader.fill({ order: 31, Component: ConsolidatedFigures });
+diff --git a/src/main/frontend/features/overdue/overdue.slot.tsx b/src/main/frontend/features/overdue/overdue.slot.tsx
+index d6a92af0f..d269e18bf 100644
+--- a/src/main/frontend/features/overdue/overdue.slot.tsx
++++ b/src/main/frontend/features/overdue/overdue.slot.tsx
+@@ -18,8 +18,9 @@ function OverdueHead() {
+   );
+ }
+ 
+-function useOverdue() {
+-  const [sheet] = useCurrentSheet();
++function useOverdue(of?: string) {
++  const [current] = useCurrentSheet();
++  const sheet = of ?? current;
+   const claims = useClaims(sheet);
+   const rates = useRates(sheet);
+   const today = useSheetToday(sheet);
+@@ -45,12 +46,14 @@ function PersonOverdue({ person }: { person: Person }) {
+   );
+ }
+ 
+-/** The sheet's overdue figures: everyone's overdue counts added up, and their overdue-totals
+- *  added up trimmed of the single highest and lowest when three or more people have one. */
+-export function useSheetOverdue(): { count: number; total: string } {
+-  const [sheet] = useCurrentSheet();
++/** The sheet's overdue figures (the current sheet's unless another is named): everyone's overdue counts
++ *  added up, and their overdue-totals added up trimmed of the single highest and lowest when three or more
++ *  people have one. */
++export function useSheetOverdue(of?: string): { count: number; total: string } {
++  const [current] = useCurrentSheet();
++  const sheet = of ?? current;
+   const people = usePeople(sheet);
+-  const figures = (people.data ?? []).map(useOverdue());
++  const figures = (people.data ?? []).map(useOverdue(sheet));
+   return { count: figures.reduce((n, f) => n + f.count, 0), total: trimmedTotal(figures.map((f) => f.total)) };
+ }
+ 
+diff --git a/src/main/frontend/features/rates/due.slot.tsx b/src/main/frontend/features/rates/due.slot.tsx
+index f94b8a90d..e29d63fe4 100644
+--- a/src/main/frontend/features/rates/due.slot.tsx
++++ b/src/main/frontend/features/rates/due.slot.tsx
+@@ -43,10 +43,11 @@ function PersonExcess({ person }: { person: Person }) {
+   );
+ }
+ 
+-/** The sheet's due-total: everyone's (retired people included) due-totals added up, skipping n/a, trimmed
+- *  of the single highest and lowest when three or more people have one. */
+-export function useSheetDueTotal(): string {
+-  const [sheet] = useCurrentSheet();
++/** The sheet's due-total (the current sheet's unless another is named): everyone's (retired people included)
++ *  due-totals added up, skipping n/a, trimmed of the single highest and lowest when three or more people have one. */
++export function useSheetDueTotal(of?: string): string {
++  const [current] = useCurrentSheet();
++  const sheet = of ?? current;
+   const people = usePeople(sheet);
+   const claims = useClaims(sheet);
+   const rates = useRates(sheet);
+diff --git a/src/main/java/net/officefloor/hq/app/setting/RespondWithDescendants.java b/src/main/java/net/officefloor/hq/app/setting/RespondWithDescendants.java
+new file mode 100644
+index 000000000..db9bd8d1a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/setting/RespondWithDescendants.java
+@@ -0,0 +1,13 @@
++package net.officefloor.hq.app.setting;
++
++import java.util.List;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** The ids of the sheet's descendants: the sheets naming it as their parent, their children, and so on. */
++public class RespondWithDescendants {
++    public void respond(@PathVariable("sheetId") String sheetId, SettingStore store,
++            ObjectResponse<List<String>> response) {
++        response.send(store.descendants(sheetId.trim()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingStore.java b/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
+index 8dff80c76..0b285e74e 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
+@@ -93,6 +93,26 @@ public class SettingStore {
+         return find(sheetId, PARENT);
+     }
+ 
++    /** The sheet's descendants: the sheets naming it as their parent (its children), then their children, and so
++     *  on, each once, by id within each level. The parents are those named now. */
++    public List<String> descendants(String sheetId) {
++        java.util.Set<String> seen = new java.util.LinkedHashSet<>(List.of(sheetId));
++        List<String> level = List.of(sheetId);
++        while (!level.isEmpty()) {
++            List<String> next = new java.util.ArrayList<>();
++            for (String parent : level) {
++                for (String child : jdbc.queryForList("SELECT sheet_id FROM sheet_setting WHERE setting_key = '"
++                        + PARENT + "' AND setting_value = ? ORDER BY sheet_id", String.class, parent)) {
++                    if (seen.add(child)) {
++                        next.add(child);
++                    }
++                }
++            }
++            level = next;
++        }
++        return List.copyOf(seen).subList(1, seen.size());
++    }
++
+     /** Whether naming the parent for the sheet would make the sheet its own ancestor: the parent is the sheet,
+      *  or has it among its ancestors. */
+     public boolean cyclic(String sheetId, String parent) {
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/descendants.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/descendants.GET.yml
+new file mode 100644
+index 000000000..5af558ee2
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/descendants.GET.yml
+@@ -0,0 +1,5 @@
++# GET /api/sheets/{sheetId}/descendants — the ids of the sheets naming the sheet as their parent (named now),
++# then their children, and so on.
++respond:
++  class: net.officefloor.hq.app.setting.RespondWithDescendants
++  govern: [ readonly-transaction ]
