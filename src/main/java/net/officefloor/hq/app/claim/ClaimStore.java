@@ -68,6 +68,15 @@ public class ClaimStore {
         return found.isEmpty() ? null : found.get(0);
     }
 
+    /** The sum of the amounts (negative) of the person's corrections against the claim numbered {@code number},
+     *  VOID and DELETED ones left out, and the claim {@code exceptId} (0 for none) too. */
+    public BigDecimal correctedTotal(String sheetId, long personId, String number, long exceptId) {
+        BigDecimal total = jdbc.queryForObject(
+                "SELECT COALESCE(SUM(amount), 0) FROM claim WHERE sheet_id = ? AND person_id = ? AND corrects = ? AND id <> ? AND status NOT IN (?, ?)",
+                BigDecimal.class, sheetId, personId, number, exceptId, ClaimStatus.VOID.name(), ClaimStatus.DELETED.name());
+        return total == null ? BigDecimal.ZERO : total;
+    }
+
     /** Every tag ever carried by a claim or a person on the sheet (by their history, see {@link History}), as stored (see
      *  {@link Tags}); up to the end of {@code date} when given, else up to now. */
     public List<String> tagsEverUsed(String sheetId, LocalDate date) {
