@@ -11,14 +11,15 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
 public class ValidateClaim {
-    /** 0.00 or more, with up to two decimals. */
-    private static final Pattern AMOUNT = Pattern.compile("\\d+(\\.\\d{1,2})?");
+    /** A number with up to two decimals; negative for a correction. */
+    private static final Pattern AMOUNT = Pattern.compile("-?\\d+(\\.\\d{1,2})?");
+    private static final Pattern NUMBER = Pattern.compile("\\d{1,18}");
 
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ClaimRequest request,
             SheetStore sheets, Out<ClaimInput> body) throws InvalidSheetException {
         String amount = request == null || request.amount() == null ? "" : request.amount().trim();
         if (!AMOUNT.matcher(amount).matches()) {
-            throw new InvalidSheetException("The amount must be a number of 0.00 or more with up to two decimals");
+            throw new InvalidSheetException("The amount must be a number with up to two decimals");
         }
         String dateText = request.date() == null ? "" : request.date().trim();
         LocalDate date;
@@ -28,6 +29,17 @@ public class ValidateClaim {
             throw new InvalidSheetException("Not a date: " + dateText);
         }
         String note = request.note() == null ? "" : request.note().trim();
-        body.set(new ClaimInput(new BigDecimal(amount).setScale(2), date, note, request.user()));
+        BigDecimal value = new BigDecimal(amount).setScale(2);
+        String correctsText = request.corrects() == null ? "" : request.corrects().trim();
+        Long corrects = null;
+        if (value.signum() < 0) {
+            if (!NUMBER.matcher(correctsText).matches()) {
+                throw new InvalidSheetException("A negative amount must name the number of the settled claim it corrects");
+            }
+            corrects = Long.valueOf(correctsText);
+        } else if (!correctsText.isEmpty()) {
+            throw new InvalidSheetException("Only a negative amount corrects a claim");
+        }
+        body.set(new ClaimInput(value, date, note, request.user(), corrects));
     }
 }

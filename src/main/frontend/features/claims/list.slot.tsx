@@ -12,9 +12,9 @@ import { useSheetToday } from '../sheet/sheet';
 import { dueBy, lateOf, overdue } from '../overdue/overdue';
 import { type Claim, type ClaimStatus, claimsKey, useClaims } from './claims';
 
-type Fields = { amount: string; date: string; note: string };
+type Fields = { amount: string; date: string; note: string; corrects: string };
 type StatusChange = { id: number; status: ClaimStatus };
-const EMPTY: Fields = { amount: '', date: '', note: '' };
+const EMPTY: Fields = { amount: '', date: '', note: '', corrects: '' };
 
 function ClaimsHead() {
   return <th>Claims</th>;
@@ -69,7 +69,7 @@ function PersonClaims({ person }: { person: Person }) {
     save.reset();
     move.reset();
     setEditing(c.id);
-    setFields({ amount: c.amount, date: c.date, note: c.note });
+    setFields({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects?.toString() ?? '' });
   };
   const cancel = () => {
     save.reset();
@@ -88,6 +88,7 @@ function PersonClaims({ person }: { person: Person }) {
               <span data-testid="claim-amount">{c.amount}</span>{' '}
               <span data-testid="claim-date">{c.date}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}
+              <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}
               <span data-testid="claim-period">{periodOf(periods.data, c.date)?.name ?? ''}</span>{' '}
               <span data-testid="claim-due">{claimDue(c, rates.data, person.grades, floor, lateOf(settings, today))}</span>{' '}
               <span data-testid="claim-due-by">{dueBy(c, terms)}</span>{' '}
@@ -131,6 +132,13 @@ function PersonClaims({ person }: { person: Person }) {
         <input data-testid="claim-form-amount" placeholder="Amount" inputMode="decimal" value={fields.amount} onChange={set('amount')} />
         <input data-testid="claim-form-date" placeholder="Date (yyyy-mm-dd)" value={fields.date} onChange={set('date')} />
         <input data-testid="claim-form-note" placeholder="Note" value={fields.note} onChange={set('note')} />
+        <input
+          data-testid="claim-form-corrects"
+          placeholder="Corrects claim no."
+          inputMode="numeric"
+          value={fields.corrects}
+          onChange={set('corrects')}
+        />
         <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
           {editing !== undefined ? 'Save claim' : 'Add claim'}
         </button>

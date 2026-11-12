@@ -22,7 +22,12 @@ export type Claim = {
   stated: boolean;
   /** The figure the claim was bound to; null when not bound, or bound while it had none. */
   statedDue: string | null;
+  /** The number of the settled claim a correction (a negative amount) corrects; null for any other claim. */
+  corrects: number | null;
 };
+
+/** A correction: a claim with a negative amount, which has no floor and no late charge. */
+export const isCorrection = (c: Claim) => c.amount.trim().startsWith('-') && Number(c.amount) !== 0;
 
 /** Only OPEN and SETTLED claims count toward claimed and the totals. */
 export const counts = (c: Claim) => c.status === 'OPEN' || c.status === 'SETTLED';

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { sheetKey } from '../sheet/sheet';
-import { type Claim, counts } from '../claims/claims';
+import { type Claim, counts, isCorrection } from '../claims/claims';
 import { type Grades, gradeOn } from '../people/people';
 
 /** A grade's rate: `pct` is a percent with two decimals; `from` (yyyy-MM-dd) is the date it applies
@@ -78,7 +78,7 @@ export type Late = { pct: string | undefined; periods: (claim: Claim) => number 
 
 /** The late charge on a figure: the late percent of it for every full 30 days overdue, rounded like due. */
 function lateCharge(claim: Claim, figure: string, late: Late | undefined): string | undefined {
-  const periods = late?.pct === undefined ? 0 : late.periods(claim);
+  const periods = late?.pct === undefined || isCorrection(claim) ? 0 : late.periods(claim);
   if (periods <= 0 || figure === NA) return undefined;
   return due(figure, format(hundredths(late!.pct!) * BigInt(periods)));
 }
@@ -89,6 +89,7 @@ const fixed = (claim: Claim) => claim.due !== null || (claim.stated && claim.sta
 /** A claim's due: the due fixed when it was settled (its late charge frozen in), else its figure — the
  *  figure its person's last statement bound it to, else its live due: its amount at the rate in force
  *  on the claim's date of its person's grade in force on that date, at least the sheet's floor — plus its late charge when overdue.
+ *  A correction's live due has no floor and it has no late charge.
  *  A statement never binds the charge: it keeps following the sheet's today. */
 export function claimDue(
   claim: Claim,
@@ -98,7 +99,8 @@ export function claimDue(
   late?: Late,
 ): string {
   if (claim.due !== null) return claim.due;
-  const figure = (claim.stated ? claim.statedDue : null) ?? liveDue(claim.amount, rateOf(rates, gradeOn(grades, claim.date), claim.date), floor);
+  const pct = rateOf(rates, gradeOn(grades, claim.date), claim.date);
+  const figure = (claim.stated ? claim.statedDue : null) ?? (isCorrection(claim) ? due(claim.amount, pct) : liveDue(claim.amount, pct, floor));
   const charge = lateCharge(claim, figure, late);
   return charge === undefined ? figure : format(hundredths(figure) + hundredths(charge));
 }

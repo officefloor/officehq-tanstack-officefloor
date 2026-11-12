@@ -6,6 +6,7 @@ import net.officefloor.plugin.variable.Val;
 
 public class SaveClaimAdded {
     public void save(@Val ClaimInput input, @Val Person person, ClaimStore store, Out<Claim> claim) {
-        claim.set(store.add(person.getSheetId(), person.getId(), input.amount(), input.date(), input.note()));
+        claim.set(store.add(person.getSheetId(), person.getId(), input.amount(), input.date(), input.note(),
+                input.corrects()));
     }
 }

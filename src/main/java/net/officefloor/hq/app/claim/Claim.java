@@ -3,7 +3,8 @@ package net.officefloor.hq.app.claim;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 
-/** A person's claim on a sheet. {@code amount} has two decimals and is 0.00 or more; it starts
+/** A person's claim on a sheet. {@code amount} has two decimals and is 0.00 or more, or negative for
+ *  a correction, which names the number of the settled claim of its person it corrects; it starts
  *  as {@link ClaimStatus#DRAFT}. */
 public class Claim {
     private final long id;
@@ -18,10 +19,11 @@ public class Claim {
     private String openedBy;
     private boolean stated;
     private BigDecimal statedDue;
+    private Long corrects;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, Long number, BigDecimal settledDue, String openedBy, boolean stated,
-            BigDecimal statedDue) {
+            BigDecimal statedDue, Long corrects) {
         this.id = id;
         this.sheetId = sheetId;
         this.personId = personId;
@@ -34,6 +36,7 @@ public class Claim {
         this.openedBy = openedBy;
         this.stated = stated;
         this.statedDue = statedDue;
+        this.corrects = corrects;
     }
 
     public long getId() { return id; }
@@ -55,6 +58,11 @@ public class Claim {
     /** The figure the claim was bound to by the person's last statement; null when it had none (n/a)
      *  or is not bound. */
     public BigDecimal getStatedDue() { return statedDue; }
+    /** The number of the claim this correction corrects; null when it is not a correction. */
+    public Long getCorrects() { return corrects; }
+    /** Whether the claim is a correction: a negative amount, with no floor and no late charge. */
+    public boolean isCorrection() { return amount.signum() < 0; }
+    public void setCorrects(Long corrects) { this.corrects = corrects; }
     public void setAmount(BigDecimal amount) { this.amount = amount; }
     public void setDate(LocalDate date) { this.date = date; }
     public void setNote(String note) { this.note = note; }

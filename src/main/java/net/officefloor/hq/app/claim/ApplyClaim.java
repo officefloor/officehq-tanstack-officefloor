@@ -7,5 +7,6 @@ public class ApplyClaim {
         claim.setAmount(input.amount());
         claim.setDate(input.date());
         claim.setNote(input.note());
+        claim.setCorrects(input.corrects());
     }
 }

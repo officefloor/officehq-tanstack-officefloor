@@ -19,7 +19,8 @@ public class ClaimStore {
             rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getObject("claim_date", LocalDate.class),
             rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
             rs.getObject("number", Long.class), rs.getBigDecimal("settled_due"),
-            rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"));
+            rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
+            rs.getObject("corrects", Long.class));
 
     private final JdbcTemplate jdbc;
 
@@ -36,20 +37,29 @@ public class ClaimStore {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note) {
+    /** The person's claim with the number, or null when they have none. */
+    public Claim findByNumber(String sheetId, long personId, long number) {
+        List<Claim> found = jdbc.query("SELECT * FROM claim WHERE sheet_id = ? AND person_id = ? AND number = ?", ROW,
+                sheetId, personId, number);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, Long corrects) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note) VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects) VALUES (?, ?, ?, ?, ?, ?)",
                     new String[] { "ID" });
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
             ps.setBigDecimal(3, amount);
             ps.setDate(4, Date.valueOf(date));
             ps.setString(5, note);
+            ps.setObject(6, corrects);
             return ps;
         }, keys);
-        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null);
+        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null,
+                corrects);
     }
 
     public void save(Claim claim) {
@@ -59,10 +69,10 @@ public class ClaimStore {
                 claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getSheetId(), claim.getId());
     }
 
-    /** Stores a draft's amount, date and note; false when the stored claim is no longer a draft. */
+    /** Stores a draft's amount, date, note and the claim it corrects; false when the stored claim is no longer a draft. */
     public boolean edit(Claim claim) {
-        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ? WHERE sheet_id = ? AND id = ? AND status = ?",
-                claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getSheetId(), claim.getId(),
+        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ? WHERE sheet_id = ? AND id = ? AND status = ?",
+                claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getCorrects(), claim.getSheetId(), claim.getId(),
                 ClaimStatus.DRAFT.name()) == 1;
     }
 

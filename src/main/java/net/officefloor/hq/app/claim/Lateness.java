@@ -19,9 +19,10 @@ public record Lateness(int terms, BigDecimal pct, LocalDate today) {
         return new Lateness(settings.terms(sheetId), settings.latePct(sheetId), sheets.today(sheetId));
     }
 
-    /** The late charge on a claim whose figure (bound, else floored live) is {@code figure}. */
+    /** The late charge on a claim whose figure (bound, else floored live) is {@code figure}; none on
+     *  a correction. */
     public BigDecimal charge(Claim claim, BigDecimal figure) {
-        if (figure == null || claim.getStatus() != ClaimStatus.OPEN || today == null) {
+        if (figure == null || claim.getStatus() != ClaimStatus.OPEN || today == null || claim.isCorrection()) {
             return BigDecimal.ZERO.setScale(2);
         }
         long overdue = ChronoUnit.DAYS.between(claim.getDate().plusDays(terms), today);
