@@ -1,0 +1,333 @@
+diff --git a/src/main/frontend/features/claims/list.slot.tsx b/src/main/frontend/features/claims/list.slot.tsx
+index 0d075bea2..0398bd9a6 100644
+--- a/src/main/frontend/features/claims/list.slot.tsx
++++ b/src/main/frontend/features/claims/list.slot.tsx
+@@ -85,6 +85,7 @@ function PersonClaims({ person }: { person: Person }) {
+   const [deferDates, setDeferDates] = useState<Record<number, string>>({});
+   const [redates, setRedates] = useState<Record<number, string>>({});
+   const [splitAmounts, setSplitAmounts] = useState<Record<number, string>>({});
++  const [partAmounts, setPartAmounts] = useState<Record<number, string>>({});
+   const [inlineAmounts, setInlineAmounts] = useState<Record<number, string>>({});
+   const [commentTexts, setCommentTexts] = useState<Record<number, string>>({});
+   const [lineFields, setLineFields] = useState<Record<number, { label: string; qty: string; unit: string }>>({});
+@@ -157,6 +158,7 @@ function PersonClaims({ person }: { person: Person }) {
+     line.reset();
+     proof.reset();
+     split.reset();
++    partSettle.reset();
+     redate.reset();
+     inline.reset();
+     move.mutate({ id, status, review: review !== undefined, reason: review?.reason ?? voidReason });
+@@ -187,6 +189,7 @@ function PersonClaims({ person }: { person: Person }) {
+     line.reset();
+     proof.reset();
+     split.reset();
++    partSettle.reset();
+     redate.reset();
+     inline.reset();
+     reassign.mutate({ id, to: targets[id] ?? '' });
+@@ -215,6 +218,7 @@ function PersonClaims({ person }: { person: Person }) {
+     line.reset();
+     proof.reset();
+     split.reset();
++    partSettle.reset();
+     redate.reset();
+     inline.reset();
+     resettle.mutate(id);
+@@ -244,6 +248,7 @@ function PersonClaims({ person }: { person: Person }) {
+     line.reset();
+     proof.reset();
+     split.reset();
++    partSettle.reset();
+     redate.reset();
+     inline.reset();
+     defer.mutate({ id, until: (deferDates[id] ?? '').trim() });
+@@ -269,6 +274,7 @@ function PersonClaims({ person }: { person: Person }) {
+     line.reset();
+     proof.reset();
+     split.reset();
++    partSettle.reset();
+     redate.reset();
+     inline.reset();
+     remind.mutate(id);
+@@ -297,6 +303,7 @@ function PersonClaims({ person }: { person: Person }) {
+     line.reset();
+     proof.reset();
+     split.reset();
++    partSettle.reset();
+     redate.reset();
+     inline.reset();
+     waive.mutate(id);
+@@ -326,6 +333,7 @@ function PersonClaims({ person }: { person: Person }) {
+     line.reset();
+     proof.reset();
+     split.reset();
++    partSettle.reset();
+     redate.reset();
+     inline.reset();
+     hold.mutate(id);
+@@ -353,6 +361,7 @@ function PersonClaims({ person }: { person: Person }) {
+     line.reset();
+     proof.reset();
+     split.reset();
++    partSettle.reset();
+     redate.reset();
+     inline.reset();
+     comment.mutate({ id, text: commentTexts[id] ?? '' });
+@@ -383,6 +392,7 @@ function PersonClaims({ person }: { person: Person }) {
+     line.reset();
+     proof.reset();
+     split.reset();
++    partSettle.reset();
+     redate.reset();
+     inline.reset();
+     const f = lineFields[id] ?? { label: '', qty: '', unit: '' };
+@@ -416,6 +426,7 @@ function PersonClaims({ person }: { person: Person }) {
+     line.reset();
+     proof.reset();
+     split.reset();
++    partSettle.reset();
+     redate.reset();
+     inline.reset();
+     proof.mutate(id);
+@@ -446,10 +457,42 @@ function PersonClaims({ person }: { person: Person }) {
+     line.reset();
+     proof.reset();
+     split.reset();
++    partSettle.reset();
+     redate.reset();
+     inline.reset();
+     split.mutate({ id, amount: (splitAmounts[id] ?? '').trim() });
+   };
++  // Part-settling an OPEN claim splits the amount off it and settles the new claim at once; both people's figures follow.
++  const partSettle = useMutation({
++    mutationFn: (d: { id: number; amount: string }) =>
++      postJson<Claim>(`${base}/claims/${d.id}/settle-part`, { amount: d.amount, user }),
++    onSuccess: async (_, d) => {
++      await Promise.all([
++        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
++        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
++      ]);
++      setPartAmounts((a) => ({ ...a, [d.id]: '' }));
++    },
++  });
++  const settlePartClaim = (id: number) => {
++    move.reset();
++    lock.reset();
++    setUneditable(undefined);
++    reassign.reset();
++    resettle.reset();
++    defer.reset();
++    remind.reset();
++    waive.reset();
++    hold.reset();
++    comment.reset();
++    line.reset();
++    proof.reset();
++    split.reset();
++    partSettle.reset();
++    redate.reset();
++    inline.reset();
++    partSettle.mutate({ id, amount: (partAmounts[id] ?? '').trim() });
++  };
+   // A steward re-dates an OPEN or PENDING claim; its due-by, and so its period (and per-period number), stay as they are.
+   const redate = useMutation({
+     mutationFn: (d: { id: number; date: string }) =>
+@@ -476,6 +519,7 @@ function PersonClaims({ person }: { person: Person }) {
+     line.reset();
+     proof.reset();
+     split.reset();
++    partSettle.reset();
+     redate.mutate({ id, date: (redates[id] ?? '').trim() });
+   };
+   // A draft's amount changed in its row: an edit as the claim form makes it, keeping the claim's date, note,
+@@ -513,6 +557,7 @@ function PersonClaims({ person }: { person: Person }) {
+     line.reset();
+     proof.reset();
+     split.reset();
++    partSettle.reset();
+     redate.reset();
+     inline.reset();
+     inline.mutate({ claim: c, amount: (inlineAmounts[c.id] ?? '').trim() });
+@@ -542,6 +587,8 @@ function PersonClaims({ person }: { person: Person }) {
+                   ? proof.error
+                   : split.isError && split.variables?.id === id
+                     ? split.error
++                  : partSettle.isError && partSettle.variables?.id === id
++                    ? partSettle.error
+                     : redate.isError && redate.variables?.id === id
+                       ? redate.error
+                       : inline.isError && inline.variables?.claim.id === id
+@@ -574,6 +621,7 @@ function PersonClaims({ person }: { person: Person }) {
+     line.reset();
+     proof.reset();
+     split.reset();
++    partSettle.reset();
+     redate.reset();
+     inline.reset();
+     // Only a DRAFT can be edited: any other claim is refused at once, as the server would refuse it.
+@@ -823,6 +871,20 @@ function PersonClaims({ person }: { person: Person }) {
+               <button type="button" data-testid="claim-split" disabled={split.isPending} onClick={() => splitClaim(c.id)}>
+                 Split
+               </button>{' '}
++              <input
++                data-testid="claim-settle-part-amount"
++                placeholder="Settle part"
++                aria-label="Amount to settle"
++                inputMode="decimal"
++                value={partAmounts[c.id] ?? ''}
++                onChange={(e) => {
++                  setPartAmounts({ ...partAmounts, [c.id]: e.target.value });
++                  if (partSettle.variables?.id === c.id) partSettle.reset();
++                }}
++              />{' '}
++              <button type="button" data-testid="claim-settle-part" disabled={partSettle.isPending} onClick={() => settlePartClaim(c.id)}>
++                Settle part
++              </button>{' '}
+               <input
+                 data-testid="claim-inline-amount"
+                 placeholder="Amount"
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyPartSettle.java b/src/main/java/net/officefloor/hq/app/claim/ApplyPartSettle.java
+new file mode 100644
+index 000000000..72bff89df
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyPartSettle.java
+@@ -0,0 +1,99 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.holiday.HolidayStore;
++import net.officefloor.hq.app.period.PeriodStore;
++import net.officefloor.hq.app.person.PersonStore;
++import net.officefloor.hq.app.rate.RateStore;
++import net.officefloor.hq.app.role.Role;
++import net.officefloor.hq.app.role.RoleStore;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.rollup.RollupService;
++import net.officefloor.hq.app.setting.SettingStore;
++import net.officefloor.hq.app.sheet.InvalidSheetException;
++import net.officefloor.hq.app.sheet.SheetStore;
++import net.officefloor.hq.app.voidreason.VoidReasonStore;
++import net.officefloor.hq.app.watch.WatchStore;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.transaction.PlatformTransactionManager;
++import org.springframework.transaction.TransactionDefinition;
++import org.springframework.transaction.support.TransactionTemplate;
++
++/** Part-settles an OPEN claim: splits the amount off it through the very steps of a split, then settles the new
++ *  claim by the user through the very steps of a settle (a clerk's settle above the clerk limit sends it to PENDING).
++ *  The four-eyes rules and the proof rule are judged on the original claim, before the split; the new claim, opened
++ *  by the user, is not judged by them again. All or nothing: a refusal of either rolls both back and drops their
++ *  audit records. */
++public class ApplyPartSettle {
++    public void apply(@Val SplitInput input, @Val Claim claim, ClaimStore store, PersonStore people, PeriodStore periods,
++            SettingStore settings, SheetStore sheets, RoleStore roles, RateStore rates, ClaimLogStore log,
++            HolidayStore holidays, RollupService rollups, Audit audit, WatchStore watches, VoidReasonStore voidReasons,
++            PlatformTransactionManager transactions) throws InvalidSheetException {
++        StatusInput status = new StatusInput(ClaimStatus.SETTLED, input.user(), false, "");
++        TransactionTemplate nested = new TransactionTemplate(transactions);
++        nested.setPropagationBehavior(TransactionDefinition.PROPAGATION_NESTED);
++        InvalidSheetException[] refused = new InvalidSheetException[1];
++        audit.hold();
++        boolean done = false;
++        try {
++            done = Boolean.TRUE.equals(nested.execute(tx -> {
++                try {
++                    String sheet = claim.getSheetId();
++                    Role role = roles.find(sheet, input.user());
++                    // The split, as the split button makes it.
++                    new CheckClaimPeriod().check(claim, periods);
++                    new CheckSplit().check(input, claim, roles, settings, sheets);
++                    // The settle's own rules judged on the original claim.
++                    CheckClerkLimit.refuseUnpermitted(ClaimStatus.SETTLED, sheet, role, settings);
++                    if (claim.getOpenedBy() != null && claim.getOpenedBy().equals(input.user())) {
++                        throw new InvalidSheetException("The user who opened a claim cannot settle it");
++                    }
++                    if (claim.getEditedBy() != null && claim.getEditedBy().equals(input.user())) {
++                        throw new InvalidSheetException("The user who last edited a claim cannot settle it");
++                    }
++                    CheckProofs.refuseUnproved(status, claim, settings, people, rates, sheets, store);
++                    Rollup beforeSplit = rollups.snapshot(sheet);
++                    Split[] split = new Split[1];
++                    new ApplySplit().apply(input, claim, store, people, settings, sheets, periods, log, holidays,
++                            s -> split[0] = s);
++                    new AuditClaimSplit().audit(input, claim, split[0], beforeSplit, people, audit, rollups);
++                    // The settle of the new claim, as the settle button makes it.
++                    Claim into = split[0].into();
++                    sheets.refuseArchived(sheet);
++                    new CheckClaimPeriod().check(into, periods);
++                    StatusMove move = new StatusMove(ClaimStatus.OPEN, CheckClerkLimit.overLimit(status, into,
++                            role == Role.STEWARD, settings, people, rates, sheets, store)
++                                    ? ClaimStatus.PENDING : ClaimStatus.SETTLED);
++                    Rollup beforeSettle = rollups.snapshot(sheet);
++                    StatusChange[] change = new StatusChange[1];
++                    // The new claim's opener is the user, who may still settle it.
++                    String openedBy = into.getOpenedBy();
++                    into.setOpenedBy(null);
++                    try {
++                        new ApplyStatus().apply(status, move, into, store, people, rates, settings, sheets, periods,
++                                voidReasons, c -> change[0] = c);
++                    } finally {
++                        into.setOpenedBy(openedBy);
++                    }
++                    new SaveClaim().save(status, into, store, log);
++                    new AuditClaimStatus().audit(status, move, into, change[0], beforeSettle, people, audit, rollups,
++                            watches);
++                    return true;
++                } catch (InvalidSheetException e) {
++                    refused[0] = e;
++                    tx.setRollbackOnly();
++                    return false;
++                }
++            }));
++        } finally {
++            if (done) {
++                audit.release();
++            } else {
++                audit.discard();
++            }
++        }
++        if (refused[0] != null) {
++            throw refused[0];
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/CheckClerkLimit.java b/src/main/java/net/officefloor/hq/app/claim/CheckClerkLimit.java
+index 9d9507261..1a8629049 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/CheckClerkLimit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/CheckClerkLimit.java
+@@ -151,7 +151,7 @@ public class CheckClerkLimit {
+         }
+     }
+ 
+-    private static boolean overLimit(StatusInput input, Claim claim, boolean steward, SettingStore settings,
++    static boolean overLimit(StatusInput input, Claim claim, boolean steward, SettingStore settings,
+             PersonStore people, RateStore rates, SheetStore sheets, ClaimStore claims) {
+         if (input.status() != ClaimStatus.SETTLED || claim.getStatus() != ClaimStatus.OPEN || steward) {
+             return false;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle-part.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle-part.POST.yml
+new file mode 100644
+index 000000000..591fcc6de
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/settle-part.POST.yml
+@@ -0,0 +1,20 @@
++# POST /api/sheets/{sheetId}/claims/{claimId}/settle-part — part-settle an OPEN claim (body {amount, user}): the
++# amount is split off it exactly as a split does, and the new claim is settled at once by the user exactly as a
++# settle does (PENDING when the clerk limit says so). The four-eyes rules (the user who opened or last edited a
++# claim may not settle it) and the proof rule are judged on the original claim; the new claim's opener is the user,
++# who may still settle it. Refused (400), storing and auditing nothing, when the split or the settle would be
++# refused. Audited as the split (CLAIM_SPLIT, CLAIM_OPENED, figures), then the settle (CLAIM_SETTLED or CLAIM_PENDING, ...).
++validate:
++  class: net.officefloor.hq.app.claim.ValidateSplit
++  next: load
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ transaction ]
++  next: apply
++apply:
++  class: net.officefloor.hq.app.claim.ApplyPartSettle
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaim
++  govern: [ transaction ]
