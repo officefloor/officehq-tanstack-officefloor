@@ -21,7 +21,8 @@ import net.officefloor.plugin.variable.Val;
  *  proof threshold is refused (see {@link CheckProofs}), so it never goes to PENDING. Opening, settling
  *  and voiding are refused to a role the sheet's permission matrix does not allow it. A SETTLED claim
  *  may be voided only by a steward, and only within {@link #VOID_SETTLED_DAYS} days of the sheet's today
- *  it was settled on (its status log's SETTLED date). */
+ *  it was settled on (its status log's SETTLED date). A DELETED claim may be restored only on the
+ *  sheet's today it was deleted on. */
 public class CheckClerkLimit {
     /** How many days after settling a claim a steward may still void it. */
     static final int VOID_SETTLED_DAYS = 7;
@@ -51,6 +52,9 @@ public class CheckClerkLimit {
         if (from == ClaimStatus.SETTLED && input.status() == ClaimStatus.VOID) {
             refuseLateVoid(claim, steward, log, sheets);
         }
+        if (from == ClaimStatus.DELETED && input.status() == ClaimStatus.DRAFT) {
+            refuseLateRestore(claim, log, sheets);
+        }
         if (from == ClaimStatus.DRAFT && input.status() == ClaimStatus.OPEN) {
             CheckProofs.refuseUnnoted(claim, settings, people, rates, sheets, claims);
         }
@@ -71,6 +75,16 @@ public class CheckClerkLimit {
         if (settled == null || today == null || today.isAfter(settled.plusDays(VOID_SETTLED_DAYS))) {
             throw new InvalidSheetException("A SETTLED claim can be voided only within " + VOID_SETTLED_DAYS
                     + " days of settling it");
+        }
+    }
+
+    /** Refuses restoring a DELETED claim on any day but the sheet's today it was deleted on (its status
+     *  log's last DELETED date). */
+    static void refuseLateRestore(Claim claim, ClaimLogStore log, SheetStore sheets) throws InvalidSheetException {
+        LocalDate deleted = log.lastOn(claim, ClaimStatus.DELETED);
+        LocalDate today = sheets.today(claim.getSheetId());
+        if (deleted == null || today == null || !today.equals(deleted)) {
+            throw new InvalidSheetException("A DELETED claim can be restored only on the day it was deleted");
         }
     }
 

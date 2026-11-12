@@ -6,10 +6,11 @@ import { asNumber, asString, useSearchParam } from '../../url/useSearchParam';
 import { type Hold, covers } from '../people/people';
 
 /** PENDING: settled by a clerk above the clerk limit, awaiting a steward's approval; handled as OPEN,
- *  except that a statement does not bind it while it is PENDING. */
-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
+ *  except that a statement does not bind it while it is PENDING. DELETED: a deleted DRAFT, which counts
+ *  nowhere and can be restored to a DRAFT on the sheet's today it was deleted. */
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED';
 
-/** Every status the summary and header count, whether or not a claim can reach it. */
+/** Every status the summary and header count, whether or not a claim can reach it; a DELETED claim counts nowhere. */
 export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const satisfies readonly ClaimStatus[];
 
 /** How many of these claims have the status. */

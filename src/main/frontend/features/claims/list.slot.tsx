@@ -486,6 +486,12 @@ function PersonClaims({ person }: { person: Person }) {
               >
                 Void
               </button>{' '}
+              <button type="button" data-testid="claim-delete" disabled={move.isPending} onClick={() => moveTo(c.id, 'DELETED')}>
+                Delete
+              </button>{' '}
+              <button type="button" data-testid="claim-restore" disabled={move.isPending} onClick={() => moveTo(c.id, 'DRAFT')}>
+                Restore
+              </button>{' '}
               <button
                 type="button"
                 data-testid="claim-resettle"
