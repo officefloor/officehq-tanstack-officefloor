@@ -1,0 +1,358 @@
+diff --git a/src/main/frontend/features/people/transfer.slot.tsx b/src/main/frontend/features/people/transfer.slot.tsx
+index 05f8a94ef..d1e96c3fa 100644
+--- a/src/main/frontend/features/people/transfer.slot.tsx
++++ b/src/main/frontend/features/people/transfer.slot.tsx
+@@ -81,9 +81,64 @@ function PersonTransfer({ person }: { person: Person }) {
+   );
+ }
+ 
++function TransferUndoHead() {
++  return <th>Undo transfer</th>;
++}
++
++// The button that undoes the transfer that brought this person here: a steward's action, on the sheet-today they
++// arrived. They are transferred back to the sheet they came from and their row leaves this one. A refused undo
++// shows its error until the next action is taken.
++function PersonTransferUndo({ person }: { person: Person }) {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const queryClient = useQueryClient();
++
++  const undo = useMutation({
++    mutationKey: personActionKey(sheet, person.id),
++    mutationFn: () =>
++      postJson<unknown>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/transfer-undo`, { user }),
++    onSuccess: async () => {
++      await Promise.all([
++        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
++        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
++        queryClient.invalidateQueries({ queryKey: poolsKey(sheet) }),
++        queryClient.invalidateQueries({ queryKey: [...sheetKey(sheet), 'watches'] }),
++      ]);
++    },
++  });
++
++  const latest = useLatestPersonAction(sheet, person.id);
++
++  return (
++    <td>
++      <button
++        type="button"
++        data-testid="person-transfer-undo"
++        disabled={undo.isPending}
++        onClick={() => {
++          undo.reset();
++          undo.mutate();
++        }}
++      >
++        Undo transfer
++      </button>
++      {undo.isError && undo.submittedAt >= latest && (
++        <span data-testid="person-error" role="alert">
++          {' '}
++          {undo.error instanceof HttpError && undo.error.reason
++            ? `${undo.error.reason}.`
++            : 'The transfer undo was refused.'}
++        </span>
++      )}
++    </td>
++  );
++}
++
+ export const contributions = [
+   PersonColumnHeads.fill({ order: 19.94, Component: OriginHead }),
+   PersonColumns.fill({ order: 19.94, Component: PersonOrigin }),
+   PersonColumnHeads.fill({ order: 19.95, Component: TransferHead }),
+   PersonColumns.fill({ order: 19.95, Component: PersonTransfer }),
++  PersonColumnHeads.fill({ order: 19.955, Component: TransferUndoHead }),
++  PersonColumns.fill({ order: 19.955, Component: PersonTransferUndo }),
+ ];
+diff --git a/src/main/java/net/officefloor/hq/app/person/AuditPersonTransferUndone.java b/src/main/java/net/officefloor/hq/app/person/AuditPersonTransferUndone.java
+new file mode 100644
+index 000000000..c24ebf89b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/AuditPersonTransferUndone.java
+@@ -0,0 +1,17 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.rollup.Rollup;
++import net.officefloor.hq.app.rollup.RollupService;
++import net.officefloor.plugin.variable.Val;
++
++/** After the transfer back's own lines, records the undo on this sheet: PERSON_TRANSFER_UNDONE sheet=<this>
++ *  by=<user> name=<name> to=<the sheet they went back to>, followed by how it moved this sheet's figures. */
++public class AuditPersonTransferUndone {
++    public void audit(@Val TransferRequest request, @Val Person person, @Val Rollup before, Audit audit,
++            RollupService rollups) {
++        audit.record("PERSON_TRANSFER_UNDONE sheet=" + person.getSheetId() + " by=" + request.user() + " name="
++                + person.getName() + " to=" + request.to());
++        rollups.record(person.getSheetId(), request.user(), before);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index 87d19e4db..72f4e19b8 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -35,6 +35,7 @@ public class Person {
+     private String contact;
+     private boolean contactChanged;
+     private String origin;
++    private LocalDate arrivedOn;
+     private String tags;
+ 
+     public Person(long id, String sheetId, String name, NavigableMap<LocalDate, String> grades, long version) {
+@@ -128,6 +129,9 @@ public class Person {
+     /** The sheet they were transferred from, null when they were not transferred here. */
+     public String getOrigin() { return origin; }
+     public void setOrigin(String origin) { this.origin = origin; }
++    /** The sheet's today on which a transfer brought them here, null when they were not transferred here. */
++    public LocalDate getArrivedOn() { return arrivedOn; }
++    public void setArrivedOn(LocalDate arrivedOn) { this.arrivedOn = arrivedOn; }
+     public void setVersion(long version) { this.version = version; }
+     public void setRetiredFrom(LocalDate retiredFrom) { this.retiredFrom = retiredFrom; }
+     /** Their past retirements (each ended by unretiring them), oldest first. */
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonStore.java b/src/main/java/net/officefloor/hq/app/person/PersonStore.java
+index b42ef0dbd..4c98e3ad8 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonStore.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonStore.java
+@@ -116,6 +116,7 @@ public class PersonStore {
+             p.setContact(rs.getString("contact"));
+             p.setTags(rs.getString("tags"));
+             p.setOrigin(rs.getString("origin"));
++            p.setArrivedOn(rs.getObject("arrived_on", LocalDate.class));
+             p.getAliases().addAll(aliases.getOrDefault(rs.getLong("id"), List.of()));
+             p.getPastRetirements().addAll(past.getOrDefault(rs.getLong("id"), List.of()));
+             p.getSnapshots().addAll(snapshots.getOrDefault(rs.getLong("id"), List.of()));
+@@ -369,8 +370,9 @@ public class PersonStore {
+ 
+     /** Adds a copy of the person to the other sheet: their name, every grade with its from-date, their terms,
+      *  contact, tags and aliases, noting this sheet as the one they came from. Their holds, statements and watchers
+-     *  are not carried (a transfer gives them their statements, see StatementStore). */
+-    public Person copyTo(Person person, String toSheet) {
++     *  are not carried (a transfer gives them their statements, see StatementStore). {@code arrivedOn} is the other
++     *  sheet's today, the day they arrived there. */
++    public Person copyTo(Person person, String toSheet, LocalDate arrivedOn) {
+         Person copy = add(toSheet, person.getName(), person.gradeOn(Person.START), person.getTerms(), person.getContact(),
+                 person.getTags());
+         person.getGrades().forEach((from, grade) -> {
+@@ -385,8 +387,8 @@ public class PersonStore {
+         for (String alias : person.getAliases()) {
+             addAlias(copy, alias);
+         }
+-        jdbc.update("UPDATE person SET origin = ? WHERE sheet_id = ? AND id = ?", person.getSheetId(), toSheet,
+-                copy.getId());
++        jdbc.update("UPDATE person SET origin = ?, arrived_on = ? WHERE sheet_id = ? AND id = ?", person.getSheetId(),
++                arrivedOn, toSheet, copy.getId());
+         return find(toSheet, copy.getId());
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/person/PrepareTransferUndo.java b/src/main/java/net/officefloor/hq/app/person/PrepareTransferUndo.java
+new file mode 100644
+index 000000000..ed5f22826
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/PrepareTransferUndo.java
+@@ -0,0 +1,21 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.sheet.InvalidSheetException;
++import net.officefloor.hq.app.sheet.SheetStore;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++/** Refuses to undo the transfer of a person who did not arrive by transfer, or who arrived on a sheet-today other
++ *  than this sheet's today; otherwise sets up the transfer back to the sheet they came from. */
++public class PrepareTransferUndo {
++    public void prepare(@Val TransferUndoRequest request, @Val Person person, SheetStore sheets,
++            Out<TransferRequest> transfer) throws InvalidSheetException {
++        if (person.getOrigin() == null || person.getArrivedOn() == null) {
++            throw new InvalidSheetException(person.getName() + " did not arrive by transfer");
++        }
++        if (!person.getArrivedOn().equals(sheets.today(person.getSheetId()))) {
++            throw new InvalidSheetException("A transfer can be undone only on the day it arrived");
++        }
++        transfer.set(new TransferRequest(person.getOrigin(), request.user()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/TransferPerson.java b/src/main/java/net/officefloor/hq/app/person/TransferPerson.java
+index fcfeed84a..bb5aeea66 100644
+--- a/src/main/java/net/officefloor/hq/app/person/TransferPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/TransferPerson.java
+@@ -68,7 +68,7 @@ public class TransferPerson {
+             numbers.putIfAbsent(claim.getNumber(), number);
+             numberOf.put(claim.getId(), number);
+         }
+-        Person copy = into == null ? people.copyTo(person, to) : into;
++        Person copy = into == null ? people.copyTo(person, to, sheets.today(to)) : into;
+         // listed newest first: copy the oldest first, so they keep their order
+         for (int i = theirs.size() - 1; i >= 0; i--) {
+             Claim claim = theirs.get(i);
+diff --git a/src/main/java/net/officefloor/hq/app/person/TransferUndoRequest.java b/src/main/java/net/officefloor/hq/app/person/TransferUndoRequest.java
+new file mode 100644
+index 000000000..b122721ad
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/TransferUndoRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** Body of a transfer undo: who undoes it. */
++public record TransferUndoRequest(String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateTransferUndo.java b/src/main/java/net/officefloor/hq/app/person/ValidateTransferUndo.java
+new file mode 100644
+index 000000000..77bb61756
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateTransferUndo.java
+@@ -0,0 +1,21 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.role.Role;
++import net.officefloor.hq.app.role.RoleStore;
++import net.officefloor.hq.app.sheet.InvalidSheetException;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Refuses a transfer undo by anyone but a steward. */
++public class ValidateTransferUndo {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody TransferUndoRequest request,
++            RoleStore roles, Out<TransferUndoRequest> body) throws InvalidSheetException {
++        String user = request == null || request.user() == null ? "" : request.user().trim();
++        roles.refuseChange(sheetId.trim(), user);
++        if (roles.find(sheetId.trim(), user) != Role.STEWARD) {
++            throw new InvalidSheetException("Only a steward may undo a transfer");
++        }
++        body.set(new TransferUndoRequest(user));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/plan/GeneratePlanClaims.java b/src/main/java/net/officefloor/hq/app/plan/GeneratePlanClaims.java
+index 84a49bf42..9741707cb 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/GeneratePlanClaims.java
++++ b/src/main/java/net/officefloor/hq/app/plan/GeneratePlanClaims.java
+@@ -11,6 +11,8 @@ import net.officefloor.hq.app.holiday.HolidayStore;
+ import net.officefloor.hq.app.period.PeriodStore;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonStore;
++import net.officefloor.hq.app.role.Role;
++import net.officefloor.hq.app.role.RoleStore;
+ import net.officefloor.hq.app.rollup.RollupService;
+ import net.officefloor.hq.app.setting.SettingStore;
+ import net.officefloor.hq.app.sheet.InvalidSheetException;
+@@ -23,16 +25,20 @@ import org.springframework.web.bind.annotation.PathVariable;
+  * For every plan on the sheet in the order they were added, adds a DRAFT claim of the plan's amount, dated that
+  * day with an empty note, for every plan date (the start, then every N days, or a monthly plan's day in each month) up to its end and the sheet's today
+  * that it has made none for yet, as the claim form would (recorded as CLAIM_ADDED). A date the claim form refuses
+- * is skipped, and tried again on the next generate.
++ * is skipped, and tried again on the next generate. A viewer makes none: the answer is 0, storing and recording nothing.
+  */
+ public class GeneratePlanClaims {
+     public void generate(@PathVariable("sheetId") String sheetId, @Val PlanGenerateRequest request, PlanStore plans,
+             PersonStore people, SheetStore sheets, ClaimStore claims, SettingStore settings, ClaimLogStore log,
+-            PeriodStore periods, RollupService rollups, Audit audit, HolidayStore holidays,
++            PeriodStore periods, RollupService rollups, Audit audit, HolidayStore holidays, RoleStore roles,
+             Out<PlanGenerateResult> result) {
+         String sheet = sheetId.trim();
+         LocalDate today = sheets.today(sheet);
+         int made = 0;
++        if (roles.find(sheet, request.user()) == Role.VIEWER) {
++            result.set(new PlanGenerateResult(made));
++            return;
++        }
+         for (Plan plan : plans.list(sheet)) {
+             LocalDate last = plan.end().isBefore(today) ? plan.end() : today;
+             for (LocalDate d : plan.dates(last)) {
+diff --git a/src/main/java/net/officefloor/hq/app/plan/ValidatePlanGenerate.java b/src/main/java/net/officefloor/hq/app/plan/ValidatePlanGenerate.java
+index ef08b75a0..12e920109 100644
+--- a/src/main/java/net/officefloor/hq/app/plan/ValidatePlanGenerate.java
++++ b/src/main/java/net/officefloor/hq/app/plan/ValidatePlanGenerate.java
+@@ -1,17 +1,17 @@
+ package net.officefloor.hq.app.plan;
+ 
+-import net.officefloor.hq.app.role.RoleStore;
++import net.officefloor.hq.app.sheet.SheetStore;
+ import net.officefloor.hq.app.sheet.InvalidSheetException;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+-/** Refuses a generate by a viewer or on an archived sheet. */
++/** Refuses a generate on an archived sheet. A viewer's generate is answered by GeneratePlanClaims, making none. */
+ public class ValidatePlanGenerate {
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PlanGenerateRequest request,
+-            Out<PlanGenerateRequest> body, RoleStore roles) throws InvalidSheetException {
++            Out<PlanGenerateRequest> body, SheetStore sheets) throws InvalidSheetException {
+         String user = request == null || request.user() == null ? "" : request.user().trim();
+-        roles.refuseChange(sheetId.trim(), user);
++        sheets.refuseArchived(sheetId.trim());
+         body.set(new PlanGenerateRequest(user));
+     }
+ }
+diff --git a/src/main/resources/db/migration/V80__person_arrived_on.sql b/src/main/resources/db/migration/V80__person_arrived_on.sql
+new file mode 100644
+index 000000000..a5522bced
+--- /dev/null
++++ b/src/main/resources/db/migration/V80__person_arrived_on.sql
+@@ -0,0 +1,8 @@
++-- The sheet's today on which a transfer brought the person here: set with origin on the copy a transfer makes,
++-- null for anyone added on the sheet itself. A transfer is undone only on that day. Kept in person_hist too;
++-- the history trigger is set again afterwards, as in V59__person_origin.sql.
++DROP TRIGGER person_history;
++ALTER TABLE person ADD COLUMN arrived_on DATE;
++ALTER TABLE person_hist ADD COLUMN arrived_on DATE;
++CREATE TRIGGER person_history AFTER INSERT, UPDATE, DELETE ON person FOR EACH ROW
++    CALL 'net.officefloor.hq.app.history.HistoryTrigger';
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/transfer-undo.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/transfer-undo.POST.yml
+new file mode 100644
+index 000000000..82fbc7d15
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/transfer-undo.POST.yml
+@@ -0,0 +1,36 @@
++# POST /api/sheets/{sheetId}/people/{personId}/transfer-undo — undo the transfer that brought a person to this
++# sheet (body: {user}). Only a steward undoes it, and only on the sheet-today the person arrived. The person is
++# transferred back to the sheet they came from by exactly the transfer's rules and lines (see transfer.POST.yml),
++# then this sheet records PERSON_TRANSFER_UNDONE followed by its rollup lines. Refused (400), storing nothing,
++# when the user is not a steward, the person did not arrive by transfer or arrived on another day, or the
++# transfer back is refused.
++validate:
++  class: net.officefloor.hq.app.person.ValidateTransferUndo
++  next: load
++load:
++  class: net.officefloor.hq.app.person.LoadPerson
++  govern: [ transaction ]
++  next: prepare
++prepare:
++  class: net.officefloor.hq.app.person.PrepareTransferUndo
++  govern: [ transaction ]
++  next: snapshot
++snapshot:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  govern: [ transaction ]
++  next: transfer
++transfer:
++  class: net.officefloor.hq.app.person.TransferPerson
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.person.AuditPersonTransferred
++  govern: [ transaction ]
++  next: undone
++undone:
++  class: net.officefloor.hq.app.person.AuditPersonTransferUndone
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithTransferred
++  govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/generate.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/generate.POST.yml
+index 2346da415..1e151e8ac 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/generate.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/plans/generate.POST.yml
+@@ -2,7 +2,7 @@
+ # a DRAFT claim of its amount, dated that day with an empty note, for every plan date up to its end and the
+ # sheet's today that it has made none for yet, by the claim form's rules: a date the form refuses is
+ # skipped and tried again next time. Each is recorded as CLAIM_ADDED. Answers {generated}. Refused (400)
+-# for a viewer or on an archived sheet.
++# on an archived sheet. A viewer makes none: answers {generated: 0}, storing and recording nothing.
+ validate:
+   class: net.officefloor.hq.app.plan.ValidatePlanGenerate
+   next: generate
