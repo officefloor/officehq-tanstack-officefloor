@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.setting;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -16,6 +17,8 @@ public class SettingStore {
     public static final String TERMS = "terms";
 
     public static final String LATE_PCT = "late-pct";
+
+    public static final String POLICY_DATE = "policy-date";
 
     /** The late percent a sheet has until one is set. */
     public static final BigDecimal DEFAULT_LATE_PCT = new BigDecimal("0.00");
@@ -62,6 +65,12 @@ public class SettingStore {
     public BigDecimal latePct(String sheetId) {
         String value = find(sheetId, LATE_PCT);
         return value == null ? DEFAULT_LATE_PCT : new BigDecimal(value);
+    }
+
+    /** The date the sheet's rounding turns on, or null when blank (then the sheet's today). */
+    public LocalDate policyDate(String sheetId) {
+        String value = find(sheetId, POLICY_DATE);
+        return value == null ? null : LocalDate.parse(value);
     }
 
     public void set(String sheetId, String key, String value) {

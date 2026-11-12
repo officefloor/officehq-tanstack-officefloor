@@ -1,6 +1,8 @@
 package net.officefloor.hq.app.setting;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.sheet.InvalidSheetException;
 import net.officefloor.plugin.variable.Out;
@@ -17,10 +19,23 @@ public class ValidateSetting {
         boolean floor = SettingStore.FLOOR.equals(key);
         boolean terms = SettingStore.TERMS.equals(key);
         boolean late = SettingStore.LATE_PCT.equals(key);
-        if (!SettingStore.CLERK_LIMIT.equals(key) && !floor && !terms && !late) {
+        boolean policy = SettingStore.POLICY_DATE.equals(key);
+        if (!SettingStore.CLERK_LIMIT.equals(key) && !floor && !terms && !late && !policy) {
             throw new InvalidSheetException("Not a setting: " + key);
         }
         String value = request.value() == null ? "" : request.value().trim();
+        if (policy) {
+            if (value.isEmpty()) {
+                body.set(new SettingInput(key, null, request.user()));
+                return;
+            }
+            try {
+                body.set(new SettingInput(key, LocalDate.parse(value).toString(), request.user()));
+            } catch (DateTimeParseException e) {
+                throw new InvalidSheetException("The policy date must be a date (YYYY-MM-DD), or blank");
+            }
+            return;
+        }
         if (terms) {
             if (value.isEmpty()) {
                 body.set(new SettingInput(key, String.valueOf(SettingStore.DEFAULT_TERMS), request.user()));

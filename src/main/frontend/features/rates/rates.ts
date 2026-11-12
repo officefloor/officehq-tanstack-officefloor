@@ -47,22 +47,22 @@ function format(cents: bigint): string {
   return `${neg ? '-' : ''}${abs / 100n}.${String(abs % 100n).padStart(2, '0')}`;
 }
 
-/** amount × pct ÷ 100, rounded half to even to two decimals; n/a when there is no rate. */
-export function due(amount: string, pct: string | undefined): string {
+/** amount × pct ÷ 100, rounded half to even (half up when `halfUp`) to two decimals; n/a when there is no rate. */
+export function due(amount: string, pct: string | undefined, halfUp = false): string {
   if (pct === undefined) return NA;
   // amount (hundredths) × pct (hundredths) is in units of 1/10000 cent-percent: ÷ 10000 gives cents.
   const product = hundredths(amount) * hundredths(pct);
   const abs = product < 0n ? -product : product;
   const rest = abs % 10000n;
   let cents = abs / 10000n;
-  if (rest > 5000n || (rest === 5000n && cents % 2n === 1n)) cents += 1n;
+  if (rest > 5000n || (rest === 5000n && (halfUp || cents % 2n === 1n))) cents += 1n;
   return format(product < 0n ? -cents : cents);
 }
 
 /** A live due: amount at pct (see `due`), raised to the sheet's floor (two decimals) when below it;
  *  n/a when there is no rate. */
-export function liveDue(amount: string, pct: string | undefined, floor: string | undefined): string {
-  const d = due(amount, pct);
+export function liveDue(amount: string, pct: string | undefined, floor: string | undefined, halfUp = false): string {
+  const d = due(amount, pct, halfUp);
   if (d === NA || floor === undefined || hundredths(d) >= hundredths(floor)) return d;
   return format(hundredths(floor));
 }
@@ -73,14 +73,14 @@ export function dueTotal(dues: string[]): string {
 }
 
 /** What a claim's late charge follows: the sheet's late percent (two decimals) and how many full
- *  30 days the claim is overdue. */
-export type Late = { pct: string | undefined; periods: (claim: Claim) => number };
+ *  30 days the claim is overdue; and whether the claim's live figures round half up (else half to even). */
+export type Late = { pct: string | undefined; periods: (claim: Claim) => number; halfUp?: (claim: Claim) => boolean };
 
 /** The late charge on a figure: the late percent of it for every full 30 days overdue, rounded like due. */
 function lateCharge(claim: Claim, figure: string, late: Late | undefined): string | undefined {
   const periods = late?.pct === undefined || isCorrection(claim) ? 0 : late.periods(claim);
   if (periods <= 0 || figure === NA) return undefined;
-  return due(figure, format(hundredths(late!.pct!) * BigInt(periods)));
+  return due(figure, format(hundredths(late!.pct!) * BigInt(periods)), late?.halfUp?.(claim) ?? false);
 }
 
 /** Whether the claim keeps a figure whatever the rates: fixed when settled, or bound by a statement. */
@@ -100,7 +100,9 @@ export function claimDue(
 ): string {
   if (claim.due !== null) return claim.due;
   const pct = rateOf(rates, gradeOn(grades, claim.date), claim.date);
-  const figure = (claim.stated ? claim.statedDue : null) ?? (isCorrection(claim) ? due(claim.amount, pct) : liveDue(claim.amount, pct, floor));
+  const halfUp = late?.halfUp?.(claim) ?? false;
+  const figure = (claim.stated ? claim.statedDue : null)
+    ?? (isCorrection(claim) ? due(claim.amount, pct, halfUp) : liveDue(claim.amount, pct, floor, halfUp));
   const charge = lateCharge(claim, figure, late);
   return charge === undefined ? figure : format(hundredths(figure) + hundredths(charge));
 }

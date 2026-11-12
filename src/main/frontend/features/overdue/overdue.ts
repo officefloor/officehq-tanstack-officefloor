@@ -27,9 +27,15 @@ export function latePeriods(claim: Claim, terms: string | undefined, today: stri
   return Math.floor(days / 30);
 }
 
-/** What the sheet's late charge follows: its late percent, its terms and its today. */
+/** What the sheet's late charge follows: its late percent, its terms and its today; and how it rounds:
+ *  a claim rounding by a date before the policy date (else the sheet's today) rounds half up. */
 export function lateOf(settings: Settings | undefined, today: string | undefined): Late {
-  return { pct: settings?.latePct, periods: (c) => latePeriods(c, settings?.terms, today) };
+  const policy = settings?.policyDate ?? today;
+  return {
+    pct: settings?.latePct,
+    periods: (c) => latePeriods(c, settings?.terms, today),
+    halfUp: (c) => policy !== undefined && (c.roundsBy ?? c.date) < policy,
+  };
 }
 
 /** A person's overdue claims among these (their claims that count): how many, and the sum of their

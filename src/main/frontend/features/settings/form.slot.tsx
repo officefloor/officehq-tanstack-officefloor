@@ -6,16 +6,16 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { type Settings, settingsKey, useSettings } from './settings';
 
-type Key = 'clerk-limit' | 'floor' | 'terms' | 'late-pct';
+type Key = 'clerk-limit' | 'floor' | 'terms' | 'late-pct' | 'policy-date';
 
 // The sheet's settings in force, and the form that changes them: the clerk limit (blank for none),
 // the floor (blank for its default), the terms in days (blank for 14) and the late percent (blank for
-// 0.00). Saving changes the setting last touched, so a field left blank does not clear the others.
+// 0.00) and the policy date rounding turns on (blank for the sheet's today). Saving changes the setting last touched, so a field left blank does not clear the others.
 function SheetSettings() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const settings = useSettings(sheet);
-  const [values, setValues] = useState<Record<Key, string>>({ 'clerk-limit': '', floor: '', terms: '', 'late-pct': '' });
+  const [values, setValues] = useState<Record<Key, string>>({ 'clerk-limit': '', floor: '', terms: '', 'late-pct': '', 'policy-date': '' });
   const [key, setKey] = useState<Key>('clerk-limit');
   const queryClient = useQueryClient();
 
@@ -29,11 +29,11 @@ function SheetSettings() {
   });
   const submit = useSubmitOnce(save);
 
-  const field = (k: Key, placeholder: string) => (
+  const field = (k: Key, placeholder: string, inputMode: 'decimal' | 'text' = 'decimal') => (
     <input
       data-testid={`setting-${k}`}
       placeholder={placeholder}
-      inputMode="decimal"
+      inputMode={inputMode}
       value={values[k]}
       onFocus={() => setKey(k)}
       onChange={(e) => {
@@ -61,7 +61,9 @@ function SheetSettings() {
         Terms <strong data-testid="setting-terms-current">{settings.data?.terms ?? ''}</strong>{' '}
         {field('terms', 'Terms in days (blank for 14)')}{' '}
         Late percent <strong data-testid="setting-late-pct-current">{settings.data?.latePct ?? ''}</strong>{' '}
-        {field('late-pct', 'Late percent (blank for 0.00)')}
+        {field('late-pct', 'Late percent (blank for 0.00)')}{' '}
+        Policy date <strong data-testid="setting-policy-date-current">{settings.data?.policyDate ?? ''}</strong>{' '}
+        {field('policy-date', 'Policy date YYYY-MM-DD (blank for today)', 'text')}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>

@@ -7,6 +7,7 @@ import net.officefloor.hq.app.claim.ClaimFigure;
 import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.ClaimStore;
 import net.officefloor.hq.app.claim.Lateness;
+import net.officefloor.hq.app.claim.Rounding;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.rate.RateStore;
 import net.officefloor.hq.app.setting.SettingStore;
@@ -25,7 +26,8 @@ public class TakeStatement {
         String sheetId = person.getSheetId();
         LocalDate today = sheets.today(sheetId);
         BigDecimal floor = settings.floor(sheetId);
-        Lateness lateness = new Lateness(settings.terms(sheetId), settings.latePct(sheetId), today);
+        Rounding rounding = Rounding.of(sheetId, settings, sheets, claims);
+        Lateness lateness = new Lateness(settings.terms(sheetId), settings.latePct(sheetId), today, rounding);
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         boolean fixed = false;
         int counted = 0;
@@ -36,7 +38,7 @@ public class TakeStatement {
                     || (claim.getStatus() == ClaimStatus.OPEN && !person.isHeld());
             BigDecimal figure = null;
             if (counts) {
-                figure = ClaimFigure.of(claim, rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()), floor);
+                figure = ClaimFigure.of(claim, rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()), floor, rounding);
                 counted++;
                 if (figure != null) {
                     total = total.add(claim.getSettledDue() != null ? figure : figure.add(lateness.charge(claim, figure)));

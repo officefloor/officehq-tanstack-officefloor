@@ -12,7 +12,7 @@ import net.officefloor.plugin.variable.Val;
 
 /** Moves the claim to the new status, refusing a change its current status does not allow. Opening
  *  gives the claim the sheet's next number and records who opened it; a voided claim keeps its number, which is never reused. Settling fixes its due at its person's
- *  grade rate in force on the claim's date, rounded half to even and at least the sheet's floor (none when no rate of the grade applies then),
+ *  grade rate in force on the claim's date, rounded as the sheet's policy date has it and at least the sheet's floor (none when no rate of the grade applies then),
  *  or at the figure its person's last statement bound it to, plus the late charge it has then (frozen in).
  *  The user who opened a claim may not settle it. */
 public class ApplyStatus {
@@ -32,7 +32,7 @@ public class ApplyStatus {
         if (input.status() == ClaimStatus.SETTLED) {
             Person person = people.find(claim.getSheetId(), claim.getPersonId());
             BigDecimal pct = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
-            settledDue = Lateness.of(claim.getSheetId(), settings, sheets).due(claim, pct, settings.floor(claim.getSheetId()));
+            settledDue = Lateness.of(claim.getSheetId(), settings, sheets, store).due(claim, pct, settings.floor(claim.getSheetId()));
         }
         claim.setStatus(input.status());
         if (input.status() == ClaimStatus.OPEN) {

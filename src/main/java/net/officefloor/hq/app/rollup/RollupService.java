@@ -10,6 +10,7 @@ import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.ClaimStore;
 import net.officefloor.hq.app.claim.Lateness;
+import net.officefloor.hq.app.claim.Rounding;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonStore;
 import net.officefloor.hq.app.rate.RateStore;
@@ -51,7 +52,8 @@ public class RollupService {
         LocalDate today = sheets.today(sheetId);
         List<Claim> all = claims.list(sheetId);
         BigDecimal floor = settings.floor(sheetId);
-        Lateness lateness = Lateness.of(sheetId, settings, sheets);
+        Lateness lateness = new Lateness(settings.terms(sheetId), settings.latePct(sheetId), sheets.today(sheetId),
+                new Rounding(policyDate(sheetId), all));
         Map<Long, Rollup.Figures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
         BigDecimal dueTotal = BigDecimal.ZERO.setScale(2);
@@ -88,7 +90,8 @@ public class RollupService {
     public BigDecimal dueBetween(String sheetId, LocalDate from, LocalDate to) {
         List<Claim> all = claims.list(sheetId);
         BigDecimal floor = settings.floor(sheetId);
-        Lateness lateness = Lateness.of(sheetId, settings, sheets);
+        Lateness lateness = new Lateness(settings.terms(sheetId), settings.latePct(sheetId), sheets.today(sheetId),
+                new Rounding(policyDate(sheetId), all));
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         for (Person person : people.list(sheetId)) {
             for (Claim claim : all) {
@@ -119,6 +122,12 @@ public class RollupService {
         if (!after.claimedTotal().equals(before.claimedTotal()) || !after.dueTotal().equals(before.dueTotal())) {
             audit.record("TOTALS" + who + " claimed-total=" + after.claimedTotal() + " due-total=" + after.dueTotal());
         }
+    }
+
+    /** The date the sheet's rounding turns on: the policy date set, else the sheet's today. */
+    private LocalDate policyDate(String sheetId) {
+        LocalDate policy = settings.policyDate(sheetId);
+        return policy != null ? policy : sheets.today(sheetId);
     }
 
     /** Only OPEN and SETTLED claims count, and a held person's OPEN claims do not. */
