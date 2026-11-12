@@ -20,12 +20,14 @@ import { useAsOf } from '../../session/session';
  *  sheet's today moves, null when blank (off). `entryDate` (yyyy-MM-dd) is the default date of a new claim
  *  in place of the sheet's today, null when blank (off). `gradeGrace` is each grade's grace days in force on the sheet's
  *  today, by grade, null when it has none; `gradeGraceFrom` is each grade's grace days recorded, by grade, oldest
- *  from-date first: a claim's grace is the one in force on its date for its person's grade then. */
+ *  from-date first: a claim's grace is the one in force on its date for its person's grade then. `gradeProofThreshold`
+ *  is each grade's proof threshold in force on the sheet's today, by grade, null when it has none (then the sheet's). */
 export type Settings = { clerkLimit: string | null; floor: string; terms: string; latePct: string; policyDate: string | null;
   periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; proofThreshold: string | null;
   floorFrom: Dated[]; latePctFrom: Dated[]; perms: Record<string, string | null>;
   graceDays: string | null; noteThreshold: string | null; entryDate: string | null;
-  gradeGrace: Record<string, string | null>; gradeGraceFrom: Record<string, Dated[]> };
+  gradeGrace: Record<string, string | null>; gradeGraceFrom: Record<string, Dated[]>;
+  gradeProofThreshold: Record<string, string | null> };
 
 /** A setting's value recorded from a date (yyyy-MM-dd); a null value is blank. */
 export type Dated = { from: string; value: string | null };

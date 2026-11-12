@@ -9,7 +9,7 @@ import net.officefloor.hq.app.sheet.InvalidSheetException;
 import net.officefloor.hq.app.sheet.SheetStore;
 
 /** Refuses settling an OPEN claim, or approving a PENDING one, while it has no proofs and its due is above
- *  the proof threshold in force on its date. A sheet with no threshold then, and a claim whose due is n/a,
+ *  the proof threshold in force on its date (its person's grade's then when one is set, else the sheet's). A sheet with no threshold then, and a claim whose due is n/a,
  *  need no proof. */
 final class CheckProofs {
     private CheckProofs() {
@@ -22,12 +22,13 @@ final class CheckProofs {
                 || claim.getProofs() > 0) {
             return;
         }
-        BigDecimal threshold = settings.proofThreshold(claim.getSheetId(), claim.getDate());
+        Person person = people.find(claim.getSheetId(), claim.getPersonId());
+        String grade = person == null ? null : person.gradeOn(claim.getDate());
+        BigDecimal threshold = settings.proofThreshold(claim.getSheetId(), grade, claim.getDate());
         if (threshold == null) {
             return;
         }
-        Person person = people.find(claim.getSheetId(), claim.getPersonId());
-        BigDecimal pct = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
+        BigDecimal pct = person == null ? null : rates.find(claim.getSheetId(), grade, claim.getDate());
         BigDecimal due = Lateness.of(claim.getSheetId(), settings, sheets, claims, people).due(claim, pct);
         if (due != null && due.compareTo(threshold) > 0) {
             throw new InvalidSheetException("A claim due above the proof threshold of " + threshold.setScale(2)

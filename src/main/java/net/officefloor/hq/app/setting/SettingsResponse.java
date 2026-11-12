@@ -21,12 +21,14 @@ import java.util.Map;
  *  {@code entryDate} is the default date of a new claim in place of the sheet's today, null when blank (off).
  *  {@code gradeGrace} is each grade's grace days in force on the sheet's today, by grade, null when it has none;
  *  {@code gradeGraceFrom} is each grade's grace days recorded, by grade, oldest from-date first (a claim's grace is the
- *  one in force on its date for its person's grade then). */
+ *  one in force on its date for its person's grade then).
+ *  {@code gradeProofThreshold} is each grade's proof threshold in force on the sheet's today, by grade, null when it has
+ *  none (a claim's proof threshold is its person's grade's in force on its date when one is set, else the sheet's). */
 public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
         String periodNumberingFrom, Map<String, String> gradeTerms, String cap, String proofThreshold, List<Dated> floorFrom,
         List<Dated> latePctFrom, Map<String, String> perms, String graceDays,
         String noteThreshold, String entryDate, Map<String, String> gradeGrace,
-        Map<String, List<Dated>> gradeGraceFrom) {
+        Map<String, List<Dated>> gradeGraceFrom, Map<String, String> gradeProofThreshold) {
 
     /** A value recorded from a date (yyyy-MM-dd). */
     public record Dated(String from, String value) {

@@ -32,7 +32,8 @@ public class ValidateSetting {
         boolean entry = SettingStore.ENTRY_DATE.equals(key);
         boolean dated = SettingStore.POLICY_DATE.equals(key) || numbering || entry;
         boolean cap = SettingStore.CAP.equals(key);
-        boolean proof = SettingStore.PROOF_THRESHOLD.equals(key);
+        boolean gradeProof = SettingStore.isGradeProofThreshold(key);
+        boolean proof = SettingStore.PROOF_THRESHOLD.equals(key) || gradeProof;
         boolean note = SettingStore.NOTE_THRESHOLD.equals(key);
         if (SettingStore.GRACE_DAYS.equals(key)) {
             String value = request.value() == null ? "" : request.value().trim();
@@ -122,6 +123,7 @@ public class ValidateSetting {
         if (!LIMIT.matcher(value).matches()) {
             throw new InvalidSheetException(floor ? "The floor must be 0.00 or more with up to two decimals"
                     : late ? "The late percent must be 0.00 or more with up to two decimals"
+                    : gradeProof ? "The grade's proof threshold must be 0.00 or more with up to two decimals, or blank"
                     : proof ? "The proof threshold must be 0.00 or more with up to two decimals, or blank"
                     : note ? "The note threshold must be 0.00 or more with up to two decimals, or blank"
                     : cap ? "The cap must be 0.00 or more with up to two decimals, or blank"

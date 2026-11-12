@@ -31,7 +31,7 @@ public class RespondWithSettings {
                 history(sheet, SettingStore.FLOOR, store), history(sheet, SettingStore.LATE_PCT, store),
                 store.perms(sheet), store.find(sheet, SettingStore.GRACE_DAYS),
                 store.find(sheet, SettingStore.NOTE_THRESHOLD), store.find(sheet, SettingStore.ENTRY_DATE),
-                gradeGrace(sheet, today, store), gradeGraceFrom(sheet, store)));
+                gradeGrace(sheet, today, store), gradeGraceFrom(sheet, store), gradeProofThreshold(sheet, today, store)));
     }
 
     private static Map<String, String> gradeTerms(String sheetId, LocalDate today, SettingStore store) {
@@ -48,6 +48,14 @@ public class RespondWithSettings {
             grace.put(grade, store.findOn(sheetId, SettingStore.GRACE_PREFIX + grade, today));
         }
         return grace;
+    }
+
+    private static Map<String, String> gradeProofThreshold(String sheetId, LocalDate today, SettingStore store) {
+        Map<String, String> thresholds = new LinkedHashMap<>();
+        for (String grade : SettingStore.GRADES) {
+            thresholds.put(grade, store.findOn(sheetId, SettingStore.PROOF_THRESHOLD_PREFIX + grade, today));
+        }
+        return thresholds;
     }
 
     private static Map<String, List<SettingsResponse.Dated>> gradeGraceFrom(String sheetId, SettingStore store) {

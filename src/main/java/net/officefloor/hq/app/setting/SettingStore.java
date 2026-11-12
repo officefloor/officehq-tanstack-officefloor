@@ -18,7 +18,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 /** The settings kept per sheet, by key. A setting never set, or set blank, has no value. The settings
- *  that carry a figure (the clerk limit, the floor, the cap, the proof threshold, the note threshold, the terms, a grade's terms, a grade's grace days and the late
+ *  that carry a figure (the clerk limit, the floor, the cap, the proof threshold, a grade's proof threshold, the note threshold, the terms, a grade's terms, a grade's grace days and the late
  *  percent) are dated: each value is recorded from a from-date, and the value in force on a date is the
  *  one with the latest from-date on or before it (none before every from-date, then the sheet's starting
  *  value). The policy date, the period numbering date, the entry date, the grace days and the permission matrix are not dated. */
@@ -33,6 +33,15 @@ public class SettingStore {
 
     /** Above it a claim's due needs a proof before it is settled or approved. */
     public static final String PROOF_THRESHOLD = "proof-threshold";
+
+    /** The key of a grade's own proof threshold: proof-threshold-A, proof-threshold-B or proof-threshold-C (dated;
+     *  blank for none, then the sheet's). */
+    public static final String PROOF_THRESHOLD_PREFIX = "proof-threshold-";
+
+    /** Whether the key is a grade's proof threshold. */
+    public static boolean isGradeProofThreshold(String key) {
+        return key.startsWith(PROOF_THRESHOLD_PREFIX) && GRADES.contains(key.substring(PROOF_THRESHOLD_PREFIX.length()));
+    }
 
     /** Above it a claim's due needs a note before it is opened. */
     public static final String NOTE_THRESHOLD = "note-threshold";
@@ -212,6 +221,14 @@ public class SettingStore {
     public BigDecimal proofThreshold(String sheetId, LocalDate date) {
         String value = findOn(sheetId, PROOF_THRESHOLD, date);
         return value == null ? null : new BigDecimal(value);
+    }
+
+    /** The due above which a claim dated on the date of a person of the grade then needs a proof before it is
+     *  settled or approved: the grade's own threshold in force on that date when one is set, else the sheet's;
+     *  null for none. */
+    public BigDecimal proofThreshold(String sheetId, String grade, LocalDate date) {
+        String own = grade == null ? null : findOn(sheetId, PROOF_THRESHOLD_PREFIX + grade, date);
+        return own != null ? new BigDecimal(own) : proofThreshold(sheetId, date);
     }
 
     /** The due above which a claim dated on the date needs a note before it is opened (the one in force on
