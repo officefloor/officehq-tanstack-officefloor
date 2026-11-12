@@ -1,0 +1,142 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+index b098c888a..c30a7e5af 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaim.java
+@@ -10,5 +10,6 @@ public class ApplyClaim {
+         claim.setCorrects(input.corrects());
+         claim.setRef(input.ref());
+         claim.setTags(input.tags());
++        claim.setEditedBy(input.user());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyStatus.java b/src/main/java/net/officefloor/hq/app/claim/ApplyStatus.java
+index 20318acf2..77c7e81be 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyStatus.java
+@@ -20,7 +20,7 @@ import net.officefloor.plugin.variable.Val;
+  *  A clerk's settle above the clerk limit makes it PENDING instead (see {@link CheckClerkLimit}); a steward's
+  *  approval settles a PENDING claim, frozen then at its live figure (a statement does not bind it while
+  *  PENDING), and a rejection moves it back to OPEN, bound again by its person's last statement if that included it.
+- *  The user who opened a claim may not settle or approve it, and a claim deferred on the sheet's today may not be settled.
++ *  The user who opened a claim, or who last edited it, may not settle or approve it, and a claim deferred on the sheet's today may not be settled.
+  *  While the sheet has void reasons, a void needs one of them (the input's reason), kept on the claim. */
+ public class ApplyStatus {
+     public void apply(@Val StatusInput input, @Val StatusMove move, @Val Claim claim, ClaimStore store, PersonStore people,
+@@ -34,6 +34,11 @@ public class ApplyStatus {
+             throw new InvalidSheetException("The user who opened a claim cannot "
+                     + (input.review() ? "approve" : "settle") + " it");
+         }
++        if (input.status() == ClaimStatus.SETTLED && claim.getEditedBy() != null
++                && claim.getEditedBy().equals(input.user())) {
++            throw new InvalidSheetException("The user who last edited a claim cannot "
++                    + (input.review() ? "approve" : "settle") + " it");
++        }
+         if (input.status() == ClaimStatus.SETTLED && claim.isDeferredOn(sheets.today(claim.getSheetId()))) {
+             throw new InvalidSheetException("A deferred claim cannot be settled until " + claim.getDeferredUntil());
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 19a741fdd..fdef58c4d 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -30,6 +30,7 @@ public class Claim {
+     private String ref;
+     private String tags;
+     private String voidReason;
++    private String editedBy;
+ 
+     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
+             ClaimStatus status, String number, BigDecimal settledDue, String openedBy, boolean stated,
+@@ -113,6 +114,9 @@ public class Claim {
+     /** The reason it was voided with, from the sheet's list then; null when not voided, or voided while the list was empty. */
+     public String getVoidReason() { return voidReason; }
+     public void setVoidReason(String voidReason) { this.voidReason = voidReason; }
++    /** The user who last edited the claim (claim form or amount entry); null when it was never edited. */
++    public String getEditedBy() { return editedBy; }
++    public void setEditedBy(String editedBy) { this.editedBy = editedBy; }
+     public void setDeferredUntil(LocalDate deferredUntil) { this.deferredUntil = deferredUntil; }
+     public void setPersonId(long personId) { this.personId = personId; }
+     public void setCorrects(String corrects) { this.corrects = corrects; }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java
+index 94d69cfde..662cf00b3 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java
+@@ -32,6 +32,7 @@ public class ClaimStore {
+         claim.setRef(rs.getString("ref"));
+         claim.setTags(rs.getString("tags"));
+         claim.setVoidReason(rs.getString("void_reason"));
++        claim.setEditedBy(rs.getString("edited_by"));
+         return claim;
+     };
+ 
+@@ -132,10 +133,10 @@ public class ClaimStore {
+                 claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getVoidReason(), claim.getSheetId(), claim.getId());
+     }
+ 
+-    /** Stores a draft's amount, date, note, the claim it corrects and its reference and its tags, releasing its lock; false when the stored claim is no longer a draft. */
++    /** Stores a draft's amount, date, note, the claim it corrects, its reference, its tags and who edited it, releasing its lock; false when the stored claim is no longer a draft. */
+     public boolean edit(Claim claim) {
+-        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ?, tags = ?, locked_by = NULL WHERE sheet_id = ? AND id = ? AND status = ?",
+-                claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getCorrects(), claim.getRef(), claim.getTags(), claim.getSheetId(), claim.getId(),
++        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, corrects = ?, ref = ?, tags = ?, edited_by = ?, locked_by = NULL WHERE sheet_id = ? AND id = ? AND status = ?",
++                claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getCorrects(), claim.getRef(), claim.getTags(), claim.getEditedBy(), claim.getSheetId(), claim.getId(),
+                 ClaimStatus.DRAFT.name()) == 1;
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java b/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java
+index c60d0af9f..7d532589b 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java
+@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ /** Settles each selected claim, in list order: its people in the order they were added, a person's
+  *  claims newest first. Each goes through the very steps of a single settle by the user (period,
+- *  clerk limit, opened-by and status checks, then store, log and audit), so a clerk's settle above
++ *  clerk limit, opened-by, edited-by and status checks, then store, log and audit), so a clerk's settle above
+  *  the clerk limit sends it to PENDING, which counts as settled. A claim that is not on the sheet,
+  *  or that a single settle would refuse (every claim on an archived sheet), is refused and left as it is. */
+ public class SettleClaims {
+diff --git a/src/main/resources/db/migration/V48__claim_edited_by.sql b/src/main/resources/db/migration/V48__claim_edited_by.sql
+new file mode 100644
+index 000000000..5198eb363
+--- /dev/null
++++ b/src/main/resources/db/migration/V48__claim_edited_by.sql
+@@ -0,0 +1,8 @@
++-- The user who last edited a claim (through the claim form or the row's amount entry); null when it was
++-- never edited. Like its opener, that user may not settle or approve it. Kept in claim_hist too; the
++-- history trigger is set again afterwards, as in V45__claim_tags.sql.
++DROP TRIGGER claim_history;
++ALTER TABLE claim ADD COLUMN edited_by VARCHAR(255);
++ALTER TABLE claim_hist ADD COLUMN edited_by VARCHAR(255);
++CREATE TRIGGER claim_history AFTER INSERT, UPDATE, DELETE ON claim FOR EACH ROW
++    CALL 'net.officefloor.hq.app.history.HistoryTrigger';
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+index 07d65ae14..191ead837 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+@@ -3,7 +3,7 @@
+ # (an open claim is voided and added anew instead), or
+ # when another user has locked it by opening its editor, when its due-by (fixed when it was added, so left as it is by an edit) falls in a closed period, or when its new date is after the date
+ # its person is retired from, or when its ref is one another claim on the sheet carries; nothing is stored then.
+-# A stored change releases the claim's lock and is recorded in the audit file as CLAIM_EDITED; a refused one records nothing.
++# A stored change records the user as the claim's edited-by (who may then not settle or approve it), releases the claim's lock and is recorded in the audit file as CLAIM_EDITED; a refused one records nothing.
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaim
+   next: load
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.POST.yml
+index 9a4a50018..14597e41c 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.POST.yml
+@@ -3,11 +3,11 @@
+ # and SETTLED to VOID by a steward within 7 days of its settling (its status log's SETTLED date).
+ # A clerk (any user not assigned steward) settling a claim whose due is above the sheet's clerk limit
+ # sends it to PENDING instead. A steward reviews a PENDING claim (review true): status SETTLED approves
+-# it (not by the user who opened it), status OPEN with a reason rejects it. Refused (400) for any
++# it (not by the user who opened it or last edited it), status OPEN with a reason rejects it. Refused (400) for any
+ # other change, when the sheet's permission matrix (perm-open, perm-settle, perm-void; by default a
+ # clerk or a steward) does not allow the user's role to open, settle or void, when settling or approving a claim with no proofs whose due is above the proof threshold
+ # in force on its date, when opening a claim with an empty note whose due is above the note threshold
+-# in force on its date (both checked before the clerk limit, so it never goes to PENDING), when the user who opened the claim tries to settle it, when the claim is not on
++# in force on its date (both checked before the clerk limit, so it never goes to PENDING), when the user who opened the claim or last edited it (claim form or amount entry) tries to settle or approve it, when the claim is not on
+ # the sheet, or when its due-by falls in a closed period; nothing is stored then. Opening records the
+ # user as the claim's opened-by. A stored change is recorded in the audit file as CLAIM_OPENED,
+ # CLAIM_PENDING, CLAIM_SETTLED, CLAIM_APPROVED, CLAIM_REJECTED or CLAIM_VOIDED (with reversed=<the
