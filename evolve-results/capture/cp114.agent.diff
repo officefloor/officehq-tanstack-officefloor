@@ -1,0 +1,172 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index fa1c42a47..8a3294c74 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -6,10 +6,11 @@ import { asNumber, asString, useSearchParam } from '../../url/useSearchParam';
+ import { type Hold, covers } from '../people/people';
+ 
+ /** PENDING: settled by a clerk above the clerk limit, awaiting a steward's approval; handled as OPEN,
+- *  except that a statement does not bind it while it is PENDING. */
+-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
++ *  except that a statement does not bind it while it is PENDING. DELETED: a deleted DRAFT, which counts
++ *  nowhere and can be restored to a DRAFT on the sheet's today it was deleted. */
++export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID' | 'DELETED';
+ 
+-/** Every status the summary and header count, whether or not a claim can reach it. */
++/** Every status the summary and header count, whether or not a claim can reach it; a DELETED claim counts nowhere. */
+ export const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const satisfies readonly ClaimStatus[];
+ 
+ /** How many of these claims have the status. */
+diff --git a/src/main/frontend/features/claims/list.slot.tsx b/src/main/frontend/features/claims/list.slot.tsx
+index a3ba58212..c0626bd7c 100644
+--- a/src/main/frontend/features/claims/list.slot.tsx
++++ b/src/main/frontend/features/claims/list.slot.tsx
+@@ -486,6 +486,12 @@ function PersonClaims({ person }: { person: Person }) {
+               >
+                 Void
+               </button>{' '}
++              <button type="button" data-testid="claim-delete" disabled={move.isPending} onClick={() => moveTo(c.id, 'DELETED')}>
++                Delete
++              </button>{' '}
++              <button type="button" data-testid="claim-restore" disabled={move.isPending} onClick={() => moveTo(c.id, 'DRAFT')}>
++                Restore
++              </button>{' '}
+               <button
+                 type="button"
+                 data-testid="claim-resettle"
+diff --git a/src/main/java/net/officefloor/hq/app/claim/CheckClerkLimit.java b/src/main/java/net/officefloor/hq/app/claim/CheckClerkLimit.java
+index 80de95e05..eb049b1ba 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/CheckClerkLimit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/CheckClerkLimit.java
+@@ -21,7 +21,8 @@ import net.officefloor.plugin.variable.Val;
+  *  proof threshold is refused (see {@link CheckProofs}), so it never goes to PENDING. Opening, settling
+  *  and voiding are refused to a role the sheet's permission matrix does not allow it. A SETTLED claim
+  *  may be voided only by a steward, and only within {@link #VOID_SETTLED_DAYS} days of the sheet's today
+- *  it was settled on (its status log's SETTLED date). */
++ *  it was settled on (its status log's SETTLED date). A DELETED claim may be restored only on the
++ *  sheet's today it was deleted on. */
+ public class CheckClerkLimit {
+     /** How many days after settling a claim a steward may still void it. */
+     static final int VOID_SETTLED_DAYS = 7;
+@@ -51,6 +52,9 @@ public class CheckClerkLimit {
+         if (from == ClaimStatus.SETTLED && input.status() == ClaimStatus.VOID) {
+             refuseLateVoid(claim, steward, log, sheets);
+         }
++        if (from == ClaimStatus.DELETED && input.status() == ClaimStatus.DRAFT) {
++            refuseLateRestore(claim, log, sheets);
++        }
+         if (from == ClaimStatus.DRAFT && input.status() == ClaimStatus.OPEN) {
+             CheckProofs.refuseUnnoted(claim, settings, people, rates, sheets, claims);
+         }
+@@ -74,6 +78,16 @@ public class CheckClerkLimit {
+         }
+     }
+ 
++    /** Refuses restoring a DELETED claim on any day but the sheet's today it was deleted on (its status
++     *  log's last DELETED date). */
++    static void refuseLateRestore(Claim claim, ClaimLogStore log, SheetStore sheets) throws InvalidSheetException {
++        LocalDate deleted = log.lastOn(claim, ClaimStatus.DELETED);
++        LocalDate today = sheets.today(claim.getSheetId());
++        if (deleted == null || today == null || !today.equals(deleted)) {
++            throw new InvalidSheetException("A DELETED claim can be restored only on the day it was deleted");
++        }
++    }
++
+     /** Refuses opening, settling or voiding a claim by a role the sheet's permission matrix does not allow it. */
+     static void refuseUnpermitted(ClaimStatus to, String sheetId, Role role, SettingStore settings)
+             throws InvalidSheetException {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimLogStore.java b/src/main/java/net/officefloor/hq/app/claim/ClaimLogStore.java
+index 0f6fcb774..4ea72bd15 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimLogStore.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimLogStore.java
+@@ -80,9 +80,14 @@ public class ClaimLogStore {
+ 
+     /** The sheet's today on which the claim was last logged SETTLED; null when it never was. */
+     public LocalDate settledOn(Claim claim) {
++        return lastOn(claim, ClaimStatus.SETTLED);
++    }
++
++    /** The sheet's today on which the claim was last logged with the status; null when it never was. */
++    public LocalDate lastOn(Claim claim, ClaimStatus status) {
+         List<LocalDate> dates = jdbc.query("SELECT log_date FROM claim_log WHERE sheet_id = ? AND claim_id = ? "
+                 + "AND status = ? ORDER BY id DESC LIMIT 1", (rs, n) -> rs.getObject("log_date", LocalDate.class),
+-                claim.getSheetId(), claim.getId(), ClaimStatus.SETTLED.name());
++                claim.getSheetId(), claim.getId(), status.name());
+         return dates.isEmpty() ? null : dates.get(0);
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
+index d2b7554bb..43a9b6b19 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
+@@ -2,21 +2,23 @@ package net.officefloor.hq.app.claim;
+ 
+ /** Where a claim stands. Only OPEN, PENDING and SETTLED claims count toward the totals; a PENDING claim
+  *  (settled by a clerk above the clerk limit, awaiting a steward) is handled as an OPEN one, except
+- *  that a statement does not bind it while it is PENDING. */
++ *  that a statement does not bind it while it is PENDING. A DELETED claim (a deleted DRAFT) counts nowhere,
++ *  and may be restored to a DRAFT only on the sheet's today it was deleted (see {@link CheckClerkLimit}). */
+ public enum ClaimStatus {
+-    DRAFT, OPEN, PENDING, SETTLED, VOID;
++    DRAFT, OPEN, PENDING, SETTLED, VOID, DELETED;
+ 
+     /** Whether a claim may move from this status to {@code next}: DRAFT to OPEN, OPEN to PENDING or
+      *  SETTLED, PENDING to SETTLED (approved) or OPEN (rejected), and DRAFT, OPEN or PENDING to VOID;
+      *  SETTLED to VOID too, though only a steward within days of settling it (see {@link CheckClerkLimit}).
+-     *  VOID is final. */
++     *  DRAFT to DELETED, and DELETED back to DRAFT (restored). VOID is final. */
+     public boolean canBecome(ClaimStatus next) {
+         return switch (next) {
+             case OPEN -> this == DRAFT || this == PENDING;
+             case PENDING -> this == OPEN;
+             case SETTLED -> this == OPEN || this == PENDING;
+             case VOID -> this == DRAFT || this == OPEN || this == PENDING || this == SETTLED;
+-            case DRAFT -> false;
++            case DELETED -> this == DRAFT;
++            case DRAFT -> this == DELETED;
+         };
+     }
+ 
+@@ -37,13 +39,18 @@ public enum ClaimStatus {
+             case PENDING -> "CLAIM_PENDING";
+             case SETTLED -> "CLAIM_SETTLED";
+             case VOID -> "CLAIM_VOIDED";
++            case DELETED -> "CLAIM_DELETED";
+             case DRAFT -> "CLAIM_DRAFTED";
+         };
+     }
+ 
+     /** The audit event recorded when a claim moves from {@code from} to this status: a PENDING claim
+-     *  settled is CLAIM_APPROVED, and one moved back to OPEN is CLAIM_REJECTED. */
++     *  settled is CLAIM_APPROVED, one moved back to OPEN is CLAIM_REJECTED, and a DELETED claim moved
++     *  back to DRAFT is CLAIM_RESTORED. */
+     public String event(ClaimStatus from) {
++        if (from == DELETED && this == DRAFT) {
++            return "CLAIM_RESTORED";
++        }
+         if (from == PENDING && this == SETTLED) {
+             return "CLAIM_APPROVED";
+         }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.POST.yml
+index 14597e41c..ea2674c0c 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/status.POST.yml
+@@ -1,6 +1,8 @@
+ # POST /api/sheets/{sheetId}/claims/{claimId}/status — move a claim to a new status (body
+ # {status, user, review, reason}): DRAFT to OPEN, OPEN to SETTLED, DRAFT, OPEN or PENDING to VOID,
+-# and SETTLED to VOID by a steward within 7 days of its settling (its status log's SETTLED date).
++# and SETTLED to VOID by a steward within 7 days of its settling (its status log's SETTLED date); DRAFT
++# to DELETED (deleted: it counts nowhere), and DELETED back to DRAFT (restored) only on the sheet's today it
++# was deleted on (its status log's last DELETED date).
+ # A clerk (any user not assigned steward) settling a claim whose due is above the sheet's clerk limit
+ # sends it to PENDING instead. A steward reviews a PENDING claim (review true): status SETTLED approves
+ # it (not by the user who opened it or last edited it), status OPEN with a reason rejects it. Refused (400) for any
+@@ -10,7 +12,7 @@
+ # in force on its date (both checked before the clerk limit, so it never goes to PENDING), when the user who opened the claim or last edited it (claim form or amount entry) tries to settle or approve it, when the claim is not on
+ # the sheet, or when its due-by falls in a closed period; nothing is stored then. Opening records the
+ # user as the claim's opened-by. A stored change is recorded in the audit file as CLAIM_OPENED,
+-# CLAIM_PENDING, CLAIM_SETTLED, CLAIM_APPROVED, CLAIM_REJECTED or CLAIM_VOIDED (with reversed=<the
++# CLAIM_PENDING, CLAIM_SETTLED, CLAIM_APPROVED, CLAIM_REJECTED, CLAIM_VOIDED, CLAIM_DELETED or CLAIM_RESTORED (with reversed=<the
+ # frozen figure> when a SETTLED claim is voided). While the sheet has void reasons, a void needs one of
+ # them as its reason (refused otherwise); it is kept on the claim and CLAIM_VOIDED ends with reason=<it>.
+ validate:
