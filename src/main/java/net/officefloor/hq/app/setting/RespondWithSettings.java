@@ -10,6 +10,7 @@ public class RespondWithSettings {
                 store.floor(sheetId.trim()).setScale(2).toPlainString(),
                 String.valueOf(store.terms(sheetId.trim())),
                 store.latePct(sheetId.trim()).setScale(2).toPlainString(),
-                store.find(sheetId.trim(), SettingStore.POLICY_DATE)));
+                store.find(sheetId.trim(), SettingStore.POLICY_DATE),
+                store.find(sheetId.trim(), SettingStore.PERIOD_NUMBERING_FROM)));
     }
 }

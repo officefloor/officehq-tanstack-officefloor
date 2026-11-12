@@ -19,12 +19,13 @@ public class ValidateSetting {
         boolean floor = SettingStore.FLOOR.equals(key);
         boolean terms = SettingStore.TERMS.equals(key);
         boolean late = SettingStore.LATE_PCT.equals(key);
-        boolean policy = SettingStore.POLICY_DATE.equals(key);
-        if (!SettingStore.CLERK_LIMIT.equals(key) && !floor && !terms && !late && !policy) {
+        boolean numbering = SettingStore.PERIOD_NUMBERING_FROM.equals(key);
+        boolean dated = SettingStore.POLICY_DATE.equals(key) || numbering;
+        if (!SettingStore.CLERK_LIMIT.equals(key) && !floor && !terms && !late && !dated) {
             throw new InvalidSheetException("Not a setting: " + key);
         }
         String value = request.value() == null ? "" : request.value().trim();
-        if (policy) {
+        if (dated) {
             if (value.isEmpty()) {
                 body.set(new SettingInput(key, null, request.user()));
                 return;
@@ -32,7 +33,8 @@ public class ValidateSetting {
             try {
                 body.set(new SettingInput(key, LocalDate.parse(value).toString(), request.user()));
             } catch (DateTimeParseException e) {
-                throw new InvalidSheetException("The policy date must be a date (YYYY-MM-DD), or blank");
+                throw new InvalidSheetException((numbering ? "The period numbering from" : "The policy date")
+                        + " must be a date (YYYY-MM-DD), or blank");
             }
             return;
         }

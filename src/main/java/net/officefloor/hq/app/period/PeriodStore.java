@@ -41,6 +41,13 @@ public class PeriodStore {
         return found.isEmpty() ? null : found.get(0);
     }
 
+    /** The period on the sheet whose dates contain the date, or null when none does. */
+    public PeriodResponse on(String sheetId, LocalDate date) {
+        List<PeriodResponse> found = jdbc.query(
+                "SELECT * FROM period WHERE sheet_id = ? AND from_date <= ? AND to_date >= ?", ROW, sheetId, date, date);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
     /** Whether a period on the sheet has this name, ignoring case. */
     public boolean nameTaken(String sheetId, String name) {
         Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM period WHERE sheet_id = ? AND LOWER(name) = LOWER(?)",

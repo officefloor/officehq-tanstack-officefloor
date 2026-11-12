@@ -70,7 +70,7 @@ function PersonClaims({ person }: { person: Person }) {
     save.reset();
     move.reset();
     setEditing(c.id);
-    setFields({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects?.toString() ?? '' });
+    setFields({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects ?? '' });
   };
   const cancel = () => {
     save.reset();

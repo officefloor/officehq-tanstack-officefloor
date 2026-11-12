@@ -3,14 +3,14 @@ package net.officefloor.hq.app.claim;
 import java.time.LocalDate;
 
 /** A claim as the front end reads it: the amount with two decimals, the date as yyyy-MM-dd,
- *  the status by name, the number as given when opened (null when it has none), the due fixed when
+ *  the status by name, the number as given when opened (1, 2, ... or <period>-<n> / X-<n>; null when it has none), the due fixed when
  *  settled with two decimals (null when it has none, so its due is worked out from the current rate), and who opened it
  *  (null until opened), whether its person's last statement bound it, and the figure it was bound to
  *  (null when not bound, or bound while it had none), and the number of the claim a correction corrects
  *  (null when it is not a correction), and the date its live figures round by (its own, or for a
  *  correction that of the claim it corrects). */
-public record ClaimResponse(long id, long personId, String amount, String date, String note, String status, Long number,
-        String due, String openedBy, boolean stated, String statedDue, Long corrects, String roundsBy) {
+public record ClaimResponse(long id, long personId, String amount, String date, String note, String status, String number,
+        String due, String openedBy, boolean stated, String statedDue, String corrects, String roundsBy) {
     public static ClaimResponse from(Claim c) {
         return from(c, c.getDate());
     }

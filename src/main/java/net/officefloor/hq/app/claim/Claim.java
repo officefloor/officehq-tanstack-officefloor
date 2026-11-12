@@ -14,16 +14,16 @@ public class Claim {
     private LocalDate date;
     private String note;
     private ClaimStatus status;
-    private Long number;
+    private String number;
     private BigDecimal settledDue;
     private String openedBy;
     private boolean stated;
     private BigDecimal statedDue;
-    private Long corrects;
+    private String corrects;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
-            ClaimStatus status, Long number, BigDecimal settledDue, String openedBy, boolean stated,
-            BigDecimal statedDue, Long corrects) {
+            ClaimStatus status, String number, BigDecimal settledDue, String openedBy, boolean stated,
+            BigDecimal statedDue, String corrects) {
         this.id = id;
         this.sheetId = sheetId;
         this.personId = personId;
@@ -46,9 +46,10 @@ public class Claim {
     public LocalDate getDate() { return date; }
     public String getNote() { return note; }
     public ClaimStatus getStatus() { return status; }
-    /** The number given when the claim was opened; null for a draft, or a claim voided as a draft;
+    /** The number given when the claim was opened (the sheet-wide 1, 2, ..., or <period>-<n> / X-<n>
+     *  while the sheet numbers by period); null for a draft, or a claim voided as a draft;
      *  a claim voided once open keeps it. */
-    public Long getNumber() { return number; }
+    public String getNumber() { return number; }
     /** The due fixed when the claim was settled; null when not settled, or settled with no rate. */
     public BigDecimal getSettledDue() { return settledDue; }
     /** The user who opened the claim; null until it is opened. */
@@ -59,15 +60,15 @@ public class Claim {
      *  or is not bound. */
     public BigDecimal getStatedDue() { return statedDue; }
     /** The number of the claim this correction corrects; null when it is not a correction. */
-    public Long getCorrects() { return corrects; }
+    public String getCorrects() { return corrects; }
     /** Whether the claim is a correction: a negative amount, with no floor and no late charge. */
     public boolean isCorrection() { return amount.signum() < 0; }
-    public void setCorrects(Long corrects) { this.corrects = corrects; }
+    public void setCorrects(String corrects) { this.corrects = corrects; }
     public void setAmount(BigDecimal amount) { this.amount = amount; }
     public void setDate(LocalDate date) { this.date = date; }
     public void setNote(String note) { this.note = note; }
     public void setStatus(ClaimStatus status) { this.status = status; }
-    public void setNumber(Long number) { this.number = number; }
+    public void setNumber(String number) { this.number = number; }
     public void setSettledDue(BigDecimal settledDue) { this.settledDue = settledDue; }
     public void setOpenedBy(String openedBy) { this.openedBy = openedBy; }
     public void setStated(boolean stated) { this.stated = stated; }

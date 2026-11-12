@@ -11,19 +11,21 @@ import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonStore;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.rollup.RollupService;
+import net.officefloor.hq.app.setting.SettingStore;
 import net.officefloor.hq.app.sheet.InvalidSheetException;
+import net.officefloor.hq.app.sheet.SheetStore;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 
 /** Opens each selected claim that can be opened, in list order: its people in the order they were
- *  added, a person's claims newest first. Each is opened as a single open would be (the sheet's next
+ *  added, a person's claims newest first. Each is opened as a single open would be (its next
  *  number, opened-by the user) and recorded as CLAIM_OPENED, then how it moved the sheet's figures.
  *  A claim that is not on the sheet, is not a DRAFT, or is dated in a closed period is refused and
  *  left as it is. */
 public class OpenClaims {
     public void open(@PathVariable("sheetId") String sheetId, @Val BulkOpenInput input, ClaimStore store,
-            PersonStore people, PeriodStore periods, RollupService rollups, Audit audit, Out<BulkOpenResult> result) {
+            PersonStore people, PeriodStore periods, SettingStore settings, SheetStore sheets, RollupService rollups, Audit audit, Out<BulkOpenResult> result) {
         String sheet = sheetId.trim();
         Map<Long, Integer> personOrder = new HashMap<>();
         Map<Long, Person> persons = new HashMap<>();
@@ -55,7 +57,7 @@ public class OpenClaims {
                 continue;
             }
             claim.setStatus(ClaimStatus.OPEN);
-            claim.setNumber(store.nextNumber(sheet));
+            claim.setNumber(Numbering.next(sheet, claim.getDate(), store, settings, sheets, periods));
             claim.setOpenedBy(input.user());
             store.save(claim);
             Person person = persons.get(claim.getPersonId());

@@ -6,7 +6,7 @@ import { asString, useSearchParam } from '../../url/useSearchParam';
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 
 /** `amount` has two decimals; `date` is yyyy-MM-dd; `number` is given when the claim is opened
- *  (null for a draft or a voided claim). */
+ *  (null for a draft or a voided claim): the sheet-wide 1, 2, ... or, numbered per period, <period>-<n> / X-<n>. */
 export type Claim = {
   id: number;
   personId: number;
@@ -14,7 +14,7 @@ export type Claim = {
   date: string;
   note: string;
   status: ClaimStatus;
-  number: number | null;
+  number: string | null;
   /** The due fixed when the claim was settled; null when it has none, so its due follows the rate. */
   due: string | null;
   /** The user who opened the claim; null until it is opened. */
@@ -24,7 +24,7 @@ export type Claim = {
   /** The figure the claim was bound to; null when not bound, or bound while it had none. */
   statedDue: string | null;
   /** The number of the settled claim a correction (a negative amount) corrects; null for any other claim. */
-  corrects: number | null;
+  corrects: string | null;
   /** The date (yyyy-MM-dd) its live figures round by: its own, or for a correction that of the claim it corrects. */
   roundsBy: string;
 };

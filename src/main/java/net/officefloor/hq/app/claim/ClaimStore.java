@@ -18,9 +18,9 @@ public class ClaimStore {
     private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getObject("claim_date", LocalDate.class),
             rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
-            rs.getObject("number", Long.class), rs.getBigDecimal("settled_due"),
+            rs.getString("number"), rs.getBigDecimal("settled_due"),
             rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
-            rs.getObject("corrects", Long.class));
+            rs.getString("corrects"));
 
     private final JdbcTemplate jdbc;
 
@@ -38,13 +38,13 @@ public class ClaimStore {
     }
 
     /** The person's claim with the number, or null when they have none. */
-    public Claim findByNumber(String sheetId, long personId, long number) {
+    public Claim findByNumber(String sheetId, long personId, String number) {
         List<Claim> found = jdbc.query("SELECT * FROM claim WHERE sheet_id = ? AND person_id = ? AND number = ?", ROW,
                 sheetId, personId, number);
         return found.isEmpty() ? null : found.get(0);
     }
 
-    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, Long corrects) {
+    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
@@ -55,7 +55,7 @@ public class ClaimStore {
             ps.setBigDecimal(3, amount);
             ps.setDate(4, Date.valueOf(date));
             ps.setString(5, note);
-            ps.setObject(6, corrects);
+            ps.setString(6, corrects);
             return ps;
         }, keys);
         return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null, false, null,
@@ -107,5 +107,21 @@ public class ClaimStore {
         }
         jdbc.update("UPDATE claim_number SET last_number = last_number + 1 WHERE sheet_id = ?", sheetId);
         return jdbc.queryForObject("SELECT last_number FROM claim_number WHERE sheet_id = ?", Long.class, sheetId);
+    }
+
+    /** Takes the next number in one of the sheet's per-period sequences: 1, then 2, and so on, locked
+     *  as {@link #nextNumber(String)} is. */
+    public long nextNumber(String sheetId, String sequence) {
+        try {
+            jdbc.update("INSERT INTO claim_period_number (sheet_id, sequence, last_number) SELECT ?, ?, 0 FROM DUAL "
+                    + "WHERE NOT EXISTS (SELECT 1 FROM claim_period_number WHERE sheet_id = ? AND sequence = ?)",
+                    sheetId, sequence, sheetId, sequence);
+        } catch (DataAccessException e) {
+            // another transaction added the sequence's counter first
+        }
+        jdbc.update("UPDATE claim_period_number SET last_number = last_number + 1 WHERE sheet_id = ? AND sequence = ?",
+                sheetId, sequence);
+        return jdbc.queryForObject("SELECT last_number FROM claim_period_number WHERE sheet_id = ? AND sequence = ?",
+                Long.class, sheetId, sequence);
     }
 }

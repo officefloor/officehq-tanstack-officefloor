@@ -20,6 +20,8 @@ public class SettingStore {
 
     public static final String POLICY_DATE = "policy-date";
 
+    public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
+
     /** The late percent a sheet has until one is set. */
     public static final BigDecimal DEFAULT_LATE_PCT = new BigDecimal("0.00");
 
@@ -70,6 +72,12 @@ public class SettingStore {
     /** The date the sheet's rounding turns on, or null when blank (then the sheet's today). */
     public LocalDate policyDate(String sheetId) {
         String value = find(sheetId, POLICY_DATE);
+        return value == null ? null : LocalDate.parse(value);
+    }
+
+    /** The date from which claims opened are numbered per period, or null when blank (off). */
+    public LocalDate periodNumberingFrom(String sheetId) {
+        String value = find(sheetId, PERIOD_NUMBERING_FROM);
         return value == null ? null : LocalDate.parse(value);
     }
 

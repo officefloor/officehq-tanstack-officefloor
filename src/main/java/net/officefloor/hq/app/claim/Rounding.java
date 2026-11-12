@@ -47,7 +47,7 @@ public final class Rounding {
         return policyDate != null && date(claim).isBefore(policyDate) ? RoundingMode.HALF_UP : RoundingMode.HALF_EVEN;
     }
 
-    private static String key(long personId, long number) {
+    private static String key(long personId, String number) {
         return personId + "/" + number;
     }
 }

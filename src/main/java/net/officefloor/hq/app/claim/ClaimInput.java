@@ -5,7 +5,7 @@ import java.time.LocalDate;
 
 /** A validated claim add or edit: the date already defaulted to the sheet's today; {@code corrects}
  *  the number of the claim a correction (a negative amount) corrects, null for any other claim. */
-public record ClaimInput(BigDecimal amount, LocalDate date, String note, String user, Long corrects) {
+public record ClaimInput(BigDecimal amount, LocalDate date, String note, String user, String corrects) {
 
     public ClaimInput(BigDecimal amount, LocalDate date, String note, String user) {
         this(amount, date, note, user, null);

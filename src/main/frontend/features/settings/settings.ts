@@ -6,8 +6,10 @@ import { sheetKey } from '../sheet/sheet';
  *  null for no limit; `floor` (two decimals) is the least a claim's live due may be; `terms` is the
  *  whole days after its date a claim is due by; `latePct` (two decimals) is the percent of an overdue
  *  claim's figure charged for every full 30 days it is overdue; `policyDate` (yyyy-MM-dd) is the date
- *  rounding turns on, null when blank (then the sheet's today). */
-export type Settings = { clerkLimit: string | null; floor: string; terms: string; latePct: string; policyDate: string | null };
+ *  rounding turns on, null when blank (then the sheet's today); `periodNumberingFrom` (yyyy-MM-dd) is the
+ *  date from which claims opened are numbered per period, null when blank (off). */
+export type Settings = { clerkLimit: string | null; floor: string; terms: string; latePct: string; policyDate: string | null;
+  periodNumberingFrom: string | null };
 
 /** Under the sheet's key, so loading the sheet again re-reads its settings. */
 export const settingsKey = (sheet: string) => [...sheetKey(sheet), 'settings'] as const;
