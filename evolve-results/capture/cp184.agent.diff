@@ -1,0 +1,132 @@
+diff --git a/src/main/frontend/features/claims/claimed.slot.tsx b/src/main/frontend/features/claims/claimed.slot.tsx
+index 8094caf13..279c3c8ce 100644
+--- a/src/main/frontend/features/claims/claimed.slot.tsx
++++ b/src/main/frontend/features/claims/claimed.slot.tsx
+@@ -2,7 +2,7 @@ import { HomeMain } from '../../slots/defs/homeMain';
+ import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
+ import { type Person, usePeople } from '../people/people';
+ import { useCurrentSheet } from '../../session/session';
+-import { claimed, live, useClaims } from './claims';
++import { claimed, liveClaimed, useClaims } from './claims';
+ import { useFigure } from '../locale/locale';
+ import { useColumnShown } from '../columns/columns';
+ 
+@@ -18,7 +18,7 @@ function PersonClaimed({ person }: { person: Person }) {
+   const [sheet] = useCurrentSheet();
+   const claims = useClaims(sheet);
+   if (!shown('claimed')) return null;
+-  return <td data-testid="person-claimed">{fig(claimed(live((claims.data ?? []).filter((c) => c.personId === person.id), [person])))}</td>;
++  return <td data-testid="person-claimed">{fig(claimed(liveClaimed((claims.data ?? []).filter((c) => c.personId === person.id), [person])))}</td>;
+ }
+ 
+ function ClaimedTotal() {
+@@ -28,7 +28,7 @@ function ClaimedTotal() {
+   const claims = useClaims(sheet);
+   return (
+     <p>
+-      Claimed total <strong data-testid="rollup-claimed-total">{fig(claimed(live(claims.data ?? [], people.data)))}</strong>
++      Claimed total <strong data-testid="rollup-claimed-total">{fig(claimed(liveClaimed(claims.data ?? [], people.data)))}</strong>
+     </p>
+   );
+ }
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 544889b36..a92a6452c 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -98,13 +98,22 @@ export const counts = (c: Claim) => (isOpen(c) && !c.deferred) || c.status === '
+ export const isBound = (c: Claim) => c.stated && (c.statedDue !== null || c.statedNa);
+ 
+ /** These claims less the OPEN (or PENDING) claims held, or dated within one of their person's holds, or of a
+- *  person whose retirement date the sheet's today has reached, which count in no live total, unless a
++ *  person whose retirement date the sheet's today has reached, which count in no live due total, unless a
+  *  statement bound them. */
+-export const live = (claims: Claim[], people: { id: number; holds: Hold[]; retiredNow: boolean }[] | undefined) => {
++export const live = (claims: Claim[], people: { id: number; holds: Hold[]; retiredNow: boolean }[] | undefined) =>
++  liveOf(claims, people, false);
++
++/** These claims less the OPEN (or PENDING) claims of a person whose retirement date the sheet's today has
++ *  reached, unless a statement bound them: a hold leaves a claim in claimed and the claimed-total. */
++export const liveClaimed = (claims: Claim[], people: { id: number; holds: Hold[]; retiredNow: boolean }[] | undefined) =>
++  liveOf(claims, people, true);
++
++const liveOf = (claims: Claim[], people: { id: number; holds: Hold[]; retiredNow: boolean }[] | undefined, keepHeld: boolean) => {
+   const byId = new Map((people ?? []).map((p) => [p.id, p]));
+   return claims.filter((c) => {
+     const p = byId.get(c.personId);
+-    return !(isOpen(c) && !c.stated && (c.held || (p !== undefined && (p.retiredNow || p.holds.some((h) => covers(h, c.date))))));
++    const held = !keepHeld && (c.held || (p !== undefined && p.holds.some((h) => covers(h, c.date))));
++    return !(isOpen(c) && !c.stated && (held || (p !== undefined && p.retiredNow)));
+   });
+ };
+ 
+diff --git a/src/main/frontend/features/summary/classic.slot.tsx b/src/main/frontend/features/summary/classic.slot.tsx
+index d7ca27bbf..31136e788 100644
+--- a/src/main/frontend/features/summary/classic.slot.tsx
++++ b/src/main/frontend/features/summary/classic.slot.tsx
+@@ -2,7 +2,7 @@ import { HomeMain } from '../../slots/defs/homeMain';
+ import { useCurrentSheet } from '../../session/session';
+ import { counts, live, useClaims } from '../claims/claims';
+ import { usePeople } from '../people/people';
+-import { contains, usePeriods } from '../periods/periods';
++import { contains, isFixed, usePeriods } from '../periods/periods';
+ import { claimDue, dueTotal, useRates } from '../rates/rates';
+ import { floorOf, useSettings } from '../settings/settings';
+ import { useSheetToday } from '../sheet/sheet';
+@@ -11,8 +11,8 @@ import { usePersonDue } from '../rates/due.slot';
+ import { useFigure } from '../locale/locale';
+ 
+ // The classic summary, shown beside the summary: per period, its due-total counting each claim by its
+-// status now (OPEN, SETTLED and PENDING count, by the live rules), a closed period showing the figure fixed
+-// when it closed; and the sheet's due-total untrimmed, everyone's due-totals added up (skipping n/a).
++// status now (OPEN, SETTLED and PENDING count, by the live rules), a closed or soft-closed period showing the figure fixed
++// when it (soft-)closed; and the sheet's due-total untrimmed, everyone's due-totals added up (skipping n/a).
+ function ClassicSummary() {
+   const fig = useFigure();
+   const [sheet] = useCurrentSheet();
+@@ -26,7 +26,7 @@ function ClassicSummary() {
+   const personDue = usePersonDue(sheet);
+ 
+   const periodTotal = (period: NonNullable<typeof periods.data>[number]) => {
+-    if (period.closed) return period.total ?? '0.00';
++    if (isFixed(period)) return period.total ?? '0.00';
+     return dueTotal(
+       (people.data ?? []).flatMap((p) =>
+         live((claims.data ?? []).filter((c) => c.personId === p.id), [p])
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/RollupService.java b/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
+index 43bf5de9d..757e60760 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
+@@ -73,13 +73,17 @@ public class RollupService {
+             boolean fixed = false;
+             for (Claim claim : all) {
+                 if (claim.getPersonId() != person.getId()
+-                        || !counts(claim, person, today)) {
++                        || !countsClaimed(claim, person, today)) {
+                     continue;
+                 }
+                 // A claim that corrects another counts toward due but not toward claimed.
+                 if (claim.getCorrects() == null || claim.getCorrects().isBlank()) {
+                     claimed = claimed.add(claim.getAmount());
+                 }
++                // A held claim stays in claimed, but leaves the due figures while held.
++                if (!counts(claim, person, today)) {
++                    continue;
++                }
+                 BigDecimal figure = lateness.due(claim, rates.forClaim(claim).find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()));
+                 if (figure != null) {
+                     due = due.add(figure);
+@@ -247,6 +251,14 @@ public class RollupService {
+                         && (claim.isStated() || !(claim.isHeld() || person.heldOn(claim.getDate()) || person.retiredOn(today))));
+     }
+ 
++    /** Whether the claim counts toward claimed: as {@link #counts}, except that a hold (the claim's or its
++     *  person's) does not take it out. */
++    public static boolean countsClaimed(Claim claim, Person person, LocalDate today) {
++        return claim.getStatus() == ClaimStatus.SETTLED
++                || (claim.getStatus().isOpen() && !claim.isDeferredOn(today)
++                        && (claim.isStated() || !person.retiredOn(today)));
++    }
++
+     /** Whether the claim counts by {@code status}, the status it had at a period's end (null when it
+      *  was added after it): OPEN, PENDING or SETTLED then; and, as the live rules say, an OPEN claim
+      *  deferred on the sheet's today does not, nor one open then and still open now held or dated within a hold
