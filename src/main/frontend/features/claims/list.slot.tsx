@@ -69,6 +69,7 @@ function PersonClaims({ person }: { person: Person }) {
   const moveTo = (id: number, status: ClaimStatus, review?: { reason: string }) => {
     move.reset();
     reassign.reset();
+    resettle.reset();
     move.mutate({ id, status, review: review !== undefined, reason: review?.reason });
   };
 
@@ -86,12 +87,35 @@ function PersonClaims({ person }: { person: Person }) {
   const reassignTo = (id: number) => {
     move.reset();
     reassign.reset();
+    resettle.reset();
     reassign.mutate({ id, to: targets[id] ?? '' });
   };
-  // The refusal of the last status change or move of the claim, as the server gave it; null when none.
+  // A steward re-settling a SETTLED claim freezes it again at today's figure.
+  const resettle = useMutation({
+    mutationFn: (id: number) => postJson<Claim>(`${base}/claims/${id}/resettle`, { user }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+      ]);
+    },
+  });
+  const resettleClaim = (id: number) => {
+    move.reset();
+    reassign.reset();
+    resettle.reset();
+    resettle.mutate(id);
+  };
+  // The refusal of the last status change, move or re-settle of the claim, as the server gave it; null when none.
   const refusal = (id: number) => {
     const error =
-      move.isError && move.variables?.id === id ? move.error : reassign.isError && reassign.variables?.id === id ? reassign.error : null;
+      move.isError && move.variables?.id === id
+        ? move.error
+        : reassign.isError && reassign.variables?.id === id
+          ? reassign.error
+          : resettle.isError && resettle.variables === id
+            ? resettle.error
+            : null;
     if (error === null) return null;
     return error instanceof HttpError && error.reason ? `${error.reason}.` : 'The change was refused.';
   };
@@ -104,6 +128,7 @@ function PersonClaims({ person }: { person: Person }) {
     save.reset();
     move.reset();
     reassign.reset();
+    resettle.reset();
     setEditing(c.id);
     setFields({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects ?? '' });
   };
@@ -147,6 +172,14 @@ function PersonClaims({ person }: { person: Person }) {
               </button>{' '}
               <button type="button" data-testid="claim-void" disabled={move.isPending} onClick={() => moveTo(c.id, 'VOID')}>
                 Void
+              </button>{' '}
+              <button
+                type="button"
+                data-testid="claim-resettle"
+                disabled={resettle.isPending}
+                onClick={() => resettleClaim(c.id)}
+              >
+                Re-settle
               </button>{' '}
               <button
                 type="button"
