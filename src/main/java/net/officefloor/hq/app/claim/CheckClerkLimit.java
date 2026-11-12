@@ -156,11 +156,12 @@ public class CheckClerkLimit {
         if (input.status() != ClaimStatus.SETTLED || claim.getStatus() != ClaimStatus.OPEN || steward) {
             return false;
         }
-        BigDecimal limit = settings.clerkLimit(claim.getSheetId());
+        Person person = people.find(claim.getSheetId(), claim.getPersonId());
+        BigDecimal limit = settings.clerkLimit(claim.getSheetId(),
+                person == null ? null : person.gradeOn(sheets.today(claim.getSheetId())));
         if (limit == null) {
             return false;
         }
-        Person person = people.find(claim.getSheetId(), claim.getPersonId());
         BigDecimal pct = person == null ? null : rates.forClaim(claim).find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
         BigDecimal due = Lateness.of(claim.getSheetId(), settings, sheets, claims, people).due(claim, pct);
         return due != null && due.compareTo(limit) > 0;

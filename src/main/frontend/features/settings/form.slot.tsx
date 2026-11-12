@@ -18,18 +18,19 @@ const STANDING_PERMS: Record<(typeof PERM_ACTIONS)[number], string> = {
 
 type PermKey = `perm-${(typeof PERM_ACTIONS)[number]}`;
 
-type Key = 'clerk-limit' | 'floor' | 'terms' | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'late-pct' | 'policy-date' | 'period-numbering-from' | 'cap' | 'proof-threshold' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'note-threshold' | 'review-threshold' | 'grace-days' | 'escalate-after' | 'review-sla' | 'entry-date' | 'pot' | 'alert-threshold' | 'parent' | 'fiscal-start-month' | 'rounding' | 'proof-kinds' | 'default-grade' | PermKey;
+type Key = 'clerk-limit' | 'clerk-limit-A' | 'clerk-limit-B' | 'clerk-limit-C' | 'floor' | 'terms' | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'late-pct' | 'policy-date' | 'period-numbering-from' | 'cap' | 'proof-threshold' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'note-threshold' | 'review-threshold' | 'grace-days' | 'escalate-after' | 'review-sla' | 'entry-date' | 'pot' | 'alert-threshold' | 'parent' | 'fiscal-start-month' | 'rounding' | 'proof-kinds' | 'default-grade' | PermKey;
 
 const GRADES = ['A', 'B', 'C'] as const;
 
 /** The settings that carry a figure: each is saved from a from-date (blank for the sheet's today). */
 type DatedKey = Exclude<Key, 'policy-date' | 'period-numbering-from' | 'grace-days' | 'escalate-after' | 'review-sla' | 'entry-date' | 'pot' | 'alert-threshold' | 'parent' | 'fiscal-start-month' | 'proof-kinds' | 'default-grade' | PermKey>;
 
-const NO_FROM: Record<DatedKey, string> = { 'clerk-limit': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'late-pct': '', cap: '', 'proof-threshold': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'note-threshold': '', 'review-threshold': '', rounding: '' };
+const NO_FROM: Record<DatedKey, string> = { 'clerk-limit': '', 'clerk-limit-A': '', 'clerk-limit-B': '', 'clerk-limit-C': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'late-pct': '', cap: '', 'proof-threshold': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'note-threshold': '', 'review-threshold': '', rounding: '' };
 
 const isDated = (k: Key): k is DatedKey => k in NO_FROM;
 
-// The sheet's settings in force, and the form that changes them: the clerk limit (blank for none),
+// The sheet's settings in force, and the form that changes them: the clerk limit (blank for none), each grade's
+// own clerk limit, which a claim of a person of the grade on the sheet's today takes instead (blank for none: the sheet's),
 // the floor (blank for its default), the terms in days (blank for 14), each grade's own terms (blank
 // for the sheet's terms), each grade's grace days (blank for none: whole days after its due-by a claim of
 // a person of the grade on its date is not yet overdue, and its late charge counts from) and the late percent (blank for
@@ -62,7 +63,7 @@ function SheetSettings() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const settings = useSettings(sheet);
-  const [values, setValues] = useState<Record<Key, string>>({ 'clerk-limit': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '', cap: '', 'proof-threshold': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'note-threshold': '', 'review-threshold': '', 'grace-days': '', 'escalate-after': '', 'review-sla': '', 'entry-date': '', pot: '', 'alert-threshold': '', parent: '', 'fiscal-start-month': '', rounding: '', 'proof-kinds': '', 'default-grade': '',
+  const [values, setValues] = useState<Record<Key, string>>({ 'clerk-limit': '', 'clerk-limit-A': '', 'clerk-limit-B': '', 'clerk-limit-C': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '', cap: '', 'proof-threshold': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'note-threshold': '', 'review-threshold': '', 'grace-days': '', 'escalate-after': '', 'review-sla': '', 'entry-date': '', pot: '', 'alert-threshold': '', parent: '', 'fiscal-start-month': '', rounding: '', 'proof-kinds': '', 'default-grade': '',
     'perm-open': '', 'perm-settle': '', 'perm-void': '', 'perm-reassign': '', 'perm-close': '', 'perm-reopen': '' });
   const [froms, setFroms] = useState<Record<DatedKey, string>>(NO_FROM);
   const [key, setKey] = useState<Key>('clerk-limit');
@@ -122,6 +123,12 @@ function SheetSettings() {
       >
         Clerk limit <strong data-testid="setting-clerk-limit-current">{fig(settings.data?.clerkLimit ?? '')}</strong>{' '}
         {field('clerk-limit', 'Clerk limit (blank for none)')}{' '}{from('clerk-limit')}{' '}
+        {GRADES.map((g) => (
+          <span key={g}>
+            Clerk limit {g} <strong data-testid={`setting-clerk-limit-${g}-current`}>{fig(settings.data?.gradeClerkLimit?.[g] ?? '')}</strong>{' '}
+            {field(`clerk-limit-${g}`, `Clerk limit for grade ${g} (blank for the sheet's)`)}{' '}{from(`clerk-limit-${g}`)}{' '}
+          </span>
+        ))}
         Floor <strong data-testid="setting-floor-current">{fig(settings.data?.floor ?? '')}</strong>{' '}
         {field('floor', 'Floor (blank for 1.00)')}{' '}{from('floor')}{' '}
         Terms <strong data-testid="setting-terms-current">{settings.data?.terms ?? ''}</strong>{' '}

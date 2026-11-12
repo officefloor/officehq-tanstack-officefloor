@@ -19,7 +19,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 /** The settings kept per sheet, by key. A setting never set, or set blank, has no value. The settings
- *  that carry a figure (the clerk limit, the floor, the cap, the proof threshold, a grade's proof threshold, the note threshold, the review threshold, the terms, a grade's terms, a grade's grace days and the late
+ *  that carry a figure (the clerk limit, a grade's clerk limit, the floor, the cap, the proof threshold, a grade's proof threshold, the note threshold, the review threshold, the terms, a grade's terms, a grade's grace days and the late
  *  percent) are dated: each value is recorded from a from-date, and the value in force on a date is the
  *  one with the latest from-date on or before it (none before every from-date, then the sheet's starting
  *  value). The policy date, the period numbering date, the entry date, the grace days, the escalation gap, the review SLA, the pot, the alert threshold, the parent sheet, the fiscal start month, the default grade, the proof kinds and the permission matrix are not dated. */
@@ -27,6 +27,15 @@ import org.springframework.stereotype.Repository;
 public class SettingStore {
 
     public static final String CLERK_LIMIT = "clerk-limit";
+
+    /** The key of a grade's own clerk limit: clerk-limit-A, clerk-limit-B or clerk-limit-C (dated; blank for
+     *  none, then the sheet's). */
+    public static final String CLERK_LIMIT_PREFIX = "clerk-limit-";
+
+    /** Whether the key is a grade's clerk limit. */
+    public static boolean isGradeClerkLimit(String key) {
+        return key.startsWith(CLERK_LIMIT_PREFIX) && GRADES.contains(key.substring(CLERK_LIMIT_PREFIX.length()));
+    }
 
     public static final String FLOOR = "floor";
 
@@ -350,6 +359,13 @@ public class SettingStore {
     public BigDecimal clerkLimit(String sheetId) {
         String value = find(sheetId, CLERK_LIMIT);
         return value == null ? null : new BigDecimal(value);
+    }
+
+    /** The most a clerk may settle a claim's due at for a person of the grade: the grade's own limit in force on
+     *  the sheet's today when one is set, else the sheet's; null for no limit. */
+    public BigDecimal clerkLimit(String sheetId, String grade) {
+        String own = grade == null ? null : find(sheetId, CLERK_LIMIT_PREFIX + grade);
+        return own != null ? new BigDecimal(own) : clerkLimit(sheetId);
     }
 
     /** The most a person's due-total may be (the one in force on the sheet's today), or null for no cap. */

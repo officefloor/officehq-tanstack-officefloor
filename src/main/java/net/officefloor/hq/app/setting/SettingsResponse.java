@@ -42,7 +42,9 @@ import java.util.Map;
  *  {@code proofKinds} is the kinds of proof a claim above its proof threshold needs one of each of before it is settled
  *  or approved, comma separated, null for none (not dated).
  *  {@code defaultGrade} is the grade the quick-add bar and an import line with a blank grade give a new person, null
- *  when blank (then A; not dated). */
+ *  when blank (then A; not dated).
+ *  {@code gradeClerkLimit} is each grade's clerk limit in force on the sheet's today, by grade, null when it has none
+ *  (a claim's clerk limit is its person's grade's on the sheet's today when one is set, else the sheet's). */
 public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
         String periodNumberingFrom, Map<String, String> gradeTerms, String cap, String proofThreshold, List<Dated> floorFrom,
         List<Dated> latePctFrom, Map<String, String> perms, String graceDays,
@@ -50,7 +52,7 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
         Map<String, List<Dated>> gradeGraceFrom, Map<String, String> gradeProofThreshold,
         String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding,
         List<Dated> roundingFrom, String reviewThreshold, String escalateAfter, String reviewSla,
-        String proofKinds, String defaultGrade) {
+        String proofKinds, String defaultGrade, Map<String, String> gradeClerkLimit) {
 
     /** A value recorded from a date (yyyy-MM-dd). */
     public record Dated(String from, String value) {

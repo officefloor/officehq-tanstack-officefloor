@@ -37,7 +37,7 @@ public class RespondWithSettings {
                 store.find(sheet, SettingStore.ROUNDING), history(sheet, SettingStore.ROUNDING, store),
                 store.find(sheet, SettingStore.REVIEW_THRESHOLD), store.find(sheet, SettingStore.ESCALATE_AFTER),
                 store.find(sheet, SettingStore.REVIEW_SLA), store.find(sheet, SettingStore.PROOF_KINDS),
-                store.find(sheet, SettingStore.DEFAULT_GRADE)));
+                store.find(sheet, SettingStore.DEFAULT_GRADE), gradeClerkLimit(sheet, today, store)));
     }
 
     private static Map<String, String> gradeTerms(String sheetId, LocalDate today, SettingStore store) {
@@ -62,6 +62,14 @@ public class RespondWithSettings {
             thresholds.put(grade, store.findOn(sheetId, SettingStore.PROOF_THRESHOLD_PREFIX + grade, today));
         }
         return thresholds;
+    }
+
+    private static Map<String, String> gradeClerkLimit(String sheetId, LocalDate today, SettingStore store) {
+        Map<String, String> limits = new LinkedHashMap<>();
+        for (String grade : SettingStore.GRADES) {
+            limits.put(grade, store.findOn(sheetId, SettingStore.CLERK_LIMIT_PREFIX + grade, today));
+        }
+        return limits;
     }
 
     private static Map<String, List<SettingsResponse.Dated>> gradeGraceFrom(String sheetId, SettingStore store) {
