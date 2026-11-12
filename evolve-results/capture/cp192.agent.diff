@@ -1,0 +1,111 @@
+diff --git a/src/main/frontend/features/crews/crews.slot.tsx b/src/main/frontend/features/crews/crews.slot.tsx
+index 3b1344428..4fc323d8b 100644
+--- a/src/main/frontend/features/crews/crews.slot.tsx
++++ b/src/main/frontend/features/crews/crews.slot.tsx
+@@ -4,7 +4,7 @@ import { HttpError, postJson } from '../../api/http';
+ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { HomeMain } from '../../slots/defs/homeMain';
+ import { useCurrentSheet, useCurrentUser } from '../../session/session';
+-import { type Person, usePeople } from '../people/people';
++import { type Person, shownName, usePeople } from '../people/people';
+ import { usePersonDue } from '../rates/due.slot';
+ import { type Crew, crewDue, crewsKey, useCrews } from './crews';
+ import { poolsKey } from '../pools/pools';
+@@ -35,10 +35,12 @@ function CrewRow({ crew, people, due }: { crew: Crew; people: Person[]; due: (p:
+   const submit = useSubmitOnce(add);
+ 
+   const total = crewDue(crew, people, due);
++  const leader = people.find((p) => p.id === crew.leadId);
++  const leadShown = crew.lead === null ? '' : leader ? shownName(leader) : crew.lead;
+ 
+   return (
+     <li data-testid={`crew-row-${crew.name}`}>
+-      <strong>{crew.name}</strong> — lead <span data-testid="crew-lead">{crew.lead ?? ''}</span>, due total{' '}
++      <strong>{crew.name}</strong> — lead <span data-testid="crew-lead">{leadShown}</span>, due total{' '}
+       <span data-testid="crew-due-total">{fig(total)}</span>
+       <ul>
+         {crew.members.map((m) => (
+diff --git a/src/main/frontend/features/patrons/patrons.slot.tsx b/src/main/frontend/features/patrons/patrons.slot.tsx
+index 70589f768..27b479c75 100644
+--- a/src/main/frontend/features/patrons/patrons.slot.tsx
++++ b/src/main/frontend/features/patrons/patrons.slot.tsx
+@@ -2,7 +2,7 @@ import { useState } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { HttpError, postJson } from '../../api/http';
+ import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
+-import { type Person, peopleKey, usePeople } from '../people/people';
++import { type Person, peopleKey, shownName, usePeople } from '../people/people';
+ import { useCurrentSheet, useCurrentUser } from '../../session/session';
+ import { useSheetToday } from '../sheet/sheet';
+ import { isRecentSettled, useClaims } from '../claims/claims';
+@@ -48,9 +48,9 @@ function PersonPatrons({ person }: { person: Person }) {
+     return p ? [{ person: p, share: shares[i] }] : [];
+   });
+   const named = patrons
+-    .map((p) => ({ name: p.person.name, share: p.share }))
+-    .sort((a, b) => a.name.localeCompare(b.name))
+-    .map((p) => `${p.name} ${p.share}`);
++    .map((p) => ({ person: p.person, share: p.share }))
++    .sort((a, b) => a.person.name.localeCompare(b.person.name))
++    .map((p) => `${shownName(p.person)} ${p.share}`);
+   const backing = sharedTotal(
+     patrons.map((p) => ({
+       figure: dueTotal(
+diff --git a/src/main/frontend/features/people/list.slot.tsx b/src/main/frontend/features/people/list.slot.tsx
+index 7fb919585..1e1900947 100644
+--- a/src/main/frontend/features/people/list.slot.tsx
++++ b/src/main/frontend/features/people/list.slot.tsx
+@@ -2,7 +2,7 @@ import { HomeMain } from '../../slots/defs/homeMain';
+ import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
+ import { useCurrentSheet } from '../../session/session';
+ import { usePersonDue } from '../rates/due.slot';
+-import { type Person, useEditingPerson, usePeople, useSelectedPeople, useShowRetired } from './people';
++import { type Person, shownName, useEditingPerson, usePeople, useSelectedPeople, useShowRetired } from './people';
+ import { asString, useSearchParam } from '../../url/useSearchParam';
+ import { useColumnShown } from '../columns/columns';
+ 
+@@ -93,7 +93,7 @@ function PeopleList() {
+                 onChange={(e) => setSelected(e.target.checked ? [...selected, p.id] : selected.filter((id) => id !== p.id))}
+               />
+             </td>
+-            <td data-testid="person-name" style={{ whiteSpace: 'pre' }}>{p.name}</td>
++            <td data-testid="person-name" style={{ whiteSpace: 'pre' }}>{shownName(p)}</td>
+             <td data-testid="person-grade">{p.grade}</td>
+             {shown('terms') && <td data-testid="person-terms">{p.terms ?? ''}</td>}
+             {shown('contact') && <td data-testid="person-contact">{p.contact ?? ''}</td>}
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index 7d19b7ffb..752a1bde1 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -73,6 +73,9 @@ export const covers = (h: Hold, date: string) => h.from <= date && (h.to === nul
+ 
+ export const GRADES = ['A', 'B', 'C'] as const;
+ 
++/** A person's name as the screen shows it: <name> (<grade in force on the sheet's today>). */
++export const shownName = (p: Person) => `${p.name} (${p.grade})`;
++
+ /** A person's grades, each with the date (yyyy-MM-dd) it applies from; the first has none (null),
+  *  applying from the beginning of time. */
+ export type Grades = { grade: string; from: string | null }[];
+diff --git a/src/main/frontend/features/search/search.slot.tsx b/src/main/frontend/features/search/search.slot.tsx
+index cbe55c7df..fcd7a5ce6 100644
+--- a/src/main/frontend/features/search/search.slot.tsx
++++ b/src/main/frontend/features/search/search.slot.tsx
+@@ -4,7 +4,7 @@ import { getJson } from '../../api/http';
+ import { HomeMain } from '../../slots/defs/homeMain';
+ import { LiveView, useCurrentSheet } from '../../session/session';
+ import { sheetKey, useSheet } from '../sheet/sheet';
+-import { type Person, usePeople } from '../people/people';
++import { type Person, shownName, usePeople } from '../people/people';
+ import { useClaims } from '../claims/claims';
+ import { useRates } from '../rates/rates';
+ import { useSettings } from '../settings/settings';
+@@ -33,7 +33,7 @@ function Gather({ sheets, text, sofar, done }: { sheets: string[]; text: string;
+   const dueOf = usePersonDue(first);
+   const ready = !!(people.data && claims.data && rates.data && settings.data && sheet.data);
+   const lines = ready
+-    ? [...sofar, ...people.data!.filter((p) => matches(p, text)).map((p) => `${first} ${p.name} ${dueOf(p)}`)]
++    ? [...sofar, ...people.data!.filter((p) => matches(p, text)).map((p) => `${first} ${shownName(p)} ${dueOf(p)}`)]
+     : sofar;
+   const last = ready && rest.length === 0;
+   const key = lines.join('\n');
