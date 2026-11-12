@@ -1,5 +1,6 @@
 import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
-import type { Person } from '../people/people';
+import { HomeMain } from '../../slots/defs/homeMain';
+import { type Person, usePeople } from '../people/people';
 import { useCurrentSheet } from '../../session/session';
 import { useSheetToday } from '../sheet/sheet';
 import { type Claim, counts, isOpen, live, useClaims } from '../claims/claims';
@@ -28,35 +29,63 @@ function AgedHead() {
   );
 }
 
-function PersonAged({ person }: { person: Person }) {
-  const fig = useFigure();
-  const [sheet] = useCurrentSheet();
+type Aged = { young: string; middle: string; old: string };
+
+/** A person's aged due on the sheet (the current sheet's unless another is named). */
+function useAged(of?: string) {
+  const [current] = useCurrentSheet();
+  const sheet = of ?? current;
   const claims = useClaims(sheet);
   const rates = useRates(sheet);
   const today = useSheetToday(sheet);
   const settings = useSettings(sheet).data;
   const floor = floorOf(settings);
-  const late = lateOf(settings, today, [person]);
-  const mine = live((claims.data ?? []).filter((c) => c.personId === person.id), [person])
-    .filter((c) => isOpen(c) && counts(c));
-  const bucket = (from: number, to: number) =>
-    dueTotal(
-      today === undefined
-        ? []
-        : mine
-            .filter((c) => age(c, today) >= from && age(c, today) <= to)
-            .map((c) => claimDue(c, rates.data, person.grades, floor, late)),
-    );
+  return (person: Person): Aged => {
+    const late = lateOf(settings, today, [person]);
+    const mine = live((claims.data ?? []).filter((c) => c.personId === person.id), [person])
+      .filter((c) => isOpen(c) && counts(c));
+    const bucket = (from: number, to: number) =>
+      dueTotal(
+        today === undefined
+          ? []
+          : mine
+              .filter((c) => age(c, today) >= from && age(c, today) <= to)
+              .map((c) => claimDue(c, rates.data, person.grades, floor, late)),
+      );
+    return { young: bucket(0, 30), middle: bucket(31, 60), old: bucket(61, Infinity) };
+  };
+}
+
+function PersonAged({ person }: { person: Person }) {
+  const fig = useFigure();
+  const { young, middle, old } = useAged()(person);
   return (
     <>
-      <td data-testid="person-aged-0-30">{fig(bucket(0, 30))}</td>
-      <td data-testid="person-aged-31-60">{fig(bucket(31, 60))}</td>
-      <td data-testid="person-aged-61">{fig(bucket(61, Infinity))}</td>
+      <td data-testid="person-aged-0-30">{fig(young)}</td>
+      <td data-testid="person-aged-31-60">{fig(middle)}</td>
+      <td data-testid="person-aged-61">{fig(old)}</td>
     </>
+  );
+}
+
+// The sheet's aged due: everyone's buckets added up, not trimmed.
+function SheetAged() {
+  const fig = useFigure();
+  const [sheet] = useCurrentSheet();
+  const people = usePeople(sheet);
+  const figures = (people.data ?? []).map(useAged(sheet));
+  const sum = (key: keyof Aged) => dueTotal(figures.map((f) => f[key]));
+  return (
+    <p>
+      Aged 0–30 <strong data-testid="rollup-aged-0-30">{fig(sum('young'))}</strong>{' '}
+      Aged 31–60 <strong data-testid="rollup-aged-31-60">{fig(sum('middle'))}</strong>{' '}
+      Aged 61+ <strong data-testid="rollup-aged-61">{fig(sum('old'))}</strong>
+    </p>
   );
 }
 
 export const contributions = [
   PersonColumnHeads.fill({ order: 17.5, Component: AgedHead }),
   PersonColumns.fill({ order: 17.5, Component: PersonAged }),
+  HomeMain.fill({ order: 36.4, Component: SheetAged }),
 ];
