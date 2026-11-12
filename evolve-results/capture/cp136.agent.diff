@@ -1,0 +1,172 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java
+index 29c06fcc1..485fca755 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java
+@@ -380,21 +380,21 @@ public class ClaimStore {
+                 Long.class, sheetId, sequence);
+     }
+ 
+-    /** Moves every claim of {@code fromId} to {@code intoId}, keeping their numbers and dates, each unbound from any
+-     *  statement figure and listed after the claims {@code intoId} has, in the order they were listed. */
++    /** Moves every claim of {@code fromId} to {@code intoId}, keeping their numbers, dates and any figure a statement
++     *  bound them to, listed after the claims {@code intoId} has, in the order they were listed. */
+     public void moveAll(String sheetId, long fromId, long intoId) {
+         for (Long id : jdbc.queryForList("SELECT id FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY listed",
+                 Long.class, sheetId, fromId)) {
+-            jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, stated_na = FALSE, "
+-                    + "listed = NEXT VALUE FOR claim_listed_seq WHERE sheet_id = ? AND id = ?", intoId, sheetId, id);
++            jdbc.update("UPDATE claim SET person_id = ?, listed = NEXT VALUE FOR claim_listed_seq "
++                    + "WHERE sheet_id = ? AND id = ?", intoId, sheetId, id);
+         }
+     }
+ 
+     /** Adds a copy of the claim to the person on the other sheet under {@code number} (null for none), correcting
+      *  and split off the numbers given: its amount, date, note, status, frozen settled figure, opener, due-by and
+      *  the terms it was fixed with, deferral, proofs, late entry, reminder, tags, void reason and editor, with its
+-     *  status log and comments, listed as the person's newest claim. Any figure a statement bound, its reference,
+-     *  lock and bulk settle batch are not carried. The id of the copy. */
++     *  status log and comments, listed as the person's newest claim, keeping any figure a statement bound it to.
++     *  Its reference, lock and bulk settle batch are not carried. The id of the copy. */
+     public long copyTo(Claim claim, String toSheet, long toPerson, String number, String corrects, String splitFrom) {
+         Integer terms = jdbc.queryForObject("SELECT due_terms FROM claim WHERE sheet_id = ? AND id = ?", Integer.class,
+                 claim.getSheetId(), claim.getId());
+@@ -403,7 +403,8 @@ public class ClaimStore {
+             PreparedStatement ps = con.prepareStatement(
+                     "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, "
+                             + "corrects, due_by, due_terms, deferred_until, proofs, split_from, late_entry, reminded_on, tags, "
+-                            + "void_reason, edited_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
++                            + "void_reason, edited_by, stated, stated_due, stated_na) "
++                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                     new String[] { "ID" });
+             ps.setString(1, toSheet);
+             ps.setLong(2, toPerson);
+@@ -425,6 +426,9 @@ public class ClaimStore {
+             ps.setString(18, claim.getTags());
+             ps.setString(19, claim.getVoidReason());
+             ps.setString(20, claim.getEditedBy());
++            ps.setBoolean(21, claim.isStated());
++            ps.setBigDecimal(22, claim.getStatedDue());
++            ps.setBoolean(23, claim.isStatedNa());
+             return ps;
+         }, keys);
+         long id = keys.getKey().longValue();
+diff --git a/src/main/java/net/officefloor/hq/app/person/MergePerson.java b/src/main/java/net/officefloor/hq/app/person/MergePerson.java
+index 2855a3d05..a00ab2bdd 100644
+--- a/src/main/java/net/officefloor/hq/app/person/MergePerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/MergePerson.java
+@@ -3,15 +3,17 @@ package net.officefloor.hq.app.person;
+ import net.officefloor.hq.app.claim.ClaimStore;
+ import net.officefloor.hq.app.pool.PoolStore;
+ import net.officefloor.hq.app.sheet.InvalidSheetException;
++import net.officefloor.hq.app.statement.StatementStore;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Merges the person into another on the sheet, refusing the same person or either of them retired: their claims,
+- *  name and aliases, patrons, the patronage of them and their pool memberships move to the other; the rest of
+- *  them is dropped. */
++/** Merges the person into another on the sheet, refusing the same person or either of them retired: their claims
++ *  (keeping any figure a statement bound them to), statements (the other's last statement stays theirs), name and
++ *  aliases, patrons, the patronage of them and their pool memberships move to the other; the rest of them is
++ *  dropped. */
+ public class MergePerson {
+     public void merge(@Val MergeRequest request, @Val Person person, PersonStore people, ClaimStore claims,
+-            PatronStore patrons, PoolStore pools, Out<MergedInto> merged) throws InvalidSheetException {
++            PatronStore patrons, PoolStore pools, StatementStore statements, Out<MergedInto> merged) throws InvalidSheetException {
+         Person into = request.into() == null ? null : people.find(person.getSheetId(), request.into());
+         if (into == null) {
+             throw new InvalidSheetException("No such person to merge into");
+@@ -24,6 +26,7 @@ public class MergePerson {
+         }
+         String sheetId = person.getSheetId();
+         claims.moveAll(sheetId, person.getId(), into.getId());
++        statements.moveAll(sheetId, person.getId(), sheetId, into.getId());
+         patrons.merge(sheetId, person.getId(), into.getId());
+         pools.merge(sheetId, person.getId(), into.getId());
+         people.mergeInto(person, into);
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonStore.java b/src/main/java/net/officefloor/hq/app/person/PersonStore.java
+index 6697e1354..67c1645fd 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonStore.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonStore.java
+@@ -323,7 +323,7 @@ public class PersonStore {
+ 
+     /** Adds a copy of the person to the other sheet: their name, every grade with its from-date, their terms,
+      *  contact, tags and aliases, noting this sheet as the one they came from. Their holds, statements and watchers
+-     *  are not carried. */
++     *  are not carried (a transfer gives them their statements, see StatementStore). */
+     public Person copyTo(Person person, String toSheet) {
+         Person copy = add(toSheet, person.getName(), person.gradeOn(Person.START), person.getTerms(), person.getContact(),
+                 person.getTags());
+diff --git a/src/main/java/net/officefloor/hq/app/person/TransferPerson.java b/src/main/java/net/officefloor/hq/app/person/TransferPerson.java
+index b83d1fd9c..fcfeed84a 100644
+--- a/src/main/java/net/officefloor/hq/app/person/TransferPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/TransferPerson.java
+@@ -16,18 +16,19 @@ import net.officefloor.hq.app.rollup.RollupService;
+ import net.officefloor.hq.app.setting.SettingStore;
+ import net.officefloor.hq.app.sheet.InvalidSheetException;
+ import net.officefloor.hq.app.sheet.SheetStore;
++import net.officefloor.hq.app.statement.StatementStore;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /** Transfers the person to another sheet, refusing a retired person, an archived sheet, or a name, alias or
+- *  contact of theirs already on it (a name or alias also when on another sheet of its tree). They arrive with their grades, terms, contact, aliases and claims; each claim
++ *  contact of theirs already on it (a name or alias also when on another sheet of its tree). They arrive with their grades, terms, contact, aliases, statements and claims (keeping any figure a statement bound them to); each claim
+  *  that had a number takes the other sheet's next, in the order they were opened (by the sheet's today when each
+  *  was opened, then the order they were added). They leave this sheet entirely. When the other sheet already has someone with their name or an alias
+  *  of theirs, they merge into that person instead, as a merge does. */
+ public class TransferPerson {
+     public void transfer(@Val TransferRequest request, @Val Person person, PersonStore people, ClaimStore claims,
+             ClaimLogStore log, PatronStore patrons, PoolStore pools, SheetStore sheets, SettingStore settings,
+-            PeriodStore periods, RollupService rollups, Out<Transferred> transferred) throws InvalidSheetException {
++            PeriodStore periods, RollupService rollups, StatementStore statements, Out<Transferred> transferred) throws InvalidSheetException {
+         String from = person.getSheetId();
+         String to = request.to();
+         if (person.isRetired()) {
+@@ -76,7 +77,7 @@ public class TransferPerson {
+         }
+ 
+         if (into != null) {
+-            // merged as a merge does: their claims after the other's (copied without bound figures above), their
++            // merged as a merge does: their claims after the other's (copied with their bound figures above), their
+             // name and aliases the other's aliases, the rest of them dropped
+             for (String alias : person.getAliases()) {
+                 people.addAlias(into, alias);
+@@ -85,6 +86,7 @@ public class TransferPerson {
+             copy = people.find(to, into.getId());
+         }
+ 
++        statements.moveAll(from, person.getId(), to, copy.getId());
+         claims.removeAll(from, person.getId());
+         patrons.drop(from, person.getId());
+         pools.drop(from, person.getId());
+diff --git a/src/main/java/net/officefloor/hq/app/statement/StatementStore.java b/src/main/java/net/officefloor/hq/app/statement/StatementStore.java
+index 2a0f003f3..dd4746df5 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/StatementStore.java
++++ b/src/main/java/net/officefloor/hq/app/statement/StatementStore.java
+@@ -25,6 +25,25 @@ public class StatementStore {
+                 statement.claims(), user);
+     }
+ 
++    /** Gives the statements of {@code fromId} on {@code fromSheet} to {@code intoId} on {@code toSheet}, after the
++     *  ones {@code intoId} has, but keeps the last of {@code intoId}'s statements their last (when they have none,
++     *  the last of the others becomes theirs). The statements of {@code fromId} are dropped with them (see
++     *  PersonStore). */
++    public void moveAll(String fromSheet, long fromId, String toSheet, long intoId) {
++        var last = jdbc.queryForList("SELECT id FROM statement WHERE sheet_id = ? AND person_id = ? ORDER BY id DESC LIMIT 1",
++                Long.class, toSheet, intoId);
++        jdbc.update("INSERT INTO statement (sheet_id, person_id, taken_on, due_total, claims, taken_by) "
++                + "SELECT ?, ?, taken_on, due_total, claims, taken_by FROM statement WHERE sheet_id = ? AND person_id = ? "
++                + "ORDER BY id", toSheet, intoId, fromSheet, fromId);
++        if (!last.isEmpty()) {
++            // listed by id: taken again after the others, so it stays their last
++            jdbc.update("INSERT INTO statement (sheet_id, person_id, taken_on, due_total, claims, taken_by) "
++                    + "SELECT sheet_id, person_id, taken_on, due_total, claims, taken_by FROM statement WHERE id = ?",
++                    last.get(0));
++            jdbc.update("DELETE FROM statement WHERE id = ?", last.get(0));
++        }
++    }
++
+     /** Removes the person's last statement and returns it, or null when they have none. */
+     public Statement removeLast(String sheetId, long personId) {
+         var ids = jdbc.queryForList("SELECT id FROM statement WHERE sheet_id = ? AND person_id = ? ORDER BY id DESC LIMIT 1 FOR UPDATE",
