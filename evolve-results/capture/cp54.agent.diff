@@ -1,0 +1,661 @@
+diff --git a/src/main/frontend/features/hold/hold.slot.tsx b/src/main/frontend/features/hold/hold.slot.tsx
+index 8e78c1ef5..3599b5fe2 100644
+--- a/src/main/frontend/features/hold/hold.slot.tsx
++++ b/src/main/frontend/features/hold/hold.slot.tsx
+@@ -2,7 +2,7 @@ import { type ChangeEvent, useState } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { HttpError, postJson } from '../../api/http';
+ import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
+-import { type Person, peopleKey } from '../people/people';
++import { type Person, peopleKey, personActionKey, useLatestPersonAction } from '../people/people';
+ import { useCurrentSheet, useCurrentUser } from '../../session/session';
+ 
+ function HoldHead() {
+@@ -20,6 +20,7 @@ function PersonHold({ person }: { person: Person }) {
+   const queryClient = useQueryClient();
+ 
+   const hold = useMutation({
++    mutationKey: personActionKey(sheet, person.id),
+     mutationFn: (dates: { from: string; to: string }) =>
+       postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/hold`, { ...dates, user }),
+     onSuccess: async () => {
+@@ -33,6 +34,8 @@ function PersonHold({ person }: { person: Person }) {
+     setFields((f) => ({ ...f, [k]: e.target.value }));
+   };
+ 
++  const latest = useLatestPersonAction(sheet, person.id);
++
+   return (
+     <td>
+       <span data-testid="person-hold">{person.held ? 'yes' : 'no'}</span>
+@@ -54,7 +57,7 @@ function PersonHold({ person }: { person: Person }) {
+       >
+         Hold
+       </button>
+-      {hold.isError && (
++      {hold.isError && hold.submittedAt >= latest && (
+         <span data-testid="person-error" role="alert">
+           {' '}
+           {hold.error instanceof HttpError && hold.error.reason ? `${hold.error.reason}.` : 'The hold was refused.'}
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index dcb8d4aff..80b8d14a2 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -1,4 +1,4 @@
+-import { useQuery } from '@tanstack/react-query';
++import { useMutationState, useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ import { asFlag, asString, useSearchParam } from '../../url/useSearchParam';
+ import { sheetKey } from '../sheet/sheet';
+@@ -66,3 +66,16 @@ export const useEditingPerson = () => useSearchParam('editPerson', asString);
+ 
+ /** Whether the people list shows retired people too; off when the screen is first opened. */
+ export const useShowRetired = () => useSearchParam('showRetired', asFlag);
++
++/** The mutation key of an action on a person's row (a statement, a hold, a retirement): the row
++ *  shows only the error of the latest one taken, so taking the next action clears an earlier one's. */
++export const personActionKey = (sheet: string, personId: number) => [...peopleKey(sheet), personId, 'action'] as const;
++
++/** When the latest action on the person's row was taken (0 when none was). */
++export function useLatestPersonAction(sheet: string, personId: number): number {
++  const taken = useMutationState({
++    filters: { mutationKey: personActionKey(sheet, personId) },
++    select: (m) => m.state.submittedAt,
++  });
++  return Math.max(0, ...taken);
++}
+diff --git a/src/main/frontend/features/retire/retire.slot.tsx b/src/main/frontend/features/retire/retire.slot.tsx
+index 5ac9c353b..5d72fbffe 100644
+--- a/src/main/frontend/features/retire/retire.slot.tsx
++++ b/src/main/frontend/features/retire/retire.slot.tsx
+@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { HttpError, postJson } from '../../api/http';
+ import { HomeMain } from '../../slots/defs/homeMain';
+ import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
+-import { type Person, peopleKey, useShowRetired } from '../people/people';
++import { type Person, peopleKey, personActionKey, useLatestPersonAction, useShowRetired } from '../people/people';
+ import { useCurrentSheet, useCurrentUser } from '../../session/session';
+ 
+ // The "show retired" toggle: the people list leaves retired people out unless it is on. It belongs
+@@ -40,6 +40,7 @@ function PersonRetired({ person }: { person: Person }) {
+   const queryClient = useQueryClient();
+ 
+   const retire = useMutation({
++    mutationKey: personActionKey(sheet, person.id),
+     mutationFn: (from: string) =>
+       postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/retire`, { date: from, user }),
+     onSuccess: async () => {
+@@ -48,6 +49,8 @@ function PersonRetired({ person }: { person: Person }) {
+     },
+   });
+ 
++  const latest = useLatestPersonAction(sheet, person.id);
++
+   return (
+     <td>
+       <span data-testid="person-retired">{person.retired ? 'yes' : 'no'}</span>{' '}
+@@ -72,7 +75,7 @@ function PersonRetired({ person }: { person: Person }) {
+       >
+         Retire
+       </button>
+-      {retire.isError && (
++      {retire.isError && retire.submittedAt >= latest && (
+         <span data-testid="person-error" role="alert">
+           {' '}
+           {retire.error instanceof HttpError && retire.error.reason ? `${retire.error.reason}.` : 'The retirement was refused.'}
+diff --git a/src/main/frontend/features/roles/roles.ts b/src/main/frontend/features/roles/roles.ts
+index a7e3ccf21..fde660806 100644
+--- a/src/main/frontend/features/roles/roles.ts
++++ b/src/main/frontend/features/roles/roles.ts
+@@ -2,10 +2,10 @@ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ import { sheetKey } from '../sheet/sheet';
+ 
+-/** A user name's role on the sheet. A name with none assigned is a clerk. */
++/** A user name's role on the sheet. A name with none assigned is a clerk; a viewer may change nothing. */
+ export type Role = { user: string; role: string };
+ 
+-export const ROLES = ['clerk', 'steward'] as const;
++export const ROLES = ['clerk', 'steward', 'viewer'] as const;
+ 
+ /** Under the sheet's key, so loading the sheet again re-reads its roles. */
+ export const rolesKey = (sheet: string) => [...sheetKey(sheet), 'roles'] as const;
+diff --git a/src/main/frontend/features/statements/statement.slot.tsx b/src/main/frontend/features/statements/statement.slot.tsx
+index f557a7248..4e64b4689 100644
+--- a/src/main/frontend/features/statements/statement.slot.tsx
++++ b/src/main/frontend/features/statements/statement.slot.tsx
+@@ -1,7 +1,7 @@
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { HttpError, postJson } from '../../api/http';
+ import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
+-import { type Person, peopleKey } from '../people/people';
++import { type Person, peopleKey, personActionKey, useLatestPersonAction } from '../people/people';
+ import { claimsKey } from '../claims/claims';
+ import { useCurrentSheet, useCurrentUser } from '../../session/session';
+ 
+@@ -18,6 +18,7 @@ function PersonStatement({ person }: { person: Person }) {
+   const queryClient = useQueryClient();
+ 
+   const take = useMutation({
++    mutationKey: personActionKey(sheet, person.id),
+     mutationFn: () =>
+       postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/statement`, { user }),
+     onSuccess: () =>
+@@ -27,6 +28,8 @@ function PersonStatement({ person }: { person: Person }) {
+       ]),
+   });
+ 
++  const latest = useLatestPersonAction(sheet, person.id);
++
+   return (
+     <td>
+       <span data-testid="person-statement-count">{person.statementCount}</span>{' '}
+@@ -43,7 +46,7 @@ function PersonStatement({ person }: { person: Person }) {
+       >
+         Statement
+       </button>
+-      {take.isError && (
++      {take.isError && take.submittedAt >= latest && (
+         <span data-testid="person-error" role="alert">
+           {' '}
+           {take.error instanceof HttpError && take.error.reason ? `${take.error.reason}.` : 'The statement was refused.'}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java b/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
+index d0cd956e1..960ff897b 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
+@@ -4,6 +4,7 @@ import java.math.BigDecimal;
+ import java.time.LocalDate;
+ import java.time.format.DateTimeParseException;
+ import java.util.regex.Pattern;
++import net.officefloor.hq.app.role.RoleStore;
+ import net.officefloor.hq.app.sheet.InvalidSheetException;
+ import net.officefloor.hq.app.sheet.SheetStore;
+ import net.officefloor.plugin.variable.Out;
+@@ -17,7 +18,8 @@ public class ValidateClaim {
+     private static final Pattern NUMBER = Pattern.compile("\\S{1,255}");
+ 
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ClaimRequest request,
+-            SheetStore sheets, Out<ClaimInput> body) throws InvalidSheetException {
++            SheetStore sheets, Out<ClaimInput> body, RoleStore roles) throws InvalidSheetException {
++        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
+         body.set(check(sheetId, request, sheets));
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateDefer.java b/src/main/java/net/officefloor/hq/app/claim/ValidateDefer.java
+index 89ec95841..389b6a4d8 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateDefer.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateDefer.java
+@@ -2,12 +2,15 @@ package net.officefloor.hq.app.claim;
+ 
+ import java.time.LocalDate;
+ import java.time.format.DateTimeParseException;
++import net.officefloor.hq.app.role.RoleStore;
+ import net.officefloor.hq.app.sheet.InvalidSheetException;
+ import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateDefer {
+-    public void validate(@RequestBody DeferRequest request, Out<DeferInput> body) throws InvalidSheetException {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody DeferRequest request, Out<DeferInput> body, RoleStore roles) throws InvalidSheetException {
++        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
+         String text = request == null || request.until() == null ? "" : request.until().trim();
+         try {
+             body.set(new DeferInput(LocalDate.parse(text), request.user()));
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateProof.java b/src/main/java/net/officefloor/hq/app/claim/ValidateProof.java
+index b1bb74d3e..6fede71ad 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateProof.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateProof.java
+@@ -1,10 +1,14 @@
+ package net.officefloor.hq.app.claim;
+ 
++import net.officefloor.hq.app.role.RoleStore;
++import net.officefloor.hq.app.sheet.InvalidSheetException;
+ import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateProof {
+-    public void validate(@RequestBody ProofRequest request, Out<ProofInput> body) {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ProofRequest request, Out<ProofInput> body, RoleStore roles) throws InvalidSheetException {
++        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
+         body.set(new ProofInput(request == null ? null : request.user()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateReassign.java b/src/main/java/net/officefloor/hq/app/claim/ValidateReassign.java
+index d106828f4..de14b0f8e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateReassign.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateReassign.java
+@@ -1,11 +1,14 @@
+ package net.officefloor.hq.app.claim;
+ 
++import net.officefloor.hq.app.role.RoleStore;
+ import net.officefloor.hq.app.sheet.InvalidSheetException;
+ import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateReassign {
+-    public void validate(@RequestBody ReassignRequest request, Out<ReassignInput> body) throws InvalidSheetException {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ReassignRequest request, Out<ReassignInput> body, RoleStore roles) throws InvalidSheetException {
++        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
+         String to = request == null || request.to() == null ? "" : request.to().trim();
+         if (to.isEmpty()) {
+             throw new InvalidSheetException("Choose the person to move the claim to");
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateResettle.java b/src/main/java/net/officefloor/hq/app/claim/ValidateResettle.java
+index e233f20ce..8cc42728c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateResettle.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateResettle.java
+@@ -1,10 +1,14 @@
+ package net.officefloor.hq.app.claim;
+ 
++import net.officefloor.hq.app.role.RoleStore;
++import net.officefloor.hq.app.sheet.InvalidSheetException;
+ import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateResettle {
+-    public void validate(@RequestBody ResettleRequest request, Out<ResettleInput> body) {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ResettleRequest request, Out<ResettleInput> body, RoleStore roles) throws InvalidSheetException {
++        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
+         body.set(new ResettleInput(request == null ? null : request.user()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateStatus.java b/src/main/java/net/officefloor/hq/app/claim/ValidateStatus.java
+index 5f76089f9..0f88758c5 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateStatus.java
+@@ -1,11 +1,14 @@
+ package net.officefloor.hq.app.claim;
+ 
++import net.officefloor.hq.app.role.RoleStore;
+ import net.officefloor.hq.app.sheet.InvalidSheetException;
+ import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateStatus {
+-    public void validate(@RequestBody StatusRequest request, Out<StatusInput> body) throws InvalidSheetException {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody StatusRequest request, Out<StatusInput> body, RoleStore roles) throws InvalidSheetException {
++        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
+         String status = request == null || request.status() == null ? "" : request.status().trim();
+         ClaimStatus to;
+         try {
+diff --git a/src/main/java/net/officefloor/hq/app/paste/ValidatePaste.java b/src/main/java/net/officefloor/hq/app/paste/ValidatePaste.java
+index 88271c020..f502e9981 100644
+--- a/src/main/java/net/officefloor/hq/app/paste/ValidatePaste.java
++++ b/src/main/java/net/officefloor/hq/app/paste/ValidatePaste.java
+@@ -9,6 +9,7 @@ import net.officefloor.hq.app.claim.ClaimStore;
+ import net.officefloor.hq.app.period.PeriodStore;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonStore;
++import net.officefloor.hq.app.role.RoleStore;
+ import net.officefloor.hq.app.sheet.InvalidSheetException;
+ import net.officefloor.hq.app.sheet.SheetStore;
+ import net.officefloor.plugin.variable.Out;
+@@ -24,8 +25,8 @@ import org.springframework.web.bind.annotation.RequestBody;
+  */
+ public class ValidatePaste {
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PasteRequest request,
+-            SheetStore sheets, PersonStore people, PeriodStore periods, ClaimStore claims, Out<PasteInput> pasted)
+-            throws InvalidSheetException {
++            SheetStore sheets, PersonStore people, PeriodStore periods, ClaimStore claims, Out<PasteInput> pasted, RoleStore roles) throws InvalidSheetException {
++        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
+         String sheet = sheetId.trim();
+         String text = request == null || request.text() == null ? "" : request.text();
+         List<PastedClaim> pastedClaims = new ArrayList<>();
+diff --git a/src/main/java/net/officefloor/hq/app/period/ValidateClose.java b/src/main/java/net/officefloor/hq/app/period/ValidateClose.java
+index 7a57a8614..d5ce8a8e5 100644
+--- a/src/main/java/net/officefloor/hq/app/period/ValidateClose.java
++++ b/src/main/java/net/officefloor/hq/app/period/ValidateClose.java
+@@ -1,10 +1,14 @@
+ package net.officefloor.hq.app.period;
+ 
++import net.officefloor.hq.app.role.RoleStore;
++import net.officefloor.hq.app.sheet.InvalidSheetException;
+ import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateClose {
+-    public void validate(@RequestBody CloseRequest request, Out<CloseRequest> body) {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody CloseRequest request, Out<CloseRequest> body, RoleStore roles) throws InvalidSheetException {
++        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
+         body.set(request == null ? new CloseRequest(null) : request);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/ValidatePeriod.java b/src/main/java/net/officefloor/hq/app/period/ValidatePeriod.java
+index a2dd811a9..6bb3e9d98 100644
+--- a/src/main/java/net/officefloor/hq/app/period/ValidatePeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/ValidatePeriod.java
+@@ -2,12 +2,15 @@ package net.officefloor.hq.app.period;
+ 
+ import java.time.LocalDate;
+ import java.time.format.DateTimeParseException;
++import net.officefloor.hq.app.role.RoleStore;
+ import net.officefloor.hq.app.sheet.InvalidSheetException;
+ import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidatePeriod {
+-    public void validate(@RequestBody PeriodRequest request, Out<PeriodInput> body) throws InvalidSheetException {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PeriodRequest request, Out<PeriodInput> body, RoleStore roles) throws InvalidSheetException {
++        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
+         if (request == null || request.name() == null || request.name().trim().isEmpty()) {
+             throw new InvalidSheetException("A name is required");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateHold.java b/src/main/java/net/officefloor/hq/app/person/ValidateHold.java
+index 3a07df005..37a0031ba 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidateHold.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateHold.java
+@@ -2,6 +2,7 @@ package net.officefloor.hq.app.person;
+ 
+ import java.time.LocalDate;
+ import java.time.format.DateTimeParseException;
++import net.officefloor.hq.app.role.RoleStore;
+ import net.officefloor.hq.app.sheet.InvalidSheetException;
+ import net.officefloor.hq.app.sheet.SheetStore;
+ import net.officefloor.plugin.variable.Out;
+@@ -10,7 +11,8 @@ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateHold {
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody HoldRequest request,
+-            SheetStore sheets, Out<HoldInput> body) throws InvalidSheetException {
++            SheetStore sheets, Out<HoldInput> body, RoleStore roles) throws InvalidSheetException {
++        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
+         String fromText = request == null || request.from() == null ? "" : request.from().trim();
+         String toText = request == null || request.to() == null ? "" : request.to().trim();
+         LocalDate from = fromText.isEmpty() ? sheets.today(sheetId.trim()) : parse(fromText);
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidatePatron.java b/src/main/java/net/officefloor/hq/app/person/ValidatePatron.java
+index b8981697f..133381fc9 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidatePatron.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidatePatron.java
+@@ -1,10 +1,14 @@
+ package net.officefloor.hq.app.person;
+ 
++import net.officefloor.hq.app.role.RoleStore;
++import net.officefloor.hq.app.sheet.InvalidSheetException;
+ import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidatePatron {
+-    public void validate(@RequestBody PatronRequest request, Out<PatronRequest> body) {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PatronRequest request, Out<PatronRequest> body, RoleStore roles) throws InvalidSheetException {
++        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
+         body.set(request == null ? new PatronRequest(null, null) : request);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+index 2ce4920f8..cfd028ae1 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+@@ -3,14 +3,17 @@ package net.officefloor.hq.app.person;
+ import java.time.LocalDate;
+ import java.time.format.DateTimeParseException;
+ import java.util.Set;
++import net.officefloor.hq.app.role.RoleStore;
+ import net.officefloor.hq.app.sheet.InvalidSheetException;
+ import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidatePerson {
+     private static final Set<String> GRADES = Set.of("A", "B", "C");
+ 
+-    public void validate(@RequestBody PersonRequest request, Out<PersonRequest> body) throws InvalidSheetException {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PersonRequest request, Out<PersonRequest> body, RoleStore roles) throws InvalidSheetException {
++        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
+         if (request == null || request.name() == null || request.name().trim().isEmpty()) {
+             throw new InvalidSheetException("A name is required");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateRetire.java b/src/main/java/net/officefloor/hq/app/person/ValidateRetire.java
+index bb49994af..871575c42 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidateRetire.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateRetire.java
+@@ -2,6 +2,7 @@ package net.officefloor.hq.app.person;
+ 
+ import java.time.LocalDate;
+ import java.time.format.DateTimeParseException;
++import net.officefloor.hq.app.role.RoleStore;
+ import net.officefloor.hq.app.sheet.InvalidSheetException;
+ import net.officefloor.hq.app.sheet.SheetStore;
+ import net.officefloor.plugin.variable.Out;
+@@ -10,7 +11,8 @@ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateRetire {
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody RetireRequest request,
+-            SheetStore sheets, Out<RetireInput> body) throws InvalidSheetException {
++            SheetStore sheets, Out<RetireInput> body, RoleStore roles) throws InvalidSheetException {
++        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
+         String dateText = request == null || request.date() == null ? "" : request.date().trim();
+         LocalDate from;
+         try {
+diff --git a/src/main/java/net/officefloor/hq/app/quick/ValidateQuickAdd.java b/src/main/java/net/officefloor/hq/app/quick/ValidateQuickAdd.java
+index d565a678c..5a3fb4ab3 100644
+--- a/src/main/java/net/officefloor/hq/app/quick/ValidateQuickAdd.java
++++ b/src/main/java/net/officefloor/hq/app/quick/ValidateQuickAdd.java
+@@ -4,6 +4,7 @@ import java.math.BigDecimal;
+ import java.util.regex.Pattern;
+ import net.officefloor.hq.app.claim.ClaimInput;
+ import net.officefloor.hq.app.person.PersonRequest;
++import net.officefloor.hq.app.role.RoleStore;
+ import net.officefloor.hq.app.sheet.InvalidSheetException;
+ import net.officefloor.hq.app.sheet.SheetStore;
+ import net.officefloor.plugin.variable.Out;
+@@ -19,7 +20,8 @@ public class ValidateQuickAdd {
+     private static final Pattern AMOUNT = Pattern.compile("\\d+(\\.\\d{1,2})?");
+ 
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody QuickAddRequest request,
+-            SheetStore sheets, Out<PersonRequest> person, Out<ClaimInput> claim) throws InvalidSheetException {
++            SheetStore sheets, Out<PersonRequest> person, Out<ClaimInput> claim, RoleStore roles) throws InvalidSheetException {
++        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
+         if (request == null || request.name() == null || request.name().trim().isEmpty()) {
+             throw new InvalidSheetException("A name is required");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java b/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java
+index 72a81d1cd..6e2d6c810 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java
++++ b/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java
+@@ -5,8 +5,10 @@ import java.time.LocalDate;
+ import java.time.format.DateTimeParseException;
+ import java.util.Set;
+ import java.util.regex.Pattern;
++import net.officefloor.hq.app.role.RoleStore;
+ import net.officefloor.hq.app.sheet.InvalidSheetException;
+ import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateRate {
+@@ -15,7 +17,8 @@ public class ValidateRate {
+     /** 0.00 or more, with up to two decimals. */
+     private static final Pattern PCT = Pattern.compile("\\d+(\\.\\d{1,2})?");
+ 
+-    public void validate(@RequestBody RateRequest request, Out<RateInput> body) throws InvalidSheetException {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody RateRequest request, Out<RateInput> body, RoleStore roles) throws InvalidSheetException {
++        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
+         if (request == null || request.grade() == null || !GRADES.contains(request.grade())) {
+             throw new InvalidSheetException("The grade must be A, B or C");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/role/Role.java b/src/main/java/net/officefloor/hq/app/role/Role.java
+index a64cc8adb..46e304058 100644
+--- a/src/main/java/net/officefloor/hq/app/role/Role.java
++++ b/src/main/java/net/officefloor/hq/app/role/Role.java
+@@ -3,16 +3,17 @@ package net.officefloor.hq.app.role;
+ import java.util.Locale;
+ 
+ /** A user's role on a sheet: every name is a clerk unless assigned otherwise. A clerk settles only
+- *  claims within the sheet's clerk limit; a steward settles any. */
++ *  claims within the sheet's clerk limit; a steward settles any. A viewer sees everything and may
++ *  change nothing. */
+ public enum Role {
+-    CLERK, STEWARD;
++    CLERK, STEWARD, VIEWER;
+ 
+-    /** The role as the screen and the audit file show it: clerk or steward. */
++    /** The role as the screen and the audit file show it: clerk, steward or viewer. */
+     public String shown() {
+         return name().toLowerCase(Locale.ROOT);
+     }
+ 
+-    /** The role named by the text (clerk or steward), or null when it names none. */
++    /** The role named by the text (clerk, steward or viewer), or null when it names none. */
+     public static Role of(String text) {
+         for (Role r : values()) {
+             if (r.shown().equals(text)) {
+diff --git a/src/main/java/net/officefloor/hq/app/role/RoleResponse.java b/src/main/java/net/officefloor/hq/app/role/RoleResponse.java
+index fae64c4fb..d844cfdf2 100644
+--- a/src/main/java/net/officefloor/hq/app/role/RoleResponse.java
++++ b/src/main/java/net/officefloor/hq/app/role/RoleResponse.java
+@@ -1,5 +1,5 @@
+ package net.officefloor.hq.app.role;
+ 
+-/** A user's role as the front end reads it: clerk or steward. */
++/** A user's role as the front end reads it: clerk, steward or viewer. */
+ public record RoleResponse(String user, String role) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/role/RoleStore.java b/src/main/java/net/officefloor/hq/app/role/RoleStore.java
+index 7495697c5..5d1f21b81 100644
+--- a/src/main/java/net/officefloor/hq/app/role/RoleStore.java
++++ b/src/main/java/net/officefloor/hq/app/role/RoleStore.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.role;
+ 
+ import java.util.List;
++import net.officefloor.hq.app.sheet.InvalidSheetException;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+ 
+@@ -28,6 +29,13 @@ public class RoleStore {
+         return found.isEmpty() ? Role.CLERK : Role.valueOf(found.get(0));
+     }
+ 
++    /** Refuses any change by a viewer: a viewer may change nothing on the sheet. */
++    public void refuseViewer(String sheetId, String user) throws InvalidSheetException {
++        if (find(sheetId, user == null ? "" : user.trim()) == Role.VIEWER) {
++            throw new InvalidSheetException("A viewer may change nothing");
++        }
++    }
++
+     public void set(String sheetId, String user, Role role) {
+         jdbc.update("MERGE INTO sheet_role (sheet_id, user_name, role) KEY (sheet_id, user_name) VALUES (?, ?, ?)",
+                 sheetId, user, role.name());
+diff --git a/src/main/java/net/officefloor/hq/app/role/ValidateRole.java b/src/main/java/net/officefloor/hq/app/role/ValidateRole.java
+index a4d21b7ea..4ea27526e 100644
+--- a/src/main/java/net/officefloor/hq/app/role/ValidateRole.java
++++ b/src/main/java/net/officefloor/hq/app/role/ValidateRole.java
+@@ -2,10 +2,12 @@ package net.officefloor.hq.app.role;
+ 
+ import net.officefloor.hq.app.sheet.InvalidSheetException;
+ import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateRole {
+-    public void validate(@RequestBody RoleRequest request, Out<RoleInput> body) throws InvalidSheetException {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody RoleRequest request, Out<RoleInput> body, RoleStore roles) throws InvalidSheetException {
++        roles.refuseViewer(sheetId.trim(), request == null ? null : request.by());
+         String user = request == null || request.user() == null ? "" : request.user().trim();
+         if (user.isEmpty()) {
+             throw new InvalidSheetException("A user name is required");
+@@ -13,7 +15,7 @@ public class ValidateRole {
+         String text = request.role() == null ? "" : request.role().trim();
+         Role role = Role.of(text);
+         if (role == null) {
+-            throw new InvalidSheetException("The role must be clerk or steward");
++            throw new InvalidSheetException("The role must be clerk, steward or viewer");
+         }
+         body.set(new RoleInput(user, role, request.by()));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingStore.java b/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
+index 2f1d4eba3..6d362b4ac 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
+@@ -83,6 +83,9 @@ public class SettingStore {
+     /** Whether the role may take the action (one of {@link #PERM_ACTIONS}): the roles listed in its
+      *  permission, else, when blank, the standing rule. */
+     public boolean allows(String sheetId, String action, Role role) {
++        if (role == Role.VIEWER) {
++            return false;
++        }
+         String value = find(sheetId, PERM_PREFIX + action);
+         if (value == null) {
+             return STANDING_PERMS.get(action).contains(role);
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+index d91a06076..c166c1345 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+@@ -7,8 +7,10 @@ import java.util.ArrayList;
+ import java.util.List;
+ import java.util.regex.Pattern;
+ import net.officefloor.hq.app.role.Role;
++import net.officefloor.hq.app.role.RoleStore;
+ import net.officefloor.hq.app.sheet.InvalidSheetException;
+ import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateSetting {
+@@ -17,7 +19,8 @@ public class ValidateSetting {
+     /** A whole number of days, 0 or more. */
+     private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
+ 
+-    public void validate(@RequestBody SettingRequest request, Out<SettingInput> body) throws InvalidSheetException {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SettingRequest request, Out<SettingInput> body, RoleStore roles) throws InvalidSheetException {
++        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
+         String key = request == null || request.key() == null ? "" : request.key().trim();
+         boolean floor = SettingStore.FLOOR.equals(key);
+         boolean terms = SettingStore.TERMS.equals(key);
+@@ -112,7 +115,7 @@ public class ValidateSetting {
+         List<String> roles = new ArrayList<>();
+         for (String part : value.split(",")) {
+             String role = part.trim();
+-            if (Role.of(role) == null) {
++            if (Role.of(role) == null || Role.of(role) == Role.VIEWER) {
+                 throw new InvalidSheetException("A permission lists roles (clerk, steward), comma separated, or is blank");
+             }
+             if (!roles.contains(role)) {
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/ValidateToday.java b/src/main/java/net/officefloor/hq/app/sheet/ValidateToday.java
+index 9994de843..b3cd52d14 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/ValidateToday.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/ValidateToday.java
+@@ -2,12 +2,14 @@ package net.officefloor.hq.app.sheet;
+ 
+ import java.time.LocalDate;
+ import java.time.format.DateTimeParseException;
++import net.officefloor.hq.app.role.RoleStore;
+ import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateToday {
+-    public void validate(@RequestBody TodayRequest request, Out<LocalDate> today, Out<TodayRequest> body)
+-            throws InvalidSheetException {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody TodayRequest request, Out<LocalDate> today, Out<TodayRequest> body, RoleStore roles) throws InvalidSheetException {
++        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
+         String text = request == null || request.today() == null ? "" : request.today().trim();
+         body.set(request);
+         try {
+diff --git a/src/main/java/net/officefloor/hq/app/statement/ValidateStatement.java b/src/main/java/net/officefloor/hq/app/statement/ValidateStatement.java
+index 0c343be74..6132722f2 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/ValidateStatement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/ValidateStatement.java
+@@ -1,10 +1,14 @@
+ package net.officefloor.hq.app.statement;
+ 
++import net.officefloor.hq.app.role.RoleStore;
++import net.officefloor.hq.app.sheet.InvalidSheetException;
+ import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateStatement {
+-    public void validate(@RequestBody StatementRequest request, Out<StatementRequest> body) {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody StatementRequest request, Out<StatementRequest> body, RoleStore roles) throws InvalidSheetException {
++        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
+         body.set(request == null ? new StatementRequest(null) : request);
+     }
+ }
