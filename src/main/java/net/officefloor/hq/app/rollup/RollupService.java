@@ -75,6 +75,27 @@ public class RollupService {
         return new Rollup(figures, shown(claimedTotal), shown(dueTotal));
     }
 
+    /** The due-total of the claims that count dated from..to (inclusive): the sum of their figures,
+     *  skipping n/a, as the screen shows a period's due-total. */
+    public BigDecimal dueBetween(String sheetId, LocalDate from, LocalDate to) {
+        List<Claim> all = claims.list(sheetId);
+        BigDecimal total = BigDecimal.ZERO.setScale(2);
+        for (Person person : people.list(sheetId)) {
+            for (Claim claim : all) {
+                if (claim.getPersonId() != person.getId()
+                        || (claim.getStatus() != ClaimStatus.OPEN && claim.getStatus() != ClaimStatus.SETTLED)
+                        || claim.getDate().isBefore(from) || claim.getDate().isAfter(to)) {
+                    continue;
+                }
+                BigDecimal figure = ClaimFigure.of(claim, rates.find(sheetId, person.getGrade(), claim.getDate()));
+                if (figure != null) {
+                    total = total.add(figure);
+                }
+            }
+        }
+        return total;
+    }
+
     /** Records how the sheet's figures moved since {@code before}, the change made by {@code user}. */
     public void record(String sheetId, String user, Rollup before) {
         Rollup after = snapshot(sheetId);

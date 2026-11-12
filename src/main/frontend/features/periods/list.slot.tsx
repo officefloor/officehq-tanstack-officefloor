@@ -13,7 +13,8 @@ type Fields = { name: string; from: string; to: string };
 const EMPTY: Fields = { name: '', from: '', to: '' };
 
 // The sheet's periods, each with its due-total (the figures of the claims that count whose date falls
-// in it, skipping n/a), and the form that adds one.
+// in it, skipping n/a; fixed when the period was closed), its closed yes/no and the button that
+// closes it, and the form that adds one.
 function Periods() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -32,6 +33,17 @@ function Periods() {
     },
   });
   const submit = useSubmitOnce(save);
+
+  // The server refuses closing a period that is already closed; the error shows on that period.
+  const close = useMutation({
+    mutationFn: (name: string) =>
+      postJson<Period>(`/api/sheets/${encodeURIComponent(sheet)}/periods/${encodeURIComponent(name)}/close`, { user }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheet) }),
+  });
+  const closePeriod = (name: string) => {
+    close.reset();
+    close.mutate(name);
+  };
 
   const set = (key: keyof Fields) => (e: ChangeEvent<HTMLInputElement>) => {
     setFields({ ...fields, [key]: e.target.value });
@@ -56,6 +68,8 @@ function Periods() {
             <th>From</th>
             <th>To</th>
             <th>Due total</th>
+            <th>Closed</th>
+            <th />
           </tr>
         </thead>
         <tbody>
@@ -64,7 +78,19 @@ function Periods() {
               <td data-testid="period-name">{p.name}</td>
               <td data-testid="period-from">{p.from}</td>
               <td data-testid="period-to">{p.to}</td>
-              <td data-testid="period-due-total">{periodDue(p)}</td>
+              <td data-testid="period-due-total">{p.closed && p.total !== null ? p.total : periodDue(p)}</td>
+              <td data-testid="period-closed">{p.closed ? 'yes' : 'no'}</td>
+              <td>
+                <button type="button" data-testid="period-close" disabled={close.isPending} onClick={() => closePeriod(p.name)}>
+                  Close
+                </button>
+                {close.isError && close.variables === p.name && (
+                  <span data-testid="period-error" role="alert">
+                    {' '}
+                    {close.error instanceof HttpError && close.error.reason ? `${close.error.reason}.` : 'The period was refused.'}
+                  </span>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>
