@@ -18,7 +18,8 @@ import { useAsOf } from '../../session/session';
  *  `contact` is their contact (trimmed, lower-cased; null when none), no other person's on the sheet.
  *  `aliases` are other names they are found by (no name or other alias on the sheet), sorted as names are compared.
  *  `clashing` whether their name or an alias is used as a name or alias on another sheet of the sheet's tree (its
- *  ancestors and descendants); every edit of them is refused until it renames them to a name that does not clash. */
+ *  ancestors and descendants); every edit of them is refused until it renames them to a name that does not clash.
+ *  `origin` is the id of the sheet they were transferred from (null when they were not). */
 export type Person = {
   id: number;
   name: string;
@@ -38,6 +39,7 @@ export type Person = {
   contact: string | null;
   aliases: string[];
   clashing: boolean;
+  origin: string | null;
 };
 
 /** A hold from its from-date to its to-date (yyyy-MM-dd, both inclusive; null for no end). */

@@ -73,6 +73,7 @@ public class PersonStore {
                     rs.getObject("retired_from", LocalDate.class), holds.getOrDefault(rs.getLong("id"), List.of()));
             p.setTerms(rs.getObject("terms", Integer.class));
             p.setContact(rs.getString("contact"));
+            p.setOrigin(rs.getString("origin"));
             p.getAliases().addAll(aliases.getOrDefault(rs.getLong("id"), List.of()));
             return p;
         };
@@ -285,7 +286,8 @@ public class PersonStore {
     }
 
     /** Adds a copy of the person to the other sheet: their name, every grade with its from-date, their terms,
-     *  contact and aliases. Their holds, statements and watchers are not carried. */
+     *  contact and aliases, noting this sheet as the one they came from. Their holds, statements and watchers
+     *  are not carried. */
     public Person copyTo(Person person, String toSheet) {
         Person copy = add(toSheet, person.getName(), person.gradeOn(Person.START), person.getTerms(), person.getContact());
         person.getGrades().forEach((from, grade) -> {
@@ -297,6 +299,8 @@ public class PersonStore {
         for (String alias : person.getAliases()) {
             addAlias(copy, alias);
         }
+        jdbc.update("UPDATE person SET origin = ? WHERE sheet_id = ? AND id = ?", person.getSheetId(), toSheet,
+                copy.getId());
         return find(toSheet, copy.getId());
     }
 

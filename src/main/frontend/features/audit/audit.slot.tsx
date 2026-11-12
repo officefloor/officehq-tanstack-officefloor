@@ -5,7 +5,8 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet } from '../../session/session';
 
 // The audit viewer: the sheet's lines exactly as the audit file holds them, newest first. A name in the
-// filter shows only the lines about that person (name=/person=, compared as names are). It reads the
+// filter shows only the lines about that person (name=/person=, compared as names are); for a person
+// transferred here, followed by the lines about them from the sheet they came from. It reads the
 // file each time Show is pressed; it keeps no record of its own.
 function AuditViewer() {
   const [sheet] = useCurrentSheet();

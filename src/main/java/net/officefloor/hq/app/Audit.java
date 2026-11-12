@@ -130,6 +130,20 @@ public class Audit {
         return found;
     }
 
+    /** The lines about the person on the sheet they were transferred from to {@code to}, newest first, exactly as
+     *  the file holds them: from the latest record of their transfer to it, back (all of them when there is none). */
+    public synchronized List<String> linesBefore(String from, String to, String person) {
+        List<String> theirs = lines(from, person);
+        String prefix = "PERSON_TRANSFERRED sheet=" + from + " ";
+        for (int i = 0; i < theirs.size(); i++) {
+            String line = theirs.get(i);
+            if (line.startsWith(prefix) && (line + " ").contains(" to=" + to + " ")) {
+                return theirs.subList(i, theirs.size());
+            }
+        }
+        return theirs;
+    }
+
     /** Whether the line carries name=<name> or person=<name>: the value runs to the line's end or to the next field. */
     private static boolean about(String line, String name) {
         String lower = line.toLowerCase(java.util.Locale.ROOT);

@@ -29,6 +29,7 @@ public class Person {
     private boolean termsChanged;
     private String contact;
     private boolean contactChanged;
+    private String origin;
 
     public Person(long id, String sheetId, String name, NavigableMap<LocalDate, String> grades, long version) {
         this.id = id;
@@ -97,6 +98,9 @@ public class Person {
     }
     /** Whether the last {@link #setContact} changed their contact. */
     public boolean isContactChanged() { return contactChanged; }
+    /** The sheet they were transferred from, null when they were not transferred here. */
+    public String getOrigin() { return origin; }
+    public void setOrigin(String origin) { this.origin = origin; }
     public void setVersion(long version) { this.version = version; }
     public void setRetiredFrom(LocalDate retiredFrom) { this.retiredFrom = retiredFrom; }
 }

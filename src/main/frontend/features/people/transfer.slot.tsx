@@ -8,6 +8,15 @@ import { poolsKey } from '../pools/pools';
 import { sheetKey } from '../sheet/sheet';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
 
+function OriginHead() {
+  return <th>From sheet</th>;
+}
+
+// The sheet a transferred person came from; blank for anyone added on this sheet.
+function PersonOrigin({ person }: { person: Person }) {
+  return <td data-testid="person-origin">{person.origin ?? ''}</td>;
+}
+
 function TransferHead() {
   return <th>Transfer</th>;
 }
@@ -73,6 +82,8 @@ function PersonTransfer({ person }: { person: Person }) {
 }
 
 export const contributions = [
+  PersonColumnHeads.fill({ order: 19.94, Component: OriginHead }),
+  PersonColumns.fill({ order: 19.94, Component: PersonOrigin }),
   PersonColumnHeads.fill({ order: 19.95, Component: TransferHead }),
   PersonColumns.fill({ order: 19.95, Component: PersonTransfer }),
 ];
