@@ -2,8 +2,13 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { sheetKey } from '../sheet/sheet';
 
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+
 /** `amount` has two decimals; `date` is yyyy-MM-dd. */
-export type Claim = { id: number; personId: number; amount: string; date: string; note: string };
+export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus };
+
+/** Only OPEN and SETTLED claims count toward claimed and the totals. */
+export const counts = (c: Claim) => c.status === 'OPEN' || c.status === 'SETTLED';
 
 /** Under the sheet's key, so loading the sheet again re-reads its claims. */
 export const claimsKey = (sheet: string) => [...sheetKey(sheet), 'claims'] as const;
@@ -20,7 +25,7 @@ export function useClaims(sheet: string) {
 /** Amounts are added in whole cents, so the sum is exact. */
 const cents = (amount: string) => Math.round(Number(amount) * 100);
 
-/** The sum of these claims' amounts, with two decimals. */
+/** The sum of the amounts of those of these claims that count, with two decimals. */
 export function claimed(claims: Claim[]): string {
-  return (claims.reduce((sum, c) => sum + cents(c.amount), 0) / 100).toFixed(2);
+  return (claims.filter(counts).reduce((sum, c) => sum + cents(c.amount), 0) / 100).toFixed(2);
 }

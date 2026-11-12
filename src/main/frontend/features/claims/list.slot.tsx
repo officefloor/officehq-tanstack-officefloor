@@ -5,16 +5,18 @@ import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns
 import type { Person } from '../people/people';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { due, rateOf, useRates } from '../rates/rates';
-import { type Claim, claimsKey, useClaims } from './claims';
+import { type Claim, type ClaimStatus, claimsKey, useClaims } from './claims';
 
 type Fields = { amount: string; date: string; note: string };
+type StatusChange = { id: number; status: ClaimStatus };
 const EMPTY: Fields = { amount: '', date: '', note: '' };
 
 function ClaimsHead() {
   return <th>Claims</th>;
 }
 
-// A person's claims, newest first, with the form that adds one or edits the one whose editor is open.
+// A person's claims, newest first, each with its status and the buttons that move it on, and the
+// form that adds one or edits the one whose editor is open.
 function PersonClaims({ person }: { person: Person }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -37,12 +39,23 @@ function PersonClaims({ person }: { person: Person }) {
     },
   });
 
+  // The server refuses a change the claim's status does not allow; the error shows on that claim.
+  const move = useMutation({
+    mutationFn: (m: StatusChange) => postJson<Claim>(`${base}/claims/${m.id}/status`, { status: m.status, user }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+  });
+  const moveTo = (id: number, status: ClaimStatus) => {
+    move.reset();
+    move.mutate({ id, status });
+  };
+
   const set = (key: keyof Fields) => (e: ChangeEvent<HTMLInputElement>) => {
     setFields({ ...fields, [key]: e.target.value });
     save.reset();
   };
   const open = (c: Claim) => {
     save.reset();
+    move.reset();
     setEditing(c.id);
     setFields({ amount: c.amount, date: c.date, note: c.note });
   };
@@ -63,6 +76,16 @@ function PersonClaims({ person }: { person: Person }) {
               <span data-testid="claim-date">{c.date}</span>{' '}
               <span data-testid="claim-note">{c.note}</span>{' '}
               <span data-testid="claim-due">{due(c.amount, rateOf(rates.data, person.grade))}</span>{' '}
+              <span data-testid="claim-status">{c.status}</span>{' '}
+              <button type="button" data-testid="claim-open" disabled={move.isPending} onClick={() => moveTo(c.id, 'OPEN')}>
+                Open
+              </button>{' '}
+              <button type="button" data-testid="claim-settle" disabled={move.isPending} onClick={() => moveTo(c.id, 'SETTLED')}>
+                Settle
+              </button>{' '}
+              <button type="button" data-testid="claim-void" disabled={move.isPending} onClick={() => moveTo(c.id, 'VOID')}>
+                Void
+              </button>{' '}
               <button type="button" data-testid="claim-edit" onClick={() => open(c)}>
                 Edit
               </button>
@@ -70,6 +93,12 @@ function PersonClaims({ person }: { person: Person }) {
                 <button type="button" data-testid="claim-cancel" onClick={cancel}>
                   Cancel
                 </button>
+              )}
+              {move.isError && move.variables?.id === c.id && (
+                <span data-testid="claim-error" role="alert">
+                  {' '}
+                  {move.error instanceof HttpError && move.error.reason ? `${move.error.reason}.` : 'The change was refused.'}
+                </span>
               )}
             </li>
           ))}
