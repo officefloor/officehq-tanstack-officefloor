@@ -128,8 +128,7 @@ public class Claim {
     /** Whether a steward waived its late charge: it bears none from then on, whatever its overdue state. */
     public boolean isWaived() { return waived; }
     public void setWaived(boolean waived) { this.waived = waived; }
-    /** Whether the claim is held: while OPEN (or PENDING) and unbound by a statement it counts in no live total,
-     *  as a claim dated within a hold of its person's does. */
+    /** Whether the claim is held. A held claim still counts in every total. */
     public boolean isHeld() { return held; }
     public void setHeld(boolean held) { this.held = held; }
     /** The external reference, unique on the sheet without regard to case; null when it has none. */

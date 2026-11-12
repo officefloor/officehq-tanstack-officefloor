@@ -3,7 +3,6 @@ import { getJson } from '../../api/http';
 import { asOfKey, asOfPath, sheetKey } from '../sheet/sheet';
 import { useAsOf } from '../../session/session';
 import { asNumber, asString, useSearchParam } from '../../url/useSearchParam';
-import { type Hold, covers } from '../people/people';
 
 /** PENDING: settled by a clerk above the clerk limit, awaiting a steward's approval; handled as OPEN
  *  (a statement binds it like any other claim that counts). DELETED: a deleted DRAFT, which counts
@@ -80,8 +79,7 @@ export type Claim = {
   reviewOn: string | null;
   /** Whether a steward waived its late charge: it bears none from then on, whatever its overdue state. */
   waived: boolean;
-  /** Whether it is held: while OPEN (or PENDING) and unbound by a statement it counts in no live total, as a
-   *  claim dated within one of its person's holds does. */
+  /** Whether it is held. A held claim still counts in every total. */
   held: boolean;
 };
 
@@ -97,25 +95,19 @@ export const counts = (c: Claim) => (isOpen(c) && !c.deferred) || c.status === '
 /** Whether the claim keeps the figure (or n/a) its person's last statement bound it to. */
 export const isBound = (c: Claim) => c.stated && (c.statedDue !== null || c.statedNa);
 
-/** These claims less the OPEN (or PENDING) claims held, or dated within one of their person's holds, or of a
- *  person whose retirement date the sheet's today has reached, which count in no live due total, unless a
- *  statement bound them. */
-export const live = (claims: Claim[], people: { id: number; holds: Hold[]; retiredNow: boolean }[] | undefined) =>
-  liveOf(claims, people, false);
-
 /** These claims less the OPEN (or PENDING) claims of a person whose retirement date the sheet's today has
- *  reached, unless a statement bound them: a hold leaves a claim in claimed and the claimed-total. */
-export const liveClaimed = (claims: Claim[], people: { id: number; holds: Hold[]; retiredNow: boolean }[] | undefined) =>
-  liveOf(claims, people, true);
-
-const liveOf = (claims: Claim[], people: { id: number; holds: Hold[]; retiredNow: boolean }[] | undefined, keepHeld: boolean) => {
+ *  reached, which count in no live due total, unless a statement bound them. A hold (the claim's or its
+ *  person's) leaves a claim in every total: it only takes the person's cuts from their pools. */
+export const live = (claims: Claim[], people: { id: number; retiredNow: boolean }[] | undefined) => {
   const byId = new Map((people ?? []).map((p) => [p.id, p]));
   return claims.filter((c) => {
     const p = byId.get(c.personId);
-    const held = !keepHeld && (c.held || (p !== undefined && p.holds.some((h) => covers(h, c.date))));
-    return !(isOpen(c) && !c.stated && (held || (p !== undefined && p.retiredNow)));
+    return !(isOpen(c) && !c.stated && p !== undefined && p.retiredNow);
   });
 };
+
+/** The claims that count toward claimed: as {@link live}. */
+export const liveClaimed = live;
 
 /** The date (yyyy-MM-dd) the given number of days before this one. */
 const daysBefore = (date: string, days: number) => {

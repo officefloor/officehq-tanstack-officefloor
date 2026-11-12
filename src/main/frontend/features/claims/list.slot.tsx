@@ -317,8 +317,7 @@ function PersonClaims({ person }: { person: Person }) {
     inline.reset();
     waive.mutate(id);
   };
-  // Holding an OPEN or PENDING claim, or releasing it when held: while held and unbound by a statement it counts
-  // in no live total, as a claim dated within its person's hold does. Its figures move with it.
+  // Holding an OPEN or PENDING claim, or releasing it when held: a held claim still counts in every total.
   const hold = useMutation({
     mutationFn: (id: number) => postJson<Claim>(`${base}/claims/${id}/hold`, { user }),
     onSuccess: async () => {

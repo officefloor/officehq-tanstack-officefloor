@@ -13,8 +13,8 @@ function HoldHead() {
 }
 
 // Whether the person has any hold, a line for each of their holds, and the dates and button that add
-// one (a blank from-date takes the sheet's today, a blank to-date has no end). Their OPEN claims dated
-// within a hold count in no live total unless a statement bound them. A refused hold shows its error
+// one (a blank from-date takes the sheet's today, a blank to-date has no end). A hold leaves their
+// claims in every total; one in force on today only takes their cuts. A refused hold shows its error
 // until the dates are changed or the next is tried.
 function PersonHold({ person }: { person: Person }) {
   const [user] = useCurrentUser();

@@ -9,9 +9,9 @@ import { useAsOf } from '../../session/session';
  *  and `statementDate` (yyyy-MM-dd) are the last one's, null when none was taken. `retired` is set
  *  as soon as a `retiredFrom` date (yyyy-MM-dd, null when not retired) is, whatever the date;
  *  `retiredNow` once the sheet's today reaches it: from then their OPEN claims count in no live total
- *  unless a statement bound them, as a hold's would.
- *  `holds` are their holds, oldest first; `held` whether they have any. Their OPEN claims dated within
- *  a hold count in no live total unless a statement bound them; their SETTLED ones still do.
+ *  unless a statement bound them.
+ *  `holds` are their holds, oldest first; `held` whether they have any. A hold leaves their claims in
+ *  every total: one in force on the sheet's today only takes their cuts from their pools.
  *  `patronIds` are the ids of the other people on the sheet they named as their patrons, in the order they named them.
  *  `grade` is the grade in force on the sheet's today; `grades` every grade with the date it applies from.
  *  `terms` are their own terms in force on the sheet's today, in whole days (null when none), ahead of their grade's and the sheet's.

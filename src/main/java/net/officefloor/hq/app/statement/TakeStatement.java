@@ -73,7 +73,7 @@ public class TakeStatement {
         for (Claim live : bound) {
             // The claim as it stood then (itself when taken now); null when it was not theirs then.
             Claim claim = was.get(live.getId());
-            // An OPEN (or PENDING) claim dated within a hold counts in no live total unless a statement bound
+            // An OPEN (or PENDING) claim of a retired person counts in no live total unless a statement bound
             // it, so a statement neither counts nor binds it; one it bound before stays counted. A deferred
             // claim counts in no total until the sheet's today reaches its date: a statement leaves it unbound.
             boolean counts = claim != null && RollupService.counts(claim, then, on);
