@@ -1,0 +1,170 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimAdded.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimAdded.java
+new file mode 100644
+index 000000000..8c44ecfc2
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimAdded.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.plugin.variable.Val;
++
++/** Records a stored claim add: CLAIM_ADDED sheet=<id> by=<user> person=<name> amount=<0.00> date=<yyyy-mm-dd>. */
++public class AuditClaimAdded {
++    public void audit(@Val ClaimInput input, @Val Person person, @Val Claim claim, Audit audit) {
++        audit.record(AuditClaimEdited.line("CLAIM_ADDED", input, person, claim));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimEdited.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimEdited.java
+new file mode 100644
+index 000000000..24c35ca0c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimEdited.java
+@@ -0,0 +1,19 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonStore;
++import net.officefloor.plugin.variable.Val;
++
++/** Records a stored claim edit: CLAIM_EDITED sheet=<id> by=<user> person=<name> amount=<0.00> date=<yyyy-mm-dd>. */
++public class AuditClaimEdited {
++    public void audit(@Val ClaimInput input, @Val Claim claim, PersonStore people, Audit audit) {
++        audit.record(line("CLAIM_EDITED", input, people.find(claim.getSheetId(), claim.getPersonId()), claim));
++    }
++
++    static String line(String event, ClaimInput input, Person person, Claim claim) {
++        ClaimResponse shown = ClaimResponse.from(claim);
++        return event + " sheet=" + claim.getSheetId() + " by=" + input.user() + " person=" + person.getName()
++                + " amount=" + shown.amount() + " date=" + shown.date();
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/AuditPersonAdded.java b/src/main/java/net/officefloor/hq/app/person/AuditPersonAdded.java
+new file mode 100644
+index 000000000..4c5786d0f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/AuditPersonAdded.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++
++/** Records a stored person add: PERSON_ADDED sheet=<id> by=<user> name=<name> grade=<grade>. */
++public class AuditPersonAdded {
++    public void audit(@Val PersonRequest request, @Val Person person, Audit audit) {
++        audit.record("PERSON_ADDED sheet=" + person.getSheetId() + " by=" + request.user() + " name="
++                + person.getName() + " grade=" + person.getGrade());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/AuditPersonEdited.java b/src/main/java/net/officefloor/hq/app/person/AuditPersonEdited.java
+new file mode 100644
+index 000000000..6344b5573
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/AuditPersonEdited.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++
++/** Records a stored person edit: PERSON_EDITED sheet=<id> by=<user> name=<name> grade=<grade>. */
++public class AuditPersonEdited {
++    public void audit(@Val PersonRequest request, @Val Person person, Audit audit) {
++        audit.record("PERSON_EDITED sheet=" + person.getSheetId() + " by=" + request.user() + " name="
++                + person.getName() + " grade=" + person.getGrade());
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+index fac1da010..d72c52f7b 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+@@ -1,5 +1,6 @@
+ # PUT /api/sheets/{sheetId}/claims/{claimId} — edit a claim's amount, date and note (body as an
+ # add). Refused (400) like an add, or when the claim is not on the sheet; nothing is stored then.
++# A stored change is recorded in the audit file as CLAIM_EDITED; a refused one records nothing.
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaim
+   next: load
+@@ -14,6 +15,10 @@ apply:
+ save:
+   class: net.officefloor.hq.app.claim.SaveClaim
+   govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.claim.AuditClaimEdited
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.claim.RespondWithClaim
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+index b7972574d..87f4c6b4e 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+@@ -1,6 +1,7 @@
+ # POST /api/sheets/{sheetId}/people — add a person (body: {name, grade, user}). An empty name or a
+ # grade other than A, B or C, or a name another person on the sheet has (ignoring case and the
+ # spaces around it), is refused (400) and nothing is stored. The name is stored trimmed.
++# A stored change is recorded in the audit file as PERSON_ADDED; a refused one records nothing.
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePerson
+   next: check
+@@ -11,6 +12,10 @@ check:
+ save:
+   class: net.officefloor.hq.app.person.SavePersonAdded
+   govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.person.AuditPersonAdded
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.person.RespondWithPerson
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+index aa63c761d..41ae53b3b 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+@@ -1,6 +1,7 @@
+ # PUT /api/sheets/{sheetId}/people/{personId} — edit a person (body: {name, grade, user}). Refused
+ # (400) like an add (a name another person on the sheet has), or when the person is not on the
+ # sheet; nothing is stored then.
++# A stored change is recorded in the audit file as PERSON_EDITED; a refused one records nothing.
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePerson
+   next: load
+@@ -19,6 +20,10 @@ apply:
+ save:
+   class: net.officefloor.hq.app.person.SavePerson
+   govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.person.AuditPersonEdited
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.person.RespondWithPerson
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+index caa468d05..1947ffec1 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+@@ -2,6 +2,7 @@
+ # date, note, user}). The amount is required: a number with up to two decimals, 0.00 or more. A
+ # blank date takes the sheet's today. Refused (400), storing nothing, when the amount or date is
+ # not valid or the person is not on the sheet.
++# A stored change is recorded in the audit file as CLAIM_ADDED; a refused one records nothing.
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaim
+   next: load
+@@ -12,6 +13,10 @@ load:
+ save:
+   class: net.officefloor.hq.app.claim.SaveClaimAdded
+   govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.claim.AuditClaimAdded
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.claim.RespondWithClaim
