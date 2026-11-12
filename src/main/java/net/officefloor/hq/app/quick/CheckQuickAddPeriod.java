@@ -14,14 +14,14 @@ import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 
 /** Refuses a quick add whose claim would be due by a date inside a closed period: the business day after its date the terms
- *  of the person named (or, for a person still to be added, of their grade). */
+ *  of the person named (or, for a person still to be added, of their grade), in force on the sheet's today. */
 public class CheckQuickAddPeriod {
     public void check(@PathVariable("sheetId") String sheetId, @Val PersonRequest request, @Val ClaimInput claim,
             PersonStore people, SettingStore settings, PeriodStore periods, HolidayStore holidays) throws InvalidSheetException {
         String sheet = sheetId.trim();
         Person person = people.findByName(sheet, request.name());
         LocalDate dueBy = person != null ? ClaimPeriods.dueByOf(person, claim.date(), settings, holidays)
-                : holidays.businessDaysAfter(sheet, claim.date(), settings.terms(sheet, request.grade(), claim.date()));
+                : holidays.businessDaysAfter(sheet, claim.date(), settings.terms(sheet, request.grade(), settings.termsDay(sheet)));
         ClaimPeriods.refuseClosed(periods, sheet, dueBy);
     }
 }

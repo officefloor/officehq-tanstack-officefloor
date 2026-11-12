@@ -270,6 +270,11 @@ public class SettingStore {
         return asOf != null ? asOf : sheets.today(sheetId);
     }
 
+    /** The day a claim added now takes its terms on: the sheet's today (the date standing in for it when as of a date). */
+    public LocalDate termsDay(String sheetId) {
+        return today(sheetId);
+    }
+
     /** Whether the key's values are recorded from a from-date. */
     public static boolean isDated(String key) {
         return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key)

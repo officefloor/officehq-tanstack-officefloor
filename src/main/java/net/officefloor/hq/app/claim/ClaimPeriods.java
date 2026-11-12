@@ -15,10 +15,10 @@ public final class ClaimPeriods {
     }
 
     /** The due-by a claim of the person dated {@code date} would be fixed with, were it added now: its date
-     *  the terms-th business day after it, for the terms it would get (see {@link SaveClaimAdded#termsOf}),
+     *  the terms-th business day after it, for the terms in force on the sheet's today it would get (see {@link SaveClaimAdded#termsOf}),
      *  skipping weekends and the holidays on the sheet now. */
     public static LocalDate dueByOf(Person person, LocalDate date, SettingStore settings, HolidayStore holidays) {
-        return holidays.businessDaysAfter(person.getSheetId(), date, SaveClaimAdded.termsOf(person, date, settings));
+        return holidays.businessDaysAfter(person.getSheetId(), date, SaveClaimAdded.termsOf(person, settings));
     }
 
     /** Refuses opening the claim when the period it belongs to caps its open claims and the claim's person
