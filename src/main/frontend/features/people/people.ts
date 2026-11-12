@@ -23,7 +23,9 @@ import { useAsOf } from '../../session/session';
  *  `pastRetirements` are the retirements they were unretired from, oldest first.
  *  `tags` are their tags (trimmed, lower-cased, no repeats), sorted; a claim counts for a tag when it or its
  *  person carries it.
- *  `snapshots` are their snapshots, one per SNAPSHOT written for them as the sheet's today moved on, oldest first. */
+ *  `snapshots` are their snapshots, one per SNAPSHOT written for them as the sheet's today moved on, oldest first.
+ *  `statements` are their statements still standing (a cancelled one is gone), oldest first by date, the ones a
+ *  merge or a transfer brought over among them. */
 export type Person = {
   id: number;
   name: string;
@@ -47,7 +49,11 @@ export type Person = {
   pastRetirements: PastRetirement[];
   tags: string[];
   snapshots: Snapshot[];
+  statements: StatementLine[];
 };
+
+/** A statement: its date (yyyy-MM-dd) and the person's due-total it recorded (two decimals, or n/a). */
+export type StatementLine = { date: string; dueTotal: string };
 
 /** A snapshot: the day being left (yyyy-MM-dd) and the person's due-total as it stood then (two decimals, or n/a). */
 export type Snapshot = { day: string; dueTotal: string };

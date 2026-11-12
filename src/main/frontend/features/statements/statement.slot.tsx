@@ -14,7 +14,8 @@ function StatementHead() {
   return <th>Statements</th>;
 }
 
-// A person's statements: how many were taken, the last one's due-total and date, and the date and button
+// A person's statements: how many were taken, the last one's due-total and date, a line for each still
+// standing (oldest first, by date), and the date and button
 // that take one (binding their counting claims to their figures now, or as they stood at the end of the
 // date given; a blank date takes it now), and the button that cancels the last one
 // (a steward only; its claims follow their live figures again). A refused action shows its error until
@@ -58,6 +59,11 @@ function PersonStatement({ person }: { person: Person }) {
       {shown('statement-count') && <><span data-testid="person-statement-count">{person.statementCount}</span>{' '}</>}
       {shown('stated-total') && <><span data-testid="person-stated-total">{fig(person.statedTotal ?? '')}</span>{' '}</>}
       {shown('statement-date') && <><span data-testid="person-statement-date">{person.statementDate ?? ''}</span>{' '}</>}
+      {person.statements.map((s, i) => (
+        <div key={i} data-testid="person-statement-line-line">
+          {s.date} {s.dueTotal}
+        </div>
+      ))}
       <input
         type="date"
         data-testid="person-statement-asof"

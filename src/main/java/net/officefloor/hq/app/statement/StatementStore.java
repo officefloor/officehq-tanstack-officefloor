@@ -3,7 +3,9 @@ package net.officefloor.hq.app.statement;
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import net.officefloor.hq.app.history.History;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -70,16 +72,26 @@ public class StatementStore {
     }
 
     private Map<Long, StatementSummary> summariesFrom(String sheetId, String table) {
+        Map<Long, List<StatementSummary.Line>> lines = new HashMap<>();
+        jdbc.query("SELECT person_id, taken_on, due_total FROM " + table + " WHERE sheet_id = ? ORDER BY taken_on, id",
+                rs -> {
+                    lines.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(new StatementSummary.Line(
+                            rs.getObject("taken_on", LocalDate.class).toString(), figure(rs.getBigDecimal("due_total"))));
+                }, sheetId);
         Map<Long, StatementSummary> found = new HashMap<>();
         jdbc.query("SELECT s.person_id, s.taken_on, s.due_total, c.n FROM (SELECT * FROM " + table + ") s JOIN "
                 + "(SELECT person_id, COUNT(*) AS n, MAX(id) AS last_id FROM " + table + " WHERE sheet_id = ? GROUP BY person_id) c "
                 + "ON s.id = c.last_id", rs -> {
-                    BigDecimal total = rs.getBigDecimal("due_total");
-                    found.put(rs.getLong("person_id"), new StatementSummary(rs.getInt("n"),
-                            total == null ? "n/a" : total.setScale(2).toPlainString(),
-                            rs.getObject("taken_on", LocalDate.class).toString()));
+                    long personId = rs.getLong("person_id");
+                    found.put(personId, new StatementSummary(rs.getInt("n"), figure(rs.getBigDecimal("due_total")),
+                            rs.getObject("taken_on", LocalDate.class).toString(),
+                            List.copyOf(lines.getOrDefault(personId, List.of()))));
                 }, sheetId);
         return found;
+    }
+
+    private static String figure(BigDecimal total) {
+        return total == null ? "n/a" : total.setScale(2).toPlainString();
     }
 
     public StatementSummary summary(String sheetId, long personId) {
