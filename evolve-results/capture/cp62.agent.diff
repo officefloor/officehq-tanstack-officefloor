@@ -1,0 +1,622 @@
+diff --git a/src/main/frontend/features/sheet/sheet.ts b/src/main/frontend/features/sheet/sheet.ts
+index c9baafe63..be85829e5 100644
+--- a/src/main/frontend/features/sheet/sheet.ts
++++ b/src/main/frontend/features/sheet/sheet.ts
+@@ -1,8 +1,9 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ 
+-/** `today` (yyyy-MM-dd) is the sheet's own date: every date decision and default uses it, never the clock. */
+-export type Sheet = { id: string; today: string };
++/** `today` (yyyy-MM-dd) is the sheet's own date: every date decision and default uses it, never the clock.
++ *  An `archived` sheet stays visible but the server refuses every change to it. */
++export type Sheet = { id: string; today: string; archived: boolean };
+ 
+ /** Every per-sheet query key starts with ['sheet', id], so loading a sheet re-reads all of it. */
+ export const sheetKey = (id: string) => ['sheet', id] as const;
+diff --git a/src/main/frontend/features/sheet/today.slot.tsx b/src/main/frontend/features/sheet/today.slot.tsx
+index 5434b1988..5abb324d8 100644
+--- a/src/main/frontend/features/sheet/today.slot.tsx
++++ b/src/main/frontend/features/sheet/today.slot.tsx
+@@ -1,6 +1,6 @@
+ import { useState } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+-import { postJson } from '../../api/http';
++import { HttpError, postJson } from '../../api/http';
+ import { useSubmitOnce } from '../../query/useSubmitOnce';
+ import { AppHeader } from '../../slots/defs/appHeader';
+ import { useCurrentSheet, useCurrentUser } from '../../session/session';
+@@ -19,6 +19,13 @@ function SheetToday() {
+     onSuccess: () => queryClient.invalidateQueries({ queryKey: sheetKey(sheet) }),
+   });
+   const submit = useSubmitOnce(save);
++  const archive = useMutation({
++    mutationFn: () => postJson<Sheet>(`/api/sheets/${encodeURIComponent(sheet)}/archive`, { user }),
++    onSuccess: (archived) => queryClient.setQueryData(sheetKey(sheet), archived),
++  });
++  const submitArchive = useSubmitOnce(archive);
++  // The sheet's one error element: a refused today or a refused archive, whichever was tried last.
++  const failed = save.isError ? save.error : archive.isError ? archive.error : null;
+ 
+   if (!user || !loaded.data) return null;
+   return (
+@@ -26,6 +33,7 @@ function SheetToday() {
+       data-testid="sheet-today-form"
+       onSubmit={(e) => {
+         e.preventDefault();
++        archive.reset();
+         submit(input.trim());
+       }}
+     >
+@@ -37,14 +45,26 @@ function SheetToday() {
+         onChange={(e) => {
+           setInput(e.target.value);
+           save.reset();
++          archive.reset();
+         }}
+       />
+       <button type="submit" data-testid="sheet-today-save">
+         Set today
+       </button>
+-      {save.isError && (
++      {' '}Archived <strong data-testid="sheet-archived">{loaded.data.archived ? 'yes' : 'no'}</strong>{' '}
++      <button
++        type="button"
++        data-testid="sheet-archive"
++        onClick={() => {
++          save.reset();
++          submitArchive();
++        }}
++      >
++        Archive sheet
++      </button>
++      {failed && (
+         <span data-testid="sheet-error" role="alert">
+-          {' '}Not a valid date.
++          {' '}{failed instanceof HttpError && failed.reason ? failed.reason : 'Not a valid date.'}
+         </span>
+       )}
+     </form>
+diff --git a/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java b/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java
+index df5261535..d2c8f5560 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/OpenClaims.java
+@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.PathVariable;
+  *  added, a person's claims newest first. Each is opened as a single open would be (its next
+  *  number, opened-by the user) and recorded as CLAIM_OPENED, then how it moved the sheet's figures.
+  *  A claim that is not on the sheet, is not a DRAFT, or is dated in a closed period, and every claim when
+- *  the sheet's permission matrix does not allow the user's role to open, is refused and
++ *  the sheet is archived or the sheet's permission matrix does not allow the user's role to open, is refused and
+  *  left as it is. */
+ public class OpenClaims {
+     public void open(@PathVariable("sheetId") String sheetId, @Val BulkOpenInput input, ClaimStore store,
+@@ -47,7 +47,7 @@ public class OpenClaims {
+         }
+         selected.sort(Comparator.<Claim>comparingInt(c -> personOrder.getOrDefault(c.getPersonId(), Integer.MAX_VALUE))
+                 .thenComparing(Comparator.comparingLong(Claim::getId).reversed()));
+-        boolean permitted = settings.allows(sheet, "open", roles.find(sheet, input.user()));
++        boolean permitted = !sheets.archived(sheet) && settings.allows(sheet, "open", roles.find(sheet, input.user()));
+         int opened = 0;
+         for (Claim claim : selected) {
+             if (!permitted || claim.getStatus() != ClaimStatus.DRAFT || closed(periods, claim)) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java b/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java
+index 05cb7c4ef..39209f081 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java
+@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.PathVariable;
+  *  claims newest first. Each goes through the very steps of a single settle by the user (period,
+  *  clerk limit, opened-by and status checks, then store, log and audit), so a clerk's settle above
+  *  the clerk limit sends it to PENDING, which counts as settled. A claim that is not on the sheet,
+- *  or that a single settle would refuse, is refused and left as it is. */
++ *  or that a single settle would refuse (every claim on an archived sheet), is refused and left as it is. */
+ public class SettleClaims {
+     public void settle(@PathVariable("sheetId") String sheetId, @Val BulkSettleInput input, ClaimStore store,
+             PersonStore people, PeriodStore periods, SettingStore settings, SheetStore sheets, RoleStore roles,
+@@ -52,6 +52,7 @@ public class SettleClaims {
+         int settled = 0;
+         for (Claim claim : selected) {
+             try {
++                sheets.refuseArchived(sheet);
+                 new CheckClaimPeriod().check(claim, periods);
+                 StatusMove[] move = new StatusMove[1];
+                 new CheckClerkLimit().check(status, claim, roles, settings, people, rates, sheets, store, m -> move[0] = m);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java b/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
+index 960ff897b..f60132b10 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateClaim.java
+@@ -19,7 +19,7 @@ public class ValidateClaim {
+ 
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ClaimRequest request,
+             SheetStore sheets, Out<ClaimInput> body, RoleStore roles) throws InvalidSheetException {
+-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
++        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
+         body.set(check(sheetId, request, sheets));
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateDefer.java b/src/main/java/net/officefloor/hq/app/claim/ValidateDefer.java
+index 389b6a4d8..0be43bcba 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateDefer.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateDefer.java
+@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateDefer {
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody DeferRequest request, Out<DeferInput> body, RoleStore roles) throws InvalidSheetException {
+-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
++        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
+         String text = request == null || request.until() == null ? "" : request.until().trim();
+         try {
+             body.set(new DeferInput(LocalDate.parse(text), request.user()));
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateProof.java b/src/main/java/net/officefloor/hq/app/claim/ValidateProof.java
+index 6fede71ad..3543fa88c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateProof.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateProof.java
+@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateProof {
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ProofRequest request, Out<ProofInput> body, RoleStore roles) throws InvalidSheetException {
+-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
++        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
+         body.set(new ProofInput(request == null ? null : request.user()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateReassign.java b/src/main/java/net/officefloor/hq/app/claim/ValidateReassign.java
+index de14b0f8e..a5ab9338c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateReassign.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateReassign.java
+@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateReassign {
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ReassignRequest request, Out<ReassignInput> body, RoleStore roles) throws InvalidSheetException {
+-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
++        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
+         String to = request == null || request.to() == null ? "" : request.to().trim();
+         if (to.isEmpty()) {
+             throw new InvalidSheetException("Choose the person to move the claim to");
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateResettle.java b/src/main/java/net/officefloor/hq/app/claim/ValidateResettle.java
+index 8cc42728c..77db027b0 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateResettle.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateResettle.java
+@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateResettle {
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ResettleRequest request, Out<ResettleInput> body, RoleStore roles) throws InvalidSheetException {
+-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
++        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
+         body.set(new ResettleInput(request == null ? null : request.user()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateSplit.java b/src/main/java/net/officefloor/hq/app/claim/ValidateSplit.java
+index e454d3a23..9a00a8d89 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateSplit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateSplit.java
+@@ -14,7 +14,7 @@ public class ValidateSplit {
+ 
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SplitRequest request, Out<SplitInput> body,
+             RoleStore roles) throws InvalidSheetException {
+-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
++        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
+         String amount = request == null || request.amount() == null ? "" : request.amount().trim();
+         if (!AMOUNT.matcher(amount).matches()) {
+             throw new InvalidSheetException("The amount must be a number with up to two decimals");
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ValidateStatus.java b/src/main/java/net/officefloor/hq/app/claim/ValidateStatus.java
+index 0f88758c5..9761e77e4 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ValidateStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ValidateStatus.java
+@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateStatus {
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody StatusRequest request, Out<StatusInput> body, RoleStore roles) throws InvalidSheetException {
+-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
++        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
+         String status = request == null || request.status() == null ? "" : request.status().trim();
+         ClaimStatus to;
+         try {
+diff --git a/src/main/java/net/officefloor/hq/app/paste/ValidatePaste.java b/src/main/java/net/officefloor/hq/app/paste/ValidatePaste.java
+index f502e9981..d84a5aa64 100644
+--- a/src/main/java/net/officefloor/hq/app/paste/ValidatePaste.java
++++ b/src/main/java/net/officefloor/hq/app/paste/ValidatePaste.java
+@@ -26,7 +26,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+ public class ValidatePaste {
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PasteRequest request,
+             SheetStore sheets, PersonStore people, PeriodStore periods, ClaimStore claims, Out<PasteInput> pasted, RoleStore roles) throws InvalidSheetException {
+-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
++        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
+         String sheet = sheetId.trim();
+         String text = request == null || request.text() == null ? "" : request.text();
+         List<PastedClaim> pastedClaims = new ArrayList<>();
+diff --git a/src/main/java/net/officefloor/hq/app/period/ValidateClose.java b/src/main/java/net/officefloor/hq/app/period/ValidateClose.java
+index d5ce8a8e5..9893d551e 100644
+--- a/src/main/java/net/officefloor/hq/app/period/ValidateClose.java
++++ b/src/main/java/net/officefloor/hq/app/period/ValidateClose.java
+@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateClose {
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody CloseRequest request, Out<CloseRequest> body, RoleStore roles) throws InvalidSheetException {
+-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
++        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
+         body.set(request == null ? new CloseRequest(null) : request);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/ValidateGenerate.java b/src/main/java/net/officefloor/hq/app/period/ValidateGenerate.java
+index 3c418202a..d137e717e 100644
+--- a/src/main/java/net/officefloor/hq/app/period/ValidateGenerate.java
++++ b/src/main/java/net/officefloor/hq/app/period/ValidateGenerate.java
+@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+ public class ValidateGenerate {
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody GenerateRequest request,
+             SheetStore sheets, Out<GenerateInput> body, RoleStore roles) throws InvalidSheetException {
+-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
++        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
+         if (request == null) {
+             throw new InvalidSheetException("A from and to date are required");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/period/ValidatePeriod.java b/src/main/java/net/officefloor/hq/app/period/ValidatePeriod.java
+index 6bb3e9d98..3caf75530 100644
+--- a/src/main/java/net/officefloor/hq/app/period/ValidatePeriod.java
++++ b/src/main/java/net/officefloor/hq/app/period/ValidatePeriod.java
+@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidatePeriod {
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PeriodRequest request, Out<PeriodInput> body, RoleStore roles) throws InvalidSheetException {
+-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
++        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
+         if (request == null || request.name() == null || request.name().trim().isEmpty()) {
+             throw new InvalidSheetException("A name is required");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateHold.java b/src/main/java/net/officefloor/hq/app/person/ValidateHold.java
+index 37a0031ba..ecb08f668 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidateHold.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateHold.java
+@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+ public class ValidateHold {
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody HoldRequest request,
+             SheetStore sheets, Out<HoldInput> body, RoleStore roles) throws InvalidSheetException {
+-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
++        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
+         String fromText = request == null || request.from() == null ? "" : request.from().trim();
+         String toText = request == null || request.to() == null ? "" : request.to().trim();
+         LocalDate from = fromText.isEmpty() ? sheets.today(sheetId.trim()) : parse(fromText);
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidatePatron.java b/src/main/java/net/officefloor/hq/app/person/ValidatePatron.java
+index 133381fc9..002b176bb 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidatePatron.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidatePatron.java
+@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidatePatron {
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PatronRequest request, Out<PatronRequest> body, RoleStore roles) throws InvalidSheetException {
+-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
++        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
+         body.set(request == null ? new PatronRequest(null, null) : request);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+index cfd028ae1..1efb4d4c6 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidatePerson.java
+@@ -13,7 +13,7 @@ public class ValidatePerson {
+     private static final Set<String> GRADES = Set.of("A", "B", "C");
+ 
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PersonRequest request, Out<PersonRequest> body, RoleStore roles) throws InvalidSheetException {
+-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
++        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
+         if (request == null || request.name() == null || request.name().trim().isEmpty()) {
+             throw new InvalidSheetException("A name is required");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidateRetire.java b/src/main/java/net/officefloor/hq/app/person/ValidateRetire.java
+index 871575c42..e04b6186d 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidateRetire.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidateRetire.java
+@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+ public class ValidateRetire {
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody RetireRequest request,
+             SheetStore sheets, Out<RetireInput> body, RoleStore roles) throws InvalidSheetException {
+-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
++        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
+         String dateText = request == null || request.date() == null ? "" : request.date().trim();
+         LocalDate from;
+         try {
+diff --git a/src/main/java/net/officefloor/hq/app/quick/ValidateQuickAdd.java b/src/main/java/net/officefloor/hq/app/quick/ValidateQuickAdd.java
+index 5a3fb4ab3..98e7c6aaa 100644
+--- a/src/main/java/net/officefloor/hq/app/quick/ValidateQuickAdd.java
++++ b/src/main/java/net/officefloor/hq/app/quick/ValidateQuickAdd.java
+@@ -21,7 +21,7 @@ public class ValidateQuickAdd {
+ 
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody QuickAddRequest request,
+             SheetStore sheets, Out<PersonRequest> person, Out<ClaimInput> claim, RoleStore roles) throws InvalidSheetException {
+-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
++        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
+         if (request == null || request.name() == null || request.name().trim().isEmpty()) {
+             throw new InvalidSheetException("A name is required");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java b/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java
+index 6e2d6c810..5505aec82 100644
+--- a/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java
++++ b/src/main/java/net/officefloor/hq/app/rate/ValidateRate.java
+@@ -18,7 +18,7 @@ public class ValidateRate {
+     private static final Pattern PCT = Pattern.compile("\\d+(\\.\\d{1,2})?");
+ 
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody RateRequest request, Out<RateInput> body, RoleStore roles) throws InvalidSheetException {
+-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
++        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
+         if (request == null || request.grade() == null || !GRADES.contains(request.grade())) {
+             throw new InvalidSheetException("The grade must be A, B or C");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/role/RoleStore.java b/src/main/java/net/officefloor/hq/app/role/RoleStore.java
+index c222d251a..3f8f1ead7 100644
+--- a/src/main/java/net/officefloor/hq/app/role/RoleStore.java
++++ b/src/main/java/net/officefloor/hq/app/role/RoleStore.java
+@@ -2,6 +2,7 @@ package net.officefloor.hq.app.role;
+ 
+ import java.util.List;
+ import net.officefloor.hq.app.sheet.InvalidSheetException;
++import net.officefloor.hq.app.sheet.SheetStore;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+ 
+@@ -12,10 +13,12 @@ public class RoleStore {
+ 
+     private final JdbcTemplate jdbc;
+     private final DelegationStore delegations;
++    private final SheetStore sheets;
+ 
+-    public RoleStore(JdbcTemplate jdbc, DelegationStore delegations) {
++    public RoleStore(JdbcTemplate jdbc, DelegationStore delegations, SheetStore sheets) {
+         this.jdbc = jdbc;
+         this.delegations = delegations;
++        this.sheets = sheets;
+     }
+ 
+     /** Every role assigned on the sheet, by user name. */
+@@ -38,8 +41,10 @@ public class RoleStore {
+         return found.isEmpty() ? Role.CLERK : Role.valueOf(found.get(0));
+     }
+ 
+-    /** Refuses any change by a viewer: a viewer may change nothing on the sheet. */
+-    public void refuseViewer(String sheetId, String user) throws InvalidSheetException {
++    /** Refuses any change to an archived sheet, and any change by a viewer: a viewer may change nothing
++     *  on the sheet. */
++    public void refuseChange(String sheetId, String user) throws InvalidSheetException {
++        sheets.refuseArchived(sheetId);
+         if (find(sheetId, user == null ? "" : user.trim()) == Role.VIEWER) {
+             throw new InvalidSheetException("A viewer may change nothing");
+         }
+diff --git a/src/main/java/net/officefloor/hq/app/role/ValidateDelegation.java b/src/main/java/net/officefloor/hq/app/role/ValidateDelegation.java
+index f019fa57e..89037e479 100644
+--- a/src/main/java/net/officefloor/hq/app/role/ValidateDelegation.java
++++ b/src/main/java/net/officefloor/hq/app/role/ValidateDelegation.java
+@@ -14,6 +14,7 @@ public class ValidateDelegation {
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody DelegationRequest request,
+             Out<Delegation> body, RoleStore roles, SheetStore sheets) throws InvalidSheetException {
+         String sheet = sheetId.trim();
++        sheets.refuseArchived(sheet);
+         String by = request == null || request.by() == null ? "" : request.by().trim();
+         if (roles.assigned(sheet, by) != Role.STEWARD) {
+             throw new InvalidSheetException("Only a steward can delegate the steward role");
+diff --git a/src/main/java/net/officefloor/hq/app/role/ValidateRole.java b/src/main/java/net/officefloor/hq/app/role/ValidateRole.java
+index 4ea27526e..8165a8dd2 100644
+--- a/src/main/java/net/officefloor/hq/app/role/ValidateRole.java
++++ b/src/main/java/net/officefloor/hq/app/role/ValidateRole.java
+@@ -7,7 +7,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateRole {
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody RoleRequest request, Out<RoleInput> body, RoleStore roles) throws InvalidSheetException {
+-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.by());
++        roles.refuseChange(sheetId.trim(), request == null ? null : request.by());
+         String user = request == null || request.user() == null ? "" : request.user().trim();
+         if (user.isEmpty()) {
+             throw new InvalidSheetException("A user name is required");
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+index 7228ebb7d..a600cb332 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+@@ -20,7 +20,7 @@ public class ValidateSetting {
+     private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
+ 
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SettingRequest request, Out<SettingInput> body, RoleStore roles) throws InvalidSheetException {
+-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
++        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
+         String key = request == null || request.key() == null ? "" : request.key().trim();
+         boolean floor = SettingStore.FLOOR.equals(key);
+         boolean terms = SettingStore.TERMS.equals(key);
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/ArchiveRequest.java b/src/main/java/net/officefloor/hq/app/sheet/ArchiveRequest.java
+new file mode 100644
+index 000000000..a5ad27ac1
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/ArchiveRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.sheet;
++
++/** Body of POST /api/sheets/{sheetId}/archive: who archives the sheet. */
++public record ArchiveRequest(String user) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/AuditArchived.java b/src/main/java/net/officefloor/hq/app/sheet/AuditArchived.java
+new file mode 100644
+index 000000000..001cf3dca
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/AuditArchived.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Records SHEET_ARCHIVED sheet=<id> by=<user>. */
++public class AuditArchived {
++    public void audit(@PathVariable("sheetId") String sheetId, @Val ArchiveRequest request, Audit audit) {
++        audit.record("SHEET_ARCHIVED sheet=" + sheetId.trim() + " by=" + request.user());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+index 25d8d8218..1ba589e67 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+@@ -7,6 +7,6 @@ public class RespondWithSheet {
+     public void respond(@PathVariable("sheetId") String sheetId, SheetStore store,
+             ObjectResponse<SheetResponse> response) {
+         String id = sheetId.trim();
+-        response.send(new SheetResponse(id, store.today(id).toString()));
++        response.send(new SheetResponse(id, store.today(id).toString(), store.archived(id)));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SaveArchive.java b/src/main/java/net/officefloor/hq/app/sheet/SaveArchive.java
+new file mode 100644
+index 000000000..cf25ede6d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/SaveArchive.java
+@@ -0,0 +1,9 @@
++package net.officefloor.hq.app.sheet;
++
++import org.springframework.web.bind.annotation.PathVariable;
++
++public class SaveArchive {
++    public void save(@PathVariable("sheetId") String sheetId, SheetStore store) {
++        store.archive(sheetId.trim());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java b/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java
+index 623904415..bea867d34 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.sheet;
+ 
+-/** A sheet as the front end reads it. {@code today} is ISO yyyy-MM-dd. */
+-public record SheetResponse(String id, String today) {
++/** A sheet as the front end reads it. {@code today} is ISO yyyy-MM-dd; an archived sheet
++ *  refuses every change. */
++public record SheetResponse(String id, String today, boolean archived) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetStore.java b/src/main/java/net/officefloor/hq/app/sheet/SheetStore.java
+index b8c1c9bf9..8ea5a417e 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetStore.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetStore.java
+@@ -28,4 +28,23 @@ public class SheetStore {
+     public void setToday(String sheetId, LocalDate today) {
+         jdbc.update("MERGE INTO sheet (id, today) KEY (id) VALUES (?, ?)", sheetId, today);
+     }
++
++    /** Whether the sheet is archived: visible, but every change to it is refused. */
++    public boolean archived(String sheetId) {
++        List<Boolean> found = jdbc.query("SELECT archived FROM sheet WHERE id = ?",
++                (rs, i) -> rs.getBoolean(1), sheetId);
++        return !found.isEmpty() && found.get(0);
++    }
++
++    /** Archives the sheet, keeping its today as it reads now. */
++    public void archive(String sheetId) {
++        jdbc.update("MERGE INTO sheet (id, today, archived) KEY (id) VALUES (?, ?, TRUE)", sheetId, today(sheetId));
++    }
++
++    /** Refuses any change to an archived sheet. */
++    public void refuseArchived(String sheetId) throws InvalidSheetException {
++        if (archived(sheetId)) {
++            throw new InvalidSheetException("The sheet is archived");
++        }
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/ValidateArchive.java b/src/main/java/net/officefloor/hq/app/sheet/ValidateArchive.java
+new file mode 100644
+index 000000000..d55735db6
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/ValidateArchive.java
+@@ -0,0 +1,21 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.hq.app.role.Role;
++import net.officefloor.hq.app.role.RoleStore;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Refuses archiving by anyone but a steward, and archiving a sheet already archived. */
++public class ValidateArchive {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ArchiveRequest request,
++            Out<ArchiveRequest> body, RoleStore roles, SheetStore sheets) throws InvalidSheetException {
++        String sheet = sheetId.trim();
++        String user = request == null || request.user() == null ? "" : request.user().trim();
++        if (roles.find(sheet, user) != Role.STEWARD) {
++            throw new InvalidSheetException("Only a steward can archive the sheet");
++        }
++        sheets.refuseArchived(sheet);
++        body.set(new ArchiveRequest(user));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/ValidateToday.java b/src/main/java/net/officefloor/hq/app/sheet/ValidateToday.java
+index b3cd52d14..fc0a2264b 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/ValidateToday.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/ValidateToday.java
+@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateToday {
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody TodayRequest request, Out<LocalDate> today, Out<TodayRequest> body, RoleStore roles) throws InvalidSheetException {
+-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
++        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
+         String text = request == null || request.today() == null ? "" : request.today().trim();
+         body.set(request);
+         try {
+diff --git a/src/main/java/net/officefloor/hq/app/statement/ValidateStatement.java b/src/main/java/net/officefloor/hq/app/statement/ValidateStatement.java
+index 6132722f2..e75c66542 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/ValidateStatement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/ValidateStatement.java
+@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateStatement {
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody StatementRequest request, Out<StatementRequest> body, RoleStore roles) throws InvalidSheetException {
+-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
++        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
+         body.set(request == null ? new StatementRequest(null) : request);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/watch/ValidateWatch.java b/src/main/java/net/officefloor/hq/app/watch/ValidateWatch.java
+index 52452cc70..30edcdc94 100644
+--- a/src/main/java/net/officefloor/hq/app/watch/ValidateWatch.java
++++ b/src/main/java/net/officefloor/hq/app/watch/ValidateWatch.java
+@@ -1,11 +1,15 @@
+ package net.officefloor.hq.app.watch;
+ 
+ import net.officefloor.hq.app.sheet.InvalidSheetException;
++import net.officefloor.hq.app.sheet.SheetStore;
+ import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateWatch {
+-    public void validate(@RequestBody WatchRequest request, Out<WatchRequest> body) throws InvalidSheetException {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody WatchRequest request, Out<WatchRequest> body,
++            SheetStore sheets) throws InvalidSheetException {
++        sheets.refuseArchived(sheetId.trim());
+         if (request == null || request.user() == null || request.user().isBlank()) {
+             throw new InvalidSheetException("Sign in to watch a person");
+         }
+diff --git a/src/main/resources/db/migration/V35__sheet_archived.sql b/src/main/resources/db/migration/V35__sheet_archived.sql
+new file mode 100644
+index 000000000..b9a7cf86c
+--- /dev/null
++++ b/src/main/resources/db/migration/V35__sheet_archived.sql
+@@ -0,0 +1,2 @@
++-- An archived sheet stays visible but refuses every change. Only a steward archives a sheet.
++ALTER TABLE sheet ADD COLUMN archived BOOLEAN DEFAULT FALSE NOT NULL;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/archive.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/archive.POST.yml
+new file mode 100644
+index 000000000..6beea3022
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/archive.POST.yml
+@@ -0,0 +1,17 @@
++# POST /api/sheets/{sheetId}/archive — archive the sheet (body: {user}). Only a steward may, and only
++# once; anyone else, or a sheet already archived, is refused (400) and nothing is stored. An archived
++# sheet stays visible and refuses every change. Recorded in the audit file as SHEET_ARCHIVED.
++validate:
++  class: net.officefloor.hq.app.sheet.ValidateArchive
++  next: save
++save:
++  class: net.officefloor.hq.app.sheet.SaveArchive
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.sheet.AuditArchived
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.sheet.RespondWithSheet
++  govern: [ transaction ]
