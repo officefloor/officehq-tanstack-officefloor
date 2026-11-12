@@ -14,8 +14,8 @@ import net.officefloor.hq.app.sheet.SheetStore;
  *  percent in force on each date and its today; and the sheet's floor in force on each claim's date. An overdue claim (OPEN or PENDING, not deferred, due-by before today) gains, for every full 30 days it is
  *  overdue, the late percent in force on that boundary (its due-by plus 30, 60, 90 ... days) of its figure plus the
  *  charges of the boundaries before it (compounding), each rounded as the sheet's {@link Rounding} has the claim, the charges added up (a boundary at 0.00 adds nothing). A statement binds a claim's due as shown, its
- *  charge and floor included: while bound, its charge no longer follows today. Settling freezes it into the settled due. The floor is applied last: a live due is at least the floor
- *  in force on the claim's date (none for a correction). A claim whose person's grade in force on its date has grace
+ *  charge and floor included: while bound, its charge no longer follows today. Settling freezes it into the settled due. The floor is applied first: a live due is its figure raised to
+ *  the floor in force on the claim's date (none for a correction), plus the late charge worked out on that floored figure. A claim whose person's grade in force on its date has grace
  *  days in force on that date is overdue only when its due-by plus the grace is before today, and its 30-day
  *  boundaries count from its due-by plus the grace ({@link #graceBy}). */
 public record Lateness(Function<LocalDate, BigDecimal> latePcts, Function<LocalDate, BigDecimal> floors,
@@ -49,7 +49,7 @@ public record Lateness(Function<LocalDate, BigDecimal> latePcts, Function<LocalD
                 && graceBy.apply(claim).isBefore(today);
     }
 
-    /** The late charge on a claim whose rate figure (never floored) is {@code figure}; none on a correction, nor on a
+    /** The late charge on a claim whose floored rate figure is {@code figure}; none on a correction, nor on a
      *  claim whose charge was waived, nor on one bound by a statement (its bound due has its charge in it). */
     public BigDecimal charge(Claim claim, BigDecimal figure) {
         if (figure == null || !claim.getStatus().isOpen() || today == null || claim.isCorrection() || claim.isBound()
@@ -73,7 +73,8 @@ public record Lateness(Function<LocalDate, BigDecimal> latePcts, Function<LocalD
     }
 
     /** The claim's due now: its settled due, else the due its person's last statement bound it to, else the greater
-     *  of its floor and its figure plus the late charge (a correction has no floor and no charge). */
+     *  of its floor and its figure, plus the late charge worked out on that floored figure (a correction has no floor
+     *  and no charge). */
     public BigDecimal due(Claim claim, BigDecimal pct) {
         return dueOf(claim, ClaimFigure.of(claim, pct, rounding));
     }
@@ -83,7 +84,7 @@ public record Lateness(Function<LocalDate, BigDecimal> latePcts, Function<LocalD
         if (figure == null || claim.getSettledDue() != null || claim.isBound()) {
             return figure;
         }
-        BigDecimal charged = figure.add(charge(claim, figure));
-        return claim.isCorrection() ? charged : ClaimFigure.floored(charged, floor(claim));
+        BigDecimal floored = claim.isCorrection() ? figure : ClaimFigure.floored(figure, floor(claim));
+        return floored.add(charge(claim, floored));
     }
 }

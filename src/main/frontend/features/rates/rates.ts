@@ -194,8 +194,8 @@ const fixed = (claim: Claim) => claim.due !== null || (isBound(claim) && claim.s
 
 /** A claim's due: the due fixed when it was settled (its late charge frozen in), else the due as shown its
  *  person's last statement bound it to (its late charge and floor in it), else its figure — its amount at the rate in force
- *  on the claim's date of its person's grade in force on that date — plus its late charge when overdue (worked out
- *  on that figure), and at least the sheet's floor in force on the claim's date, applied last.
+ *  on the claim's date of its person's grade in force on that date — raised to at least the sheet's floor in force
+ *  on the claim's date, applied first, plus its late charge when overdue (worked out on that floored figure).
  *  A correction's live due has no floor and it has no late charge.
  *  While bound by a statement, its late charge no longer follows the sheet's today. */
 export function claimDue(
@@ -210,9 +210,9 @@ export function claimDue(
   const pct = rateOf(ratesFor(rates, claim), gradeOn(grades, claim.date), claim.date);
   const halfUp = late?.halfUp?.(claim) ?? false;
   const figure = due(claim.amount, pct, halfUp);
-  const charge = lateCharge(claim, figure, late);
-  const charged = charge === undefined ? figure : format(hundredths(figure) + hundredths(charge));
-  return isCorrection(claim) ? charged : liveDue(charged, floor?.(claim.date));
+  const floored = isCorrection(claim) ? figure : liveDue(figure, floor?.(claim.date));
+  const charge = lateCharge(claim, floored, late);
+  return charge === undefined ? floored : format(hundredths(floored) + hundredths(charge));
 }
 
 /** A person's due-total: the sum of the figures of their claims that count, at most the sheet's cap
