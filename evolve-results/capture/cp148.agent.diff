@@ -1,0 +1,49 @@
+diff --git a/src/main/frontend/features/claims/claimed.slot.tsx b/src/main/frontend/features/claims/claimed.slot.tsx
+index ba5201525..a5a7f5ffd 100644
+--- a/src/main/frontend/features/claims/claimed.slot.tsx
++++ b/src/main/frontend/features/claims/claimed.slot.tsx
+@@ -4,7 +4,7 @@ import { type Person, usePeople } from '../people/people';
+ import { useCurrentSheet } from '../../session/session';
+ import { claimed, live, useClaims } from './claims';
+ 
+-// A person's claimed (the sum of their claims) and the sheet's claimed-total (everyone's).
++// A person's claimed (the sum of their claims, leaving out corrections) and the sheet's claimed-total (everyone's).
+ function ClaimedHead() {
+   return <th>Claimed</th>;
+ }
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 0e763e8b7..ae8dc4db1 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -142,9 +142,13 @@ export function useClaims(sheet: string) {
+ /** Amounts are added in whole cents, so the sum is exact. */
+ const cents = (amount: string) => Math.round(Number(amount) * 100);
+ 
+-/** The sum of the amounts of those of these claims that count, with two decimals. */
++/** Whether the claim corrects another: it names the number of the claim it corrects. */
++export const correctsAnother = (c: Claim) => c.corrects !== null && c.corrects.trim() !== '';
++
++/** The sum of the amounts of those of these claims that count, leaving out claims that correct another,
++ *  with two decimals. */
+ export function claimed(claims: Claim[]): string {
+-  return (claims.filter(counts).reduce((sum, c) => sum + cents(c.amount), 0) / 100).toFixed(2);
++  return (claims.filter((c) => counts(c) && !correctsAnother(c)).reduce((sum, c) => sum + cents(c.amount), 0) / 100).toFixed(2);
+ }
+ 
+ /** The ids of the claims selected for a bulk action, kept in the URL (`selectedClaims`, comma separated). */
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/RollupService.java b/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
+index a1ad3513b..3b2dd7431 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
+@@ -76,7 +76,10 @@ public class RollupService {
+                         || !counts(claim, person, today)) {
+                     continue;
+                 }
+-                claimed = claimed.add(claim.getAmount());
++                // A claim that corrects another counts toward due but not toward claimed.
++                if (claim.getCorrects() == null || claim.getCorrects().isBlank()) {
++                    claimed = claimed.add(claim.getAmount());
++                }
+                 BigDecimal figure = lateness.due(claim, rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()));
+                 if (figure != null) {
+                     due = due.add(figure);
