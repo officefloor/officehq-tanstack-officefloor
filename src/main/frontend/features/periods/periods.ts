@@ -12,7 +12,7 @@ import { type Floor, type Late, type Rate, claimDue, dueTotal } from '../rates/r
  *  due-total fixed on closing, by person id (empty while open), and whether it is soft-closed: not closed,
  *  but with those figures fixed as when it was soft-closed, and the most OPEN or PENDING claims a person may
  *  have in it (null for no cap), and each person's carried figure fixed with their due-total, by person id
- *  (empty while open). No two periods on a sheet overlap. */
+ *  (empty while open), and whether a steward has locked it (a locked period cannot be reopened). No two periods on a sheet overlap. */
 export type Period = {
   name: string;
   from: string;
@@ -23,6 +23,7 @@ export type Period = {
   soft: boolean;
   cap: number | null;
   carried: Record<string, string>;
+  locked: boolean;
 };
 
 /** Whether the period's figures are fixed: it is closed or soft-closed. */

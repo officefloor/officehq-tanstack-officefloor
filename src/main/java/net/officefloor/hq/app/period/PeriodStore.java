@@ -21,7 +21,7 @@ public class PeriodStore {
                     : Map.of(),
             rs.getBoolean("soft"), cap(rs),
             rs.getBoolean("closed") || rs.getBoolean("soft") ? personCarried(rs.getString("sheet_id"), rs.getString("name"),
-                    "period_person_total") : Map.of());
+                    "period_person_total") : Map.of(), rs.getBoolean("locked"));
 
     private final JdbcTemplate jdbc;
 
@@ -48,7 +48,7 @@ public class PeriodStore {
                         rs.getBoolean("soft"), cap(rs),
                         rs.getBoolean("closed") || rs.getBoolean("soft")
                                 ? personCarried(rs.getString("sheet_id"), rs.getString("name"), totals)
-                                : Map.of()),
+                                : Map.of(), rs.getBoolean("locked")),
                 sheetId);
     }
 
@@ -171,6 +171,12 @@ public class PeriodStore {
     public boolean reopen(String sheetId, String name) {
         dropPersonTotals(sheetId, name);
         return jdbc.update("UPDATE period SET closed = FALSE, soft = FALSE, closed_total = NULL "
-                + "WHERE sheet_id = ? AND name = ? AND (closed OR soft)", sheetId, name) == 1;
+                + "WHERE sheet_id = ? AND name = ? AND (closed OR soft) AND NOT locked", sheetId, name) == 1;
+    }
+
+    /** Locks or unlocks the period; false when it is already so (another user changed it first). */
+    public boolean lock(String sheetId, String name, boolean locked) {
+        return jdbc.update("UPDATE period SET locked = ? WHERE sheet_id = ? AND name = ? AND locked = ?", locked,
+                sheetId, name, !locked) == 1;
     }
 }

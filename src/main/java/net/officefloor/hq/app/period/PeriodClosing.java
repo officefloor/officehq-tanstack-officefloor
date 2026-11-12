@@ -43,6 +43,7 @@ public final class PeriodClosing {
         }
         store.dropPersonTotals(sheet, period.name());
         store.fixPersonTotals(sheet, period.name(), people, carried);
-        return PeriodResponse.of(period.name(), from, to, !soft, total, people, soft, period.cap(), carried);
+        return PeriodResponse.of(period.name(), from, to, !soft, total, people, soft, period.cap(), carried,
+                period.locked());
     }
 }

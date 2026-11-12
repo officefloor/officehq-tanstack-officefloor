@@ -24,7 +24,8 @@ type Generate = { range: Range } | { year: string };
 
 // The sheet's periods, each with its due-total (the figures of the claims whose date falls in it and that
 // count by their status at its end, skipping n/a; fixed when the period was closed or soft-closed), its closed yes/soft/no and the buttons that
-// close it, soft-close it and reopen it (as the sheet's permission matrix allows), its cap on each person's open
+// close it, soft-close it and reopen it (as the sheet's permission matrix allows), its locked yes/no and the
+// buttons that lock and unlock it (a steward only), its cap on each person's open
 // claims (blank for none), and the form that adds one.
 function Periods() {
   const fig = useFigure();
@@ -70,9 +71,9 @@ function Periods() {
   };
 
   // The server refuses closing a period that is already closed, soft-closing one that is closed or
-  // soft-closed, and reopening one that is neither
+  // soft-closed, reopening one that is neither or is locked, locking a locked one and unlocking an unlocked one
   // or by a role the sheet's permission matrix does not allow; the error shows on that period.
-  type Action = { name: string; action: 'close' | 'soft-close' | 'reopen' };
+  type Action = { name: string; action: 'close' | 'soft-close' | 'reopen' | 'lock' | 'unlock' };
   const act = useMutation({
     mutationFn: ({ name, action }: Action) =>
       postJson<Period>(`/api/sheets/${encodeURIComponent(sheet)}/periods/${encodeURIComponent(name)}/${action}`, { user }),
@@ -102,6 +103,7 @@ function Periods() {
             <th>Closed</th>
             <th>Fiscal year</th>
             <th>Cap</th>
+            <th>Locked</th>
             <th />
           </tr>
         </thead>
@@ -115,6 +117,7 @@ function Periods() {
               <td data-testid="period-closed">{p.closed ? 'yes' : p.soft ? 'soft' : 'no'}</td>
               <td data-testid="period-fy">{settings ? fiscalYearOf(p.from, fiscalStart) : ''}</td>
               <td data-testid="period-cap">{fig(p.cap ?? '')}</td>
+              <td data-testid="period-locked">{p.locked ? 'yes' : 'no'}</td>
               <td>
                 <button type="button" data-testid="period-close" disabled={act.isPending} onClick={() => periodAction(p.name, 'close')}>
                   Close
@@ -124,6 +127,12 @@ function Periods() {
                 </button>{' '}
                 <button type="button" data-testid="period-reopen" disabled={act.isPending} onClick={() => periodAction(p.name, 'reopen')}>
                   Reopen
+                </button>{' '}
+                <button type="button" data-testid="period-lock" disabled={act.isPending} onClick={() => periodAction(p.name, 'lock')}>
+                  Lock
+                </button>{' '}
+                <button type="button" data-testid="period-unlock" disabled={act.isPending} onClick={() => periodAction(p.name, 'unlock')}>
+                  Unlock
                 </button>
                 {act.isError && act.variables?.name === p.name && (
                   <span data-testid="period-error" role="alert">
