@@ -212,6 +212,34 @@ public class PersonStore {
         person.addHold(hold);
     }
 
+    /** Adds a copy of the person to the other sheet: their name, every grade with its from-date, their terms,
+     *  contact and aliases. Their holds, statements and watchers are not carried. */
+    public Person copyTo(Person person, String toSheet) {
+        Person copy = add(toSheet, person.getName(), person.gradeOn(Person.START), person.getTerms(), person.getContact());
+        person.getGrades().forEach((from, grade) -> {
+            if (!from.equals(Person.START)) {
+                jdbc.update("INSERT INTO person_grade (sheet_id, person_id, from_date, grade) VALUES (?, ?, ?, ?)",
+                        toSheet, copy.getId(), from, grade);
+            }
+        });
+        for (String alias : person.getAliases()) {
+            addAlias(copy, alias);
+        }
+        return find(toSheet, copy.getId());
+    }
+
+    /** Drops the person from their sheet with their grades, holds, aliases, statements and watchers. Their claims,
+     *  patrons and pool memberships are dropped before this (see ClaimStore, PatronStore and PoolStore). */
+    public void remove(Person person) {
+        String sheetId = person.getSheetId();
+        jdbc.update("DELETE FROM person_alias WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
+        jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, person.getId());
+        jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
+        jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
+        jdbc.update("DELETE FROM statement WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
+        jdbc.update("DELETE FROM watch WHERE sheet_id = ? AND person_id = ?", sheetId, person.getId());
+    }
+
     /** Makes the person's name and aliases aliases of {@code into}, then drops the person with their grades,
      *  holds, statements and watchers (their contact goes with them). Their claims, patrons and pool
      *  memberships are moved before this (see ClaimStore, PatronStore and PoolStore). */

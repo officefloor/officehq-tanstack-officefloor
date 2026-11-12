@@ -90,4 +90,14 @@ public class ClaimLogStore {
     public List<String> lines(Claim claim) {
         return lines(claim.getSheetId()).getOrDefault(claim.getId(), List.of());
     }
+
+    /** The sheet's today on which each claim was first logged OPEN, by claim id; a claim never opened is absent. */
+    public Map<Long, LocalDate> openedOn(String sheetId) {
+        Map<Long, LocalDate> opened = new HashMap<>();
+        jdbc.query("SELECT claim_id, MIN(log_date) AS opened FROM claim_log WHERE sheet_id = ? AND status = ? GROUP BY claim_id",
+                rs -> {
+                    opened.put(rs.getLong("claim_id"), rs.getObject("opened", LocalDate.class));
+                }, sheetId, ClaimStatus.OPEN.name());
+        return opened;
+    }
 }

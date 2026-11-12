@@ -93,4 +93,9 @@ public class PoolStore {
             }
         }
     }
+
+    /** Drops the person's pool memberships. */
+    public void drop(String sheetId, long personId) {
+        jdbc.update("DELETE FROM pool_member WHERE sheet_id = ? AND person_id = ?", sheetId, personId);
+    }
 }

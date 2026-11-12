@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { AppHeader } from '../../slots/defs/appHeader';
-import { useCurrentSheet } from '../../session/session';
+import { LiveView, useCurrentSheet } from '../../session/session';
 import { sheetKey } from '../sheet/sheet';
 import { usePeople } from '../people/people';
 import { dueTotal } from '../rates/rates';
@@ -45,7 +45,8 @@ function Consolidate({ sheets, sofar }: { sheets: string[]; sofar: Figures }) {
 }
 
 // The consolidated figures over the sheet and all its descendants: their people, and each sheet's due- and
-// overdue-totals (the header's) added up. A sheet with no children shows its own.
+// overdue-totals (the header's) added up, as they are now whatever the screen's as-of date. A sheet with no
+// children shows its own.
 function ConsolidatedFigures() {
   const [sheet] = useCurrentSheet();
   const descendants = useDescendants(sheet);
@@ -53,7 +54,9 @@ function ConsolidatedFigures() {
   return (
     <p data-testid="consolidated-figures">
       Consolidated{' '}
-      <Consolidate key={descendants.data.join(',')} sheets={[sheet, ...descendants.data]} sofar={{ people: 0, due: [], overdue: [] }} />
+      <LiveView.Provider value={true}>
+        <Consolidate key={descendants.data.join(',')} sheets={[sheet, ...descendants.data]} sofar={{ people: 0, due: [], overdue: [] }} />
+      </LiveView.Provider>
     </p>
   );
 }

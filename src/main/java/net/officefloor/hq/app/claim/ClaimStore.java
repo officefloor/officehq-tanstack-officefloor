@@ -362,4 +362,59 @@ public class ClaimStore {
                     + "listed = NEXT VALUE FOR claim_listed_seq WHERE sheet_id = ? AND id = ?", intoId, sheetId, id);
         }
     }
+
+    /** Adds a copy of the claim to the person on the other sheet under {@code number} (null for none), correcting
+     *  and split off the numbers given: its amount, date, note, status, frozen settled figure, opener, due-by and
+     *  the terms it was fixed with, deferral, proofs, late entry, reminder, tags, void reason and editor, with its
+     *  status log and comments, listed as the person's newest claim. Any figure a statement bound, its reference,
+     *  lock and bulk settle batch are not carried. The id of the copy. */
+    public long copyTo(Claim claim, String toSheet, long toPerson, String number, String corrects, String splitFrom) {
+        Integer terms = jdbc.queryForObject("SELECT due_terms FROM claim WHERE sheet_id = ? AND id = ?", Integer.class,
+                claim.getSheetId(), claim.getId());
+        GeneratedKeyHolder keys = new GeneratedKeyHolder();
+        jdbc.update(con -> {
+            PreparedStatement ps = con.prepareStatement(
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, "
+                            + "corrects, due_by, due_terms, deferred_until, proofs, split_from, late_entry, reminded_on, tags, "
+                            + "void_reason, edited_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    new String[] { "ID" });
+            ps.setString(1, toSheet);
+            ps.setLong(2, toPerson);
+            ps.setBigDecimal(3, claim.getAmount());
+            ps.setDate(4, Date.valueOf(claim.getDate()));
+            ps.setString(5, claim.getNote());
+            ps.setString(6, claim.getStatus().name());
+            ps.setString(7, number);
+            ps.setBigDecimal(8, claim.getSettledDue());
+            ps.setString(9, claim.getOpenedBy());
+            ps.setString(10, corrects);
+            ps.setDate(11, Date.valueOf(claim.getDueBy()));
+            ps.setObject(12, terms, java.sql.Types.INTEGER);
+            ps.setDate(13, claim.getDeferredUntil() == null ? null : Date.valueOf(claim.getDeferredUntil()));
+            ps.setInt(14, claim.getProofs());
+            ps.setString(15, splitFrom);
+            ps.setBoolean(16, claim.isLateEntry());
+            ps.setDate(17, claim.getRemindedOn() == null ? null : Date.valueOf(claim.getRemindedOn()));
+            ps.setString(18, claim.getTags());
+            ps.setString(19, claim.getVoidReason());
+            ps.setString(20, claim.getEditedBy());
+            return ps;
+        }, keys);
+        long id = keys.getKey().longValue();
+        jdbc.update("INSERT INTO claim_log (sheet_id, claim_id, status, by_user, log_date, due) "
+                + "SELECT ?, ?, status, by_user, log_date, due FROM claim_log WHERE sheet_id = ? AND claim_id = ? ORDER BY id",
+                toSheet, id, claim.getSheetId(), claim.getId());
+        jdbc.update("INSERT INTO claim_comment (sheet_id, claim_id, by_user, written_on, text) "
+                + "SELECT ?, ?, by_user, written_on, text FROM claim_comment WHERE sheet_id = ? AND claim_id = ? ORDER BY id",
+                toSheet, id, claim.getSheetId(), claim.getId());
+        return id;
+    }
+
+    /** Drops every claim of the person, with their status logs and comments. */
+    public void removeAll(String sheetId, long personId) {
+        String mine = "SELECT id FROM claim WHERE sheet_id = ? AND person_id = ?";
+        jdbc.update("DELETE FROM claim_log WHERE sheet_id = ? AND claim_id IN (" + mine + ")", sheetId, sheetId, personId);
+        jdbc.update("DELETE FROM claim_comment WHERE sheet_id = ? AND claim_id IN (" + mine + ")", sheetId, sheetId, personId);
+        jdbc.update("DELETE FROM claim WHERE sheet_id = ? AND person_id = ?", sheetId, personId);
+    }
 }

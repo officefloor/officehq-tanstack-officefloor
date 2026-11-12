@@ -66,4 +66,9 @@ public class PatronStore {
         }
         jdbc.update("DELETE FROM patron WHERE sheet_id = ? AND (person_id = ? OR patron_id = ?)", sheetId, fromId, fromId);
     }
+
+    /** Drops every patron of or by the person. */
+    public void drop(String sheetId, long personId) {
+        jdbc.update("DELETE FROM patron WHERE sheet_id = ? AND (person_id = ? OR patron_id = ?)", sheetId, personId, personId);
+    }
 }
