@@ -25,7 +25,7 @@ import org.springframework.stereotype.Service;
  * Works out the sheet's figures as the screen shows them, and records in the audit file how a change
  * moved them: ROLLUP sheet=<id> by=<user> person=<name> claimed=<0.00> due-total=<0.00 or n/a>
  * overdue-total=<0.00> for each person whose figures changed (a person new to the sheet counts as changed), in
- * the order they were added, then TOTALS sheet=<id> by=<user> claimed-total=<0.00> due-total=<0.00>
+ * list order (by their positions), then TOTALS sheet=<id> by=<user> claimed-total=<0.00> due-total=<0.00>
  * overdue-total=<0.00> when any of the sheet's totals changed; the sheet's due-total and overdue-total leave out
  * the single highest and the single lowest person's figure when three or more people have one (n/a is no figure). A person's overdue-total is the due (late charge
  * included, skipping n/a) of their counting claims that are OPEN or PENDING with a due-by (plus any grace days of their grade, see {@link Lateness}) before today. A person's due-total is at most the sheet's cap. A change that moves no figure records nothing here.

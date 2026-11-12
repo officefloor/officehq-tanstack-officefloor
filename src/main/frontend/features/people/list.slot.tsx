@@ -3,7 +3,7 @@ import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns
 import { useCurrentSheet } from '../../session/session';
 import { useEditingPerson, usePeople, useSelectedPeople, useShowRetired } from './people';
 
-// The sheet's people in the order they were added; retired people only while "show retired" is on.
+// The sheet's people in list order (by their positions, see move.slot.tsx); retired people only while "show retired" is on.
 function PeopleList() {
   const [sheet] = useCurrentSheet();
   const [, setEditing] = useEditingPerson();

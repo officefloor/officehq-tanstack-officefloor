@@ -15,7 +15,7 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 
-/** Gives each selected person the grade from the from-date, in list order (the order they were added),
+/** Gives each selected person the grade from the from-date, in list order (by their positions),
  *  exactly as the person form's edit would (keeping their name and terms), each recorded as PERSON_EDITED
  *  and then how it moved the sheet's figures. A selected person not on the sheet refuses the whole change; a viewer grades no one (0, nothing stored). */
 public class GradePeople {
@@ -35,7 +35,8 @@ public class GradePeople {
             result.set(new BulkGradeResult(0));
             return;
         }
-        selected.sort(Comparator.comparingLong(Person::getId));
+        List<Long> order = store.list(sheet).stream().map(Person::getId).toList();
+        selected.sort(Comparator.comparingInt(p -> order.indexOf(p.getId())));
         LocalDate today = sheets.today(sheet);
         for (Person person : selected) {
             Rollup before = rollups.snapshot(sheet);

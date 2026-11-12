@@ -27,7 +27,7 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.bind.annotation.PathVariable;
 
-/** Settles each selected claim, in list order: its people in the order they were added, a person's
+/** Settles each selected claim, in list order: its people by their positions, a person's
  *  claims newest first. Each goes through the very steps of a single settle by the user (period,
  *  clerk limit, opened-by, edited-by and status checks, then store, log and audit), so a clerk's settle above
  *  the clerk limit sends it to PENDING, which counts as settled. A claim that is not on the sheet,

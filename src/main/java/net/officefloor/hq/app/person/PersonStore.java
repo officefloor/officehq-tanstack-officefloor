@@ -14,7 +14,8 @@ import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
 
-/** The people kept per sheet, in the order they were added, each with their dated grades. */
+/** The people kept per sheet, in list order (by their position: a new person goes to the end, a move swaps
+ *  two neighbours), each with their dated grades. */
 @Repository
 public class PersonStore {
 
@@ -79,15 +80,15 @@ public class PersonStore {
     }
 
     public List<Person> list(String sheetId) {
-        return query(sheetId, null, "SELECT * FROM person WHERE sheet_id = ? ORDER BY id", sheetId);
+        return query(sheetId, null, "SELECT * FROM person WHERE sheet_id = ? ORDER BY list_position, id", sheetId);
     }
 
     /** The people on the sheet as they stood at the end of the date, with their grades and holds then (see
-     *  {@link History}), in the order they were added. */
+     *  {@link History}), in list order then. */
     public List<Person> listAsOf(String sheetId, LocalDate date) {
         return queryFrom(sheetId, null, History.asOf("person_grade", "person_id, from_date", date),
                 History.asOf("person_hold", "id", date), History.asOf("person_alias", "id", date),
-                "SELECT * FROM " + History.asOf("person", "id", date) + " WHERE sheet_id = ? ORDER BY id", sheetId);
+                "SELECT * FROM " + History.asOf("person", "id", date) + " WHERE sheet_id = ? ORDER BY list_position, id", sheetId);
     }
 
     public Person find(String sheetId, long id) {
@@ -191,11 +192,13 @@ public class PersonStore {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, terms, contact) VALUES (?, ?, ?, ?)", new String[] { "ID" });
+                    "INSERT INTO person (sheet_id, name, terms, contact, list_position) VALUES (?, ?, ?, ?, (SELECT"
+                    + " COALESCE(MAX(list_position), 0) + 1 FROM person WHERE sheet_id = ?))", new String[] { "ID" });
             ps.setString(1, sheetId);
             ps.setString(2, name);
             ps.setObject(3, terms, java.sql.Types.INTEGER);
             ps.setString(4, contact);
+            ps.setString(5, sheetId);
             return ps;
         }, keys);
         long id = keys.getKey().longValue();
@@ -225,6 +228,46 @@ public class PersonStore {
             }
         }
         return n == 1;
+    }
+
+    /**
+     * Swaps the person with their neighbour in the list (the one above when {@code up}, else the one below);
+     * answers the person's new position in the list, counting from 1, or 0 (nothing stored) when there is no
+     * neighbour that way: the top cannot move up, nor the bottom down. An edit of them leaves it as it is.
+     */
+    public int move(Person person, boolean up) {
+        List<long[]> order = jdbc.query("SELECT id, list_position FROM person WHERE sheet_id = ? ORDER BY list_position, id"
+                + " FOR UPDATE", (rs, i) -> new long[] { rs.getLong("id"), rs.getLong("list_position") },
+                person.getSheetId());
+        int at = -1;
+        for (int i = 0; i < order.size(); i++) {
+            if (order.get(i)[0] == person.getId()) {
+                at = i;
+            }
+        }
+        int to = up ? at - 1 : at + 1;
+        if (at < 0 || to < 0 || to >= order.size()) {
+            return 0;
+        }
+        long[] mine = order.get(at);
+        long[] theirs = order.get(to);
+        if (mine[1] == theirs[1]) {
+            // tied positions (never made by this store): number them apart first, so the swap moves them
+            renumber(person.getSheetId(), order);
+            return move(person, up);
+        }
+        jdbc.update("UPDATE person SET list_position = ? WHERE sheet_id = ? AND id = ?", theirs[1], person.getSheetId(),
+                mine[0]);
+        jdbc.update("UPDATE person SET list_position = ? WHERE sheet_id = ? AND id = ?", mine[1], person.getSheetId(),
+                theirs[0]);
+        return to + 1;
+    }
+
+    /** Gives the people positions 1, 2, ... in their present order. */
+    private void renumber(String sheetId, List<long[]> order) {
+        for (int i = 0; i < order.size(); i++) {
+            jdbc.update("UPDATE person SET list_position = ? WHERE sheet_id = ? AND id = ?", i + 1, sheetId, order.get(i)[0]);
+        }
     }
 
     /** Retires the person from the date. An edit of their name or grade leaves it as it is. */

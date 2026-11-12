@@ -19,7 +19,7 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 
-/** Moves each selected claim to the chosen person, in list order: its people in the order they were added, a
+/** Moves each selected claim to the chosen person, in list order: its people by their positions, a
  *  person's claims newest first. Each goes through the very steps of a single move by the user (role, period,
  *  status, correction and retirement checks, then store and audit as CLAIM_REASSIGNED with its rollup lines). A
  *  claim that is not on the sheet, or that a single move would refuse, is refused and left as it is. */
