@@ -20,10 +20,11 @@ import org.springframework.stereotype.Service;
 
 /**
  * Works out the sheet's figures as the screen shows them, and records in the audit file how a change
- * moved them: ROLLUP sheet=<id> by=<user> person=<name> claimed=<0.00> due-total=<0.00 or n/a> for each
- * person whose figures changed (a person new to the sheet counts as changed), in the order they were
- * added, then TOTALS sheet=<id> by=<user> claimed-total=<0.00> due-total=<0.00> when the sheet's totals
- * changed. A person's due-total is at most the sheet's cap. A change that moves no figure records nothing here.
+ * moved them: ROLLUP sheet=<id> by=<user> person=<name> claimed=<0.00> due-total=<0.00 or n/a>
+ * overdue-total=<0.00> for each person whose figures changed (a person new to the sheet counts as changed), in
+ * the order they were added, then TOTALS sheet=<id> by=<user> claimed-total=<0.00> due-total=<0.00>
+ * overdue-total=<0.00> when any of the sheet's totals changed. A person's overdue-total is the due (late charge
+ * included, skipping n/a) of their counting claims that are OPEN or PENDING with a due-by before today. A person's due-total is at most the sheet's cap. A change that moves no figure records nothing here.
  */
 @Service
 public class RollupService {
@@ -58,9 +59,11 @@ public class RollupService {
         Map<Long, Rollup.Figures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
         BigDecimal dueTotal = BigDecimal.ZERO.setScale(2);
+        BigDecimal overdueTotal = BigDecimal.ZERO.setScale(2);
         for (Person person : people.list(sheetId)) {
             BigDecimal claimed = BigDecimal.ZERO.setScale(2);
             BigDecimal due = BigDecimal.ZERO.setScale(2);
+            BigDecimal overdue = BigDecimal.ZERO.setScale(2);
             boolean fixed = false;
             for (Claim claim : all) {
                 if (claim.getPersonId() != person.getId()
@@ -71,6 +74,9 @@ public class RollupService {
                 BigDecimal figure = lateness.due(claim, rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()), floor);
                 if (figure != null) {
                     due = due.add(figure);
+                    if (overdue(claim, today)) {
+                        overdue = overdue.add(figure);
+                    }
                 }
                 // A figure at a grade other than the one in force today, or at a rate that ended before
                 // today, does not hang on today's grade's rate.
@@ -80,13 +86,15 @@ public class RollupService {
             }
             boolean na = rates.find(sheetId, person.gradeOn(today), today) == null && !fixed;
             claimedTotal = claimedTotal.add(claimed);
+            overdueTotal = overdueTotal.add(overdue);
             due = SettingStore.capped(due, cap);
             if (!na) {
                 dueTotal = dueTotal.add(due);
             }
-            figures.put(person.getId(), new Rollup.Figures(person.getName(), shown(claimed), na ? NA : shown(due)));
+            figures.put(person.getId(), new Rollup.Figures(person.getName(), shown(claimed), na ? NA : shown(due),
+                    shown(overdue)));
         }
-        return new Rollup(figures, shown(claimedTotal), shown(dueTotal));
+        return new Rollup(figures, shown(claimedTotal), shown(dueTotal), shown(overdueTotal));
     }
 
     /** The due-total of the claims that count dated from..to (inclusive): the sum of their figures,
@@ -120,12 +128,20 @@ public class RollupService {
         after.people().forEach((id, now) -> {
             if (!now.sameAs(before.people().get(id))) {
                 audit.record("ROLLUP" + who + " person=" + now.name() + " claimed=" + now.claimed() + " due-total="
-                        + now.dueTotal());
+                        + now.dueTotal() + " overdue-total=" + now.overdueTotal());
             }
         });
-        if (!after.claimedTotal().equals(before.claimedTotal()) || !after.dueTotal().equals(before.dueTotal())) {
-            audit.record("TOTALS" + who + " claimed-total=" + after.claimedTotal() + " due-total=" + after.dueTotal());
+        if (!after.claimedTotal().equals(before.claimedTotal()) || !after.dueTotal().equals(before.dueTotal())
+                || !after.overdueTotal().equals(before.overdueTotal())) {
+            audit.record("TOTALS" + who + " claimed-total=" + after.claimedTotal() + " due-total=" + after.dueTotal()
+                    + " overdue-total=" + after.overdueTotal());
         }
+    }
+
+    /** Whether the claim is overdue: OPEN (or PENDING) with its due-by before the sheet's today. */
+    private static boolean overdue(Claim claim, LocalDate today) {
+        return claim.getStatus().isOpen() && today != null && claim.getDueBy() != null
+                && claim.getDueBy().isBefore(today);
     }
 
     /** The date the sheet's rounding turns on: the policy date set, else the sheet's today. */
