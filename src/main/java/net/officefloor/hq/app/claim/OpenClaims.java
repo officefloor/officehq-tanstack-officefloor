@@ -9,6 +9,7 @@ import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.period.PeriodStore;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonStore;
+import net.officefloor.hq.app.role.RoleStore;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.rollup.RollupService;
 import net.officefloor.hq.app.setting.SettingStore;
@@ -21,11 +22,12 @@ import org.springframework.web.bind.annotation.PathVariable;
 /** Opens each selected claim that can be opened, in list order: its people in the order they were
  *  added, a person's claims newest first. Each is opened as a single open would be (its next
  *  number, opened-by the user) and recorded as CLAIM_OPENED, then how it moved the sheet's figures.
- *  A claim that is not on the sheet, is not a DRAFT, or is dated in a closed period is refused and
+ *  A claim that is not on the sheet, is not a DRAFT, or is dated in a closed period, and every claim when
+ *  the sheet's permission matrix does not allow the user's role to open, is refused and
  *  left as it is. */
 public class OpenClaims {
     public void open(@PathVariable("sheetId") String sheetId, @Val BulkOpenInput input, ClaimStore store,
-            PersonStore people, PeriodStore periods, SettingStore settings, SheetStore sheets, ClaimLogStore log, RollupService rollups, Audit audit, Out<BulkOpenResult> result) {
+            PersonStore people, PeriodStore periods, SettingStore settings, SheetStore sheets, RoleStore roles, ClaimLogStore log, RollupService rollups, Audit audit, Out<BulkOpenResult> result) {
         String sheet = sheetId.trim();
         Map<Long, Integer> personOrder = new HashMap<>();
         Map<Long, Person> persons = new HashMap<>();
@@ -45,9 +47,10 @@ public class OpenClaims {
         }
         selected.sort(Comparator.<Claim>comparingInt(c -> personOrder.getOrDefault(c.getPersonId(), Integer.MAX_VALUE))
                 .thenComparing(Comparator.comparingLong(Claim::getId).reversed()));
+        boolean permitted = settings.allows(sheet, "open", roles.find(sheet, input.user()));
         int opened = 0;
         for (Claim claim : selected) {
-            if (claim.getStatus() != ClaimStatus.DRAFT || closed(periods, claim)) {
+            if (!permitted || claim.getStatus() != ClaimStatus.DRAFT || closed(periods, claim)) {
                 refused++;
                 continue;
             }

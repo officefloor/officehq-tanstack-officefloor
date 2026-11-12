@@ -13,10 +13,12 @@ import java.util.Map;
  *  be, null for no cap; {@code proofThreshold} has two decimals, the due above which a claim needs a proof
  *  before it is settled or approved, null for none. Each of these that carries a figure is the one in force on the sheet's today.
  *  {@code floorFrom} and {@code latePctFrom} are the floor and late percent recorded, oldest from-date
- *  first (a claim's floor and late percent are those in force on its date). */
+ *  first (a claim's floor and late percent are those in force on its date). {@code perms} is the permission
+ *  matrix: the roles that may take each action (open, settle, void, reassign, close, reopen), comma
+ *  separated, by action; null when blank (the standing rule). */
 public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
         String periodNumberingFrom, Map<String, String> gradeTerms, String cap, String proofThreshold, List<Dated> floorFrom,
-        List<Dated> latePctFrom) {
+        List<Dated> latePctFrom, Map<String, String> perms) {
 
     /** A value recorded from a date (yyyy-MM-dd). */
     public record Dated(String from, String value) {

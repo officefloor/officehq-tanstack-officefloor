@@ -3,7 +3,10 @@ package net.officefloor.hq.app.setting;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.regex.Pattern;
+import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.sheet.InvalidSheetException;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -25,6 +28,11 @@ public class ValidateSetting {
         boolean dated = SettingStore.POLICY_DATE.equals(key) || numbering;
         boolean cap = SettingStore.CAP.equals(key);
         boolean proof = SettingStore.PROOF_THRESHOLD.equals(key);
+        if (key.startsWith(SettingStore.PERM_PREFIX)
+                && SettingStore.PERM_ACTIONS.contains(key.substring(SettingStore.PERM_PREFIX.length()))) {
+            body.set(new SettingInput(key, perm(request.value()), null, request.user()));
+            return;
+        }
         if (!SettingStore.CLERK_LIMIT.equals(key) && !cap && !proof && !floor && !terms && !gradeTerms && !late && !dated) {
             throw new InvalidSheetException("Not a setting: " + key);
         }
@@ -93,5 +101,24 @@ public class ValidateSetting {
                     : "The clerk limit must be 0.00 or more with up to two decimals, or blank");
         }
         body.set(new SettingInput(key, new BigDecimal(value).setScale(2).toPlainString(), from, request.user()));
+    }
+
+    /** The roles listed, comma separated without spaces, or null when blank (the standing rule). */
+    private static String perm(String raw) throws InvalidSheetException {
+        String value = raw == null ? "" : raw.trim();
+        if (value.isEmpty()) {
+            return null;
+        }
+        List<String> roles = new ArrayList<>();
+        for (String part : value.split(",")) {
+            String role = part.trim();
+            if (Role.of(role) == null) {
+                throw new InvalidSheetException("A permission lists roles (clerk, steward), comma separated, or is blank");
+            }
+            if (!roles.contains(role)) {
+                roles.add(role);
+            }
+        }
+        return String.join(",", roles);
     }
 }

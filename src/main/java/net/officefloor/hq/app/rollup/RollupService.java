@@ -167,12 +167,12 @@ public class RollupService {
 
     /** Whether the claim counts by {@code status}, the status it had at a period's end (null when it
      *  was added after it): OPEN, PENDING or SETTLED then; and, as the live rules say, an OPEN claim
-     *  deferred on the sheet's today does not, nor one open then dated within a hold of its person,
-     *  unless a statement bound it. */
+     *  deferred on the sheet's today does not, nor one open then and still open now dated within a hold
+     *  of its person, unless a statement bound it. */
     static boolean countsAt(Claim claim, ClaimStatus status, Person person, LocalDate today) {
         return status == ClaimStatus.SETTLED
                 || (status != null && status.isOpen() && !claim.isDeferredOn(today)
-                        && (claim.isStated() || !person.heldOn(claim.getDate())));
+                        && (claim.isStated() || !claim.getStatus().isOpen() || !person.heldOn(claim.getDate())));
     }
 
     private static String shown(BigDecimal value) {

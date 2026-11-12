@@ -12,10 +12,12 @@ import { sheetKey } from '../sheet/sheet';
  *  due-total may be, null for no cap; `proofThreshold` (two decimals) is the due above which a claim needs a proof
  *  before it is settled or approved, null for none. Each of these that carries a figure is the one in force on the sheet's today.
  *  `floorFrom` and `latePctFrom` are the floor and late percent recorded, oldest from-date (yyyy-MM-dd) first:
- *  a claim's floor and late percent are those in force on its date. */
+ *  a claim's floor and late percent are those in force on its date. `perms` is the permission matrix: the roles
+ *  that may take each action (open, settle, void, reassign, close, reopen), comma separated, by action; null when
+ *  blank (the standing rule). */
 export type Settings = { clerkLimit: string | null; floor: string; terms: string; latePct: string; policyDate: string | null;
   periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; proofThreshold: string | null;
-  floorFrom: Dated[]; latePctFrom: Dated[] };
+  floorFrom: Dated[]; latePctFrom: Dated[]; perms: Record<string, string | null> };
 
 /** A setting's value recorded from a date (yyyy-MM-dd); a null value is blank. */
 export type Dated = { from: string; value: string | null };

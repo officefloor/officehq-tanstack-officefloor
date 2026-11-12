@@ -2,10 +2,14 @@ package net.officefloor.hq.app.setting;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.NavigableMap;
 import java.util.TreeMap;
 import java.util.function.Function;
+import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.sheet.SheetStore;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -14,7 +18,7 @@ import org.springframework.stereotype.Repository;
  *  that carry a figure (the clerk limit, the floor, the cap, the proof threshold, the terms, a grade's terms and the late
  *  percent) are dated: each value is recorded from a from-date, and the value in force on a date is the
  *  one with the latest from-date on or before it (none before every from-date, then the sheet's starting
- *  value). The policy date and the period numbering date are not dated. */
+ *  value). The policy date, the period numbering date and the permission matrix are not dated. */
 @Repository
 public class SettingStore {
 
@@ -41,6 +45,18 @@ public class SettingStore {
 
     public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
 
+    /** The key of an action's permission: perm-open, perm-settle, and so on. */
+    public static final String PERM_PREFIX = "perm-";
+
+    /** The roles that may take each action while its permission is blank (the standing rule). */
+    public static final Map<String, List<Role>> STANDING_PERMS = Map.of(
+            "open", List.of(Role.CLERK, Role.STEWARD), "settle", List.of(Role.CLERK, Role.STEWARD),
+            "void", List.of(Role.CLERK, Role.STEWARD), "close", List.of(Role.CLERK, Role.STEWARD),
+            "reassign", List.of(Role.STEWARD), "reopen", List.of(Role.STEWARD));
+
+    /** The actions of the permission matrix, in the order the screen shows them. */
+    public static final List<String> PERM_ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
+
     /** The late percent a sheet has until one is set. */
     public static final BigDecimal DEFAULT_LATE_PCT = new BigDecimal("0.00");
 
@@ -61,7 +77,26 @@ public class SettingStore {
 
     /** Whether the key's values are recorded from a from-date. */
     public static boolean isDated(String key) {
-        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key);
+        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !key.startsWith(PERM_PREFIX);
+    }
+
+    /** Whether the role may take the action (one of {@link #PERM_ACTIONS}): the roles listed in its
+     *  permission, else, when blank, the standing rule. */
+    public boolean allows(String sheetId, String action, Role role) {
+        String value = find(sheetId, PERM_PREFIX + action);
+        if (value == null) {
+            return STANDING_PERMS.get(action).contains(role);
+        }
+        return Arrays.stream(value.split(",")).map(String::trim).anyMatch(r -> r.equals(role.shown()));
+    }
+
+    /** The permissions recorded, by action; a blank one is null (the standing rule). */
+    public Map<String, String> perms(String sheetId) {
+        Map<String, String> perms = new LinkedHashMap<>();
+        for (String action : PERM_ACTIONS) {
+            perms.put(action, find(sheetId, PERM_PREFIX + action));
+        }
+        return perms;
     }
 
     /** The setting's value (a dated one's in force on the sheet's today), or null when it has none. */

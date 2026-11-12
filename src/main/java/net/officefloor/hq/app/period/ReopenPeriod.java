@@ -3,20 +3,22 @@ package net.officefloor.hq.app.period;
 import java.time.LocalDate;
 import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.role.RoleStore;
+import net.officefloor.hq.app.setting.SettingStore;
 import net.officefloor.hq.app.sheet.InvalidSheetException;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 
-/** Reopens a closed period, dropping its fixed due-total so it is live again. Refused when the user is
- *  not a steward on the sheet, there is no such period, or it is not closed. */
+/** Reopens a closed period, dropping its fixed due-total so it is live again. Refused when the sheet's
+ *  permission matrix does not allow the user's role to reopen (by default only a steward), there is no such period, or it is not closed. */
 public class ReopenPeriod {
     public void reopen(@PathVariable("sheetId") String sheetId, @PathVariable("periodName") String periodName,
-            @Val CloseRequest request, PeriodStore store, RoleStore roles, Out<PeriodResponse> reopened)
-            throws InvalidSheetException {
+            @Val CloseRequest request, PeriodStore store, RoleStore roles, SettingStore settings,
+            Out<PeriodResponse> reopened) throws InvalidSheetException {
         String sheet = sheetId.trim();
-        if (roles.find(sheet, request.user()) != Role.STEWARD) {
-            throw new InvalidSheetException("Only a steward can reopen a period");
+        Role role = roles.find(sheet, request.user());
+        if (!settings.allows(sheet, "reopen", role)) {
+            throw new InvalidSheetException("A " + role.shown() + " may not reopen a period");
         }
         PeriodResponse period = store.find(sheet, periodName.trim());
         if (period == null) {

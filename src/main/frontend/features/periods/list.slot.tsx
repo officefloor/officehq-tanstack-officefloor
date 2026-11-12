@@ -17,7 +17,7 @@ const EMPTY: Fields = { name: '', from: '', to: '' };
 
 // The sheet's periods, each with its due-total (the figures of the claims whose date falls in it and that
 // count by their status at its end, skipping n/a; fixed when the period was closed), its closed yes/no and the buttons that
-// close it and (a steward only) reopen it, and the form that adds one.
+// close it and reopen it (as the sheet's permission matrix allows), and the form that adds one.
 function Periods() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -41,7 +41,7 @@ function Periods() {
   const submit = useSubmitOnce(save);
 
   // The server refuses closing a period that is already closed, and reopening one that is not closed
-  // or by anyone but a steward; the error shows on that period.
+  // or by a role the sheet's permission matrix does not allow; the error shows on that period.
   type Action = { name: string; action: 'close' | 'reopen' };
   const act = useMutation({
     mutationFn: ({ name, action }: Action) =>

@@ -17,13 +17,15 @@ import net.officefloor.plugin.variable.Val;
  *  sheet with no limit, and a steward, settle anything. Only a steward reviews a PENDING claim, and
  *  only a review moves it to SETTLED or back to OPEN; a review of a claim that is not PENDING is refused.
  *  Before the limit is considered, settling or approving a claim with no proofs whose due is above the
- *  proof threshold is refused (see {@link CheckProofs}), so it never goes to PENDING. */
+ *  proof threshold is refused (see {@link CheckProofs}), so it never goes to PENDING. Opening, settling
+ *  and voiding are refused to a role the sheet's permission matrix does not allow it. */
 public class CheckClerkLimit {
     public void check(@Val StatusInput input, @Val Claim claim, RoleStore roles, SettingStore settings,
             PersonStore people, RateStore rates, SheetStore sheets, ClaimStore claims, Out<StatusMove> move)
             throws InvalidSheetException {
         ClaimStatus from = claim.getStatus();
-        boolean steward = roles.find(claim.getSheetId(), input.user()) == Role.STEWARD;
+        Role role = roles.find(claim.getSheetId(), input.user());
+        boolean steward = role == Role.STEWARD;
         if (input.review()) {
             if (from != ClaimStatus.PENDING) {
                 throw new InvalidSheetException("Only a PENDING claim can be approved or rejected");
@@ -38,9 +40,20 @@ public class CheckClerkLimit {
         if (from == ClaimStatus.PENDING && input.status() != ClaimStatus.VOID) {
             throw new InvalidSheetException("A PENDING claim waits for a steward to approve or reject it");
         }
+        refuseUnpermitted(input.status(), claim.getSheetId(), role, settings);
         CheckProofs.refuseUnproved(input, claim, settings, people, rates, sheets, claims);
         move.set(new StatusMove(from, overLimit(input, claim, steward, settings, people, rates, sheets, claims)
                 ? ClaimStatus.PENDING : input.status()));
+    }
+
+    /** Refuses opening, settling or voiding a claim by a role the sheet's permission matrix does not allow it. */
+    static void refuseUnpermitted(ClaimStatus to, String sheetId, Role role, SettingStore settings)
+            throws InvalidSheetException {
+        String action = to == ClaimStatus.OPEN ? "open" : to == ClaimStatus.SETTLED ? "settle"
+                : to == ClaimStatus.VOID ? "void" : null;
+        if (action != null && !settings.allows(sheetId, action, role)) {
+            throw new InvalidSheetException("A " + role.shown() + " may not " + action + " a claim");
+        }
     }
 
     private static boolean overLimit(StatusInput input, Claim claim, boolean steward, SettingStore settings,
