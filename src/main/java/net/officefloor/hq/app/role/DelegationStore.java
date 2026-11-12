@@ -2,6 +2,7 @@ package net.officefloor.hq.app.role;
 
 import java.time.LocalDate;
 import java.util.List;
+import net.officefloor.hq.app.history.History;
 import net.officefloor.hq.app.sheet.SheetStore;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -28,6 +29,12 @@ public class DelegationStore {
     public List<Delegation> list(String sheetId) {
         return jdbc.query("SELECT user_name, from_date, to_date, delegated_by FROM delegation WHERE sheet_id = ?"
                 + " ORDER BY id", ROW, sheetId);
+    }
+
+    /** Every delegation on the sheet at the end of the date (see {@link History}), in the order they were made. */
+    public List<Delegation> listAsOf(String sheetId, LocalDate date) {
+        return jdbc.query("SELECT user_name, from_date, to_date, delegated_by FROM "
+                + History.asOf("delegation", "id", date) + " WHERE sheet_id = ? ORDER BY id", ROW, sheetId);
     }
 
     /** The steward who delegated to the user a delegation in force on the sheet's today (the latest made

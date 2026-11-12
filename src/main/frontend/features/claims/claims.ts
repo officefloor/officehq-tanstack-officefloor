@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { sheetKey } from '../sheet/sheet';
+import { asOfKey, asOfPath, sheetKey } from '../sheet/sheet';
+import { useAsOf } from '../../session/session';
 import { asNumber, asString, useSearchParam } from '../../url/useSearchParam';
 import { type Hold, covers } from '../people/people';
 
@@ -101,9 +102,10 @@ export const claimsKey = (sheet: string) => [...sheetKey(sheet), 'claims'] as co
 
 /** Every claim on the sheet, newest first. */
 export function useClaims(sheet: string) {
+  const [asOf] = useAsOf();
   return useQuery({
-    queryKey: claimsKey(sheet),
-    queryFn: () => getJson<Claim[]>(`/api/sheets/${encodeURIComponent(sheet)}/claims`),
+    queryKey: asOfKey(claimsKey(sheet), asOf),
+    queryFn: () => getJson<Claim[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/claims`, asOf)),
     enabled: sheet !== '',
   });
 }

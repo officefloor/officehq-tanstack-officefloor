@@ -53,12 +53,18 @@ public class ClaimLogStore {
 
     /** Every claim's log lines on the sheet, by claim id, oldest first. */
     public Map<Long, List<String>> lines(String sheetId) {
+        return lines(sheetId, null);
+    }
+
+    /** Every claim's log lines on the sheet logged on or before the date (all of them when it is null), by
+     *  claim id, oldest first. */
+    public Map<Long, List<String>> lines(String sheetId, LocalDate until) {
         Map<Long, List<String>> lines = new HashMap<>();
-        jdbc.query("SELECT * FROM claim_log WHERE sheet_id = ? ORDER BY id", rs -> {
+        jdbc.query("SELECT * FROM claim_log WHERE sheet_id = ? AND (CAST(? AS DATE) IS NULL OR log_date <= ?) ORDER BY id", rs -> {
             lines.computeIfAbsent(rs.getLong("claim_id"), id -> new ArrayList<>())
                     .add(rs.getString("status") + " by " + rs.getString("by_user") + " on "
                             + rs.getObject("log_date", LocalDate.class) + " due=" + rs.getString("due"));
-        }, sheetId);
+        }, sheetId, until == null ? null : Date.valueOf(until), until == null ? null : Date.valueOf(until));
         return lines;
     }
 

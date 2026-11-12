@@ -1,6 +1,8 @@
 package net.officefloor.hq.app.watch;
 
+import java.time.LocalDate;
 import java.util.List;
+import net.officefloor.hq.app.history.History;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -18,6 +20,12 @@ public class WatchStore {
     public List<Long> watchedBy(String sheetId, String user) {
         return jdbc.queryForList("SELECT person_id FROM watch WHERE sheet_id = ? AND username = ? ORDER BY person_id",
                 Long.class, sheetId, user);
+    }
+
+    /** The ids of the people the user watched on the sheet at the end of the date (see {@link History}). */
+    public List<Long> watchedByAsOf(String sheetId, String user, LocalDate date) {
+        return jdbc.queryForList("SELECT person_id FROM " + History.asOf("watch", "id", date)
+                + " WHERE sheet_id = ? AND username = ? ORDER BY person_id", Long.class, sheetId, user);
     }
 
     /** The users watching the person, in the order they started watching. */

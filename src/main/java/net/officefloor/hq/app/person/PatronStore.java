@@ -1,9 +1,11 @@
 package net.officefloor.hq.app.person;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import net.officefloor.hq.app.history.History;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -19,8 +21,17 @@ public class PatronStore {
 
     /** The ids of each person's patrons on the sheet, keyed by the person's id. */
     public Map<Long, List<Long>> all(String sheetId) {
+        return allFrom(sheetId, "patron");
+    }
+
+    /** The ids of each person's patrons on the sheet as they stood at the end of the date (see {@link History}). */
+    public Map<Long, List<Long>> allAsOf(String sheetId, LocalDate date) {
+        return allFrom(sheetId, History.asOf("patron", "sheet_id, person_id, patron_id", date));
+    }
+
+    private Map<Long, List<Long>> allFrom(String sheetId, String table) {
         Map<Long, List<Long>> found = new HashMap<>();
-        jdbc.query("SELECT person_id, patron_id FROM patron WHERE sheet_id = ? ORDER BY patron_id",
+        jdbc.query("SELECT person_id, patron_id FROM " + table + " WHERE sheet_id = ? ORDER BY patron_id",
                 rs -> {
                     found.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(rs.getLong("patron_id"));
                 }, sheetId);

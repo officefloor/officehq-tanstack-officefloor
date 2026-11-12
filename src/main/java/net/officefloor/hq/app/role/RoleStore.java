@@ -1,6 +1,8 @@
 package net.officefloor.hq.app.role;
 
+import java.time.LocalDate;
 import java.util.List;
+import net.officefloor.hq.app.history.History;
 import net.officefloor.hq.app.sheet.InvalidSheetException;
 import net.officefloor.hq.app.sheet.SheetStore;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -23,7 +25,16 @@ public class RoleStore {
 
     /** Every role assigned on the sheet, by user name. */
     public List<RoleResponse> list(String sheetId) {
-        return jdbc.query("SELECT user_name, role FROM sheet_role WHERE sheet_id = ? ORDER BY user_name",
+        return listFrom(sheetId, "sheet_role");
+    }
+
+    /** Every role assigned on the sheet at the end of the date (see {@link History}), by user name. */
+    public List<RoleResponse> listAsOf(String sheetId, LocalDate date) {
+        return listFrom(sheetId, History.asOf("sheet_role", "sheet_id, user_name", date));
+    }
+
+    private List<RoleResponse> listFrom(String sheetId, String table) {
+        return jdbc.query("SELECT user_name, role FROM " + table + " WHERE sheet_id = ? ORDER BY user_name",
                 (rs, i) -> new RoleResponse(rs.getString("user_name"), Role.valueOf(rs.getString("role")).shown()),
                 sheetId);
     }

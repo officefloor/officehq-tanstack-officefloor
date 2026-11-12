@@ -5,16 +5,22 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import net.officefloor.hq.app.history.History;
 import net.officefloor.hq.app.sheet.SheetStore;
 import net.officefloor.web.ObjectResponse;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
 
-/** The settings in force on the sheet's today, and the floor and late percent recorded by from-date. */
+/** The settings in force on the sheet's today, and the floor and late percent recorded by from-date; as of a
+ *  date, as they stood at the end of it, in force on that date. */
 public class RespondWithSettings {
-    public void respond(@PathVariable("sheetId") String sheetId, SettingStore store, SheetStore sheets,
+    public void respond(@PathVariable("sheetId") String sheetId,
+            @RequestParam(name = "asOf", required = false) String asOf, SettingStore settings, SheetStore sheets,
             ObjectResponse<SettingsResponse> response) {
         String sheet = sheetId.trim();
-        LocalDate today = sheets.today(sheet);
+        LocalDate on = History.date(asOf);
+        SettingStore store = on == null ? settings : settings.asOf(on);
+        LocalDate today = on == null ? sheets.today(sheet) : on;
         response.send(new SettingsResponse(store.find(sheet, SettingStore.CLERK_LIMIT),
                 store.floors(sheet).apply(today).setScale(2).toPlainString(),
                 String.valueOf(store.terms(sheet, today)),

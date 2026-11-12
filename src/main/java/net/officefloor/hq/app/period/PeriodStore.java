@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import net.officefloor.hq.app.history.History;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -29,6 +30,21 @@ public class PeriodStore {
     /** Every period on the sheet, by from-date. */
     public List<PeriodResponse> list(String sheetId) {
         return jdbc.query("SELECT * FROM period WHERE sheet_id = ? ORDER BY from_date", ROW, sheetId);
+    }
+
+    /** Every period on the sheet as the periods and their fixed figures stood at the end of the date (see
+     *  {@link History}), by from-date. */
+    public List<PeriodResponse> listAsOf(String sheetId, LocalDate date) {
+        String totals = History.asOf("period_person_total", "sheet_id, period_name, person_id", date);
+        return jdbc.query("SELECT * FROM " + History.asOf("period", "id", date) + " WHERE sheet_id = ? ORDER BY from_date",
+                (rs, i) -> PeriodResponse.of(rs.getString("name"), rs.getObject("from_date", LocalDate.class),
+                        rs.getObject("to_date", LocalDate.class), rs.getBoolean("closed"),
+                        rs.getBigDecimal("closed_total"),
+                        rs.getBoolean("closed") || rs.getBoolean("soft")
+                                ? personTotals(rs.getString("sheet_id"), rs.getString("name"), totals)
+                                : Map.of(),
+                        rs.getBoolean("soft")),
+                sheetId);
     }
 
     /** The period on the sheet with this name, or null when there is none. */
@@ -83,8 +99,12 @@ public class PeriodStore {
 
     /** Each person's due-total fixed when the period was closed, by person id. */
     private Map<Long, BigDecimal> personTotals(String sheetId, String name) {
+        return personTotals(sheetId, name, "period_person_total");
+    }
+
+    private Map<Long, BigDecimal> personTotals(String sheetId, String name, String table) {
         Map<Long, BigDecimal> totals = new LinkedHashMap<>();
-        jdbc.query("SELECT person_id, total FROM period_person_total WHERE sheet_id = ? AND period_name = ? ORDER BY person_id",
+        jdbc.query("SELECT person_id, total FROM " + table + " WHERE sheet_id = ? AND period_name = ? ORDER BY person_id",
                 rs -> {
                     totals.put(rs.getLong("person_id"), rs.getBigDecimal("total"));
                 }, sheetId, name);

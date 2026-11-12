@@ -30,7 +30,6 @@ function PersonStatement({ person }: { person: Person }) {
         queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
         queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
       ]);
-      setAsOf('');
     },
   });
 
@@ -68,6 +67,8 @@ function PersonStatement({ person }: { person: Person }) {
         onClick={() => {
           take.reset();
           take.mutate(asOf);
+          // The date goes with this statement only: a refused one's never carries into the next.
+          setAsOf('');
         }}
       >
         Statement

@@ -11,6 +11,12 @@ public final class History {
     private History() {
     }
 
+    /** The date of an {@code asOf} query parameter (yyyy-MM-dd): null when absent or blank, so the store is
+     *  read as it is now. */
+    public static LocalDate date(String asOf) {
+        return asOf == null || asOf.isBlank() ? null : LocalDate.parse(asOf.trim());
+    }
+
     /** A table expression, named as the table, for use in place of it in a query's FROM: the table's rows
      *  (each identified by {@code keys}, comma separated) as they stood at the end of {@code date}. */
     public static String asOf(String table, String keys, LocalDate date) {

@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { sheetKey } from '../sheet/sheet';
+import { asOfKey, asOfPath, sheetKey } from '../sheet/sheet';
+import { useAsOf } from '../../session/session';
 
 /** The sheet's settings: `clerkLimit` (two decimals) is the most due a clerk may settle a claim at,
  *  null for no limit; `floor` (two decimals) is the least a claim's live due may be; `terms` is the
@@ -51,9 +52,10 @@ export function latePctOf(settings: Settings | undefined): ((date: string) => st
 export const settingsKey = (sheet: string) => [...sheetKey(sheet), 'settings'] as const;
 
 export function useSettings(sheet: string) {
+  const [asOf] = useAsOf();
   return useQuery({
-    queryKey: settingsKey(sheet),
-    queryFn: () => getJson<Settings>(`/api/sheets/${encodeURIComponent(sheet)}/settings`),
+    queryKey: asOfKey(settingsKey(sheet), asOf),
+    queryFn: () => getJson<Settings>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/settings`, asOf)),
     enabled: sheet !== '',
   });
 }

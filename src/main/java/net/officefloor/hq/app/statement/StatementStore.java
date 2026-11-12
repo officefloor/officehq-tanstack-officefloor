@@ -5,6 +5,7 @@ import java.sql.Date;
 import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.Map;
+import net.officefloor.hq.app.history.History;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -40,9 +41,19 @@ public class StatementStore {
 
     /** Each person on the sheet with a statement: their count and last statement. */
     public Map<Long, StatementSummary> summaries(String sheetId) {
+        return summariesFrom(sheetId, "statement");
+    }
+
+    /** Each person on the sheet with a statement as the statements stood at the end of the date (see
+     *  {@link History}): their count and last statement then. */
+    public Map<Long, StatementSummary> summariesAsOf(String sheetId, LocalDate date) {
+        return summariesFrom(sheetId, History.asOf("statement", "id", date));
+    }
+
+    private Map<Long, StatementSummary> summariesFrom(String sheetId, String table) {
         Map<Long, StatementSummary> found = new HashMap<>();
-        jdbc.query("SELECT s.person_id, s.taken_on, s.due_total, c.n FROM statement s JOIN "
-                + "(SELECT person_id, COUNT(*) AS n, MAX(id) AS last_id FROM statement WHERE sheet_id = ? GROUP BY person_id) c "
+        jdbc.query("SELECT s.person_id, s.taken_on, s.due_total, c.n FROM (SELECT * FROM " + table + ") s JOIN "
+                + "(SELECT person_id, COUNT(*) AS n, MAX(id) AS last_id FROM " + table + " WHERE sheet_id = ? GROUP BY person_id) c "
                 + "ON s.id = c.last_id", rs -> {
                     BigDecimal total = rs.getBigDecimal("due_total");
                     found.put(rs.getLong("person_id"), new StatementSummary(rs.getInt("n"),

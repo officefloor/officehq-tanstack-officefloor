@@ -1,7 +1,8 @@
 import { useMutationState, useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { asFlag, asString, useSearchParam } from '../../url/useSearchParam';
-import { sheetKey } from '../sheet/sheet';
+import { asOfKey, asOfPath, sheetKey } from '../sheet/sheet';
+import { useAsOf } from '../../session/session';
 
 /** `version` moves on with each stored edit; an edit is saved only over the version its editor loaded.
  *  `statementCount` is how many statements were taken of them; `statedTotal` (two decimals, or n/a)
@@ -59,9 +60,10 @@ export function gradeOn(grades: Grades, on: string | undefined): string {
 export const peopleKey = (sheet: string) => [...sheetKey(sheet), 'people'] as const;
 
 export function usePeople(sheet: string) {
+  const [asOf] = useAsOf();
   return useQuery({
-    queryKey: peopleKey(sheet),
-    queryFn: () => getJson<Person[]>(`/api/sheets/${encodeURIComponent(sheet)}/people`),
+    queryKey: asOfKey(peopleKey(sheet), asOf),
+    queryFn: () => getJson<Person[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/people`, asOf)),
     enabled: sheet !== '',
   });
 }

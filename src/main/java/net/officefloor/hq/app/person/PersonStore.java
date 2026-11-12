@@ -68,6 +68,14 @@ public class PersonStore {
         return query(sheetId, null, "SELECT * FROM person WHERE sheet_id = ? ORDER BY id", sheetId);
     }
 
+    /** The people on the sheet as they stood at the end of the date, with their grades and holds then (see
+     *  {@link History}), in the order they were added. */
+    public List<Person> listAsOf(String sheetId, LocalDate date) {
+        return queryFrom(sheetId, null, History.asOf("person_grade", "person_id, from_date", date),
+                History.asOf("person_hold", "id", date),
+                "SELECT * FROM " + History.asOf("person", "id", date) + " WHERE sheet_id = ? ORDER BY id", sheetId);
+    }
+
     public Person find(String sheetId, long id) {
         List<Person> found = query(sheetId, id, "SELECT * FROM person WHERE sheet_id = ? AND id = ?", sheetId, id);
         return found.isEmpty() ? null : found.get(0);

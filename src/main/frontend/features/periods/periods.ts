@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { sheetKey } from '../sheet/sheet';
+import { asOfKey, asOfPath, sheetKey } from '../sheet/sheet';
+import { useAsOf } from '../../session/session';
 import { type Claim, type ClaimStatus, isOpen } from '../claims/claims';
 import { covers } from '../people/people';
 import type { Person } from '../people/people';
@@ -28,9 +29,10 @@ export const periodsKey = (sheet: string) => [...sheetKey(sheet), 'periods'] as 
 
 /** Every period on the sheet, by from-date. */
 export function usePeriods(sheet: string) {
+  const [asOf] = useAsOf();
   return useQuery({
-    queryKey: periodsKey(sheet),
-    queryFn: () => getJson<Period[]>(`/api/sheets/${encodeURIComponent(sheet)}/periods`),
+    queryKey: asOfKey(periodsKey(sheet), asOf),
+    queryFn: () => getJson<Period[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/periods`, asOf)),
     enabled: sheet !== '',
   });
 }

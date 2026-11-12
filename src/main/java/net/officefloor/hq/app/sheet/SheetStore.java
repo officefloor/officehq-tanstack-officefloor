@@ -36,9 +36,18 @@ public class SheetStore {
         return !found.isEmpty() && found.get(0);
     }
 
-    /** Archives the sheet, keeping its today as it reads now. */
+    /** Whether the sheet was archived while its today was on or before the date. */
+    public boolean archivedBy(String sheetId, LocalDate date) {
+        List<Boolean> found = jdbc.query("SELECT archived AND archived_on <= ? FROM sheet WHERE id = ?",
+                (rs, i) -> rs.getBoolean(1), date, sheetId);
+        return !found.isEmpty() && found.get(0);
+    }
+
+    /** Archives the sheet, keeping its today as it reads now, and recording that today as the day it was archived. */
     public void archive(String sheetId) {
-        jdbc.update("MERGE INTO sheet (id, today, archived) KEY (id) VALUES (?, ?, TRUE)", sheetId, today(sheetId));
+        LocalDate today = today(sheetId);
+        jdbc.update("MERGE INTO sheet (id, today, archived, archived_on) KEY (id) VALUES (?, ?, TRUE, ?)", sheetId,
+                today, today);
     }
 
     /** Refuses any change to an archived sheet. */

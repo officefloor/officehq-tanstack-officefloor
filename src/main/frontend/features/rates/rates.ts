@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { sheetKey } from '../sheet/sheet';
+import { asOfKey, asOfPath, sheetKey } from '../sheet/sheet';
+import { useAsOf } from '../../session/session';
 import { type Claim, counts, isBound, isCorrection } from '../claims/claims';
 import { type Grades, gradeOn } from '../people/people';
 
@@ -13,9 +14,10 @@ export type Rate = { grade: string; pct: string; from: string | null; to: string
 export const ratesKey = (sheet: string) => [...sheetKey(sheet), 'rates'] as const;
 
 export function useRates(sheet: string) {
+  const [asOf] = useAsOf();
   return useQuery({
-    queryKey: ratesKey(sheet),
-    queryFn: () => getJson<Rate[]>(`/api/sheets/${encodeURIComponent(sheet)}/rates`),
+    queryKey: asOfKey(ratesKey(sheet), asOf),
+    queryFn: () => getJson<Rate[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/rates`, asOf)),
     enabled: sheet !== '',
   });
 }
