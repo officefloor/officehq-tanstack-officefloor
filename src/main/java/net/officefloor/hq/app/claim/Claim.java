@@ -33,6 +33,8 @@ public class Claim {
     private String editedBy;
     private Long batch;
 
+    private long addedSeq;
+
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue, String openedBy, boolean stated,
             BigDecimal statedDue, String corrects, LocalDate dueBy) {
@@ -121,6 +123,11 @@ public class Claim {
     /** The bulk settle batch it was settled in; null when settled one at a time, or not settled. */
     public Long getBatch() { return batch; }
     public void setBatch(Long batch) { this.batch = batch; }
+
+    /** When it was added, in the order of change_seq (see {@code RateStore}); a copy keeps its original's. 0 for
+     *  claims added before forward-only rates. */
+    public long getAddedSeq() { return addedSeq; }
+    public void setAddedSeq(long addedSeq) { this.addedSeq = addedSeq; }
     public void setDeferredUntil(LocalDate deferredUntil) { this.deferredUntil = deferredUntil; }
     public void setPersonId(long personId) { this.personId = personId; }
     public void setCorrects(String corrects) { this.corrects = corrects; }

@@ -8,6 +8,6 @@ public class RespondWithRate {
     public void respond(@PathVariable("sheetId") String sheetId, @Val RateInput rate, RateStore store,
             ObjectResponse<RateResponse> response) {
         response.send(RateResponse.of(rate.grade(), rate.pct(), rate.from(), rate.to(),
-                store.version(sheetId.trim(), rate.grade(), rate.from())));
+                0, store.version(sheetId.trim(), rate.grade(), rate.from()), store.forward(sheetId.trim(), rate.grade(), rate.from())));
     }
 }

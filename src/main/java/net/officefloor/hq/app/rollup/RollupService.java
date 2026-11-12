@@ -80,7 +80,7 @@ public class RollupService {
                 if (claim.getCorrects() == null || claim.getCorrects().isBlank()) {
                     claimed = claimed.add(claim.getAmount());
                 }
-                BigDecimal figure = lateness.due(claim, rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()));
+                BigDecimal figure = lateness.due(claim, rates.forClaim(claim).find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()));
                 if (figure != null) {
                     due = due.add(figure);
                     if (lateness.overdue(claim)) {
@@ -91,7 +91,7 @@ public class RollupService {
                 // today, does not hang on today's grade's rate.
                 fixed |= claim.getSettledDue() != null || (claim.isBound() && claim.getStatedDue() != null)
                         || (figure != null && (!person.gradeOn(claim.getDate()).equals(person.gradeOn(today))
-                                || rates.endsBefore(sheetId, person.gradeOn(claim.getDate()), claim.getDate(), today)));
+                                || rates.forClaim(claim).endsBefore(sheetId, person.gradeOn(claim.getDate()), claim.getDate(), today)));
             }
             boolean na = rates.find(sheetId, person.gradeOn(today), today) == null && !fixed;
             claimedTotal = claimedTotal.add(claimed);
@@ -135,7 +135,7 @@ public class RollupService {
                         || claim.getDueBy().isBefore(from) || claim.getDueBy().isAfter(to)) {
                     continue;
                 }
-                BigDecimal figure = lateness.due(claim, rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()));
+                BigDecimal figure = lateness.due(claim, rates.forClaim(claim).find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()));
                 if (figure != null) {
                     total = total.add(figure);
                 }

@@ -10,8 +10,16 @@ import { type Grades, gradeOn } from '../people/people';
  *  grade may have several; one with no rate has none. `level` is the sheet it is on: 0 (or absent) for the
  *  sheet's own, 1 for its parent's, and so on up; a grade with no rate in force on a date on the sheet takes
  *  the first level up that has one. `version` is how many versions it has; `pct` is the newest's, the one in
- *  force. */
-export type Rate = { grade: string; pct: string; from: string | null; to: string | null; level?: number; version?: number };
+ *  force. `forward` is set on a forward-only rate (saved with a from-date on or after the sheet's today): when
+ *  it was saved, so it applies only to claims added after (see `ratesFor`); null or absent for one that applies
+ *  to every claim. The rate in force (the rates panel and preview) is read without regard to it. */
+export type Rate = { grade: string; pct: string; from: string | null; to: string | null; level?: number; version?: number;
+  forward?: number | null };
+
+/** The rates that apply to the claim: all but the forward-only ones saved after it was added. */
+export function ratesFor(rates: Rate[] | undefined, claim: Claim): Rate[] | undefined {
+  return rates?.filter((r) => r.forward == null || r.forward < claim.added);
+}
 
 /** The rates of each level, the sheet's own first. */
 function levels(rates: Rate[] | undefined): Rate[][] {
@@ -197,7 +205,7 @@ export function claimDue(
   late?: Late,
 ): string {
   if (claim.due !== null) return claim.due;
-  const pct = rateOf(rates, gradeOn(grades, claim.date), claim.date);
+  const pct = rateOf(ratesFor(rates, claim), gradeOn(grades, claim.date), claim.date);
   const halfUp = late?.halfUp?.(claim) ?? false;
   const figure = isBound(claim) ? claim.statedDue ?? NA : due(claim.amount, pct, halfUp);
   const charge = lateCharge(claim, figure, late);
@@ -253,8 +261,9 @@ function uncappedDue(
   const now = gradeOn(grades, today);
   const elsewhere = (c: Claim) => {
     const grade = gradeOn(grades, c.date);
-    return rateOf(rates, grade, c.date) !== undefined
-      && (grade !== now || (today !== undefined && endsBefore(rates, grade, c.date, today)));
+    const theirs = ratesFor(rates, c);
+    return rateOf(theirs, grade, c.date) !== undefined
+      && (grade !== now || (today !== undefined && endsBefore(theirs, grade, c.date, today)));
   };
   if (rateOf(rates, now, today) === undefined && !mine.some((c) => fixed(c) || elsewhere(c))) {
     return NA;

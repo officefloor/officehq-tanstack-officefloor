@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.history.History;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -13,7 +14,11 @@ import org.springframework.stereotype.Repository;
  *  (if it has one). A rate with no from-date applies from the beginning of time (stored as
  *  {@link #START}). A grade with no rate is absent. When a grade has no rate in force on a date on a
  *  sheet, its parent sheet's (the setting {@code parent}) in force then is used, then the parent's parent,
- *  up to {@link #LEVELS} levels up. */
+ *  up to {@link #LEVELS} levels up.
+ *  <p>A rate saved with a from-date on or after the sheet's today is forward-only: it takes the next
+ *  {@code change_seq} as its {@code forward_seq} and applies only to claims added after it (with a later
+ *  {@code added_seq}; see {@link #forClaim}). The rate in force (the rates panel, preview and calendar) is read
+ *  without regard to this. */
 @Repository
 public class RateStore {
 
@@ -36,6 +41,13 @@ public class RateStore {
     private RateStore(JdbcTemplate jdbc, String rates) {
         this.jdbc = jdbc;
         this.rates = rates;
+    }
+
+    /** The rates that apply to the claim (to read only): those that are not forward-only, and those saved
+     *  before the claim was added. */
+    public RateStore forClaim(Claim claim) {
+        return new RateStore(jdbc, "(SELECT * FROM " + rates + " WHERE forward_seq IS NULL OR forward_seq < "
+                + claim.getAddedSeq() + ") rate");
     }
 
     /** The rates as they stood at the end of the date (see {@link History}), to read only. */
@@ -68,11 +80,12 @@ public class RateStore {
         List<String> chain = chain(sheetId);
         for (int level = 0; level < chain.size(); level++) {
             int at = level;
-            all.addAll(jdbc.query("SELECT grade, pct, from_date, to_date, version FROM " + rates + " WHERE sheet_id = ? ORDER BY grade, from_date",
+            all.addAll(jdbc.query("SELECT grade, pct, from_date, to_date, version, forward_seq FROM " + rates + " WHERE sheet_id = ? ORDER BY grade, from_date",
                     (rs, i) -> {
                         LocalDate from = rs.getObject("from_date", LocalDate.class);
                         return RateResponse.of(rs.getString("grade"), rs.getBigDecimal("pct"),
-                                START.equals(from) ? null : from, rs.getObject("to_date", LocalDate.class), at, rs.getInt("version"));
+                                START.equals(from) ? null : from, rs.getObject("to_date", LocalDate.class), at, rs.getInt("version"),
+                                rs.getObject("forward_seq", Long.class));
                     }, chain.get(level)));
         }
         return all;
@@ -167,15 +180,26 @@ public class RateStore {
     }
 
     /** Sets the grade's rate from the date (null for from the beginning of time) through the to-date
-     *  (null for no end). When the grade and from-date already have a rate, the value it replaces is kept as an
+     *  (null for no end): forward-only when the from-date is on or after the sheet's {@code today}. When the grade and from-date already have a rate, the value it replaces is kept as an
      *  older version and this is added as the newest, the one in force. */
-    public void set(String sheetId, String grade, LocalDate from, LocalDate to, BigDecimal pct) {
+    public void set(String sheetId, String grade, LocalDate from, LocalDate to, BigDecimal pct, LocalDate today) {
         LocalDate at = from == null ? START : from;
         int version = version(sheetId, grade, from) + 1;
-        jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, pct, to_date) VALUES (?, ?, ?, ?, ?, ?)",
-                sheetId, grade, at, version, pct, to);
-        jdbc.update("MERGE INTO rate (sheet_id, grade, from_date, to_date, pct, version) KEY (sheet_id, grade, from_date) VALUES (?, ?, ?, ?, ?, ?)",
-                sheetId, grade, at, to, pct, version);
+        Long forward = from != null && !from.isBefore(today)
+                ? jdbc.queryForObject("SELECT NEXT VALUE FOR change_seq", Long.class)
+                : null;
+        jdbc.update("INSERT INTO rate_version (sheet_id, grade, from_date, version, pct, to_date, forward_seq) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                sheetId, grade, at, version, pct, to, forward);
+        jdbc.update("MERGE INTO rate (sheet_id, grade, from_date, to_date, pct, version, forward_seq) KEY (sheet_id, grade, from_date) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                sheetId, grade, at, to, pct, version, forward);
+    }
+
+    /** When the sheet's rate of the grade from the date (null for from the beginning of time) was saved, when it
+     *  is forward-only; else null. */
+    public Long forward(String sheetId, String grade, LocalDate from) {
+        List<Long> found = jdbc.queryForList("SELECT forward_seq FROM rate WHERE sheet_id = ? AND grade = ? AND from_date = ?",
+                Long.class, sheetId, grade, from == null ? START : from);
+        return found.isEmpty() ? null : found.get(0);
     }
 
     /** How many versions the sheet's rate of the grade from the date (null for from the beginning of time)

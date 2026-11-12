@@ -95,7 +95,7 @@ public class CheckClerkLimit {
             return false;
         }
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
-        BigDecimal pct = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
+        BigDecimal pct = person == null ? null : rates.forClaim(claim).find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
         BigDecimal due = Lateness.of(claim.getSheetId(), settings, sheets, claims, people).due(claim, pct);
         return due != null && due.compareTo(threshold) > 0;
     }
@@ -145,7 +145,7 @@ public class CheckClerkLimit {
             return false;
         }
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
-        BigDecimal pct = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
+        BigDecimal pct = person == null ? null : rates.forClaim(claim).find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
         BigDecimal due = Lateness.of(claim.getSheetId(), settings, sheets, claims, people).due(claim, pct);
         return due != null && due.compareTo(limit) > 0;
     }

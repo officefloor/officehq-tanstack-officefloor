@@ -28,7 +28,7 @@ final class CheckProofs {
         if (threshold == null) {
             return;
         }
-        BigDecimal pct = person == null ? null : rates.find(claim.getSheetId(), grade, claim.getDate());
+        BigDecimal pct = person == null ? null : rates.forClaim(claim).find(claim.getSheetId(), grade, claim.getDate());
         BigDecimal due = Lateness.of(claim.getSheetId(), settings, sheets, claims, people).due(claim, pct);
         if (due != null && due.compareTo(threshold) > 0) {
             throw new InvalidSheetException("A claim due above the proof threshold of " + threshold.setScale(2)
@@ -48,7 +48,7 @@ final class CheckProofs {
             return;
         }
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
-        BigDecimal pct = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
+        BigDecimal pct = person == null ? null : rates.forClaim(claim).find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
         BigDecimal due = Lateness.of(claim.getSheetId(), settings, sheets, claims, people).due(claim, pct);
         if (due != null && due.compareTo(threshold) > 0) {
             throw new InvalidSheetException("A claim due above the note threshold of " + threshold.setScale(2)

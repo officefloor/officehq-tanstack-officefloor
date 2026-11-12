@@ -81,7 +81,7 @@ public class TakeStatement {
             BigDecimal figure = null;
             boolean na = false;
             if (counts) {
-                figure = ClaimFigure.of(claim, rates.find(sheetId, then.gradeOn(claim.getDate()), claim.getDate()), rounding);
+                figure = ClaimFigure.of(claim, rates.forClaim(claim).find(sheetId, then.gradeOn(claim.getDate()), claim.getDate()), rounding);
                 counted++;
                 if (figure != null) {
                     total = total.add(lateness.dueOf(claim, figure));
@@ -90,10 +90,10 @@ public class TakeStatement {
                 // today, does not hang on today's grade's rate.
                 fixed |= claim.getSettledDue() != null || (claim.isBound() && claim.getStatedDue() != null)
                         || (figure != null && (!then.gradeOn(claim.getDate()).equals(then.gradeOn(on))
-                                || rates.endsBefore(sheetId, then.gradeOn(claim.getDate()), claim.getDate(), on)));
+                                || rates.forClaim(claim).endsBefore(sheetId, then.gradeOn(claim.getDate()), claim.getDate(), on)));
                 // A claim whose rate ended before its date is bound to n/a, so a later rate leaves it so.
                 na = figure == null && (claim.isBound()
-                        || (claim.getSettledDue() == null && rates.ended(sheetId, then.gradeOn(claim.getDate()), claim.getDate())));
+                        || (claim.getSettledDue() == null && rates.forClaim(claim).ended(sheetId, then.gradeOn(claim.getDate()), claim.getDate())));
             }
             live.setStated(counts);
             live.setStatedDue(figure);

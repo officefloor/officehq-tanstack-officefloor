@@ -44,7 +44,7 @@ public class ClaimLogStore {
         LocalDate today = sheets.today(sheetId);
         Person person = people.find(sheetId, claim.getPersonId());
         BigDecimal pct = person == null ? null
-                : rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate());
+                : rates.forClaim(claim).find(sheetId, person.gradeOn(claim.getDate()), claim.getDate());
         BigDecimal due = Lateness.of(sheetId, settings, sheets, claims, people).due(claim, pct);
         jdbc.update("INSERT INTO claim_log (sheet_id, claim_id, status, by_user, log_date, due) VALUES (?, ?, ?, ?, ?, ?)",
                 sheetId, claim.getId(), claim.getStatus().name(), user, Date.valueOf(today),

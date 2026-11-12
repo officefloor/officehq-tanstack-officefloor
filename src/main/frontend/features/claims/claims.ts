@@ -72,6 +72,8 @@ export type Claim = {
   batch: number | null;
   /** Its lines, in the order added: `<label> <qty> x <unit>`; a claim with lines has their sum as its amount. */
   lines: string[];
+  /** When it was added, in the order forward-only rates are saved in (see `Rate`); a copy keeps its original's. */
+  added: number;
 };
 
 /** A correction: a claim with a negative amount, which has no floor and no late charge. */

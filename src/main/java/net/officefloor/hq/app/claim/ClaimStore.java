@@ -36,6 +36,7 @@ public class ClaimStore {
         claim.setVoidReason(rs.getString("void_reason"));
         claim.setEditedBy(rs.getString("edited_by"));
         claim.setBatch(rs.getObject("settle_batch", Long.class));
+        claim.setAddedSeq(rs.getLong("added_seq"));
         return claim;
     };
 
@@ -122,6 +123,7 @@ public class ClaimStore {
                 false, null, corrects, dueBy);
         added.setRef(ref);
         added.setTags(tags);
+        added.setAddedSeq(addedSeq(sheetId, added.getId()));
         return added;
     }
 
@@ -267,7 +269,13 @@ public class ClaimStore {
                 from.getNote(), ClaimStatus.OPEN, number, null, openedBy, false, null, null, dueBy);
         added.setSplitFrom(from.getNumber());
         added.setTags(from.getTags());
+        added.setAddedSeq(addedSeq(from.getSheetId(), added.getId()));
         return added;
+    }
+
+    /** When the claim was added (see {@link Claim#getAddedSeq}). */
+    private long addedSeq(String sheetId, long id) {
+        return jdbc.queryForObject("SELECT added_seq FROM claim WHERE sheet_id = ? AND id = ?", Long.class, sheetId, id);
     }
 
     /** Works out again the due-by of every claim on the sheet that is not SETTLED or VOID and is due by
@@ -475,6 +483,7 @@ public class ClaimStore {
             return ps;
         }, keys);
         long id = keys.getKey().longValue();
+        jdbc.update("UPDATE claim SET added_seq = ? WHERE sheet_id = ? AND id = ?", claim.getAddedSeq(), toSheet, id);
         jdbc.update("INSERT INTO claim_log (sheet_id, claim_id, status, by_user, log_date, due) "
                 + "SELECT ?, ?, status, by_user, log_date, due FROM claim_log WHERE sheet_id = ? AND claim_id = ? ORDER BY id",
                 toSheet, id, claim.getSheetId(), claim.getId());
