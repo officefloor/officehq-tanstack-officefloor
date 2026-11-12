@@ -9,8 +9,10 @@ import java.util.Map;
 import java.util.NavigableMap;
 import java.util.TreeMap;
 import java.util.function.Function;
+import net.officefloor.hq.app.history.History;
 import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.sheet.SheetStore;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -73,9 +75,37 @@ public class SettingStore {
 
     private final SheetStore sheets;
 
+    /** Where the undated and the dated settings are read from: their tables, or as they stood at the end of
+     *  {@link #asOf}. */
+    private final String undated;
+
+    private final String dated;
+
+    /** The date that stands in for the sheet's today; null to read the sheet's today. */
+    private final LocalDate asOf;
+
+    @Autowired
     public SettingStore(JdbcTemplate jdbc, SheetStore sheets) {
+        this(jdbc, sheets, "sheet_setting", "sheet_setting_from", null);
+    }
+
+    private SettingStore(JdbcTemplate jdbc, SheetStore sheets, String undated, String dated, LocalDate asOf) {
         this.jdbc = jdbc;
         this.sheets = sheets;
+        this.undated = undated;
+        this.dated = dated;
+        this.asOf = asOf;
+    }
+
+    /** The settings as they stood at the end of the date (see {@link History}), with the date standing in for
+     *  the sheet's today, to read only. */
+    public SettingStore asOf(LocalDate date) {
+        return new SettingStore(jdbc, sheets, History.asOf("sheet_setting", "sheet_id, setting_key", date),
+                History.asOf("sheet_setting_from", "sheet_id, setting_key, from_date", date), date);
+    }
+
+    private LocalDate today(String sheetId) {
+        return asOf != null ? asOf : sheets.today(sheetId);
     }
 
     /** Whether the key's values are recorded from a from-date. */
@@ -109,10 +139,10 @@ public class SettingStore {
     /** The setting's value (a dated one's in force on the sheet's today), or null when it has none. */
     public String find(String sheetId, String key) {
         if (isDated(key)) {
-            return findOn(sheetId, key, sheets.today(sheetId));
+            return findOn(sheetId, key, today(sheetId));
         }
         List<String> found = jdbc.queryForList(
-                "SELECT setting_value FROM sheet_setting WHERE sheet_id = ? AND setting_key = ?", String.class,
+                "SELECT setting_value FROM " + undated + " WHERE sheet_id = ? AND setting_key = ?", String.class,
                 sheetId, key);
         return found.isEmpty() ? null : found.get(0);
     }
@@ -120,7 +150,7 @@ public class SettingStore {
     /** The dated setting's values recorded, by from-date (a null value is blank). */
     public NavigableMap<LocalDate, String> history(String sheetId, String key) {
         NavigableMap<LocalDate, String> values = new TreeMap<>();
-        jdbc.query("SELECT from_date, setting_value FROM sheet_setting_from WHERE sheet_id = ? AND setting_key = ?",
+        jdbc.query("SELECT from_date, setting_value FROM " + dated + " WHERE sheet_id = ? AND setting_key = ?",
                 rs -> {
                     values.put(rs.getObject("from_date", LocalDate.class), rs.getString("setting_value"));
                 }, sheetId, key);

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, postJson } from '../../api/http';
 import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
@@ -9,24 +10,28 @@ function StatementHead() {
   return <th>Statements</th>;
 }
 
-// A person's statements: how many were taken, the last one's due-total and date, and the button that
-// takes one (binding their counting claims to their figures now), and the button that cancels the last one
+// A person's statements: how many were taken, the last one's due-total and date, and the date and button
+// that take one (binding their counting claims to their figures now, or as they stood at the end of the
+// date given; a blank date takes it now), and the button that cancels the last one
 // (a steward only; its claims follow their live figures again). A refused action shows its error until
 // the next action on the person is taken.
 function PersonStatement({ person }: { person: Person }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
+  const [asOf, setAsOf] = useState('');
   const queryClient = useQueryClient();
 
   const take = useMutation({
     mutationKey: personActionKey(sheet, person.id),
-    mutationFn: () =>
-      postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/statement`, { user }),
-    onSuccess: () =>
-      Promise.all([
+    mutationFn: (date: string) =>
+      postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/statement`, { user, asOf: date }),
+    onSuccess: async () => {
+      await Promise.all([
         queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
         queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
-      ]),
+      ]);
+      setAsOf('');
+    },
   });
 
   const cancel = useMutation({
@@ -47,13 +52,22 @@ function PersonStatement({ person }: { person: Person }) {
       <span data-testid="person-statement-count">{person.statementCount}</span>{' '}
       <span data-testid="person-stated-total">{person.statedTotal ?? ''}</span>{' '}
       <span data-testid="person-statement-date">{person.statementDate ?? ''}</span>{' '}
+      <input
+        type="date"
+        data-testid="person-statement-asof"
+        value={asOf}
+        onChange={(e) => {
+          take.reset();
+          setAsOf(e.target.value);
+        }}
+      />
       <button
         type="button"
         data-testid="person-statement"
         disabled={take.isPending}
         onClick={() => {
           take.reset();
-          take.mutate();
+          take.mutate(asOf);
         }}
       >
         Statement

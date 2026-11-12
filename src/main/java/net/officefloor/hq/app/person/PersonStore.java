@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.TreeMap;
+import net.officefloor.hq.app.history.History;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -24,9 +25,9 @@ public class PersonStore {
     }
 
     /** The people's grades on the sheet (only the one person when {@code personId} is given), by person. */
-    private Map<Long, NavigableMap<LocalDate, String>> grades(String sheetId, Long personId) {
+    private Map<Long, NavigableMap<LocalDate, String>> grades(String sheetId, Long personId, String table) {
         Map<Long, NavigableMap<LocalDate, String>> grades = new HashMap<>();
-        jdbc.query("SELECT person_id, from_date, grade FROM person_grade WHERE sheet_id = ?"
+        jdbc.query("SELECT person_id, from_date, grade FROM " + table + " WHERE sheet_id = ?"
                 + (personId == null ? "" : " AND person_id = " + personId), rs -> {
                     grades.computeIfAbsent(rs.getLong("person_id"), k -> new TreeMap<>())
                             .put(rs.getObject("from_date", LocalDate.class), rs.getString("grade"));
@@ -35,9 +36,9 @@ public class PersonStore {
     }
 
     /** The people's holds on the sheet (only the one person's when {@code personId} is given), by person, oldest first. */
-    private Map<Long, List<Hold>> holds(String sheetId, Long personId) {
+    private Map<Long, List<Hold>> holds(String sheetId, Long personId, String table) {
         Map<Long, List<Hold>> holds = new HashMap<>();
-        jdbc.query("SELECT person_id, from_date, to_date FROM person_hold WHERE sheet_id = ?"
+        jdbc.query("SELECT person_id, from_date, to_date FROM " + table + " WHERE sheet_id = ?"
                 + (personId == null ? "" : " AND person_id = " + personId) + " ORDER BY id", rs -> {
                     holds.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(new Hold(
                             rs.getObject("from_date", LocalDate.class), rs.getObject("to_date", LocalDate.class)));
@@ -46,8 +47,13 @@ public class PersonStore {
     }
 
     private List<Person> query(String sheetId, Long personId, String sql, Object... args) {
-        Map<Long, NavigableMap<LocalDate, String>> grades = grades(sheetId, personId);
-        Map<Long, List<Hold>> holds = holds(sheetId, personId);
+        return queryFrom(sheetId, personId, "person_grade", "person_hold", sql, args);
+    }
+
+    private List<Person> queryFrom(String sheetId, Long personId, String gradeTable, String holdTable, String sql,
+            Object... args) {
+        Map<Long, NavigableMap<LocalDate, String>> grades = grades(sheetId, personId, gradeTable);
+        Map<Long, List<Hold>> holds = holds(sheetId, personId, holdTable);
         RowMapper<Person> row = (rs, i) -> {
             Person p = new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
                     grades.getOrDefault(rs.getLong("id"), new TreeMap<>()), rs.getLong("version"),
@@ -64,6 +70,15 @@ public class PersonStore {
 
     public Person find(String sheetId, long id) {
         List<Person> found = query(sheetId, id, "SELECT * FROM person WHERE sheet_id = ? AND id = ?", sheetId, id);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** The person as they stood at the end of the date, with their grades and holds then (see {@link History});
+     *  null when they were not on the sheet then. */
+    public Person findAsOf(String sheetId, long id, LocalDate date) {
+        List<Person> found = queryFrom(sheetId, id, History.asOf("person_grade", "person_id, from_date", date),
+                History.asOf("person_hold", "id", date),
+                "SELECT * FROM " + History.asOf("person", "id", date) + " WHERE sheet_id = ? AND id = ?", sheetId, id);
         return found.isEmpty() ? null : found.get(0);
     }
 

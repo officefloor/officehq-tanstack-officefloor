@@ -5,6 +5,7 @@ import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.time.LocalDate;
 import java.util.List;
+import net.officefloor.hq.app.history.History;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -38,6 +39,12 @@ public class ClaimStore {
 
     public List<Claim> list(String sheetId) {
         return jdbc.query("SELECT * FROM claim WHERE sheet_id = ? ORDER BY listed DESC", ROW, sheetId);
+    }
+
+    /** The sheet's claims as they stood at the end of the date (see {@link History}), newest first. */
+    public List<Claim> listAsOf(String sheetId, LocalDate date) {
+        return jdbc.query("SELECT * FROM " + History.asOf("claim", "id", date) + " WHERE sheet_id = ? ORDER BY listed DESC",
+                ROW, sheetId);
     }
 
     public Claim find(String sheetId, long id) {
