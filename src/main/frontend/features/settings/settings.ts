@@ -31,7 +31,8 @@ import { useAsOf } from '../../session/session';
  *  first (a claim rounds by the one in force on its date, else by the policy date). `reviewThreshold` (two decimals)
  *  is the due above which a claim goes to REVIEW when opened, in force on the sheet's today, null for none.
  *  `escalateAfter` is the whole days at least between a claim's previous reminder and the sheet's today for a reminder
- *  to escalate it (once per claim), null for off; it is not dated. */
+ *  to escalate it (once per claim), null for off; it is not dated. `reviewSla` is the whole days after its review day
+ *  a claim in REVIEW may stay there before it is late, null for none; it is not dated. */
 export type Settings = { clerkLimit: string | null; floor: string; terms: string; latePct: string; policyDate: string | null;
   periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; proofThreshold: string | null;
   floorFrom: Dated[]; latePctFrom: Dated[]; perms: Record<string, string | null>;
@@ -39,7 +40,7 @@ export type Settings = { clerkLimit: string | null; floor: string; terms: string
   gradeGrace: Record<string, string | null>; gradeGraceFrom: Record<string, Dated[]>;
   gradeProofThreshold: Record<string, string | null>; pot: string | null; parent: string | null; fiscalStartMonth: string;
   alertThreshold: string | null; rounding: string | null; roundingFrom: Dated[]; reviewThreshold: string | null;
-  escalateAfter: string | null };
+  escalateAfter: string | null; reviewSla: string | null };
 
 /** A setting's value recorded from a date (yyyy-MM-dd); a null value is blank. */
 export type Dated = { from: string; value: string | null };

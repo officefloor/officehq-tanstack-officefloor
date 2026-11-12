@@ -22,7 +22,7 @@ import org.springframework.stereotype.Repository;
  *  that carry a figure (the clerk limit, the floor, the cap, the proof threshold, a grade's proof threshold, the note threshold, the review threshold, the terms, a grade's terms, a grade's grace days and the late
  *  percent) are dated: each value is recorded from a from-date, and the value in force on a date is the
  *  one with the latest from-date on or before it (none before every from-date, then the sheet's starting
- *  value). The policy date, the period numbering date, the entry date, the grace days, the pot, the alert threshold, the parent sheet, the fiscal start month and the permission matrix are not dated. */
+ *  value). The policy date, the period numbering date, the entry date, the grace days, the escalation gap, the review SLA, the pot, the alert threshold, the parent sheet, the fiscal start month and the permission matrix are not dated. */
 @Repository
 public class SettingStore {
 
@@ -187,6 +187,10 @@ public class SettingStore {
      *  escalate it; blank for off (not dated). */
     public static final String ESCALATE_AFTER = "escalate-after";
 
+    /** The whole days after its review day a claim in REVIEW may stay there before it is late; blank for none
+     *  (not dated). */
+    public static final String REVIEW_SLA = "review-sla";
+
     /** The key of a grade's grace days: grace-A, grace-B or grace-C (dated; blank for none). */
     public static final String GRACE_PREFIX = "grace-";
 
@@ -255,7 +259,7 @@ public class SettingStore {
 
     /** Whether the key's values are recorded from a from-date. */
     public static boolean isDated(String key) {
-        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key)
+        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key)
                 && !ENTRY_DATE.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
                 && !key.startsWith(PERM_PREFIX);
     }
@@ -444,6 +448,13 @@ public class SettingStore {
      *  escalate it, or null when blank (off). */
     public Integer escalateAfter(String sheetId) {
         String value = find(sheetId, ESCALATE_AFTER);
+        return value == null ? null : Integer.valueOf(value);
+    }
+
+    /** The whole days after its review day a claim in REVIEW may stay there before it is late, or null when
+     *  blank (none). */
+    public Integer reviewSla(String sheetId) {
+        String value = find(sheetId, REVIEW_SLA);
         return value == null ? null : Integer.valueOf(value);
     }
 

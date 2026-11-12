@@ -21,6 +21,13 @@ export function overdue(claim: Claim, today: string | undefined, late?: Late): b
 const plusDays = (date: string, days: number): string =>
   new Date(Date.parse(`${date}T00:00:00Z`) + days * DAY).toISOString().slice(0, 10);
 
+/** Whether the claim is review-late: it is REVIEW and its review day plus the sheet's review SLA (whole days; null or
+ *  blank for none) is before the sheet's today. */
+export function reviewLate(claim: Claim, today: string | undefined, sla: string | null | undefined): boolean {
+  return claim.status === 'REVIEW' && claim.reviewOn !== null && today !== undefined && sla != null && sla !== ''
+    && plusDays(claim.reviewOn, Number(sla)) < today;
+}
+
 /** How many full 30 days the claim is overdue on the sheet's today, counted from its due-by plus any grace (0 when it is not overdue). */
 export function latePeriods(claim: Claim, today: string | undefined, late?: Late): number {
   if (today === undefined || !overdue(claim, today, late)) return 0;

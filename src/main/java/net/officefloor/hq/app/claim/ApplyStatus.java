@@ -80,6 +80,9 @@ public class ApplyStatus {
         if (from == ClaimStatus.DRAFT && (to == ClaimStatus.OPEN || to == ClaimStatus.REVIEW)) {
             claim.setOpenedBy(input.user());
         }
+        if (to == ClaimStatus.REVIEW) {
+            store.markReview(claim, sheets.today(claim.getSheetId()));
+        }
         if (to == ClaimStatus.SETTLED) {
             claim.setSettledDue(settledDue);
         }

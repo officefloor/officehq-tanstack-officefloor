@@ -40,10 +40,12 @@ public class ValidateSetting {
         boolean review = SettingStore.REVIEW_THRESHOLD.equals(key);
         boolean pot = SettingStore.POT.equals(key);
         boolean alert = SettingStore.ALERT_THRESHOLD.equals(key);
-        if (SettingStore.GRACE_DAYS.equals(key) || SettingStore.ESCALATE_AFTER.equals(key)) {
+        if (SettingStore.GRACE_DAYS.equals(key) || SettingStore.ESCALATE_AFTER.equals(key)
+                || SettingStore.REVIEW_SLA.equals(key)) {
             String value = request.value() == null ? "" : request.value().trim();
             if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
-                throw new InvalidSheetException((SettingStore.GRACE_DAYS.equals(key) ? "The grace days" : "The escalation gap")
+                throw new InvalidSheetException((SettingStore.GRACE_DAYS.equals(key) ? "The grace days"
+                        : SettingStore.REVIEW_SLA.equals(key) ? "The review SLA" : "The escalation gap")
                         + " must be a whole number of days, 0 or more, or blank");
             }
             body.set(new SettingInput(key, value.isEmpty() ? null : String.valueOf(Integer.parseInt(value)), null,

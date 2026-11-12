@@ -74,6 +74,8 @@ export type Claim = {
   lines: string[];
   /** When it was added, in the order forward-only rates are saved in (see `Rate`); a copy keeps its original's. */
   added: number;
+  /** The date (yyyy-MM-dd) it went to REVIEW on, the sheet's today then (its review day); null when it never went to REVIEW. */
+  reviewOn: string | null;
 };
 
 /** A correction: a claim with a negative amount, which has no floor and no late charge. */

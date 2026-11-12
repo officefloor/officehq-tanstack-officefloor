@@ -78,6 +78,9 @@ public class OpenClaims {
             }
             claim.setOpenedBy(input.user());
             store.save(claim);
+            if (to == ClaimStatus.REVIEW) {
+                store.markReview(claim, sheets.today(sheet));
+            }
             log.record(claim, input.user());
             Person person = persons.get(claim.getPersonId());
             ClaimResponse shown = ClaimResponse.from(claim);

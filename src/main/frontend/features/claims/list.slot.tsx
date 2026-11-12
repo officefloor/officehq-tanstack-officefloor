@@ -9,7 +9,7 @@ import { claimDue, useRates } from '../rates/rates';
 import { floorOf, useSettings } from '../settings/settings';
 import { periodOf, usePeriods } from '../periods/periods';
 import { useSheetToday } from '../sheet/sheet';
-import { dueBy, lateOf, overdue } from '../overdue/overdue';
+import { dueBy, lateOf, overdue, reviewLate } from '../overdue/overdue';
 import { useVoidReasons } from '../voidreasons/voidreasons';
 import { useTemplates } from '../templates/templates';
 import { type Claim, type ClaimStatus, claimsKey, useClaims, useEditingClaim, useSelectedClaims } from './claims';
@@ -542,6 +542,7 @@ function PersonClaims({ person }: { person: Person }) {
               <span data-testid="claim-due-by">{dueBy(c)}</span>{' '}
               <span data-testid="claim-overdue">{overdue(c, today, lateOf(settings, today, [person])) ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-status">{c.status}</span>{' '}
+              <span data-testid="claim-review-late">{reviewLate(c, today, settings?.reviewSla) ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
               <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-deferred">{c.deferred ? 'yes' : 'no'}</span>{' '}

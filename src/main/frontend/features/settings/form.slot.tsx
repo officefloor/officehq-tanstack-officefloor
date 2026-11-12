@@ -18,12 +18,12 @@ const STANDING_PERMS: Record<(typeof PERM_ACTIONS)[number], string> = {
 
 type PermKey = `perm-${(typeof PERM_ACTIONS)[number]}`;
 
-type Key = 'clerk-limit' | 'floor' | 'terms' | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'late-pct' | 'policy-date' | 'period-numbering-from' | 'cap' | 'proof-threshold' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'note-threshold' | 'review-threshold' | 'grace-days' | 'escalate-after' | 'entry-date' | 'pot' | 'alert-threshold' | 'parent' | 'fiscal-start-month' | 'rounding' | PermKey;
+type Key = 'clerk-limit' | 'floor' | 'terms' | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'late-pct' | 'policy-date' | 'period-numbering-from' | 'cap' | 'proof-threshold' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'note-threshold' | 'review-threshold' | 'grace-days' | 'escalate-after' | 'review-sla' | 'entry-date' | 'pot' | 'alert-threshold' | 'parent' | 'fiscal-start-month' | 'rounding' | PermKey;
 
 const GRADES = ['A', 'B', 'C'] as const;
 
 /** The settings that carry a figure: each is saved from a from-date (blank for the sheet's today). */
-type DatedKey = Exclude<Key, 'policy-date' | 'period-numbering-from' | 'grace-days' | 'escalate-after' | 'entry-date' | 'pot' | 'alert-threshold' | 'parent' | 'fiscal-start-month' | PermKey>;
+type DatedKey = Exclude<Key, 'policy-date' | 'period-numbering-from' | 'grace-days' | 'escalate-after' | 'review-sla' | 'entry-date' | 'pot' | 'alert-threshold' | 'parent' | 'fiscal-start-month' | PermKey>;
 
 const NO_FROM: Record<DatedKey, string> = { 'clerk-limit': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'late-pct': '', cap: '', 'proof-threshold': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'note-threshold': '', 'review-threshold': '', rounding: '' };
 
@@ -42,6 +42,8 @@ const isDated = (k: Key): k is DatedKey => k in NO_FROM;
 // dated) are the whole days after its to-date an open period is closed when the sheet's today moves.
 // The escalation gap (blank for off, not dated) is the whole days at least between a claim's previous reminder
 // and the sheet's today for a reminder to escalate it, once per claim.
+// The review SLA (blank for none, not dated) is the whole days after its review day a claim in REVIEW may stay
+// there; past them it shows as review-late.
 // The entry date (blank for off, not dated) is the default date of a new claim in place of the sheet's today.
 // The pot (blank for none, not dated) is shared out among each balanced pool's members by their shares.
 // The alert threshold (blank for off, not dated) is the due-total above which a person a change takes there
@@ -56,7 +58,7 @@ function SheetSettings() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const settings = useSettings(sheet);
-  const [values, setValues] = useState<Record<Key, string>>({ 'clerk-limit': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '', cap: '', 'proof-threshold': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'note-threshold': '', 'review-threshold': '', 'grace-days': '', 'escalate-after': '', 'entry-date': '', pot: '', 'alert-threshold': '', parent: '', 'fiscal-start-month': '', rounding: '',
+  const [values, setValues] = useState<Record<Key, string>>({ 'clerk-limit': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '', cap: '', 'proof-threshold': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'note-threshold': '', 'review-threshold': '', 'grace-days': '', 'escalate-after': '', 'review-sla': '', 'entry-date': '', pot: '', 'alert-threshold': '', parent: '', 'fiscal-start-month': '', rounding: '',
     'perm-open': '', 'perm-settle': '', 'perm-void': '', 'perm-reassign': '', 'perm-close': '', 'perm-reopen': '' });
   const [froms, setFroms] = useState<Record<DatedKey, string>>(NO_FROM);
   const [key, setKey] = useState<Key>('clerk-limit');
@@ -158,6 +160,8 @@ function SheetSettings() {
         {field('grace-days', 'Grace days (blank for off)')}{' '}
         Escalate after <strong data-testid="setting-escalate-after-current">{settings.data?.escalateAfter ?? ''}</strong>{' '}
         {field('escalate-after', 'Escalate after days (blank for off)')}{' '}
+        Review SLA <strong data-testid="setting-review-sla-current">{settings.data?.reviewSla ?? ''}</strong>{' '}
+        {field('review-sla', 'Review SLA days (blank for none)')}{' '}
         Entry date <strong data-testid="setting-entry-date-current">{settings.data?.entryDate ?? ''}</strong>{' '}
         {field('entry-date', 'Entry date YYYY-MM-DD (blank for off)', 'text')}{' '}
         Pot <strong data-testid="setting-pot-current">{fig(settings.data?.pot ?? '')}</strong>{' '}

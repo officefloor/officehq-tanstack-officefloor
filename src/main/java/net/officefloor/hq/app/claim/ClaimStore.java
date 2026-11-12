@@ -32,6 +32,7 @@ public class ClaimStore {
         claim.setLateEntry(rs.getBoolean("late_entry"));
         claim.setRemindedOn(rs.getObject("reminded_on", LocalDate.class));
         claim.setEscalated(rs.getBoolean("escalated"));
+        claim.setReviewOn(rs.getObject("review_on", LocalDate.class));
         claim.setRef(rs.getString("ref"));
         claim.setTags(rs.getString("tags"));
         claim.setVoidReason(rs.getString("void_reason"));
@@ -352,6 +353,13 @@ public class ClaimStore {
                 claim.getSheetId(), claim.getId(), from.name()) == 1;
     }
 
+    /** Records the sheet's today as the day the claim went to REVIEW on (its review day). */
+    public void markReview(Claim claim, LocalDate today) {
+        jdbc.update("UPDATE claim SET review_on = ? WHERE sheet_id = ? AND id = ?", today == null ? null : Date.valueOf(today),
+                claim.getSheetId(), claim.getId());
+        claim.setReviewOn(today);
+    }
+
     /** Records the bulk settle batch the claim was settled in. */
     public void markBatch(Claim claim, long batch) {
         jdbc.update("UPDATE claim SET settle_batch = ? WHERE sheet_id = ? AND id = ?", batch, claim.getSheetId(), claim.getId());
@@ -463,7 +471,7 @@ public class ClaimStore {
 
     /** Adds a copy of the claim to the person on the other sheet under {@code number} (null for none), correcting
      *  and split off the numbers given: its amount, date, note, status, frozen settled figure, opener, due-by and
-     *  the terms it was fixed with, deferral, proofs, late entry, reminder and escalation, tags, void reason and editor, with its
+     *  the terms it was fixed with, deferral, proofs, late entry, reminder and escalation, review day, tags, void reason and editor, with its
      *  status log, comments and lines, listed as the person's newest claim, keeping any figure a statement bound it to.
      *  Its reference, lock and bulk settle batch are not carried. The id of the copy. */
     public long copyTo(Claim claim, String toSheet, long toPerson, String number, String corrects, String splitFrom) {
@@ -503,8 +511,9 @@ public class ClaimStore {
             return ps;
         }, keys);
         long id = keys.getKey().longValue();
-        jdbc.update("UPDATE claim SET added_seq = ?, escalated = ? WHERE sheet_id = ? AND id = ?", claim.getAddedSeq(),
-                claim.isEscalated(), toSheet, id);
+        jdbc.update("UPDATE claim SET added_seq = ?, escalated = ?, review_on = ? WHERE sheet_id = ? AND id = ?",
+                claim.getAddedSeq(), claim.isEscalated(), claim.getReviewOn() == null ? null : Date.valueOf(claim.getReviewOn()),
+                toSheet, id);
         jdbc.update("INSERT INTO claim_log (sheet_id, claim_id, status, by_user, log_date, due) "
                 + "SELECT ?, ?, status, by_user, log_date, due FROM claim_log WHERE sheet_id = ? AND claim_id = ? ORDER BY id",
                 toSheet, id, claim.getSheetId(), claim.getId());

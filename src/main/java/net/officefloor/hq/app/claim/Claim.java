@@ -28,6 +28,7 @@ public class Claim {
     private boolean lateEntry;
     private LocalDate remindedOn;
     private boolean escalated;
+    private LocalDate reviewOn;
     private String ref;
     private String tags;
     private String voidReason;
@@ -112,6 +113,9 @@ public class Claim {
     /** Whether a reminder ever escalated the claim (it is escalated once only). */
     public boolean isEscalated() { return escalated; }
     public void setEscalated(boolean escalated) { this.escalated = escalated; }
+    /** The sheet's today the claim went to REVIEW on (its review day); null when it never went to REVIEW. */
+    public LocalDate getReviewOn() { return reviewOn; }
+    public void setReviewOn(LocalDate reviewOn) { this.reviewOn = reviewOn; }
     /** The external reference, unique on the sheet without regard to case; null when it has none. */
     public String getRef() { return ref; }
     public void setRef(String ref) { this.ref = ref; }
