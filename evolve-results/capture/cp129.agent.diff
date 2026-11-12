@@ -1,0 +1,65 @@
+diff --git a/src/main/frontend/features/claims/export.slot.tsx b/src/main/frontend/features/claims/export.slot.tsx
+new file mode 100644
+index 000000000..bdc4d9398
+--- /dev/null
++++ b/src/main/frontend/features/claims/export.slot.tsx
+@@ -0,0 +1,59 @@
++import { HomeMain } from '../../slots/defs/homeMain';
++import { useCurrentSheet, useCurrentUser } from '../../session/session';
++import { lateOf } from '../overdue/overdue';
++import { usePeople } from '../people/people';
++import { periodOf, usePeriods } from '../periods/periods';
++import { claimDue, useRates } from '../rates/rates';
++import { floorOf, useSettings } from '../settings/settings';
++import { useSheetToday } from '../sheet/sheet';
++import { useClaims } from './claims';
++
++/** A CSV value: wrapped in double quotes, inner quotes doubled, when it holds a comma, quote or line break. */
++const cell = (v: string) => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
++
++// Downloads the sheet's claims as CSV: person, number, date, amount, due, status and period as the
++// list shows them, people in list order (retired people included) and each person's claims oldest first.
++function ExportClaims() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const people = usePeople(sheet);
++  const claims = useClaims(sheet);
++  const rates = useRates(sheet);
++  const periods = usePeriods(sheet);
++  const today = useSheetToday(sheet);
++  const settings = useSettings(sheet).data;
++
++  if (!user || !sheet) return null;
++
++  const download = () => {
++    const lines = [['person', 'number', 'date', 'amount', 'due', 'status', 'period']];
++    for (const p of people.data ?? []) {
++      const late = lateOf(settings, today, [p]);
++      // The list shows a person's claims newest first.
++      const mine = (claims.data ?? []).filter((c) => c.personId === p.id).reverse();
++      for (const c of mine) {
++        const due = claimDue(c, rates.data, p.grades, floorOf(settings), late);
++        lines.push([p.name, c.number?.toString() ?? '', c.date, c.amount, due, c.status, periodOf(periods.data, c.dueBy)?.name ?? '']);
++      }
++    }
++    const csv = lines.map((l) => l.map(cell).join(',') + '\n').join('');
++    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
++    const a = document.createElement('a');
++    a.href = url;
++    a.download = `claims-${sheet}.csv`;
++    document.body.appendChild(a);
++    a.click();
++    a.remove();
++    setTimeout(() => URL.revokeObjectURL(url), 1000);
++  };
++
++  return (
++    <p>
++      <button type="button" data-testid="export-claims" onClick={download}>
++        Export claims (CSV)
++      </button>
++    </p>
++  );
++}
++
++export const contribution = HomeMain.fill({ order: 22, Component: ExportClaims });
