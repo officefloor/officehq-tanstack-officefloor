@@ -1,0 +1,359 @@
+diff --git a/src/main/frontend/features/patrons/patrons.slot.tsx b/src/main/frontend/features/patrons/patrons.slot.tsx
+new file mode 100644
+index 000000000..134a67f6e
+--- /dev/null
++++ b/src/main/frontend/features/patrons/patrons.slot.tsx
+@@ -0,0 +1,99 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { HttpError, postJson } from '../../api/http';
++import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
++import { type Person, peopleKey, usePeople } from '../people/people';
++import { useCurrentSheet, useCurrentUser } from '../../session/session';
++import { useSheetToday } from '../sheet/sheet';
++import { live, useClaims } from '../claims/claims';
++import { useSettings } from '../settings/settings';
++import { lateOf } from '../overdue/overdue';
++import { dueTotal, personDue, useRates } from '../rates/rates';
++
++function PatronsHead() {
++  return <th>Patrons</th>;
++}
++
++// The person's patrons (names, sorted) and their backing: the patrons' due-totals added up, skipping
++// n/a. Another person on the sheet is named as a patron one at a time; a refusal shows its error until
++// the next is tried.
++function PersonPatrons({ person }: { person: Person }) {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const people = usePeople(sheet).data ?? [];
++  const claims = useClaims(sheet);
++  const rates = useRates(sheet);
++  const today = useSheetToday(sheet);
++  const settings = useSettings(sheet).data;
++  const [chosen, setChosen] = useState('');
++  const queryClient = useQueryClient();
++
++  const add = useMutation({
++    mutationFn: (patronId: number) =>
++      postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/patrons`, { user, patronId }),
++    onSuccess: async () => {
++      await queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
++      setChosen('');
++    },
++  });
++
++  const patrons = people.filter((p) => person.patronIds.includes(p.id));
++  const names = patrons.map((p) => p.name).sort((a, b) => a.localeCompare(b));
++  const backing = dueTotal(
++    patrons.map((p) =>
++      personDue(
++        live((claims.data ?? []).filter((c) => c.personId === p.id), [p]),
++        rates.data,
++        p.grade,
++        today,
++        settings?.floor,
++        lateOf(settings, today),
++      ),
++    ),
++  );
++  const candidates = people.filter((p) => p.id !== person.id && !person.patronIds.includes(p.id));
++
++  return (
++    <td>
++      <span data-testid="person-patrons">{names.join(', ')}</span>{' '}
++      <span data-testid="person-backing">{backing}</span>{' '}
++      <select
++        data-testid="person-patron-select"
++        value={chosen}
++        onChange={(e) => {
++          add.reset();
++          setChosen(e.target.value);
++        }}
++      >
++        <option value="">Patron…</option>
++        {candidates.map((p) => (
++          <option key={p.id} value={String(p.id)}>
++            {p.name}
++          </option>
++        ))}
++      </select>
++      <button
++        type="button"
++        data-testid="person-patron-add"
++        disabled={add.isPending}
++        onClick={() => {
++          add.reset();
++          add.mutate(Number(chosen));
++        }}
++      >
++        Add patron
++      </button>
++      {add.isError && (
++        <span data-testid="person-patron-error" role="alert">
++          {' '}
++          {add.error instanceof HttpError && add.error.reason ? `${add.error.reason}.` : 'The patron was refused.'}
++        </span>
++      )}
++    </td>
++  );
++}
++
++export const contributions = [
++  PersonColumnHeads.fill({ order: 19.7, Component: PatronsHead }),
++  PersonColumns.fill({ order: 19.7, Component: PersonPatrons }),
++];
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index d035c4d4a..faac55ef6 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -7,7 +7,8 @@ import { sheetKey } from '../sheet/sheet';
+  *  `statementCount` is how many statements were taken of them; `statedTotal` (two decimals, or n/a)
+  *  and `statementDate` (yyyy-MM-dd) are the last one's, null when none was taken. `retired` is set
+  *  as soon as a `retiredFrom` date (yyyy-MM-dd, null when not retired) is, whatever the date.
+- *  While `held`, their OPEN claims count in no live total; their SETTLED ones still do. */
++ *  While `held`, their OPEN claims count in no live total; their SETTLED ones still do.
++ *  `patronIds` are the ids of the other people on the sheet they named as their patrons. */
+ export type Person = {
+   id: number;
+   name: string;
+@@ -19,6 +20,7 @@ export type Person = {
+   retired: boolean;
+   retiredFrom: string | null;
+   held: boolean;
++  patronIds: number[];
+ };
+ 
+ export const GRADES = ['A', 'B', 'C'] as const;
+diff --git a/src/main/java/net/officefloor/hq/app/person/AddPatron.java b/src/main/java/net/officefloor/hq/app/person/AddPatron.java
+new file mode 100644
+index 000000000..7f4399b4f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/AddPatron.java
+@@ -0,0 +1,24 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.sheet.InvalidSheetException;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++/** Names the patron as the person's, refusing themselves, someone not on the sheet, or a patron twice. */
++public class AddPatron {
++    public void add(@Val PatronRequest request, @Val Person person, PersonStore people, PatronStore patrons,
++            Out<Patron> added) throws InvalidSheetException {
++        Person patron = request.patronId() == null ? null : people.find(person.getSheetId(), request.patronId());
++        if (patron == null) {
++            throw new InvalidSheetException("No such person to be a patron");
++        }
++        if (patron.getId() == person.getId()) {
++            throw new InvalidSheetException("A person cannot be their own patron");
++        }
++        if (patrons.of(person.getSheetId(), person.getId()).contains(patron.getId())) {
++            throw new InvalidSheetException(patron.getName() + " is already a patron");
++        }
++        patrons.add(person.getSheetId(), person.getId(), patron.getId());
++        added.set(new Patron(patron));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/AuditPatronAdded.java b/src/main/java/net/officefloor/hq/app/person/AuditPatronAdded.java
+new file mode 100644
+index 000000000..574b77671
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/AuditPatronAdded.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++
++/** Records a patron added: PATRON_ADDED sheet=<id> by=<user> name=<name> patron=<patron name>. */
++public class AuditPatronAdded {
++    public void audit(@Val PatronRequest request, @Val Person person, @Val Patron patron, Audit audit) {
++        audit.record("PATRON_ADDED sheet=" + person.getSheetId() + " by=" + request.user() + " name="
++                + person.getName() + " patron=" + patron.person().getName());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/Patron.java b/src/main/java/net/officefloor/hq/app/person/Patron.java
+new file mode 100644
+index 000000000..b35f15bc7
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/Patron.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** The person just named as a patron (wrapped, so it is told apart from the person they back). */
++public record Patron(Person person) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/PatronRequest.java b/src/main/java/net/officefloor/hq/app/person/PatronRequest.java
+new file mode 100644
+index 000000000..94a6c1467
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/PatronRequest.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** Body of a patron added: who adds it, and the id of the person named as patron. */
++public record PatronRequest(String user, Long patronId) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/PatronStore.java b/src/main/java/net/officefloor/hq/app/person/PatronStore.java
+new file mode 100644
+index 000000000..9b8bc07c6
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/PatronStore.java
+@@ -0,0 +1,38 @@
++package net.officefloor.hq.app.person;
++
++import java.util.ArrayList;
++import java.util.HashMap;
++import java.util.List;
++import java.util.Map;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Repository;
++
++/** Each person's patrons, kept per sheet as the ids of the people they named. */
++@Repository
++public class PatronStore {
++
++    private final JdbcTemplate jdbc;
++
++    public PatronStore(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /** The ids of each person's patrons on the sheet, keyed by the person's id. */
++    public Map<Long, List<Long>> all(String sheetId) {
++        Map<Long, List<Long>> found = new HashMap<>();
++        jdbc.query("SELECT person_id, patron_id FROM patron WHERE sheet_id = ? ORDER BY patron_id",
++                rs -> {
++                    found.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(rs.getLong("patron_id"));
++                }, sheetId);
++        return found;
++    }
++
++    public List<Long> of(String sheetId, long personId) {
++        return jdbc.queryForList("SELECT patron_id FROM patron WHERE sheet_id = ? AND person_id = ? ORDER BY patron_id",
++                Long.class, sheetId, personId);
++    }
++
++    public void add(String sheetId, long personId, long patronId) {
++        jdbc.update("INSERT INTO patron (sheet_id, person_id, patron_id) VALUES (?, ?, ?)", sheetId, personId, patronId);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+index 04452f9dc..67466311c 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+@@ -1,14 +1,17 @@
+ package net.officefloor.hq.app.person;
+ 
++import java.util.List;
+ import net.officefloor.hq.app.statement.StatementSummary;
+ 
+ /** A person as the front end reads it, with their statement count and the last statement's
+- *  due-total and date (null when none was taken), whether they are retired and from when (null when not), and whether they are on hold. */
++ *  due-total and date (null when none was taken), whether they are retired and from when (null when not), whether they are on hold,
++ *  and the ids of their patrons. */
+ public record PersonResponse(long id, String name, String grade, long version, int statementCount,
+-        String statedTotal, String statementDate, boolean retired, String retiredFrom, boolean held) {
+-    public static PersonResponse from(Person p, StatementSummary s) {
++        String statedTotal, String statementDate, boolean retired, String retiredFrom, boolean held,
++        List<Long> patronIds) {
++    public static PersonResponse from(Person p, StatementSummary s, List<Long> patronIds) {
+         return new PersonResponse(p.getId(), p.getName(), p.getGrade(), p.getVersion(), s.count(), s.lastDueTotal(),
+                 s.lastDate(), p.isRetired(),
+-                p.getRetiredFrom() == null ? null : p.getRetiredFrom().toString(), p.isHeld());
++                p.getRetiredFrom() == null ? null : p.getRetiredFrom().toString(), p.isHeld(), patronIds);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+index 8e583e592..d21c9c450 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+@@ -9,9 +9,12 @@ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ public class RespondWithPeople {
+     public void respond(@PathVariable("sheetId") String sheetId, PersonStore store,
+-            StatementStore statements, ObjectResponse<List<PersonResponse>> response) {
++            StatementStore statements, PatronStore patrons, ObjectResponse<List<PersonResponse>> response) {
+         Map<Long, StatementSummary> stated = statements.summaries(sheetId.trim());
++        Map<Long, List<Long>> named = patrons.all(sheetId.trim());
+         response.send(store.list(sheetId.trim()).stream()
+-                .map(p -> PersonResponse.from(p, stated.getOrDefault(p.getId(), StatementSummary.NONE))).toList());
++                .map(p -> PersonResponse.from(p, stated.getOrDefault(p.getId(), StatementSummary.NONE),
++                        named.getOrDefault(p.getId(), List.of())))
++                .toList());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithPerson.java b/src/main/java/net/officefloor/hq/app/person/RespondWithPerson.java
+index bbf99c4ed..549bb2b14 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RespondWithPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithPerson.java
+@@ -5,7 +5,9 @@ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
+ 
+ public class RespondWithPerson {
+-    public void respond(@Val Person person, StatementStore statements, ObjectResponse<PersonResponse> response) {
+-        response.send(PersonResponse.from(person, statements.summary(person.getSheetId(), person.getId())));
++    public void respond(@Val Person person, StatementStore statements, PatronStore patrons,
++            ObjectResponse<PersonResponse> response) {
++        response.send(PersonResponse.from(person, statements.summary(person.getSheetId(), person.getId()),
++                patrons.of(person.getSheetId(), person.getId())));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidatePatron.java b/src/main/java/net/officefloor/hq/app/person/ValidatePatron.java
+new file mode 100644
+index 000000000..b8981697f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ValidatePatron.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ValidatePatron {
++    public void validate(@RequestBody PatronRequest request, Out<PatronRequest> body) {
++        body.set(request == null ? new PatronRequest(null, null) : request);
++    }
++}
+diff --git a/src/main/resources/db/migration/V19__patron.sql b/src/main/resources/db/migration/V19__patron.sql
+new file mode 100644
+index 000000000..ee061482a
+--- /dev/null
++++ b/src/main/resources/db/migration/V19__patron.sql
+@@ -0,0 +1,7 @@
++-- A person's patrons: other people on the same sheet they named, each at most once.
++CREATE TABLE patron (
++    sheet_id  VARCHAR(255) NOT NULL,
++    person_id BIGINT       NOT NULL,
++    patron_id BIGINT       NOT NULL,
++    PRIMARY KEY (sheet_id, person_id, patron_id)
++);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml
+new file mode 100644
+index 000000000..56df98a04
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml
+@@ -0,0 +1,22 @@
++# POST /api/sheets/{sheetId}/people/{personId}/patrons — name another person on the sheet as the
++# person's patron (body: {user, patronId}). Refused (400), storing nothing, when either is not on the
++# sheet, when the patron is the person themselves, or when they are already one of their patrons.
++# A stored patron is recorded in the audit file as PATRON_ADDED.
++validate:
++  class: net.officefloor.hq.app.person.ValidatePatron
++  next: load
++load:
++  class: net.officefloor.hq.app.person.LoadPerson
++  govern: [ transaction ]
++  next: add
++add:
++  class: net.officefloor.hq.app.person.AddPatron
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.person.AuditPatronAdded
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPerson
++  govern: [ transaction ]
