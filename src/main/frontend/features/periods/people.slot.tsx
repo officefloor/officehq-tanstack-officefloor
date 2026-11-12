@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
 import { type Person } from '../people/people';
 import { useCurrentSheet } from '../../session/session';
@@ -6,18 +7,21 @@ import { useClaims } from '../claims/claims';
 import { useRates } from '../rates/rates';
 import { floorOf, useSettings } from '../settings/settings';
 import { lateOf } from '../overdue/overdue';
-import { personPeriodDue, usePeriods } from './periods';
+import { personPeriodCarried, personPeriodDue, usePeriods } from './periods';
 import { useFigure } from '../locale/locale';
 
 // For every period on the sheet, a person's due-total for it: live while the period is open, fixed
-// when it was closed.
+// when it was closed; and the figure carried into it from earlier periods' claims still open at its end.
 function PeriodHeads() {
   const [sheet] = useCurrentSheet();
   const periods = usePeriods(sheet);
   return (
     <>
       {(periods.data ?? []).map((p) => (
-        <th key={p.name}>{p.name} due</th>
+        <Fragment key={p.name}>
+          <th>{p.name} due</th>
+          <th>{p.name} carried</th>
+        </Fragment>
       ))}
     </>
   );
@@ -35,9 +39,14 @@ function PersonPeriods({ person }: { person: Person }) {
   return (
     <>
       {(periods.data ?? []).map((p) => (
-        <td key={p.name} data-testid={`person-period-${p.name}-due-total`}>
-          {fig(personPeriodDue(p, person, claims.data, rates.data, floorOf(settings), late))}
-        </td>
+        <Fragment key={p.name}>
+          <td data-testid={`person-period-${p.name}-due-total`}>
+            {fig(personPeriodDue(p, person, claims.data, rates.data, floorOf(settings), late))}
+          </td>
+          <td data-testid={`person-period-${p.name}-carried`}>
+            {fig(personPeriodCarried(p, periods.data, person, claims.data, rates.data, floorOf(settings), late))}
+          </td>
+        </Fragment>
       ))}
     </>
   );
