@@ -14,6 +14,7 @@ import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.rollup.RollupService;
 import net.officefloor.hq.app.setting.SettingStore;
 import net.officefloor.hq.app.sheet.InvalidSheetException;
+import net.officefloor.hq.app.sheet.SheetStore;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -25,7 +26,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class ReassignClaims {
     public void reassign(@PathVariable("sheetId") String sheetId, @Val BulkReassignInput input, ClaimStore store,
             PersonStore people, PeriodStore periods, SettingStore settings, RoleStore roles, RollupService rollups,
-            Audit audit, Out<BulkReassignResult> result) {
+            SheetStore sheets, Audit audit, Out<BulkReassignResult> result) {
         String sheet = sheetId.trim();
         Map<Long, Integer> personOrder = new HashMap<>();
         // A person's claims newest first, as listed: a claim moved to them is listed as their newest.
@@ -56,7 +57,7 @@ public class ReassignClaims {
                 new CheckClaimPeriod().check(claim, periods);
                 Reassignment reassignment = CheckReassign.refuse(move, claim, roles, people, settings, true);
                 Rollup before = rollups.snapshot(sheet);
-                new ApplyReassign().apply(claim, reassignment, store);
+                new ApplyReassign().apply(claim, reassignment, store, settings, sheets, periods);
                 new AuditClaimReassigned().audit(move, claim, reassignment, before, audit, rollups);
                 reassigned++;
             } catch (InvalidSheetException e) {

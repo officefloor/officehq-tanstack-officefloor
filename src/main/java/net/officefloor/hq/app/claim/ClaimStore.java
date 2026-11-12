@@ -279,15 +279,18 @@ public class ClaimStore {
         return added;
     }
 
-    /** Moves the stored DRAFT, OPEN or PENDING claim to the person, unbound from any statement figure and
-     *  listed as their newest claim; false when it is no longer one of those (another user moved it on). */
-    public boolean reassign(Claim claim, long personId) {
-        boolean moved = jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL, stated_na = FALSE, "
-                + "listed = NEXT VALUE FOR claim_listed_seq WHERE sheet_id = ? AND id = ? AND status IN (?, ?, ?)",
-                personId, claim.getSheetId(), claim.getId(), ClaimStatus.DRAFT.name(), ClaimStatus.OPEN.name(),
-                ClaimStatus.PENDING.name()) == 1;
+    /** Moves the stored DRAFT, OPEN or PENDING claim to the person under {@code number} (null for a draft),
+     *  unbound from any statement figure and listed as their newest claim; false when it is no longer one of
+     *  those under the number it had (another user moved it on). */
+    public boolean reassign(Claim claim, long personId, String number) {
+        boolean moved = jdbc.update("UPDATE claim SET person_id = ?, number = ?, stated = FALSE, stated_due = NULL, "
+                + "stated_na = FALSE, listed = NEXT VALUE FOR claim_listed_seq "
+                + "WHERE sheet_id = ? AND id = ? AND status IN (?, ?, ?) AND number IS NOT DISTINCT FROM ?",
+                personId, number, claim.getSheetId(), claim.getId(), ClaimStatus.DRAFT.name(), ClaimStatus.OPEN.name(),
+                ClaimStatus.PENDING.name(), claim.getNumber()) == 1;
         if (moved) {
             claim.setPersonId(personId);
+            claim.setNumber(number);
             claim.setStated(false);
             claim.setStatedDue(null);
             claim.setStatedNa(false);
