@@ -6,8 +6,7 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { type Person, usePeople } from '../people/people';
 import { usePersonDue } from '../rates/due.slot';
-import { dueTotal } from '../rates/rates';
-import { type Crew, crewsKey, useCrews } from './crews';
+import { type Crew, crewDue, crewsKey, useCrews } from './crews';
 import { useFigure } from '../locale/locale';
 
 const refusal = (e: unknown, fallback: string) =>
@@ -33,8 +32,7 @@ function CrewRow({ crew, people, due }: { crew: Crew; people: Person[]; due: (p:
   });
   const submit = useSubmitOnce(add);
 
-  const ids = [crew.leadId, ...crew.members.map((m) => m.personId)];
-  const total = dueTotal(people.filter((p) => ids.includes(p.id)).map(due));
+  const total = crewDue(crew, people, due);
 
   return (
     <li data-testid={`crew-row-${crew.name}`}>

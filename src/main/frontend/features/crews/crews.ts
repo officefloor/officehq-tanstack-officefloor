@@ -2,6 +2,8 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { asOfKey, asOfPath, sheetKey } from '../sheet/sheet';
 import { useAsOf } from '../../session/session';
+import type { Person } from '../people/people';
+import { dueTotal } from '../rates/rates';
 
 /** A member of a crew: a person on the sheet. */
 export type CrewMember = { personId: number; name: string };
@@ -19,4 +21,10 @@ export function useCrews(sheet: string) {
     queryFn: () => getJson<Crew[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/crews`, asOf)),
     enabled: sheet !== '',
   });
+}
+
+/** A crew's due-total: its lead's and its members' due-totals added up, skipping n/a. */
+export function crewDue(crew: Crew, people: Person[], due: (p: Person) => string): string {
+  const ids = [crew.leadId, ...crew.members.map((m) => m.personId)];
+  return dueTotal(people.filter((p) => ids.includes(p.id)).map(due));
 }

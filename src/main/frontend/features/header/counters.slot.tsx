@@ -3,6 +3,8 @@ import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { STATUSES, statusCount, useClaims } from '../claims/claims';
 import { type Person, usePeople } from '../people/people';
 import { usePersonDue, useSheetDueTotal } from '../rates/due.slot';
+import { dueTotal } from '../rates/rates';
+import { crewDue, useCrews } from '../crews/crews';
 import { useOverdue, useSheetOverdue } from '../overdue/overdue.slot';
 import { useFigure } from '../locale/locale';
 
@@ -18,7 +20,8 @@ function personNamed(people: Person[] | undefined, user: string): Person | undef
 
 // The sheet's counters, always in the header: its people (retired people included), its claims per
 // status (the summary's counts) and its due- and overdue-totals (the rollup's), from the same figures;
-// then the signed-in user's own due- and overdue-totals (their person's, blank when no person has their name).
+// then the signed-in user's own due- and overdue-totals (their person's, blank when no person has their name),
+// and their crew total: the due-totals of the crews their person leads, added up (blank when they lead none).
 function HeaderCounters() {
   const fig = useFigure();
   const [sheet] = useCurrentSheet();
@@ -30,6 +33,9 @@ function HeaderCounters() {
   const me = personNamed(people.data, user);
   const myDue = usePersonDue();
   const myOverdue = useOverdue();
+  const crews = useCrews(sheet);
+  const led = me ? (crews.data ?? []).filter((c) => c.leadId === me.id) : [];
+  const myCrewDue = led.length > 0 ? dueTotal(led.map((c) => crewDue(c, people.data ?? [], myDue))) : '';
 
   return (
     <p data-testid="header-counters">
@@ -42,7 +48,8 @@ function HeaderCounters() {
       Due total <strong data-testid="header-due-total">{fig(due)}</strong>{' '}
       Overdue total <strong data-testid="header-overdue-total">{fig(overdue.total)}</strong>{' '}
       My due total <strong data-testid="my-due-total">{fig(me ? myDue(me) : '')}</strong>{' '}
-      My overdue total <strong data-testid="my-overdue-total">{fig(me ? myOverdue(me).total : '')}</strong>
+      My overdue total <strong data-testid="my-overdue-total">{fig(me ? myOverdue(me).total : '')}</strong>{' '}
+      My crew total <strong data-testid="my-crew-due-total">{fig(myCrewDue)}</strong>
     </p>
   );
 }
