@@ -6,16 +6,16 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { type Settings, settingsKey, useSettings } from './settings';
 
-type Key = 'clerk-limit' | 'floor';
+type Key = 'clerk-limit' | 'floor' | 'terms';
 
-// The sheet's settings in force, and the form that changes them: the clerk limit (blank for none) and
-// the floor (blank for its default). Saving changes the setting last touched, so a field left blank
-// does not clear the other.
+// The sheet's settings in force, and the form that changes them: the clerk limit (blank for none),
+// the floor (blank for its default) and the terms in days (blank for 14). Saving changes the setting
+// last touched, so a field left blank does not clear the others.
 function SheetSettings() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const settings = useSettings(sheet);
-  const [values, setValues] = useState<Record<Key, string>>({ 'clerk-limit': '', floor: '' });
+  const [values, setValues] = useState<Record<Key, string>>({ 'clerk-limit': '', floor: '', terms: '' });
   const [key, setKey] = useState<Key>('clerk-limit');
   const queryClient = useQueryClient();
 
@@ -57,7 +57,9 @@ function SheetSettings() {
         Clerk limit <strong data-testid="setting-clerk-limit-current">{settings.data?.clerkLimit ?? ''}</strong>{' '}
         {field('clerk-limit', 'Clerk limit (blank for none)')}{' '}
         Floor <strong data-testid="setting-floor-current">{settings.data?.floor ?? ''}</strong>{' '}
-        {field('floor', 'Floor (blank for 1.00)')}
+        {field('floor', 'Floor (blank for 1.00)')}{' '}
+        Terms <strong data-testid="setting-terms-current">{settings.data?.terms ?? ''}</strong>{' '}
+        {field('terms', 'Terms in days (blank for 14)')}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>

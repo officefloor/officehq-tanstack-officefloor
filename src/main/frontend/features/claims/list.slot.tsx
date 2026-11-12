@@ -8,6 +8,8 @@ import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { claimDue, useRates } from '../rates/rates';
 import { useSettings } from '../settings/settings';
 import { periodOf, usePeriods } from '../periods/periods';
+import { useSheetToday } from '../sheet/sheet';
+import { dueBy, overdue } from '../overdue/overdue';
 import { type Claim, type ClaimStatus, claimsKey, useClaims } from './claims';
 
 type Fields = { amount: string; date: string; note: string };
@@ -25,7 +27,10 @@ function PersonClaims({ person }: { person: Person }) {
   const [sheet] = useCurrentSheet();
   const claims = useClaims(sheet);
   const rates = useRates(sheet);
-  const floor = useSettings(sheet).data?.floor;
+  const settings = useSettings(sheet).data;
+  const floor = settings?.floor;
+  const terms = settings?.terms;
+  const today = useSheetToday(sheet);
   const periods = usePeriods(sheet);
   const [fields, setFields] = useState<Fields>(EMPTY);
   const [editing, setEditing] = useState<number | undefined>();
@@ -85,6 +90,8 @@ function PersonClaims({ person }: { person: Person }) {
               <span data-testid="claim-note">{c.note}</span>{' '}
               <span data-testid="claim-period">{periodOf(periods.data, c.date)?.name ?? ''}</span>{' '}
               <span data-testid="claim-due">{claimDue(c, rates.data, person.grade, floor)}</span>{' '}
+              <span data-testid="claim-due-by">{dueBy(c, terms)}</span>{' '}
+              <span data-testid="claim-overdue">{overdue(c, terms, today) ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-status">{c.status}</span>{' '}
               <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
               <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}

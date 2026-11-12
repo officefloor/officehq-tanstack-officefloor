@@ -13,6 +13,11 @@ public class SettingStore {
 
     public static final String FLOOR = "floor";
 
+    public static final String TERMS = "terms";
+
+    /** The terms (days) a sheet has until they are set. */
+    public static final int DEFAULT_TERMS = 14;
+
     /** The floor a sheet has until one is set. */
     public static final BigDecimal DEFAULT_FLOOR = new BigDecimal("1.00");
 
@@ -40,6 +45,12 @@ public class SettingStore {
     public BigDecimal floor(String sheetId) {
         String value = find(sheetId, FLOOR);
         return value == null ? DEFAULT_FLOOR : new BigDecimal(value);
+    }
+
+    /** The days after its date a claim is due by: the terms set, else 14. */
+    public int terms(String sheetId) {
+        String value = find(sheetId, TERMS);
+        return value == null ? DEFAULT_TERMS : Integer.parseInt(value);
     }
 
     public void set(String sheetId, String key, String value) {

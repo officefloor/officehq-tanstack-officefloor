@@ -7,6 +7,7 @@ public class RespondWithSettings {
     public void respond(@PathVariable("sheetId") String sheetId, SettingStore store,
             ObjectResponse<SettingsResponse> response) {
         response.send(new SettingsResponse(store.find(sheetId.trim(), SettingStore.CLERK_LIMIT),
-                store.floor(sheetId.trim()).setScale(2).toPlainString()));
+                store.floor(sheetId.trim()).setScale(2).toPlainString(),
+                String.valueOf(store.terms(sheetId.trim()))));
     }
 }
