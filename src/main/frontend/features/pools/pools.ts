@@ -3,10 +3,19 @@ import { getJson } from '../../api/http';
 import { asOfKey, asOfPath, sheetKey } from '../sheet/sheet';
 import { useAsOf } from '../../session/session';
 
-/** A member of a pool: a person on the sheet and their share percent (two decimals). `retired` once a
- *  retirement date is set for them, whatever the date: their share then counts as 0.00 toward the total. `cut` is their cut of the sheet's pot (two decimals; 0.00 when retired), null when the pool
- *  is not balanced or the sheet has no pot. */
-export type PoolMember = { personId: number; name: string; share: string; retired: boolean; cut: string | null };
+/** A member of a pool: a person on the sheet, or another pool (`memberPoolId` set, `personId` null), and its share
+ *  percent (two decimals). `retired` once a retirement date is set for them, whatever the date: their share then
+ *  counts as 0.00 toward the total. `cut` is their cut of the pool's pot (two decimals; 0.00 when retired), null
+ *  when the pool is not balanced or has no pot: a pool that is a member of none has the sheet's pot, a member
+ *  pool's pot is its cut in the pool above. */
+export type PoolMember = {
+  personId: number | null;
+  memberPoolId: number | null;
+  name: string;
+  share: string;
+  retired: boolean;
+  cut: string | null;
+};
 
 /** A pool on the sheet: its members, the total of their shares (two decimals) and whether it is exactly 100.00. */
 export type Pool = { id: number; name: string; members: PoolMember[]; totalShare: string; balanced: boolean };

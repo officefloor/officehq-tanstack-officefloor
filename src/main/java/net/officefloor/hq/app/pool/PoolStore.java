@@ -17,8 +17,10 @@ public class PoolStore {
     public record Pool(long id, String name) {
     }
 
-    /** A member of a pool: the person, their share, and whether they are retired (a retirement date set). */
-    public record Member(long poolId, long personId, String name, BigDecimal share, boolean retired) {
+    /** A member of a pool: the person, or the pool (personId null, memberPoolId set), the name, the share,
+     *  and whether the person is retired (a retirement date set; never for a pool). */
+    public record Member(long poolId, Long personId, Long memberPoolId, String name, BigDecimal share,
+            boolean retired) {
     }
 
     private final JdbcTemplate jdbc;
@@ -38,11 +40,18 @@ public class PoolStore {
     public Map<Long, List<Member>> members(String sheetId, LocalDate on) {
         String member = on == null ? "pool_member" : History.asOf("pool_member", "id", on);
         String person = on == null ? "person" : History.asOf("person", "id", on);
+        String pool = on == null ? "pool" : History.asOf("pool", "id", on);
         Map<Long, List<Member>> found = new LinkedHashMap<>();
-        jdbc.query("SELECT pool_member.pool_id, pool_member.person_id, person.name, pool_member.share,"
-                + " person.retired_from FROM " + member + " JOIN " + person + " ON person.id = pool_member.person_id"
-                + " WHERE pool_member.sheet_id = ? ORDER BY pool_member.id", rs -> {
-                    Member m = new Member(rs.getLong("pool_id"), rs.getLong("person_id"), rs.getString("name"),
+        jdbc.query("SELECT pool_member.pool_id, pool_member.person_id, pool_member.member_pool_id, person.name,"
+                + " pool.name AS pool_name, pool_member.share, person.retired_from FROM " + member
+                + " LEFT JOIN " + person + " ON person.id = pool_member.person_id"
+                + " LEFT JOIN " + pool + " ON pool.id = pool_member.member_pool_id"
+                + " WHERE pool_member.sheet_id = ? AND (person.id IS NOT NULL OR pool.id IS NOT NULL)"
+                + " ORDER BY pool_member.id", rs -> {
+                    Long personId = rs.getObject("person_id") == null ? null : rs.getLong("person_id");
+                    Long memberPoolId = rs.getObject("member_pool_id") == null ? null : rs.getLong("member_pool_id");
+                    Member m = new Member(rs.getLong("pool_id"), personId, memberPoolId,
+                            personId != null ? rs.getString("name") : rs.getString("pool_name"),
                             rs.getBigDecimal("share"), rs.getObject("retired_from") != null);
                     found.computeIfAbsent(m.poolId(), k -> new java.util.ArrayList<>()).add(m);
                 }, sheetId);
@@ -74,6 +83,22 @@ public class PoolStore {
     public void addMember(String sheetId, long poolId, long personId, BigDecimal share) {
         jdbc.update("INSERT INTO pool_member (sheet_id, pool_id, person_id, share) VALUES (?, ?, ?, ?)", sheetId,
                 poolId, personId, share);
+    }
+
+    /** Adds the pool {@code memberPoolId} as a member of the pool {@code poolId}. */
+    public void addPoolMember(String sheetId, long poolId, long memberPoolId, BigDecimal share) {
+        jdbc.update("INSERT INTO pool_member (sheet_id, pool_id, member_pool_id, share) VALUES (?, ?, ?, ?)",
+                sheetId, poolId, memberPoolId, share);
+    }
+
+    /** The sheet's pools that are members of another, each to the pool it is a member of. */
+    public Map<Long, Long> parents(String sheetId) {
+        Map<Long, Long> found = new LinkedHashMap<>();
+        jdbc.query("SELECT pool_id, member_pool_id FROM pool_member WHERE sheet_id = ? AND member_pool_id IS NOT NULL",
+                rs -> {
+                    found.put(rs.getLong("member_pool_id"), rs.getLong("pool_id"));
+                }, sheetId);
+        return found;
     }
 
     /** Moves the memberships of {@code fromId} to {@code intoId}, adding the share to theirs in a pool they are

@@ -11,8 +11,9 @@ const refusal = (e: unknown, fallback: string) =>
   e instanceof HttpError && e.reason ? `${e.reason}.` : fallback;
 
 // One pool: its members with their shares and their cuts of the sheet's pot (blank when unbalanced or no pot), its total share and whether it is balanced, and the entry a
-// member is added with. A person already in the pool, or a bad share, is refused with an error on the pool.
-function PoolRow({ pool }: { pool: Pool }) {
+// member is added with: a person, or another pool (pool:<name>). A person already in the pool, a pool already in
+// a pool, in a loop or more than three deep, or a bad share, is refused with an error on the pool.
+function PoolRow({ pool, pools }: { pool: Pool; pools: Pool[] }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const people = usePeople(sheet).data ?? [];
@@ -21,7 +22,7 @@ function PoolRow({ pool }: { pool: Pool }) {
   const queryClient = useQueryClient();
 
   const add = useMutation({
-    mutationFn: (m: { personId: number | null; share: string }) =>
+    mutationFn: (m: { personId: number | null; memberPoolId: number | null; share: string }) =>
       postJson(`/api/sheets/${encodeURIComponent(sheet)}/pools/${pool.id}/members`, { ...m, user }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: poolsKey(sheet) });
@@ -37,7 +38,10 @@ function PoolRow({ pool }: { pool: Pool }) {
       <span data-testid="pool-balanced">{pool.balanced ? 'yes' : 'no'}</span>
       <ul>
         {pool.members.map((m) => (
-          <li key={m.personId} data-testid={`pool-member-${pool.name}-${m.personId}`}>
+          <li
+            key={m.memberPoolId !== null ? `pool-${m.memberPoolId}` : m.personId}
+            data-testid={`pool-member-${pool.name}-${m.memberPoolId !== null ? `pool-${m.name}` : m.personId}`}
+          >
             {m.name}: <span data-testid="pool-share">{m.share}</span>%{m.retired ? ' (retired)' : ''}, cut{' '}
             <span data-testid="pool-cut">{m.cut ?? ''}</span>
           </li>
@@ -46,7 +50,11 @@ function PoolRow({ pool }: { pool: Pool }) {
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          submit({ personId: personId === '' ? null : Number(personId), share });
+          submit({
+            personId: personId === '' || personId.startsWith('pool:') ? null : Number(personId),
+            memberPoolId: personId.startsWith('pool:') ? Number(personId.slice(5)) : null,
+            share,
+          });
         }}
       >
         <select
@@ -61,6 +69,11 @@ function PoolRow({ pool }: { pool: Pool }) {
           {people.map((p) => (
             <option key={p.id} value={String(p.id)}>
               {p.name}
+            </option>
+          ))}
+          {pools.map((p) => (
+            <option key={`pool:${p.id}`} value={`pool:${p.id}`}>
+              pool:{p.name}
             </option>
           ))}
         </select>
@@ -109,7 +122,7 @@ function Pools() {
       <h2>Pools</h2>
       <ul>
         {(pools.data ?? []).map((p) => (
-          <PoolRow key={p.id} pool={p} />
+          <PoolRow key={p.id} pool={p} pools={pools.data ?? []} />
         ))}
       </ul>
       <form

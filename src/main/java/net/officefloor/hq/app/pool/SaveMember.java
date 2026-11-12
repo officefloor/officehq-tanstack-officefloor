@@ -5,6 +5,10 @@ import org.springframework.web.bind.annotation.PathVariable;
 
 public class SaveMember {
     public void save(@PathVariable("sheetId") String sheetId, @Val MemberInput input, PoolStore store) {
-        store.addMember(sheetId.trim(), input.pool().id(), input.personId(), input.share());
+        if (input.memberPoolId() != null) {
+            store.addPoolMember(sheetId.trim(), input.pool().id(), input.memberPoolId(), input.share());
+        } else {
+            store.addMember(sheetId.trim(), input.pool().id(), input.personId(), input.share());
+        }
     }
 }

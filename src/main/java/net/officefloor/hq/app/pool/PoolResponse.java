@@ -6,8 +6,10 @@ import java.util.List;
  *  0.00) and whether that total is exactly 100.00. Shares and the total have two decimals. */
 public record PoolResponse(long id, String name, List<MemberResponse> members, String totalShare, boolean balanced) {
 
-    /** A member of a pool: the person, their share, and their cut of the sheet's pot (two decimals), null when
-     *  the pool is not balanced or the sheet has no pot. */
-    public record MemberResponse(long personId, String name, String share, boolean retired, String cut) {
+    /** A member of a pool: the person or the member pool (the other null), its name, its share, and its cut of
+     *  the pool's pot (two decimals), null when the pool is not balanced or has no pot. A pool that is a member
+     *  of none has the sheet's pot; a member pool's pot is its cut in the pool above. */
+    public record MemberResponse(Long personId, Long memberPoolId, String name, String share, boolean retired,
+            String cut) {
     }
 }
