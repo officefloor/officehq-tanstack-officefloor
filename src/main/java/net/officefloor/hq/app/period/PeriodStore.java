@@ -131,6 +131,16 @@ public class PeriodStore {
         return carried;
     }
 
+    /** Each person's opening balance for the period, by person id (a person missing has none). */
+    public Map<Long, BigDecimal> openings(String sheetId, String name) {
+        Map<Long, BigDecimal> amounts = new LinkedHashMap<>();
+        jdbc.query("SELECT person_id, amount FROM period_person_opening WHERE sheet_id = ? AND period_name = ?",
+                rs -> {
+                    amounts.put(rs.getLong("person_id"), rs.getBigDecimal("amount"));
+                }, sheetId, name);
+        return amounts;
+    }
+
     /** Fixes each person's due-total and carried figure in the period as they are when it is closed. */
     public void fixPersonTotals(String sheetId, String name, Map<Long, BigDecimal> totals, Map<Long, BigDecimal> carried) {
         totals.forEach((personId, total) -> jdbc.update(

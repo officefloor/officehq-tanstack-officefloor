@@ -93,7 +93,8 @@ export function personPeriodDue(
 /** A person's carried figure for a period: once closed or soft-closed, the figure fixed then (0.00 for a person
  *  added since); else the sum of the figures (as shown now) of their claims that count
  *  in it, whose due-by falls in a period ending before it starts, and that were still OPEN or PENDING at
- *  its end by their status log, skipping n/a; 0.00 when nothing is carried. */
+ *  its end by their status log, skipping n/a, with their opening balance for it (0.00 for none) added;
+ *  0.00 when nothing is carried. A closed period's fixed figure took in the opening balance as it was then. */
 export function personPeriodCarried(
   period: Period,
   periods: Period[] | undefined,
@@ -102,18 +103,20 @@ export function personPeriodCarried(
   rates: Rate[] | undefined,
   floor: Floor,
   late: Late,
+  opening: string,
 ): string {
   if (isFixed(period)) return period.carried?.[String(person.id)] ?? '0.00';
   const earlier = (periods ?? []).filter((p) => p.to < period.from);
-  return dueTotal(
-    (claims ?? [])
+  return dueTotal([
+    opening,
+    ...(claims ?? [])
       .filter((c) => c.personId === person.id && earlier.some((p) => contains(p, c.dueBy)))
       .filter((c) => {
         const status = statusAt(c, period.to);
         return (status === 'OPEN' || status === 'PENDING') && countsInPeriod(c, period, person);
       })
       .map((c) => claimDue(c, rates, person.grades, floor, late)),
-  );
+  ]);
 }
 
 /** A period's due-total as the list shows it: the sum of the people's due-totals for it. */

@@ -9,9 +9,11 @@ import { floorOf, useSettings } from '../settings/settings';
 import { lateOf } from '../overdue/overdue';
 import { personPeriodCarried, personPeriodDue, usePeriods } from './periods';
 import { useFigure } from '../locale/locale';
+import { openingOf, useOpenings } from '../openings/openings';
 
 // For every period on the sheet, a person's due-total for it: live while the period is open, fixed
-// when it was closed; and the figure carried into it from earlier periods' claims still open at its end, likewise
+// when it was closed; and the figure carried into it from earlier periods' claims still open at its end (with
+// their pasted opening balance for it), likewise
 // live while it is open and fixed when it was closed.
 function PeriodHeads() {
   const [sheet] = useCurrentSheet();
@@ -34,6 +36,7 @@ function PersonPeriods({ person }: { person: Person }) {
   const periods = usePeriods(sheet);
   const claims = useClaims(sheet);
   const rates = useRates(sheet);
+  const openings = useOpenings(sheet);
   const today = useSheetToday(sheet);
   const settings = useSettings(sheet).data;
   const late = lateOf(settings, today, [person]);
@@ -45,7 +48,10 @@ function PersonPeriods({ person }: { person: Person }) {
             {fig(personPeriodDue(p, person, claims.data, rates.data, floorOf(settings), late))}
           </td>
           <td data-testid={`person-period-${p.name}-carried`}>
-            {fig(personPeriodCarried(p, periods.data, person, claims.data, rates.data, floorOf(settings), late))}
+            {fig(
+              personPeriodCarried(p, periods.data, person, claims.data, rates.data, floorOf(settings), late,
+                openingOf(openings.data, p.name, person.id)),
+            )}
           </td>
         </Fragment>
       ))}

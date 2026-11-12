@@ -14,6 +14,7 @@ public final class PeriodClosing {
     }
 
     /** Closes the open (or soft-closed) period, fixing its due-total and each person's due-total and carried figure in it
+     *  (with their opening balance for it added)
      *  as they are now; refused when it was closed meanwhile. Shared by a close by hand and the auto close of a new today. */
     public static PeriodResponse fix(String sheet, PeriodResponse period, PeriodStore store, RollupService rollups)
             throws InvalidSheetException {
@@ -35,6 +36,7 @@ public final class PeriodClosing {
         List<LocalDate[]> earlier = store.list(sheet).stream().filter(p -> LocalDate.parse(p.to()).isBefore(from))
                 .map(p -> new LocalDate[] { LocalDate.parse(p.from()), LocalDate.parse(p.to()) }).toList();
         Map<Long, BigDecimal> carried = rollups.carriedByPerson(sheet, to, earlier);
+        store.openings(sheet, period.name()).forEach((id, amount) -> carried.merge(id, amount, BigDecimal::add));
         BigDecimal total = people.values().stream().reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
         if (!(soft ? store.softClose(sheet, period.name(), total) : store.close(sheet, period.name(), total))) {
             throw new InvalidSheetException("The period " + period.name() + " is already closed");
