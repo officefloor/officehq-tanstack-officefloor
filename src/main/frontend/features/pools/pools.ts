@@ -10,7 +10,9 @@ import { useAsOf } from '../../session/session';
  *  the pool is not balanced, has no pot, or every member is retired: a pool that is a member of none has the sheet's pot, a member
  *  pool's pot is its cut in the pool above. `from` and `to` bound the dates the membership counts (null for no
  *  bound): a member whose dates do not include the sheet's today counts toward neither the total nor the balance,
- *  and its `cut` is null. */
+ *  and its `cut` is null. `periodCuts` has, for each period whose to-date is on or before the sheet's today (in the
+ *  periods' order), the member's cut as it stood at the end of that period (the pool, its members, the pot and the
+ *  holds as they were then, with that day as the sheet's today), null when there was none. */
 export type PoolMember = {
   personId: number | null;
   memberPoolId: number | null;
@@ -20,6 +22,7 @@ export type PoolMember = {
   cut: string | null;
   from: string | null;
   to: string | null;
+  periodCuts: { period: string; cut: string | null }[];
 };
 
 /** A pool on the sheet: its members, the total of their shares (two decimals) and whether it is exactly 100.00.

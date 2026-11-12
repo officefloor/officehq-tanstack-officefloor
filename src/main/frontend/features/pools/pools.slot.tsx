@@ -53,6 +53,12 @@ function PoolRow({ pool, pools }: { pool: Pool; pools: Pool[] }) {
             {m.name}: <span data-testid="pool-share">{fig(m.share)}</span>%{m.retired ? ' (retired)' : ''}
             {m.from !== null || m.to !== null ? ` (${m.from ?? '…'} – ${m.to ?? '…'})` : ''}, cut{' '}
             <span data-testid="pool-cut">{fig(m.cut ?? '')}</span>
+            {m.periodCuts.map((c) => (
+              <span key={c.period}>
+                , {c.period}{' '}
+                <span data-testid={`pool-cut-${c.period}`}>{fig(c.cut ?? '')}</span>
+              </span>
+            ))}
           </li>
         ))}
       </ul>
