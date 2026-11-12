@@ -18,7 +18,8 @@ function OverdueHead() {
   );
 }
 
-function useOverdue(of?: string) {
+/** A person's overdue figures on the sheet (the current sheet's unless another is named). */
+export function useOverdue(of?: string) {
   const [current] = useCurrentSheet();
   const sheet = of ?? current;
   const claims = useClaims(sheet);

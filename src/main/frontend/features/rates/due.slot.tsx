@@ -49,15 +49,20 @@ export function useSheetDueTotal(of?: string): string {
   const [current] = useCurrentSheet();
   const sheet = of ?? current;
   const people = usePeople(sheet);
+  return trimmedTotal((people.data ?? []).map(usePersonDue(sheet)));
+}
+
+/** A person's due-total on the sheet (the current sheet's unless another is named), as their row shows it. */
+export function usePersonDue(of?: string): (person: Person) => string {
+  const [current] = useCurrentSheet();
+  const sheet = of ?? current;
   const claims = useClaims(sheet);
   const rates = useRates(sheet);
   const today = useSheetToday(sheet);
   const settings = useSettings(sheet).data;
   const floor = floorOf(settings);
-  const dues = (people.data ?? []).map((p) =>
-    personDue(live((claims.data ?? []).filter((c) => c.personId === p.id), [p]), rates.data, p.grades, today, floor, lateOf(settings, today, [p]), settings?.cap),
-  );
-  return trimmedTotal(dues);
+  return (p: Person) =>
+    personDue(live((claims.data ?? []).filter((c) => c.personId === p.id), [p]), rates.data, p.grades, today, floor, lateOf(settings, today, [p]), settings?.cap);
 }
 
 function DueTotal() {

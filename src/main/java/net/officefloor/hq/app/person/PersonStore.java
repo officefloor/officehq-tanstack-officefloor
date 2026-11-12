@@ -60,9 +60,9 @@ public class PersonStore {
 
     /** The people's past retirements on the sheet (only the one person's when {@code personId} is given), by
      *  person, oldest first. */
-    private Map<Long, List<PastRetirement>> pastRetirements(String sheetId, Long personId) {
+    private Map<Long, List<PastRetirement>> pastRetirements(String sheetId, Long personId, String table) {
         Map<Long, List<PastRetirement>> past = new HashMap<>();
-        jdbc.query("SELECT person_id, from_date, to_date FROM person_retirement WHERE sheet_id = ?"
+        jdbc.query("SELECT person_id, from_date, to_date FROM " + table + " WHERE sheet_id = ?"
                 + (personId == null ? "" : " AND person_id = " + personId) + " ORDER BY id", rs -> {
                     past.computeIfAbsent(rs.getLong("person_id"), k -> new ArrayList<>()).add(new PastRetirement(
                             rs.getObject("from_date", LocalDate.class), rs.getObject("to_date", LocalDate.class)));
@@ -71,15 +71,16 @@ public class PersonStore {
     }
 
     private List<Person> query(String sheetId, Long personId, String sql, Object... args) {
-        return queryFrom(sheetId, personId, "person_grade", "person_hold", "person_alias", sql, args);
+        return queryFrom(sheetId, personId, "person_grade", "person_hold", "person_alias", "person_retirement", sql,
+                args);
     }
 
     private List<Person> queryFrom(String sheetId, Long personId, String gradeTable, String holdTable,
-            String aliasTable, String sql, Object... args) {
+            String aliasTable, String retirementTable, String sql, Object... args) {
         Map<Long, NavigableMap<LocalDate, String>> grades = grades(sheetId, personId, gradeTable);
         Map<Long, List<Hold>> holds = holds(sheetId, personId, holdTable);
         Map<Long, List<String>> aliases = aliases(sheetId, personId, aliasTable);
-        Map<Long, List<PastRetirement>> past = pastRetirements(sheetId, personId);
+        Map<Long, List<PastRetirement>> past = pastRetirements(sheetId, personId, retirementTable);
         RowMapper<Person> row = (rs, i) -> {
             Person p = new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
                     grades.getOrDefault(rs.getLong("id"), new TreeMap<>()), rs.getLong("version"),
@@ -103,6 +104,7 @@ public class PersonStore {
     public List<Person> listAsOf(String sheetId, LocalDate date) {
         return queryFrom(sheetId, null, History.asOf("person_grade", "person_id, from_date", date),
                 History.asOf("person_hold", "id", date), History.asOf("person_alias", "id", date),
+                History.asOf("person_retirement", "id", date),
                 "SELECT * FROM " + History.asOf("person", "id", date) + " WHERE sheet_id = ? ORDER BY list_position, id", sheetId);
     }
 
@@ -116,6 +118,7 @@ public class PersonStore {
     public Person findAsOf(String sheetId, long id, LocalDate date) {
         List<Person> found = queryFrom(sheetId, id, History.asOf("person_grade", "person_id, from_date", date),
                 History.asOf("person_hold", "id", date), History.asOf("person_alias", "id", date),
+                History.asOf("person_retirement", "id", date),
                 "SELECT * FROM " + History.asOf("person", "id", date) + " WHERE sheet_id = ? AND id = ?", sheetId, id);
         return found.isEmpty() ? null : found.get(0);
     }
