@@ -1,0 +1,341 @@
+diff --git a/src/main/frontend/features/settings/form.slot.tsx b/src/main/frontend/features/settings/form.slot.tsx
+index dd8499fa6..e1742a183 100644
+--- a/src/main/frontend/features/settings/form.slot.tsx
++++ b/src/main/frontend/features/settings/form.slot.tsx
+@@ -18,12 +18,12 @@ const STANDING_PERMS: Record<(typeof PERM_ACTIONS)[number], string> = {
+ 
+ type PermKey = `perm-${(typeof PERM_ACTIONS)[number]}`;
+ 
+-type Key = 'clerk-limit' | 'floor' | 'terms' | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'late-pct' | 'policy-date' | 'period-numbering-from' | 'cap' | 'proof-threshold' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'note-threshold' | 'review-threshold' | 'grace-days' | 'entry-date' | 'pot' | 'alert-threshold' | 'parent' | 'fiscal-start-month' | 'rounding' | PermKey;
++type Key = 'clerk-limit' | 'floor' | 'terms' | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'late-pct' | 'policy-date' | 'period-numbering-from' | 'cap' | 'proof-threshold' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'note-threshold' | 'review-threshold' | 'grace-days' | 'escalate-after' | 'entry-date' | 'pot' | 'alert-threshold' | 'parent' | 'fiscal-start-month' | 'rounding' | PermKey;
+ 
+ const GRADES = ['A', 'B', 'C'] as const;
+ 
+ /** The settings that carry a figure: each is saved from a from-date (blank for the sheet's today). */
+-type DatedKey = Exclude<Key, 'policy-date' | 'period-numbering-from' | 'grace-days' | 'entry-date' | 'pot' | 'alert-threshold' | 'parent' | 'fiscal-start-month' | PermKey>;
++type DatedKey = Exclude<Key, 'policy-date' | 'period-numbering-from' | 'grace-days' | 'escalate-after' | 'entry-date' | 'pot' | 'alert-threshold' | 'parent' | 'fiscal-start-month' | PermKey>;
+ 
+ const NO_FROM: Record<DatedKey, string> = { 'clerk-limit': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'late-pct': '', cap: '', 'proof-threshold': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'note-threshold': '', 'review-threshold': '', rounding: '' };
+ 
+@@ -40,6 +40,8 @@ const isDated = (k: Key): k is DatedKey => k in NO_FROM;
+ // The permission matrix gives, for each action, the roles that may take it, comma separated (blank keeps
+ // the standing rule, shown as the placeholder); it is not dated. The grace days (blank for off, not
+ // dated) are the whole days after its to-date an open period is closed when the sheet's today moves.
++// The escalation gap (blank for off, not dated) is the whole days at least between a claim's previous reminder
++// and the sheet's today for a reminder to escalate it, once per claim.
+ // The entry date (blank for off, not dated) is the default date of a new claim in place of the sheet's today.
+ // The pot (blank for none, not dated) is shared out among each balanced pool's members by their shares.
+ // The alert threshold (blank for off, not dated) is the due-total above which a person a change takes there
+@@ -54,7 +56,7 @@ function SheetSettings() {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+   const settings = useSettings(sheet);
+-  const [values, setValues] = useState<Record<Key, string>>({ 'clerk-limit': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '', cap: '', 'proof-threshold': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'note-threshold': '', 'review-threshold': '', 'grace-days': '', 'entry-date': '', pot: '', 'alert-threshold': '', parent: '', 'fiscal-start-month': '', rounding: '',
++  const [values, setValues] = useState<Record<Key, string>>({ 'clerk-limit': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '', cap: '', 'proof-threshold': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'note-threshold': '', 'review-threshold': '', 'grace-days': '', 'escalate-after': '', 'entry-date': '', pot: '', 'alert-threshold': '', parent: '', 'fiscal-start-month': '', rounding: '',
+     'perm-open': '', 'perm-settle': '', 'perm-void': '', 'perm-reassign': '', 'perm-close': '', 'perm-reopen': '' });
+   const [froms, setFroms] = useState<Record<DatedKey, string>>(NO_FROM);
+   const [key, setKey] = useState<Key>('clerk-limit');
+@@ -154,6 +156,8 @@ function SheetSettings() {
+         {field('review-threshold', 'Review threshold (blank for none)')}{' '}{from('review-threshold')}{' '}
+         Grace days <strong data-testid="setting-grace-days-current">{settings.data?.graceDays ?? ''}</strong>{' '}
+         {field('grace-days', 'Grace days (blank for off)')}{' '}
++        Escalate after <strong data-testid="setting-escalate-after-current">{settings.data?.escalateAfter ?? ''}</strong>{' '}
++        {field('escalate-after', 'Escalate after days (blank for off)')}{' '}
+         Entry date <strong data-testid="setting-entry-date-current">{settings.data?.entryDate ?? ''}</strong>{' '}
+         {field('entry-date', 'Entry date YYYY-MM-DD (blank for off)', 'text')}{' '}
+         Pot <strong data-testid="setting-pot-current">{fig(settings.data?.pot ?? '')}</strong>{' '}
+diff --git a/src/main/frontend/features/settings/settings.ts b/src/main/frontend/features/settings/settings.ts
+index 74b2c6955..f70cef468 100644
+--- a/src/main/frontend/features/settings/settings.ts
++++ b/src/main/frontend/features/settings/settings.ts
+@@ -29,14 +29,17 @@ import { useAsOf } from '../../session/session';
+  *  crossing it raises an ALERT, null for off; it is not dated. `rounding` is the rounding mode in force on
+  *  the sheet's today (half-up or half-even), null for none; `roundingFrom` is the modes recorded, oldest from-date
+  *  first (a claim rounds by the one in force on its date, else by the policy date). `reviewThreshold` (two decimals)
+- *  is the due above which a claim goes to REVIEW when opened, in force on the sheet's today, null for none. */
++ *  is the due above which a claim goes to REVIEW when opened, in force on the sheet's today, null for none.
++ *  `escalateAfter` is the whole days at least between a claim's previous reminder and the sheet's today for a reminder
++ *  to escalate it (once per claim), null for off; it is not dated. */
+ export type Settings = { clerkLimit: string | null; floor: string; terms: string; latePct: string; policyDate: string | null;
+   periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; proofThreshold: string | null;
+   floorFrom: Dated[]; latePctFrom: Dated[]; perms: Record<string, string | null>;
+   graceDays: string | null; noteThreshold: string | null; entryDate: string | null;
+   gradeGrace: Record<string, string | null>; gradeGraceFrom: Record<string, Dated[]>;
+   gradeProofThreshold: Record<string, string | null>; pot: string | null; parent: string | null; fiscalStartMonth: string;
+-  alertThreshold: string | null; rounding: string | null; roundingFrom: Dated[]; reviewThreshold: string | null };
++  alertThreshold: string | null; rounding: string | null; roundingFrom: Dated[]; reviewThreshold: string | null;
++  escalateAfter: string | null };
+ 
+ /** A setting's value recorded from a date (yyyy-MM-dd); a null value is blank. */
+ export type Dated = { from: string; value: string | null };
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyRemind.java b/src/main/java/net/officefloor/hq/app/claim/ApplyRemind.java
+index 9dbcd2958..5d60d2872 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyRemind.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyRemind.java
+@@ -1,14 +1,24 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.time.LocalDate;
++import net.officefloor.hq.app.setting.SettingStore;
+ import net.officefloor.hq.app.sheet.InvalidSheetException;
+ import net.officefloor.hq.app.sheet.SheetStore;
++import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Stores the claim reminded on the sheet's today; refused when another user moved it on or reminded it first. */
++/** Stores the claim reminded on the sheet's today; refused when another user moved it on or reminded it first.
++ *  A reminder at least the sheet's escalate-after days after the claim's previous one escalates it, once only. */
+ public class ApplyRemind {
+-    public void apply(@Val Claim claim, ClaimStore store, SheetStore sheets) throws InvalidSheetException {
+-        if (!store.remind(claim, sheets.today(claim.getSheetId()))) {
++    public void apply(@Val Claim claim, ClaimStore store, SheetStore sheets, SettingStore settings,
++            Out<Escalation> escalation) throws InvalidSheetException {
++        LocalDate previous = claim.getRemindedOn();
++        LocalDate today = sheets.today(claim.getSheetId());
++        if (!store.remind(claim, today)) {
+             throw new InvalidSheetException("Only an OPEN or PENDING claim not yet reminded today can be reminded");
+         }
++        Integer gap = settings.escalateAfter(claim.getSheetId());
++        boolean due = gap != null && previous != null && !previous.plusDays(gap).isAfter(today) && !claim.isEscalated();
++        escalation.set(new Escalation(due && store.escalate(claim)));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimEscalated.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimEscalated.java
+new file mode 100644
+index 000000000..5fdd0a8eb
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimEscalated.java
+@@ -0,0 +1,21 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonStore;
++import net.officefloor.plugin.variable.Val;
++
++/** Records a reminder that escalated its claim, after its REMIND: ESCALATE sheet=<id> by=<user> person=<name>
++ *  amount=<0.00> date=<yyyy-mm-dd>, then number=<n> when the claim has one. */
++public class AuditClaimEscalated {
++    public void audit(@Val RemindInput input, @Val Claim claim, @Val Escalation escalation, PersonStore people, Audit audit) {
++        if (!escalation.escalated()) {
++            return;
++        }
++        Person person = people.find(claim.getSheetId(), claim.getPersonId());
++        ClaimResponse shown = ClaimResponse.from(claim);
++        audit.record("ESCALATE sheet=" + claim.getSheetId() + " by=" + input.user() + " person="
++                + person.getName() + " amount=" + shown.amount() + " date=" + shown.date()
++                + (claim.getNumber() == null ? "" : " number=" + claim.getNumber()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 09f4c1f89..14d377eda 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -27,6 +27,7 @@ public class Claim {
+     private String splitFrom;
+     private boolean lateEntry;
+     private LocalDate remindedOn;
++    private boolean escalated;
+     private String ref;
+     private String tags;
+     private String voidReason;
+@@ -108,6 +109,9 @@ public class Claim {
+     /** The last sheet's today a reminder was written for the claim; null when it was never reminded. */
+     public LocalDate getRemindedOn() { return remindedOn; }
+     public void setRemindedOn(LocalDate remindedOn) { this.remindedOn = remindedOn; }
++    /** Whether a reminder ever escalated the claim (it is escalated once only). */
++    public boolean isEscalated() { return escalated; }
++    public void setEscalated(boolean escalated) { this.escalated = escalated; }
+     /** The external reference, unique on the sheet without regard to case; null when it has none. */
+     public String getRef() { return ref; }
+     public void setRef(String ref) { this.ref = ref; }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java
+index 8bf2aa400..2c36a08d2 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java
+@@ -31,6 +31,7 @@ public class ClaimStore {
+         claim.setSplitFrom(rs.getString("split_from"));
+         claim.setLateEntry(rs.getBoolean("late_entry"));
+         claim.setRemindedOn(rs.getObject("reminded_on", LocalDate.class));
++        claim.setEscalated(rs.getBoolean("escalated"));
+         claim.setRef(rs.getString("ref"));
+         claim.setTags(rs.getString("tags"));
+         claim.setVoidReason(rs.getString("void_reason"));
+@@ -222,6 +223,16 @@ public class ClaimStore {
+         return reminded;
+     }
+ 
++    /** Marks the stored claim escalated; false when it already was (it is escalated once only). */
++    public boolean escalate(Claim claim) {
++        boolean escalated = jdbc.update("UPDATE claim SET escalated = TRUE WHERE sheet_id = ? AND id = ? AND escalated = FALSE",
++                claim.getSheetId(), claim.getId()) == 1;
++        if (escalated) {
++            claim.setEscalated(true);
++        }
++        return escalated;
++    }
++
+     /** Re-dates the stored OPEN or PENDING claim, under {@code number}; false when it is no longer one of
+      *  those at the date it had (another user changed it first). Its due-by and any statement figure stay. */
+     public boolean redate(Claim claim, LocalDate date, String number) {
+@@ -452,7 +463,7 @@ public class ClaimStore {
+ 
+     /** Adds a copy of the claim to the person on the other sheet under {@code number} (null for none), correcting
+      *  and split off the numbers given: its amount, date, note, status, frozen settled figure, opener, due-by and
+-     *  the terms it was fixed with, deferral, proofs, late entry, reminder, tags, void reason and editor, with its
++     *  the terms it was fixed with, deferral, proofs, late entry, reminder and escalation, tags, void reason and editor, with its
+      *  status log, comments and lines, listed as the person's newest claim, keeping any figure a statement bound it to.
+      *  Its reference, lock and bulk settle batch are not carried. The id of the copy. */
+     public long copyTo(Claim claim, String toSheet, long toPerson, String number, String corrects, String splitFrom) {
+@@ -492,7 +503,8 @@ public class ClaimStore {
+             return ps;
+         }, keys);
+         long id = keys.getKey().longValue();
+-        jdbc.update("UPDATE claim SET added_seq = ? WHERE sheet_id = ? AND id = ?", claim.getAddedSeq(), toSheet, id);
++        jdbc.update("UPDATE claim SET added_seq = ?, escalated = ? WHERE sheet_id = ? AND id = ?", claim.getAddedSeq(),
++                claim.isEscalated(), toSheet, id);
+         jdbc.update("INSERT INTO claim_log (sheet_id, claim_id, status, by_user, log_date, due) "
+                 + "SELECT ?, ?, status, by_user, log_date, due FROM claim_log WHERE sheet_id = ? AND claim_id = ? ORDER BY id",
+                 toSheet, id, claim.getSheetId(), claim.getId());
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Escalation.java b/src/main/java/net/officefloor/hq/app/claim/Escalation.java
+new file mode 100644
+index 000000000..7197c991e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/Escalation.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.claim;
++
++/** Whether a stored reminder escalated its claim. */
++public record Escalation(boolean escalated) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java b/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
+index 43c265e80..619a7cb2f 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
+@@ -35,7 +35,7 @@ public class RespondWithSettings {
+                 store.find(sheet, SettingStore.POT), settings.parent(sheet),
+                 String.valueOf(store.fiscalStartMonth(sheet)), store.find(sheet, SettingStore.ALERT_THRESHOLD),
+                 store.find(sheet, SettingStore.ROUNDING), history(sheet, SettingStore.ROUNDING, store),
+-                store.find(sheet, SettingStore.REVIEW_THRESHOLD)));
++                store.find(sheet, SettingStore.REVIEW_THRESHOLD), store.find(sheet, SettingStore.ESCALATE_AFTER)));
+     }
+ 
+     private static Map<String, String> gradeTerms(String sheetId, LocalDate today, SettingStore store) {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingStore.java b/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
+index 3fd3db776..0f65fb2cd 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
+@@ -183,6 +183,10 @@ public class SettingStore {
+     /** The whole days after its to-date an open period is closed by a new today; blank for off. */
+     public static final String GRACE_DAYS = "grace-days";
+ 
++    /** The whole days at least between a claim's previous reminder and the sheet's today for a reminder to
++     *  escalate it; blank for off (not dated). */
++    public static final String ESCALATE_AFTER = "escalate-after";
++
+     /** The key of a grade's grace days: grace-A, grace-B or grace-C (dated; blank for none). */
+     public static final String GRACE_PREFIX = "grace-";
+ 
+@@ -251,7 +255,7 @@ public class SettingStore {
+ 
+     /** Whether the key's values are recorded from a from-date. */
+     public static boolean isDated(String key) {
+-        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key)
++        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key)
+                 && !ENTRY_DATE.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
+                 && !key.startsWith(PERM_PREFIX);
+     }
+@@ -436,6 +440,13 @@ public class SettingStore {
+         return value == null ? null : Integer.valueOf(value);
+     }
+ 
++    /** The whole days at least between a claim's previous reminder and the sheet's today for a reminder to
++     *  escalate it, or null when blank (off). */
++    public Integer escalateAfter(String sheetId) {
++        String value = find(sheetId, ESCALATE_AFTER);
++        return value == null ? null : Integer.valueOf(value);
++    }
++
+     /** Records the setting's value; a dated one's from the date (replacing a value recorded from it). */
+     public void set(String sheetId, String key, String value, LocalDate from) {
+         if (isDated(key)) {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+index 578c016fa..f11c5e874 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+@@ -34,14 +34,16 @@ import java.util.Map;
+  *  {@code roundingFrom} is the rounding modes recorded, oldest from-date first (a claim rounds by the one in force on
+  *  its date, else by the policy date).
+  *  {@code reviewThreshold} has two decimals, the due above which a claim goes to REVIEW when opened, in force on the
+- *  sheet's today, null for none. */
++ *  sheet's today, null for none.
++ *  {@code escalateAfter} is the whole days at least between a claim's previous reminder and the sheet's today for a
++ *  reminder to escalate it (once per claim), null for off (not dated). */
+ public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
+         String periodNumberingFrom, Map<String, String> gradeTerms, String cap, String proofThreshold, List<Dated> floorFrom,
+         List<Dated> latePctFrom, Map<String, String> perms, String graceDays,
+         String noteThreshold, String entryDate, Map<String, String> gradeGrace,
+         Map<String, List<Dated>> gradeGraceFrom, Map<String, String> gradeProofThreshold,
+         String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding,
+-        List<Dated> roundingFrom, String reviewThreshold) {
++        List<Dated> roundingFrom, String reviewThreshold, String escalateAfter) {
+ 
+     /** A value recorded from a date (yyyy-MM-dd). */
+     public record Dated(String from, String value) {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+index 184ce27b2..6a82d2e14 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+@@ -40,10 +40,11 @@ public class ValidateSetting {
+         boolean review = SettingStore.REVIEW_THRESHOLD.equals(key);
+         boolean pot = SettingStore.POT.equals(key);
+         boolean alert = SettingStore.ALERT_THRESHOLD.equals(key);
+-        if (SettingStore.GRACE_DAYS.equals(key)) {
++        if (SettingStore.GRACE_DAYS.equals(key) || SettingStore.ESCALATE_AFTER.equals(key)) {
+             String value = request.value() == null ? "" : request.value().trim();
+             if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
+-                throw new InvalidSheetException("The grace days must be a whole number of days, 0 or more, or blank");
++                throw new InvalidSheetException((SettingStore.GRACE_DAYS.equals(key) ? "The grace days" : "The escalation gap")
++                        + " must be a whole number of days, 0 or more, or blank");
+             }
+             body.set(new SettingInput(key, value.isEmpty() ? null : String.valueOf(Integer.parseInt(value)), null,
+                     request.user()));
+diff --git a/src/main/resources/db/migration/V74__claim_escalated.sql b/src/main/resources/db/migration/V74__claim_escalated.sql
+new file mode 100644
+index 000000000..b13d31178
+--- /dev/null
++++ b/src/main/resources/db/migration/V74__claim_escalated.sql
+@@ -0,0 +1,8 @@
++-- Whether a claim was ever escalated: reminded at least the sheet's escalate-after days after its previous
++-- reminder. A claim is escalated once only. Kept in claim_hist too; the history trigger is set again
++-- afterwards, as in V48__claim_edited_by.sql.
++DROP TRIGGER claim_history;
++ALTER TABLE claim ADD COLUMN escalated BOOLEAN DEFAULT FALSE NOT NULL;
++ALTER TABLE claim_hist ADD COLUMN escalated BOOLEAN DEFAULT FALSE NOT NULL;
++CREATE TRIGGER claim_history AFTER INSERT, UPDATE, DELETE ON claim FOR EACH ROW
++    CALL 'net.officefloor.hq.app.history.HistoryTrigger';
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/remind.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/remind.POST.yml
+index 066511463..987d09d17 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/remind.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/remind.POST.yml
+@@ -1,7 +1,8 @@
+ # POST /api/sheets/{sheetId}/claims/{claimId}/remind — remind an OPEN or PENDING claim (body {user}): its
+ # reminded date becomes the sheet's today. Refused (400) for a viewer, a claim not on the sheet, one in any
+ # other status, or one already reminded on the sheet's today; nothing is stored then. A stored reminder is
+-# recorded in the audit file as REMIND.
++# recorded in the audit file as REMIND; one at least the sheet's escalate-after days after the claim's previous
++# reminder escalates it (once per claim), recorded as ESCALATE after the REMIND.
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateRemind
+   next: load
+@@ -20,6 +21,10 @@ apply:
+ audit:
+   class: net.officefloor.hq.app.claim.AuditClaimReminded
+   govern: [ transaction ]
++  next: auditEscalated
++auditEscalated:
++  class: net.officefloor.hq.app.claim.AuditClaimEscalated
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.claim.RespondWithClaim
