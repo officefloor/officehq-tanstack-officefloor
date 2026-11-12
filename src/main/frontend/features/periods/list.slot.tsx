@@ -15,6 +15,9 @@ import { type Period, periodDue, periodsKey, usePeriods } from './periods';
 type Fields = { name: string; from: string; to: string };
 const EMPTY: Fields = { name: '', from: '', to: '' };
 
+type Range = { from: string; to: string };
+type GenerateResult = { generated: number };
+
 // The sheet's periods, each with its due-total (the figures of the claims whose date falls in it and that
 // count by their status at its end, skipping n/a; fixed when the period was closed), its closed yes/no and the buttons that
 // close it and reopen it (as the sheet's permission matrix allows), and the form that adds one.
@@ -39,6 +42,21 @@ function Periods() {
     },
   });
   const submit = useSubmitOnce(save);
+
+  // Generates one period per calendar month from the from-date's month to the to-date's; the server
+  // leaves out a month whose name is taken or whose days overlap a period, and the count made shows
+  // once it answers (gone while it runs).
+  const [range, setRange] = useState<Range>({ from: '', to: '' });
+  const generate = useMutation({
+    mutationFn: (r: Range) =>
+      postJson<GenerateResult>(`/api/sheets/${encodeURIComponent(sheet)}/periods/generate`, { ...r, user }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: periodsKey(sheet) }),
+  });
+  const submitGenerate = useSubmitOnce(generate);
+  const setBound = (key: keyof Range) => (e: ChangeEvent<HTMLInputElement>) => {
+    setRange({ ...range, [key]: e.target.value });
+    generate.reset();
+  };
 
   // The server refuses closing a period that is already closed, and reopening one that is not closed
   // or by a role the sheet's permission matrix does not allow; the error shows on that period.
@@ -116,6 +134,31 @@ function Periods() {
           <span data-testid="period-form-error" role="alert">
             {' '}
             {save.error instanceof HttpError && save.error.reason ? `${save.error.reason}.` : 'The period was refused.'}
+          </span>
+        )}
+      </form>
+      <form
+        data-testid="period-generate-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          submitGenerate(range);
+        }}
+      >
+        <input data-testid="period-generate-from" placeholder="From (yyyy-mm-dd)" value={range.from} onChange={setBound('from')} />
+        <input data-testid="period-generate-to" placeholder="To (yyyy-mm-dd)" value={range.to} onChange={setBound('to')} />
+        <button type="submit" data-testid="period-generate" disabled={generate.isPending}>
+          Generate monthly periods
+        </button>
+        {generate.isSuccess && (
+          <>
+            {' '}
+            Made <strong data-testid="period-generated">{generate.data.generated}</strong>
+          </>
+        )}
+        {generate.isError && (
+          <span data-testid="period-generate-error" role="alert">
+            {' '}
+            {generate.error instanceof HttpError && generate.error.reason ? `${generate.error.reason}.` : 'The generate was refused.'}
           </span>
         )}
       </form>
