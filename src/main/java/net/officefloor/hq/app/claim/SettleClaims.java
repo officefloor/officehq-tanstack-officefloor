@@ -26,7 +26,8 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  claims newest first. Each goes through the very steps of a single settle by the user (period,
  *  clerk limit, opened-by, edited-by and status checks, then store, log and audit), so a clerk's settle above
  *  the clerk limit sends it to PENDING, which counts as settled. A claim that is not on the sheet,
- *  or that a single settle would refuse (every claim on an archived sheet), is refused and left as it is. */
+ *  or that a single settle would refuse (every claim on an archived sheet), is refused and left as it is.
+ *  When at least one is settled, the bulk settle takes the sheet's next batch and each settled claim records it. */
 public class SettleClaims {
     public void settle(@PathVariable("sheetId") String sheetId, @Val BulkSettleInput input, ClaimStore store,
             PersonStore people, PeriodStore periods, SettingStore settings, SheetStore sheets, RoleStore roles,
@@ -57,6 +58,7 @@ public class SettleClaims {
                 .thenComparing(c -> listed.getOrDefault(c.getId(), Integer.MAX_VALUE)));
         StatusInput status = new StatusInput(ClaimStatus.SETTLED, input.user(), false, "");
         int settled = 0;
+        Long batch = null;
         for (Claim claim : selected) {
             try {
                 sheets.refuseArchived(sheet);
@@ -69,6 +71,10 @@ public class SettleClaims {
                 new ApplyStatus().apply(status, move[0], claim, store, people, rates, settings, sheets, periods, voidReasons,
                         c -> change[0] = c);
                 new SaveClaim().save(status, claim, store, log);
+                if (batch == null) {
+                    batch = store.nextBatch(sheet);
+                }
+                store.markBatch(claim, batch);
                 new AuditClaimStatus().audit(status, move[0], claim, change[0], before, people, audit, rollups, watches);
                 settled++;
             } catch (InvalidSheetException e) {

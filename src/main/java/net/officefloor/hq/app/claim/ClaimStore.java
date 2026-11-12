@@ -35,6 +35,7 @@ public class ClaimStore {
         claim.setTags(rs.getString("tags"));
         claim.setVoidReason(rs.getString("void_reason"));
         claim.setEditedBy(rs.getString("edited_by"));
+        claim.setBatch(rs.getObject("settle_batch", Long.class));
         return claim;
     };
 
@@ -299,6 +300,24 @@ public class ClaimStore {
     public boolean move(Claim claim, ClaimStatus from, ClaimStatus to) {
         return jdbc.update("UPDATE claim SET status = ? WHERE sheet_id = ? AND id = ? AND status = ?", to.name(),
                 claim.getSheetId(), claim.getId(), from.name()) == 1;
+    }
+
+    /** Records the bulk settle batch the claim was settled in. */
+    public void markBatch(Claim claim, long batch) {
+        jdbc.update("UPDATE claim SET settle_batch = ? WHERE sheet_id = ? AND id = ?", batch, claim.getSheetId(), claim.getId());
+        claim.setBatch(batch);
+    }
+
+    /** Takes the next bulk settle batch on the sheet: 1, then 2, and so on, locked as {@link #nextNumber(String)} is. */
+    public long nextBatch(String sheetId) {
+        try {
+            jdbc.update("INSERT INTO settle_batch (sheet_id, last_batch) SELECT ?, 0 FROM DUAL "
+                    + "WHERE NOT EXISTS (SELECT 1 FROM settle_batch WHERE sheet_id = ?)", sheetId, sheetId);
+        } catch (DataAccessException e) {
+            // another transaction added the sheet's counter first
+        }
+        jdbc.update("UPDATE settle_batch SET last_batch = last_batch + 1 WHERE sheet_id = ?", sheetId);
+        return jdbc.queryForObject("SELECT last_batch FROM settle_batch WHERE sheet_id = ?", Long.class, sheetId);
     }
 
     /** Takes the next claim number on the sheet: 1, then 2, and so on. The sheet's counter row stays

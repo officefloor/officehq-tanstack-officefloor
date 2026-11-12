@@ -31,6 +31,7 @@ public class Claim {
     private String tags;
     private String voidReason;
     private String editedBy;
+    private Long batch;
 
     public Claim(long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
             ClaimStatus status, String number, BigDecimal settledDue, String openedBy, boolean stated,
@@ -117,6 +118,9 @@ public class Claim {
     /** The user who last edited the claim (claim form or amount entry); null when it was never edited. */
     public String getEditedBy() { return editedBy; }
     public void setEditedBy(String editedBy) { this.editedBy = editedBy; }
+    /** The bulk settle batch it was settled in; null when settled one at a time, or not settled. */
+    public Long getBatch() { return batch; }
+    public void setBatch(Long batch) { this.batch = batch; }
     public void setDeferredUntil(LocalDate deferredUntil) { this.deferredUntil = deferredUntil; }
     public void setPersonId(long personId) { this.personId = personId; }
     public void setCorrects(String corrects) { this.corrects = corrects; }

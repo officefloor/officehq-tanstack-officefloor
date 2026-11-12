@@ -436,6 +436,7 @@ function PersonClaims({ person }: { person: Person }) {
               <span data-testid="claim-deferred-until">{c.deferredUntil ?? ''}</span>{' '}
               <span data-testid="claim-reminded">{c.remindedOn ?? ''}</span>{' '}
               <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}
+              <span data-testid="claim-batch">{c.batch ?? ''}</span>{' '}
               <span data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</span>{' '}
               <button type="button" data-testid="claim-open" disabled={move.isPending} onClick={() => moveTo(c.id, 'OPEN')}>
                 Open

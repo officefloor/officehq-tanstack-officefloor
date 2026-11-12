@@ -65,6 +65,8 @@ export type Claim = {
   voidReason: string | null;
   /** Its comments, oldest first: `<user> on <date>: <text>`, the date the sheet's today when it was written. */
   comments: string[];
+  /** The bulk settle batch it was settled in (1, 2, ... on the sheet); null when settled one at a time, or not settled. */
+  batch: number | null;
 };
 
 /** A correction: a claim with a negative amount, which has no floor and no late charge. */
