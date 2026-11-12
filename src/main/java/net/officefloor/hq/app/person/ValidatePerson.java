@@ -3,14 +3,17 @@ package net.officefloor.hq.app.person;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.Set;
+import net.officefloor.hq.app.role.RoleStore;
 import net.officefloor.hq.app.sheet.InvalidSheetException;
 import net.officefloor.plugin.variable.Out;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
 public class ValidatePerson {
     private static final Set<String> GRADES = Set.of("A", "B", "C");
 
-    public void validate(@RequestBody PersonRequest request, Out<PersonRequest> body) throws InvalidSheetException {
+    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PersonRequest request, Out<PersonRequest> body, RoleStore roles) throws InvalidSheetException {
+        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
         if (request == null || request.name() == null || request.name().trim().isEmpty()) {
             throw new InvalidSheetException("A name is required");
         }

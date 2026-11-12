@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutationState, useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { asFlag, asString, useSearchParam } from '../../url/useSearchParam';
 import { sheetKey } from '../sheet/sheet';
@@ -66,3 +66,16 @@ export const useEditingPerson = () => useSearchParam('editPerson', asString);
 
 /** Whether the people list shows retired people too; off when the screen is first opened. */
 export const useShowRetired = () => useSearchParam('showRetired', asFlag);
+
+/** The mutation key of an action on a person's row (a statement, a hold, a retirement): the row
+ *  shows only the error of the latest one taken, so taking the next action clears an earlier one's. */
+export const personActionKey = (sheet: string, personId: number) => [...peopleKey(sheet), personId, 'action'] as const;
+
+/** When the latest action on the person's row was taken (0 when none was). */
+export function useLatestPersonAction(sheet: string, personId: number): number {
+  const taken = useMutationState({
+    filters: { mutationKey: personActionKey(sheet, personId) },
+    select: (m) => m.state.submittedAt,
+  });
+  return Math.max(0, ...taken);
+}

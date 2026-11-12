@@ -9,6 +9,7 @@ import net.officefloor.hq.app.claim.ClaimStore;
 import net.officefloor.hq.app.period.PeriodStore;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonStore;
+import net.officefloor.hq.app.role.RoleStore;
 import net.officefloor.hq.app.sheet.InvalidSheetException;
 import net.officefloor.hq.app.sheet.SheetStore;
 import net.officefloor.plugin.variable.Out;
@@ -24,8 +25,8 @@ import org.springframework.web.bind.annotation.RequestBody;
  */
 public class ValidatePaste {
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PasteRequest request,
-            SheetStore sheets, PersonStore people, PeriodStore periods, ClaimStore claims, Out<PasteInput> pasted)
-            throws InvalidSheetException {
+            SheetStore sheets, PersonStore people, PeriodStore periods, ClaimStore claims, Out<PasteInput> pasted, RoleStore roles) throws InvalidSheetException {
+        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
         String sheet = sheetId.trim();
         String text = request == null || request.text() == null ? "" : request.text();
         List<PastedClaim> pastedClaims = new ArrayList<>();

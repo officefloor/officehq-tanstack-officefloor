@@ -83,6 +83,9 @@ public class SettingStore {
     /** Whether the role may take the action (one of {@link #PERM_ACTIONS}): the roles listed in its
      *  permission, else, when blank, the standing rule. */
     public boolean allows(String sheetId, String action, Role role) {
+        if (role == Role.VIEWER) {
+            return false;
+        }
         String value = find(sheetId, PERM_PREFIX + action);
         if (value == null) {
             return STANDING_PERMS.get(action).contains(role);

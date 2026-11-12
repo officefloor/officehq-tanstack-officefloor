@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, postJson } from '../../api/http';
 import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
-import { type Person, peopleKey } from '../people/people';
+import { type Person, peopleKey, personActionKey, useLatestPersonAction } from '../people/people';
 import { claimsKey } from '../claims/claims';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
 
@@ -18,6 +18,7 @@ function PersonStatement({ person }: { person: Person }) {
   const queryClient = useQueryClient();
 
   const take = useMutation({
+    mutationKey: personActionKey(sheet, person.id),
     mutationFn: () =>
       postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/statement`, { user }),
     onSuccess: () =>
@@ -26,6 +27,8 @@ function PersonStatement({ person }: { person: Person }) {
         queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
       ]),
   });
+
+  const latest = useLatestPersonAction(sheet, person.id);
 
   return (
     <td>
@@ -43,7 +46,7 @@ function PersonStatement({ person }: { person: Person }) {
       >
         Statement
       </button>
-      {take.isError && (
+      {take.isError && take.submittedAt >= latest && (
         <span data-testid="person-error" role="alert">
           {' '}
           {take.error instanceof HttpError && take.error.reason ? `${take.error.reason}.` : 'The statement was refused.'}

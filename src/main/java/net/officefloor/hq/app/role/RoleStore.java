@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.role;
 
 import java.util.List;
+import net.officefloor.hq.app.sheet.InvalidSheetException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -26,6 +27,13 @@ public class RoleStore {
         List<String> found = jdbc.queryForList("SELECT role FROM sheet_role WHERE sheet_id = ? AND user_name = ?",
                 String.class, sheetId, user);
         return found.isEmpty() ? Role.CLERK : Role.valueOf(found.get(0));
+    }
+
+    /** Refuses any change by a viewer: a viewer may change nothing on the sheet. */
+    public void refuseViewer(String sheetId, String user) throws InvalidSheetException {
+        if (find(sheetId, user == null ? "" : user.trim()) == Role.VIEWER) {
+            throw new InvalidSheetException("A viewer may change nothing");
+        }
     }
 
     public void set(String sheetId, String user, Role role) {

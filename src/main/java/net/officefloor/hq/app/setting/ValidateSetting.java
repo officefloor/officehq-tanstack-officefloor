@@ -7,8 +7,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.role.Role;
+import net.officefloor.hq.app.role.RoleStore;
 import net.officefloor.hq.app.sheet.InvalidSheetException;
 import net.officefloor.plugin.variable.Out;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 
 public class ValidateSetting {
@@ -17,7 +19,8 @@ public class ValidateSetting {
     /** A whole number of days, 0 or more. */
     private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
 
-    public void validate(@RequestBody SettingRequest request, Out<SettingInput> body) throws InvalidSheetException {
+    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SettingRequest request, Out<SettingInput> body, RoleStore roles) throws InvalidSheetException {
+        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
         String key = request == null || request.key() == null ? "" : request.key().trim();
         boolean floor = SettingStore.FLOOR.equals(key);
         boolean terms = SettingStore.TERMS.equals(key);
@@ -112,7 +115,7 @@ public class ValidateSetting {
         List<String> roles = new ArrayList<>();
         for (String part : value.split(",")) {
             String role = part.trim();
-            if (Role.of(role) == null) {
+            if (Role.of(role) == null || Role.of(role) == Role.VIEWER) {
                 throw new InvalidSheetException("A permission lists roles (clerk, steward), comma separated, or is blank");
             }
             if (!roles.contains(role)) {

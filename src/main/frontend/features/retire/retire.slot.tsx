@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, postJson } from '../../api/http';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
-import { type Person, peopleKey, useShowRetired } from '../people/people';
+import { type Person, peopleKey, personActionKey, useLatestPersonAction, useShowRetired } from '../people/people';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
 
 // The "show retired" toggle: the people list leaves retired people out unless it is on. It belongs
@@ -40,6 +40,7 @@ function PersonRetired({ person }: { person: Person }) {
   const queryClient = useQueryClient();
 
   const retire = useMutation({
+    mutationKey: personActionKey(sheet, person.id),
     mutationFn: (from: string) =>
       postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/retire`, { date: from, user }),
     onSuccess: async () => {
@@ -47,6 +48,8 @@ function PersonRetired({ person }: { person: Person }) {
       setDate('');
     },
   });
+
+  const latest = useLatestPersonAction(sheet, person.id);
 
   return (
     <td>
@@ -72,7 +75,7 @@ function PersonRetired({ person }: { person: Person }) {
       >
         Retire
       </button>
-      {retire.isError && (
+      {retire.isError && retire.submittedAt >= latest && (
         <span data-testid="person-error" role="alert">
           {' '}
           {retire.error instanceof HttpError && retire.error.reason ? `${retire.error.reason}.` : 'The retirement was refused.'}

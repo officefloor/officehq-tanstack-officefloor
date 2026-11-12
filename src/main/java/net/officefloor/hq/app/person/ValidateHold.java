@@ -2,6 +2,7 @@ package net.officefloor.hq.app.person;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import net.officefloor.hq.app.role.RoleStore;
 import net.officefloor.hq.app.sheet.InvalidSheetException;
 import net.officefloor.hq.app.sheet.SheetStore;
 import net.officefloor.plugin.variable.Out;
@@ -10,7 +11,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 public class ValidateHold {
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody HoldRequest request,
-            SheetStore sheets, Out<HoldInput> body) throws InvalidSheetException {
+            SheetStore sheets, Out<HoldInput> body, RoleStore roles) throws InvalidSheetException {
+        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
         String fromText = request == null || request.from() == null ? "" : request.from().trim();
         String toText = request == null || request.to() == null ? "" : request.to().trim();
         LocalDate from = fromText.isEmpty() ? sheets.today(sheetId.trim()) : parse(fromText);
