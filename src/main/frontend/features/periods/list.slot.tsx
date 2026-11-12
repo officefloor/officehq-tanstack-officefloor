@@ -12,8 +12,8 @@ import { useSheetToday } from '../sheet/sheet';
 import { lateOf } from '../overdue/overdue';
 import { type Period, periodDue, periodsKey, usePeriods } from './periods';
 
-type Fields = { name: string; from: string; to: string };
-const EMPTY: Fields = { name: '', from: '', to: '' };
+type Fields = { name: string; from: string; to: string; cap: string };
+const EMPTY: Fields = { name: '', from: '', to: '', cap: '' };
 
 type Range = { from: string; to: string };
 type GenerateResult = { generated: number };
@@ -23,7 +23,8 @@ type Generate = { range: Range } | { year: string };
 
 // The sheet's periods, each with its due-total (the figures of the claims whose date falls in it and that
 // count by their status at its end, skipping n/a; fixed when the period was closed or soft-closed), its closed yes/soft/no and the buttons that
-// close it, soft-close it and reopen it (as the sheet's permission matrix allows), and the form that adds one.
+// close it, soft-close it and reopen it (as the sheet's permission matrix allows), its cap on each person's open
+// claims (blank for none), and the form that adds one.
 function Periods() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -98,6 +99,7 @@ function Periods() {
             <th>Due total</th>
             <th>Closed</th>
             <th>Fiscal year</th>
+            <th>Cap</th>
             <th />
           </tr>
         </thead>
@@ -110,6 +112,7 @@ function Periods() {
               <td data-testid="period-due-total">{periodDue(p, claims.data, people.data, rates.data, floor, lateOf(settings, today, people.data))}</td>
               <td data-testid="period-closed">{p.closed ? 'yes' : p.soft ? 'soft' : 'no'}</td>
               <td data-testid="period-fy">{settings ? fiscalYearOf(p.from, fiscalStart) : ''}</td>
+              <td data-testid="period-cap">{p.cap ?? ''}</td>
               <td>
                 <button type="button" data-testid="period-close" disabled={act.isPending} onClick={() => periodAction(p.name, 'close')}>
                   Close
@@ -141,6 +144,7 @@ function Periods() {
         <input data-testid="period-form-name" placeholder="Name" value={fields.name} onChange={set('name')} />
         <input data-testid="period-form-from" placeholder="From (yyyy-mm-dd)" value={fields.from} onChange={set('from')} />
         <input data-testid="period-form-to" placeholder="To (yyyy-mm-dd)" value={fields.to} onChange={set('to')} />
+        <input data-testid="period-form-cap" placeholder="Open claims cap (blank for none)" value={fields.cap} onChange={set('cap')} />
         <button type="submit" data-testid="period-form-submit" disabled={save.isPending}>
           Add period
         </button>

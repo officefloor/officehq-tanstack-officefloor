@@ -14,7 +14,7 @@ public class GeneratePeriods {
         String sheet = sheetId.trim();
         int made = 0;
         for (YearMonth month = input.from(); !month.isAfter(input.to()); month = month.plusMonths(1)) {
-            PeriodInput period = new PeriodInput(month.toString(), month.atDay(1), month.atEndOfMonth(), input.user());
+            PeriodInput period = new PeriodInput(month.toString(), month.atDay(1), month.atEndOfMonth(), input.user(), null);
             if (store.nameTaken(sheet, period.name()) || store.overlaps(sheet, period.from(), period.to())) {
                 continue;
             }

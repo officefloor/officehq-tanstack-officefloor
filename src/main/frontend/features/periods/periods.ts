@@ -10,7 +10,8 @@ import { type Floor, type Late, type Rate, claimDue, dueTotal } from '../rates/r
 /** A period: its name (unique on the sheet), its from and to dates (yyyy-MM-dd, inclusive), whether
  *  it is closed and, once closed, the due-total fixed on closing (null while open) and each person's
  *  due-total fixed on closing, by person id (empty while open), and whether it is soft-closed: not closed,
- *  but with those figures fixed as when it was soft-closed. No two periods on a sheet overlap. */
+ *  but with those figures fixed as when it was soft-closed, and the most OPEN or PENDING claims a person may
+ *  have in it (null for no cap). No two periods on a sheet overlap. */
 export type Period = {
   name: string;
   from: string;
@@ -19,6 +20,7 @@ export type Period = {
   total: string | null;
   people: Record<string, string>;
   soft: boolean;
+  cap: number | null;
 };
 
 /** Whether the period's figures are fixed: it is closed or soft-closed. */

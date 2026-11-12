@@ -19,7 +19,7 @@ public class PeriodStore {
             rs.getBoolean("closed"), rs.getBigDecimal("closed_total"),
             rs.getBoolean("closed") || rs.getBoolean("soft") ? personTotals(rs.getString("sheet_id"), rs.getString("name"))
                     : Map.of(),
-            rs.getBoolean("soft"));
+            rs.getBoolean("soft"), cap(rs));
 
     private final JdbcTemplate jdbc;
 
@@ -43,7 +43,7 @@ public class PeriodStore {
                         rs.getBoolean("closed") || rs.getBoolean("soft")
                                 ? personTotals(rs.getString("sheet_id"), rs.getString("name"), totals)
                                 : Map.of(),
-                        rs.getBoolean("soft")),
+                        rs.getBoolean("soft"), cap(rs)),
                 sheetId);
     }
 
@@ -93,8 +93,13 @@ public class PeriodStore {
     }
 
     public void add(String sheetId, PeriodInput period) {
-        jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date) VALUES (?, ?, ?, ?)", sheetId,
-                period.name(), period.from(), period.to());
+        jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, open_cap) VALUES (?, ?, ?, ?, ?)", sheetId,
+                period.name(), period.from(), period.to(), period.cap());
+    }
+
+    private static Integer cap(java.sql.ResultSet rs) throws java.sql.SQLException {
+        int cap = rs.getInt("open_cap");
+        return rs.wasNull() ? null : cap;
     }
 
     /** Each person's due-total fixed when the period was closed, by person id. */

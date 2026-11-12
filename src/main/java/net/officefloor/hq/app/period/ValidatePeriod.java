@@ -19,7 +19,18 @@ public class ValidatePeriod {
         if (to.isBefore(from)) {
             throw new InvalidSheetException("The to date must not be before the from date");
         }
-        body.set(new PeriodInput(request.name().trim(), from, to, request.user()));
+        body.set(new PeriodInput(request.name().trim(), from, to, request.user(), cap(request.cap())));
+    }
+
+    private static Integer cap(String value) throws InvalidSheetException {
+        String text = value == null ? "" : value.trim();
+        if (text.isEmpty()) {
+            return null;
+        }
+        if (!text.matches("\\d{1,6}") || Integer.parseInt(text) < 1) {
+            throw new InvalidSheetException("The cap must be a whole number of at least 1: " + text);
+        }
+        return Integer.parseInt(text);
     }
 
     private static LocalDate date(String value, String field) throws InvalidSheetException {

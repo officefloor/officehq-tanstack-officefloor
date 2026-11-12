@@ -5,6 +5,6 @@ import net.officefloor.web.ObjectResponse;
 
 public class RespondWithPeriod {
     public void respond(@Val PeriodInput period, ObjectResponse<PeriodResponse> response) {
-        response.send(PeriodResponse.of(period.name(), period.from(), period.to()));
+        response.send(PeriodResponse.of(period.name(), period.from(), period.to(), period.cap()));
     }
 }

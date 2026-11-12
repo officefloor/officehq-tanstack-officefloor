@@ -82,6 +82,14 @@ public class ClaimStore {
                         sheetId, Date.valueOf(date));
     }
 
+    /** How many of the person's claims on the sheet are OPEN or PENDING and due by a date in from..to (inclusive). */
+    public int countOpenDue(String sheetId, long personId, LocalDate from, LocalDate to) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND person_id = ? "
+                + "AND status IN (?, ?) AND due_by >= ? AND due_by <= ?", Integer.class, sheetId, personId,
+                ClaimStatus.OPEN.name(), ClaimStatus.PENDING.name(), Date.valueOf(from), Date.valueOf(to));
+        return n == null ? 0 : n;
+    }
+
     /** Whether a claim on the sheet other than {@code exceptId} carries the reference, compared without regard to case. */
     public boolean refTaken(String sheetId, String ref, long exceptId) {
         Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND LOWER(ref) = LOWER(?) AND id <> ?",

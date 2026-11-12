@@ -21,6 +21,24 @@ public final class ClaimPeriods {
         return holidays.businessDaysAfter(person.getSheetId(), date, SaveClaimAdded.termsOf(person, date, settings));
     }
 
+    /** Refuses opening the claim when the period it belongs to caps its open claims and the claim's person
+     *  already has that many OPEN or PENDING claims in it. */
+    public static void refuseCapped(PeriodStore periods, ClaimStore claims, Claim claim) throws InvalidSheetException {
+        if (claim.getDueBy() == null) {
+            return;
+        }
+        PeriodResponse period = periods.on(claim.getSheetId(), claim.getDueBy());
+        if (period == null || period.cap() == null) {
+            return;
+        }
+        int open = claims.countOpenDue(claim.getSheetId(), claim.getPersonId(), LocalDate.parse(period.from()),
+                LocalDate.parse(period.to()));
+        if (open >= period.cap()) {
+            throw new InvalidSheetException("The period " + period.name() + " allows " + period.cap()
+                    + " open claims per person");
+        }
+    }
+
     /** Refuses a claim due by {@code dueBy} when that falls in a closed period. */
     public static void refuseClosed(PeriodStore periods, String sheetId, LocalDate dueBy) throws InvalidSheetException {
         PeriodResponse closed = periods.closedOn(sheetId, dueBy);

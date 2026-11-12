@@ -71,8 +71,8 @@ public class SheetCloneStore {
                 + "SELECT ?, reason FROM void_reason WHERE sheet_id = ? ORDER BY id", to, from);
         jdbc.update("INSERT INTO claim_template (sheet_id, name, amount, note) "
                 + "SELECT ?, name, amount, note FROM claim_template WHERE sheet_id = ? ORDER BY id", to, from);
-        jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date) "
-                + "SELECT ?, name, from_date, to_date FROM period WHERE sheet_id = ? ORDER BY id", to, from);
+        jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, open_cap) "
+                + "SELECT ?, name, from_date, to_date, open_cap FROM period WHERE sheet_id = ? ORDER BY id", to, from);
 
         // people, in list order
         List<Person> theirs = people.list(from);

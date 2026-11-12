@@ -23,7 +23,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 /** Opens each selected claim that can be opened, in list order: its people in the order they were
  *  added, a person's claims newest first. Each is opened as a single open would be (its next
  *  number, opened-by the user) and recorded as CLAIM_OPENED, then how it moved the sheet's figures.
- *  A claim that is not on the sheet, is not a DRAFT, or is due by a date in a closed period, or has an empty note while its due is above the
+ *  A claim that is not on the sheet, is not a DRAFT, or is due by a date in a closed period, or whose person already has
+ *  as many OPEN or PENDING claims in its period as the period's cap (counting those opened before it here), or has an empty note while its due is above the
  *  note threshold in force on its date, and every claim when
  *  the sheet is archived or the sheet's permission matrix does not allow the user's role to open, is refused and
  *  left as it is. */
@@ -58,7 +59,7 @@ public class OpenClaims {
         int opened = 0;
         for (Claim claim : selected) {
             if (!permitted || claim.getStatus() != ClaimStatus.DRAFT || closed(periods, claim)
-                    || unnoted(claim, settings, people, rates, sheets, store)) {
+                    || capped(periods, store, claim) || unnoted(claim, settings, people, rates, sheets, store)) {
                 refused++;
                 continue;
             }
@@ -87,6 +88,15 @@ public class OpenClaims {
             SheetStore sheets, ClaimStore store) {
         try {
             CheckProofs.refuseUnnoted(claim, settings, people, rates, sheets, store);
+            return false;
+        } catch (InvalidSheetException e) {
+            return true;
+        }
+    }
+
+    private static boolean capped(PeriodStore periods, ClaimStore store, Claim claim) {
+        try {
+            ClaimPeriods.refuseCapped(periods, store, claim);
             return false;
         } catch (InvalidSheetException e) {
             return true;
