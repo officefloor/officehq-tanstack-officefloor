@@ -1,0 +1,60 @@
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index fd55fcea8..97651e649 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -107,13 +107,15 @@ export type Late = { pct: ((date: string) => string) | undefined; boundaries: (c
+ /** The sheet's floor (two decimals) in force on a date; undefined for none known. */
+ export type Floor = ((date: string) => string) | undefined;
+ 
+-/** The late charge on a figure: for every full 30 days overdue, the late percent in force on that boundary
+- *  of it, rounded like due, added up (a boundary at 0.00 adds nothing). */
++/** The late charge on a figure, compounding: for every full 30 days overdue, the late percent in force on that
++ *  boundary of the figure plus the charges of the boundaries before it, rounded like due, added up (a boundary at
++ *  0.00 adds nothing). */
+ function lateCharge(claim: Claim, figure: string, late: Late | undefined): string | undefined {
+   const boundaries = late?.pct === undefined || isCorrection(claim) ? [] : late.boundaries(claim);
+   if (boundaries.length === 0 || figure === NA) return undefined;
+   const halfUp = late?.halfUp?.(claim) ?? false;
+-  return format(boundaries.reduce((sum, b) => sum + hundredths(due(figure, late!.pct!(b), halfUp)), 0n));
++  return format(boundaries.reduce(
++    (sum, b) => sum + hundredths(due(format(hundredths(figure) + sum), late!.pct!(b), halfUp)), 0n));
+ }
+ 
+ /** Whether the claim keeps a figure whatever the rates: fixed when settled, or bound by a statement to a
+diff --git a/src/main/frontend/features/settings/settings.ts b/src/main/frontend/features/settings/settings.ts
+index f2883dfb7..8e36613dc 100644
+--- a/src/main/frontend/features/settings/settings.ts
++++ b/src/main/frontend/features/settings/settings.ts
+@@ -6,7 +6,7 @@ import { useAsOf } from '../../session/session';
+ /** The sheet's settings: `clerkLimit` (two decimals) is the most due a clerk may settle a claim at,
+  *  null for no limit; `floor` (two decimals) is the least a claim's live due may be; `terms` is the
+  *  business days after its date a claim is due by; `latePct` (two decimals) is the percent of an overdue
+- *  claim's figure charged at each full 30 days it is overdue (the one in force on that boundary); `policyDate` (yyyy-MM-dd) is the date
++ *  claim's figure plus its earlier charges (compounding) charged at each full 30 days it is overdue (the one in force on that boundary); `policyDate` (yyyy-MM-dd) is the date
+  *  rounding turns on, null when blank (then the sheet's today); `periodNumberingFrom` (yyyy-MM-dd) is the
+  *  date from which claims opened are numbered per period, null when blank (off); `gradeTerms` is the terms
+  *  in force for each grade (its own, else the sheet's), by grade; `cap` (two decimals) is the most a person's
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Lateness.java b/src/main/java/net/officefloor/hq/app/claim/Lateness.java
+index ce1bcc55f..9ed836bd7 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Lateness.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Lateness.java
+@@ -12,8 +12,8 @@ import net.officefloor.hq.app.sheet.SheetStore;
+ 
+ /** What a sheet's late charge follows: each claim's due-by (fixed when it was added), the sheet's late
+  *  percent in force on each date and its today; and the sheet's floor in force on each claim's date. An overdue claim (OPEN or PENDING, not deferred, due-by before today) gains, for every full 30 days it is
+- *  overdue, the late percent in force on that boundary (its due-by plus 30, 60, 90 ... days) of its figure, rounded as the
+- *  sheet's {@link Rounding} has the claim, the charges added up (a boundary at 0.00 adds nothing). The charge is never bound by a
++ *  overdue, the late percent in force on that boundary (its due-by plus 30, 60, 90 ... days) of its figure plus the
++ *  charges of the boundaries before it (compounding), each rounded as the sheet's {@link Rounding} has the claim, the charges added up (a boundary at 0.00 adds nothing). The charge is never bound by a
+  *  statement; settling freezes it into the settled due. The floor is applied last: a live due is at least the floor
+  *  in force on the claim's date (none for a correction). A claim whose person's grade in force on its date has grace
+  *  days in force on that date is overdue only when its due-by plus the grace is before today, and its 30-day
+@@ -62,7 +62,7 @@ public record Lateness(Function<LocalDate, BigDecimal> latePcts, Function<LocalD
+         BigDecimal total = BigDecimal.ZERO.setScale(2);
+         for (long n = 1; n <= periods; n++) {
+             BigDecimal pct = latePcts.apply(from.plusDays(n * PERIOD_DAYS));
+-            total = total.add(ClaimFigure.of(figure, pct, rounding.mode(claim)));
++            total = total.add(ClaimFigure.of(figure.add(total), pct, rounding.mode(claim)));
+         }
+         return total;
+     }
