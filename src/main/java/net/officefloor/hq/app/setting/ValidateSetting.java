@@ -26,6 +26,7 @@ public class ValidateSetting {
         boolean terms = SettingStore.TERMS.equals(key);
         boolean gradeTerms = key.startsWith(SettingStore.TERMS_PREFIX)
                 && SettingStore.GRADES.contains(key.substring(SettingStore.TERMS_PREFIX.length()));
+        boolean gradeGrace = SettingStore.isGradeGrace(key);
         boolean late = SettingStore.LATE_PCT.equals(key);
         boolean numbering = SettingStore.PERIOD_NUMBERING_FROM.equals(key);
         boolean entry = SettingStore.ENTRY_DATE.equals(key);
@@ -47,7 +48,7 @@ public class ValidateSetting {
             body.set(new SettingInput(key, perm(request.value()), null, request.user()));
             return;
         }
-        if (!SettingStore.CLERK_LIMIT.equals(key) && !cap && !proof && !note && !floor && !terms && !gradeTerms && !late && !dated) {
+        if (!SettingStore.CLERK_LIMIT.equals(key) && !cap && !proof && !note && !floor && !terms && !gradeTerms && !gradeGrace && !late && !dated) {
             throw new InvalidSheetException("Not a setting: " + key);
         }
         String value = request.value() == null ? "" : request.value().trim();
@@ -71,6 +72,17 @@ public class ValidateSetting {
                 throw new InvalidSheetException((numbering ? "The period numbering from" : entry ? "The entry date" : "The policy date")
                         + " must be a date (YYYY-MM-DD), or blank");
             }
+            return;
+        }
+        if (gradeGrace) {
+            if (value.isEmpty()) {
+                body.set(new SettingInput(key, null, from, request.user()));
+                return;
+            }
+            if (!DAYS.matcher(value).matches()) {
+                throw new InvalidSheetException("The grade's grace days must be a whole number of days, 0 or more, or blank");
+            }
+            body.set(new SettingInput(key, String.valueOf(Integer.parseInt(value)), from, request.user()));
             return;
         }
         if (gradeTerms) {

@@ -3,6 +3,7 @@ package net.officefloor.hq.app.rollup;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -27,7 +28,7 @@ import org.springframework.stereotype.Service;
  * the order they were added, then TOTALS sheet=<id> by=<user> claimed-total=<0.00> due-total=<0.00>
  * overdue-total=<0.00> when any of the sheet's totals changed; the sheet's due-total and overdue-total leave out
  * the single highest and the single lowest person's figure when three or more people have one (n/a is no figure). A person's overdue-total is the due (late charge
- * included, skipping n/a) of their counting claims that are OPEN or PENDING with a due-by before today. A person's due-total is at most the sheet's cap. A change that moves no figure records nothing here.
+ * included, skipping n/a) of their counting claims that are OPEN or PENDING with a due-by (plus any grace days of their grade, see {@link Lateness}) before today. A person's due-total is at most the sheet's cap. A change that moves no figure records nothing here.
  */
 @Service
 public class RollupService {
@@ -58,8 +59,7 @@ public class RollupService {
         LocalDate today = sheets.today(sheetId);
         List<Claim> all = claims.list(sheetId);
         BigDecimal cap = settings.cap(sheetId);
-        Lateness lateness = new Lateness(settings.latePcts(sheetId), settings.floors(sheetId), sheets.today(sheetId),
-                new Rounding(policyDate(sheetId), all));
+        Lateness lateness = lateness(sheetId, today, all);
         Map<Long, Rollup.Figures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
         List<BigDecimal> dues = new ArrayList<>();
@@ -78,7 +78,7 @@ public class RollupService {
                 BigDecimal figure = lateness.due(claim, rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()));
                 if (figure != null) {
                     due = due.add(figure);
-                    if (overdue(claim, today)) {
+                    if (lateness.overdue(claim)) {
                         overdue = overdue.add(figure);
                     }
                 }
@@ -119,8 +119,7 @@ public class RollupService {
     public Map<Long, BigDecimal> dueBetweenByPerson(String sheetId, LocalDate from, LocalDate to) {
         LocalDate today = sheets.today(sheetId);
         List<Claim> all = claims.list(sheetId);
-        Lateness lateness = new Lateness(settings.latePcts(sheetId), settings.floors(sheetId), today,
-                new Rounding(policyDate(sheetId), all));
+        Lateness lateness = lateness(sheetId, today, all);
         Map<Long, ClaimStatus> atEnd = log.statusesAt(sheetId, to);
         Map<Long, BigDecimal> totals = new LinkedHashMap<>();
         for (Person person : people.list(sheetId)) {
@@ -158,10 +157,12 @@ public class RollupService {
         }
     }
 
-    /** Whether the claim is overdue: OPEN (or PENDING), not deferred, with its due-by before the sheet's today. */
-    private static boolean overdue(Claim claim, LocalDate today) {
-        return claim.getStatus().isOpen() && !claim.isDeferredOn(today) && today != null && claim.getDueBy() != null
-                && claim.getDueBy().isBefore(today);
+    /** What the sheet's late charge follows on the date, for these claims (see {@link Lateness}). */
+    private Lateness lateness(String sheetId, LocalDate today, List<Claim> all) {
+        Map<Long, Person> byId = new HashMap<>();
+        people.list(sheetId).forEach(person -> byId.put(person.getId(), person));
+        return new Lateness(settings.latePcts(sheetId), settings.floors(sheetId), today,
+                new Rounding(policyDate(sheetId), all), Lateness.graced(settings.graces(sheetId), byId::get));
     }
 
     /** The date the sheet's rounding turns on: the policy date set, else the sheet's today. */

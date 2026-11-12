@@ -32,7 +32,7 @@ function useSplit() {
       person.grades,
       today,
       floorOf(settings),
-      lateOf(settings, today),
+      lateOf(settings, today, [person]),
     );
 }
 

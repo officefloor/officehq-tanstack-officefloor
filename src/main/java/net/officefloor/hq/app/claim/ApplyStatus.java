@@ -42,7 +42,7 @@ public class ApplyStatus {
         if (to == ClaimStatus.SETTLED) {
             Person person = people.find(claim.getSheetId(), claim.getPersonId());
             BigDecimal pct = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
-            settledDue = Lateness.of(claim.getSheetId(), settings, sheets, store).due(claim, pct);
+            settledDue = Lateness.of(claim.getSheetId(), settings, sheets, store, people).due(claim, pct);
         }
         claim.setStatus(to);
         if (from == ClaimStatus.DRAFT && to == ClaimStatus.OPEN) {

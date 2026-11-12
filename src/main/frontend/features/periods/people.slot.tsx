@@ -29,7 +29,7 @@ function PersonPeriods({ person }: { person: Person }) {
   const rates = useRates(sheet);
   const today = useSheetToday(sheet);
   const settings = useSettings(sheet).data;
-  const late = lateOf(settings, today);
+  const late = lateOf(settings, today, [person]);
   return (
     <>
       {(periods.data ?? []).map((p) => (

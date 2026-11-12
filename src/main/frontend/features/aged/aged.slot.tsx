@@ -34,7 +34,7 @@ function PersonAged({ person }: { person: Person }) {
   const today = useSheetToday(sheet);
   const settings = useSettings(sheet).data;
   const floor = floorOf(settings);
-  const late = lateOf(settings, today);
+  const late = lateOf(settings, today, [person]);
   const mine = live((claims.data ?? []).filter((c) => c.personId === person.id), [person])
     .filter((c) => isOpen(c) && counts(c));
   const bucket = (from: number, to: number) =>

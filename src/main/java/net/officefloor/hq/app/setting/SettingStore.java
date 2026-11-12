@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.TreeMap;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import net.officefloor.hq.app.history.History;
 import net.officefloor.hq.app.role.Role;
@@ -17,7 +18,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 /** The settings kept per sheet, by key. A setting never set, or set blank, has no value. The settings
- *  that carry a figure (the clerk limit, the floor, the cap, the proof threshold, the note threshold, the terms, a grade's terms and the late
+ *  that carry a figure (the clerk limit, the floor, the cap, the proof threshold, the note threshold, the terms, a grade's terms, a grade's grace days and the late
  *  percent) are dated: each value is recorded from a from-date, and the value in force on a date is the
  *  one with the latest from-date on or before it (none before every from-date, then the sheet's starting
  *  value). The policy date, the period numbering date, the entry date, the grace days and the permission matrix are not dated. */
@@ -67,6 +68,14 @@ public class SettingStore {
 
     /** The whole days after its to-date an open period is closed by a new today; blank for off. */
     public static final String GRACE_DAYS = "grace-days";
+
+    /** The key of a grade's grace days: grace-A, grace-B or grace-C (dated; blank for none). */
+    public static final String GRACE_PREFIX = "grace-";
+
+    /** Whether the key is a grade's grace days. */
+    public static boolean isGradeGrace(String key) {
+        return key.startsWith(GRACE_PREFIX) && GRADES.contains(key.substring(GRACE_PREFIX.length()));
+    }
 
     /** The key of an action's permission: perm-open, perm-settle, and so on. */
     public static final String PERM_PREFIX = "perm-";
@@ -253,6 +262,20 @@ public class SettingStore {
     public int terms(String sheetId, String grade, LocalDate date) {
         Integer own = grade == null ? null : gradeTerms(sheetId, grade, date);
         return own == null ? terms(sheetId, date) : own;
+    }
+
+    /** The grace days of each grade in force on each date (null when it has none then), the whole days after
+     *  its due-by a claim of a person of the grade then is not yet overdue. Read once, for many claims. */
+    public BiFunction<String, LocalDate, Integer> graces(String sheetId) {
+        Map<String, NavigableMap<LocalDate, String>> histories = new LinkedHashMap<>();
+        for (String grade : GRADES) {
+            histories.put(grade, history(sheetId, GRACE_PREFIX + grade));
+        }
+        return (grade, date) -> {
+            NavigableMap<LocalDate, String> history = histories.get(grade);
+            String value = history == null ? null : on(history, date);
+            return value == null ? null : Integer.valueOf(value);
+        };
     }
 
     /** The date the sheet's rounding turns on, or null when blank (then the sheet's today). */

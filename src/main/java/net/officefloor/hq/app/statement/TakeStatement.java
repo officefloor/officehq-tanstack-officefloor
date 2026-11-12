@@ -65,7 +65,9 @@ public class TakeStatement {
         }
         LocalDate policy = settings.policyDate(sheetId);
         Rounding rounding = new Rounding(policy != null ? policy : on, all);
-        Lateness lateness = new Lateness(settings.latePcts(sheetId), settings.floors(sheetId), on, rounding);
+        Person whose = then;
+        Lateness lateness = new Lateness(settings.latePcts(sheetId), settings.floors(sheetId), on, rounding,
+                Lateness.graced(settings.graces(sheetId), id -> id == whose.getId() ? whose : null));
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         boolean fixed = false;
         int counted = 0;

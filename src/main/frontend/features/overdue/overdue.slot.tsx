@@ -31,7 +31,7 @@ function useOverdue() {
       person.grades,
       floorOf(settings),
       today,
-      lateOf(settings, today),
+      lateOf(settings, today, [person]),
     );
 }
 

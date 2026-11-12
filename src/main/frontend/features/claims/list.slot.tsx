@@ -332,9 +332,9 @@ function PersonClaims({ person }: { person: Person }) {
               <span data-testid="claim-note">{c.note}</span>{' '}
               <span data-testid="claim-corrects">{c.corrects ?? ''}</span>{' '}
               <span data-testid="claim-period">{periodOf(periods.data, c.dueBy)?.name ?? ''}</span>{' '}
-              <span data-testid="claim-due">{claimDue(c, rates.data, person.grades, floor, lateOf(settings, today))}</span>{' '}
+              <span data-testid="claim-due">{claimDue(c, rates.data, person.grades, floor, lateOf(settings, today, [person]))}</span>{' '}
               <span data-testid="claim-due-by">{dueBy(c)}</span>{' '}
-              <span data-testid="claim-overdue">{overdue(c, today) ? 'yes' : 'no'}</span>{' '}
+              <span data-testid="claim-overdue">{overdue(c, today, lateOf(settings, today, [person])) ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-status">{c.status}</span>{' '}
               <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
               <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>{' '}

@@ -24,7 +24,7 @@ function ExportPeople() {
   if (!user || !sheet) return null;
 
   const download = () => {
-    const late = lateOf(settings, today);
+    const late = lateOf(settings, today, people.data);
     const lines = [['name', 'grade', 'retired-from', 'due-total']];
     for (const p of people.data ?? []) {
       const due = personDue(live((claims.data ?? []).filter((c) => c.personId === p.id), [p]), rates.data, p.grades, today, floorOf(settings), late, settings?.cap);

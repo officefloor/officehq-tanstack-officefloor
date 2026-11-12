@@ -30,7 +30,8 @@ public class RespondWithSettings {
                 store.find(sheet, SettingStore.CAP), store.find(sheet, SettingStore.PROOF_THRESHOLD),
                 history(sheet, SettingStore.FLOOR, store), history(sheet, SettingStore.LATE_PCT, store),
                 store.perms(sheet), store.find(sheet, SettingStore.GRACE_DAYS),
-                store.find(sheet, SettingStore.NOTE_THRESHOLD), store.find(sheet, SettingStore.ENTRY_DATE)));
+                store.find(sheet, SettingStore.NOTE_THRESHOLD), store.find(sheet, SettingStore.ENTRY_DATE),
+                gradeGrace(sheet, today, store), gradeGraceFrom(sheet, store)));
     }
 
     private static Map<String, String> gradeTerms(String sheetId, LocalDate today, SettingStore store) {
@@ -39,6 +40,22 @@ public class RespondWithSettings {
             terms.put(grade, String.valueOf(store.terms(sheetId, grade, today)));
         }
         return terms;
+    }
+
+    private static Map<String, String> gradeGrace(String sheetId, LocalDate today, SettingStore store) {
+        Map<String, String> grace = new LinkedHashMap<>();
+        for (String grade : SettingStore.GRADES) {
+            grace.put(grade, store.findOn(sheetId, SettingStore.GRACE_PREFIX + grade, today));
+        }
+        return grace;
+    }
+
+    private static Map<String, List<SettingsResponse.Dated>> gradeGraceFrom(String sheetId, SettingStore store) {
+        Map<String, List<SettingsResponse.Dated>> graces = new LinkedHashMap<>();
+        for (String grade : SettingStore.GRADES) {
+            graces.put(grade, history(sheetId, SettingStore.GRACE_PREFIX + grade, store));
+        }
+        return graces;
     }
 
     private static List<SettingsResponse.Dated> history(String sheetId, String key, SettingStore store) {

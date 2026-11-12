@@ -20,7 +20,7 @@ function Summary() {
   const today = useSheetToday(sheet);
   const settings = useSettings(sheet).data;
   const floor = floorOf(settings);
-  const late = lateOf(settings, today);
+  const late = lateOf(settings, today, people.data);
 
   const active = (people.data ?? []).filter((p) => !p.retired);
   const onGrade = (grade: string) => active.filter((p) => gradeOn(p.grades, today) === grade);

@@ -18,11 +18,14 @@ import { useAsOf } from '../../session/session';
  *  that may take each action (open, settle, void, reassign, close, reopen), comma separated, by action; null when
  *  blank (the standing rule). `graceDays` is the whole days after its to-date an open period is closed when the
  *  sheet's today moves, null when blank (off). `entryDate` (yyyy-MM-dd) is the default date of a new claim
- *  in place of the sheet's today, null when blank (off). */
+ *  in place of the sheet's today, null when blank (off). `gradeGrace` is each grade's grace days in force on the sheet's
+ *  today, by grade, null when it has none; `gradeGraceFrom` is each grade's grace days recorded, by grade, oldest
+ *  from-date first: a claim's grace is the one in force on its date for its person's grade then. */
 export type Settings = { clerkLimit: string | null; floor: string; terms: string; latePct: string; policyDate: string | null;
   periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; proofThreshold: string | null;
   floorFrom: Dated[]; latePctFrom: Dated[]; perms: Record<string, string | null>;
-  graceDays: string | null; noteThreshold: string | null; entryDate: string | null };
+  graceDays: string | null; noteThreshold: string | null; entryDate: string | null;
+  gradeGrace: Record<string, string | null>; gradeGraceFrom: Record<string, Dated[]> };
 
 /** A setting's value recorded from a date (yyyy-MM-dd); a null value is blank. */
 export type Dated = { from: string; value: string | null };
@@ -48,6 +51,14 @@ export function floorOf(settings: Settings | undefined): ((date: string) => stri
 /** The late percent in force on each date; undefined until the settings are read. */
 export function latePctOf(settings: Settings | undefined): ((date: string) => string) | undefined {
   return settings && ((date) => valueOn(settings.latePctFrom, date, STARTING_LATE_PCT));
+}
+
+/** The grace days of a grade in force on each date (null for none); undefined until the settings are read. */
+export function graceOf(settings: Settings | undefined): ((grade: string, date: string) => number | null) | undefined {
+  return settings && ((grade, date) => {
+    const value = valueOn(settings.gradeGraceFrom?.[grade] ?? [], date, '');
+    return value === '' ? null : Number(value);
+  });
 }
 
 /** Under the sheet's key, so loading the sheet again re-reads its settings. */

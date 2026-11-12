@@ -99,8 +99,10 @@ export function trimmedTotal(dues: string[]): string {
 }
 
 /** What a claim's late charge follows: the sheet's late percent (two decimals) in force on a date and the
- *  30-day boundaries (yyyy-MM-dd) the claim is overdue past; and whether the claim's live figures round half up (else half to even). */
-export type Late = { pct: ((date: string) => string) | undefined; boundaries: (claim: Claim) => string[]; halfUp?: (claim: Claim) => boolean };
+ *  30-day boundaries (yyyy-MM-dd) the claim is overdue past; and whether the claim's live figures round half up (else half to even);
+ *  and the date (yyyy-MM-dd) its overdue is counted from: its due-by plus any grace days of its person's grade. */
+export type Late = { pct: ((date: string) => string) | undefined; boundaries: (claim: Claim) => string[]; halfUp?: (claim: Claim) => boolean;
+  graceBy?: (claim: Claim) => string };
 
 /** The sheet's floor (two decimals) in force on a date; undefined for none known. */
 export type Floor = ((date: string) => string) | undefined;

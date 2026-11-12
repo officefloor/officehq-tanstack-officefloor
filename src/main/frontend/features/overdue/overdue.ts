@@ -1,42 +1,58 @@
 import { type Claim, isOpen } from '../claims/claims';
 import { type Floor, type Late, type Rate, claimDue, dueTotal } from '../rates/rates';
-import { type Settings, latePctOf } from '../settings/settings';
-import type { Grades } from '../people/people';
+import { type Settings, graceOf, latePctOf } from '../settings/settings';
+import { type Grades, type Person, gradeOn } from '../people/people';
+
+const DAY = 24 * 60 * 60 * 1000;
 
 /** The claim's due-by (yyyy-MM-dd): fixed when it was added, from the terms of its person's grade then. */
 export const dueBy = (claim: Claim): string => claim.dueBy;
 
-/** Whether the claim is overdue: it is OPEN (or PENDING), not deferred, and its due-by is before the sheet's today. */
-export function overdue(claim: Claim, today: string | undefined): boolean {
-  return isOpen(claim) && !claim.deferred && today !== undefined && dueBy(claim) < today;
+/** The date (yyyy-MM-dd) the claim's overdue counts from: its due-by plus the grace days in force on its date for
+ *  its person's grade then (its due-by when none, or when the late charge is not known). */
+export const graceBy = (claim: Claim, late?: Late): string => late?.graceBy?.(claim) ?? dueBy(claim);
+
+/** Whether the claim is overdue: it is OPEN (or PENDING), not deferred, and its due-by plus any grace is before the sheet's today. */
+export function overdue(claim: Claim, today: string | undefined, late?: Late): boolean {
+  return isOpen(claim) && !claim.deferred && today !== undefined && graceBy(claim, late) < today;
 }
 
-const DAY = 24 * 60 * 60 * 1000;
+/** The date `days` after the date (yyyy-MM-dd). */
+const plusDays = (date: string, days: number): string =>
+  new Date(Date.parse(`${date}T00:00:00Z`) + days * DAY).toISOString().slice(0, 10);
 
-/** How many full 30 days the claim is overdue on the sheet's today (0 when it is not overdue). */
-export function latePeriods(claim: Claim, today: string | undefined): number {
-  if (today === undefined || !overdue(claim, today)) return 0;
-  const days = (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${dueBy(claim)}T00:00:00Z`)) / DAY;
+/** How many full 30 days the claim is overdue on the sheet's today, counted from its due-by plus any grace (0 when it is not overdue). */
+export function latePeriods(claim: Claim, today: string | undefined, late?: Late): number {
+  if (today === undefined || !overdue(claim, today, late)) return 0;
+  const days = (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${graceBy(claim, late)}T00:00:00Z`)) / DAY;
   return Math.floor(days / 30);
 }
 
-/** The 30-day boundaries (yyyy-MM-dd) the claim is overdue past on the sheet's today: its due-by plus 30, 60, 90 ... days. */
-export function lateBoundaries(claim: Claim, today: string | undefined): string[] {
-  const start = Date.parse(`${dueBy(claim)}T00:00:00Z`);
-  return Array.from({ length: latePeriods(claim, today) }, (_, i) =>
+/** The 30-day boundaries (yyyy-MM-dd) the claim is overdue past on the sheet's today: its due-by plus any grace, plus 30, 60, 90 ... days. */
+export function lateBoundaries(claim: Claim, today: string | undefined, late?: Late): string[] {
+  const start = Date.parse(`${graceBy(claim, late)}T00:00:00Z`);
+  return Array.from({ length: latePeriods(claim, today, late) }, (_, i) =>
     new Date(start + (i + 1) * 30 * DAY).toISOString().slice(0, 10));
 }
 
-/** What the sheet's late charge follows: its late percent in force on each boundary date, each claim's due-by and its today; and how it rounds:
+/** What the sheet's late charge follows: its late percent in force on each boundary date, each claim's due-by plus
+ *  the grace days in force on its date for its person's grade then (of these people), and its today; and how it rounds:
  *  a claim rounding by a date before the policy date (else the sheet's today) rounds half up. */
-export function lateOf(settings: Settings | undefined, today: string | undefined): Late {
+export function lateOf(settings: Settings | undefined, today: string | undefined, people: Person[] | undefined): Late {
   const policy = settings?.policyDate ?? today;
   const pcts = latePctOf(settings);
-  return {
+  const graces = graceOf(settings);
+  const late: Late = {
     pct: pcts,
-    boundaries: (c) => lateBoundaries(c, today),
+    boundaries: (c) => lateBoundaries(c, today, late),
     halfUp: (c) => policy !== undefined && (c.roundsBy ?? c.date) < policy,
+    graceBy: (c) => {
+      const person = people?.find((p) => p.id === c.personId);
+      const grace = person && graces?.(gradeOn(person.grades, c.date), c.date);
+      return grace == null ? dueBy(c) : plusDays(dueBy(c), grace);
+    },
   };
+  return late;
 }
 
 /** A person's overdue claims among these (their claims that count): how many, and the sum of their
@@ -49,6 +65,6 @@ export function overdueFigures(
   today: string | undefined,
   lateCharge?: Late,
 ): { count: number; total: string } {
-  const late = claims.filter((c) => overdue(c, today));
+  const late = claims.filter((c) => overdue(c, today, lateCharge));
   return { count: late.length, total: dueTotal(late.map((c) => claimDue(c, rates, grades, floor, lateCharge))) };
 }

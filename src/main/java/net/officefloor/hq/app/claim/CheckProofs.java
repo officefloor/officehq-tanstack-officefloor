@@ -28,7 +28,7 @@ final class CheckProofs {
         }
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         BigDecimal pct = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
-        BigDecimal due = Lateness.of(claim.getSheetId(), settings, sheets, claims).due(claim, pct);
+        BigDecimal due = Lateness.of(claim.getSheetId(), settings, sheets, claims, people).due(claim, pct);
         if (due != null && due.compareTo(threshold) > 0) {
             throw new InvalidSheetException("A claim due above the proof threshold of " + threshold.setScale(2)
                     + " needs a proof before it can be " + (input.review() ? "approved" : "settled"));
@@ -48,7 +48,7 @@ final class CheckProofs {
         }
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
         BigDecimal pct = person == null ? null : rates.find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
-        BigDecimal due = Lateness.of(claim.getSheetId(), settings, sheets, claims).due(claim, pct);
+        BigDecimal due = Lateness.of(claim.getSheetId(), settings, sheets, claims, people).due(claim, pct);
         if (due != null && due.compareTo(threshold) > 0) {
             throw new InvalidSheetException("A claim due above the note threshold of " + threshold.setScale(2)
                     + " needs a note before it can be opened");

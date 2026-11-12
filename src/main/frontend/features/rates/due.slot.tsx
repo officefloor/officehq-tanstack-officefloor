@@ -22,7 +22,7 @@ function PersonDue({ person }: { person: Person }) {
   const settings = useSettings(sheet).data;
   const floor = floorOf(settings);
   const mine = live((claims.data ?? []).filter((c) => c.personId === person.id), [person]);
-  return <td data-testid="person-due-total">{personDue(mine, rates.data, person.grades, today, floor, lateOf(settings, today), settings?.cap)}</td>;
+  return <td data-testid="person-due-total">{personDue(mine, rates.data, person.grades, today, floor, lateOf(settings, today, [person]), settings?.cap)}</td>;
 }
 
 function ExcessHead() {
@@ -38,7 +38,7 @@ function PersonExcess({ person }: { person: Person }) {
   const mine = live((claims.data ?? []).filter((c) => c.personId === person.id), [person]);
   return (
     <td data-testid="person-excess">
-      {personExcess(mine, rates.data, person.grades, today, floorOf(settings), lateOf(settings, today), settings?.cap)}
+      {personExcess(mine, rates.data, person.grades, today, floorOf(settings), lateOf(settings, today, [person]), settings?.cap)}
     </td>
   );
 }
@@ -54,7 +54,7 @@ export function useSheetDueTotal(): string {
   const settings = useSettings(sheet).data;
   const floor = floorOf(settings);
   const dues = (people.data ?? []).map((p) =>
-    personDue(live((claims.data ?? []).filter((c) => c.personId === p.id), [p]), rates.data, p.grades, today, floor, lateOf(settings, today), settings?.cap),
+    personDue(live((claims.data ?? []).filter((c) => c.personId === p.id), [p]), rates.data, p.grades, today, floor, lateOf(settings, today, [p]), settings?.cap),
   );
   return trimmedTotal(dues);
 }

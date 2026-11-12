@@ -27,7 +27,7 @@ public class ApplyResettle {
                 claim.getCorrects(), claim.getDueBy());
         Person person = people.find(sheetId, claim.getPersonId());
         BigDecimal pct = person == null ? null : rates.find(sheetId, person.gradeOn(claim.getDate()), claim.getDate());
-        BigDecimal now = Lateness.of(sheetId, settings, sheets, store).due(open, pct);
+        BigDecimal now = Lateness.of(sheetId, settings, sheets, store, people).due(open, pct);
         BigDecimal old = claim.getSettledDue();
         claim.setSettledDue(now);
         store.save(claim);

@@ -98,7 +98,7 @@ function Periods() {
               <td data-testid="period-name">{p.name}</td>
               <td data-testid="period-from">{p.from}</td>
               <td data-testid="period-to">{p.to}</td>
-              <td data-testid="period-due-total">{periodDue(p, claims.data, people.data, rates.data, floor, lateOf(settings, today))}</td>
+              <td data-testid="period-due-total">{periodDue(p, claims.data, people.data, rates.data, floor, lateOf(settings, today, people.data))}</td>
               <td data-testid="period-closed">{p.closed ? 'yes' : p.soft ? 'soft' : 'no'}</td>
               <td>
                 <button type="button" data-testid="period-close" disabled={act.isPending} onClick={() => periodAction(p.name, 'close')}>
