@@ -5,7 +5,8 @@ import { useAsOf } from '../../session/session';
 
 /** A member of a pool: a person on the sheet, or another pool (`memberPoolId` set, `personId` null), and its share
  *  percent (two decimals). `retired` once a retirement date is set for them, whatever the date: their share then
- *  counts as 0.00 toward the total. `cut` is their cut of the pool's pot (two decimals; 0.00 when retired), null
+ *  counts as 0.00 toward the total. `cut` is their cut of the pool's pot (two decimals; 0.00 when retired or held
+ *  on the sheet's today, their share then spread over the members with a cut in proportion to their shares), null
  *  when the pool is not balanced or has no pot: a pool that is a member of none has the sheet's pot, a member
  *  pool's pot is its cut in the pool above. */
 export type PoolMember = {

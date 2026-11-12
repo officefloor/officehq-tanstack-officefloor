@@ -4,6 +4,7 @@ import { HttpError, postJson } from '../../api/http';
 import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
 import { type Person, peopleKey, personActionKey, useLatestPersonAction } from '../people/people';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
+import { poolsKey } from '../pools/pools';
 
 function HoldHead() {
   return <th>Hold</th>;
@@ -25,6 +26,8 @@ function PersonHold({ person }: { person: Person }) {
       postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/hold`, { ...dates, user }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
+      // a hold in force on today takes the person's cuts from their pools
+      await queryClient.invalidateQueries({ queryKey: poolsKey(sheet) });
       setFields({ from: '', to: '' });
     },
   });
