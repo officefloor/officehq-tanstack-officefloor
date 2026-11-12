@@ -12,8 +12,8 @@ import net.officefloor.hq.app.sheet.SheetStore;
 
 /** What a sheet's late charge follows: each claim's due-by (fixed when it was added), the sheet's late
  *  percent in force on each date and its today; and the sheet's floor in force on each claim's date. An overdue claim (OPEN or PENDING, not deferred, due-by before today) gains, for every full 30 days it is
- *  overdue, the late percent in force on that boundary (its due-by plus 30, 60, 90 ... days) of its figure, rounded as the
- *  sheet's {@link Rounding} has the claim, the charges added up (a boundary at 0.00 adds nothing). The charge is never bound by a
+ *  overdue, the late percent in force on that boundary (its due-by plus 30, 60, 90 ... days) of its figure plus the
+ *  charges of the boundaries before it (compounding), each rounded as the sheet's {@link Rounding} has the claim, the charges added up (a boundary at 0.00 adds nothing). The charge is never bound by a
  *  statement; settling freezes it into the settled due. The floor is applied last: a live due is at least the floor
  *  in force on the claim's date (none for a correction). A claim whose person's grade in force on its date has grace
  *  days in force on that date is overdue only when its due-by plus the grace is before today, and its 30-day
@@ -62,7 +62,7 @@ public record Lateness(Function<LocalDate, BigDecimal> latePcts, Function<LocalD
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         for (long n = 1; n <= periods; n++) {
             BigDecimal pct = latePcts.apply(from.plusDays(n * PERIOD_DAYS));
-            total = total.add(ClaimFigure.of(figure, pct, rounding.mode(claim)));
+            total = total.add(ClaimFigure.of(figure.add(total), pct, rounding.mode(claim)));
         }
         return total;
     }

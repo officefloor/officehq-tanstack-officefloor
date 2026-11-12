@@ -107,13 +107,15 @@ export type Late = { pct: ((date: string) => string) | undefined; boundaries: (c
 /** The sheet's floor (two decimals) in force on a date; undefined for none known. */
 export type Floor = ((date: string) => string) | undefined;
 
-/** The late charge on a figure: for every full 30 days overdue, the late percent in force on that boundary
- *  of it, rounded like due, added up (a boundary at 0.00 adds nothing). */
+/** The late charge on a figure, compounding: for every full 30 days overdue, the late percent in force on that
+ *  boundary of the figure plus the charges of the boundaries before it, rounded like due, added up (a boundary at
+ *  0.00 adds nothing). */
 function lateCharge(claim: Claim, figure: string, late: Late | undefined): string | undefined {
   const boundaries = late?.pct === undefined || isCorrection(claim) ? [] : late.boundaries(claim);
   if (boundaries.length === 0 || figure === NA) return undefined;
   const halfUp = late?.halfUp?.(claim) ?? false;
-  return format(boundaries.reduce((sum, b) => sum + hundredths(due(figure, late!.pct!(b), halfUp)), 0n));
+  return format(boundaries.reduce(
+    (sum, b) => sum + hundredths(due(format(hundredths(figure) + sum), late!.pct!(b), halfUp)), 0n));
 }
 
 /** Whether the claim keeps a figure whatever the rates: fixed when settled, or bound by a statement to a
