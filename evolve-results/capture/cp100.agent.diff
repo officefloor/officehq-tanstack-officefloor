@@ -1,0 +1,210 @@
+diff --git a/src/main/frontend/features/claims/settle.slot.tsx b/src/main/frontend/features/claims/settle.slot.tsx
+index d7b9592ed..a7cc26a9b 100644
+--- a/src/main/frontend/features/claims/settle.slot.tsx
++++ b/src/main/frontend/features/claims/settle.slot.tsx
+@@ -8,8 +8,8 @@ import { claimsKey, useClaims, useSelectedClaims } from './claims';
+ type BulkSettleResult = { settled: number; refused: number };
+ 
+ // Settles the selected claims together: the server settles each in list order by the rules of a
+-// single settle (a clerk's above the clerk limit goes to PENDING, counted as settled) and refuses
+-// the rest, and the counts show once it answers (gone while it runs). One that settles any is a batch,
++// single settle (a clerk's above the clerk limit goes to PENDING, counted as settled), or, when any
++// would be refused, settles none and counts them all refused; and the counts show once it answers (gone while it runs). One that settles any is a batch,
+ // numbered on the sheet; the last batch's number shows beside the button (nothing when there is none).
+ function BulkSettle() {
+   const [user] = useCurrentUser();
+diff --git a/src/main/java/net/officefloor/hq/app/Audit.java b/src/main/java/net/officefloor/hq/app/Audit.java
+index 7a50a30af..7a5f54f8f 100644
+--- a/src/main/java/net/officefloor/hq/app/Audit.java
++++ b/src/main/java/net/officefloor/hq/app/Audit.java
+@@ -6,6 +6,8 @@ import java.nio.charset.StandardCharsets;
+ import java.nio.file.Files;
+ import java.nio.file.Path;
+ import java.nio.file.StandardOpenOption;
++import java.util.ArrayList;
++import java.util.List;
+ import java.util.Set;
+ import net.officefloor.hq.app.role.DelegationStore;
+ import org.springframework.beans.factory.annotation.Value;
+@@ -28,6 +30,8 @@ public class Audit {
+ 
+     private final Path file;
+     private final DelegationStore delegations;
++    /** The records held back on this thread while a change that may yet be refused as a whole runs. */
++    private final ThreadLocal<List<String>> held = new ThreadLocal<>();
+ 
+     public Audit(@Value("${app.audit.file:.run/audit.log}") String path, DelegationStore delegations) {
+         this.file = Path.of(path);
+@@ -41,6 +45,37 @@ public class Audit {
+         if (delegator != null) {
+             entry = entry + " for=" + delegator;
+         }
++        List<String> holding = held.get();
++        if (holding != null) {
++            holding.add(entry);
++            return;
++        }
++        append(entry);
++    }
++
++    /** Holds back the records this thread makes from now on, until {@link #release()} writes them or
++     *  {@link #discard()} drops them: a change refused as a whole writes nothing. */
++    public void hold() {
++        held.set(new ArrayList<>());
++    }
++
++    /** Writes the records held back on this thread, in the order they were made, and stops holding. */
++    public synchronized void release() {
++        List<String> holding = held.get();
++        held.remove();
++        if (holding != null) {
++            for (String entry : holding) {
++                append(entry);
++            }
++        }
++    }
++
++    /** Drops the records held back on this thread, and stops holding. */
++    public void discard() {
++        held.remove();
++    }
++
++    private void append(String entry) {
+         try {
+             Path parent = file.toAbsolutePath().getParent();
+             if (parent != null) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java b/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java
+index 4ca2dd7bd..82d966a1d 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SettleClaims.java
+@@ -1,5 +1,7 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.math.BigDecimal;
++import java.math.RoundingMode;
+ import java.util.ArrayList;
+ import java.util.Comparator;
+ import java.util.HashMap;
+@@ -20,19 +22,25 @@ import net.officefloor.hq.app.voidreason.VoidReasonStore;
+ import net.officefloor.hq.app.watch.WatchStore;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.plugin.variable.Out;
++import org.springframework.transaction.PlatformTransactionManager;
++import org.springframework.transaction.TransactionDefinition;
++import org.springframework.transaction.support.TransactionTemplate;
+ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ /** Settles each selected claim, in list order: its people in the order they were added, a person's
+  *  claims newest first. Each goes through the very steps of a single settle by the user (period,
+  *  clerk limit, opened-by, edited-by and status checks, then store, log and audit), so a clerk's settle above
+  *  the clerk limit sends it to PENDING, which counts as settled. A claim that is not on the sheet,
+- *  or that a single settle would refuse (every claim on an archived sheet), is refused and left as it is.
+- *  When at least one is settled, the bulk settle takes the sheet's next batch and each settled claim records it. */
++ *  or that a single settle would refuse (every claim on an archived sheet), is refused.
++ *  All or nothing: when any is refused, none is settled, every one counts as refused and nothing is
++ *  stored or audited. Otherwise the bulk settle takes the sheet's next batch, each settled claim records
++ *  it, and after the claims' own records BATCH_SETTLED sheet=<id> by=<user> batch=<n> count=<claims>
++ *  total=<the frozen figures of those SETTLED, added up> is written. */
+ public class SettleClaims {
+     public void settle(@PathVariable("sheetId") String sheetId, @Val BulkSettleInput input, ClaimStore store,
+             PersonStore people, PeriodStore periods, SettingStore settings, SheetStore sheets, RoleStore roles,
+             RateStore rates, ClaimLogStore log, RollupService rollups, Audit audit, WatchStore watches,
+-            VoidReasonStore voidReasons,
++            VoidReasonStore voidReasons, PlatformTransactionManager transactions,
+             Out<BulkSettleResult> result) {
+         String sheet = sheetId.trim();
+         Map<Long, Integer> personOrder = new HashMap<>();
+@@ -57,30 +65,55 @@ public class SettleClaims {
+         selected.sort(Comparator.<Claim>comparingInt(c -> personOrder.getOrDefault(c.getPersonId(), Integer.MAX_VALUE))
+                 .thenComparing(c -> listed.getOrDefault(c.getId(), Integer.MAX_VALUE)));
+         StatusInput status = new StatusInput(ClaimStatus.SETTLED, input.user(), false, "");
+-        int settled = 0;
+-        Long batch = null;
+-        for (Claim claim : selected) {
+-            try {
+-                sheets.refuseArchived(sheet);
+-                new CheckClaimPeriod().check(claim, periods);
+-                StatusMove[] move = new StatusMove[1];
+-                new CheckClerkLimit().check(status, claim, roles, settings, people, rates, sheets, store, log,
+-                        m -> move[0] = m);
+-                Rollup before = rollups.snapshot(sheet);
+-                StatusChange[] change = new StatusChange[1];
+-                new ApplyStatus().apply(status, move[0], claim, store, people, rates, settings, sheets, periods, voidReasons,
+-                        c -> change[0] = c);
+-                new SaveClaim().save(status, claim, store, log);
+-                if (batch == null) {
+-                    batch = store.nextBatch(sheet);
++        int all = input.claimIds().size();
++        if (refused > 0) {
++            result.set(new BulkSettleResult(0, all));
++            return;
++        }
++        // All or nothing: the claims are settled in a nested transaction, their audit records held back,
++        // and the first refusal rolls every one of them back and drops the records.
++        TransactionTemplate nested = new TransactionTemplate(transactions);
++        nested.setPropagationBehavior(TransactionDefinition.PROPAGATION_NESTED);
++        audit.hold();
++        boolean done = false;
++        try {
++            done = Boolean.TRUE.equals(nested.execute(tx -> {
++                long batch = store.nextBatch(sheet);
++                BigDecimal total = BigDecimal.ZERO;
++                for (Claim claim : selected) {
++                    try {
++                        sheets.refuseArchived(sheet);
++                        new CheckClaimPeriod().check(claim, periods);
++                        StatusMove[] move = new StatusMove[1];
++                        new CheckClerkLimit().check(status, claim, roles, settings, people, rates, sheets, store, log,
++                                m -> move[0] = m);
++                        Rollup before = rollups.snapshot(sheet);
++                        StatusChange[] change = new StatusChange[1];
++                        new ApplyStatus().apply(status, move[0], claim, store, people, rates, settings, sheets, periods,
++                                voidReasons, c -> change[0] = c);
++                        new SaveClaim().save(status, claim, store, log);
++                        store.markBatch(claim, batch);
++                        new AuditClaimStatus().audit(status, move[0], claim, change[0], before, people, audit, rollups,
++                                watches);
++                        if (move[0].to() == ClaimStatus.SETTLED && claim.getSettledDue() != null) {
++                            total = total.add(claim.getSettledDue());
++                        }
++                    } catch (InvalidSheetException e) {
++                        tx.setRollbackOnly();
++                        return false;
++                    }
+                 }
+-                store.markBatch(claim, batch);
+-                new AuditClaimStatus().audit(status, move[0], claim, change[0], before, people, audit, rollups, watches);
+-                settled++;
+-            } catch (InvalidSheetException e) {
+-                refused++;
++                audit.record("BATCH_SETTLED sheet=" + sheet + " by=" + input.user() + " batch=" + batch + " count="
++                        + selected.size() + " total=" + total.setScale(2, RoundingMode.HALF_UP).toPlainString());
++                return true;
++            }));
++        } finally {
++            if (done) {
++                audit.release();
++            } else {
++                audit.discard();
+             }
+         }
+-        result.set(new BulkSettleResult(settled, refused));
++        result.set(done ? new BulkSettleResult(selected.size(), 0) : new BulkSettleResult(0, all));
+     }
+ }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-settle.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-settle.POST.yml
+index 07640199b..df6826990 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-settle.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/bulk-settle.POST.yml
+@@ -2,8 +2,9 @@
+ # Each selected claim is settled in list order — people in the order they were added, a person's
+ # claims newest first — by exactly the rules of a single settle by the user, and recorded as a single
+ # settle is (CLAIM_SETTLED, or CLAIM_PENDING for a clerk above the clerk limit, which counts as
+-# settled); each that a single settle would refuse is refused and left as it is. Answers
+-# {settled, refused}. Refused (400) only when no claim is selected.
++# settled). All or nothing: when a single settle would refuse any of them, none is settled, every one
++# counts as refused and nothing is written; otherwise BATCH_SETTLED follows the claims' own records.
++# Answers {settled, refused}. Refused (400) only when no claim is selected.
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateBulkSettle
+   next: settle
