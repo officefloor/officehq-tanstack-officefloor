@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import net.officefloor.hq.app.period.PeriodStore;
 import net.officefloor.hq.app.person.Person;
@@ -57,6 +58,9 @@ public class ApplyStatus {
                 voidReason = input.reason();
             }
         }
+        // A settle as of a date fixes its due as the claim stood at the end of that date.
+        BigDecimal dueThen = input.status() == ClaimStatus.SETTLED && input.on() != null
+                ? dueAsOf(claim, input.on(), store, people, rates, settings, sheets) : null;
         if (from == ClaimStatus.DRAFT && (to == ClaimStatus.OPEN || to == ClaimStatus.REVIEW)) {
             ClaimPeriods.refuseCapped(periods, store, claim);
         }
@@ -65,7 +69,9 @@ public class ApplyStatus {
         }
         // The due to freeze is worked out while the claim is still OPEN or PENDING, so it takes its late charge in.
         BigDecimal settledDue = null;
-        if (to == ClaimStatus.SETTLED) {
+        if (to == ClaimStatus.SETTLED && input.on() != null) {
+            settledDue = dueThen;
+        } else if (to == ClaimStatus.SETTLED) {
             Person person = people.find(claim.getSheetId(), claim.getPersonId());
             BigDecimal pct = person == null ? null : rates.forClaim(claim).find(claim.getSheetId(), person.gradeOn(claim.getDate()), claim.getDate());
             settledDue = Lateness.of(claim.getSheetId(), settings, sheets, store, people).due(claim, pct);
@@ -87,5 +93,34 @@ public class ApplyStatus {
             claim.setSettledDue(settledDue);
         }
         change.set(new StatusChange(claim.getNumber()));
+    }
+
+    /** The claim's due as it stood at the end of the date, as the as-of view works it out (see
+     *  {@link net.officefloor.hq.app.history.History}): the claim, its person, rates and settings as they stood
+     *  then, the date standing in for the sheet's today. Refused when the date is after the sheet's today, or the
+     *  claim or its person was not on the sheet then. */
+    static BigDecimal dueAsOf(Claim claim, LocalDate on, ClaimStore store, PersonStore people, RateStore rates,
+            SettingStore settings, SheetStore sheets) throws InvalidSheetException {
+        String sheetId = claim.getSheetId();
+        if (on.isAfter(sheets.today(sheetId))) {
+            throw new InvalidSheetException("The settle date is after the sheet's today");
+        }
+        List<Claim> all = store.listAsOf(sheetId, on);
+        Claim then = all.stream().filter(c -> c.getId() == claim.getId()).findFirst().orElse(null);
+        if (then == null || then.getStatus() == ClaimStatus.DELETED) {
+            throw new InvalidSheetException("The claim was not on the sheet on " + on);
+        }
+        Person person = people.findAsOf(sheetId, then.getPersonId(), on);
+        if (person == null) {
+            throw new InvalidSheetException("The claim's person was not on the sheet on " + on);
+        }
+        RateStore ratesThen = rates.asOf(on);
+        SettingStore settingsThen = settings.asOf(on);
+        LocalDate policy = settingsThen.policyDate(sheetId);
+        Rounding rounding = new Rounding(policy != null ? policy : on, settingsThen.roundings(sheetId), all);
+        Lateness lateness = new Lateness(settingsThen.latePcts(sheetId), settingsThen.floors(sheetId), on, rounding,
+                Lateness.graced(settingsThen.graces(sheetId), id -> id == person.getId() ? person : null));
+        BigDecimal pct = ratesThen.forClaim(then).find(sheetId, person.gradeOn(then.getDate()), then.getDate());
+        return lateness.due(then, pct);
     }
 }

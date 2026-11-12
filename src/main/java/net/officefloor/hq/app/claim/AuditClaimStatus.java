@@ -14,7 +14,7 @@ import net.officefloor.plugin.variable.Val;
  *  then number=<n> when the claim has or had a number, then for CLAIM_SETTLED and CLAIM_APPROVED
  *  due=<0.00> as fixed on settling (n/a when its grade had no rate), for CLAIM_REJECTED reason=<reason>,
  *  for CLAIM_VOIDED of a SETTLED claim reversed=<0.00>, the frozen figure it takes out of the totals (n/a when none),
- *  then for CLAIM_VOIDED reason=<reason> when voided with one.
+ *  then for CLAIM_VOIDED reason=<reason> when voided with one, then for CLAIM_SETTLED on=<date> when settled as of a date.
  *  A claim opened above the review threshold is CLAIM_REVIEW (no number yet); a steward's review of it is
  *  CLAIM_REVIEWED, then CLAIM_OPENED with its number.
  *  A claim settled or approved then tells the person's watchers (NOTIFY), before the figures moved. */
@@ -38,7 +38,8 @@ public class AuditClaimStatus {
                 + (move.from() == ClaimStatus.PENDING && move.to() == ClaimStatus.OPEN ? " reason=" + input.reason() : "")
                 + (move.from() == ClaimStatus.SETTLED && move.to() == ClaimStatus.VOID
                         ? " reversed=" + (shown.due() == null ? "n/a" : shown.due()) : "")
-                + (move.to() == ClaimStatus.VOID && claim.getVoidReason() != null ? " reason=" + claim.getVoidReason() : ""));
+                + (move.to() == ClaimStatus.VOID && claim.getVoidReason() != null ? " reason=" + claim.getVoidReason() : "")
+                + (move.to() == ClaimStatus.SETTLED && input.on() != null ? " on=" + input.on() : ""));
         if (move.to() == ClaimStatus.SETTLED) {
             Notify.watchers(watches, audit, person, input.user(), change.number());
         }

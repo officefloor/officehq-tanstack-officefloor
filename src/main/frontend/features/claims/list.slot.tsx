@@ -17,7 +17,7 @@ import { useFigure } from '../locale/locale';
 
 type Fields = { amount: string; date: string; note: string; corrects: string; ref: string; tags: string };
 /** `review` for a steward approving (SETTLED) or rejecting (OPEN, with a reason) a PENDING claim. */
-type StatusChange = { id: number; status: ClaimStatus; review?: boolean; reason?: string };
+type StatusChange = { id: number; status: ClaimStatus; review?: boolean; reason?: string; on?: string };
 /** A steward moving a claim to another person (`to`, their id). */
 type Reassign = { id: number; to: string };
 const EMPTY: Fields = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
@@ -78,6 +78,8 @@ function PersonClaims({ person }: { person: Person }) {
   const editingClaim = (claims.data ?? []).find((c) => c.id === editingId && c.personId === person.id);
   const editing = editingClaim?.id;
   const [reasons, setReasons] = useState<Record<number, string>>({});
+  // The date each claim's settle is made as of (blank: the sheet's today).
+  const [settleDates, setSettleDates] = useState<Record<number, string>>({});
   // The void reason chosen per claim, from the sheet's list; a void needs one while the list is not empty.
   const voidReasons = useVoidReasons(sheet).data ?? [];
   const [voidChoices, setVoidChoices] = useState<Record<number, string>>({});
@@ -138,13 +140,20 @@ function PersonClaims({ person }: { person: Person }) {
   // The server refuses a change the claim's status does not allow; the error shows on that claim.
   const move = useMutation({
     mutationFn: (m: StatusChange) =>
-      postJson<Claim>(`${base}/claims/${m.id}/status`, { status: m.status, user, review: m.review ?? false, reason: m.reason ?? '' }),
+      postJson<Claim>(`${base}/claims/${m.id}/status`, {
+        status: m.status,
+        user,
+        review: m.review ?? false,
+        reason: m.reason ?? '',
+        on: m.on ?? '',
+      }),
     onSuccess: async (_, m) => {
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
       if (m.review) setReasons((r) => ({ ...r, [m.id]: '' }));
+      if (m.on) setSettleDates((d) => ({ ...d, [m.id]: '' }));
     },
   });
-  const moveTo = (id: number, status: ClaimStatus, review?: { reason: string }, voidReason?: string) => {
+  const moveTo = (id: number, status: ClaimStatus, review?: { reason: string }, voidReason?: string, on?: string) => {
     move.reset();
     lock.reset();
     setUneditable(undefined);
@@ -161,7 +170,7 @@ function PersonClaims({ person }: { person: Person }) {
     partSettle.reset();
     redate.reset();
     inline.reset();
-    move.mutate({ id, status, review: review !== undefined, reason: review?.reason ?? voidReason });
+    move.mutate({ id, status, review: review !== undefined, reason: review?.reason ?? voidReason, on });
   };
 
   // Moving a claim re-reads the people too: both people's figures follow it.
@@ -695,7 +704,22 @@ function PersonClaims({ person }: { person: Person }) {
               <button type="button" data-testid="claim-open" disabled={move.isPending} onClick={() => moveTo(c.id, 'OPEN')}>
                 Open
               </button>{' '}
-              <button type="button" data-testid="claim-settle" disabled={move.isPending} onClick={() => moveTo(c.id, 'SETTLED')}>
+              <input
+                type="date"
+                data-testid="claim-settle-date"
+                aria-label="Settle as of"
+                value={settleDates[c.id] ?? ''}
+                onChange={(e) => {
+                  setSettleDates({ ...settleDates, [c.id]: e.target.value });
+                  if (move.variables?.id === c.id) move.reset();
+                }}
+              />{' '}
+              <button
+                type="button"
+                data-testid="claim-settle"
+                disabled={move.isPending}
+                onClick={() => moveTo(c.id, 'SETTLED', undefined, undefined, settleDates[c.id] || undefined)}
+              >
                 Settle
               </button>{' '}
               {voidReasons.length > 0 && (

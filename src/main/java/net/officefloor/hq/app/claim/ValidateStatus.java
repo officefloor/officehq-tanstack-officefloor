@@ -1,5 +1,7 @@
 package net.officefloor.hq.app.claim;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import net.officefloor.hq.app.role.RoleStore;
 import net.officefloor.hq.app.sheet.InvalidSheetException;
 import net.officefloor.plugin.variable.Out;
@@ -21,6 +23,14 @@ public class ValidateStatus {
         if (review && to != ClaimStatus.SETTLED && to != ClaimStatus.OPEN) {
             throw new InvalidSheetException("A review approves or rejects a claim");
         }
-        body.set(new StatusInput(to, request.user(), review, reason));
+        LocalDate on = null;
+        if (to == ClaimStatus.SETTLED && request.on() != null && !request.on().isBlank()) {
+            try {
+                on = LocalDate.parse(request.on().trim());
+            } catch (DateTimeParseException e) {
+                throw new InvalidSheetException("Not a date: " + request.on().trim());
+            }
+        }
+        body.set(new StatusInput(to, request.user(), review, reason, on));
     }
 }
