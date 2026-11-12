@@ -1,0 +1,232 @@
+diff --git a/src/main/frontend/features/settings/form.slot.tsx b/src/main/frontend/features/settings/form.slot.tsx
+index dda7a28dc..1f22430a7 100644
+--- a/src/main/frontend/features/settings/form.slot.tsx
++++ b/src/main/frontend/features/settings/form.slot.tsx
+@@ -17,12 +17,12 @@ const STANDING_PERMS: Record<(typeof PERM_ACTIONS)[number], string> = {
+ 
+ type PermKey = `perm-${(typeof PERM_ACTIONS)[number]}`;
+ 
+-type Key = 'clerk-limit' | 'floor' | 'terms' | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'late-pct' | 'policy-date' | 'period-numbering-from' | 'cap' | 'proof-threshold' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'note-threshold' | 'grace-days' | 'entry-date' | 'pot' | 'parent' | 'fiscal-start-month' | PermKey;
++type Key = 'clerk-limit' | 'floor' | 'terms' | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'late-pct' | 'policy-date' | 'period-numbering-from' | 'cap' | 'proof-threshold' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'note-threshold' | 'grace-days' | 'entry-date' | 'pot' | 'alert-threshold' | 'parent' | 'fiscal-start-month' | PermKey;
+ 
+ const GRADES = ['A', 'B', 'C'] as const;
+ 
+ /** The settings that carry a figure: each is saved from a from-date (blank for the sheet's today). */
+-type DatedKey = Exclude<Key, 'policy-date' | 'period-numbering-from' | 'grace-days' | 'entry-date' | 'pot' | 'parent' | 'fiscal-start-month' | PermKey>;
++type DatedKey = Exclude<Key, 'policy-date' | 'period-numbering-from' | 'grace-days' | 'entry-date' | 'pot' | 'alert-threshold' | 'parent' | 'fiscal-start-month' | PermKey>;
+ 
+ const NO_FROM: Record<DatedKey, string> = { 'clerk-limit': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'late-pct': '', cap: '', 'proof-threshold': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'note-threshold': '' };
+ 
+@@ -41,6 +41,8 @@ const isDated = (k: Key): k is DatedKey => k in NO_FROM;
+ // dated) are the whole days after its to-date an open period is closed when the sheet's today moves.
+ // The entry date (blank for off, not dated) is the default date of a new claim in place of the sheet's today.
+ // The pot (blank for none, not dated) is shared out among each balanced pool's members by their shares.
++// The alert threshold (blank for off, not dated) is the due-total above which a person a change takes there
++// raises an ALERT in the audit file.
+ // The parent (a sheet id, blank for none, not dated) is the sheet whose rates a grade with no rate in force on a
+ // date takes, then its parent's, up to three levels up.
+ // The fiscal start month (1 to 12, not dated) is the month a fiscal year starts in; 1 unless set.
+@@ -48,7 +50,7 @@ function SheetSettings() {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+   const settings = useSettings(sheet);
+-  const [values, setValues] = useState<Record<Key, string>>({ 'clerk-limit': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '', cap: '', 'proof-threshold': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'note-threshold': '', 'grace-days': '', 'entry-date': '', pot: '', parent: '', 'fiscal-start-month': '',
++  const [values, setValues] = useState<Record<Key, string>>({ 'clerk-limit': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '', cap: '', 'proof-threshold': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'note-threshold': '', 'grace-days': '', 'entry-date': '', pot: '', 'alert-threshold': '', parent: '', 'fiscal-start-month': '',
+     'perm-open': '', 'perm-settle': '', 'perm-void': '', 'perm-reassign': '', 'perm-close': '', 'perm-reopen': '' });
+   const [froms, setFroms] = useState<Record<DatedKey, string>>(NO_FROM);
+   const [key, setKey] = useState<Key>('clerk-limit');
+@@ -148,6 +150,8 @@ function SheetSettings() {
+         {field('entry-date', 'Entry date YYYY-MM-DD (blank for off)', 'text')}{' '}
+         Pot <strong data-testid="setting-pot-current">{settings.data?.pot ?? ''}</strong>{' '}
+         {field('pot', 'Pot (blank for none)')}{' '}
++        Alert threshold <strong data-testid="setting-alert-threshold-current">{settings.data?.alertThreshold ?? ''}</strong>{' '}
++        {field('alert-threshold', 'Alert threshold (blank for off)')}{' '}
+         Parent <strong data-testid="setting-parent-current">{settings.data?.parent ?? ''}</strong>{' '}
+         {field('parent', 'Parent sheet id (blank for none)', 'text')}{' '}
+         Fiscal start month <strong data-testid="setting-fiscal-start-month-current">{settings.data?.fiscalStartMonth ?? ''}</strong>{' '}
+diff --git a/src/main/frontend/features/settings/settings.ts b/src/main/frontend/features/settings/settings.ts
+index cca404d59..7add97eea 100644
+--- a/src/main/frontend/features/settings/settings.ts
++++ b/src/main/frontend/features/settings/settings.ts
+@@ -25,13 +25,15 @@ import { useAsOf } from '../../session/session';
+  *  `pot` (two decimals) is the sum a balanced pool shares out among its members, null for none; it is not dated.
+  *  `parent` is the id of the sheet whose rates a grade with no rate in force on a date takes (then its parent's, up
+  *  to three levels up), null for none; it is not dated. `fiscalStartMonth` is the month (1 to 12) a fiscal year starts in,
+- *  1 unless set; it is not dated. */
++ *  1 unless set; it is not dated. `alertThreshold` (two decimals) is the due-total above which a person
++ *  crossing it raises an ALERT, null for off; it is not dated. */
+ export type Settings = { clerkLimit: string | null; floor: string; terms: string; latePct: string; policyDate: string | null;
+   periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; proofThreshold: string | null;
+   floorFrom: Dated[]; latePctFrom: Dated[]; perms: Record<string, string | null>;
+   graceDays: string | null; noteThreshold: string | null; entryDate: string | null;
+   gradeGrace: Record<string, string | null>; gradeGraceFrom: Record<string, Dated[]>;
+-  gradeProofThreshold: Record<string, string | null>; pot: string | null; parent: string | null; fiscalStartMonth: string };
++  gradeProofThreshold: Record<string, string | null>; pot: string | null; parent: string | null; fiscalStartMonth: string;
++  alertThreshold: string | null };
+ 
+ /** A setting's value recorded from a date (yyyy-MM-dd); a null value is blank. */
+ export type Dated = { from: string; value: string | null };
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/RollupService.java b/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
+index b9d09f4d8..a1ad3513b 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
+@@ -29,6 +29,8 @@ import org.springframework.stereotype.Service;
+  * overdue-total=<0.00> when any of the sheet's totals changed; the sheet's due-total and overdue-total leave out
+  * the single highest and the single lowest person's figure when three or more people have one (n/a is no figure). A person's overdue-total is the due (late charge
+  * included, skipping n/a) of their counting claims that are OPEN or PENDING with a due-by (plus any grace days of their grade, see {@link Lateness}) before today. A person's due-total is at most the sheet's cap. A change that moves no figure records nothing here.
++ * After those lines, while the sheet's alert threshold is set, ALERT sheet=<id> by=<user> name=<name> due-total=<0.00>
++ * for each person whose due-total the change took from at or below it (or no due-total) to above it, in list order.
+  */
+ @Service
+ public class RollupService {
+@@ -155,10 +157,31 @@ public class RollupService {
+             audit.record("TOTALS" + who + " claimed-total=" + after.claimedTotal() + " due-total=" + after.dueTotal()
+                     + " overdue-total=" + after.overdueTotal());
+         }
++        alerts(sheetId, who, before, after);
++    }
++
++    /** Records ALERT for each person whose due-total went from at or below the sheet's alert threshold (or none)
++     *  to above it, in list order; nothing while the threshold is off. */
++    private void alerts(String sheetId, String who, Rollup before, Rollup after) {
++        BigDecimal threshold = settings.alertThreshold(sheetId);
++        if (threshold == null) {
++            return;
++        }
++        after.people().forEach((id, now) -> {
++            Rollup.Figures was = before == null ? null : before.people().get(id);
++            if (above(now, threshold) && !above(was, threshold)) {
++                audit.record("ALERT" + who + " name=" + now.name() + " due-total=" + now.dueTotal());
++            }
++        });
++    }
++
++    private static boolean above(Rollup.Figures figures, BigDecimal threshold) {
++        return figures != null && !NA.equals(figures.dueTotal())
++                && new BigDecimal(figures.dueTotal()).compareTo(threshold) > 0;
+     }
+ 
+     /** Records the sheet's figures as they stand, the change made by {@code user}: a ROLLUP line for every
+-     *  person, then its TOTALS. */
++     *  person, then its TOTALS, then an ALERT for each person above the alert threshold (each counts as new). */
+     public void recordAll(String sheetId, String user) {
+         Rollup now = snapshot(sheetId);
+         String who = " sheet=" + sheetId + " by=" + user;
+@@ -166,6 +189,7 @@ public class RollupService {
+                 + p.claimed() + " due-total=" + p.dueTotal() + " overdue-total=" + p.overdueTotal()));
+         audit.record("TOTALS" + who + " claimed-total=" + now.claimedTotal() + " due-total=" + now.dueTotal()
+                 + " overdue-total=" + now.overdueTotal());
++        alerts(sheetId, who, null, now);
+     }
+ 
+     /** What the sheet's late charge follows on the date, for these claims (see {@link Lateness}). */
+diff --git a/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java b/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
+index 3e180dc4a..4175c5e9c 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
+@@ -33,7 +33,7 @@ public class RespondWithSettings {
+                 store.find(sheet, SettingStore.NOTE_THRESHOLD), store.find(sheet, SettingStore.ENTRY_DATE),
+                 gradeGrace(sheet, today, store), gradeGraceFrom(sheet, store), gradeProofThreshold(sheet, today, store),
+                 store.find(sheet, SettingStore.POT), settings.parent(sheet),
+-                String.valueOf(store.fiscalStartMonth(sheet))));
++                String.valueOf(store.fiscalStartMonth(sheet)), store.find(sheet, SettingStore.ALERT_THRESHOLD)));
+     }
+ 
+     private static Map<String, String> gradeTerms(String sheetId, LocalDate today, SettingStore store) {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingStore.java b/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
+index 3b01d14f5..a39af0402 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
+@@ -21,7 +21,7 @@ import org.springframework.stereotype.Repository;
+  *  that carry a figure (the clerk limit, the floor, the cap, the proof threshold, a grade's proof threshold, the note threshold, the terms, a grade's terms, a grade's grace days and the late
+  *  percent) are dated: each value is recorded from a from-date, and the value in force on a date is the
+  *  one with the latest from-date on or before it (none before every from-date, then the sheet's starting
+- *  value). The policy date, the period numbering date, the entry date, the grace days, the pot, the parent sheet, the fiscal start month and the permission matrix are not dated. */
++ *  value). The policy date, the period numbering date, the entry date, the grace days, the pot, the alert threshold, the parent sheet, the fiscal start month and the permission matrix are not dated. */
+ @Repository
+ public class SettingStore {
+ 
+@@ -84,6 +84,16 @@ public class SettingStore {
+         return value == null ? null : new BigDecimal(value);
+     }
+ 
++    /** Above it a person's due-total raises an ALERT when a change takes it there (two decimals); blank for off,
++     *  not dated. */
++    public static final String ALERT_THRESHOLD = "alert-threshold";
++
++    /** The alert threshold, or null when blank (off). */
++    public BigDecimal alertThreshold(String sheetId) {
++        String value = find(sheetId, ALERT_THRESHOLD);
++        return value == null ? null : new BigDecimal(value);
++    }
++
+     /** The month (1 to 12) a fiscal year starts in; 1 unless set, not dated. */
+     public static final String FISCAL_START_MONTH = "fiscal-start-month";
+ 
+@@ -231,7 +241,7 @@ public class SettingStore {
+     /** Whether the key's values are recorded from a from-date. */
+     public static boolean isDated(String key) {
+         return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key)
+-                && !ENTRY_DATE.equals(key) && !POT.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
++                && !ENTRY_DATE.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
+                 && !key.startsWith(PERM_PREFIX);
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+index e0b3e4eff..45f1f1c26 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+@@ -27,13 +27,15 @@ import java.util.Map;
+  *  {@code pot} has two decimals, the sum shared out among a balanced pool's members, null for none (not dated).
+  *  {@code parent} is the id of the sheet whose rates a grade with no rate in force on a date takes, null for none (not dated;
+  *  the one named now, also as of a date).
+- *  {@code fiscalStartMonth} is the month (1 to 12) a fiscal year starts in, 1 unless set (not dated). */
++ *  {@code fiscalStartMonth} is the month (1 to 12) a fiscal year starts in, 1 unless set (not dated).
++ *  {@code alertThreshold} has two decimals, the due-total above which a person crossing it raises an ALERT, null for
++ *  off (not dated). */
+ public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
+         String periodNumberingFrom, Map<String, String> gradeTerms, String cap, String proofThreshold, List<Dated> floorFrom,
+         List<Dated> latePctFrom, Map<String, String> perms, String graceDays,
+         String noteThreshold, String entryDate, Map<String, String> gradeGrace,
+         Map<String, List<Dated>> gradeGraceFrom, Map<String, String> gradeProofThreshold,
+-        String pot, String parent, String fiscalStartMonth) {
++        String pot, String parent, String fiscalStartMonth, String alertThreshold) {
+ 
+     /** A value recorded from a date (yyyy-MM-dd). */
+     public record Dated(String from, String value) {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+index 1b00564c0..77d04a8a7 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+@@ -38,6 +38,7 @@ public class ValidateSetting {
+         boolean proof = SettingStore.PROOF_THRESHOLD.equals(key) || gradeProof;
+         boolean note = SettingStore.NOTE_THRESHOLD.equals(key);
+         boolean pot = SettingStore.POT.equals(key);
++        boolean alert = SettingStore.ALERT_THRESHOLD.equals(key);
+         if (SettingStore.GRACE_DAYS.equals(key)) {
+             String value = request.value() == null ? "" : request.value().trim();
+             if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
+@@ -79,13 +80,13 @@ public class ValidateSetting {
+             body.set(new SettingInput(key, perm(request.value()), null, request.user()));
+             return;
+         }
+-        if (!SettingStore.CLERK_LIMIT.equals(key) && !cap && !proof && !note && !pot && !floor && !terms && !gradeTerms && !gradeGrace && !late && !dated) {
++        if (!SettingStore.CLERK_LIMIT.equals(key) && !cap && !proof && !note && !pot && !alert && !floor && !terms && !gradeTerms && !gradeGrace && !late && !dated) {
+             throw new InvalidSheetException("Not a setting: " + key);
+         }
+         String value = request.value() == null ? "" : request.value().trim();
+         String fromValue = request.from() == null ? "" : request.from().trim();
+         LocalDate from = null;
+-        if (!dated && !pot && !fromValue.isEmpty()) {
++        if (!dated && !pot && !alert && !fromValue.isEmpty()) {
+             try {
+                 from = LocalDate.parse(fromValue);
+             } catch (DateTimeParseException e) {
+@@ -156,6 +157,7 @@ public class ValidateSetting {
+                     : gradeProof ? "The grade's proof threshold must be 0.00 or more with up to two decimals, or blank"
+                     : proof ? "The proof threshold must be 0.00 or more with up to two decimals, or blank"
+                     : note ? "The note threshold must be 0.00 or more with up to two decimals, or blank"
++                    : alert ? "The alert threshold must be 0.00 or more with up to two decimals, or blank"
+                     : pot ? "The pot must be 0.00 or more with up to two decimals, or blank"
+                     : cap ? "The cap must be 0.00 or more with up to two decimals, or blank"
+                     : "The clerk limit must be 0.00 or more with up to two decimals, or blank");
