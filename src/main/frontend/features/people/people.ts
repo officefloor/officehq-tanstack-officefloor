@@ -3,7 +3,8 @@ import { getJson } from '../../api/http';
 import { asString, useSearchParam } from '../../url/useSearchParam';
 import { sheetKey } from '../sheet/sheet';
 
-export type Person = { id: number; name: string; grade: string };
+/** `version` moves on with each stored edit; an edit is saved only over the version its editor loaded. */
+export type Person = { id: number; name: string; grade: string; version: number };
 
 export const GRADES = ['A', 'B', 'C'] as const;
 

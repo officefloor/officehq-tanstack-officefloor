@@ -1,6 +1,7 @@
 import { type ChangeEvent, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, postJson, putJson } from '../../api/http';
+import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
 import type { Person } from '../people/people';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
@@ -38,6 +39,8 @@ function PersonClaims({ person }: { person: Person }) {
       setEditing(undefined);
     },
   });
+
+  const submit = useSubmitOnce(save);
 
   // The server refuses a change the claim's status does not allow; the error shows on that claim.
   const move = useMutation({
@@ -109,8 +112,7 @@ function PersonClaims({ person }: { person: Person }) {
         data-testid="claim-form"
         onSubmit={(e) => {
           e.preventDefault();
-          save.reset();
-          save.mutate(fields);
+          submit(fields);
         }}
       >
         <input data-testid="claim-form-amount" placeholder="Amount" inputMode="decimal" value={fields.amount} onChange={set('amount')} />

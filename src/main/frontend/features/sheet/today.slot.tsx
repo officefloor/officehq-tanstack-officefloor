@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
+import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { AppHeader } from '../../slots/defs/appHeader';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { type Sheet, sheetKey, useSheet } from './sheet';
@@ -17,6 +18,7 @@ function SheetToday() {
     // A new today changes every date decision on the sheet: re-read all of it.
     onSuccess: () => queryClient.invalidateQueries({ queryKey: sheetKey(sheet) }),
   });
+  const submit = useSubmitOnce(save);
 
   if (!user || !loaded.data) return null;
   return (
@@ -24,7 +26,7 @@ function SheetToday() {
       data-testid="sheet-today-form"
       onSubmit={(e) => {
         e.preventDefault();
-        save.mutate(input.trim());
+        submit(input.trim());
       }}
     >
       Today <strong data-testid="sheet-today">{loaded.data.today}</strong>{' '}

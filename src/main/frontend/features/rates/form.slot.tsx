@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, postJson } from '../../api/http';
+import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { GRADES } from '../people/people';
@@ -28,6 +29,7 @@ function Rates() {
       setFrom('');
     },
   });
+  const submit = useSubmitOnce(save);
 
   return (
     <section data-testid="rates">
@@ -70,8 +72,7 @@ function Rates() {
         data-testid="rate-form"
         onSubmit={(e) => {
           e.preventDefault();
-          save.reset();
-          save.mutate({ grade, pct, from });
+          submit({ grade, pct, from });
         }}
       >
         <select

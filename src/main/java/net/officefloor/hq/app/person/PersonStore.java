@@ -12,7 +12,7 @@ import org.springframework.stereotype.Repository;
 public class PersonStore {
 
     private static final RowMapper<Person> ROW = (rs, i) -> new Person(rs.getLong("id"),
-            rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"));
+            rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"), rs.getLong("version"));
 
     private final JdbcTemplate jdbc;
 
@@ -47,11 +47,20 @@ public class PersonStore {
             ps.setString(3, grade);
             return ps;
         }, keys);
-        return new Person(keys.getKey().longValue(), sheetId, name, grade);
+        return new Person(keys.getKey().longValue(), sheetId, name, grade, 0);
     }
 
-    public void save(Person person) {
-        jdbc.update("UPDATE person SET name = ?, grade = ? WHERE sheet_id = ? AND id = ?",
-                person.getName(), person.getGrade(), person.getSheetId(), person.getId());
+    /**
+     * Stores the person over the version it was loaded at, moving the version on; false (nothing
+     * stored) when someone else has stored another version since.
+     */
+    public boolean save(Person person) {
+        int n = jdbc.update(
+                "UPDATE person SET name = ?, grade = ?, version = version + 1 WHERE sheet_id = ? AND id = ? AND version = ?",
+                person.getName(), person.getGrade(), person.getSheetId(), person.getId(), person.getVersion());
+        if (n == 1) {
+            person.setVersion(person.getVersion() + 1);
+        }
+        return n == 1;
     }
 }

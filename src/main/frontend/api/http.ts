@@ -2,7 +2,7 @@
 // of a silent `if (res.ok)` that leaves the UI showing stale data.
 /** A refused request; `reason` is the text the server answered with (empty when none). */
 export class HttpError extends Error {
-  constructor(message: string, readonly reason: string) {
+  constructor(message: string, readonly reason: string, readonly status: number) {
     super(message);
   }
 }
@@ -11,7 +11,7 @@ async function send<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init);
   if (!res.ok) {
     const reason = await res.text().catch(() => '');
-    throw new HttpError(`${init?.method ?? 'GET'} ${path} -> ${res.status}`, reason);
+    throw new HttpError(`${init?.method ?? 'GET'} ${path} -> ${res.status}`, reason, res.status);
   }
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }
