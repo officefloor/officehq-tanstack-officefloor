@@ -10,19 +10,25 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /** Moves the claim to the new status, refusing a change its current status does not allow. Opening
- *  gives the claim the sheet's next number; voiding clears it. Settling fixes its due at its person's
- *  grade rate in force on the claim's date, rounded half to even (none when no rate of the grade applies then). */
+ *  gives the claim the sheet's next number and records who opened it; voiding clears it. Settling fixes its due at its person's
+ *  grade rate in force on the claim's date, rounded half to even (none when no rate of the grade applies then).
+ *  The user who opened a claim may not settle it. */
 public class ApplyStatus {
     public void apply(@Val StatusInput input, @Val Claim claim, ClaimStore store, PersonStore people,
             RateStore rates, Out<StatusChange> change)
             throws InvalidSheetException {
         ClaimStatus from = claim.getStatus();
+        if (input.status() == ClaimStatus.SETTLED && claim.getOpenedBy() != null
+                && claim.getOpenedBy().equals(input.user())) {
+            throw new InvalidSheetException("The user who opened a claim cannot settle it");
+        }
         if (!from.canBecome(input.status()) || !store.move(claim, from, input.status())) {
             throw new InvalidSheetException("A " + from + " claim cannot become " + input.status());
         }
         claim.setStatus(input.status());
         if (input.status() == ClaimStatus.OPEN) {
             claim.setNumber(store.nextNumber(claim.getSheetId()));
+            claim.setOpenedBy(input.user());
         }
         if (input.status() == ClaimStatus.SETTLED) {
             Person person = people.find(claim.getSheetId(), claim.getPersonId());

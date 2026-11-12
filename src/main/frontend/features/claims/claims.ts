@@ -16,6 +16,8 @@ export type Claim = {
   number: number | null;
   /** The due fixed when the claim was settled; null when it has none, so its due follows the rate. */
   due: string | null;
+  /** The user who opened the claim; null until it is opened. */
+  openedBy: string | null;
 };
 
 /** Only OPEN and SETTLED claims count toward claimed and the totals. */

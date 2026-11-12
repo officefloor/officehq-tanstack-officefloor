@@ -18,7 +18,8 @@ public class ClaimStore {
     private static final RowMapper<Claim> ROW = (rs, i) -> new Claim(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getObject("claim_date", LocalDate.class),
             rs.getString("note"), ClaimStatus.valueOf(rs.getString("status")),
-            rs.getObject("number", Long.class), rs.getBigDecimal("settled_due"));
+            rs.getObject("number", Long.class), rs.getBigDecimal("settled_due"),
+            rs.getString("opened_by"));
 
     private final JdbcTemplate jdbc;
 
@@ -48,14 +49,14 @@ public class ClaimStore {
             ps.setString(5, note);
             return ps;
         }, keys);
-        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null);
+        return new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null);
     }
 
     public void save(Claim claim) {
-        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, number = ?, settled_due = ? "
+        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, number = ?, settled_due = ?, opened_by = ? "
                 + "WHERE sheet_id = ? AND id = ?",
                 claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getStatus().name(),
-                claim.getNumber(), claim.getSettledDue(), claim.getSheetId(), claim.getId());
+                claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getSheetId(), claim.getId());
     }
 
     /** Moves the stored claim from {@code from} to {@code to}, locking its row until the transaction

@@ -78,6 +78,7 @@ function PersonClaims({ person }: { person: Person }) {
               <span data-testid="claim-note">{c.note}</span>{' '}
               <span data-testid="claim-due">{claimDue(c, rates.data, person.grade)}</span>{' '}
               <span data-testid="claim-status">{c.status}</span>{' '}
+              <span data-testid="claim-opened-by">{c.openedBy ?? ''}</span>{' '}
               <button type="button" data-testid="claim-open" disabled={move.isPending} onClick={() => moveTo(c.id, 'OPEN')}>
                 Open
               </button>{' '}
