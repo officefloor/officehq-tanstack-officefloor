@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.claim;
 
 import java.time.LocalDate;
+import net.officefloor.hq.app.holiday.HolidayStore;
 import net.officefloor.hq.app.period.PeriodResponse;
 import net.officefloor.hq.app.period.PeriodStore;
 import net.officefloor.hq.app.person.Person;
@@ -14,9 +15,11 @@ public final class ClaimPeriods {
     }
 
     /** The due-by a claim of the person dated {@code date} would be fixed with, were it added now: its date
-     *  plus the terms it would get (see {@link SaveClaimAdded#termsOf}). */
-    public static LocalDate dueByOf(Person person, LocalDate date, SettingStore settings) {
-        return date.plusDays(SaveClaimAdded.termsOf(person, date, settings));
+     *  plus the terms it would get (see {@link SaveClaimAdded#termsOf}), moved past any holiday on the sheet
+     *  now to the next day that is not one. */
+    public static LocalDate dueByOf(Person person, LocalDate date, SettingStore settings, HolidayStore holidays) {
+        return holidays.nextWorkingDay(person.getSheetId(),
+                date.plusDays(SaveClaimAdded.termsOf(person, date, settings)));
     }
 
     /** Refuses a claim due by {@code dueBy} when that falls in a closed period. */

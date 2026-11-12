@@ -3,6 +3,7 @@ package net.officefloor.hq.app.quick;
 import java.time.LocalDate;
 import net.officefloor.hq.app.claim.ClaimInput;
 import net.officefloor.hq.app.claim.ClaimPeriods;
+import net.officefloor.hq.app.holiday.HolidayStore;
 import net.officefloor.hq.app.period.PeriodStore;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRequest;
@@ -16,11 +17,11 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  of the person named (or, for a person still to be added, of their grade). */
 public class CheckQuickAddPeriod {
     public void check(@PathVariable("sheetId") String sheetId, @Val PersonRequest request, @Val ClaimInput claim,
-            PersonStore people, SettingStore settings, PeriodStore periods) throws InvalidSheetException {
+            PersonStore people, SettingStore settings, PeriodStore periods, HolidayStore holidays) throws InvalidSheetException {
         String sheet = sheetId.trim();
         Person person = people.findByName(sheet, request.name());
-        LocalDate dueBy = person != null ? ClaimPeriods.dueByOf(person, claim.date(), settings)
-                : claim.date().plusDays(settings.terms(sheet, request.grade(), claim.date()));
+        LocalDate dueBy = person != null ? ClaimPeriods.dueByOf(person, claim.date(), settings, holidays)
+                : holidays.nextWorkingDay(sheet, claim.date().plusDays(settings.terms(sheet, request.grade(), claim.date())));
         ClaimPeriods.refuseClosed(periods, sheet, dueBy);
     }
 }

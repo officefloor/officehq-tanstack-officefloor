@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.claim;
 
 import java.time.LocalDate;
+import net.officefloor.hq.app.holiday.HolidayStore;
 import net.officefloor.hq.app.period.PeriodStore;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonStore;
@@ -16,13 +17,14 @@ import net.officefloor.plugin.variable.Val;
  *  now (a late entry when the period that due-by falls in is soft-closed), and logged as OPEN by the user. Refused when another user moved the claim on first. */
 public class ApplySplit {
     public void apply(@Val SplitInput input, @Val Claim claim, ClaimStore store, PersonStore people, SettingStore settings,
-            SheetStore sheets, PeriodStore periods, ClaimLogStore log, Out<Split> split) throws InvalidSheetException {
+            SheetStore sheets, PeriodStore periods, ClaimLogStore log, HolidayStore holidays,
+            Out<Split> split) throws InvalidSheetException {
         if (!store.shrink(claim, claim.getAmount().subtract(input.amount()))) {
             throw new InvalidSheetException("Only an OPEN claim can be split");
         }
         String sheetId = claim.getSheetId();
         Person person = people.find(sheetId, claim.getPersonId());
-        LocalDate dueBy = ClaimPeriods.dueByOf(person, claim.getDate(), settings);
+        LocalDate dueBy = ClaimPeriods.dueByOf(person, claim.getDate(), settings, holidays);
         String number = Numbering.next(sheetId, dueBy, store, settings, sheets, periods);
         Claim into = store.addSplit(claim, input.amount(), number, input.user(), dueBy);
         if (periods.softOn(sheetId, dueBy)) {

@@ -6,6 +6,7 @@ import net.officefloor.hq.app.claim.ClaimAdding;
 import net.officefloor.hq.app.claim.ClaimInput;
 import net.officefloor.hq.app.claim.ClaimRequest;
 import net.officefloor.hq.app.claim.ClaimStore;
+import net.officefloor.hq.app.holiday.HolidayStore;
 import net.officefloor.hq.app.period.PeriodStore;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonStore;
@@ -25,7 +26,7 @@ import org.springframework.web.bind.annotation.RequestBody;
  */
 public class ValidatePaste {
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PasteRequest request,
-            SettingStore settings, PersonStore people, PeriodStore periods, ClaimStore claims, Out<PasteInput> pasted, RoleStore roles) throws InvalidSheetException {
+            SettingStore settings, PersonStore people, PeriodStore periods, ClaimStore claims, Out<PasteInput> pasted, RoleStore roles, HolidayStore holidays) throws InvalidSheetException {
         roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
         String sheet = sheetId.trim();
         String text = request == null || request.text() == null ? "" : request.text();
@@ -47,7 +48,7 @@ public class ValidatePaste {
                 }
                 ClaimInput claim = ClaimAdding.check(sheet, person, new ClaimRequest(fields[1],
                         fields.length > 2 ? fields[2] : "", fields.length > 3 ? fields[3] : "", request.user(), ""),
-                        settings, periods, claims);
+                        settings, periods, claims, holidays);
                 pastedClaims.add(new PastedClaim(person, claim));
             } catch (InvalidSheetException e) {
                 throw new InvalidSheetException("Line " + (i + 1) + ": " + e.getMessage());

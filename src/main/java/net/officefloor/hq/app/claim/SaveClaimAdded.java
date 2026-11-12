@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.claim;
 
 import java.time.LocalDate;
+import net.officefloor.hq.app.holiday.HolidayStore;
 import net.officefloor.hq.app.period.PeriodStore;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.setting.SettingStore;
@@ -8,16 +9,16 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /** Adds the claim (a late entry when the period its due-by falls in is soft-closed), due by its date plus its person's own terms (else the terms of their grade in force on
- *  that date, else the sheet's terms in force then), fixed now, and logs it as DRAFT by the user at its due then. */
+ *  that date, else the sheet's terms in force then) moved past the sheet's holidays, fixed now, and logs it as DRAFT by the user at its due then. */
 public class SaveClaimAdded {
     public void save(@Val ClaimInput input, @Val Person person, ClaimStore store, SettingStore settings,
-            ClaimLogStore log, PeriodStore periods, Out<Claim> claim) {
-        claim.set(add(input, person, store, settings, log, periods));
+            ClaimLogStore log, PeriodStore periods, HolidayStore holidays, Out<Claim> claim) {
+        claim.set(add(input, person, store, settings, log, periods, holidays));
     }
 
     static Claim add(ClaimInput input, Person person, ClaimStore store, SettingStore settings, ClaimLogStore log,
-            PeriodStore periods) {
-        LocalDate dueBy = ClaimPeriods.dueByOf(person, input.date(), settings);
+            PeriodStore periods, HolidayStore holidays) {
+        LocalDate dueBy = ClaimPeriods.dueByOf(person, input.date(), settings, holidays);
         Claim added = store.add(person.getSheetId(), person.getId(), input.amount(), input.date(), input.note(),
                 input.corrects(), dueBy);
         if (periods.softOn(person.getSheetId(), dueBy)) {
