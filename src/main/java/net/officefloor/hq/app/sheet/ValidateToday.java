@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 public class ValidateToday {
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody TodayRequest request, Out<LocalDate> today, Out<TodayRequest> body, RoleStore roles) throws InvalidSheetException {
-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
+        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
         String text = request == null || request.today() == null ? "" : request.today().trim();
         body.set(request);
         try {

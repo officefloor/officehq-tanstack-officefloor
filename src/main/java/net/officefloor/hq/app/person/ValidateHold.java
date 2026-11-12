@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 public class ValidateHold {
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody HoldRequest request,
             SheetStore sheets, Out<HoldInput> body, RoleStore roles) throws InvalidSheetException {
-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
+        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
         String fromText = request == null || request.from() == null ? "" : request.from().trim();
         String toText = request == null || request.to() == null ? "" : request.to().trim();
         LocalDate from = fromText.isEmpty() ? sheets.today(sheetId.trim()) : parse(fromText);

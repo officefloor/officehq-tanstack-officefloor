@@ -7,7 +7,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 public class ValidateRole {
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody RoleRequest request, Out<RoleInput> body, RoleStore roles) throws InvalidSheetException {
-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.by());
+        roles.refuseChange(sheetId.trim(), request == null ? null : request.by());
         String user = request == null || request.user() == null ? "" : request.user().trim();
         if (user.isEmpty()) {
             throw new InvalidSheetException("A user name is required");

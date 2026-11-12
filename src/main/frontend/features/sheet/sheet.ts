@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 
-/** `today` (yyyy-MM-dd) is the sheet's own date: every date decision and default uses it, never the clock. */
-export type Sheet = { id: string; today: string };
+/** `today` (yyyy-MM-dd) is the sheet's own date: every date decision and default uses it, never the clock.
+ *  An `archived` sheet stays visible but the server refuses every change to it. */
+export type Sheet = { id: string; today: string; archived: boolean };
 
 /** Every per-sheet query key starts with ['sheet', id], so loading a sheet re-reads all of it. */
 export const sheetKey = (id: string) => ['sheet', id] as const;

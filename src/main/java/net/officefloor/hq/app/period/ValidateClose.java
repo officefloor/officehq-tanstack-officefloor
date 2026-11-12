@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 public class ValidateClose {
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody CloseRequest request, Out<CloseRequest> body, RoleStore roles) throws InvalidSheetException {
-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
+        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
         body.set(request == null ? new CloseRequest(null) : request);
     }
 }

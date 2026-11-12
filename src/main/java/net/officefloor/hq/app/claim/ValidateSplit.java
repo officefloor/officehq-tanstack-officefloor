@@ -14,7 +14,7 @@ public class ValidateSplit {
 
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SplitRequest request, Out<SplitInput> body,
             RoleStore roles) throws InvalidSheetException {
-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
+        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
         String amount = request == null || request.amount() == null ? "" : request.amount().trim();
         if (!AMOUNT.matcher(amount).matches()) {
             throw new InvalidSheetException("The amount must be a number with up to two decimals");

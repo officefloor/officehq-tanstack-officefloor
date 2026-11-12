@@ -14,6 +14,7 @@ public class ValidateDelegation {
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody DelegationRequest request,
             Out<Delegation> body, RoleStore roles, SheetStore sheets) throws InvalidSheetException {
         String sheet = sheetId.trim();
+        sheets.refuseArchived(sheet);
         String by = request == null || request.by() == null ? "" : request.by().trim();
         if (roles.assigned(sheet, by) != Role.STEWARD) {
             throw new InvalidSheetException("Only a steward can delegate the steward role");

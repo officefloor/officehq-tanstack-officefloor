@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 public class ValidateStatus {
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody StatusRequest request, Out<StatusInput> body, RoleStore roles) throws InvalidSheetException {
-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
+        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
         String status = request == null || request.status() == null ? "" : request.status().trim();
         ClaimStatus to;
         try {

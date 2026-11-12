@@ -20,7 +20,7 @@ public class ValidateSetting {
     private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
 
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SettingRequest request, Out<SettingInput> body, RoleStore roles) throws InvalidSheetException {
-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
+        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
         String key = request == null || request.key() == null ? "" : request.key().trim();
         boolean floor = SettingStore.FLOOR.equals(key);
         boolean terms = SettingStore.TERMS.equals(key);

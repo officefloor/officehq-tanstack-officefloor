@@ -21,7 +21,7 @@ public class ValidateQuickAdd {
 
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody QuickAddRequest request,
             SheetStore sheets, Out<PersonRequest> person, Out<ClaimInput> claim, RoleStore roles) throws InvalidSheetException {
-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
+        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
         if (request == null || request.name() == null || request.name().trim().isEmpty()) {
             throw new InvalidSheetException("A name is required");
         }

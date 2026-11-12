@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  claims newest first. Each goes through the very steps of a single settle by the user (period,
  *  clerk limit, opened-by and status checks, then store, log and audit), so a clerk's settle above
  *  the clerk limit sends it to PENDING, which counts as settled. A claim that is not on the sheet,
- *  or that a single settle would refuse, is refused and left as it is. */
+ *  or that a single settle would refuse (every claim on an archived sheet), is refused and left as it is. */
 public class SettleClaims {
     public void settle(@PathVariable("sheetId") String sheetId, @Val BulkSettleInput input, ClaimStore store,
             PersonStore people, PeriodStore periods, SettingStore settings, SheetStore sheets, RoleStore roles,
@@ -52,6 +52,7 @@ public class SettleClaims {
         int settled = 0;
         for (Claim claim : selected) {
             try {
+                sheets.refuseArchived(sheet);
                 new CheckClaimPeriod().check(claim, periods);
                 StatusMove[] move = new StatusMove[1];
                 new CheckClerkLimit().check(status, claim, roles, settings, people, rates, sheets, store, m -> move[0] = m);

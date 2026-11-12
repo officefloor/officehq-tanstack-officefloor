@@ -2,6 +2,7 @@ package net.officefloor.hq.app.role;
 
 import java.util.List;
 import net.officefloor.hq.app.sheet.InvalidSheetException;
+import net.officefloor.hq.app.sheet.SheetStore;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -12,10 +13,12 @@ public class RoleStore {
 
     private final JdbcTemplate jdbc;
     private final DelegationStore delegations;
+    private final SheetStore sheets;
 
-    public RoleStore(JdbcTemplate jdbc, DelegationStore delegations) {
+    public RoleStore(JdbcTemplate jdbc, DelegationStore delegations, SheetStore sheets) {
         this.jdbc = jdbc;
         this.delegations = delegations;
+        this.sheets = sheets;
     }
 
     /** Every role assigned on the sheet, by user name. */
@@ -38,8 +41,10 @@ public class RoleStore {
         return found.isEmpty() ? Role.CLERK : Role.valueOf(found.get(0));
     }
 
-    /** Refuses any change by a viewer: a viewer may change nothing on the sheet. */
-    public void refuseViewer(String sheetId, String user) throws InvalidSheetException {
+    /** Refuses any change to an archived sheet, and any change by a viewer: a viewer may change nothing
+     *  on the sheet. */
+    public void refuseChange(String sheetId, String user) throws InvalidSheetException {
+        sheets.refuseArchived(sheetId);
         if (find(sheetId, user == null ? "" : user.trim()) == Role.VIEWER) {
             throw new InvalidSheetException("A viewer may change nothing");
         }

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { postJson } from '../../api/http';
+import { HttpError, postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { AppHeader } from '../../slots/defs/appHeader';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
@@ -19,6 +19,13 @@ function SheetToday() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: sheetKey(sheet) }),
   });
   const submit = useSubmitOnce(save);
+  const archive = useMutation({
+    mutationFn: () => postJson<Sheet>(`/api/sheets/${encodeURIComponent(sheet)}/archive`, { user }),
+    onSuccess: (archived) => queryClient.setQueryData(sheetKey(sheet), archived),
+  });
+  const submitArchive = useSubmitOnce(archive);
+  // The sheet's one error element: a refused today or a refused archive, whichever was tried last.
+  const failed = save.isError ? save.error : archive.isError ? archive.error : null;
 
   if (!user || !loaded.data) return null;
   return (
@@ -26,6 +33,7 @@ function SheetToday() {
       data-testid="sheet-today-form"
       onSubmit={(e) => {
         e.preventDefault();
+        archive.reset();
         submit(input.trim());
       }}
     >
@@ -37,14 +45,26 @@ function SheetToday() {
         onChange={(e) => {
           setInput(e.target.value);
           save.reset();
+          archive.reset();
         }}
       />
       <button type="submit" data-testid="sheet-today-save">
         Set today
       </button>
-      {save.isError && (
+      {' '}Archived <strong data-testid="sheet-archived">{loaded.data.archived ? 'yes' : 'no'}</strong>{' '}
+      <button
+        type="button"
+        data-testid="sheet-archive"
+        onClick={() => {
+          save.reset();
+          submitArchive();
+        }}
+      >
+        Archive sheet
+      </button>
+      {failed && (
         <span data-testid="sheet-error" role="alert">
-          {' '}Not a valid date.
+          {' '}{failed instanceof HttpError && failed.reason ? failed.reason : 'Not a valid date.'}
         </span>
       )}
     </form>

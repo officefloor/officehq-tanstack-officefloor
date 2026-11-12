@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 public class ValidateReassign {
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ReassignRequest request, Out<ReassignInput> body, RoleStore roles) throws InvalidSheetException {
-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
+        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
         String to = request == null || request.to() == null ? "" : request.to().trim();
         if (to.isEmpty()) {
             throw new InvalidSheetException("Choose the person to move the claim to");

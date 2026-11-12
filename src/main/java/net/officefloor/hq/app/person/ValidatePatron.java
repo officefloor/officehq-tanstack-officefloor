@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 public class ValidatePatron {
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PatronRequest request, Out<PatronRequest> body, RoleStore roles) throws InvalidSheetException {
-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
+        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
         body.set(request == null ? new PatronRequest(null, null) : request);
     }
 }

@@ -26,7 +26,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 public class ValidatePaste {
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PasteRequest request,
             SheetStore sheets, PersonStore people, PeriodStore periods, ClaimStore claims, Out<PasteInput> pasted, RoleStore roles) throws InvalidSheetException {
-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
+        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
         String sheet = sheetId.trim();
         String text = request == null || request.text() == null ? "" : request.text();
         List<PastedClaim> pastedClaims = new ArrayList<>();

@@ -28,4 +28,23 @@ public class SheetStore {
     public void setToday(String sheetId, LocalDate today) {
         jdbc.update("MERGE INTO sheet (id, today) KEY (id) VALUES (?, ?)", sheetId, today);
     }
+
+    /** Whether the sheet is archived: visible, but every change to it is refused. */
+    public boolean archived(String sheetId) {
+        List<Boolean> found = jdbc.query("SELECT archived FROM sheet WHERE id = ?",
+                (rs, i) -> rs.getBoolean(1), sheetId);
+        return !found.isEmpty() && found.get(0);
+    }
+
+    /** Archives the sheet, keeping its today as it reads now. */
+    public void archive(String sheetId) {
+        jdbc.update("MERGE INTO sheet (id, today, archived) KEY (id) VALUES (?, ?, TRUE)", sheetId, today(sheetId));
+    }
+
+    /** Refuses any change to an archived sheet. */
+    public void refuseArchived(String sheetId) throws InvalidSheetException {
+        if (archived(sheetId)) {
+            throw new InvalidSheetException("The sheet is archived");
+        }
+    }
 }

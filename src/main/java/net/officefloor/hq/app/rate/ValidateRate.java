@@ -18,7 +18,7 @@ public class ValidateRate {
     private static final Pattern PCT = Pattern.compile("\\d+(\\.\\d{1,2})?");
 
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody RateRequest request, Out<RateInput> body, RoleStore roles) throws InvalidSheetException {
-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
+        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
         if (request == null || request.grade() == null || !GRADES.contains(request.grade())) {
             throw new InvalidSheetException("The grade must be A, B or C");
         }

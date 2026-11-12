@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 public class ValidateProof {
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ProofRequest request, Out<ProofInput> body, RoleStore roles) throws InvalidSheetException {
-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
+        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
         body.set(new ProofInput(request == null ? null : request.user()));
     }
 }

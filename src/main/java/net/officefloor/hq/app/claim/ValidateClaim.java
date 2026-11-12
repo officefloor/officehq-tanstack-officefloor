@@ -19,7 +19,7 @@ public class ValidateClaim {
 
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody ClaimRequest request,
             SheetStore sheets, Out<ClaimInput> body, RoleStore roles) throws InvalidSheetException {
-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
+        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
         body.set(check(sheetId, request, sheets));
     }
 

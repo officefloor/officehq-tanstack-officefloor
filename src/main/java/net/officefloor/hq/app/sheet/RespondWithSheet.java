@@ -7,6 +7,6 @@ public class RespondWithSheet {
     public void respond(@PathVariable("sheetId") String sheetId, SheetStore store,
             ObjectResponse<SheetResponse> response) {
         String id = sheetId.trim();
-        response.send(new SheetResponse(id, store.today(id).toString()));
+        response.send(new SheetResponse(id, store.today(id).toString(), store.archived(id)));
     }
 }

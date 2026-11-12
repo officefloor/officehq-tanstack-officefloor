@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 public class ValidateGenerate {
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody GenerateRequest request,
             SheetStore sheets, Out<GenerateInput> body, RoleStore roles) throws InvalidSheetException {
-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
+        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
         if (request == null) {
             throw new InvalidSheetException("A from and to date are required");
         }

@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  added, a person's claims newest first. Each is opened as a single open would be (its next
  *  number, opened-by the user) and recorded as CLAIM_OPENED, then how it moved the sheet's figures.
  *  A claim that is not on the sheet, is not a DRAFT, or is dated in a closed period, and every claim when
- *  the sheet's permission matrix does not allow the user's role to open, is refused and
+ *  the sheet is archived or the sheet's permission matrix does not allow the user's role to open, is refused and
  *  left as it is. */
 public class OpenClaims {
     public void open(@PathVariable("sheetId") String sheetId, @Val BulkOpenInput input, ClaimStore store,
@@ -47,7 +47,7 @@ public class OpenClaims {
         }
         selected.sort(Comparator.<Claim>comparingInt(c -> personOrder.getOrDefault(c.getPersonId(), Integer.MAX_VALUE))
                 .thenComparing(Comparator.comparingLong(Claim::getId).reversed()));
-        boolean permitted = settings.allows(sheet, "open", roles.find(sheet, input.user()));
+        boolean permitted = !sheets.archived(sheet) && settings.allows(sheet, "open", roles.find(sheet, input.user()));
         int opened = 0;
         for (Claim claim : selected) {
             if (!permitted || claim.getStatus() != ClaimStatus.DRAFT || closed(periods, claim)) {

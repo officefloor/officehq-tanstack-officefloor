@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 public class ValidateDefer {
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody DeferRequest request, Out<DeferInput> body, RoleStore roles) throws InvalidSheetException {
-        roles.refuseViewer(sheetId.trim(), request == null ? null : request.user());
+        roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
         String text = request == null || request.until() == null ? "" : request.until().trim();
         try {
             body.set(new DeferInput(LocalDate.parse(text), request.user()));
