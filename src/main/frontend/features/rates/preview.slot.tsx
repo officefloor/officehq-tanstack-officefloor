@@ -3,7 +3,7 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet } from '../../session/session';
 import { GRADES, usePeople } from '../people/people';
 import { useSheetToday } from '../sheet/sheet';
-import { live, useClaims } from '../claims/claims';
+import { useClaims } from '../claims/claims';
 import { floorOf, useSettings } from '../settings/settings';
 import { lateOf } from '../overdue/overdue';
 import { ratePreview, useRates } from './rates';
@@ -12,8 +12,8 @@ import { ratePreview, useRates } from './rates';
 const PCT = /^\d+(\.\d{1,2})?$/;
 
 // The rates panel's preview: how many OPEN and PENDING claims of people on a grade (on the claim's date)
-// would show a different due were a candidate percent the grade's rate on every date, and the sum of the
-// differences. Worked out on the screen; nothing is saved.
+// would show a different due were a candidate percent the grade's rate on every date (a retired or held
+// person's claims too), and the sum of the differences. Worked out on the screen; nothing is saved.
 function RatePreview() {
   const [sheet] = useCurrentSheet();
   const people = usePeople(sheet);
@@ -37,7 +37,7 @@ function RatePreview() {
     const all = people.data ?? [];
     const shown = all.map((p) => ({
       grades: p.grades,
-      claims: live((claims.data ?? []).filter((c) => c.personId === p.id), [p]),
+      claims: (claims.data ?? []).filter((c) => c.personId === p.id),
       late: lateOf(settings, today, [p]),
     }));
     // Shown on the next tick, so the old count is gone while the preview runs.

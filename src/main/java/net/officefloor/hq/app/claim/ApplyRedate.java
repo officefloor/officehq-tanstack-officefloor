@@ -10,10 +10,15 @@ import net.officefloor.plugin.variable.Val;
 public class ApplyRedate {
     public void apply(@Val RedateInput input, @Val Claim claim, ClaimStore store, Out<Redating> redating)
             throws InvalidSheetException {
+        redating.set(redate(input, claim, store));
+    }
+
+    /** Stores the claim's new date: the re-dating, or refused when the claim has moved on. */
+    static Redating redate(RedateInput input, Claim claim, ClaimStore store) throws InvalidSheetException {
         LocalDate old = claim.getDate();
         if (!store.redate(claim, input.date(), claim.getNumber())) {
             throw new InvalidSheetException("The claim has moved on");
         }
-        redating.set(new Redating(old, input.date()));
+        return new Redating(old, input.date());
     }
 }
