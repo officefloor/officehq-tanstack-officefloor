@@ -24,9 +24,10 @@ public class ApplySplit {
         }
         String sheetId = claim.getSheetId();
         Person person = people.find(sheetId, claim.getPersonId());
-        LocalDate dueBy = ClaimPeriods.dueByOf(person, claim.getDate(), settings, holidays);
+        int terms = SaveClaimAdded.termsOf(person, claim.getDate(), settings);
+        LocalDate dueBy = holidays.businessDaysAfter(sheetId, claim.getDate(), terms);
         String number = Numbering.next(sheetId, dueBy, store, settings, sheets, periods);
-        Claim into = store.addSplit(claim, input.amount(), number, input.user(), dueBy);
+        Claim into = store.addSplit(claim, input.amount(), number, input.user(), dueBy, terms);
         if (periods.softOn(sheetId, dueBy)) {
             store.markLateEntry(into);
         }

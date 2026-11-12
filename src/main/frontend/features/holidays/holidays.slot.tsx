@@ -4,6 +4,7 @@ import { HttpError, postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
+import { claimsKey } from '../claims/claims';
 import { type Holiday, holidaysKey, useHolidays } from './holidays';
 
 // The sheet's holidays, and the entry a date is added with. A date already on the list is refused.
@@ -18,7 +19,11 @@ function Holidays() {
     mutationFn: (d: string) =>
       postJson<Holiday>(`/api/sheets/${encodeURIComponent(sheet)}/holidays`, { date: d, user }),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: holidaysKey(sheet) });
+      // A holiday re-fixes the due-by of the claims due on or after it.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: holidaysKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+      ]);
       setDate('');
     },
   });

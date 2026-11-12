@@ -10,7 +10,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 /** The holidays per sheet. A claim's due-by, fixed when it is added, counts business days past those on the
- *  sheet then (see {@link #businessDaysAfter}); a holiday added later leaves existing due-by dates as they are. */
+ *  sheet then (see {@link #businessDaysAfter}); a holiday added later re-fixes the due-by of every claim not
+ *  SETTLED or VOID due on or after it, for the terms it was fixed with (see {@code ClaimStore#refixDueBy}). */
 @Repository
 public class HolidayStore {
 

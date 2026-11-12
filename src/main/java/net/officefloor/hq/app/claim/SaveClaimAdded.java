@@ -18,9 +18,10 @@ public class SaveClaimAdded {
 
     static Claim add(ClaimInput input, Person person, ClaimStore store, SettingStore settings, ClaimLogStore log,
             PeriodStore periods, HolidayStore holidays) {
-        LocalDate dueBy = ClaimPeriods.dueByOf(person, input.date(), settings, holidays);
+        int terms = termsOf(person, input.date(), settings);
+        LocalDate dueBy = holidays.businessDaysAfter(person.getSheetId(), input.date(), terms);
         Claim added = store.add(person.getSheetId(), person.getId(), input.amount(), input.date(), input.note(),
-                input.corrects(), dueBy, input.ref(), input.tags());
+                input.corrects(), dueBy, terms, input.ref(), input.tags());
         if (periods.softOn(person.getSheetId(), dueBy)) {
             store.markLateEntry(added);
         }

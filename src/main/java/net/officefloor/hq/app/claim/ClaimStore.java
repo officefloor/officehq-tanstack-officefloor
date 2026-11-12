@@ -5,7 +5,9 @@ import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Set;
 import net.officefloor.hq.app.history.History;
+import net.officefloor.hq.app.holiday.HolidayStore;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -82,25 +84,14 @@ public class ClaimStore {
         return n != null && n > 0;
     }
 
-    /** Adds a draft claim due by {@code dueBy}, which stays as it is whatever later changes. */
+    /** Adds a draft claim due by {@code dueBy}, fixed for {@code terms} business days after its date (see
+     *  {@link #refixDueBy}), with the external reference and tags (null for none). */
     public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
-            LocalDate dueBy) {
-        return add(sheetId, personId, amount, date, note, corrects, dueBy, null);
-    }
-
-    /** Adds a draft claim due by {@code dueBy} with the external reference (null for none). */
-    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
-            LocalDate dueBy, String ref) {
-        return add(sheetId, personId, amount, date, note, corrects, dueBy, ref, null);
-    }
-
-    /** Adds a draft claim due by {@code dueBy} with the external reference and tags (null for none). */
-    public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note, String corrects,
-            LocalDate dueBy, String ref, String tags) {
+            LocalDate dueBy, int terms, String ref, String tags) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, ref, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, corrects, due_by, ref, tags, due_terms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "ID" });
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
@@ -111,6 +102,7 @@ public class ClaimStore {
             ps.setDate(7, Date.valueOf(dueBy));
             ps.setString(8, ref);
             ps.setString(9, tags);
+            ps.setInt(10, terms);
             return ps;
         }, keys);
         Claim added = new Claim(keys.getKey().longValue(), sheetId, personId, amount, date, note, ClaimStatus.DRAFT, null, null, null,
@@ -229,13 +221,13 @@ public class ClaimStore {
     }
 
     /** Adds an OPEN claim split off {@code from}: its date, note and tags, the given number, opened by the user
-     *  and due by {@code dueBy}, listed as its person's newest claim. */
-    public Claim addSplit(Claim from, BigDecimal amount, String number, String openedBy, LocalDate dueBy) {
+     *  and due by {@code dueBy}, fixed for {@code terms} business days after its date, listed as its person's newest claim. */
+    public Claim addSplit(Claim from, BigDecimal amount, String number, String openedBy, LocalDate dueBy, int terms) {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, number, opened_by, due_by, split_from, tags) "
-                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, number, opened_by, due_by, split_from, tags, due_terms) "
+                            + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "ID" });
             ps.setString(1, from.getSheetId());
             ps.setLong(2, from.getPersonId());
@@ -248,6 +240,7 @@ public class ClaimStore {
             ps.setDate(9, Date.valueOf(dueBy));
             ps.setString(10, from.getNumber());
             ps.setString(11, from.getTags());
+            ps.setInt(12, terms);
             return ps;
         }, keys);
         Claim added = new Claim(keys.getKey().longValue(), from.getSheetId(), from.getPersonId(), amount, from.getDate(),
@@ -255,6 +248,21 @@ public class ClaimStore {
         added.setSplitFrom(from.getNumber());
         added.setTags(from.getTags());
         return added;
+    }
+
+    /** Works out again the due-by of every claim on the sheet that is not SETTLED or VOID and is due by
+     *  {@code from} or later: the business day the terms it was fixed with after its date, skipping weekends
+     *  and the given holidays (see {@link HolidayStore#businessDaysAfter}). */
+    public void refixDueBy(String sheetId, LocalDate from, Set<LocalDate> holidays) {
+        jdbc.query("SELECT id, claim_date, due_by, due_terms FROM claim WHERE sheet_id = ? AND status NOT IN (?, ?) "
+                + "AND due_by >= ? AND due_terms IS NOT NULL ORDER BY id", rs -> {
+                    LocalDate dueBy = HolidayStore.businessDaysAfter(holidays, rs.getObject("claim_date", LocalDate.class),
+                            rs.getInt("due_terms"));
+                    if (!dueBy.equals(rs.getObject("due_by", LocalDate.class))) {
+                        jdbc.update("UPDATE claim SET due_by = ? WHERE sheet_id = ? AND id = ?", Date.valueOf(dueBy),
+                                sheetId, rs.getLong("id"));
+                    }
+                }, sheetId, ClaimStatus.SETTLED.name(), ClaimStatus.VOID.name(), Date.valueOf(from));
     }
 
     /** Raises the stored DRAFT, OPEN or PENDING claim's proofs count by one; false when it is no longer one of

@@ -9,7 +9,7 @@ import net.officefloor.hq.app.setting.SettingStore;
 import net.officefloor.hq.app.sheet.InvalidSheetException;
 
 /** A claim belongs to the period its due-by falls in: the due-by fixed when it was added, which an edit, a
- *  re-dating or a move to another person leaves as it is. */
+ *  re-dating or a move to another person leaves as it is (only a holiday added later re-fixes it). */
 public final class ClaimPeriods {
     private ClaimPeriods() {
     }
