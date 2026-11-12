@@ -1,0 +1,80 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/CheckClaimCorrection.java b/src/main/java/net/officefloor/hq/app/claim/CheckClaimCorrection.java
+index 69b66ed00..9fa015144 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/CheckClaimCorrection.java
++++ b/src/main/java/net/officefloor/hq/app/claim/CheckClaimCorrection.java
+@@ -3,9 +3,9 @@ package net.officefloor.hq.app.claim;
+ import net.officefloor.hq.app.sheet.InvalidSheetException;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Refuses a claim edited into a correction unless it names, by number, a SETTLED claim of its person. */
++/** Refuses a claim edited into a correction unless it names, by number, a SETTLED claim of its person, and no larger than what remains of it. */
+ public class CheckClaimCorrection {
+     public void check(@Val Claim claim, @Val ClaimInput input, ClaimStore claims) throws InvalidSheetException {
+-        CheckCorrection.refuseUnsettled(claims, claim.getSheetId(), claim.getPersonId(), input);
++        CheckCorrection.refuseUnsettled(claims, claim.getSheetId(), claim.getPersonId(), input, claim.getId());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/CheckCorrection.java b/src/main/java/net/officefloor/hq/app/claim/CheckCorrection.java
+index 7b98800c5..f946e99bb 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/CheckCorrection.java
++++ b/src/main/java/net/officefloor/hq/app/claim/CheckCorrection.java
+@@ -1,10 +1,14 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.math.BigDecimal;
++
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.sheet.InvalidSheetException;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Refuses a correction added to a person unless it names, by number, a SETTLED claim of theirs. */
++/** Refuses a correction added to a person unless it names, by number, a SETTLED claim of theirs, and
++ *  unless it is no larger than what remains of that claim: its amount less the corrections already made
++ *  against it (VOID or DELETED ones left out). */
+ public class CheckCorrection {
+     public void check(@Val ClaimInput input, @Val Person person, ClaimStore claims) throws InvalidSheetException {
+         refuseUnsettled(claims, person.getSheetId(), person.getId(), input);
+@@ -12,6 +16,12 @@ public class CheckCorrection {
+ 
+     static void refuseUnsettled(ClaimStore claims, String sheetId, long personId, ClaimInput input)
+             throws InvalidSheetException {
++        refuseUnsettled(claims, sheetId, personId, input, 0);
++    }
++
++    /** As above, leaving the claim {@code exceptId} (the one being edited, 0 for none) out of the corrections already made. */
++    static void refuseUnsettled(ClaimStore claims, String sheetId, long personId, ClaimInput input, long exceptId)
++            throws InvalidSheetException {
+         if (!input.isCorrection()) {
+             return;
+         }
+@@ -19,5 +29,10 @@ public class CheckCorrection {
+         if (corrected == null || corrected.getStatus() != ClaimStatus.SETTLED) {
+             throw new InvalidSheetException("A correction must name a SETTLED claim of the same person");
+         }
++        BigDecimal remaining = corrected.getAmount().add(claims.correctedTotal(sheetId, personId, input.corrects(), exceptId));
++        if (input.amount().negate().compareTo(remaining) > 0) {
++            throw new InvalidSheetException("A correction may not exceed what remains of the claim it corrects ("
++                    + remaining.setScale(2) + ")");
++        }
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java
+index 3d3a26c5d..8bf2aa400 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStore.java
+@@ -68,6 +68,15 @@ public class ClaimStore {
+         return found.isEmpty() ? null : found.get(0);
+     }
+ 
++    /** The sum of the amounts (negative) of the person's corrections against the claim numbered {@code number},
++     *  VOID and DELETED ones left out, and the claim {@code exceptId} (0 for none) too. */
++    public BigDecimal correctedTotal(String sheetId, long personId, String number, long exceptId) {
++        BigDecimal total = jdbc.queryForObject(
++                "SELECT COALESCE(SUM(amount), 0) FROM claim WHERE sheet_id = ? AND person_id = ? AND corrects = ? AND id <> ? AND status NOT IN (?, ?)",
++                BigDecimal.class, sheetId, personId, number, exceptId, ClaimStatus.VOID.name(), ClaimStatus.DELETED.name());
++        return total == null ? BigDecimal.ZERO : total;
++    }
++
+     /** Every tag ever carried by a claim or a person on the sheet (by their history, see {@link History}), as stored (see
+      *  {@link Tags}); up to the end of {@code date} when given, else up to now. */
+     public List<String> tagsEverUsed(String sheetId, LocalDate date) {
