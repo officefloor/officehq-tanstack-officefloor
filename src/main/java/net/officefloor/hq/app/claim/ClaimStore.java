@@ -59,6 +59,13 @@ public class ClaimStore {
                 claim.getNumber(), claim.getSettledDue(), claim.getOpenedBy(), claim.getSheetId(), claim.getId());
     }
 
+    /** Stores a draft's amount, date and note; false when the stored claim is no longer a draft. */
+    public boolean edit(Claim claim) {
+        return jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ? WHERE sheet_id = ? AND id = ? AND status = ?",
+                claim.getAmount(), Date.valueOf(claim.getDate()), claim.getNote(), claim.getSheetId(), claim.getId(),
+                ClaimStatus.DRAFT.name()) == 1;
+    }
+
     /** The person's claims, newest first, their rows locked until the transaction ends. */
     public List<Claim> listForUpdate(String sheetId, long personId) {
         return jdbc.query("SELECT * FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY id DESC FOR UPDATE",

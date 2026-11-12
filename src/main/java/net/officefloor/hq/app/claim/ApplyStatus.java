@@ -9,7 +9,7 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /** Moves the claim to the new status, refusing a change its current status does not allow. Opening
- *  gives the claim the sheet's next number and records who opened it; voiding clears it. Settling fixes its due at its person's
+ *  gives the claim the sheet's next number and records who opened it; a voided claim keeps its number, which is never reused. Settling fixes its due at its person's
  *  grade rate in force on the claim's date, rounded half to even (none when no rate of the grade applies then),
  *  or at the figure its person's last statement bound it to.
  *  The user who opened a claim may not settle it. */
@@ -36,8 +36,5 @@ public class ApplyStatus {
             claim.setSettledDue(ClaimFigure.of(claim, pct));
         }
         change.set(new StatusChange(claim.getNumber()));
-        if (input.status() == ClaimStatus.VOID) {
-            claim.setNumber(null);
-        }
     }
 }
