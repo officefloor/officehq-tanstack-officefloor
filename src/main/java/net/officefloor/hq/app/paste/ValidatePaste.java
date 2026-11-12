@@ -5,9 +5,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimAdding;
 import net.officefloor.hq.app.claim.ClaimInput;
 import net.officefloor.hq.app.claim.ClaimRequest;
+import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.ClaimStore;
 import net.officefloor.hq.app.holiday.HolidayStore;
 import net.officefloor.hq.app.period.PeriodStore;
@@ -27,6 +29,8 @@ import org.springframework.web.bind.annotation.RequestBody;
  * entry date while it is set, else the sheet's today) due by (with the terms it would get) a date in no closed period and not after the person is retired from. The note is the rest
  * of the line, commas and all, less a closing " #<reference>", which is the claim's external reference: one
  * already on the sheet or given by an earlier line, compared without regard to case, is refused. Blank lines are skipped; a paste with no line is refused.
+ * A line naming a person, date and note that match one of their claims as they stood before the paste (void and deleted
+ * ones aside) updates the newest such DRAFT instead of adding a claim; one whose matches include no DRAFT is refused.
  */
 public class ValidatePaste {
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PasteRequest request,
@@ -37,6 +41,8 @@ public class ValidatePaste {
         List<PastedClaim> pastedClaims = new ArrayList<>();
         String[] lines = text.split("\\r?\\n");
         Set<String> refs = new HashSet<>();
+        // The claims as they stood before the paste, newest first: what a line may match.
+        List<Claim> before = claims.list(sheet);
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i];
             if (line.trim().isEmpty()) {
@@ -64,7 +70,7 @@ public class ValidatePaste {
                 if (claim.ref() != null && !refs.add(claim.ref().toLowerCase(Locale.ROOT))) {
                     throw new InvalidSheetException("The reference " + claim.ref() + " is given twice");
                 }
-                pastedClaims.add(new PastedClaim(person, claim));
+                pastedClaims.add(new PastedClaim(person, claim, matchedDraft(before, person, claim)));
             } catch (InvalidSheetException e) {
                 throw new InvalidSheetException("Line " + (i + 1) + ": " + e.getMessage());
             }
@@ -73,5 +79,30 @@ public class ValidatePaste {
             throw new InvalidSheetException("Paste at least one line of name,amount,date,note");
         }
         pasted.set(new PasteInput(pastedClaims));
+    }
+
+    /** The newest DRAFT of the person's claims (void and deleted ones aside) with the line's date and
+     *  note, null when none has them; refused when some have them but none is a DRAFT. */
+    private static Long matchedDraft(List<Claim> before, Person person, ClaimInput line) throws InvalidSheetException {
+        boolean matched = false;
+        for (Claim c : before) {
+            if (c.getPersonId() != person.getId() || c.getStatus() == ClaimStatus.VOID
+                    || c.getStatus() == ClaimStatus.DELETED || !line.date().equals(c.getDate())
+                    || !noteOf(line.note()).equals(noteOf(c.getNote()))) {
+                continue;
+            }
+            if (c.getStatus() == ClaimStatus.DRAFT) {
+                return c.getId();
+            }
+            matched = true;
+        }
+        if (matched) {
+            throw new InvalidSheetException("It matches a claim of " + person.getName() + " that is no longer a DRAFT");
+        }
+        return null;
+    }
+
+    private static String noteOf(String note) {
+        return note == null ? "" : note.trim();
     }
 }

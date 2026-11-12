@@ -9,9 +9,10 @@ import { claimsKey } from './claims';
 
 type PasteResult = { added: number };
 
-// The paste box: lines of name,amount,date,note each add a DRAFT claim for the named person. The
-// server checks every line with the claim form's rules first and refuses the whole paste if any
-// fails; the count added shows once it answers (gone while it runs).
+// The paste box: lines of name,amount,date,note each add a claim for the named person (or update
+// the DRAFT of theirs with that date and note) and open it. The server checks every line first and
+// refuses the whole paste if any line, or any open, fails; the count of lines that went through
+// shows once it answers (gone while it runs).
 function PasteClaims() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -48,12 +49,12 @@ function PasteClaims() {
         }}
       />
       <button type="submit" data-testid="paste-submit" disabled={paste.isPending}>
-        Add claims
+        Add and open claims
       </button>
       {paste.isSuccess && (
         <>
           {' '}
-          Added <strong data-testid="paste-added">{paste.data.added}</strong>
+          Went through <strong data-testid="paste-added">{paste.data.added}</strong>
         </>
       )}
       {paste.isError && (
