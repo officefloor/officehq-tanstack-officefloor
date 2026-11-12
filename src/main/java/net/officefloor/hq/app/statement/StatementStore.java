@@ -24,6 +24,20 @@ public class StatementStore {
                 statement.claims(), user);
     }
 
+    /** Removes the person's last statement and returns it, or null when they have none. */
+    public Statement removeLast(String sheetId, long personId) {
+        var ids = jdbc.queryForList("SELECT id FROM statement WHERE sheet_id = ? AND person_id = ? ORDER BY id DESC LIMIT 1 FOR UPDATE",
+                Long.class, sheetId, personId);
+        if (ids.isEmpty()) {
+            return null;
+        }
+        Statement last = jdbc.queryForObject("SELECT taken_on, due_total, claims FROM statement WHERE id = ?",
+                (rs, i) -> new Statement(personId, rs.getObject("taken_on", LocalDate.class), rs.getBigDecimal("due_total"),
+                        rs.getInt("claims")), ids.get(0));
+        jdbc.update("DELETE FROM statement WHERE id = ?", ids.get(0));
+        return last;
+    }
+
     /** Each person on the sheet with a statement: their count and last statement. */
     public Map<Long, StatementSummary> summaries(String sheetId) {
         Map<Long, StatementSummary> found = new HashMap<>();

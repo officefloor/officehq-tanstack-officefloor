@@ -12,8 +12,8 @@ import net.officefloor.hq.app.setting.SettingStore;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
 
-/** With grace days set, closes every open period whose to-date plus the grace days is before the new
- *  today, in order of their to-dates, exactly as a close by hand would, each recorded as
+/** With grace days set, closes every open period (not a soft-closed one, whose figures stay fixed) whose
+ *  to-date plus the grace days is before the new today, in order of their to-dates, exactly as a close by hand would, each recorded as
  *  PERIOD_CLOSED sheet=<id> by=<user> period=<name> total=<0.00> auto=yes. */
 public class AutoClosePeriods {
     public void close(@PathVariable("sheetId") String sheetId, @Val TodayRequest request, @Val LocalDate today,
@@ -25,7 +25,7 @@ public class AutoClosePeriods {
             return;
         }
         List<PeriodResponse> due = periods.list(sheet).stream()
-                .filter(p -> !p.closed() && LocalDate.parse(p.to()).plusDays(grace).isBefore(today))
+                .filter(p -> !p.closed() && !p.soft() && LocalDate.parse(p.to()).plusDays(grace).isBefore(today))
                 .sorted(Comparator.comparing(PeriodResponse::to)).toList();
         for (PeriodResponse period : due) {
             PeriodResponse closed = PeriodClosing.fix(sheet, period, periods, rollups);

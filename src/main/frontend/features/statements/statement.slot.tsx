@@ -10,8 +10,9 @@ function StatementHead() {
 }
 
 // A person's statements: how many were taken, the last one's due-total and date, and the button that
-// takes one (binding their counting claims to their figures now). A refused statement shows its error
-// until the next is taken.
+// takes one (binding their counting claims to their figures now), and the button that cancels the last one
+// (a steward only; its claims follow their live figures again). A refused action shows its error until
+// the next action on the person is taken.
 function PersonStatement({ person }: { person: Person }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -21,6 +22,17 @@ function PersonStatement({ person }: { person: Person }) {
     mutationKey: personActionKey(sheet, person.id),
     mutationFn: () =>
       postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/statement`, { user }),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+      ]),
+  });
+
+  const cancel = useMutation({
+    mutationKey: personActionKey(sheet, person.id),
+    mutationFn: () =>
+      postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/unstate`, { user }),
     onSuccess: () =>
       Promise.all([
         queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
@@ -45,11 +57,30 @@ function PersonStatement({ person }: { person: Person }) {
         }}
       >
         Statement
+      </button>{' '}
+      <button
+        type="button"
+        data-testid="person-unstate"
+        disabled={cancel.isPending}
+        onClick={() => {
+          cancel.reset();
+          cancel.mutate();
+        }}
+      >
+        Cancel statement
       </button>
       {take.isError && take.submittedAt >= latest && (
         <span data-testid="person-error" role="alert">
           {' '}
           {take.error instanceof HttpError && take.error.reason ? `${take.error.reason}.` : 'The statement was refused.'}
+        </span>
+      )}
+      {cancel.isError && cancel.submittedAt >= latest && (
+        <span data-testid="person-error" role="alert">
+          {' '}
+          {cancel.error instanceof HttpError && cancel.error.reason
+            ? `${cancel.error.reason}.`
+            : 'The cancelling was refused.'}
         </span>
       )}
     </td>
