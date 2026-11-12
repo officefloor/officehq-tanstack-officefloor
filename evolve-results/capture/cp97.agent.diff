@@ -1,0 +1,90 @@
+diff --git a/src/main/frontend/features/rates/months.slot.tsx b/src/main/frontend/features/rates/months.slot.tsx
+new file mode 100644
+index 000000000..3b1ca82e6
+--- /dev/null
++++ b/src/main/frontend/features/rates/months.slot.tsx
+@@ -0,0 +1,41 @@
++import { HomeMain } from '../../slots/defs/homeMain';
++import { usePeople } from '../people/people';
++import { useCurrentSheet } from '../../session/session';
++import { useSheetToday } from '../sheet/sheet';
++import { live, useClaims } from '../claims/claims';
++import { floorOf, useSettings } from '../settings/settings';
++import { lateOf } from '../overdue/overdue';
++import { dueTotal, personMonthDue, useRates } from './rates';
++
++// For every calendar month (yyyy-mm) any claim on the sheet is dated in, its due-total: the dues of the
++// claims that count dated in it, everyone's added up, not capped or trimmed.
++function MonthTotals() {
++  const [sheet] = useCurrentSheet();
++  const people = usePeople(sheet);
++  const claims = useClaims(sheet);
++  const rates = useRates(sheet);
++  const today = useSheetToday(sheet);
++  const settings = useSettings(sheet).data;
++  const floor = floorOf(settings);
++  const months = [...new Set((claims.data ?? []).map((c) => c.date.slice(0, 7)))].sort();
++  const total = (month: string) =>
++    dueTotal(
++      (people.data ?? []).map((p) =>
++        personMonthDue(live((claims.data ?? []).filter((c) => c.personId === p.id), [p]), month, rates.data, p.grades, today, floor,
++          lateOf(settings, today, [p])),
++      ),
++    );
++  if (months.length === 0) return null;
++  return (
++    <p>
++      Due by month{' '}
++      {months.map((month) => (
++        <span key={month}>
++          {month} <strong data-testid={`month-${month}-due-total`}>{total(month)}</strong>{' '}
++        </span>
++      ))}
++    </p>
++  );
++}
++
++export const contribution = HomeMain.fill({ order: 36.6, Component: MonthTotals });
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 701ba6414..8d6624258 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -229,9 +229,37 @@ export function personTagged(
+   today: string | undefined,
+   floor: Floor,
+   late?: Late,
++): string {
++  return personDueWhere(claims, (c) => c.tags.includes(tag), rates, grades, today, floor, late);
++}
++
++/** A person's due in a calendar month (yyyy-mm): the sum of the dues (skipping n/a) of their claims that
++ *  count dated in it; 0.00 when their due-total is n/a. */
++export function personMonthDue(
++  claims: Claim[],
++  month: string,
++  rates: Rate[] | undefined,
++  grades: Grades,
++  today: string | undefined,
++  floor: Floor,
++  late?: Late,
++): string {
++  return personDueWhere(claims, (c) => c.date.slice(0, 7) === month, rates, grades, today, floor, late);
++}
++
++/** The sum of the dues (skipping n/a) of a person's claims that count that `keep` picks; 0.00 when their
++ *  due-total is n/a. */
++function personDueWhere(
++  claims: Claim[],
++  keep: (c: Claim) => boolean,
++  rates: Rate[] | undefined,
++  grades: Grades,
++  today: string | undefined,
++  floor: Floor,
++  late?: Late,
+ ): string {
+   if (uncappedDue(claims, rates, grades, today, floor, late) === NA) return format(0n);
+-  return dueTotal(claims.filter((c) => counts(c) && c.tags.includes(tag)).map((c) => claimDue(c, rates, grades, floor, late)));
++  return dueTotal(claims.filter((c) => counts(c) && keep(c)).map((c) => claimDue(c, rates, grades, floor, late)));
+ }
+ 
+ /** A preview of a candidate percent for a grade: of these people's OPEN and PENDING claims whose person
