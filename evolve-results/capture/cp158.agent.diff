@@ -1,0 +1,384 @@
+diff --git a/src/main/frontend/features/aliases/aliases.slot.tsx b/src/main/frontend/features/aliases/aliases.slot.tsx
+index 4bcc88f51..2a788a691 100644
+--- a/src/main/frontend/features/aliases/aliases.slot.tsx
++++ b/src/main/frontend/features/aliases/aliases.slot.tsx
+@@ -4,8 +4,10 @@ import { HttpError, postJson } from '../../api/http';
+ import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
+ import { type Person, peopleKey, personActionKey, useLatestPersonAction } from '../people/people';
+ import { useCurrentSheet, useCurrentUser } from '../../session/session';
++import { useColumnShown } from '../columns/columns';
+ 
+ function AliasesHead() {
++  if (!useColumnShown()('aliases')) return null;
+   return <th>Aliases</th>;
+ }
+ 
+@@ -29,7 +31,9 @@ function PersonAliases({ person }: { person: Person }) {
+   });
+ 
+   const latest = useLatestPersonAction(sheet, person.id);
++  const shown = useColumnShown();
+ 
++  if (!shown('aliases')) return null;
+   return (
+     <td>
+       <span data-testid="person-aliases">{person.aliases.join(', ')}</span>
+diff --git a/src/main/frontend/features/claims/claimed.slot.tsx b/src/main/frontend/features/claims/claimed.slot.tsx
+index f5856bba0..8094caf13 100644
+--- a/src/main/frontend/features/claims/claimed.slot.tsx
++++ b/src/main/frontend/features/claims/claimed.slot.tsx
+@@ -4,16 +4,20 @@ import { type Person, usePeople } from '../people/people';
+ import { useCurrentSheet } from '../../session/session';
+ import { claimed, live, useClaims } from './claims';
+ import { useFigure } from '../locale/locale';
++import { useColumnShown } from '../columns/columns';
+ 
+ // A person's claimed (the sum of their claims, leaving out corrections) and the sheet's claimed-total (everyone's).
+ function ClaimedHead() {
++  if (!useColumnShown()('claimed')) return null;
+   return <th>Claimed</th>;
+ }
+ 
+ function PersonClaimed({ person }: { person: Person }) {
++  const shown = useColumnShown();
+   const fig = useFigure();
+   const [sheet] = useCurrentSheet();
+   const claims = useClaims(sheet);
++  if (!shown('claimed')) return null;
+   return <td data-testid="person-claimed">{fig(claimed(live((claims.data ?? []).filter((c) => c.personId === person.id), [person])))}</td>;
+ }
+ 
+diff --git a/src/main/frontend/features/columns/chooser.slot.tsx b/src/main/frontend/features/columns/chooser.slot.tsx
+new file mode 100644
+index 000000000..15c560e86
+--- /dev/null
++++ b/src/main/frontend/features/columns/chooser.slot.tsx
+@@ -0,0 +1,25 @@
++import { HomeMain } from '../../slots/defs/homeMain';
++import { COLUMNS, useHiddenColumns } from './columns';
++
++// A checkbox per column of the people list: unticked, this screen shows no cell for it.
++function ColumnChooser() {
++  const [hidden, setHidden] = useHiddenColumns();
++  return (
++    <fieldset>
++      <legend>Columns</legend>
++      {COLUMNS.map((c) => (
++        <label key={c}>
++          <input
++            type="checkbox"
++            data-testid={`column-${c}`}
++            checked={!hidden.includes(c)}
++            onChange={(e) => setHidden(e.target.checked ? hidden.filter((h) => h !== c) : [...hidden, c])}
++          />
++          {c}{' '}
++        </label>
++      ))}
++    </fieldset>
++  );
++}
++
++export const contribution = HomeMain.fill({ order: 19.9, Component: ColumnChooser });
+diff --git a/src/main/frontend/features/columns/columns.ts b/src/main/frontend/features/columns/columns.ts
+new file mode 100644
+index 000000000..4c788be2a
+--- /dev/null
++++ b/src/main/frontend/features/columns/columns.ts
+@@ -0,0 +1,35 @@
++import { asString, useSearchParam } from '../../url/useSearchParam';
++
++/** The people-list columns this screen can switch off, in the order its chooser shows them. */
++export const COLUMNS = [
++  'claimed',
++  'due-total',
++  'excess',
++  'statement-count',
++  'stated-total',
++  'statement-date',
++  'overdue-count',
++  'overdue-total',
++  'patrons',
++  'backing',
++  'hold',
++  'retired',
++  'terms',
++  'contact',
++  'aliases',
++] as const;
++export type Column = (typeof COLUMNS)[number];
++
++/** The columns this screen has switched off (`hiddenColumns`, comma-separated). It belongs to the screen:
++ *  other users' screens, the totals and every other figure are unaffected. */
++export function useHiddenColumns(): [Column[], (value: Column[]) => void] {
++  const [raw, setRaw] = useSearchParam('hiddenColumns', asString);
++  const hidden = raw.split(',').filter((c): c is Column => (COLUMNS as readonly string[]).includes(c));
++  return [hidden, (v) => setRaw(COLUMNS.filter((c) => v.includes(c)).join(',') || undefined)];
++}
++
++/** Whether this screen shows the column; a column switched off has no cell at all. */
++export function useColumnShown(): (column: Column) => boolean {
++  const [hidden] = useHiddenColumns();
++  return (column) => !hidden.includes(column);
++}
+diff --git a/src/main/frontend/features/hold/hold.slot.tsx b/src/main/frontend/features/hold/hold.slot.tsx
+index 3e157db57..f06e29467 100644
+--- a/src/main/frontend/features/hold/hold.slot.tsx
++++ b/src/main/frontend/features/hold/hold.slot.tsx
+@@ -5,8 +5,10 @@ import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns
+ import { type Person, peopleKey, personActionKey, useLatestPersonAction } from '../people/people';
+ import { useCurrentSheet, useCurrentUser } from '../../session/session';
+ import { poolsKey } from '../pools/pools';
++import { useColumnShown } from '../columns/columns';
+ 
+ function HoldHead() {
++  if (!useColumnShown()('hold')) return null;
+   return <th>Hold</th>;
+ }
+ 
+@@ -38,7 +40,9 @@ function PersonHold({ person }: { person: Person }) {
+   };
+ 
+   const latest = useLatestPersonAction(sheet, person.id);
++  const shown = useColumnShown();
+ 
++  if (!shown('hold')) return null;
+   return (
+     <td>
+       <span data-testid="person-hold">{person.held ? 'yes' : 'no'}</span>
+diff --git a/src/main/frontend/features/overdue/overdue.slot.tsx b/src/main/frontend/features/overdue/overdue.slot.tsx
+index c541c27f7..379fdab67 100644
+--- a/src/main/frontend/features/overdue/overdue.slot.tsx
++++ b/src/main/frontend/features/overdue/overdue.slot.tsx
+@@ -8,13 +8,15 @@ import { floorOf, useSettings } from '../settings/settings';
+ import { trimmedTotal, useRates } from '../rates/rates';
+ import { lateOf, overdueFigures } from './overdue';
+ import { useFigure } from '../locale/locale';
++import { useColumnShown } from '../columns/columns';
+ 
+ // A person's overdue count and overdue-total (the due of their overdue claims that count), and the sheet's.
+ function OverdueHead() {
++  const shown = useColumnShown();
+   return (
+     <>
+-      <th>Overdue</th>
+-      <th>Overdue total</th>
++      {shown('overdue-count') && <th>Overdue</th>}
++      {shown('overdue-total') && <th>Overdue total</th>}
+     </>
+   );
+ }
+@@ -41,10 +43,11 @@ export function useOverdue(of?: string) {
+ function PersonOverdue({ person }: { person: Person }) {
+   const fig = useFigure();
+   const { count, total } = useOverdue()(person);
++  const shown = useColumnShown();
+   return (
+     <>
+-      <td data-testid="person-overdue-count">{count}</td>
+-      <td data-testid="person-overdue-total">{fig(total)}</td>
++      {shown('overdue-count') && <td data-testid="person-overdue-count">{count}</td>}
++      {shown('overdue-total') && <td data-testid="person-overdue-total">{fig(total)}</td>}
+     </>
+   );
+ }
+diff --git a/src/main/frontend/features/patrons/patrons.slot.tsx b/src/main/frontend/features/patrons/patrons.slot.tsx
+index e9ab4befb..70589f768 100644
+--- a/src/main/frontend/features/patrons/patrons.slot.tsx
++++ b/src/main/frontend/features/patrons/patrons.slot.tsx
+@@ -8,8 +8,11 @@ import { useSheetToday } from '../sheet/sheet';
+ import { isRecentSettled, useClaims } from '../claims/claims';
+ import { NA, dueTotal, patronShares, sharedTotal } from '../rates/rates';
+ import { useFigure } from '../locale/locale';
++import { useColumnShown } from '../columns/columns';
+ 
+ function PatronsHead() {
++  const shown = useColumnShown();
++  if (!shown('patrons') && !shown('backing')) return null;
+   return <th>Patrons</th>;
+ }
+ 
+@@ -20,6 +23,7 @@ function PatronsHead() {
+ // Another person on the sheet is named as a patron one at a time; a refusal shows its error until the
+ // next is tried.
+ function PersonPatrons({ person }: { person: Person }) {
++  const shown = useColumnShown();
+   const fig = useFigure();
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+@@ -43,7 +47,7 @@ function PersonPatrons({ person }: { person: Person }) {
+     const p = people.find((q) => q.id === id);
+     return p ? [{ person: p, share: shares[i] }] : [];
+   });
+-  const shown = patrons
++  const named = patrons
+     .map((p) => ({ name: p.person.name, share: p.share }))
+     .sort((a, b) => a.name.localeCompare(b.name))
+     .map((p) => `${p.name} ${p.share}`);
+@@ -59,10 +63,11 @@ function PersonPatrons({ person }: { person: Person }) {
+   );
+   const candidates = people.filter((p) => p.id !== person.id && !person.patronIds.includes(p.id));
+ 
++  if (!shown('patrons') && !shown('backing')) return null;
+   return (
+     <td>
+-      <span data-testid="person-patrons">{shown.join(', ')}</span>{' '}
+-      <span data-testid="person-backing">{fig(backing)}</span>{' '}
++      {shown('patrons') && <><span data-testid="person-patrons">{named.join(', ')}</span>{' '}</>}
++      {shown('backing') && <><span data-testid="person-backing">{fig(backing)}</span>{' '}</>}
+       <select
+         data-testid="person-patron-select"
+         value={chosen}
+diff --git a/src/main/frontend/features/people/list.slot.tsx b/src/main/frontend/features/people/list.slot.tsx
+index cee1c6b3e..7fb919585 100644
+--- a/src/main/frontend/features/people/list.slot.tsx
++++ b/src/main/frontend/features/people/list.slot.tsx
+@@ -4,6 +4,7 @@ import { useCurrentSheet } from '../../session/session';
+ import { usePersonDue } from '../rates/due.slot';
+ import { type Person, useEditingPerson, usePeople, useSelectedPeople, useShowRetired } from './people';
+ import { asString, useSearchParam } from '../../url/useSearchParam';
++import { useColumnShown } from '../columns/columns';
+ 
+ const SORTS = ['added', 'name', 'grade', 'due-total'] as const;
+ type Sort = (typeof SORTS)[number];
+@@ -60,6 +61,7 @@ function PeopleList() {
+   const [selected, setSelected] = useSelectedPeople();
+   const [sortBy] = useSortBy();
+   const dueOf = usePersonDue(sheet);
++  const shown = useColumnShown();
+ 
+   return (
+     <>
+@@ -70,8 +72,8 @@ function PeopleList() {
+           <th />
+           <th>Name</th>
+           <th>Grade</th>
+-          <th>Terms</th>
+-          <th>Contact</th>
++          {shown('terms') && <th>Terms</th>}
++          {shown('contact') && <th>Contact</th>}
+           <th>Tags</th>
+           <th>Snapshots</th>
+           <th>Clashing</th>
+@@ -93,8 +95,8 @@ function PeopleList() {
+             </td>
+             <td data-testid="person-name" style={{ whiteSpace: 'pre' }}>{p.name}</td>
+             <td data-testid="person-grade">{p.grade}</td>
+-            <td data-testid="person-terms">{p.terms ?? ''}</td>
+-            <td data-testid="person-contact">{p.contact ?? ''}</td>
++            {shown('terms') && <td data-testid="person-terms">{p.terms ?? ''}</td>}
++            {shown('contact') && <td data-testid="person-contact">{p.contact ?? ''}</td>}
+             <td data-testid="person-tags">{p.tags.join(', ')}</td>
+             <td>
+               {p.snapshots.map((n, i) => (
+diff --git a/src/main/frontend/features/rates/due.slot.tsx b/src/main/frontend/features/rates/due.slot.tsx
+index f22c1f2bc..e7d64b616 100644
+--- a/src/main/frontend/features/rates/due.slot.tsx
++++ b/src/main/frontend/features/rates/due.slot.tsx
+@@ -8,14 +8,17 @@ import { floorOf, useSettings } from '../settings/settings';
+ import { lateOf } from '../overdue/overdue';
+ import { personDue, personExcess, trimmedTotal, useRates } from './rates';
+ import { useFigure } from '../locale/locale';
++import { useColumnShown } from '../columns/columns';
+ 
+ // A person's due-total (the sum of their counting claims' rounded figures, at most the sheet's cap), their
+ // excess over the cap, and the sheet's due-total (everyone's, skipping n/a, trimmed).
+ function DueHead() {
++  if (!useColumnShown()('due-total')) return null;
+   return <th>Due total</th>;
+ }
+ 
+ function PersonDue({ person }: { person: Person }) {
++  const shown = useColumnShown();
+   const fig = useFigure();
+   const [sheet] = useCurrentSheet();
+   const claims = useClaims(sheet);
+@@ -24,14 +27,17 @@ function PersonDue({ person }: { person: Person }) {
+   const settings = useSettings(sheet).data;
+   const floor = floorOf(settings);
+   const mine = live((claims.data ?? []).filter((c) => c.personId === person.id), [person]);
++  if (!shown('due-total')) return null;
+   return <td data-testid="person-due-total">{fig(personDue(mine, rates.data, person.grades, today, floor, lateOf(settings, today, [person]), settings?.cap))}</td>;
+ }
+ 
+ function ExcessHead() {
++  if (!useColumnShown()('excess')) return null;
+   return <th>Excess</th>;
+ }
+ 
+ function PersonExcess({ person }: { person: Person }) {
++  const shown = useColumnShown();
+   const fig = useFigure();
+   const [sheet] = useCurrentSheet();
+   const claims = useClaims(sheet);
+@@ -39,6 +45,7 @@ function PersonExcess({ person }: { person: Person }) {
+   const today = useSheetToday(sheet);
+   const settings = useSettings(sheet).data;
+   const mine = live((claims.data ?? []).filter((c) => c.personId === person.id), [person]);
++  if (!shown('excess')) return null;
+   return (
+     <td data-testid="person-excess">
+       {fig(personExcess(mine, rates.data, person.grades, today, floorOf(settings), lateOf(settings, today, [person]), settings?.cap))}
+diff --git a/src/main/frontend/features/retire/retire.slot.tsx b/src/main/frontend/features/retire/retire.slot.tsx
+index b9995a16f..956c69899 100644
+--- a/src/main/frontend/features/retire/retire.slot.tsx
++++ b/src/main/frontend/features/retire/retire.slot.tsx
+@@ -6,6 +6,7 @@ import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns
+ import { type Person, peopleKey, personActionKey, useLatestPersonAction, useShowRetired } from '../people/people';
+ import { useCurrentSheet, useCurrentUser } from '../../session/session';
+ import { poolsKey } from '../pools/pools';
++import { useColumnShown } from '../columns/columns';
+ 
+ // The "show retired" toggle: the people list leaves retired people out unless it is on. It belongs
+ // to the screen, so loading a sheet leaves it as it is.
+@@ -29,6 +30,7 @@ function ShowRetired() {
+ }
+ 
+ function RetiredHead() {
++  if (!useColumnShown()('retired')) return null;
+   return <th>Retired</th>;
+ }
+ 
+@@ -67,7 +69,9 @@ function PersonRetired({ person }: { person: Person }) {
+   });
+ 
+   const latest = useLatestPersonAction(sheet, person.id);
++  const shown = useColumnShown();
+ 
++  if (!shown('retired')) return null;
+   return (
+     <td>
+       <span data-testid="person-retired">{person.retired ? 'yes' : 'no'}</span>{' '}
+diff --git a/src/main/frontend/features/statements/statement.slot.tsx b/src/main/frontend/features/statements/statement.slot.tsx
+index b15be4128..1214fa7cc 100644
+--- a/src/main/frontend/features/statements/statement.slot.tsx
++++ b/src/main/frontend/features/statements/statement.slot.tsx
+@@ -6,8 +6,11 @@ import { type Person, peopleKey, personActionKey, useLatestPersonAction } from '
+ import { claimsKey } from '../claims/claims';
+ import { useCurrentSheet, useCurrentUser } from '../../session/session';
+ import { useFigure } from '../locale/locale';
++import { useColumnShown } from '../columns/columns';
+ 
+ function StatementHead() {
++  const shown = useColumnShown();
++  if (!shown('statement-count') && !shown('stated-total') && !shown('statement-date')) return null;
+   return <th>Statements</th>;
+ }
+ 
+@@ -47,12 +50,14 @@ function PersonStatement({ person }: { person: Person }) {
+   });
+ 
+   const latest = useLatestPersonAction(sheet, person.id);
++  const shown = useColumnShown();
+ 
++  if (!shown('statement-count') && !shown('stated-total') && !shown('statement-date')) return null;
+   return (
+     <td>
+-      <span data-testid="person-statement-count">{person.statementCount}</span>{' '}
+-      <span data-testid="person-stated-total">{fig(person.statedTotal ?? '')}</span>{' '}
+-      <span data-testid="person-statement-date">{person.statementDate ?? ''}</span>{' '}
++      {shown('statement-count') && <><span data-testid="person-statement-count">{person.statementCount}</span>{' '}</>}
++      {shown('stated-total') && <><span data-testid="person-stated-total">{fig(person.statedTotal ?? '')}</span>{' '}</>}
++      {shown('statement-date') && <><span data-testid="person-statement-date">{person.statementDate ?? ''}</span>{' '}</>}
+       <input
+         type="date"
+         data-testid="person-statement-asof"
