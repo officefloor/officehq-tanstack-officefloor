@@ -1,0 +1,146 @@
+diff --git a/src/main/frontend/features/rates/preview.slot.tsx b/src/main/frontend/features/rates/preview.slot.tsx
+new file mode 100644
+index 000000000..b4e04c69f
+--- /dev/null
++++ b/src/main/frontend/features/rates/preview.slot.tsx
+@@ -0,0 +1,103 @@
++import { useState } from 'react';
++import { HomeMain } from '../../slots/defs/homeMain';
++import { useCurrentSheet } from '../../session/session';
++import { GRADES, usePeople } from '../people/people';
++import { useSheetToday } from '../sheet/sheet';
++import { live, useClaims } from '../claims/claims';
++import { floorOf, useSettings } from '../settings/settings';
++import { lateOf } from '../overdue/overdue';
++import { ratePreview, useRates } from './rates';
++
++/** 0.00 or more, with up to two decimals — as a rate is set. */
++const PCT = /^\d+(\.\d{1,2})?$/;
++
++// The rates panel's preview: how many OPEN and PENDING claims of people on a grade (on the claim's date)
++// would show a different due were a candidate percent the grade's rate on every date, and the sum of the
++// differences. Worked out on the screen; nothing is saved.
++function RatePreview() {
++  const [sheet] = useCurrentSheet();
++  const people = usePeople(sheet);
++  const claims = useClaims(sheet);
++  const rates = useRates(sheet);
++  const today = useSheetToday(sheet);
++  const settings = useSettings(sheet).data;
++  const [grade, setGrade] = useState<string>('A');
++  const [pct, setPct] = useState('');
++  const [result, setResult] = useState<{ count: number; diff: string } | null>(null);
++  const [error, setError] = useState(false);
++
++  const preview = () => {
++    setResult(null);
++    setError(false);
++    const candidate = pct.trim();
++    if (!PCT.test(candidate)) {
++      setError(true);
++      return;
++    }
++    const all = people.data ?? [];
++    const shown = all.map((p) => ({
++      grades: p.grades,
++      claims: live((claims.data ?? []).filter((c) => c.personId === p.id), [p]),
++      late: lateOf(settings, today, [p]),
++    }));
++    // Shown on the next tick, so the old count is gone while the preview runs.
++    setTimeout(() => setResult(ratePreview(shown, rates.data, grade, candidate, floorOf(settings))), 0);
++  };
++
++  return (
++    <section data-testid="rate-preview-panel">
++      <h3>Rate preview</h3>
++      <form
++        onSubmit={(e) => {
++          e.preventDefault();
++          preview();
++        }}
++      >
++        <select
++          data-testid="rate-preview-grade"
++          value={grade}
++          onChange={(e) => {
++            setGrade(e.target.value);
++            setError(false);
++            setResult(null);
++          }}
++        >
++          {GRADES.map((g) => (
++            <option key={g} value={g}>
++              {g}
++            </option>
++          ))}
++        </select>
++        <input
++          data-testid="rate-preview-pct"
++          placeholder="Candidate rate %"
++          inputMode="decimal"
++          value={pct}
++          onChange={(e) => {
++            setPct(e.target.value);
++            setError(false);
++            setResult(null);
++          }}
++        />
++        <button type="submit" data-testid="rate-preview">
++          Preview
++        </button>
++        {result !== null && (
++          <span>
++            {' '}
++            Would change <strong data-testid="rate-preview-count">{result.count}</strong> claims by{' '}
++            <strong data-testid="rate-preview-diff">{result.diff}</strong>
++          </span>
++        )}
++        {error && (
++          <span data-testid="rate-preview-error" role="alert">
++            {' '}
++            The rate must be a percent of 0.00 or more with up to two decimals.
++          </span>
++        )}
++      </form>
++    </section>
++  );
++}
++
++export const contribution = HomeMain.fill({ order: 40.5, Component: RatePreview });
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 9cbb02759..701ba6414 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -233,3 +233,32 @@ export function personTagged(
+   if (uncappedDue(claims, rates, grades, today, floor, late) === NA) return format(0n);
+   return dueTotal(claims.filter((c) => counts(c) && c.tags.includes(tag)).map((c) => claimDue(c, rates, grades, floor, late)));
+ }
++
++/** A preview of a candidate percent for a grade: of these people's OPEN and PENDING claims whose person
++ *  was on the grade on the claim's date, how many would show a different due were the candidate the
++ *  grade's only rate (from the beginning of time, no end), and the sum of new due less current due (n/a
++ *  as 0.00). A claim bound by a statement or settled keeps its figure. Nothing is saved. */
++export function ratePreview(
++  people: { grades: Grades; claims: Claim[]; late?: Late }[],
++  rates: Rate[] | undefined,
++  grade: string,
++  pct: string,
++  floor: Floor,
++): { count: number; diff: string } {
++  const candidate: Rate[] = [...(rates ?? []).filter((r) => r.grade !== grade), { grade, pct, from: null, to: null }];
++  const figure = (d: string) => (d === NA ? 0n : hundredths(d));
++  let count = 0;
++  let diff = 0n;
++  for (const p of people) {
++    for (const c of p.claims) {
++      if (c.status !== 'OPEN' && c.status !== 'PENDING') continue;
++      if (gradeOn(p.grades, c.date) !== grade) continue;
++      const now = claimDue(c, rates, p.grades, floor, p.late);
++      const then = claimDue(c, candidate, p.grades, floor, p.late);
++      if (now === then) continue;
++      count += 1;
++      diff += figure(then) - figure(now);
++    }
++  }
++  return { count, diff: format(diff) };
++}
