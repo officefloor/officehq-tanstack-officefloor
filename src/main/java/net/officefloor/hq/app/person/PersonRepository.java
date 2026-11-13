@@ -214,7 +214,7 @@ public class PersonRepository {
      * Merge the person ({@code from}, their claims already moved) into the other: their name and then their aliases,
      * in the order added, become the other's newest aliases; their patrons are added after the other's, in the order named (not the other,
      * no repeats); anyone naming them as patron names the other instead (not themselves, no repeats); their pool
-     * memberships move to the other (shares added where the other is already a member). Their statements, grades,
+     * memberships and plans move to the other (shares added where the other is already a member). Their statements, grades,
      * holds, past retirements, watchers and contact are dropped with them.
      */
     public void merge(Person from, Person into) {
@@ -249,6 +249,8 @@ public class PersonRepository {
         jdbc.update("DELETE FROM pool_member g WHERE g.person_id = ? AND EXISTS (SELECT 1 FROM pool_member k"
                 + " WHERE k.pool_id = g.pool_id AND k.person_id = ?)", gone, kept);
         jdbc.update("UPDATE pool_member SET person_id = ? WHERE person_id = ?", kept, gone);
+
+        jdbc.update("UPDATE person_plan SET person_id = ? WHERE sheet_id = ? AND person_id = ?", kept, sheetId, gone);
 
         jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
@@ -341,7 +343,7 @@ public class PersonRepository {
 
     /**
      * Remove the person, transferred to another sheet (their claims already moved), from this sheet entirely: their
-     * statements, holds, past retirements, patron links either way, pool memberships, watches and closed-period figures go with them.
+     * statements, holds, past retirements, patron links either way, pool memberships, watches, plans and closed-period figures go with them.
      */
     public void dropTransferred(Person person) {
         String sheetId = person.sheetId();
@@ -356,6 +358,9 @@ public class PersonRepository {
         jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+        jdbc.update("DELETE FROM person_plan_date WHERE plan_id IN (SELECT id FROM person_plan WHERE sheet_id = ? AND"
+                + " person_id = ?)", sheetId, gone);
+        jdbc.update("DELETE FROM person_plan WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, gone);
     }
 
