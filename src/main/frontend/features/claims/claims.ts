@@ -2,8 +2,17 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { sheetKey, useCurrentSheet } from '../session/session';
 
-/** Where a claim is in its life: DRAFT -> OPEN -> SETTLED; DRAFT or OPEN -> VOID. */
-export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+/**
+ * Where a claim is in its life: DRAFT -> OPEN -> SETTLED; a clerk's settle above the clerk limit makes it
+ * PENDING, which a steward approves (SETTLED) or rejects (OPEN); DRAFT, OPEN or PENDING -> VOID.
+ */
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
+
+/** Whether a claim is open: OPEN, or PENDING (handled like an open claim). */
+export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING';
+
+/** Whether a statement binds the claim now: it was stated and is not PENDING (a pending claim shows its live figure). */
+export const bound = (c: Claim) => c.stated && c.status !== 'PENDING';
 
 /**
  * A claim as the store holds it: the amount with two decimals, the date as yyyy-MM-dd; its number
@@ -29,10 +38,10 @@ export type Claim = {
 };
 
 /**
- * Whether a claim counts toward claimed, due-total and every live total: only OPEN and SETTLED do, and
- * an OPEN one not while its person is held.
+ * Whether a claim counts toward claimed, due-total and every live total: only OPEN, PENDING and SETTLED do,
+ * and an open (or pending) one not while its person is held.
  */
-export const counts = (c: Claim, held = false) => c.status === 'SETTLED' || (c.status === 'OPEN' && !held);
+export const counts = (c: Claim, held = false) => c.status === 'SETTLED' || (isOpen(c) && !held);
 
 /** The ids of the people on hold, whose open claims count in no live total. */
 export const heldIds = (people: { id: number; held: boolean }[]) => new Set(people.filter((p) => p.held).map((p) => p.id));

@@ -63,7 +63,7 @@ public class RollupService {
                     continue;
                 }
                 claimed = claimed.add(claim.amount());
-                kept |= claim.due() != null || (claim.stated() && claim.statedDue() != null);
+                kept |= claim.keepsFigure();
                 BigDecimal figure = claim.due(Rate.inForce(sheetRates, person.gradeOn(claim.date()), claim.date()), floor, late, rounding);
                 if (figure != null) {
                     kept = true;

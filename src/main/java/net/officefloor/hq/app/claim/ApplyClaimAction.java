@@ -8,6 +8,7 @@ import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.setting.Role;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
@@ -23,10 +24,13 @@ import org.springframework.web.bind.annotation.RequestParam;
  * Opening records the user who opened it; that user cannot settle it (four eyes).
  * Settling fixes the claim's due at its person's grade's rate in force on the claim's date, raised to the sheet's floor and rounded by its policy date — or, when a statement
  * bound the claim, at the figure it was bound to — plus the late charge it has then, if overdue, frozen in; with no
- * figure it stays live.
+ * figure it stays live. A clerk settling a claim whose due is above the sheet's clerk limit (a due of n/a is within any
+ * limit) makes it PENDING instead, live and unfixed. Only a steward approves a PENDING claim (fixing its due at its live
+ * figure, plus any late charge, at that moment) — not the user who opened it — or rejects it, with a reason, back to OPEN.
  */
 public class ApplyClaimAction {
-    public void apply(@PathVariable("action") String action, @RequestParam("user") String user, @Val Claim claim, SheetRepository sheets,
+    public void apply(@PathVariable("action") String action, @RequestParam("user") String user, @Val Claim claim,
+            @Val ClaimActionRequest request, SheetRepository sheets,
             PersonRepository people, RateRepository rates, SettingRepository settings, PeriodRepository periods,
             ClaimRepository claims, Out<ClaimAction> applied, Out<ClaimNumber> number, Out<Claim> updated) throws InvalidClaimException {
         ClaimAction found = ClaimAction.of(action);
@@ -39,13 +43,27 @@ public class ApplyClaimAction {
         if (found == ClaimAction.SETTLE && user.equals(claim.openedBy())) {
             throw new InvalidClaimException("The user who opened a claim cannot settle it.");
         }
+        if (found == ClaimAction.APPROVE && user.equals(claim.openedBy())) {
+            throw new InvalidClaimException("The user who opened a claim cannot approve it.");
+        }
+        if ((found == ClaimAction.APPROVE || found == ClaimAction.REJECT)
+                && settings.find(claim.sheetId()).roleOf(user) != Role.STEWARD) {
+            throw new InvalidClaimException("Only a steward can " + action + " a pending claim.");
+        }
+        if (found == ClaimAction.REJECT && request.reason().isEmpty()) {
+            throw new InvalidClaimException("A reason is required to reject a claim.");
+        }
+        BigDecimal due = found.settles() ? settledDue(claim, sheets, people, rates, settings, claims) : claim.due();
+        if (found == ClaimAction.SETTLE && !settings.find(claim.sheetId()).maySettle(user, due)) {
+            found = ClaimAction.PEND;
+            due = null;
+        }
         String next = switch (found) {
             case OPEN -> nextNumber(claim, sheets, settings, periods);
             default -> claim.number();
         };
         applied.set(found);
         number.set(new ClaimNumber(next));
-        BigDecimal due = found == ClaimAction.SETTLE ? settledDue(claim, sheets, people, rates, settings, claims) : claim.due();
         updated.set(claim.withStatus(found.to(), next, due, found == ClaimAction.OPEN ? user : claim.openedBy()));
     }
 

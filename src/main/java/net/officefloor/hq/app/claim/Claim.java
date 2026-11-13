@@ -12,7 +12,8 @@ import java.time.LocalDate;
  * its person's last statement bound it to a figure, {@code statedDue} (null: n/a) — it then shows and totals
  * that figure, not its live one. {@code number} is sheet-wide (1, 2, ...) or, under period numbering,
  * within its period (P1-1, X-1). {@code corrects} is, for a correction, the number of the claim it corrects (null:
- * not a correction).
+ * not a correction). While PENDING the claim is not bound: it shows and totals its live figure, and is bound again
+ * once rejected (back to OPEN) when the statement included it.
  */
 public record Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
         ClaimStatus status, String number, BigDecimal due, String openedBy, boolean stated, BigDecimal statedDue,
@@ -29,26 +30,36 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
         return corrects != null;
     }
 
-    /** Whether the claim counts toward the totals: only OPEN and SETTLED claims do. */
+    /** Whether the claim counts toward the totals: only OPEN, PENDING and SETTLED claims do. */
     public boolean counts() {
-        return status == ClaimStatus.OPEN || status == ClaimStatus.SETTLED;
+        return status.open() || status == ClaimStatus.SETTLED;
     }
 
-    /** Whether the claim counts toward the live totals when its person is held or not: a held person's open claims do not. */
+    /** Whether the claim counts toward the live totals when its person is held or not: a held person's open (and pending) claims do not. */
     public boolean counts(boolean held) {
-        return status == ClaimStatus.SETTLED || (status == ClaimStatus.OPEN && !held);
+        return status == ClaimStatus.SETTLED || (status.open() && !held);
+    }
+
+    /** Whether a statement binds the claim now: it was stated and is not PENDING. */
+    public boolean bound() {
+        return stated && status != ClaimStatus.PENDING;
+    }
+
+    /** Whether the claim keeps a figure whatever the rates: fixed when settled, or bound by a statement. */
+    public boolean keepsFigure() {
+        return due != null || (bound() && statedDue != null);
     }
 
     /**
      * The claim's figure (null: n/a): the due fixed when it was settled, else the figure its statement bound
-     * it to, else its amount at the given live rate (null: none), at least the sheet's floor — a correction has
+     * it to (not while PENDING), else its amount at the given live rate (null: none), at least the sheet's floor — a correction has
      * no floor. Its live figure rounds by the sheet's policy date.
      */
     public BigDecimal figure(BigDecimal liveRate, BigDecimal floor, Rounding rounding) {
         if (due != null) {
             return due;
         }
-        if (stated) {
+        if (bound()) {
             return statedDue;
         }
         RoundingMode mode = rounding.modeFor(this);

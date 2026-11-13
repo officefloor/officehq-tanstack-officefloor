@@ -1,10 +1,16 @@
 package net.officefloor.hq.app.claim;
 
-/** A change of a claim's status: the status it may start from, the status it ends in, and its audit event. */
+/**
+ * A change of a claim's status: the status it may start from, the status it ends in, and its audit event. PEND is
+ * never asked for by name: it is what a clerk's settle becomes when the due is above the clerk limit.
+ */
 public enum ClaimAction {
     OPEN("open", ClaimStatus.OPEN, "CLAIM_OPENED", ClaimStatus.DRAFT),
     SETTLE("settle", ClaimStatus.SETTLED, "CLAIM_SETTLED", ClaimStatus.OPEN),
-    VOID("void", ClaimStatus.VOID, "CLAIM_VOIDED", ClaimStatus.DRAFT, ClaimStatus.OPEN);
+    PEND(null, ClaimStatus.PENDING, "CLAIM_PENDING", ClaimStatus.OPEN),
+    APPROVE("approve", ClaimStatus.SETTLED, "CLAIM_APPROVED", ClaimStatus.PENDING),
+    REJECT("reject", ClaimStatus.OPEN, "CLAIM_REJECTED", ClaimStatus.PENDING),
+    VOID("void", ClaimStatus.VOID, "CLAIM_VOIDED", ClaimStatus.DRAFT, ClaimStatus.OPEN, ClaimStatus.PENDING);
 
     private final String path;
     private final ClaimStatus to;
@@ -21,7 +27,7 @@ public enum ClaimAction {
     /** The action named in the path, or null. */
     public static ClaimAction of(String path) {
         for (ClaimAction action : values()) {
-            if (action.path.equals(path)) {
+            if (action.path != null && action.path.equals(path)) {
                 return action;
             }
         }
@@ -43,5 +49,10 @@ public enum ClaimAction {
 
     public String event() {
         return event;
+    }
+
+    /** Whether the action fixes the claim's due: settling, or approving a pending settle. */
+    public boolean settles() {
+        return to == ClaimStatus.SETTLED;
     }
 }

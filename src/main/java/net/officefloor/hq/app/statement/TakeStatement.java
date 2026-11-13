@@ -40,7 +40,7 @@ public class TakeStatement {
                 claims.bindStatement(claim, false, null);
                 continue;
             }
-            boolean fixed = claim.due() != null || (claim.stated() && claim.statedDue() != null);
+            boolean fixed = claim.keepsFigure();
             BigDecimal figure = claim.figure(Rate.inForce(sheetRates, person.gradeOn(claim.date()), claim.date()), floor, rounding);
             claims.bindStatement(claim, true, figure);
             counted++;

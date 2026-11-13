@@ -17,7 +17,7 @@ public record LateCharge(int terms, BigDecimal pct, LocalDate today) {
 
     /** The charge on the claim's figure (null: n/a, charged nothing); zero unless the claim is overdue. */
     public BigDecimal on(Claim claim, BigDecimal figure, RoundingMode mode) {
-        if (figure == null || claim.status() != ClaimStatus.OPEN || claim.correction()) {
+        if (figure == null || !claim.status().open() || claim.correction()) {
             return BigDecimal.ZERO.setScale(2);
         }
         long late = ChronoUnit.DAYS.between(claim.date().plusDays(terms), today);

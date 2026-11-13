@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { counts } from '../claims/claims';
+import { bound, counts } from '../claims/claims';
 import type { Claim } from '../claims/claims';
 import { latePeriods } from '../overdue/dueBy';
 import { gradeOn } from '../people/people';
@@ -89,12 +89,12 @@ export function floored(value: string, floor: string): string {
 }
 
 /**
- * A claim's figure: the figure its statement bound it to, else its amount at the rate in force on its
+ * A claim's figure: the figure its statement bound it to (not while PENDING), else its amount at the rate in force on its
  * date for the person's grade in force on that date, rounded by the policy date, at least the sheet's floor —
  * a correction has no floor.
  */
 function claimFigure(claim: Claim, rates: Rate[], grades: GradeFrom[], rules: DueRules): string {
-  if (claim.stated) return claim.statedDue ?? NA;
+  if (bound(claim)) return claim.statedDue ?? NA;
   const live = due(claim.amount, rateFor(rates, gradeOn(grades, claim.date), claim.date), roundingFor(claim, rules));
   return claim.corrects !== null ? live : floored(live, rules.floor);
 }
@@ -121,7 +121,7 @@ export function claimDue(claim: Claim, rates: Rate[], grades: GradeFrom[], rules
 }
 
 /** Whether a claim keeps a figure whatever the rates: fixed when settled, or bound by a statement. */
-const keepsFigure = (c: Claim) => c.due !== null || (c.stated && c.statedDue !== null);
+const keepsFigure = (c: Claim) => c.due !== null || (bound(c) && c.statedDue !== null);
 
 /**
  * A person's due-total: the figures of their claims that count, added up (0.00 with none). With no
