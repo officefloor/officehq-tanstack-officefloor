@@ -91,3 +91,14 @@ export const useEditingPerson = () => useSearchParam('person', asNumber);
 
 /** Whether retired people are listed; off until the toggle is turned on, and kept when a sheet is loaded. */
 export const useShowRetired = () => useSearchParam('retired', asFlag);
+
+/** The keys the people list can be sorted on. */
+export const SORT_KEYS = ['added', 'name', 'grade', 'due-total'] as const;
+export type SortKey = (typeof SORT_KEYS)[number];
+
+/** How this screen sorts the people list; added (their order in the list) until another key is chosen. */
+export const usePeopleSort = () =>
+  useSearchParam<SortKey>('sort', (raw) => (SORT_KEYS as readonly unknown[]).includes(raw) ? (raw as SortKey) : 'added');
+
+/** A name as names are compared: trimmed and lower-cased. */
+export const nameKey = (name: string) => name.trim().toLowerCase();

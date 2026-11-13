@@ -1,9 +1,16 @@
 import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { PersonError } from './personError';
-import { useEditingPerson, usePeople, useShowRetired } from './people';
+import { useClaims } from '../claims/claims';
+import { NA, personDue, useRates } from '../rates/rates';
+import { useDueRules } from '../settings/settings';
+import { liveHolds, nameKey, useEditingPerson, usePeople, usePeopleSort, useShowRetired } from './people';
+import type { Person, SortKey } from './people';
 
-// Every person on the sheet, in their order in the list (their positions), each with their name and grade and
+/** Orders a and b by key: negative, zero or positive. */
+const compare = (a: string | number, b: string | number) => (a < b ? -1 : a > b ? 1 : 0);
+
+// Every person on the sheet, in their order in the list (their positions) or sorted as this screen chose, each with their name and grade and
 // the columns features add (slots/defs/personColumns.ts). Retired people are left out unless the
 // show-retired toggle is on.
 export function PeopleList() {
@@ -12,6 +19,8 @@ export function PeopleList() {
   const [, setEditing] = useEditingPerson();
   const people = usePeople();
   const [showRetired] = useShowRetired();
+  const [sort] = usePeopleSort();
+  const sortKey = useSortKey(sort);
 
   if (!user || !sheet) return null;
 
@@ -29,7 +38,7 @@ export function PeopleList() {
         </tr>
       </thead>
       <tbody>
-        {(people.data ?? []).filter((p) => showRetired || !p.retired).map((p) => (
+        {sorted((people.data ?? []).filter((p) => showRetired || !p.retired), sortKey).map((p) => (
           <tr key={p.id} data-testid={`person-row-${p.id}`}>
             <td data-testid="person-name" style={{ whiteSpace: 'pre' }}>
               {p.name}
@@ -50,4 +59,30 @@ export function PeopleList() {
       </tbody>
     </table>
   );
+}
+
+/** The people sorted by their key, ascending; equal keys (and no key) keep list order. */
+function sorted(people: Person[], key: ((p: Person) => string | number) | null): Person[] {
+  if (!key) return people;
+  return people.map((p, i) => ({ p, i, k: key(p) })).sort((a, b) => compare(a.k, b.k) || a.i - b.i).map((e) => e.p);
+}
+
+/** The key a person sorts on: their name as names compare, their grade, or their due-total (n/a last); null: list order. */
+function useSortKey(sort: SortKey): ((p: Person) => string | number) | null {
+  const rates = useRates().data ?? [];
+  const rules = useDueRules();
+  const claims = useClaims().data ?? [];
+  switch (sort) {
+    case 'name':
+      return (p) => nameKey(p.name);
+    case 'grade':
+      return (p) => p.grade;
+    case 'due-total':
+      return (p) => {
+        const total = personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, liveHolds(p, rules.today), rules);
+        return total === NA ? Infinity : Math.round(Number(total) * 100);
+      };
+    default:
+      return null;
+  }
 }
