@@ -41,6 +41,23 @@ export function Periods() {
     onError: () => setError('That period could not be added: its name must be new and its dates must not overlap another period.'),
   });
 
+  // The generate form: one period per calendar month from the from-date's month to the to-date's month.
+  const [gen, setGen] = useState({ from: '', to: '' });
+  const [genError, setGenError] = useState('');
+  const [made, setMade] = useState<number | undefined>(undefined);
+  const generate = useMutation({
+    mutationFn: (input: { from: string; to: string }) =>
+      postJson<{ made: number }>(
+        `/api/sheets/${encodeURIComponent(sheet)}/generate-periods?user=${encodeURIComponent(user)}`,
+        input,
+      ),
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: periodsKey(sheet) });
+      setMade(result.made);
+    },
+    onError: () => setGenError('No periods were generated: the to-date must not be before the from-date.'),
+  });
+
   // The period whose close or reopen was refused, and why; cleared by the next action on a period.
   const [rowError, setRowError] = useState<{ name: string; message: string } | null>(null);
   const act = useMutation({
@@ -81,6 +98,27 @@ export function Periods() {
       return;
     }
     once(() => add.mutateAsync(input));
+  };
+
+  const submitGenerate = (e: FormEvent) => {
+    e.preventDefault();
+    setGenError('');
+    setMade(undefined);
+    const input = { from: gen.from.trim(), to: gen.to.trim() };
+    if ((input.from && !DATE.test(input.from)) || (input.to && !DATE.test(input.to))) {
+      setGenError('Type the from and to dates as yyyy-mm-dd.');
+      return;
+    }
+    if (input.from && input.to && input.to < input.from) {
+      setGenError('The to-date must not be before the from-date.');
+      return;
+    }
+    once(() => generate.mutateAsync(input));
+  };
+
+  const changeGenerate = (patch: Partial<{ from: string; to: string }>) => {
+    setGen((g) => ({ ...g, ...patch }));
+    setGenError('');
   };
 
   const change = (patch: Partial<PeriodInput>) => {
@@ -161,6 +199,30 @@ export function Periods() {
           Add period
         </button>
         {error && <span data-testid="period-form-error">{error}</span>}
+      </form>
+      <form onSubmit={submitGenerate} data-testid="period-generate-form">
+        <input
+          data-testid="period-generate-from"
+          placeholder="From yyyy-mm-dd"
+          value={gen.from}
+          onChange={(e) => changeGenerate({ from: e.target.value })}
+        />
+        <input
+          data-testid="period-generate-to"
+          placeholder="To yyyy-mm-dd"
+          value={gen.to}
+          onChange={(e) => changeGenerate({ to: e.target.value })}
+        />
+        <button type="submit" data-testid="period-generate" disabled={generate.isPending}>
+          Generate monthly periods
+        </button>
+        {made !== undefined && (
+          <>
+            {' '}
+            Made <span data-testid="period-generated">{made}</span>
+          </>
+        )}
+        {genError && <span data-testid="period-generate-error">{genError}</span>}
       </form>
     </section>
   );
