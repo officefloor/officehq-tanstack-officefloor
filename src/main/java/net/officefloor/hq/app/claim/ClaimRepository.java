@@ -94,6 +94,12 @@ public class ClaimRepository {
                 Date.valueOf(claim.deferredUntil()), claim.id(), claim.sheetId());
     }
 
+    /** Store the claim's {@code date} and {@code number}. */
+    public void redate(Claim claim) {
+        jdbc.update("UPDATE claim SET claim_date = ?, claim_number = ? WHERE id = ? AND sheet_id = ?",
+                Date.valueOf(claim.date()), claim.number(), claim.id(), claim.sheetId());
+    }
+
     /** Store the claim's {@code proofs} count. */
     public void saveProofs(Claim claim) {
         jdbc.update("UPDATE claim SET proofs = ? WHERE id = ? AND sheet_id = ?", claim.proofs(), claim.id(),

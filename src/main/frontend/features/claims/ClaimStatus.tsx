@@ -34,7 +34,8 @@ const REFUSED: Partial<Record<Action, string>> = {
 // Move button. A steward re-settles a SETTLED claim, freezing it again at today's figure. An OPEN claim is deferred to the
 // date typed beside the Defer button. The Add proof button raises the claim's proofs count by one (not on a
 // SETTLED or VOID claim, nor one dated in a closed period). The Split button splits the amount typed beside it off an
-// OPEN claim into a new OPEN claim of the same person (more than 0.00 and less than the claim's amount).
+// OPEN claim into a new OPEN claim of the same person (more than 0.00 and less than the claim's amount). A steward
+// re-dates an OPEN or PENDING claim to the date typed beside the Re-date button.
 export function ClaimStatus({ claim }: { claim: Claim }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -43,6 +44,7 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
   const [moveTo, setMoveTo] = useState('');
   const [deferTo, setDeferTo] = useState('');
   const [splitAmount, setSplitAmount] = useState('');
+  const [redateTo, setRedateTo] = useState('');
   const others = (usePeople().data ?? []).filter((p) => p.id !== claim.personId);
   const queryClient = useQueryClient();
   const once = useOneAtATime();
@@ -98,6 +100,21 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
     onError: () =>
       setError(
         `This ${claim.status} claim cannot be split by that amount (only an OPEN claim, not deferred nor in a closed period, by more than 0.00 and less than its amount, by a role allowed to open a claim).`,
+      ),
+  });
+
+  const redate = useMutation({
+    mutationFn: (date: string) =>
+      putJson<Claim>(`/api/sheets/${encodeURIComponent(sheet)}/claims/${claim.id}/date?user=${encodeURIComponent(user)}`, {
+        date,
+      }),
+    onSuccess: async () => {
+      setRedateTo('');
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+    },
+    onError: () =>
+      setError(
+        `This ${claim.status} claim cannot be re-dated to that date (only a steward re-dates an OPEN or PENDING claim, not after its person's retirement, nor in or into a closed period).`,
       ),
   });
 
@@ -220,6 +237,32 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
         }}
       >
         Split
+      </button>
+      <input
+        data-testid="claim-date-new"
+        aria-label="New date"
+        placeholder="re-date to yyyy-mm-dd"
+        value={redateTo}
+        onChange={(e) => {
+          setRedateTo(e.target.value);
+          setError('');
+        }}
+      />
+      <button
+        type="button"
+        data-testid="claim-redate"
+        disabled={redate.isPending}
+        onClick={() => {
+          setError('');
+          const date = redateTo.trim();
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+            setError('Type the claim\'s new date as yyyy-mm-dd.');
+            return;
+          }
+          once(() => redate.mutateAsync(date));
+        }}
+      >
+        Re-date
       </button>
       Proofs: <span data-testid="claim-proofs">{claim.proofs}</span>{' '}
       <button

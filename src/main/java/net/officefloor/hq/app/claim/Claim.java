@@ -97,6 +97,12 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
                 corrects, dueBy, until, proofs, splitFrom);
     }
 
+    /** The same claim on another date with the given number, keeping its due-by and any statement figure. */
+    public Claim redateTo(LocalDate nextDate, String nextNumber) {
+        return new Claim(id, sheetId, personId, amount, nextDate, note, status, nextNumber, due, openedBy, stated,
+                statedDue, corrects, dueBy, deferredUntil, proofs, splitFrom);
+    }
+
     /** The same claim with one more proof. */
     public Claim withProof() {
         return new Claim(id, sheetId, personId, amount, date, note, status, number, due, openedBy, stated, statedDue,
