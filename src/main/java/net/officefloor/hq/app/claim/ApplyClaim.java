@@ -8,6 +8,6 @@ public class ApplyClaim {
     public void apply(@Val ClaimInput input, @Val Claim claim, SheetRepository sheets, Out<Claim> updated) {
         updated.set(new Claim(claim.id(), claim.sheetId(), claim.personId(), input.amount(),
                 input.date() != null ? input.date() : sheets.today(claim.sheetId()), input.note(), claim.status(),
-                claim.number()));
+                claim.number(), claim.due()));
     }
 }

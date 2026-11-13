@@ -1,5 +1,10 @@
 package net.officefloor.hq.app.claim;
 
+import java.math.BigDecimal;
+import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.person.PersonRepository;
+import net.officefloor.hq.app.rate.Rate;
+import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
@@ -8,9 +13,11 @@ import org.springframework.web.bind.annotation.PathVariable;
 /**
  * Moves the claim to the action's status; refused (400) when the claim's status does not allow it.
  * Opening gives the claim the sheet's next number; voiding clears it (the number is not reused).
+ * Settling fixes the claim's due at its person's grade's current rate; with no rate it stays live.
  */
 public class ApplyClaimAction {
     public void apply(@PathVariable("action") String action, @Val Claim claim, SheetRepository sheets,
+            PersonRepository people, RateRepository rates,
             Out<ClaimAction> applied, Out<ClaimNumber> number, Out<Claim> updated) throws InvalidClaimException {
         ClaimAction found = ClaimAction.of(action);
         if (found == null) {
@@ -26,6 +33,15 @@ public class ApplyClaimAction {
         };
         applied.set(found);
         number.set(new ClaimNumber(found == ClaimAction.VOID ? claim.number() : next));
-        updated.set(claim.withStatus(found.to(), next));
+        BigDecimal due = found == ClaimAction.SETTLE ? settledDue(claim, people, rates) : claim.due();
+        updated.set(claim.withStatus(found.to(), next, due));
+    }
+
+    private static BigDecimal settledDue(Claim claim, PersonRepository people, RateRepository rates) {
+        Person person = people.find(claim.sheetId(), claim.personId());
+        BigDecimal rate = person == null ? null
+                : rates.findAll(claim.sheetId()).stream().filter((r) -> r.grade().equals(person.grade()))
+                        .map(Rate::rate).findFirst().orElse(null);
+        return Claim.due(claim.amount(), rate);
     }
 }
