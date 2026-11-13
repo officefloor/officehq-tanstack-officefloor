@@ -1,0 +1,650 @@
+diff --git a/src/main/frontend/features/people/PeopleList.tsx b/src/main/frontend/features/people/PeopleList.tsx
+new file mode 100644
+index 000000000..63b5fffbf
+--- /dev/null
++++ b/src/main/frontend/features/people/PeopleList.tsx
+@@ -0,0 +1,39 @@
++import { useCurrentSheet, useCurrentUser } from '../session/session';
++import { useEditingPerson, usePeople } from './people';
++
++// Every person on the sheet, in the order they were added, each with their name and grade.
++export function PeopleList() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const [, setEditing] = useEditingPerson();
++  const people = usePeople();
++
++  if (!user || !sheet) return null;
++
++  return (
++    <table data-testid="people">
++      <thead>
++        <tr>
++          <th>Name</th>
++          <th>Grade</th>
++          <th />
++        </tr>
++      </thead>
++      <tbody>
++        {(people.data ?? []).map((p) => (
++          <tr key={p.id} data-testid={`person-row-${p.id}`}>
++            <td data-testid="person-name" style={{ whiteSpace: 'pre' }}>
++              {p.name}
++            </td>
++            <td data-testid="person-grade">{p.grade}</td>
++            <td>
++              <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => setEditing(p.id)}>
++                Edit
++              </button>
++            </td>
++          </tr>
++        ))}
++      </tbody>
++    </table>
++  );
++}
+diff --git a/src/main/frontend/features/people/PersonForm.tsx b/src/main/frontend/features/people/PersonForm.tsx
+new file mode 100644
+index 000000000..442712176
+--- /dev/null
++++ b/src/main/frontend/features/people/PersonForm.tsx
+@@ -0,0 +1,105 @@
++import { useEffect, useRef, useState } from 'react';
++import type { FormEvent } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson, putJson } from '../../api/http';
++import { useCurrentSheet, useCurrentUser } from '../session/session';
++import { GRADES, peopleKey, useEditingPerson, usePeople } from './people';
++import type { Person, PersonInput } from './people';
++
++const EMPTY: PersonInput = { name: '', grade: 'A' };
++
++// Adds a person, or — while a person's editor is open — saves that person's changes. Opening an
++// editor fills the form with the person's values.
++export function PersonForm() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const [editing, setEditing] = useEditingPerson();
++  const people = usePeople();
++  const [form, setForm] = useState<PersonInput>(EMPTY);
++  const [error, setError] = useState('');
++  const filledFor = useRef<number | undefined>(undefined);
++  const queryClient = useQueryClient();
++
++  // Fill the form once per opened editor; close an editor whose person is not on this sheet.
++  useEffect(() => {
++    if (editing === undefined) {
++      filledFor.current = undefined;
++      return;
++    }
++    if (!people.data || filledFor.current === editing) return;
++    const person = people.data.find((p) => p.id === editing);
++    if (!person) {
++      setEditing(undefined);
++      return;
++    }
++    filledFor.current = editing;
++    setForm({ name: person.name, grade: person.grade });
++    setError('');
++  }, [editing, people.data, setEditing]);
++
++  const close = () => {
++    setEditing(undefined);
++    setForm(EMPTY);
++    setError('');
++  };
++
++  const save = useMutation({
++    mutationFn: (input: PersonInput) =>
++      editing === undefined
++        ? postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people`, input)
++        : putJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${editing}`, input),
++    onSuccess: async () => {
++      close();
++      await queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
++    },
++    onError: () => setError('That person could not be saved.'),
++  });
++
++  if (!user || !sheet) return null;
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    setError('');
++    if (!form.name.trim()) {
++      setError('Type a name.');
++      return;
++    }
++    save.mutate(form);
++  };
++
++  const change = (patch: Partial<PersonInput>) => {
++    setForm((f) => ({ ...f, ...patch }));
++    setError('');
++  };
++
++  return (
++    <form onSubmit={submit} data-testid="person-form">
++      <input
++        data-testid="person-form-name"
++        placeholder="Name"
++        value={form.name}
++        onChange={(e) => change({ name: e.target.value })}
++      />
++      <select
++        data-testid="person-form-grade"
++        value={form.grade}
++        onChange={(e) => change({ grade: e.target.value })}
++      >
++        {GRADES.map((g) => (
++          <option key={g} value={g}>
++            {g}
++          </option>
++        ))}
++      </select>
++      <button type="submit" data-testid="person-form-submit" disabled={save.isPending}>
++        {editing === undefined ? 'Add person' : 'Save person'}
++      </button>
++      {editing !== undefined && (
++        <button type="button" data-testid="person-form-cancel" onClick={close}>
++          Cancel
++        </button>
++      )}
++      {error && <span data-testid="person-form-error">{error}</span>}
++    </form>
++  );
++}
+diff --git a/src/main/frontend/features/people/home.slot.tsx b/src/main/frontend/features/people/home.slot.tsx
+new file mode 100644
+index 000000000..ef42060cc
+--- /dev/null
++++ b/src/main/frontend/features/people/home.slot.tsx
+@@ -0,0 +1,8 @@
++import { HomeMain } from '../../slots/defs/homeMain';
++import { PeopleList } from './PeopleList';
++import { PersonForm } from './PersonForm';
++
++export const contributions = [
++  HomeMain.fill({ order: 10, Component: PersonForm }),
++  HomeMain.fill({ order: 20, Component: PeopleList }),
++];
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+new file mode 100644
+index 000000000..fcb253c34
+--- /dev/null
++++ b/src/main/frontend/features/people/people.ts
+@@ -0,0 +1,28 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { asNumber, useSearchParam } from '../../url/useSearchParam';
++import { sheetKey, useCurrentSheet } from '../session/session';
++
++export const GRADES = ['A', 'B', 'C'] as const;
++
++/** A person on the sheet as the store holds them. */
++export type Person = { id: number; name: string; grade: string };
++
++/** The fields the person form submits. */
++export type PersonInput = { name: string; grade: string };
++
++/** The query key for the sheet's people; under sheetKey, so re-loading the sheet re-reads them. */
++export const peopleKey = (sheet: string) => [...sheetKey(sheet), 'people'] as const;
++
++/** The sheet's people, in the order they were added. */
++export function usePeople() {
++  const [sheet] = useCurrentSheet();
++  return useQuery({
++    queryKey: peopleKey(sheet),
++    queryFn: () => getJson<Person[]>(`/api/sheets/${encodeURIComponent(sheet)}/people`),
++    enabled: !!sheet,
++  });
++}
++
++/** The id of the person whose editor is open in the person form, if any. */
++export const useEditingPerson = () => useSearchParam('person', asNumber);
+diff --git a/src/main/frontend/routes/index.tsx b/src/main/frontend/routes/index.tsx
+index 9fb03126a..87ebc5c43 100644
+--- a/src/main/frontend/routes/index.tsx
++++ b/src/main/frontend/routes/index.tsx
+@@ -1,11 +1,16 @@
+ import { createFileRoute } from '@tanstack/react-router';
++import { HomeMain } from '../slots/defs/homeMain';
++import { forSlot } from '../slots/registry';
+ 
+-// The base home page (empty). A page is a file under routes/ — `createFileRoute('<its url>')` —
+-// with its nav link under features/.
++// The home page. A page is a file under routes/ — `createFileRoute('<its url>')` — with its nav
++// link under features/. Its body is the home.main region, filled by features.
+ export const Route = createFileRoute('/')({
+   component: Home,
+ });
+ 
+ function Home() {
+-  return <p data-testid="home-empty">Nothing here yet.</p>;
++  if (forSlot(HomeMain.id).length === 0) {
++    return <p data-testid="home-empty">Nothing here yet.</p>;
++  }
++  return <HomeMain.Slot />;
+ }
+diff --git a/src/main/frontend/slots/defs/homeMain.ts b/src/main/frontend/slots/defs/homeMain.ts
+new file mode 100644
+index 000000000..b64ad679c
+--- /dev/null
++++ b/src/main/frontend/slots/defs/homeMain.ts
+@@ -0,0 +1,4 @@
++import { defineSlot } from '../Slot';
++
++/** The home page's body: each feature on the one screen contributes its own panel. */
++export const HomeMain = defineSlot('home.main');
+diff --git a/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+new file mode 100644
+index 000000000..e9e9fa254
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ApplyPerson.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++public class ApplyPerson {
++    public void apply(@Val PersonRequest request, @Val Person person, Out<Person> updated) {
++        updated.set(new Person(person.id(), person.sheetId(), request.name(), request.grade()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/BuildPerson.java b/src/main/java/net/officefloor/hq/app/person/BuildPerson.java
+new file mode 100644
+index 000000000..3e867193e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/BuildPerson.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++public class BuildPerson {
++    public void build(@Val PersonRequest request, @Val Sheet sheet, Out<Person> person) {
++        person.set(new Person(null, sheet.id(), request.name(), request.grade()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/HandleInvalidPerson.java b/src/main/java/net/officefloor/hq/app/person/HandleInvalidPerson.java
+new file mode 100644
+index 000000000..33e9326f5
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/HandleInvalidPerson.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleInvalidPerson {
++    public void handle(@Parameter InvalidPersonException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.BAD_REQUEST));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/HandlePersonNotFound.java b/src/main/java/net/officefloor/hq/app/person/HandlePersonNotFound.java
+new file mode 100644
+index 000000000..8992b2801
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/HandlePersonNotFound.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandlePersonNotFound {
++    public void handle(@Parameter PersonNotFoundException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.NOT_FOUND));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/InvalidPersonException.java b/src/main/java/net/officefloor/hq/app/person/InvalidPersonException.java
+new file mode 100644
+index 000000000..d8b33ef11
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/InvalidPersonException.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.person;
++
++public class InvalidPersonException extends Exception {
++    public InvalidPersonException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/LoadPeople.java b/src/main/java/net/officefloor/hq/app/person/LoadPeople.java
+new file mode 100644
+index 000000000..e0400d744
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/LoadPeople.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.person;
++
++import java.util.List;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++public class LoadPeople {
++    public void load(@Val Sheet sheet, PersonRepository repository, Out<List<Person>> people) {
++        people.set(repository.findAll(sheet.id()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/LoadPerson.java b/src/main/java/net/officefloor/hq/app/person/LoadPerson.java
+new file mode 100644
+index 000000000..64e098ef2
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/LoadPerson.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++
++public class LoadPerson {
++    public void load(@PathVariable("sheetId") String sheetId, @PathVariable("personId") long personId,
++            PersonRepository repository, Out<Person> person) throws PersonNotFoundException {
++        Person found = repository.find(sheetId, personId);
++        if (found == null) {
++            throw new PersonNotFoundException(personId);
++        }
++        person.set(found);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+new file mode 100644
+index 000000000..cdcb77cde
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.person;
++
++/** A person on a sheet. {@code id} is null until the person is first saved. */
++public record Person(Long id, String sheetId, String name, String grade) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonNotFoundException.java b/src/main/java/net/officefloor/hq/app/person/PersonNotFoundException.java
+new file mode 100644
+index 000000000..6e88c7813
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/PersonNotFoundException.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.person;
++
++public class PersonNotFoundException extends Exception {
++    public PersonNotFoundException(long id) {
++        super("No person " + id);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+new file mode 100644
+index 000000000..f57291b50
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -0,0 +1,56 @@
++package net.officefloor.hq.app.person;
++
++import java.sql.PreparedStatement;
++import java.sql.ResultSet;
++import java.sql.SQLException;
++import java.sql.Statement;
++import java.util.List;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.jdbc.support.GeneratedKeyHolder;
++import org.springframework.stereotype.Repository;
++
++@Repository
++public class PersonRepository {
++
++    private final JdbcTemplate jdbc;
++
++    public PersonRepository(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /** The sheet's people, in the order they were added. */
++    public List<Person> findAll(String sheetId) {
++        return jdbc.query("SELECT id, sheet_id, name, grade FROM person WHERE sheet_id = ? ORDER BY id",
++                PersonRepository::map, sheetId);
++    }
++
++    /** The person with this id on this sheet, or null. */
++    public Person find(String sheetId, long id) {
++        List<Person> found = jdbc.query("SELECT id, sheet_id, name, grade FROM person WHERE sheet_id = ? AND id = ?",
++                PersonRepository::map, sheetId, id);
++        return found.isEmpty() ? null : found.get(0);
++    }
++
++    /** Insert a new person (null id) or update an existing one; the person as stored. */
++    public Person save(Person person) {
++        if (person.id() != null) {
++            jdbc.update("UPDATE person SET name = ?, grade = ? WHERE id = ? AND sheet_id = ?",
++                    person.name(), person.grade(), person.id(), person.sheetId());
++            return person;
++        }
++        GeneratedKeyHolder keys = new GeneratedKeyHolder();
++        jdbc.update(con -> {
++            PreparedStatement ps = con.prepareStatement(
++                    "INSERT INTO person (sheet_id, name, grade) VALUES (?, ?, ?)", Statement.RETURN_GENERATED_KEYS);
++            ps.setString(1, person.sheetId());
++            ps.setString(2, person.name());
++            ps.setString(3, person.grade());
++            return ps;
++        }, keys);
++        return new Person(keys.getKey().longValue(), person.sheetId(), person.name(), person.grade());
++    }
++
++    private static Person map(ResultSet rs, int n) throws SQLException {
++        return new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRequest.java b/src/main/java/net/officefloor/hq/app/person/PersonRequest.java
+new file mode 100644
+index 000000000..6cb7d5d6a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRequest.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.person;
++
++import jakarta.validation.constraints.Size;
++
++/** A person's fields as the form submits them: a name (required) and a grade (A, B or C). */
++public record PersonRequest(@Size(max = 200) String name, @Size(max = 10) String grade) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+new file mode 100644
+index 000000000..08d9db1bd
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.person;
++
++public record PersonResponse(long id, String name, String grade) {
++
++    public static PersonResponse from(Person person) {
++        return new PersonResponse(person.id(), person.name(), person.grade());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+new file mode 100644
+index 000000000..b16af56e1
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app.person;
++
++import java.util.List;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithPeople {
++    public void respond(@Val List<Person> people, ObjectResponse<List<PersonResponse>> response) {
++        response.send(people.stream().map(PersonResponse::from).toList());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithPerson.java b/src/main/java/net/officefloor/hq/app/person/RespondWithPerson.java
+new file mode 100644
+index 000000000..430a023ae
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithPerson.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithPerson {
++    public void respond(@Val Person person, ObjectResponse<PersonResponse> response) {
++        response.send(PersonResponse.from(person));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/SavePerson.java b/src/main/java/net/officefloor/hq/app/person/SavePerson.java
+new file mode 100644
+index 000000000..e97382b93
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/SavePerson.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++public class SavePerson {
++    public void save(@Val Person person, PersonRepository repository, Out<Person> saved) {
++        saved.set(repository.save(person));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidatePersonRequest.java b/src/main/java/net/officefloor/hq/app/person/ValidatePersonRequest.java
+new file mode 100644
+index 000000000..cce1dee2e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/ValidatePersonRequest.java
+@@ -0,0 +1,25 @@
++package net.officefloor.hq.app.person;
++
++import jakarta.validation.Valid;
++import java.util.Set;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ValidatePersonRequest {
++
++    private static final Set<String> GRADES = Set.of("A", "B", "C");
++
++    public void validate(@RequestBody @Valid PersonRequest request, Out<PersonRequest> body)
++            throws InvalidPersonException {
++        // The name is kept as typed; only a blank one is refused.
++        String name = request.name() == null ? "" : request.name();
++        if (name.isBlank()) {
++            throw new InvalidPersonException("A name is required.");
++        }
++        String grade = request.grade() == null ? "" : request.grade().trim().toUpperCase();
++        if (!GRADES.contains(grade)) {
++            throw new InvalidPersonException("The grade must be A, B or C.");
++        }
++        body.set(new PersonRequest(name, grade));
++    }
++}
+diff --git a/src/main/resources/db/migration/V3__person.sql b/src/main/resources/db/migration/V3__person.sql
+new file mode 100644
+index 000000000..debbea2f5
+--- /dev/null
++++ b/src/main/resources/db/migration/V3__person.sql
+@@ -0,0 +1,8 @@
++-- People kept on a sheet, listed in the order they were added (id order). grade is one of A, B, C.
++CREATE TABLE person (
++    id BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id VARCHAR(100) NOT NULL REFERENCES sheet (id),
++    name VARCHAR(200) NOT NULL,
++    grade VARCHAR(1) NOT NULL
++);
++CREATE INDEX person_sheet ON person (sheet_id, id);
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.person.InvalidPersonException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.person.InvalidPersonException.yml
+new file mode 100644
+index 000000000..85feb7335
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.person.InvalidPersonException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.person.HandleInvalidPerson
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.person.PersonNotFoundException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.person.PersonNotFoundException.yml
+new file mode 100644
+index 000000000..1f310c030
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.person.PersonNotFoundException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.person.HandlePersonNotFound
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.GET.yml
+new file mode 100644
+index 000000000..6fba6d658
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.GET.yml
+@@ -0,0 +1,12 @@
++# The sheet's people, in the order they were added.
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ readonly-transaction ]
++  next: people
++people:
++  class: net.officefloor.hq.app.person.LoadPeople
++  govern: [ readonly-transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPeople
++  govern: [ readonly-transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+new file mode 100644
+index 000000000..1c711c721
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+@@ -0,0 +1,19 @@
++# Add a person to the sheet; a blank name or a grade other than A, B, C is refused (400).
++validate:
++  class: net.officefloor.hq.app.person.ValidatePersonRequest
++  next: load
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ transaction ]
++  next: build
++build:
++  class: net.officefloor.hq.app.person.BuildPerson
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.person.SavePerson
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPerson
++  govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+new file mode 100644
+index 000000000..c2e939f7b
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+@@ -0,0 +1,19 @@
++# Edit a person's name and grade; refused (400) on the same terms as an add.
++validate:
++  class: net.officefloor.hq.app.person.ValidatePersonRequest
++  next: load
++load:
++  class: net.officefloor.hq.app.person.LoadPerson
++  govern: [ transaction ]
++  next: apply
++apply:
++  class: net.officefloor.hq.app.person.ApplyPerson
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.person.SavePerson
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.person.RespondWithPerson
++  govern: [ transaction ]
