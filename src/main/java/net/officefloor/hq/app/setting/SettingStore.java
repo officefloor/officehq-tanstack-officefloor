@@ -223,6 +223,10 @@ public class SettingStore {
      *  (not dated). */
     public static final String REVIEW_SLA = "review-sla";
 
+    /** The most OPEN or PENDING claims a person may have for another to be opened; blank for none (a whole
+     *  number, not dated). */
+    public static final String MAX_OPEN = "max-open";
+
     /** The score at or above which a person's band is MID, while the high one is set too; blank for none
      *  (a whole number, not dated). */
     public static final String SCORE_MID = "score-mid";
@@ -309,6 +313,7 @@ public class SettingStore {
     /** Whether the key's values are recorded from a from-date. */
     public static boolean isDated(String key) {
         return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key)
+                && !MAX_OPEN.equals(key)
                 && !ENTRY_DATE.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
                 && !DEFAULT_GRADE.equals(key) && !SCORE_MID.equals(key) && !SCORE_HIGH.equals(key) && !SCORE_LOG.equals(key)
                 && !PROOF_KINDS.equals(key) && !key.startsWith(PERM_PREFIX);
@@ -513,6 +518,12 @@ public class SettingStore {
      *  blank (none). */
     public Integer reviewSla(String sheetId) {
         String value = find(sheetId, REVIEW_SLA);
+        return value == null ? null : Integer.valueOf(value);
+    }
+
+    /** The most OPEN or PENDING claims a person may have for another to be opened, or null when blank (none). */
+    public Integer maxOpen(String sheetId) {
+        String value = find(sheetId, MAX_OPEN);
         return value == null ? null : Integer.valueOf(value);
     }
 

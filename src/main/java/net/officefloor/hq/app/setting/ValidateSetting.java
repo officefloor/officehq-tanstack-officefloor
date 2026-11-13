@@ -44,9 +44,12 @@ public class ValidateSetting {
         boolean pot = SettingStore.POT.equals(key);
         boolean alert = SettingStore.ALERT_THRESHOLD.equals(key);
         if (SettingStore.GRACE_DAYS.equals(key) || SettingStore.ESCALATE_AFTER.equals(key)
-                || SettingStore.REVIEW_SLA.equals(key)) {
+                || SettingStore.REVIEW_SLA.equals(key) || SettingStore.MAX_OPEN.equals(key)) {
             String value = request.value() == null ? "" : request.value().trim();
             if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
+                if (SettingStore.MAX_OPEN.equals(key)) {
+                    throw new InvalidSheetException("The maximum of open claims must be a whole number, 0 or more, or blank");
+                }
                 throw new InvalidSheetException((SettingStore.GRACE_DAYS.equals(key) ? "The grace days"
                         : SettingStore.REVIEW_SLA.equals(key) ? "The review SLA" : "The escalation gap")
                         + " must be a whole number of days, 0 or more, or blank");

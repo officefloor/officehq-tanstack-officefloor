@@ -39,7 +39,7 @@ public class RespondWithSettings {
                 store.find(sheet, SettingStore.REVIEW_SLA), store.find(sheet, SettingStore.PROOF_KINDS),
                 store.find(sheet, SettingStore.DEFAULT_GRADE), gradeClerkLimit(sheet, today, store),
                 store.find(sheet, SettingStore.SCORE_MID), store.find(sheet, SettingStore.SCORE_HIGH),
-                store.find(sheet, SettingStore.SCORE_LOG)));
+                store.find(sheet, SettingStore.SCORE_LOG), store.find(sheet, SettingStore.MAX_OPEN)));
     }
 
     private static Map<String, String> gradeTerms(String sheetId, LocalDate today, SettingStore store) {

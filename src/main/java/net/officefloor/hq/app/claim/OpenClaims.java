@@ -28,7 +28,8 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  due is above the review threshold in force on its date goes to REVIEW instead (CLAIM_REVIEW, no number yet),
  *  counted as opened.
  *  A claim that is not on the sheet, is not a DRAFT, or is due by a date in a closed period, or whose person already has
- *  as many OPEN or PENDING claims in its period as the period's cap (counting those opened before it here), or has an empty note while its due is above the
+ *  as many OPEN or PENDING claims in its period as the period's cap (counting those opened before it here), or as many OPEN or PENDING claims as the sheet's
+ *  maximum of open claims (counting those opened before it here), or has an empty note while its due is above the
  *  note threshold in force on its date, or whose person's flag is in force on the sheet's today while the user
  *  is not a steward, and every claim when
  *  the sheet is archived or the sheet's permission matrix does not allow the user's role to open, is refused and
@@ -68,7 +69,7 @@ public class OpenClaims {
             Person owner = persons.get(claim.getPersonId());
             if (!permitted || claim.getStatus() != ClaimStatus.DRAFT || closed(periods, claim)
                     || (role != Role.STEWARD && owner != null && owner.flaggedOn(today))
-                    || capped(periods, store, claim) || unnoted(claim, settings, people, rates, sheets, store)) {
+                    || capped(periods, store, claim) || maxed(settings, store, claim) || unnoted(claim, settings, people, rates, sheets, store)) {
                 refused++;
                 continue;
             }
@@ -101,6 +102,15 @@ public class OpenClaims {
             SheetStore sheets, ClaimStore store) {
         try {
             CheckProofs.refuseUnnoted(claim, settings, people, rates, sheets, store);
+            return false;
+        } catch (InvalidSheetException e) {
+            return true;
+        }
+    }
+
+    private static boolean maxed(SettingStore settings, ClaimStore store, Claim claim) {
+        try {
+            ClaimPeriods.refuseMaxOpen(settings, store, claim);
             return false;
         } catch (InvalidSheetException e) {
             return true;

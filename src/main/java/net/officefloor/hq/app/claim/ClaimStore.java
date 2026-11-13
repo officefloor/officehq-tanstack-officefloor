@@ -97,6 +97,13 @@ public class ClaimStore {
                         sheetId, Date.valueOf(date));
     }
 
+    /** How many of the person's claims on the sheet are OPEN or PENDING. */
+    public int countOpen(String sheetId, long personId) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND person_id = ? AND status IN (?, ?)",
+                Integer.class, sheetId, personId, ClaimStatus.OPEN.name(), ClaimStatus.PENDING.name());
+        return n == null ? 0 : n;
+    }
+
     /** How many of the person's claims on the sheet are OPEN or PENDING and due by a date in from..to (inclusive). */
     public int countOpenDue(String sheetId, long personId, LocalDate from, LocalDate to) {
         Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM claim WHERE sheet_id = ? AND person_id = ? "

@@ -64,6 +64,7 @@ public class ApplyStatus {
                 ? dueAsOf(claim, input.on(), store, people, rates, settings, sheets) : null;
         if (from == ClaimStatus.DRAFT && (to == ClaimStatus.OPEN || to == ClaimStatus.REVIEW)) {
             ClaimPeriods.refuseCapped(periods, store, claim);
+            ClaimPeriods.refuseMaxOpen(settings, store, claim);
         }
         if (!from.canBecome(to) || !store.move(claim, from, to)) {
             throw new InvalidSheetException("A " + from + " claim cannot become " + to);

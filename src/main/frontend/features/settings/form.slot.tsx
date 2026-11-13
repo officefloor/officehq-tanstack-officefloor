@@ -18,12 +18,12 @@ const STANDING_PERMS: Record<(typeof PERM_ACTIONS)[number], string> = {
 
 type PermKey = `perm-${(typeof PERM_ACTIONS)[number]}`;
 
-type Key = 'clerk-limit' | 'clerk-limit-A' | 'clerk-limit-B' | 'clerk-limit-C' | 'floor' | 'terms' | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'late-pct' | 'policy-date' | 'period-numbering-from' | 'cap' | 'proof-threshold' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'note-threshold' | 'review-threshold' | 'grace-days' | 'escalate-after' | 'review-sla' | 'entry-date' | 'pot' | 'alert-threshold' | 'parent' | 'fiscal-start-month' | 'rounding' | 'proof-kinds' | 'default-grade' | 'score-mid' | 'score-high' | 'score-log' | PermKey;
+type Key = 'clerk-limit' | 'clerk-limit-A' | 'clerk-limit-B' | 'clerk-limit-C' | 'floor' | 'terms' | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'late-pct' | 'policy-date' | 'period-numbering-from' | 'cap' | 'proof-threshold' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'note-threshold' | 'review-threshold' | 'grace-days' | 'escalate-after' | 'review-sla' | 'entry-date' | 'pot' | 'alert-threshold' | 'parent' | 'fiscal-start-month' | 'rounding' | 'proof-kinds' | 'default-grade' | 'score-mid' | 'score-high' | 'score-log' | 'max-open' | PermKey;
 
 const GRADES = ['A', 'B', 'C'] as const;
 
 /** The settings that carry a figure: each is saved from a from-date (blank for the sheet's today). */
-type DatedKey = Exclude<Key, 'policy-date' | 'period-numbering-from' | 'grace-days' | 'escalate-after' | 'review-sla' | 'entry-date' | 'pot' | 'alert-threshold' | 'parent' | 'fiscal-start-month' | 'proof-kinds' | 'default-grade' | 'score-mid' | 'score-high' | 'score-log' | PermKey>;
+type DatedKey = Exclude<Key, 'policy-date' | 'period-numbering-from' | 'grace-days' | 'escalate-after' | 'review-sla' | 'entry-date' | 'pot' | 'alert-threshold' | 'parent' | 'fiscal-start-month' | 'proof-kinds' | 'default-grade' | 'score-mid' | 'score-high' | 'score-log' | 'max-open' | PermKey>;
 
 const NO_FROM: Record<DatedKey, string> = { 'clerk-limit': '', 'clerk-limit-A': '', 'clerk-limit-B': '', 'clerk-limit-C': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'late-pct': '', cap: '', 'proof-threshold': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'note-threshold': '', 'review-threshold': '', rounding: '' };
 
@@ -60,12 +60,14 @@ const isDated = (k: Key): k is DatedKey => k in NO_FROM;
 // threshold needs at least one proof of each of before it is settled or approved.
 // The score log (on, blank for off, not dated) writes each person's score on the day being left to the audit file
 // when the sheet's today moves.
+// The maximum of open claims (a whole number, blank for none, not dated) is the most OPEN or PENDING claims a person
+// may have for another of theirs to be opened.
 function SheetSettings() {
   const fig = useFigure();
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const settings = useSettings(sheet);
-  const [values, setValues] = useState<Record<Key, string>>({ 'clerk-limit': '', 'clerk-limit-A': '', 'clerk-limit-B': '', 'clerk-limit-C': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '', cap: '', 'proof-threshold': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'note-threshold': '', 'review-threshold': '', 'grace-days': '', 'escalate-after': '', 'review-sla': '', 'entry-date': '', pot: '', 'alert-threshold': '', parent: '', 'fiscal-start-month': '', rounding: '', 'proof-kinds': '', 'default-grade': '', 'score-mid': '', 'score-high': '', 'score-log': '',
+  const [values, setValues] = useState<Record<Key, string>>({ 'clerk-limit': '', 'clerk-limit-A': '', 'clerk-limit-B': '', 'clerk-limit-C': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '', cap: '', 'proof-threshold': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'note-threshold': '', 'review-threshold': '', 'grace-days': '', 'escalate-after': '', 'review-sla': '', 'entry-date': '', pot: '', 'alert-threshold': '', parent: '', 'fiscal-start-month': '', rounding: '', 'proof-kinds': '', 'default-grade': '', 'score-mid': '', 'score-high': '', 'score-log': '', 'max-open': '',
     'perm-open': '', 'perm-settle': '', 'perm-void': '', 'perm-reassign': '', 'perm-close': '', 'perm-reopen': '' });
   const [froms, setFroms] = useState<Record<DatedKey, string>>(NO_FROM);
   const [key, setKey] = useState<Key>('clerk-limit');
@@ -185,6 +187,8 @@ function SheetSettings() {
         {field('score-high', 'Score for HIGH band (blank for none)')}{' '}
         Score log <strong data-testid="setting-score-log-current">{settings.data?.scoreLog ?? ''}</strong>{' '}
         {field('score-log', 'Score log: on (blank for off)', 'text')}{' '}
+        Max open <strong data-testid="setting-max-open-current">{settings.data?.maxOpen ?? ''}</strong>{' '}
+        {field('max-open', 'Maximum open claims per person (blank for none)')}{' '}
         Pot <strong data-testid="setting-pot-current">{fig(settings.data?.pot ?? '')}</strong>{' '}
         {field('pot', 'Pot (blank for none)')}{' '}
         Alert threshold <strong data-testid="setting-alert-threshold-current">{fig(settings.data?.alertThreshold ?? '')}</strong>{' '}

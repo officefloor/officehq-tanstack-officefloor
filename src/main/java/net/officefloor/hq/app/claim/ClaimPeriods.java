@@ -39,6 +39,15 @@ public final class ClaimPeriods {
         }
     }
 
+    /** Refuses opening the claim when the sheet has a maximum of open claims per person and the claim's person
+     *  already has that many OPEN or PENDING claims. */
+    public static void refuseMaxOpen(SettingStore settings, ClaimStore claims, Claim claim) throws InvalidSheetException {
+        Integer max = settings.maxOpen(claim.getSheetId());
+        if (max != null && claims.countOpen(claim.getSheetId(), claim.getPersonId()) >= max) {
+            throw new InvalidSheetException("A person may have at most " + max + " open claims");
+        }
+    }
+
     /** Refuses a claim due by {@code dueBy} when that falls in a closed period. */
     public static void refuseClosed(PeriodStore periods, String sheetId, LocalDate dueBy) throws InvalidSheetException {
         PeriodResponse closed = periods.closedOn(sheetId, dueBy);
