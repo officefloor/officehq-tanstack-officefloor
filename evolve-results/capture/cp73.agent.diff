@@ -1,0 +1,490 @@
+diff --git a/src/main/frontend/features/statements/PersonStatement.tsx b/src/main/frontend/features/statements/PersonStatement.tsx
+index 55495f413..5060d46a1 100644
+--- a/src/main/frontend/features/statements/PersonStatement.tsx
++++ b/src/main/frontend/features/statements/PersonStatement.tsx
+@@ -1,3 +1,4 @@
++import { useState } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { postJson } from '../../api/http';
+ import { useOneAtATime } from '../../query/useOneAtATime';
+@@ -7,23 +8,28 @@ import type { Person } from '../people/people';
+ import { usePersonError } from '../people/personError';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ 
++const DATE = /^\d{4}-\d{2}-\d{2}$/;
++
+ // A person's statements: how many were taken, the last one's due-total and date, and the button that
+ // takes one — recording their due-total now and binding each counting claim to its figure now — and the
+-// button a steward cancels the last one with, making the claims it bound live again.
++// button a steward cancels the last one with, making the claims it bound live again. A date beside the button takes the
++// statement as of that day (on or before the sheet's today; blank: now), as the sheet stood at the end of it.
+ export function PersonStatement({ person }: { person: Person }) {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+   const [, setError] = usePersonError(person.id);
+   const queryClient = useQueryClient();
++  const [asof, setAsof] = useState('');
+   const once = useOneAtATime();
+ 
+   const take = useMutation({
+-    mutationFn: () =>
++    mutationFn: (date: string | null) =>
+       postJson<Person>(
+         `/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/statement?user=${encodeURIComponent(user)}`,
+-        {},
++        { asof: date },
+       ),
+     onSuccess: async () => {
++      setAsof('');
+       await Promise.all([
+         queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+         queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+@@ -52,13 +58,27 @@ export function PersonStatement({ person }: { person: Person }) {
+       <span data-testid="person-statement-count">{person.statementCount}</span>{' '}
+       <span data-testid="person-stated-total">{person.statedTotal ?? ''}</span>{' '}
+       <span data-testid="person-statement-date">{person.statementDate ?? ''}</span>{' '}
++      <input
++        data-testid="person-statement-asof"
++        placeholder="As of yyyy-mm-dd (blank: now)"
++        value={asof}
++        onChange={(e) => {
++          setAsof(e.target.value);
++          setError('');
++        }}
++      />
+       <button
+         type="button"
+         data-testid="person-statement"
+         disabled={take.isPending}
+         onClick={() => {
+           setError('');
+-          once(() => take.mutateAsync());
++          const date = asof.trim();
++          if (date && !DATE.test(date)) {
++            setError('Type a date as yyyy-mm-dd.');
++            return;
++          }
++          once(() => take.mutateAsync(date || null));
+         }}
+       >
+         Statement
+diff --git a/src/main/java/net/officefloor/hq/app/asof/RecordSheetDay.java b/src/main/java/net/officefloor/hq/app/asof/RecordSheetDay.java
+new file mode 100644
+index 000000000..7490ea025
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/asof/RecordSheetDay.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.asof;
++
++import java.time.LocalDate;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++
++/** Keeps the sheet as it stands at the end of its today, before its today moves on. */
++public class RecordSheetDay {
++    public void record(@Val Sheet sheet, @Val LocalDate today, SheetDayRepository days) {
++        days.record(sheet.id(), sheet.today(), today);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/asof/SheetDayRepository.java b/src/main/java/net/officefloor/hq/app/asof/SheetDayRepository.java
+new file mode 100644
+index 000000000..0450845c8
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/asof/SheetDayRepository.java
+@@ -0,0 +1,75 @@
++package net.officefloor.hq.app.asof;
++
++import java.sql.Date;
++import java.time.LocalDate;
++import java.util.List;
++import java.util.Map;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.setting.SettingRepository;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Repository;
++import tools.jackson.databind.json.JsonMapper;
++
++/**
++ * The sheet as it stood each time its today was changed, so its figures can be read as they stood at the end of an
++ * earlier date: every change made while the sheet's today was on or before that date counts, every later one does
++ * not.
++ */
++@Repository
++public class SheetDayRepository {
++
++    private static final JsonMapper JSON = JsonMapper.builder().build();
++
++    private final JdbcTemplate jdbc;
++    private final PersonRepository people;
++    private final ClaimRepository claims;
++    private final RateRepository rates;
++    private final SettingRepository settings;
++
++    public SheetDayRepository(JdbcTemplate jdbc, PersonRepository people, ClaimRepository claims, RateRepository rates,
++            SettingRepository settings) {
++        this.jdbc = jdbc;
++        this.people = people;
++        this.claims = claims;
++        this.rates = rates;
++        this.settings = settings;
++    }
++
++    /** Keep the sheet as it stands now, as its today moves from {@code from} to {@code to}. */
++    public void record(String sheetId, LocalDate from, LocalDate to) {
++        SheetState now = new SheetState(people.findAll(sheetId), claims.findAll(sheetId), rates.findAll(sheetId),
++                settings.dated(sheetId).history(), settings.policyDate(sheetId));
++        jdbc.update("INSERT INTO sheet_day (sheet_id, from_today, to_today, state) VALUES (?, ?, ?, ?)", sheetId,
++                Date.valueOf(from), Date.valueOf(to), JSON.writeValueAsString(now));
++    }
++
++    /**
++     * The sheet as it stood at the end of the date, or null when that is as it stands now (its today has not moved
++     * past the date since it was last on or before it). Before the sheet was first loaded nothing was on it.
++     */
++    public SheetState asOf(String sheetId, LocalDate date) {
++        List<LocalDate> started = jdbc.query("SELECT started FROM sheet WHERE id = ?",
++                (rs, n) -> rs.getObject("started", LocalDate.class), sheetId);
++        boolean empty = !started.isEmpty() && started.get(0) != null && started.get(0).isAfter(date);
++        Long kept = null;
++        for (Map<String, Object> day : jdbc.queryForList(
++                "SELECT id, from_today, to_today FROM sheet_day WHERE sheet_id = ? ORDER BY id", sheetId)) {
++            LocalDate from = ((Date) day.get("from_today")).toLocalDate();
++            LocalDate to = ((Date) day.get("to_today")).toLocalDate();
++            if (!to.isAfter(date)) {
++                empty = false;
++                kept = null;
++            } else if (!from.isAfter(date)) {
++                empty = false;
++                kept = ((Number) day.get("id")).longValue();
++            }
++        }
++        if (kept != null) {
++            String state = jdbc.queryForObject("SELECT state FROM sheet_day WHERE id = ?", String.class, kept);
++            return JSON.readValue(state, SheetState.class);
++        }
++        return empty ? SheetState.EMPTY : null;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/asof/SheetState.java b/src/main/java/net/officefloor/hq/app/asof/SheetState.java
+new file mode 100644
+index 000000000..4f4995a71
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/asof/SheetState.java
+@@ -0,0 +1,44 @@
++package net.officefloor.hq.app.asof;
++
++import java.time.LocalDate;
++import java.util.List;
++import java.util.Map;
++import java.util.NavigableMap;
++import java.util.TreeMap;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.rate.Rate;
++import net.officefloor.hq.app.setting.DatedSettings;
++import net.officefloor.hq.app.setting.DatedSettings.FromValue;
++
++/**
++ * A sheet's figures as they stood at a moment: its people, its claims (newest first), its rates, every dated setting
++ * value recorded (by key, oldest first) and its policy date (null: blank).
++ */
++public record SheetState(List<Person> people, List<Claim> claims, List<Rate> rates,
++        Map<String, List<FromValue>> settings, LocalDate policyDate) {
++
++    /** A sheet with nothing on it yet. */
++    public static final SheetState EMPTY = new SheetState(List.of(), List.of(), List.of(), Map.of(), null);
++
++    /** The person with this id then, or null when they were not on the sheet. */
++    public Person person(long id) {
++        return people.stream().filter((p) -> p.id() == id).findFirst().orElse(null);
++    }
++
++    /** The person's claims then, newest first. */
++    public List<Claim> claimsOf(long personId) {
++        return claims.stream().filter((c) -> c.personId() == personId).toList();
++    }
++
++    /** The dated settings then. */
++    public DatedSettings dated() {
++        Map<String, NavigableMap<LocalDate, String>> values = new java.util.LinkedHashMap<>();
++        settings.forEach((key, recorded) -> {
++            NavigableMap<LocalDate, String> byDate = new TreeMap<>();
++            recorded.forEach((v) -> byDate.put(v.from(), v.value()));
++            values.put(key, byDate);
++        });
++        return new DatedSettings(values);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+index a5ebeeae4..0ba446f01 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+@@ -18,8 +18,8 @@ public class SheetRepository {
+ 
+     /** The sheet with this id, created empty (today = the real date) when it was never loaded before. */
+     public Sheet ensure(String id) {
+-        jdbc.update("INSERT INTO sheet (id, today) SELECT ?, ? WHERE NOT EXISTS (SELECT 1 FROM sheet WHERE id = ?)",
+-                id, Date.valueOf(LocalDate.now()), id);
++        jdbc.update("INSERT INTO sheet (id, today, started) SELECT ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM sheet WHERE id = ?)",
++                id, Date.valueOf(LocalDate.now()), Date.valueOf(LocalDate.now()), id);
+         return find(id);
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/statement/AuditStatement.java b/src/main/java/net/officefloor/hq/app/statement/AuditStatement.java
+index b66290e1f..2ee615bc4 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/AuditStatement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/AuditStatement.java
+@@ -5,10 +5,12 @@ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+-/** Records the statement just taken: the person's name, their due-total and how many claims counted. */
++/** Records the statement just taken: the person's name, their due-total and how many claims counted, and the date it was
++ * taken as of when one was given. */
+ public class AuditStatement {
+     public void audit(@Val Statement statement, @Val Person person, @RequestParam("user") String user, Audit audit) {
+         audit.record("STATEMENT sheet=" + person.sheetId() + " by=" + user + " name=" + statement.name()
+-                + " due-total=" + statement.dueTotal() + " claims=" + statement.claims());
++                + " due-total=" + statement.dueTotal() + " claims=" + statement.claims()
++                + (statement.asOf() == null ? "" : " asof=" + statement.asOf()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/statement/Statement.java b/src/main/java/net/officefloor/hq/app/statement/Statement.java
+index e3e39ff04..95b1a1211 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/Statement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/Statement.java
+@@ -1,5 +1,10 @@
+ package net.officefloor.hq.app.statement;
+ 
+-/** A statement just taken of a person: their due-total at that moment (n/a with none) and how many claims counted. */
+-public record Statement(String name, String dueTotal, int claims) {
++import java.time.LocalDate;
++
++/**
++ * A statement just taken of a person: their due-total at that moment (n/a with none), how many claims counted, and
++ * the date it was taken as of (null: none given, now).
++ */
++public record Statement(String name, String dueTotal, int claims, LocalDate asOf) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/statement/StatementAsOf.java b/src/main/java/net/officefloor/hq/app/statement/StatementAsOf.java
+new file mode 100644
+index 000000000..f7ae53857
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/statement/StatementAsOf.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.statement;
++
++import java.time.LocalDate;
++
++/** The date a statement is taken as of (null: now, the sheet's today). */
++public record StatementAsOf(LocalDate date) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/statement/StatementRequest.java b/src/main/java/net/officefloor/hq/app/statement/StatementRequest.java
+new file mode 100644
+index 000000000..b5c860e71
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/statement/StatementRequest.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.statement;
++
++import jakarta.validation.constraints.Size;
++
++/** A statement to take: as of a date (yyyy-MM-dd), or blank for now. */
++public record StatementRequest(@Size(max = 20) String asof) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+index 3430660ea..e01ffb617 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+@@ -2,7 +2,11 @@ package net.officefloor.hq.app.statement;
+ 
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
++import java.util.HashMap;
+ import java.util.List;
++import java.util.Map;
++import net.officefloor.hq.app.asof.SheetDayRepository;
++import net.officefloor.hq.app.asof.SheetState;
+ import net.officefloor.hq.app.claim.Claim;
+ import net.officefloor.hq.app.claim.ClaimRepository;
+ import net.officefloor.hq.app.claim.Rounding;
+@@ -23,36 +27,69 @@ import net.officefloor.plugin.variable.Val;
+  * dues added up, at most the cap in force on the sheet's today (each the greater of the floor in force on its date and its figure plus any late charge on
+  * it — the charge and floor are never bound, they keep following the sheet's today and settings); n/a when their grade on the sheet's today has no rate there and no counting claim has a figure (kept, or at the
+  * rate for the grade in force on its date).
++ * <p>
++ * Taken as of a date (on or before the sheet's today), it works on the sheet as it stood at the end of that date — every
++ * change made while the sheet's today was on or before it, none made later — with that date standing in for the
++ * sheet's today: it binds the person's claims that counted then to their figures then, unbinds every other claim of
++ * theirs, and records that day's due-total and that date. Refused (400) for a date after the sheet's today, or one
++ * when the person was not yet on the sheet.
+  */
+ public class TakeStatement {
+-    public void take(@Val Person person, ClaimRepository claims, PersonRepository people, RateRepository rates,
+-            SheetRepository sheets, SettingRepository settings, Out<Statement> statement, Out<Person> updated) {
++    public void take(@Val Person person, @Val StatementAsOf asOf, ClaimRepository claims, PersonRepository people,
++            RateRepository rates, SheetRepository sheets, SettingRepository settings, SheetDayRepository days,
++            Out<Statement> statement, Out<Person> updated) throws InvalidStatementException {
+         LocalDate today = sheets.today(person.sheetId());
+-        List<Rate> sheetRates = rates.findAll(person.sheetId());
+-        DatedSettings dated = settings.dated(person.sheetId());
++        LocalDate on = asOf.date() == null ? today : asOf.date();
++        if (on.isAfter(today)) {
++            throw new InvalidStatementException("A statement cannot be taken as of a date after the sheet's today.");
++        }
++        List<Claim> personClaims = claims.findForPerson(person.sheetId(), person.id());
++        SheetState then = asOf.date() == null ? null : days.asOf(person.sheetId(), on);
++        Person thenPerson = person;
++        List<Claim> thenClaims = personClaims;
++        List<Rate> sheetRates;
++        DatedSettings dated;
++        LocalDate policyDate;
++        if (then == null) {
++            sheetRates = rates.findAll(person.sheetId());
++            dated = settings.dated(person.sheetId());
++            policyDate = settings.policyDate(person.sheetId());
++        } else {
++            thenPerson = then.person(person.id());
++            if (thenPerson == null) {
++                throw new InvalidStatementException(person.name() + " was not on the sheet on " + on + ".");
++            }
++            thenClaims = then.claimsOf(person.id());
++            sheetRates = then.rates();
++            dated = then.dated();
++            policyDate = then.policyDate();
++        }
++        Rounding rounding = Rounding.of(policyDate == null ? on : policyDate, thenClaims);
+         BigDecimal total = BigDecimal.ZERO.setScale(2);
+         boolean kept = false;
+         int counted = 0;
+-        List<Claim> personClaims = claims.findForPerson(person.sheetId(), person.id());
+-        Rounding rounding = settings.rounding(person.sheetId(), today, personClaims);
+-        for (Claim claim : personClaims) {
+-            if (!person.counts(claim, today)) {
+-                claims.bindStatement(claim, false, null);
++        Map<Long, BigDecimal> figures = new HashMap<>();
++        for (Claim claim : thenClaims) {
++            if (!thenPerson.counts(claim, on)) {
+                 continue;
+             }
+             boolean fixed = claim.keepsFigure();
+-            BigDecimal rate = Rate.inForce(sheetRates, person.gradeOn(claim.date()), claim.date());
++            BigDecimal rate = Rate.inForce(sheetRates, thenPerson.gradeOn(claim.date()), claim.date());
+             BigDecimal figure = claim.figure(rate, rounding);
+-            claims.bindStatement(claim, true, figure);
++            figures.put(claim.id(), figure);
+             counted++;
+             kept |= fixed || figure != null;
+             if (figure != null) {
+-                total = total.add(claim.due(rate, dated.floorOn(claim.date()), dated.lateCharge(today), rounding));
++                total = total.add(claim.due(rate, dated.floorOn(claim.date()), dated.lateCharge(on), rounding));
+             }
+         }
+-        String dueTotal = Rate.inForce(sheetRates, person.grade(), today) == null && !kept ? "n/a"
+-                : Cap.apply(dated.capOn(today), total).setScale(2).toPlainString();
+-        statement.set(new Statement(person.name(), dueTotal, counted));
+-        updated.set(people.recordStatement(person, dueTotal, today));
++        for (Claim claim : personClaims) {
++            boolean stated = figures.containsKey(claim.id());
++            claims.bindStatement(claim, stated, stated ? figures.get(claim.id()) : null);
++        }
++        String dueTotal = Rate.inForce(sheetRates, thenPerson.gradeOn(on), on) == null && !kept ? "n/a"
++                : Cap.apply(dated.capOn(on), total).setScale(2).toPlainString();
++        statement.set(new Statement(person.name(), dueTotal, counted, asOf.date()));
++        updated.set(people.recordStatement(person, dueTotal, on));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/statement/ValidateStatementRequest.java b/src/main/java/net/officefloor/hq/app/statement/ValidateStatementRequest.java
+new file mode 100644
+index 000000000..b1cad1ce7
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/statement/ValidateStatementRequest.java
+@@ -0,0 +1,24 @@
++package net.officefloor.hq.app.statement;
++
++import jakarta.validation.Valid;
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/** Refuses (400) a statement whose as-of date is not yyyy-mm-dd; a blank one takes the statement now. */
++public class ValidateStatementRequest {
++    public void validate(@RequestBody @Valid StatementRequest request, Out<StatementAsOf> asOf)
++            throws InvalidStatementException {
++        String value = request == null || request.asof() == null ? "" : request.asof().trim();
++        if (value.isEmpty()) {
++            asOf.set(new StatementAsOf(null));
++            return;
++        }
++        try {
++            asOf.set(new StatementAsOf(LocalDate.parse(value)));
++        } catch (DateTimeParseException e) {
++            throw new InvalidStatementException("A statement's date must be yyyy-mm-dd.");
++        }
++    }
++}
+diff --git a/src/main/resources/db/migration/V47__sheet_day.sql b/src/main/resources/db/migration/V47__sheet_day.sql
+new file mode 100644
+index 000000000..b59d1b2e4
+--- /dev/null
++++ b/src/main/resources/db/migration/V47__sheet_day.sql
+@@ -0,0 +1,13 @@
++-- The sheet as it stood each time its today was changed (from_today -> to_today): its people, claims, rates, dated
++-- settings and policy date as JSON, so a statement can be taken as of an earlier date. started is the sheet's today
++-- when it was first loaded (nothing was on it before).
++CREATE TABLE sheet_day (
++    id BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id VARCHAR(100) NOT NULL REFERENCES sheet (id),
++    from_today DATE NOT NULL,
++    to_today DATE NOT NULL,
++    state CLOB NOT NULL
++);
++CREATE INDEX sheet_day_sheet ON sheet_day (sheet_id, id);
++ALTER TABLE sheet ADD COLUMN started DATE;
++UPDATE sheet SET started = today;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml
+index 6e46e4269..e9a538f19 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml
+@@ -1,10 +1,15 @@
+ # Take a person's statement: record their due-total now and bind each of their counting claims to the
+-# figure it has now (unbinding the rest); a person not on the sheet is refused (404).
++# figure it has now (unbinding the rest); a person not on the sheet is refused (404). Taken as of a date (on or before
++# the sheet's today), it works on the sheet as it stood at the end of that date; a later date, or a bad one, is
++# refused (400).
+ archived:
+   class: net.officefloor.hq.app.sheet.CheckNotArchived
+   next: viewer
+ viewer:
+   class: net.officefloor.hq.app.setting.CheckNotViewer
++  next: validate
++validate:
++  class: net.officefloor.hq.app.statement.ValidateStatementRequest
+   next: load
+ load:
+   class: net.officefloor.hq.app.person.LoadPerson
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+index 3f67cfe85..f8ec00c60 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+@@ -1,4 +1,5 @@
+-# Change the sheet's today; a blank date resets it to the real date. Once it is set, every open period whose to-date
++# Change the sheet's today; a blank date resets it to the real date. The sheet is kept as it stood at the end of the
++# old today first (a statement can be taken as of it). Once it is set, every open period whose to-date
+ # plus the sheet's grace days (blank: off) is before the new today is closed, in order of their to-dates, as a close by hand would. Every claim lock on the sheet is released.
+ archived:
+   class: net.officefloor.hq.app.sheet.CheckNotArchived
+@@ -16,6 +17,10 @@ load:
+ before:
+   class: net.officefloor.hq.app.rollup.SnapshotRollup
+   govern: [ transaction ]
++  next: day
++day:
++  class: net.officefloor.hq.app.asof.RecordSheetDay
++  govern: [ transaction ]
+   next: apply
+ apply:
+   class: net.officefloor.hq.app.sheet.ApplySheetToday
