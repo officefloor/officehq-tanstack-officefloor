@@ -1,0 +1,359 @@
+diff --git a/src/main/frontend/features/paste/PasteClaims.tsx b/src/main/frontend/features/paste/PasteClaims.tsx
+new file mode 100644
+index 000000000..13e7f145f
+--- /dev/null
++++ b/src/main/frontend/features/paste/PasteClaims.tsx
+@@ -0,0 +1,78 @@
++import { useState } from 'react';
++import type { FormEvent } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { useOneAtATime } from '../../query/useOneAtATime';
++import { claimsKey } from '../claims/claims';
++import { peopleKey } from '../people/people';
++import { useCurrentSheet, useCurrentUser } from '../session/session';
++
++type PasteResult = { added: number };
++
++// The paste box: lines of name,amount,date,note (the note may hold commas, a blank date is the sheet's
++// today, the note may be left off), each a DRAFT claim for the named person on the sheet. The server
++// checks every line with the claim form's rules first, so one refused line adds nothing.
++export function PasteClaims() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const [text, setText] = useState('');
++  const [error, setError] = useState('');
++  const [added, setAdded] = useState<number | undefined>(undefined);
++  const once = useOneAtATime();
++  const queryClient = useQueryClient();
++
++  const paste = useMutation({
++    mutationFn: (pasted: string) =>
++      postJson<PasteResult>(
++        `/api/sheets/${encodeURIComponent(sheet)}/paste-claims?user=${encodeURIComponent(user)}`,
++        { text: pasted },
++      ),
++    onSuccess: async (result) => {
++      setText('');
++      await Promise.all([
++        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
++        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
++      ]);
++      setAdded(result.added);
++    },
++    onError: () => setError('Nothing was added: every line must be a claim the claim form takes, for a name on the sheet.'),
++  });
++
++  if (!user || !sheet) return null;
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    setError('');
++    setAdded(undefined);
++    if (!text.trim()) {
++      setError('Paste at least one line of name,amount,date,note.');
++      return;
++    }
++    once(() => paste.mutateAsync(text));
++  };
++
++  return (
++    <form onSubmit={submit} data-testid="paste-form">
++      <textarea
++        data-testid="paste-claims"
++        placeholder="name,amount,date,note — one claim per line"
++        rows={4}
++        value={text}
++        onChange={(e) => {
++          setText(e.target.value);
++          setError('');
++        }}
++      />
++      <button type="submit" data-testid="paste-submit" disabled={paste.isPending}>
++        Paste claims
++      </button>
++      {added !== undefined && (
++        <>
++          {' '}
++          Added <span data-testid="paste-added">{added}</span>
++        </>
++      )}
++      {error && <span data-testid="paste-error">{error}</span>}
++    </form>
++  );
++}
+diff --git a/src/main/frontend/features/paste/home.slot.tsx b/src/main/frontend/features/paste/home.slot.tsx
+new file mode 100644
+index 000000000..8843d8885
+--- /dev/null
++++ b/src/main/frontend/features/paste/home.slot.tsx
+@@ -0,0 +1,4 @@
++import { HomeMain } from '../../slots/defs/homeMain';
++import { PasteClaims } from './PasteClaims';
++
++export const contribution = HomeMain.fill({ order: 16, Component: PasteClaims });
+diff --git a/src/main/java/net/officefloor/hq/app/paste/FindPastedPeople.java b/src/main/java/net/officefloor/hq/app/paste/FindPastedPeople.java
+new file mode 100644
+index 000000000..0f088da36
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/paste/FindPastedPeople.java
+@@ -0,0 +1,42 @@
++package net.officefloor.hq.app.paste;
++
++import java.util.ArrayList;
++import java.util.List;
++import net.officefloor.hq.app.claim.CheckClaimInputNotRetired;
++import net.officefloor.hq.app.claim.CheckClaimInputPeriodOpen;
++import net.officefloor.hq.app.claim.InvalidClaimException;
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Val;
++
++/**
++ * Finds each line's person by name (as names are compared: ignoring case) and checks its claim against them with the
++ * claim form's rules: no claim after the person's retirement date, none inside a closed period. Any line refused
++ * refuses the whole paste, before anything is written.
++ */
++public class FindPastedPeople {
++    public void find(@Val PastedLines pasted, @Val Sheet sheet, PersonRepository people, SheetRepository sheets,
++            PeriodRepository periods) throws InvalidClaimException {
++        List<PastedLine> found = new ArrayList<>();
++        int number = 0;
++        for (PastedLine line : pasted.lines()) {
++            number++;
++            Person person = people.findByName(sheet.id(), line.name());
++            if (person == null) {
++                throw new InvalidClaimException("Line " + number + ": " + line.name() + " is not on the sheet.");
++            }
++            try {
++                new CheckClaimInputNotRetired().check(line.input(), person, sheet.id(), sheets);
++                new CheckClaimInputPeriodOpen().check(line.input(), sheet.id(), sheets, periods);
++            } catch (InvalidClaimException e) {
++                throw new InvalidClaimException("Line " + number + ": " + e.getMessage());
++            }
++            found.add(new PastedLine(line.name(), line.input(), person));
++        }
++        pasted.lines().clear();
++        pasted.lines().addAll(found);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/paste/PasteRequest.java b/src/main/java/net/officefloor/hq/app/paste/PasteRequest.java
+new file mode 100644
+index 000000000..22dd8d4b1
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/paste/PasteRequest.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.paste;
++
++import jakarta.validation.constraints.Size;
++
++/** The paste box's text: one claim per line, as name,amount,date,note. */
++public record PasteRequest(@Size(max = 200000) String text) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/paste/PasteResult.java b/src/main/java/net/officefloor/hq/app/paste/PasteResult.java
+new file mode 100644
+index 000000000..70eb4e785
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/paste/PasteResult.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.paste;
++
++/** How many claims a paste added. */
++public record PasteResult(int added) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/paste/PastedLine.java b/src/main/java/net/officefloor/hq/app/paste/PastedLine.java
+new file mode 100644
+index 000000000..380ca7ad0
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/paste/PastedLine.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.paste;
++
++import net.officefloor.hq.app.claim.ClaimInput;
++import net.officefloor.hq.app.person.Person;
++
++/** One pasted line: the name it typed, its claim as the claim form validates it, and (once found) its person. */
++public record PastedLine(String name, ClaimInput input, Person person) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/paste/PastedLines.java b/src/main/java/net/officefloor/hq/app/paste/PastedLines.java
+new file mode 100644
+index 000000000..b57ea35bc
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/paste/PastedLines.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.paste;
++
++import java.util.List;
++
++/** The pasted lines, in the order they were typed. */
++public record PastedLines(List<PastedLine> lines) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/paste/RespondWithPasteResult.java b/src/main/java/net/officefloor/hq/app/paste/RespondWithPasteResult.java
+new file mode 100644
+index 000000000..d8e9f6963
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/paste/RespondWithPasteResult.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.paste;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithPasteResult {
++    public void respond(@Val PasteResult result, ObjectResponse<PasteResult> response) {
++        response.send(result);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/paste/SavePastedClaims.java b/src/main/java/net/officefloor/hq/app/paste/SavePastedClaims.java
+new file mode 100644
+index 000000000..0fef23078
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/paste/SavePastedClaims.java
+@@ -0,0 +1,46 @@
++package net.officefloor.hq.app.paste;
++
++import java.math.BigDecimal;
++import java.time.LocalDate;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimDueNow;
++import net.officefloor.hq.app.claim.ClaimLogLine;
++import net.officefloor.hq.app.claim.ClaimLogRepository;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.claim.ClaimStatus;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/**
++ * Adds a DRAFT claim per pasted line, in order, each as the claim form's add does: due-by fixed from its date and
++ * its person's grade's terms, its DRAFT status logged, and recorded as CLAIM_ADDED.
++ */
++public class SavePastedClaims {
++    public void save(@Val PastedLines pasted, @RequestParam("user") String user, SheetRepository sheets,
++            SettingRepository settings, PersonRepository people, RateRepository rates, ClaimRepository claims,
++            ClaimLogRepository logs, Audit audit, Out<PasteResult> result) {
++        int added = 0;
++        for (PastedLine line : pasted.lines()) {
++            Person person = line.person();
++            LocalDate date = line.input().date() != null ? line.input().date() : sheets.today(person.sheetId());
++            LocalDate dueBy = date.plusDays(settings.dated(person.sheetId()).termsFor(person.gradeOn(date), date));
++            Claim claim = claims.save(new Claim(null, person.sheetId(), person.id(), line.input().amount(), date,
++                    line.input().note(), ClaimStatus.DRAFT, null, null, null, false, null, line.input().corrects(),
++                    dueBy));
++            BigDecimal due = ClaimDueNow.of(claim, sheets, people, rates, settings, claims);
++            logs.append(claim.sheetId(), new ClaimLogLine(claim.id(), claim.status(), user,
++                    sheets.today(claim.sheetId()), due == null ? "n/a" : due.setScale(2).toPlainString()));
++            audit.record("CLAIM_ADDED sheet=" + claim.sheetId() + " by=" + user + " person=" + person.name()
++                    + " amount=" + claim.amount().setScale(2).toPlainString() + " date=" + claim.date());
++            added++;
++        }
++        result.set(new PasteResult(added));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/paste/ValidatePasteRequest.java b/src/main/java/net/officefloor/hq/app/paste/ValidatePasteRequest.java
+new file mode 100644
+index 000000000..0cc80e1d7
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/paste/ValidatePasteRequest.java
+@@ -0,0 +1,56 @@
++package net.officefloor.hq.app.paste;
++
++import jakarta.validation.Valid;
++import java.util.ArrayList;
++import java.util.List;
++import net.officefloor.hq.app.claim.ClaimInput;
++import net.officefloor.hq.app.claim.ClaimRequest;
++import net.officefloor.hq.app.claim.InvalidClaimException;
++import net.officefloor.hq.app.claim.ValidateClaimRequest;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++/**
++ * Splits the text into lines of name,amount,date,note (the note may hold commas; the date may be blank; the note
++ * may be absent; blank lines are skipped) and checks each with exactly the claim form's rules. Nothing pasted is
++ * refused, as is a line without a name or amount. A pasted claim corrects nothing, so a negative amount is refused.
++ */
++public class ValidatePasteRequest {
++    public void validate(@RequestBody @Valid PasteRequest request, Out<PastedLines> pasted) throws InvalidClaimException {
++        String text = request.text() == null ? "" : request.text();
++        List<PastedLine> lines = new ArrayList<>();
++        int number = 0;
++        for (String line : text.split("\\r?\\n")) {
++            number++;
++            if (line.isBlank()) {
++                continue;
++            }
++            String[] fields = line.split(",", 4);
++            String name = fields[0].strip();
++            if (name.isEmpty()) {
++                throw new InvalidClaimException("Line " + number + ": a name is required.");
++            }
++            if (fields.length < 2) {
++                throw new InvalidClaimException("Line " + number + ": an amount is required.");
++            }
++            // The claim form's field limits, which its request checks on binding.
++            if (fields[1].length() > 30 || (fields.length > 2 && fields[2].length() > 30)
++                    || (fields.length > 3 && fields[3].length() > 1000)) {
++                throw new InvalidClaimException("Line " + number + ": a field is too long.");
++            }
++            ClaimRequest claim = new ClaimRequest(fields[1], fields.length > 2 ? fields[2] : "",
++                    fields.length > 3 ? fields[3] : "", "");
++            ClaimInput[] input = new ClaimInput[1];
++            try {
++                new ValidateClaimRequest().validate(claim, value -> input[0] = value);
++            } catch (InvalidClaimException e) {
++                throw new InvalidClaimException("Line " + number + ": " + e.getMessage());
++            }
++            lines.add(new PastedLine(name, input[0], null));
++        }
++        if (lines.isEmpty()) {
++            throw new InvalidClaimException("Paste at least one line of name,amount,date,note.");
++        }
++        pasted.set(new PastedLines(lines));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste-claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste-claims.POST.yml
+new file mode 100644
+index 000000000..481ddfe49
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste-claims.POST.yml
+@@ -0,0 +1,30 @@
++# Paste: a DRAFT claim per line of name,amount,date,note (the note may hold commas; a blank date is the sheet's
++# today; the note may be absent), in order, for the person on the sheet with that name (ignoring case). Every line
++# is checked first with the claim form's rules (and its name must be on the sheet); any line refused refuses the
++# whole paste (400) and nothing is added. Answers how many claims were added.
++validate:
++  class: net.officefloor.hq.app.paste.ValidatePasteRequest
++  next: load
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ transaction ]
++  next: people
++people:
++  class: net.officefloor.hq.app.paste.FindPastedPeople
++  govern: [ transaction ]
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.paste.SavePastedClaims
++  govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.paste.RespondWithPasteResult
++  govern: [ transaction ]
