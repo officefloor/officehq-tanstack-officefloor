@@ -23,12 +23,19 @@ public class PoolRepository {
             long id = rs.getLong("id");
             pools.put(id, new Pool(id, sheetId, rs.getString("name"), new ArrayList<>()));
         }, sheetId);
-        jdbc.query("SELECT m.pool_id, m.person_id, m.share, p.name, p.retired_from FROM pool_member m"
-                + " JOIN pool o ON o.id = m.pool_id JOIN person p ON p.id = m.person_id WHERE o.sheet_id = ? ORDER BY m.id",
+        jdbc.query("SELECT m.pool_id, m.person_id, m.member_pool_id, m.share, p.name, p.retired_from, q.name AS pool_name"
+                + " FROM pool_member m JOIN pool o ON o.id = m.pool_id LEFT JOIN person p ON p.id = m.person_id"
+                + " LEFT JOIN pool q ON q.id = m.member_pool_id WHERE o.sheet_id = ? ORDER BY m.id",
                 rs -> {
                     Pool pool = pools.get(rs.getLong("pool_id"));
-                    pool.members().add(new PoolMember(rs.getLong("person_id"), rs.getString("name"),
-                            rs.getBigDecimal("share"), rs.getDate("retired_from") != null));
+                    long personId = rs.getLong("person_id");
+                    if (rs.wasNull()) {
+                        pool.members().add(new PoolMember(null, rs.getLong("member_pool_id"),
+                                rs.getString("pool_name"), rs.getBigDecimal("share"), false));
+                    } else {
+                        pool.members().add(new PoolMember(personId, null, rs.getString("name"),
+                                rs.getBigDecimal("share"), rs.getDate("retired_from") != null));
+                    }
                 }, sheetId);
         return new ArrayList<>(pools.values());
     }
@@ -50,9 +57,9 @@ public class PoolRepository {
         jdbc.update("INSERT INTO pool (sheet_id, name) VALUES (?, ?)", sheetId, name);
     }
 
-    /** Adds a member to the pool. */
+    /** Adds a member (a person or a pool) to the pool. */
     public void addMember(long poolId, PoolMember member) {
-        jdbc.update("INSERT INTO pool_member (pool_id, person_id, share) VALUES (?, ?, ?)", poolId, member.personId(),
-                member.share());
+        jdbc.update("INSERT INTO pool_member (pool_id, person_id, member_pool_id, share) VALUES (?, ?, ?, ?)", poolId,
+                member.personId(), member.poolId(), member.share());
     }
 }

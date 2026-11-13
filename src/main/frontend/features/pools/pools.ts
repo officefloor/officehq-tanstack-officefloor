@@ -3,10 +3,18 @@ import { getJson } from '../../api/http';
 import { sheetKey, useCurrentSheet } from '../session/session';
 
 /**
- * A pool's member: the person, their share percent (two decimals), whether a retirement date is set and their cut of
- * the sheet's pot ('': none — the pool is unbalanced, or the sheet has no pot).
+ * A pool's member: a person (personId) or another pool (poolId), its name, its share percent (two decimals), whether
+ * it is a person with a retirement date set and its cut of the pool's pot ('': none — the pool is unbalanced, or has
+ * no pot). A pool that is a member of none has the sheet's pot; one that is a member of another, its cut there.
  */
-export type PoolMember = { personId: number; name: string; share: string; retired: boolean; cut: string };
+export type PoolMember = {
+  personId: number | null;
+  poolId: number | null;
+  name: string;
+  share: string;
+  retired: boolean;
+  cut: string;
+};
 
 /**
  * A pool on the sheet: its members in the order they were added, the total share (a retired member's share counts

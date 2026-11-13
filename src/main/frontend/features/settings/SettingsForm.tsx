@@ -634,7 +634,7 @@ export function SettingsForm() {
         />
         <input
           data-testid="setting-pot"
-          placeholder="Pot shared out among each balanced pool's members (blank: none)"
+          placeholder="Pot shared out by each top pool's members (blank: none)"
           value={pot}
           onFocus={() => setTouched((t) => ({ ...t, pot: true }))}
           onChange={(e) => {

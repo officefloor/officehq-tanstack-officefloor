@@ -19,7 +19,7 @@ import java.util.Map;
  * The clerk limit, floor, terms, grade terms, late percent, cap and proof threshold are those in force on the sheet's today; {@code dated}
  * holds every value recorded for them, by from-date. {@code delegations} are the steward role delegated to user names, in the
  * order made; one in force on {@code today} (the sheet's today) makes its user act as a steward in every rule.
- * {@code pot} is the sheet's pot (null: none), shared out among each balanced pool's members; it is not dated.
+ * {@code pot} is the sheet's pot (null: none), the pot of each pool that is a member of no pool, shared out among its members when it is balanced; it is not dated.
  * {@code parent} is the sheet's parent sheet id (null: none), whose rates a grade with none of its own in force takes; it is not dated.
  */
 public record Settings(String sheetId, BigDecimal clerkLimit, BigDecimal floor, int terms, Map<String, Integer> gradeTerms, BigDecimal latePct,
