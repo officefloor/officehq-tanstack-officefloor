@@ -1,0 +1,77 @@
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+index b0f121cbf..f44431fd6 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+@@ -2,7 +2,12 @@ package net.officefloor.hq.app.sheet;
+ 
+ import java.sql.Date;
+ import java.time.LocalDate;
++import java.util.ArrayList;
++import java.util.Collections;
++import java.util.HashSet;
++import java.util.LinkedHashSet;
+ import java.util.List;
++import java.util.Set;
+ import org.springframework.dao.DuplicateKeyException;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+@@ -49,12 +54,46 @@ public class SheetRepository {
+     }
+ 
+     /**
+-     * Takes the sheet's next claim number (1 for its first) in one atomic statement, so two claims
+-     * opened at the same moment never get the same number; a number taken is never given out again.
++     * Takes the next claim number of the sheet's tree (1 for its first): one after the last number given on any sheet
++     * of the tree, in one atomic statement that moves every sheet of the tree on to it, so two claims opened at the
++     * same moment never get the same number; a number taken is never given out again.
+      */
+     public int nextClaimNumber(String id) {
+-        return jdbc.queryForObject("SELECT last_claim_number FROM FINAL TABLE "
+-                + "(UPDATE sheet SET last_claim_number = last_claim_number + 1 WHERE id = ?)", Integer.class, id);
++        List<String> tree = tree(id);
++        String in = String.join(", ", Collections.nCopies(tree.size(), "?"));
++        Object[] args = new Object[tree.size() * 2];
++        for (int i = 0; i < tree.size(); i++) {
++            args[i] = tree.get(i);
++            args[tree.size() + i] = tree.get(i);
++        }
++        List<Integer> taken = jdbc.queryForList("SELECT last_claim_number FROM FINAL TABLE (UPDATE sheet SET"
++                + " last_claim_number = (SELECT MAX(t.last_claim_number) FROM sheet t WHERE t.id IN (" + in + ")) + 1"
++                + " WHERE id IN (" + in + "))", Integer.class, args);
++        return taken.get(0);
++    }
++
++    /**
++     * The ids of the sheets of the sheet's tree, the sheet among them: its topmost existing ancestor and every sheet
++     * below that (the sheets naming it as their parent, their children and so on).
++     */
++    public List<String> tree(String id) {
++        Set<String> seen = new HashSet<>(List.of(id));
++        String root = id;
++        for (String up = parent(id); up != null && find(up) != null && seen.add(up); up = parent(up)) {
++            root = up;
++        }
++        LinkedHashSet<String> found = new LinkedHashSet<>(List.of(root, id));
++        List<String> todo = new ArrayList<>(List.of(root));
++        while (!todo.isEmpty()) {
++            String at = todo.remove(0);
++            for (String child : jdbc.queryForList("SELECT id FROM sheet WHERE parent_id = ? ORDER BY id", String.class,
++                    at)) {
++                if (found.add(child)) {
++                    todo.add(child);
++                }
++            }
++        }
++        return List.copyOf(found);
+     }
+ 
+     /**
+@@ -91,7 +130,7 @@ public class SheetRepository {
+      * each once, nearest first; the sheet itself never, even where parents loop back to it.
+      */
+     public List<String> descendants(String id) {
+-        java.util.LinkedHashSet<String> found = new java.util.LinkedHashSet<>();
++        LinkedHashSet<String> found = new LinkedHashSet<>();
+         java.util.ArrayDeque<String> todo = new java.util.ArrayDeque<>(List.of(id));
+         while (!todo.isEmpty()) {
+             String at = todo.poll();
