@@ -164,6 +164,7 @@ function PersonClaims({ person }: { person: Person }) {
     waive.reset();
     hold.reset();
     share.reset();
+    assign.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -196,6 +197,7 @@ function PersonClaims({ person }: { person: Person }) {
     waive.reset();
     hold.reset();
     share.reset();
+    assign.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -226,6 +228,7 @@ function PersonClaims({ person }: { person: Person }) {
     waive.reset();
     hold.reset();
     share.reset();
+    assign.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -257,6 +260,7 @@ function PersonClaims({ person }: { person: Person }) {
     waive.reset();
     hold.reset();
     share.reset();
+    assign.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -284,6 +288,7 @@ function PersonClaims({ person }: { person: Person }) {
     waive.reset();
     hold.reset();
     share.reset();
+    assign.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -314,6 +319,7 @@ function PersonClaims({ person }: { person: Person }) {
     waive.reset();
     hold.reset();
     share.reset();
+    assign.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -344,6 +350,7 @@ function PersonClaims({ person }: { person: Person }) {
     waive.reset();
     hold.reset();
     share.reset();
+    assign.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -386,7 +393,38 @@ function PersonClaims({ person }: { person: Person }) {
     redate.reset();
     inline.reset();
     share.reset();
+    assign.reset();
     share.mutate({ id, person: shareWith[id] ?? '', share: (sharePcts[id] ?? '').trim() });
+  };
+  // A steward assigning a REVIEW claim's review to a user.
+  const [assignees, setAssignees] = useState<Record<number, string>>({});
+  const assign = useMutation({
+    mutationFn: (d: { id: number; assignee: string }) =>
+      postJson<Claim>(`${base}/claims/${d.id}/assign-review`, { assignee: d.assignee, user }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+    },
+  });
+  const assignReview = (id: number) => {
+    move.reset();
+    lock.reset();
+    setUneditable(undefined);
+    reassign.reset();
+    resettle.reset();
+    defer.reset();
+    remind.reset();
+    waive.reset();
+    hold.reset();
+    share.reset();
+    comment.reset();
+    line.reset();
+    proof.reset();
+    split.reset();
+    partSettle.reset();
+    redate.reset();
+    inline.reset();
+    assign.reset();
+    assign.mutate({ id, assignee: (assignees[id] ?? '').trim() });
   };
   // A comment is kept on the claim, in any status, with its writer and the sheet's today; not an empty one.
   const comment = useMutation({
@@ -408,6 +446,7 @@ function PersonClaims({ person }: { person: Person }) {
     waive.reset();
     hold.reset();
     share.reset();
+    assign.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -440,6 +479,7 @@ function PersonClaims({ person }: { person: Person }) {
     waive.reset();
     hold.reset();
     share.reset();
+    assign.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -475,6 +515,7 @@ function PersonClaims({ person }: { person: Person }) {
     waive.reset();
     hold.reset();
     share.reset();
+    assign.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -507,6 +548,7 @@ function PersonClaims({ person }: { person: Person }) {
     waive.reset();
     hold.reset();
     share.reset();
+    assign.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -539,6 +581,7 @@ function PersonClaims({ person }: { person: Person }) {
     waive.reset();
     hold.reset();
     share.reset();
+    assign.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -571,6 +614,7 @@ function PersonClaims({ person }: { person: Person }) {
     waive.reset();
     hold.reset();
     share.reset();
+    assign.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -610,6 +654,7 @@ function PersonClaims({ person }: { person: Person }) {
     waive.reset();
     hold.reset();
     share.reset();
+    assign.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -638,6 +683,8 @@ function PersonClaims({ person }: { person: Person }) {
                   ? hold.error
                 : share.isError && share.variables?.id === id
                   ? share.error
+                : assign.isError && assign.variables?.id === id
+                  ? assign.error
                 : comment.isError && comment.variables?.id === id
                   ? comment.error
                 : line.isError && line.variables?.id === id
@@ -679,6 +726,7 @@ function PersonClaims({ person }: { person: Person }) {
     waive.reset();
     hold.reset();
     share.reset();
+    assign.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -754,6 +802,7 @@ function PersonClaims({ person }: { person: Person }) {
               <span data-testid="claim-shares">
                 {(c.shares ?? []).map((h) => `${nameOf(h.personId)} ${h.share}`).join(', ')}
               </span>{' '}
+              <span data-testid="claim-review-assigned">{c.reviewUser ?? ''}</span>{' '}
               <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}
               <span data-testid="claim-batch">{c.batch ?? ''}</span>{' '}
               <span data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</span>{' '}
@@ -928,6 +977,19 @@ function PersonClaims({ person }: { person: Person }) {
               />{' '}
               <button type="button" data-testid="claim-share-add" disabled={share.isPending} onClick={() => shareClaim(c.id)}>
                 Share
+              </button>{' '}
+              <input
+                data-testid="claim-review-user"
+                placeholder="Reviewer"
+                aria-label="Assign review to"
+                value={assignees[c.id] ?? ''}
+                onChange={(e) => {
+                  setAssignees({ ...assignees, [c.id]: e.target.value });
+                  if (assign.variables?.id === c.id) assign.reset();
+                }}
+              />{' '}
+              <button type="button" data-testid="claim-review-assign" disabled={assign.isPending} onClick={() => assignReview(c.id)}>
+                Assign review
               </button>{' '}
               <input
                 data-testid="claim-date-new"

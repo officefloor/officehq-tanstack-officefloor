@@ -35,6 +35,7 @@ public class Claim {
     private String ref;
     private String tags;
     private String shares;
+    private String reviewUser;
     private String voidReason;
     private String editedBy;
     private Long batch;
@@ -142,6 +143,10 @@ public class Claim {
     /** The people it is shared with and their shares, as stored (see {@link Shares}); null when shared with nobody. */
     public String getShares() { return shares; }
     public void setShares(String shares) { this.shares = shares; }
+
+    /** The user a steward assigned its review to; null when never assigned. */
+    public String getReviewUser() { return reviewUser; }
+    public void setReviewUser(String reviewUser) { this.reviewUser = reviewUser; }
     /** The reason it was voided with, from the sheet's list then; null when not voided, or voided while the list was empty. */
     public String getVoidReason() { return voidReason; }
     public void setVoidReason(String voidReason) { this.voidReason = voidReason; }

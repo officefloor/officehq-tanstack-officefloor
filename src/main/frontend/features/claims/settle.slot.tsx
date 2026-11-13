@@ -1,8 +1,8 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { HomeMain } from '../../slots/defs/homeMain';
-import { HttpError, postJson } from '../../api/http';
+import { HttpError, getJson, postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
-import { useCurrentSheet, useCurrentUser } from '../../session/session';
+import { useAsOf, useCurrentSheet, useCurrentUser } from '../../session/session';
 import { claimsKey, useClaims, useSelectedClaims } from './claims';
 
 type BulkSettleResult = { settled: number; refused: number };
@@ -10,15 +10,24 @@ type BulkSettleResult = { settled: number; refused: number };
 // Settles the selected claims together: the server settles each in list order by the rules of a
 // single settle (a clerk's above the clerk limit goes to PENDING, counted as settled), or, when any
 // would be refused, settles none and counts them all refused; and the counts show once it answers (gone while it runs). One that settles any is a batch,
-// numbered on the sheet; the last batch's number shows beside the button (nothing when there is none).
+// numbered on the sheet; the sheet's last batch's number shows beside the button (nothing when there is none).
 function BulkSettle() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const [selected, setSelected] = useSelectedClaims();
   const queryClient = useQueryClient();
   const claims = useClaims(sheet);
-  const lastBatch = (claims.data ?? []).reduce<number | null>(
+  const [asOf] = useAsOf();
+  // The sheet keeps its last batch even once no claim on it carries it (they were transferred away); as of a
+  // past date it is the last one its claims carried then.
+  const kept = useQuery({
+    queryKey: [...claimsKey(sheet), 'last-batch'],
+    queryFn: () => getJson<number>(`/api/sheets/${encodeURIComponent(sheet)}/last-batch`),
+    enabled: sheet !== '' && asOf === '',
+  });
+  const carried = (claims.data ?? []).reduce<number | null>(
     (last, c) => (c.batch !== null && (last === null || c.batch > last) ? c.batch : last), null);
+  const lastBatch = asOf === '' && (kept.data ?? 0) > (carried ?? 0) ? kept.data! : carried;
 
   const bulk = useMutation({
     mutationFn: (claimIds: number[]) =>

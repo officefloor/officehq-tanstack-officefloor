@@ -84,6 +84,8 @@ export type Claim = {
   /** The people it is shared with (by id) and their share percents (two decimals), in the order shared; empty when none.
    *  Each holder's figures count their part of its due (see `sharedParts`), its person's the due less the parts. */
   shares: { personId: number; share: string }[];
+  /** The user a steward assigned its review to; null when never assigned. */
+  reviewUser: string | null;
 };
 
 /** A correction: a claim with a negative amount, which has no floor and no late charge. */

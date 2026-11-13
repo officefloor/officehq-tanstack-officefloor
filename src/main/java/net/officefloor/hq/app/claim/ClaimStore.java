@@ -39,6 +39,7 @@ public class ClaimStore {
         claim.setRef(rs.getString("ref"));
         claim.setTags(rs.getString("tags"));
         claim.setShares(rs.getString("shares"));
+        claim.setReviewUser(rs.getString("review_user"));
         claim.setVoidReason(rs.getString("void_reason"));
         claim.setEditedBy(rs.getString("edited_by"));
         claim.setBatch(rs.getObject("settle_batch", Long.class));
@@ -259,6 +260,16 @@ public class ClaimStore {
         return toggled;
     }
 
+    /** Stores the claim's review assigned to {@code user}; false when it is no longer in REVIEW. */
+    public boolean assignReview(Claim claim, String user) {
+        boolean stored = jdbc.update("UPDATE claim SET review_user = ? WHERE sheet_id = ? AND id = ? AND status = ?",
+                user, claim.getSheetId(), claim.getId(), ClaimStatus.REVIEW.name()) == 1;
+        if (stored) {
+            claim.setReviewUser(user);
+        }
+        return stored;
+    }
+
     /** Stores the claim shared as {@code shares} (see {@link Shares}); false when another user changed its shares
      *  first, or it was moved on to SETTLED, VOID or DELETED. */
     public boolean share(Claim claim, String shares) {
@@ -418,6 +429,12 @@ public class ClaimStore {
         claim.setBatch(batch);
     }
 
+    /** The last bulk settle batch given on the sheet; 0 when none was. */
+    public long lastBatch(String sheetId) {
+        List<Long> found = jdbc.queryForList("SELECT last_batch FROM settle_batch WHERE sheet_id = ?", Long.class, sheetId);
+        return found.isEmpty() ? 0 : found.get(0);
+    }
+
     /** Takes the next bulk settle batch on the sheet: 1, then 2, and so on, locked as {@link #nextNumber(String)} is. */
     public long nextBatch(String sheetId) {
         try {
@@ -563,9 +580,9 @@ public class ClaimStore {
             return ps;
         }, keys);
         long id = keys.getKey().longValue();
-        jdbc.update("UPDATE claim SET added_seq = ?, escalated = ?, review_on = ?, waived = ?, proof_photos = ?, held = ? WHERE sheet_id = ? AND id = ?",
+        jdbc.update("UPDATE claim SET added_seq = ?, escalated = ?, review_on = ?, waived = ?, proof_photos = ?, held = ?, review_user = ? WHERE sheet_id = ? AND id = ?",
                 claim.getAddedSeq(), claim.isEscalated(), claim.getReviewOn() == null ? null : Date.valueOf(claim.getReviewOn()),
-                claim.isWaived(), claim.getProofPhotos(), claim.isHeld(),
+                claim.isWaived(), claim.getProofPhotos(), claim.isHeld(), claim.getReviewUser(),
                 toSheet, id);
         jdbc.update("INSERT INTO claim_log (sheet_id, claim_id, status, by_user, log_date, due) "
                 + "SELECT ?, ?, status, by_user, log_date, due FROM claim_log WHERE sheet_id = ? AND claim_id = ? ORDER BY id",
