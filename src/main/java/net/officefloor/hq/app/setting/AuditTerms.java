@@ -11,6 +11,7 @@ public class AuditTerms {
         if (terms.value() == null) {
             return;
         }
-        audit.record("SETTING_CHANGED sheet=" + sheet.id() + " by=" + user + " key=terms value=" + terms.value());
+        audit.record("SETTING_CHANGED sheet=" + sheet.id() + " by=" + user + " key=terms value=" + terms.value()
+                + DatedSettings.auditFrom(terms.from()));
     }
 }

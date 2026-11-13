@@ -12,6 +12,7 @@ public class AuditClerkLimit {
             return;
         }
         audit.record("SETTING_CHANGED sheet=" + sheet.id() + " by=" + user + " key=clerk-limit value="
-                + (limit.value() == null ? "" : limit.value().toPlainString()));
+                + (limit.value() == null ? "" : limit.value().toPlainString())
+                + DatedSettings.auditFrom(limit.from()));
     }
 }

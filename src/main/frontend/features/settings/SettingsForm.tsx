@@ -3,7 +3,17 @@ import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { putJson } from '../../api/http';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
-import { AMOUNT, DATE, DAYS, DEFAULT_FLOOR, DEFAULT_LATE_PCT, DEFAULT_TERMS, PERCENT, settingsKey, useSettings } from './settings';
+import {
+  AMOUNT,
+  DATE,
+  DAYS,
+  DEFAULT_FLOOR,
+  DEFAULT_LATE_PCT,
+  DEFAULT_TERMS,
+  PERCENT,
+  settingsKey,
+  useSettings,
+} from './settings';
 import type { Settings } from './settings';
 import { useOneAtATime } from '../../query/useOneAtATime';
 import { GRADES } from '../people/people';
@@ -18,7 +28,16 @@ type SettingsInput = {
   policyDate?: string;
   periodNumberingFrom?: string;
   cap?: string;
+  clerkLimitFrom?: string;
+  floorFrom?: string;
+  termsFrom?: string;
+  latePctFrom?: string;
+  capFrom?: string;
+  gradeTermsFrom?: Record<string, string>;
 };
+
+/** The from-date field of each dated setting, by its key as the screen names it (terms-A for a grade's terms). */
+type Froms = Record<string, string>;
 
 type Touched = {
   clerkLimit: boolean;
@@ -41,7 +60,9 @@ const UNTOUCHED: Touched = {
 };
 
 // The sheet's clerk limit (blank: no limit), floor, terms, each grade's terms (blank: the sheet's), late percent and policy date (blank: today) and period numbering from date (blank: off) and cap (blank: none) in force, and the form that sets them. Saving sends
-// only the fields touched since the last save, so a blank field left alone changes nothing.
+// only the fields touched since the last save, so a blank field left alone changes nothing. A dated setting (the clerk
+// limit, floor, terms, each grade's terms, late percent and cap) is recorded from the date typed beside it (blank: the
+// sheet's today); the value shown is the one in force on the sheet's today.
 export function SettingsForm() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -55,6 +76,7 @@ export function SettingsForm() {
   const [policyDate, setPolicyDate] = useState('');
   const [periodNumberingFrom, setPeriodNumberingFrom] = useState('');
   const [cap, setCap] = useState('');
+  const [froms, setFroms] = useState<Froms>({});
   const [touched, setTouched] = useState<Touched>(UNTOUCHED);
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
@@ -73,6 +95,7 @@ export function SettingsForm() {
       setPolicyDate('');
       setPeriodNumberingFrom('');
       setCap('');
+      setFroms({});
       setTouched(UNTOUCHED);
       setError('');
       queryClient.setQueryData(settingsKey(sheet), saved);
@@ -83,10 +106,44 @@ export function SettingsForm() {
 
   if (!user || !sheet) return null;
 
+  // The from-date typed for a dated setting: '' (the sheet's today), a date, or null when it is not a date.
+  const fromOf = (key: string): string | null => {
+    const value = (froms[key] ?? '').trim();
+    return value === '' || DATE.test(value) ? value : null;
+  };
+
+  // The from-date field beside a dated setting's field.
+  const fromField = (key: string, label: string) => (
+    <input
+      data-testid={`setting-${key}-from`}
+      placeholder={`${label} from, yyyy-MM-dd (blank: the sheet's today)`}
+      value={froms[key] ?? ''}
+      onChange={(e) => {
+        const value = e.target.value;
+        setFroms((f) => ({ ...f, [key]: value }));
+        setError('');
+      }}
+    />
+  );
+
   const submit = (e: FormEvent) => {
     e.preventDefault();
     setError('');
     const input: SettingsInput = {};
+    for (const [key, label] of [
+      ['clerk-limit', 'clerk limit'],
+      ['floor', 'floor'],
+      ['terms', 'terms'],
+      ...GRADES.map((g) => [`terms-${g}`, `terms for grade ${g}`]),
+      ['late-pct', 'late percent'],
+      ['cap', 'cap'],
+    ]) {
+      if (fromOf(key) === null) {
+        setError(`Type the ${label} from-date as yyyy-MM-dd, or leave it blank for the sheet's today.`);
+        return;
+      }
+    }
+    const datedFrom = (key: string) => fromOf(key) || undefined;
     if (touched.clerkLimit) {
       const value = clerkLimit.trim();
       if (value !== '' && !AMOUNT.test(value)) {
@@ -94,6 +151,7 @@ export function SettingsForm() {
         return;
       }
       input.clerkLimit = value;
+      input.clerkLimitFrom = datedFrom('clerk-limit');
     }
     if (touched.floor) {
       const value = floor.trim();
@@ -102,6 +160,7 @@ export function SettingsForm() {
         return;
       }
       input.floor = value;
+      input.floorFrom = datedFrom('floor');
     }
     if (touched.terms) {
       const value = terms.trim();
@@ -110,6 +169,7 @@ export function SettingsForm() {
         return;
       }
       input.terms = value;
+      input.termsFrom = datedFrom('terms');
     }
     for (const g of GRADES) {
       if (!touchedGrades[g]) continue;
@@ -119,14 +179,19 @@ export function SettingsForm() {
         return;
       }
       input.gradeTerms = { ...input.gradeTerms, [g]: value };
+      const from = datedFrom(`terms-${g}`);
+      if (from) input.gradeTermsFrom = { ...input.gradeTermsFrom, [g]: from };
     }
     if (touched.latePct) {
       const value = latePct.trim();
       if (value !== '' && !PERCENT.test(value)) {
-        setError(`Type a late percent of 0.00 or more, with at most two decimals, or leave it blank for ${DEFAULT_LATE_PCT}.`);
+        setError(
+          `Type a late percent of 0.00 or more, with at most two decimals, or leave it blank for ${DEFAULT_LATE_PCT}.`,
+        );
         return;
       }
       input.latePct = value;
+      input.latePctFrom = datedFrom('late-pct');
     }
     if (touched.policyDate) {
       const value = policyDate.trim();
@@ -151,6 +216,7 @@ export function SettingsForm() {
         return;
       }
       input.cap = value;
+      input.capFrom = datedFrom('cap');
     }
     if (
       input.clerkLimit === undefined &&
@@ -210,6 +276,7 @@ export function SettingsForm() {
             setError('');
           }}
         />
+        {fromField('clerk-limit', 'Clerk limit')}
         <input
           data-testid="setting-floor"
           placeholder={`Floor (blank: ${DEFAULT_FLOOR})`}
@@ -221,6 +288,7 @@ export function SettingsForm() {
             setError('');
           }}
         />
+        {fromField('floor', 'Floor')}
         <input
           data-testid="setting-terms"
           placeholder={`Terms in days (blank: ${DEFAULT_TERMS})`}
@@ -232,19 +300,22 @@ export function SettingsForm() {
             setError('');
           }}
         />
+        {fromField('terms', 'Terms')}
         {GRADES.map((g) => (
-          <input
-            key={g}
-            data-testid={`setting-terms-${g}`}
-            placeholder={`Terms for grade ${g} in days (blank: the sheet's)`}
-            value={gradeTerms[g] ?? ''}
-            onFocus={() => setTouchedGrades((t) => ({ ...t, [g]: true }))}
-            onChange={(e) => {
-              setGradeTerms((v) => ({ ...v, [g]: e.target.value }));
-              setTouchedGrades((t) => ({ ...t, [g]: true }));
-              setError('');
-            }}
-          />
+          <span key={g}>
+            <input
+              data-testid={`setting-terms-${g}`}
+              placeholder={`Terms for grade ${g} in days (blank: the sheet's)`}
+              value={gradeTerms[g] ?? ''}
+              onFocus={() => setTouchedGrades((t) => ({ ...t, [g]: true }))}
+              onChange={(e) => {
+                setGradeTerms((v) => ({ ...v, [g]: e.target.value }));
+                setTouchedGrades((t) => ({ ...t, [g]: true }));
+                setError('');
+              }}
+            />
+            {fromField(`terms-${g}`, `Terms for grade ${g}`)}
+          </span>
         ))}
         <input
           data-testid="setting-late-pct"
@@ -257,6 +328,7 @@ export function SettingsForm() {
             setError('');
           }}
         />
+        {fromField('late-pct', 'Late percent')}
         <input
           data-testid="setting-policy-date"
           placeholder="Rounding policy date, yyyy-MM-dd (blank: the sheet's today)"
@@ -290,6 +362,7 @@ export function SettingsForm() {
             setError('');
           }}
         />
+        {fromField('cap', 'Cap')}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>

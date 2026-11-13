@@ -6,7 +6,7 @@ import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 
 /**
- * What an overdue claim is charged: the sheet's late percent of its figure for every full 30 days it is overdue
+ * What an overdue claim is charged: the late percent in force on its date of its figure for every full 30 days it is overdue
  * (its due-by, fixed when it was created, before the sheet's today), rounded like the claim's due. Never bound by a statement:
  * it follows the sheet's today until the claim is settled. A correction is never charged.
  */

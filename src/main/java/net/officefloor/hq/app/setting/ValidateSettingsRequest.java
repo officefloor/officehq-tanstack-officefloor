@@ -29,62 +29,77 @@ public class ValidateSettingsRequest {
             Out<Terms> terms, Out<LatePct> latePct, Out<PolicyDate> policyDate,
             Out<PeriodNumberingFrom> periodNumberingFrom, Out<GradeTerms> gradeTerms, Out<Cap> cap)
             throws InvalidSettingException {
-        limit.set(clerkLimit(request.clerkLimit()));
-        floor.set(floor(request.floor()));
-        terms.set(terms(request.terms()));
-        latePct.set(latePct(request.latePct()));
+        limit.set(clerkLimit(request.clerkLimit(), from(request.clerkLimitFrom(), "clerk limit")));
+        floor.set(floor(request.floor(), from(request.floorFrom(), "floor")));
+        terms.set(terms(request.terms(), from(request.termsFrom(), "terms")));
+        latePct.set(latePct(request.latePct(), from(request.latePctFrom(), "late percent")));
         policyDate.set(policyDate(request.policyDate()));
         periodNumberingFrom.set(periodNumberingFrom(request.periodNumberingFrom()));
-        gradeTerms.set(gradeTerms(request.gradeTerms()));
-        cap.set(cap(request.cap()));
+        gradeTerms.set(gradeTerms(request.gradeTerms(), request.gradeTermsFrom()));
+        cap.set(cap(request.cap(), from(request.capFrom(), "cap")));
     }
 
-    private static Cap cap(String requested) throws InvalidSettingException {
+    /** A from-date typed with a setting (null: left out or blank, the sheet's today). */
+    private static LocalDate from(String requested, String what) throws InvalidSettingException {
+        String value = requested == null ? "" : requested.trim();
+        if (value.isEmpty()) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(value);
+        } catch (DateTimeParseException e) {
+            throw new InvalidSettingException("The " + what + " from-date must be a date (yyyy-MM-dd), or blank.");
+        }
+    }
+
+    private static Cap cap(String requested, LocalDate from) throws InvalidSettingException {
         if (requested == null) {
-            return new Cap(false, null);
+            return new Cap(false, null, null);
         }
         String value = requested.trim();
         if (value.isEmpty()) {
-            return new Cap(true, null);
+            return new Cap(true, null, from);
         }
         if (!AMOUNT.matcher(value).matches()) {
             throw new InvalidSettingException("The cap must be 0.00 or more, with at most two decimals, or blank.");
         }
-        return new Cap(true, new BigDecimal(value).setScale(2));
+        return new Cap(true, new BigDecimal(value).setScale(2), from);
     }
 
-    private static ClerkLimit clerkLimit(String requested) throws InvalidSettingException {
+    private static ClerkLimit clerkLimit(String requested, LocalDate from) throws InvalidSettingException {
         if (requested == null) {
-            return new ClerkLimit(false, null);
+            return new ClerkLimit(false, null, null);
         }
         String value = requested.trim();
         if (value.isEmpty()) {
-            return new ClerkLimit(true, null);
+            return new ClerkLimit(true, null, from);
         }
         if (!AMOUNT.matcher(value).matches()) {
             throw new InvalidSettingException("The clerk limit must be 0.00 or more, with at most two decimals, or blank.");
         }
-        return new ClerkLimit(true, new BigDecimal(value).setScale(2));
+        return new ClerkLimit(true, new BigDecimal(value).setScale(2), from);
     }
 
-    private static Terms terms(String requested) throws InvalidSettingException {
+    private static Terms terms(String requested, LocalDate from) throws InvalidSettingException {
         if (requested == null) {
-            return new Terms(null);
+            return new Terms(null, null);
         }
         String value = requested.trim();
         if (value.isEmpty()) {
-            return new Terms(SettingRepository.DEFAULT_TERMS);
+            return new Terms(SettingRepository.DEFAULT_TERMS, from);
         }
         if (!DAYS.matcher(value).matches()) {
             throw new InvalidSettingException("The terms must be a whole number of days, 0 or more, or blank.");
         }
-        return new Terms(Integer.parseInt(value));
+        return new Terms(Integer.parseInt(value), from);
     }
 
-    private static GradeTerms gradeTerms(Map<String, String> requested) throws InvalidSettingException {
+    private static GradeTerms gradeTerms(Map<String, String> requested, Map<String, String> requestedFrom)
+            throws InvalidSettingException {
         Map<String, Integer> terms = new LinkedHashMap<>();
+        Map<String, LocalDate> from = new LinkedHashMap<>();
         if (requested == null) {
-            return new GradeTerms(terms);
+            return new GradeTerms(terms, from);
         }
         for (String grade : requested.keySet().stream().sorted().toList()) {
             if (!GRADES.contains(grade)) {
@@ -98,22 +113,26 @@ public class ValidateSettingsRequest {
             } else {
                 terms.put(grade, Integer.parseInt(value));
             }
+            LocalDate gradeFrom = from(requestedFrom == null ? null : requestedFrom.get(grade), "grade " + grade + " terms");
+            if (gradeFrom != null) {
+                from.put(grade, gradeFrom);
+            }
         }
-        return new GradeTerms(terms);
+        return new GradeTerms(terms, from);
     }
 
-    private static LatePct latePct(String requested) throws InvalidSettingException {
+    private static LatePct latePct(String requested, LocalDate from) throws InvalidSettingException {
         if (requested == null) {
-            return new LatePct(null);
+            return new LatePct(null, null);
         }
         String value = requested.trim();
         if (value.isEmpty()) {
-            return new LatePct(SettingRepository.DEFAULT_LATE_PCT);
+            return new LatePct(SettingRepository.DEFAULT_LATE_PCT, from);
         }
         if (!PERCENT.matcher(value).matches()) {
             throw new InvalidSettingException("The late percent must be 0.00 or more, with at most two decimals, or blank.");
         }
-        return new LatePct(new BigDecimal(value).setScale(2));
+        return new LatePct(new BigDecimal(value).setScale(2), from);
     }
 
     private static PolicyDate policyDate(String requested) throws InvalidSettingException {
@@ -146,17 +165,17 @@ public class ValidateSettingsRequest {
         }
     }
 
-    private static Floor floor(String requested) throws InvalidSettingException {
+    private static Floor floor(String requested, LocalDate from) throws InvalidSettingException {
         if (requested == null) {
-            return new Floor(null);
+            return new Floor(null, null);
         }
         String value = requested.trim();
         if (value.isEmpty()) {
-            return new Floor(SettingRepository.DEFAULT_FLOOR);
+            return new Floor(SettingRepository.DEFAULT_FLOOR, from);
         }
         if (!AMOUNT.matcher(value).matches()) {
             throw new InvalidSettingException("The floor must be 0.00 or more, with at most two decimals, or blank.");
         }
-        return new Floor(new BigDecimal(value).setScale(2));
+        return new Floor(new BigDecimal(value).setScale(2), from);
     }
 }

@@ -12,6 +12,7 @@ public class AuditFloor {
             return;
         }
         audit.record("SETTING_CHANGED sheet=" + sheet.id() + " by=" + user + " key=floor value="
-                + floor.value().toPlainString());
+                + floor.value().toPlainString()
+                + DatedSettings.auditFrom(floor.from()));
     }
 }

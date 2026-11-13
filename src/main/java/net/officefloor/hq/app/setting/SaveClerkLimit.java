@@ -6,7 +6,8 @@ import net.officefloor.plugin.variable.Val;
 public class SaveClerkLimit {
     public void save(@Val ClerkLimit limit, @Val Sheet sheet, SettingRepository repository) {
         if (limit.given()) {
-            repository.saveClerkLimit(sheet.id(), limit.value());
+            repository.saveDated(sheet.id(), DatedSettings.CLERK_LIMIT, DatedSettings.fromOr(limit.from(), sheet.today()),
+                    limit.value() == null ? null : limit.value().toPlainString());
         }
     }
 }

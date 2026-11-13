@@ -12,6 +12,7 @@ public class AuditLatePct {
             return;
         }
         audit.record("SETTING_CHANGED sheet=" + sheet.id() + " by=" + user + " key=late-pct value="
-                + latePct.value().toPlainString());
+                + latePct.value().toPlainString()
+                + DatedSettings.auditFrom(latePct.from()));
     }
 }

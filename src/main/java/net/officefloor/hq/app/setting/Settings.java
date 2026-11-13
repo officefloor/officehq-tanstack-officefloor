@@ -12,9 +12,11 @@ import java.util.Map;
  * every full 30 days), its rounding policy date (null: blank, the sheet's
  * today), its period numbering from date (null: off; on or after it, an opened claim is numbered within its period)
  * its cap (null: none; a person's due-total is at most it) and the roles given to user names (any other name is a clerk).
+ * The clerk limit, floor, terms, grade terms, late percent and cap are those in force on the sheet's today; {@code dated}
+ * holds every value recorded for them, by from-date.
  */
 public record Settings(String sheetId, BigDecimal clerkLimit, BigDecimal floor, int terms, Map<String, Integer> gradeTerms, BigDecimal latePct,
-        LocalDate policyDate, LocalDate periodNumberingFrom, BigDecimal cap, List<UserRole> roles) {
+        LocalDate policyDate, LocalDate periodNumberingFrom, BigDecimal cap, List<UserRole> roles, DatedSettings dated) {
 
     /** The role of the user name: the one given to it, else clerk. */
     public Role roleOf(String user) {

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { sheetKey, useCurrentSheet } from '../session/session';
@@ -16,9 +16,23 @@ export type UserRole = { user: string; role: string };
  * gains of its figure every full 30 days, the rounding policy date (yyyy-MM-dd; '': blank, the
  * sheet's today), the period numbering from date (yyyy-MM-dd; '': off — on or after it, an opened claim is
  * numbered within its period), the cap (two decimals; '': none — a person's due-total is at most it), and the roles
- * given to user names.
+ * given to user names. The clerk limit, floor, terms, grade terms, late percent and cap are those in force on the sheet's
+ * today; `history` holds every value recorded for them, by key (floor, late-pct, terms, terms-<grade>, clerk-limit,
+ * cap), oldest from-date first (value '': blank).
  */
-export type Settings = { clerkLimit: string | null; floor: string; terms: number; gradeTerms: Record<string, number>; latePct: string; policyDate: string; periodNumberingFrom: string; cap: string; roles: UserRole[] };
+export type Settings = { clerkLimit: string | null; floor: string; terms: number; gradeTerms: Record<string, number>; latePct: string; policyDate: string; periodNumberingFrom: string; cap: string; roles: UserRole[]; history: Record<string, FromValue[]> };
+
+/** A dated setting's value recorded from a date (yyyy-MM-dd); '': blank. */
+export type FromValue = { from: string; value: string };
+
+/** The value of a dated setting in force on a date: the one with the latest from-date on or before it, else `start`. */
+export function valueOn(history: FromValue[] | undefined, date: string, start: string): string {
+  let found = start;
+  for (const v of history ?? []) {
+    if (v.from <= date) found = v.value === '' ? start : v.value;
+  }
+  return found;
+}
 
 /** The floor a sheet starts with: a claim's live due is at least it. */
 export const DEFAULT_FLOOR = '1.00';
@@ -64,13 +78,13 @@ export function useFloor(): string {
 export const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
- * What a claim's due is worked out from: the sheet's floor, late percent and today, its policy
- * date in force (blank: today), its cap ('': none) and the dates of its claims by number (a correction rounds by the date
+ * What a claim's due is worked out from: the floor and late percent in force on a claim's date, the sheet's today, its policy
+ * date in force (blank: today), its cap in force on today ('': none) and the dates of its claims by number (a correction rounds by the date
  * of the claim it corrects).
  */
 export type DueRules = {
-  floor: string;
-  latePct: string;
+  floorOn: (date: string) => string;
+  latePctOn: (date: string) => string;
   today: string;
   policyDate: string;
   cap: string;
@@ -86,9 +100,12 @@ export function useDueRules(): DueRules {
     () => new Map((claims ?? []).filter((c) => c.number !== null).map((c) => [c.number!, c.date])),
     [claims],
   );
+  const history = settings?.history;
+  const floorOn = useCallback((date: string) => valueOn(history?.floor, date, DEFAULT_FLOOR), [history]);
+  const latePctOn = useCallback((date: string) => valueOn(history?.['late-pct'], date, DEFAULT_LATE_PCT), [history]);
   return {
-    floor: settings?.floor ?? DEFAULT_FLOOR,
-    latePct: settings?.latePct ?? DEFAULT_LATE_PCT,
+    floorOn,
+    latePctOn,
     today,
     policyDate: settings?.policyDate || today,
     cap: settings?.cap ?? '',

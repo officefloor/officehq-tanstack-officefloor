@@ -93,23 +93,23 @@ export function floored(value: string, floor: string): string {
 
 /**
  * A claim's figure: the figure its statement bound it to (not while PENDING), else its amount at the rate in force on its
- * date for the person's grade in force on that date, rounded by the policy date, at least the sheet's floor —
+ * date for the person's grade in force on that date, rounded by the policy date, at least the floor in force on its date —
  * a correction has no floor.
  */
 function claimFigure(claim: Claim, rates: Rate[], grades: GradeFrom[], rules: DueRules): string {
   if (bound(claim)) return claim.statedDue ?? NA;
   const live = due(claim.amount, rateFor(rates, gradeOn(grades, claim.date), claim.date), roundingFor(claim, rules));
-  return claim.corrects !== null ? live : floored(live, rules.floor);
+  return claim.corrects !== null ? live : floored(live, rules.floorOn(claim.date));
 }
 
 /**
- * The late charge on a figure: the late percent of it for every full 30 days the claim is overdue,
+ * The late charge on a figure: the late percent in force on the claim's date of it for every full 30 days the claim is overdue,
  * rounded like the claim's due; 0.00 when it is not overdue, and always for a correction.
  */
 export function lateCharge(claim: Claim, figure: string, rules: DueRules): string {
   if (claim.corrects !== null) return '0.00';
   const periods = latePeriods(claim, rules.today);
-  return percentOf(hundredths(figure), hundredths(rules.latePct) * periods, roundingFor(claim, rules));
+  return percentOf(hundredths(figure), hundredths(rules.latePctOn(claim.date)) * periods, roundingFor(claim, rules));
 }
 
 /**

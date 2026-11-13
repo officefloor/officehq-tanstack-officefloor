@@ -12,6 +12,7 @@ public class AuditCap {
             return;
         }
         audit.record("SETTING_CHANGED sheet=" + sheet.id() + " by=" + user + " key=cap value="
-                + (cap.value() == null ? "" : cap.value().toPlainString()));
+                + (cap.value() == null ? "" : cap.value().toPlainString())
+                + DatedSettings.auditFrom(cap.from()));
     }
 }

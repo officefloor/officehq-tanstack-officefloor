@@ -6,7 +6,8 @@ import net.officefloor.plugin.variable.Val;
 public class SaveFloor {
     public void save(@Val Floor floor, @Val Sheet sheet, SettingRepository repository) {
         if (floor.value() != null) {
-            repository.saveFloor(sheet.id(), floor.value());
+            repository.saveDated(sheet.id(), DatedSettings.FLOOR, DatedSettings.fromOr(floor.from(), sheet.today()),
+                    floor.value().toPlainString());
         }
     }
 }

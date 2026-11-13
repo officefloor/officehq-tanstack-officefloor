@@ -6,7 +6,8 @@ import net.officefloor.plugin.variable.Val;
 public class SaveCap {
     public void save(@Val Cap cap, @Val Sheet sheet, SettingRepository repository) {
         if (cap.given()) {
-            repository.saveCap(sheet.id(), cap.value());
+            repository.saveDated(sheet.id(), DatedSettings.CAP, DatedSettings.fromOr(cap.from(), sheet.today()),
+                    cap.value() == null ? null : cap.value().toPlainString());
         }
     }
 }
