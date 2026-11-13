@@ -1,0 +1,88 @@
+diff --git a/src/main/frontend/features/people/PersonInlineGrade.tsx b/src/main/frontend/features/people/PersonInlineGrade.tsx
+new file mode 100644
+index 000000000..a6f751475
+--- /dev/null
++++ b/src/main/frontend/features/people/PersonInlineGrade.tsx
+@@ -0,0 +1,69 @@
++import { useState } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { putJson } from '../../api/http';
++import { useOneAtATime } from '../../query/useOneAtATime';
++import { sheetKey, useCurrentSheet, useCurrentUser } from '../session/session';
++import { GRADES } from './people';
++import type { Person } from './people';
++import { usePersonError } from './personError';
++
++// The row's own grade select and save: gives the person the chosen grade from the sheet's today through
++// the person's own edit, exactly as the person form saves it (keeping their name, terms, contact and
++// tags, from the version listed), so it is audited and rolled up the same way. A refusal shows on the row.
++export function PersonInlineGrade({ person }: { person: Person }) {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const [chosen, setChosen] = useState<string | undefined>(undefined);
++  const [, setError] = usePersonError(person.id);
++  const queryClient = useQueryClient();
++  const once = useOneAtATime();
++  const grade = chosen ?? person.grade;
++
++  const save = useMutation({
++    mutationFn: (g: string) =>
++      putJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}?user=${encodeURIComponent(user)}`, {
++        name: person.name,
++        grade: g,
++        gradeFrom: '',
++        terms: person.terms == null ? '' : String(person.terms),
++        contact: person.contact ?? '',
++        tags: person.tags.join(','),
++        version: person.version,
++      }),
++    onSuccess: async () => {
++      setChosen(undefined);
++      await queryClient.invalidateQueries({ queryKey: sheetKey(sheet) });
++    },
++    onError: () => setError('That person could not be given the grade.'),
++  });
++
++  return (
++    <td>
++      <select
++        data-testid="person-inline-grade"
++        value={grade}
++        onChange={(e) => {
++          setChosen(e.target.value);
++          setError('');
++        }}
++      >
++        {GRADES.map((g) => (
++          <option key={g} value={g}>
++            {g}
++          </option>
++        ))}
++      </select>{' '}
++      <button
++        type="button"
++        data-testid="person-inline-grade-save"
++        disabled={save.isPending}
++        onClick={() => {
++          setError('');
++          once(() => save.mutateAsync(grade));
++        }}
++      >
++        Save grade
++      </button>
++    </td>
++  );
++}
+diff --git a/src/main/frontend/features/people/inlineGrade.slot.tsx b/src/main/frontend/features/people/inlineGrade.slot.tsx
+new file mode 100644
+index 000000000..933bc36e3
+--- /dev/null
++++ b/src/main/frontend/features/people/inlineGrade.slot.tsx
+@@ -0,0 +1,7 @@
++import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
++import { PersonInlineGrade } from './PersonInlineGrade';
++
++export const contributions = [
++  PersonColumnHeads.fill({ order: 0.5, Component: () => <th>Set grade</th> }),
++  PersonColumns.fill({ order: 0.5, Component: PersonInlineGrade }),
++];
