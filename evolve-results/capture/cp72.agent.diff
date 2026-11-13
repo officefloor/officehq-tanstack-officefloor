@@ -1,0 +1,370 @@
+diff --git a/src/main/frontend/features/active/PersonActive.tsx b/src/main/frontend/features/active/PersonActive.tsx
+index 828285f3b..2f698494e 100644
+--- a/src/main/frontend/features/active/PersonActive.tsx
++++ b/src/main/frontend/features/active/PersonActive.tsx
+@@ -1,4 +1,5 @@
+ import { useClaims } from '../claims/claims';
++import { liveHolds } from '../people/people';
+ import type { Person } from '../people/people';
+ import { useDueRules } from '../settings/settings';
+ import { isActive } from './active';
+@@ -7,5 +8,5 @@ import { isActive } from './active';
+ export function PersonActive({ person }: { person: Person }) {
+   const rules = useDueRules();
+   const claims = (useClaims().data ?? []).filter((c) => c.personId === person.id);
+-  return <td data-testid="person-active">{isActive(claims, person.holds, rules.today) ? 'yes' : 'no'}</td>;
++  return <td data-testid="person-active">{isActive(claims, liveHolds(person, rules.today), rules.today) ? 'yes' : 'no'}</td>;
+ }
+diff --git a/src/main/frontend/features/claims/ClaimedTotal.tsx b/src/main/frontend/features/claims/ClaimedTotal.tsx
+index e9075927b..e75527993 100644
+--- a/src/main/frontend/features/claims/ClaimedTotal.tsx
++++ b/src/main/frontend/features/claims/ClaimedTotal.tsx
+@@ -15,7 +15,7 @@ export function ClaimedTotal() {
+ 
+   return (
+     <p>
+-      Claimed total: <strong data-testid="rollup-claimed-total">{claimed(claims.data ?? [], holdsById(people), today)}</strong>
++      Claimed total: <strong data-testid="rollup-claimed-total">{claimed(claims.data ?? [], holdsById(people, today), today)}</strong>
+     </p>
+   );
+ }
+diff --git a/src/main/frontend/features/claims/PersonClaimed.tsx b/src/main/frontend/features/claims/PersonClaimed.tsx
+index 7e0a32e20..59ab6ca18 100644
+--- a/src/main/frontend/features/claims/PersonClaimed.tsx
++++ b/src/main/frontend/features/claims/PersonClaimed.tsx
+@@ -6,5 +6,5 @@ import { claimed, holdsById, useClaims } from './claims';
+ export function PersonClaimed({ person }: { person: Person }) {
+   const claims = (useClaims().data ?? []).filter((c) => c.personId === person.id);
+   const today = useSheetToday();
+-  return <td data-testid="person-claimed">{claimed(claims, holdsById([person]), today)}</td>;
++  return <td data-testid="person-claimed">{claimed(claims, holdsById([person], today), today)}</td>;
+ }
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index d26b5c4cf..be2a7bc5a 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -1,6 +1,6 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+-import { covers } from '../people/people';
++import { covers, liveHolds } from '../people/people';
+ import type { Hold } from '../people/people';
+ import { sheetKey, useCurrentSheet } from '../session/session';
+ 
+@@ -73,8 +73,9 @@ export const counts = (c: Claim, holds: Hold[], today: string) =>
+   c.status === 'SETTLED' ||
+   (isOpen(c) && !deferred(c, today) && (bound(c) || !holds.some((h) => covers(h, c.date))));
+ 
+-/** Each person's holds, by id: their open claims dated within one count in no live total. */
+-export const holdsById = (people: { id: number; holds: Hold[] }[]) => new Map(people.map((p) => [p.id, p.holds]));
++/** Each person's live holds on the sheet's `today`, by id: their open claims dated within one count in no live total. */
++export const holdsById = (people: { id: number; holds: Hold[]; retiredFrom: string | null }[], today: string) =>
++  new Map(people.map((p) => [p.id, liveHolds(p, today)]));
+ 
+ /** The fields the claim form submits; a blank date is the sheet's today; corrects names, by number, the claim a correction corrects. */
+ export type ClaimInput = { amount: string; date: string; note: string; corrects: string };
+diff --git a/src/main/frontend/features/counters/HeaderCounters.tsx b/src/main/frontend/features/counters/HeaderCounters.tsx
+index 42fc76009..51e8e04a5 100644
+--- a/src/main/frontend/features/counters/HeaderCounters.tsx
++++ b/src/main/frontend/features/counters/HeaderCounters.tsx
+@@ -1,6 +1,6 @@
+ import { useClaims } from '../claims/claims';
+ import { personOverdue } from '../overdue/overdue';
+-import { usePeople } from '../people/people';
++import { liveHolds, usePeople } from '../people/people';
+ import { personDue, trimmedTotal, useRates } from '../rates/rates';
+ import { useDueRules } from '../settings/settings';
+ 
+@@ -16,8 +16,8 @@ export function HeaderCounters() {
+   const rules = useDueRules();
+ 
+   const mine = (id: number) => claims.filter((c) => c.personId === id);
+-  const dues = people.map((p) => personDue(mine(p.id), rates, p.grades, p.holds, rules));
+-  const overdue = people.map((p) => personOverdue(mine(p.id), rates, p.grades, p.holds, rules).total);
++  const dues = people.map((p) => personDue(mine(p.id), rates, p.grades, liveHolds(p, rules.today), rules));
++  const overdue = people.map((p) => personOverdue(mine(p.id), rates, p.grades, liveHolds(p, rules.today), rules).total);
+   return (
+     <p data-testid="header-counters">
+       People: <strong data-testid="header-people-count">{people.length}</strong>
+diff --git a/src/main/frontend/features/export/ExportPeople.tsx b/src/main/frontend/features/export/ExportPeople.tsx
+index 0529563f8..cf9351395 100644
+--- a/src/main/frontend/features/export/ExportPeople.tsx
++++ b/src/main/frontend/features/export/ExportPeople.tsx
+@@ -1,5 +1,5 @@
+ import { useClaims } from '../claims/claims';
+-import { gradeOn, usePeople } from '../people/people';
++import { gradeOn, liveHolds, usePeople } from '../people/people';
+ import { personDue, useRates } from '../rates/rates';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ import { useSheetToday } from '../session/sheetToday';
+@@ -27,7 +27,7 @@ export function ExportPeople() {
+   const download = () => {
+     const lines = [['name', 'grade', 'retired-from', 'due-total']];
+     for (const p of people) {
+-      const due = personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, p.holds, rules);
++      const due = personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, liveHolds(p, rules.today), rules);
+       lines.push([p.name, gradeOn(p.grades, today) ?? p.grade, p.retiredFrom ?? '', due]);
+     }
+     const csv = lines.map((l) => l.map(csvField).join(',') + '\n').join('');
+diff --git a/src/main/frontend/features/overdue/OverdueTotals.tsx b/src/main/frontend/features/overdue/OverdueTotals.tsx
+index b4e6e8180..ee5388672 100644
+--- a/src/main/frontend/features/overdue/OverdueTotals.tsx
++++ b/src/main/frontend/features/overdue/OverdueTotals.tsx
+@@ -1,5 +1,5 @@
+ import { useClaims } from '../claims/claims';
+-import { usePeople } from '../people/people';
++import { liveHolds, usePeople } from '../people/people';
+ import { trimmedTotal, useRates } from '../rates/rates';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ import { useDueRules } from '../settings/settings';
+@@ -17,7 +17,7 @@ export function OverdueTotals() {
+   if (!user || !sheet) return null;
+ 
+   const each = people.map((p) =>
+-    personOverdue(claims.filter((c) => c.personId === p.id), rates, p.grades, p.holds, rules),
++    personOverdue(claims.filter((c) => c.personId === p.id), rates, p.grades, liveHolds(p, rules.today), rules),
+   );
+   return (
+     <p>
+diff --git a/src/main/frontend/features/overdue/PersonOverdue.tsx b/src/main/frontend/features/overdue/PersonOverdue.tsx
+index 08483a2a2..abb99fd7f 100644
+--- a/src/main/frontend/features/overdue/PersonOverdue.tsx
++++ b/src/main/frontend/features/overdue/PersonOverdue.tsx
+@@ -1,4 +1,5 @@
+ import { useClaims } from '../claims/claims';
++import { liveHolds } from '../people/people';
+ import type { Person } from '../people/people';
+ import { useRates } from '../rates/rates';
+ import { useDueRules } from '../settings/settings';
+@@ -8,7 +9,7 @@ function usePersonOverdue(person: Person) {
+   const rates = useRates().data ?? [];
+   const rules = useDueRules();
+   const claims = (useClaims().data ?? []).filter((c) => c.personId === person.id);
+-  return personOverdue(claims, rates, person.grades, person.holds, rules);
++  return personOverdue(claims, rates, person.grades, liveHolds(person, rules.today), rules);
+ }
+ 
+ // How many of a person's counting claims are overdue.
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index fc6d6fe50..c1929518c 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -24,6 +24,14 @@ export type Hold = { from: string | null; to: string | null };
+ /** Whether a hold covers the date (yyyy-MM-dd). */
+ export const covers = (h: Hold, date: string) => (h.from === null || h.from <= date) && (h.to === null || date <= h.to);
+ 
++/**
++ * The holds that apply to a person's live totals on the sheet's `today`: their own, and — from the day their
++ * retirement date is reached — one covering every date, so their open and pending claims leave the totals as a
++ * hold's would (settled ones, and ones a statement binds, still count).
++ */
++export const liveHolds = (p: { holds: Hold[]; retiredFrom: string | null }, today: string): Hold[] =>
++  p.retiredFrom !== null && today !== '' && today >= p.retiredFrom ? [...p.holds, { from: null, to: null }] : p.holds;
++
+ /**
+  * A person on the sheet as the store holds them; `grade` is the one in force on the sheet's today and
+  * `grades` every grade recorded for them, each from its from-date; `version` counts their saves. `statementCount` counts
+diff --git a/src/main/frontend/features/periods/periods.ts b/src/main/frontend/features/periods/periods.ts
+index aa20823cf..71133e399 100644
+--- a/src/main/frontend/features/periods/periods.ts
++++ b/src/main/frontend/features/periods/periods.ts
+@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ import { bound, deferred, isOpen } from '../claims/claims';
+ import type { Claim, ClaimStatus } from '../claims/claims';
+-import { covers } from '../people/people';
++import { covers, liveHolds } from '../people/people';
+ import type { Person } from '../people/people';
+ import { claimDue, total } from '../rates/rates';
+ import type { Rate } from '../rates/rates';
+@@ -78,7 +78,7 @@ export const countsInPeriod = (period: Period, c: Claim, holds: Person['holds'],
+ export function personPeriodDue(period: Period, person: Person, claims: Claim[], rates: Rate[], rules: DueRules): string {
+   if (period.closed || period.soft) return period.personTotals?.[String(person.id)] ?? '0.00';
+   const figures = claims
+-    .filter((c) => c.personId === person.id && contains(period, c.date) && countsInPeriod(period, c, person.holds, rules.today))
++    .filter((c) => c.personId === person.id && contains(period, c.date) && countsInPeriod(period, c, liveHolds(person, rules.today), rules.today))
+     .map((c) => claimDue(c, rates, person.grades, rules));
+   return total(figures);
+ }
+diff --git a/src/main/frontend/features/rates/DueTotal.tsx b/src/main/frontend/features/rates/DueTotal.tsx
+index b24098f56..8ff2462ed 100644
+--- a/src/main/frontend/features/rates/DueTotal.tsx
++++ b/src/main/frontend/features/rates/DueTotal.tsx
+@@ -1,5 +1,5 @@
+ import { useClaims } from '../claims/claims';
+-import { usePeople } from '../people/people';
++import { liveHolds, usePeople } from '../people/people';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ import { useDueRules } from '../settings/settings';
+ import { personDue, trimmedTotal, useRates } from './rates';
+@@ -15,7 +15,7 @@ export function DueTotal() {
+ 
+   if (!user || !sheet) return null;
+ 
+-  const dues = people.map((p) => personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, p.holds, rules));
++  const dues = people.map((p) => personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, liveHolds(p, rules.today), rules));
+   return (
+     <p>
+       Due total: <strong data-testid="rollup-due-total">{trimmedTotal(dues)}</strong>
+diff --git a/src/main/frontend/features/rates/PersonDueTotal.tsx b/src/main/frontend/features/rates/PersonDueTotal.tsx
+index 9f51d22a3..0786c6b4e 100644
+--- a/src/main/frontend/features/rates/PersonDueTotal.tsx
++++ b/src/main/frontend/features/rates/PersonDueTotal.tsx
+@@ -1,4 +1,5 @@
+ import { useClaims } from '../claims/claims';
++import { liveHolds } from '../people/people';
+ import type { Person } from '../people/people';
+ import { useDueRules } from '../settings/settings';
+ import { personDue, useRates } from './rates';
+@@ -9,5 +10,5 @@ export function PersonDueTotal({ person }: { person: Person }) {
+   const rates = useRates().data ?? [];
+   const rules = useDueRules();
+   const claims = (useClaims().data ?? []).filter((c) => c.personId === person.id);
+-  return <td data-testid="person-due-total">{personDue(claims, rates, person.grades, person.holds, rules)}</td>;
++  return <td data-testid="person-due-total">{personDue(claims, rates, person.grades, liveHolds(person, rules.today), rules)}</td>;
+ }
+diff --git a/src/main/frontend/features/rates/PersonExcess.tsx b/src/main/frontend/features/rates/PersonExcess.tsx
+index 0d44011be..79860f86c 100644
+--- a/src/main/frontend/features/rates/PersonExcess.tsx
++++ b/src/main/frontend/features/rates/PersonExcess.tsx
+@@ -1,4 +1,5 @@
+ import { useClaims } from '../claims/claims';
++import { liveHolds } from '../people/people';
+ import type { Person } from '../people/people';
+ import { useDueRules } from '../settings/settings';
+ import { personExcess, useRates } from './rates';
+@@ -8,5 +9,5 @@ export function PersonExcess({ person }: { person: Person }) {
+   const rates = useRates().data ?? [];
+   const rules = useDueRules();
+   const claims = (useClaims().data ?? []).filter((c) => c.personId === person.id);
+-  return <td data-testid="person-excess">{personExcess(claims, rates, person.grades, person.holds, rules)}</td>;
++  return <td data-testid="person-excess">{personExcess(claims, rates, person.grades, liveHolds(person, rules.today), rules)}</td>;
+ }
+diff --git a/src/main/frontend/features/retire/PersonRetire.tsx b/src/main/frontend/features/retire/PersonRetire.tsx
+index 521c83ff5..0e4b64693 100644
+--- a/src/main/frontend/features/retire/PersonRetire.tsx
++++ b/src/main/frontend/features/retire/PersonRetire.tsx
+@@ -8,7 +8,8 @@ import { usePersonError } from '../people/personError';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ 
+ // Whether the person is retired and from when, and the date and button that retire them (a blank
+-// date is the sheet's today). A retired person's claims keep counting; one dated after is refused.
++// date is the sheet's today). From the day the date is reached, a retired person's open and pending claims leave
++// the live totals (settled and statement-bound ones still count); one dated after the date is refused.
+ export function PersonRetire({ person }: { person: Person }) {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+diff --git a/src/main/frontend/features/summary/Summary.tsx b/src/main/frontend/features/summary/Summary.tsx
+index 71e9a6df7..4fdfd169f 100644
+--- a/src/main/frontend/features/summary/Summary.tsx
++++ b/src/main/frontend/features/summary/Summary.tsx
+@@ -1,6 +1,6 @@
+ import { isActive } from '../active/active';
+ import { useClaims } from '../claims/claims';
+-import { GRADES, usePeople } from '../people/people';
++import { GRADES, liveHolds, usePeople } from '../people/people';
+ import { periodDue, usePeriods } from '../periods/periods';
+ import { personDue, total, useRates } from '../rates/rates';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+@@ -39,7 +39,7 @@ export function Summary() {
+           {GRADES.map((g) => {
+             const on = current.filter((p) => p.grade === g);
+             const dues = on.map((p) =>
+-              personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, p.holds, rules),
++              personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, liveHolds(p, rules.today), rules),
+             );
+             return (
+               <tr key={g}>
+@@ -47,7 +47,7 @@ export function Summary() {
+                 <td data-testid={`summary-grade-${g}-count`}>{on.length}</td>
+                 <td data-testid={`summary-grade-${g}-due-total`}>{total(dues)}</td>
+                 <td data-testid={`summary-grade-${g}-active`}>
+-                  {on.filter((p) => isActive(claims.filter((c) => c.personId === p.id), p.holds, rules.today)).length}
++                  {on.filter((p) => isActive(claims.filter((c) => c.personId === p.id), liveHolds(p, rules.today), rules.today)).length}
+                 </td>
+               </tr>
+             );
+diff --git a/src/main/java/net/officefloor/hq/app/period/Period.java b/src/main/java/net/officefloor/hq/app/period/Period.java
+index 4a97a6862..b366eefcf 100644
+--- a/src/main/java/net/officefloor/hq/app/period/Period.java
++++ b/src/main/java/net/officefloor/hq/app/period/Period.java
+@@ -59,8 +59,8 @@ public record Period(String sheetId, String name, LocalDate from, LocalDate to,
+     /**
+      * Whether the claim counts toward the period: dated in it and OPEN, PENDING or SETTLED at the period's end, left
+      * out as the live rules say while it is deferred on today, or when it was open then, is open still, a hold of its
+-     * person covers it and no statement binds it (a hold leaves out only open claims). A settled claim voided since
+-     * leaves it.
++     * person covers it (or their retirement date is reached) and no statement binds it (a hold leaves out only open
++     * claims). A settled claim voided since leaves it.
+      */
+     public boolean counts(Claim claim, List<ClaimLogLine> log, Person person, LocalDate today) {
+         if (!contains(claim.date())) {
+@@ -73,7 +73,7 @@ public record Period(String sheetId, String name, LocalDate from, LocalDate to,
+         if (then == null || !then.open() || claim.deferred(today)) {
+             return false;
+         }
+-        return !claim.status().open() || claim.bound() || person.holds().stream().noneMatch((h) -> h.covers(claim.date()));
++        return !claim.status().open() || claim.bound() || !person.heldOn(claim.date(), today);
+     }
+ 
+     /** The same period, closed with its due-total and each person's due-total fixed. */
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index a56538810..d76cd322f 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -93,7 +93,20 @@ public record Person(Long id, String sheetId, String name, String grade, int ver
+      * nor do their open claims dated within a hold, unless a statement binds them.
+      */
+     public boolean counts(Claim claim, LocalDate today) {
+-        return !claim.deferred(today) && claim.counts(!claim.bound() && holds.stream().anyMatch((h) -> h.covers(claim.date())));
++        return !claim.deferred(today) && claim.counts(!claim.bound() && heldOn(claim.date(), today));
++    }
++
++    /**
++     * Whether the person's open claims on this date are held on the given today: a hold covers the date, or their
++     * retirement date has been reached (then all of them are, as a hold's would be).
++     */
++    public boolean heldOn(LocalDate date, LocalDate today) {
++        return retiredOn(today) || holds.stream().anyMatch((h) -> h.covers(date));
++    }
++
++    /** Whether the person's retirement date has been reached on the given today (on or after it). */
++    public boolean retiredOn(LocalDate today) {
++        return retiredFrom != null && today != null && !today.isBefore(retiredFrom);
+     }
+ 
+     /** Whether the person is retired: a retirement date is set, whatever the date. */
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml
+index 67a46f17c..5a2b47825 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml
+@@ -1,5 +1,6 @@
+ # Retire a person from a date (blank: the sheet's today); a bad date is refused (400), a person not on the
+-# sheet (404). Their claims keep counting in every total; a claim dated after the date is refused from now on.
++# sheet (404). A claim dated after the date is refused from now on; from the day the date is reached (the sheet's
++# today on or after it), their open and pending claims leave every live total as a hold's would.
+ archived:
+   class: net.officefloor.hq.app.sheet.CheckNotArchived
+   next: viewer
+@@ -12,6 +13,10 @@ validate:
+ load:
+   class: net.officefloor.hq.app.person.LoadPerson
+   govern: [ transaction ]
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  govern: [ transaction ]
+   next: retire
+ retire:
+   class: net.officefloor.hq.app.person.RetirePerson
+@@ -20,6 +25,10 @@ retire:
+ audit:
+   class: net.officefloor.hq.app.person.AuditPersonRetired
+   govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.person.RespondWithPerson
