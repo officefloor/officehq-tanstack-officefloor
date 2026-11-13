@@ -5,6 +5,6 @@ import net.officefloor.web.ObjectResponse;
 
 public class RespondWithSheet {
     public void respond(@Val Sheet sheet, ObjectResponse<SheetResponse> response) {
-        response.send(new SheetResponse(sheet.id()));
+        response.send(SheetResponse.from(sheet));
     }
 }

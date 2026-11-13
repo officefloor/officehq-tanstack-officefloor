@@ -7,3 +7,9 @@ export const useCurrentSheet = () => useSearchParam('sheet', asString);
 
 /** The query key under which everything kept per sheet lives; re-loading a sheet invalidates it. */
 export const sheetKey = (sheet: string) => ['sheet', sheet] as const;
+
+/** A sheet as the store holds it: its id and its own "today" (yyyy-MM-dd). */
+export type SheetInfo = { id: string; today: string };
+
+/** The query key for the sheet itself; under sheetKey, so re-loading the sheet re-reads it. */
+export const sheetInfoKey = (sheet: string) => [...sheetKey(sheet), 'info'] as const;

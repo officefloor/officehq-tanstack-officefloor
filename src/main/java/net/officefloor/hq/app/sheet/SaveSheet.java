@@ -1,0 +1,9 @@
+package net.officefloor.hq.app.sheet;
+
+import net.officefloor.plugin.variable.Val;
+
+public class SaveSheet {
+    public void save(@Val Sheet sheet, SheetRepository repository) {
+        repository.save(sheet);
+    }
+}

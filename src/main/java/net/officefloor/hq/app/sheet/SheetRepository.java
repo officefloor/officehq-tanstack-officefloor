@@ -1,5 +1,8 @@
 package net.officefloor.hq.app.sheet;
 
+import java.sql.Date;
+import java.time.LocalDate;
+import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -12,9 +15,30 @@ public class SheetRepository {
         this.jdbc = jdbc;
     }
 
-    /** The sheet with this id, created empty when it was never loaded before. */
+    /** The sheet with this id, created empty (today = the real date) when it was never loaded before. */
     public Sheet ensure(String id) {
-        jdbc.update("MERGE INTO sheet (id) KEY (id) VALUES (?)", id);
-        return new Sheet(id);
+        jdbc.update("INSERT INTO sheet (id, today) SELECT ?, ? WHERE NOT EXISTS (SELECT 1 FROM sheet WHERE id = ?)",
+                id, Date.valueOf(LocalDate.now()), id);
+        return find(id);
+    }
+
+    /** The sheet with this id, or null when it was never loaded. */
+    public Sheet find(String id) {
+        List<Sheet> found = jdbc.query("SELECT id, today FROM sheet WHERE id = ?",
+                (rs, n) -> new Sheet(rs.getString("id"), rs.getDate("today").toLocalDate()), id);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /**
+     * The sheet's today. Use this — never {@code LocalDate.now()} — for any date-dependent decision
+     * or default date in the sheet.
+     */
+    public LocalDate today(String id) {
+        Sheet sheet = find(id);
+        return sheet == null ? LocalDate.now() : sheet.today();
+    }
+
+    public void save(Sheet sheet) {
+        jdbc.update("UPDATE sheet SET today = ? WHERE id = ?", Date.valueOf(sheet.today()), sheet.id());
     }
 }
