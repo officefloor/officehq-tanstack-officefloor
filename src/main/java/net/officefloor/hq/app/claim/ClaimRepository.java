@@ -5,8 +5,11 @@ import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -129,6 +132,28 @@ public class ClaimRepository {
     public Set<Long> lateEntries(String sheetId) {
         return new HashSet<>(jdbc.queryForList("SELECT id FROM claim WHERE sheet_id = ? AND late_entry", Long.class,
                 sheetId));
+    }
+
+    /** Store the day the claim was last reminded. */
+    public void remind(String sheetId, long id, LocalDate day) {
+        jdbc.update("UPDATE claim SET reminded_on = ? WHERE id = ? AND sheet_id = ?", Date.valueOf(day), id, sheetId);
+    }
+
+    /** The day the claim was last reminded, or null. */
+    public LocalDate reminded(String sheetId, long id) {
+        List<Date> found = jdbc.queryForList("SELECT reminded_on FROM claim WHERE sheet_id = ? AND id = ?", Date.class,
+                sheetId, id);
+        return found.isEmpty() || found.get(0) == null ? null : found.get(0).toLocalDate();
+    }
+
+    /** The day each of the sheet's reminded claims was last reminded, by claim id. */
+    public Map<Long, LocalDate> remindedAll(String sheetId) {
+        Map<Long, LocalDate> reminded = new HashMap<>();
+        jdbc.query("SELECT id, reminded_on FROM claim WHERE sheet_id = ? AND reminded_on IS NOT NULL",
+                (ResultSet rs) -> {
+                    reminded.put(rs.getLong("id"), rs.getDate("reminded_on").toLocalDate());
+                }, sheetId);
+        return reminded;
     }
 
     private static Claim map(ResultSet rs, int n) throws SQLException {

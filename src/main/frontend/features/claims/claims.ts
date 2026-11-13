@@ -37,7 +37,8 @@ export const bound = (c: Claim) => c.stated && c.status !== 'PENDING';
  * settled or approved only once it has one);
  * splitFrom is the number of the claim it was split off, null when it was not split off one;
  * lockedBy is the user whose open editor locks it for every other user, null when it is not locked;
- * lateEntry is whether it was added while the period containing its due-by was soft-closed.
+ * lateEntry is whether it was added while the period containing its due-by was soft-closed;
+ * reminded (yyyy-MM-dd) is the last day a reminder was written for it, null when it never was.
  */
 export type Claim = {
   id: number;
@@ -59,6 +60,7 @@ export type Claim = {
   splitFrom: string | null;
   lockedBy: string | null;
   lateEntry: boolean;
+  reminded: string | null;
 };
 
 /** A line of a claim's status log: the status, the user, the sheet's today (yyyy-MM-dd) and the due then (two decimals, or n/a). */
