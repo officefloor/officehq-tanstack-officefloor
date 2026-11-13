@@ -1,0 +1,475 @@
+diff --git a/src/main/frontend/features/people/BulkGrade.tsx b/src/main/frontend/features/people/BulkGrade.tsx
+index 8f890fb85..1c2d968d3 100644
+--- a/src/main/frontend/features/people/BulkGrade.tsx
++++ b/src/main/frontend/features/people/BulkGrade.tsx
+@@ -38,7 +38,7 @@ export function BulkGrade() {
+           await putJson<Person>(
+             `/api/sheets/${encodeURIComponent(sheet)}/people/${p.id}?user=${encodeURIComponent(user)}`,
+             { name: p.name, grade, gradeFrom: from, terms: p.terms == null ? '' : String(p.terms),
+-              contact: p.contact ?? '', version: p.version },
++              contact: p.contact ?? '', tags: p.tags.join(','), version: p.version },
+           );
+           changed++;
+         } catch {
+diff --git a/src/main/frontend/features/people/PersonForm.tsx b/src/main/frontend/features/people/PersonForm.tsx
+index e818a5b41..f747395e1 100644
+--- a/src/main/frontend/features/people/PersonForm.tsx
++++ b/src/main/frontend/features/people/PersonForm.tsx
+@@ -4,10 +4,11 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { HttpError, postJson, putJson } from '../../api/http';
+ import { useOneAtATime } from '../../query/useOneAtATime';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
++import { tagsKey } from '../tags/tags';
+ import { GRADES, peopleKey, useEditingPerson, usePeople } from './people';
+ import type { Person, PersonInput } from './people';
+ 
+-const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', contact: '' };
++const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', contact: '', tags: '' };
+ 
+ // The form's values for a person as stored.
+ const fill = (p: Person): PersonInput => ({
+@@ -16,6 +17,7 @@ const fill = (p: Person): PersonInput => ({
+   gradeFrom: '',
+   terms: p.terms == null ? '' : String(p.terms),
+   contact: p.contact ?? '',
++  tags: p.tags.join(', '),
+ });
+ 
+ // Adds a person, or — while a person's editor is open — saves that person's changes. Opening an
+@@ -67,7 +69,10 @@ export function PersonForm() {
+           }),
+     onSuccess: async () => {
+       close();
+-      await queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
++      await Promise.all([
++        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
++        queryClient.invalidateQueries({ queryKey: tagsKey(sheet) }),
++      ]);
+     },
+     onError: async (e, input) => {
+       if (e instanceof HttpError && e.status === 409) {
+@@ -157,6 +162,13 @@ export function PersonForm() {
+         value={form.contact}
+         onChange={(e) => change({ contact: e.target.value })}
+       />
++      <input
++        data-testid="person-form-tags"
++        placeholder="Tags"
++        title="The person's tags, comma separated (blank: none)"
++        value={form.tags}
++        onChange={(e) => change({ tags: e.target.value })}
++      />
+       <button type="submit" data-testid="person-form-submit" disabled={save.isPending}>
+         {editing === undefined ? 'Add person' : 'Save person'}
+       </button>
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index 339fa76bf..6191b44cd 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -44,6 +44,7 @@ export const liveHolds = (p: { holds: Hold[]; retiredFrom: string | null }, toda
+  * the sheet's tree (its ancestors and descendants) uses their name or any of their aliases as a name or alias.
+  * `origin` is the sheet they were transferred from, null when they were not transferred here. `pastRetirements` are
+  * the retirements they were unretired from, oldest first: a claim dated after one's from and before its to is refused.
++ * `tags` are their tags, sorted (none: empty).
+  */
+ export type Person = {
+   id: number;
+@@ -63,13 +64,14 @@ export type Person = {
+   clashing: boolean;
+   origin: string | null;
+   pastRetirements: { from: string; to: string }[];
++  tags: string[];
+ };
+ 
+ /**
+  * The fields the person form submits; a blank `gradeFrom` is the sheet's today, blank `terms` none of their own,
+- * blank `contact` none.
++ * blank `contact` none, `tags` comma separated (blank: none).
+  */
+-export type PersonInput = { name: string; grade: string; gradeFrom: string; terms: string; contact: string };
++export type PersonInput = { name: string; grade: string; gradeFrom: string; terms: string; contact: string; tags: string };
+ 
+ /** The query key for the sheet's people; under sheetKey, so re-loading the sheet re-reads them. */
+ export const peopleKey = (sheet: string) => [...sheetKey(sheet), 'people'] as const;
+diff --git a/src/main/frontend/features/tags/PersonTags.tsx b/src/main/frontend/features/tags/PersonTags.tsx
+new file mode 100644
+index 000000000..4fca8b903
+--- /dev/null
++++ b/src/main/frontend/features/tags/PersonTags.tsx
+@@ -0,0 +1,10 @@
++import type { Person } from '../people/people';
++
++export function PersonTagsHead() {
++  return <th>Tags</th>;
++}
++
++// The person's tags, sorted, comma and space separated; empty when they have none.
++export function PersonTags({ person }: { person: Person }) {
++  return <td data-testid="person-tags">{person.tags.join(', ')}</td>;
++}
+diff --git a/src/main/frontend/features/tags/TagTotals.tsx b/src/main/frontend/features/tags/TagTotals.tsx
+index 7d170a095..f82120866 100644
+--- a/src/main/frontend/features/tags/TagTotals.tsx
++++ b/src/main/frontend/features/tags/TagTotals.tsx
+@@ -5,8 +5,9 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ import { useDueRules } from '../settings/settings';
+ import { useTags } from './tags';
+ 
+-// For every tag ever used on the sheet, the due-total of the claims that count which carry it (a claim with two
+-// tags counts in both): their dues added up, skipping n/a — not capped, not trimmed.
++// For every tag ever used on the sheet, the due-total of the claims that count which carry it, or whose person
++// carries it (once, when both do; a claim with two tags counts in both): their dues added up, skipping n/a — not
++// capped, not trimmed.
+ export function TagTotals() {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+@@ -22,9 +23,11 @@ export function TagTotals() {
+   for (const p of people) {
+     const holds = liveHolds(p, rules.today);
+     for (const c of claims) {
+-      if (c.personId !== p.id || c.tags.length === 0 || !counts(c, holds, rules.today)) continue;
++      if (c.personId !== p.id) continue;
++      const carried = new Set([...c.tags, ...p.tags]);
++      if (carried.size === 0 || !counts(c, holds, rules.today)) continue;
+       const due = claimDue(c, rates, p.grades, rules);
+-      for (const t of c.tags) dues.get(t)?.push(due);
++      for (const t of carried) dues.get(t)?.push(due);
+     }
+   }
+   return (
+diff --git a/src/main/frontend/features/tags/tags.slot.tsx b/src/main/frontend/features/tags/tags.slot.tsx
+index 4acf06ba4..1bec25ac8 100644
+--- a/src/main/frontend/features/tags/tags.slot.tsx
++++ b/src/main/frontend/features/tags/tags.slot.tsx
+@@ -1,9 +1,13 @@
+ import { ClaimRowValues } from '../../slots/defs/claimRow';
+ import { HomeMain } from '../../slots/defs/homeMain';
++import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
+ import { ClaimTags } from './ClaimTags';
++import { PersonTags, PersonTagsHead } from './PersonTags';
+ import { TagTotals } from './TagTotals';
+ 
+ export const contributions = [
+   ClaimRowValues.fill({ order: 11.5, Component: ClaimTags }),
++  PersonColumnHeads.fill({ order: 11.5, Component: PersonTagsHead }),
++  PersonColumns.fill({ order: 11.5, Component: PersonTags }),
+   HomeMain.fill({ order: 41, Component: TagTotals }),
+ ];
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RespondWithTags.java b/src/main/java/net/officefloor/hq/app/claim/RespondWithTags.java
+index 39eb8b521..b0f630cc9 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RespondWithTags.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RespondWithTags.java
+@@ -4,7 +4,7 @@ import java.util.List;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
+ 
+-/** Every tag ever given to a claim on the sheet, sorted. */
++/** Every tag ever given to a claim or person on the sheet, sorted. */
+ public class RespondWithTags {
+     public void respond(@Val Tags tags, ObjectResponse<List<String>> response) {
+         response.send(tags.list());
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Tags.java b/src/main/java/net/officefloor/hq/app/claim/Tags.java
+index 034fb3a09..d812f1cec 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Tags.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Tags.java
+@@ -2,6 +2,6 @@ package net.officefloor.hq.app.claim;
+ 
+ import java.util.List;
+ 
+-/** Every tag ever given to a claim on a sheet, sorted. */
++/** Every tag ever given to a claim or person on a sheet, sorted. */
+ public record Tags(List<String> list) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/importpeople/CheckImportedPeopleUnique.java b/src/main/java/net/officefloor/hq/app/importpeople/CheckImportedPeopleUnique.java
+index cf80e8fb5..57a8624aa 100644
+--- a/src/main/java/net/officefloor/hq/app/importpeople/CheckImportedPeopleUnique.java
++++ b/src/main/java/net/officefloor/hq/app/importpeople/CheckImportedPeopleUnique.java
+@@ -51,7 +51,7 @@ public class CheckImportedPeopleUnique {
+                         request.termsDays() != null ? request.terms()
+                                 : existing.terms() == null ? "" : String.valueOf(existing.terms()),
+                         request.contactOrNull() != null ? request.contact()
+-                                : existing.contact() == null ? "" : existing.contact());
++                                : existing.contact() == null ? "" : existing.contact(), null);
+                 Person[] person = new Person[1];
+                 PersonTermsChange[] change = new PersonTermsChange[1];
+                 try {
+diff --git a/src/main/java/net/officefloor/hq/app/importpeople/ValidateImportPeopleRequest.java b/src/main/java/net/officefloor/hq/app/importpeople/ValidateImportPeopleRequest.java
+index 989cfa8d7..3d5d06db0 100644
+--- a/src/main/java/net/officefloor/hq/app/importpeople/ValidateImportPeopleRequest.java
++++ b/src/main/java/net/officefloor/hq/app/importpeople/ValidateImportPeopleRequest.java
+@@ -44,7 +44,7 @@ public class ValidateImportPeopleRequest {
+             }
+             PersonRequest[] person = new PersonRequest[1];
+             try {
+-                new ValidatePersonRequest().validate(new PersonRequest(name, grade, "", null, terms, contact),
++                new ValidatePersonRequest().validate(new PersonRequest(name, grade, "", null, terms, contact, null),
+                         value -> person[0] = value);
+             } catch (InvalidPersonException e) {
+                 throw new InvalidPersonException("Line " + number + ": " + e.getMessage());
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index aa76d921f..dfbf8d0b6 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -303,6 +303,33 @@ public class PersonRepository {
+         return found;
+     }
+ 
++    /** Store the person's tags (stored form; null: none), adding each to the sheet's tag list. */
++    public void saveTags(String sheetId, long personId, String tags) {
++        jdbc.update("UPDATE person SET tags = ? WHERE id = ? AND sheet_id = ?", tags, personId, sheetId);
++        if (tags != null) {
++            for (String tag : tags.split(",")) {
++                jdbc.update("MERGE INTO claim_tag (sheet_id, tag) KEY (sheet_id, tag) VALUES (?, ?)", sheetId, tag);
++            }
++        }
++    }
++
++    /** The person's tags (stored form), or null. */
++    public String tags(String sheetId, long personId) {
++        List<String> found = jdbc.queryForList("SELECT tags FROM person WHERE sheet_id = ? AND id = ?", String.class,
++                sheetId, personId);
++        return found.isEmpty() ? null : found.get(0);
++    }
++
++    /** The tags (stored form) of each person on the sheet that has any, by person id. */
++    public Map<Long, String> tagsAll(String sheetId) {
++        Map<Long, String> found = new HashMap<>();
++        jdbc.query("SELECT id, tags FROM person WHERE sheet_id = ? AND tags IS NOT NULL",
++                (rs) -> {
++                    found.put(rs.getLong("id"), rs.getString("tags"));
++                }, sheetId);
++        return found;
++    }
++
+     /** The person's aliases, in the order they were added. */
+     public List<String> aliases(String sheetId, long personId) {
+         return jdbc.queryForList("SELECT alias FROM person_alias WHERE sheet_id = ? AND person_id = ? ORDER BY id",
+@@ -311,7 +338,7 @@ public class PersonRepository {
+ 
+     /**
+      * Copy the person to the other sheet as its newest person, with every grade they were given (and its from-date),
+-     * their terms, contact, aliases and past retirements, and no statement taken; the new person's id. The person stays on this sheet
++     * their terms, contact, tags (joining its tag list), aliases and past retirements, and no statement taken; the new person's id. The person stays on this sheet
+      * until {@link #dropTransferred}.
+      */
+     public long transfer(Person person, String to) {
+@@ -332,6 +359,12 @@ public class PersonRepository {
+         changed.put("statement_date", null);
+         changed.put("position", jdbc.queryForObject("SELECT " + NEXT_POSITION, Long.class, to));
+         long id = RowCopy.copy(jdbc, "person", person.id(), changed);
++        String tags = tags(to, id);
++        if (tags != null) {
++            for (String tag : tags.split(",")) {
++                jdbc.update("MERGE INTO claim_tag (sheet_id, tag) KEY (sheet_id, tag) VALUES (?, ?)", to, tag);
++            }
++        }
+         jdbc.update("UPDATE person_grade SET sheet_id = ?, person_id = ? WHERE sheet_id = ? AND person_id = ?", to, id,
+                 person.sheetId(), person.id());
+         jdbc.update("UPDATE person_alias SET sheet_id = ?, person_id = ? WHERE sheet_id = ? AND person_id = ?", to, id,
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRequest.java b/src/main/java/net/officefloor/hq/app/person/PersonRequest.java
+index a6a2fc2d6..c85d5806e 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRequest.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRequest.java
+@@ -7,10 +7,12 @@ import jakarta.validation.constraints.Size;
+  * is in force from (yyyy-mm-dd; blank is the sheet's today, and is kept blank here) and the person's own terms
+  * (a whole number of days, 0 or more; blank: none, kept blank here). An edit also sends the version of the person
+  * its editor loaded; an add sends none. The contact is kept trimmed and lower-cased (blank: none, kept blank here).
++ * The tags, comma separated, are kept lower-cased, sorted, without repeats (blank: none, kept blank here; not given:
++ * an edit keeps the person's tags).
+  */
+ public record PersonRequest(@Size(max = 200) String name, @Size(max = 10) String grade,
+         @Size(max = 30) String gradeFrom, Integer version, @Size(max = 30) String terms,
+-        @Size(max = 200) String contact) {
++        @Size(max = 200) String contact, @Size(max = 1000) String tags) {
+ 
+     /** The terms as a number of days, or null when blank; call only once validated. */
+     public Integer termsDays() {
+@@ -21,4 +23,9 @@ public record PersonRequest(@Size(max = 200) String name, @Size(max = 10) String
+     public String contactOrNull() {
+         return contact == null || contact.isEmpty() ? null : contact;
+     }
++
++    /** The tags in their stored form, or null when blank; call only once validated. */
++    public String tagsOrNull() {
++        return tags == null || tags.isEmpty() ? null : tags;
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+index fdd5f986d..d3628ddcf 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+@@ -10,12 +10,12 @@ import java.util.List;
+  * {@code contact} their contact, null when they have none. {@code clashing} is whether another sheet of the sheet's
+  * tree uses their name or any of their aliases as a name or alias. {@code origin} is the sheet they were transferred
+  * from, null when they were not transferred here. {@code pastRetirements} are the retirements they were unretired
+- * from, oldest first.
++ * from, oldest first. {@code tags} their tags, sorted (none: empty).
+  */
+ public record PersonResponse(long id, String name, String grade, int version, int statementCount, String statedTotal,
+         String statementDate, boolean retired, String retiredFrom, boolean held,
+         List<Grade> grades, List<HoldDates> holds, Integer terms, String contact,
+-        boolean clashing, String origin, List<RetirementDates> pastRetirements) {
++        boolean clashing, String origin, List<RetirementDates> pastRetirements, List<String> tags) {
+ 
+ 
+     /** A grade recorded for the person, from its from-date (yyyy-mm-dd; null: from the beginning of time). */
+@@ -30,7 +30,7 @@ public record PersonResponse(long id, String name, String grade, int version, in
+     public record RetirementDates(String from, String to) {
+     }
+ 
+-    public static PersonResponse from(Person person, boolean clashing, String origin) {
++    public static PersonResponse from(Person person, boolean clashing, String origin, String tags) {
+         return new PersonResponse(person.id(), person.name(), person.grade(), person.version(), person.statementCount(),
+                 person.statedTotal(), person.statementDate() == null ? null : person.statementDate().toString(),
+                 person.retired(), person.retiredFrom() == null ? null : person.retiredFrom().toString(),
+@@ -39,6 +39,7 @@ public record PersonResponse(long id, String name, String grade, int version, in
+                 person.holds().stream().map((h) -> new HoldDates(h.from() == null ? null : h.from().toString(),
+                         h.to() == null ? null : h.to().toString())).toList(), person.terms(),
+                 person.contact(), clashing, origin, person.pastRetirements().stream()
+-                        .map((r) -> new RetirementDates(r.from().toString(), r.to().toString())).toList());
++                        .map((r) -> new RetirementDates(r.from().toString(), r.to().toString())).toList(),
++                tags == null ? List.of() : List.of(tags.split(",")));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithMerge.java b/src/main/java/net/officefloor/hq/app/person/RespondWithMerge.java
+index ced810543..97b2fff8f 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RespondWithMerge.java
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithMerge.java
+@@ -9,6 +9,6 @@ public class RespondWithMerge {
+             ObjectResponse<PersonResponse> response) {
+         Person into = people.find(merge.into().sheetId(), merge.into().id());
+         response.send(PersonResponse.from(into, tree.clashing(into, people.aliases(into.sheetId(), into.id())),
+-                people.origin(into.sheetId(), into.id())));
++                people.origin(into.sheetId(), into.id()), people.tags(into.sheetId(), into.id())));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+index 37d7ca9a5..e28521e2d 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+@@ -21,8 +21,10 @@ public class RespondWithPeople {
+             }
+         }
+         Map<Long, String> origins = repository.origins(sheet.id());
++        Map<Long, String> tags = repository.tagsAll(sheet.id());
+         response.send(people.stream().map((p) -> PersonResponse.from(p,
+-                NameTree.clashing(taken, p.name(), byPerson.getOrDefault(p.id(), List.of())), origins.get(p.id())))
++                NameTree.clashing(taken, p.name(), byPerson.getOrDefault(p.id(), List.of())), origins.get(p.id()),
++                tags.get(p.id())))
+                 .toList());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithPerson.java b/src/main/java/net/officefloor/hq/app/person/RespondWithPerson.java
+index 210265f44..6cf2df6f8 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RespondWithPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithPerson.java
+@@ -7,6 +7,6 @@ public class RespondWithPerson {
+     public void respond(@Val Person person, PersonRepository people, NameTree tree,
+             ObjectResponse<PersonResponse> response) {
+         response.send(PersonResponse.from(person, tree.clashing(person, people.aliases(person.sheetId(), person.id())),
+-                people.origin(person.sheetId(), person.id())));
++                people.origin(person.sheetId(), person.id()), people.tags(person.sheetId(), person.id())));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithTransfer.java b/src/main/java/net/officefloor/hq/app/person/RespondWithTransfer.java
+index 5eaccc253..d3239c0cb 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RespondWithTransfer.java
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithTransfer.java
+@@ -9,6 +9,6 @@ public class RespondWithTransfer {
+             ObjectResponse<PersonResponse> response) {
+         Person person = transferred.person();
+         response.send(PersonResponse.from(person, tree.clashing(person, people.aliases(person.sheetId(), person.id())),
+-                people.origin(person.sheetId(), person.id())));
++                people.origin(person.sheetId(), person.id()), people.tags(person.sheetId(), person.id())));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/SavePersonTags.java b/src/main/java/net/officefloor/hq/app/person/SavePersonTags.java
+new file mode 100644
+index 000000000..16aa9e1d4
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/person/SavePersonTags.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.person;
++
++import net.officefloor.plugin.variable.Val;
++
++/** Stores the saved person's tags as the form gave them (blank: cleared), adding each to the sheet's tag list; none given: kept. */
++public class SavePersonTags {
++    public void save(@Val Person person, @Val PersonRequest request, PersonRepository repository) {
++        if (request.tags() != null) {
++            repository.saveTags(person.sheetId(), person.id(), request.tagsOrNull());
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/person/ValidatePersonRequest.java b/src/main/java/net/officefloor/hq/app/person/ValidatePersonRequest.java
+index c10bf0abb..3a0ef8d8c 100644
+--- a/src/main/java/net/officefloor/hq/app/person/ValidatePersonRequest.java
++++ b/src/main/java/net/officefloor/hq/app/person/ValidatePersonRequest.java
+@@ -5,6 +5,7 @@ import java.time.LocalDate;
+ import java.time.format.DateTimeParseException;
+ import java.util.Locale;
+ import java.util.Set;
++import net.officefloor.hq.app.claim.Claim;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+@@ -36,7 +37,9 @@ public class ValidatePersonRequest {
+             throw new InvalidPersonException("The terms must be a whole number of days, 0 or more, or blank.");
+         }
+         String contact = request.contact() == null ? "" : request.contact().strip().toLowerCase(Locale.ROOT);
++        String tags = request.tags() == null ? null : Claim.tags(request.tags());
+         body.set(new PersonRequest(name, grade, from, request.version(),
+-                terms.isEmpty() ? "" : String.valueOf(Integer.parseInt(terms)), contact));
++                terms.isEmpty() ? "" : String.valueOf(Integer.parseInt(terms)), contact,
++                request.tags() == null ? null : tags == null ? "" : tags));
+     }
+ }
+diff --git a/src/main/resources/db/migration/V74__person_tags.sql b/src/main/resources/db/migration/V74__person_tags.sql
+new file mode 100644
+index 000000000..28e4d02ed
+--- /dev/null
++++ b/src/main/resources/db/migration/V74__person_tags.sql
+@@ -0,0 +1,3 @@
++-- A person's tags (null: none): lower-cased, sorted and comma separated, as a claim's. Each joins the sheet's tag list
++-- (claim_tag), which keeps every tag ever given on the sheet.
++ALTER TABLE person ADD COLUMN tags VARCHAR(1000);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+index 04584c17b..4743bf3cc 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+@@ -28,6 +28,10 @@ unique:
+ save:
+   class: net.officefloor.hq.app.person.SavePerson
+   govern: [ transaction ]
++  next: tags
++tags:
++  class: net.officefloor.hq.app.person.SavePersonTags
++  govern: [ transaction ]
+   next: audit
+ audit:
+   class: net.officefloor.hq.app.person.AuditPersonAdded
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+index 7482a299f..bdcb4990c 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+@@ -29,6 +29,10 @@ unique:
+ save:
+   class: net.officefloor.hq.app.person.SavePerson
+   govern: [ transaction ]
++  next: tags
++tags:
++  class: net.officefloor.hq.app.person.SavePersonTags
++  govern: [ transaction ]
+   next: audit
+ audit:
+   class: net.officefloor.hq.app.person.AuditPersonEdited
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/tags.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/tags.GET.yml
+index 18fb062f8..3c86c7685 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/tags.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/tags.GET.yml
+@@ -1,4 +1,4 @@
+-# Every tag ever given to a claim on the sheet, sorted.
++# Every tag ever given to a claim or person on the sheet, sorted.
+ load:
+   class: net.officefloor.hq.app.sheet.LoadSheet
+   govern: [ readonly-transaction ]
