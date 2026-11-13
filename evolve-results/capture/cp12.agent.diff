@@ -1,0 +1,136 @@
+diff --git a/src/main/frontend/features/rates/ClaimDue.tsx b/src/main/frontend/features/rates/ClaimDue.tsx
+index a540fa0a1..623bfe455 100644
+--- a/src/main/frontend/features/rates/ClaimDue.tsx
++++ b/src/main/frontend/features/rates/ClaimDue.tsx
+@@ -1,9 +1,9 @@
+ import type { Claim } from '../claims/claims';
+ import type { Person } from '../people/people';
+-import { due, rateFor, useRates } from './rates';
++import { claimDue, useRates } from './rates';
+ 
+ // A claim's due: the one fixed when it was settled, else its amount at the rate in force on its date for its person's grade.
+ export function ClaimDue({ claim, person }: { claim: Claim; person: Person }) {
+   const rates = useRates().data ?? [];
+-  return <span data-testid="claim-due">{claim.due ?? due(claim.amount, rateFor(rates, person.grade, claim.date))}</span>;
++  return <span data-testid="claim-due">{claimDue(claim, rates, person.grade)}</span>;
+ }
+diff --git a/src/main/frontend/features/rates/DueTotal.tsx b/src/main/frontend/features/rates/DueTotal.tsx
+index 5e4075d1a..57b006bb6 100644
+--- a/src/main/frontend/features/rates/DueTotal.tsx
++++ b/src/main/frontend/features/rates/DueTotal.tsx
+@@ -1,10 +1,10 @@
+-import { claimed, useClaims } from '../claims/claims';
++import { useClaims } from '../claims/claims';
+ import { usePeople } from '../people/people';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ import { useSheetToday } from '../session/sheetToday';
+-import { due, rateFor, total, useRates } from './rates';
++import { personDue, total, useRates } from './rates';
+ 
+-// The sheet's due-total: everyone's due-total added up, skipping those with no rate in force on the sheet's today.
++// The sheet's due-total: everyone's due-total added up, skipping those that are n/a.
+ export function DueTotal() {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+@@ -15,9 +15,7 @@ export function DueTotal() {
+ 
+   if (!user || !sheet) return null;
+ 
+-  const dues = people.map((p) =>
+-    due(claimed(claims.filter((c) => c.personId === p.id)), rateFor(rates, p.grade, today)),
+-  );
++  const dues = people.map((p) => personDue(claims.filter((c) => c.personId === p.id), rates, p.grade, today));
+   return (
+     <p>
+       Due total: <strong data-testid="rollup-due-total">{total(dues)}</strong>
+diff --git a/src/main/frontend/features/rates/PersonDueTotal.tsx b/src/main/frontend/features/rates/PersonDueTotal.tsx
+index 021363b9d..a8fbf69f4 100644
+--- a/src/main/frontend/features/rates/PersonDueTotal.tsx
++++ b/src/main/frontend/features/rates/PersonDueTotal.tsx
+@@ -1,12 +1,13 @@
+-import { claimed, useClaims } from '../claims/claims';
++import { useClaims } from '../claims/claims';
+ import type { Person } from '../people/people';
+ import { useSheetToday } from '../session/sheetToday';
+-import { due, rateFor, useRates } from './rates';
++import { personDue, useRates } from './rates';
+ 
+-// A person's due-total: what they have claimed at their grade's rate in force on the sheet's today.
++// A person's due-total: the figures of their claims that count, added up; n/a when their grade has no
++// rate on the sheet's today, unless a settled claim keeps a figure.
+ export function PersonDueTotal({ person }: { person: Person }) {
+   const rates = useRates().data ?? [];
+   const today = useSheetToday();
+   const claims = (useClaims().data ?? []).filter((c) => c.personId === person.id);
+-  return <td data-testid="person-due-total">{due(claimed(claims), rateFor(rates, person.grade, today))}</td>;
++  return <td data-testid="person-due-total">{personDue(claims, rates, person.grade, today)}</td>;
+ }
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 5470bcff0..b7670c1e8 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -1,5 +1,7 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
++import { counts } from '../claims/claims';
++import type { Claim } from '../claims/claims';
+ import { sheetKey, useCurrentSheet } from '../session/session';
+ 
+ /**
+@@ -47,16 +49,38 @@ export function rateFor(rates: Rate[], grade: string, date: string): string | un
+ const hundredths = (value: string) => Math.round(Number(value) * 100);
+ 
+ /**
+- * An amount times a percent rate, divided by 100, rounded half up to two decimals; n/a with no
++ * An amount times a percent rate, divided by 100, rounded half to even to two decimals; n/a with no
+  * rate. Worked in whole hundredths so it is exact: cents × basis points / 10000.
+  */
+ export function due(amount: string, rate: string | undefined): string {
+   if (rate === undefined) return NA;
+   const product = hundredths(amount) * hundredths(rate);
+-  const cents = Math.sign(product) * Math.floor((Math.abs(product) + 5000) / 10000);
++  const whole = Math.floor(Math.abs(product) / 10000);
++  const rest = Math.abs(product) - whole * 10000;
++  const up = rest > 5000 || (rest === 5000 && whole % 2 === 1);
++  const cents = Math.sign(product) * (whole + (up ? 1 : 0));
+   return (cents / 100).toFixed(2);
+ }
+ 
++/** A claim's figure: the due fixed when it was settled, else its amount at the rate in force on its date for the grade. */
++export function claimDue(claim: Claim, rates: Rate[], grade: string): string {
++  return claim.due ?? due(claim.amount, rateFor(rates, grade, claim.date));
++}
++
++/**
++ * A person's due-total: the figures of their claims that count, added up (0.00 with none). With no
++ * rate in force on the sheet's today for their grade it is n/a, unless a settled claim keeps a
++ * figure: then it is the figures there are, added up.
++ */
++export function personDue(claims: Claim[], rates: Rate[], grade: string, today: string): string {
++  const counted = claims.filter(counts);
++  const figures = counted.map((c) => claimDue(c, rates, grade));
++  if (rateFor(rates, grade, today) === undefined && !counted.some((c) => c.due !== null)) {
++    return NA;
++  }
++  return total(figures);
++}
++
+ /** Dues added up, skipping n/a; with two decimals, added in cents so it is exact. */
+ export function total(dues: string[]): string {
+   const cents = dues.filter((d) => d !== NA).reduce((sum, d) => sum + hundredths(d), 0);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 329ffe5a3..58275e06b 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -17,9 +17,9 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
+         return new Claim(id, sheetId, personId, amount, date, note, next, nextNumber, nextDue);
+     }
+ 
+-    /** An amount times a percent rate, divided by 100, rounded half up to two decimals; null with no rate. */
++    /** An amount times a percent rate, divided by 100, rounded half to even to two decimals; null with no rate. */
+     public static BigDecimal due(BigDecimal amount, BigDecimal rate) {
+-        return rate == null ? null : amount.multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_UP);
++        return rate == null ? null : amount.multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
+     }
+ 
+     /** The audit field for the claim's number, " number=<n>", or "" when it has none. */
