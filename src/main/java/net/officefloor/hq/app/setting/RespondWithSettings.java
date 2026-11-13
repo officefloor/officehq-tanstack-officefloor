@@ -43,7 +43,7 @@ public class RespondWithSettings {
                 store.find(sheet, SettingStore.SCORE_LOG), store.find(sheet, SettingStore.MAX_OPEN),
                 store.find(sheet, SettingStore.PENDING_SLA), String.valueOf(policy.size()),
                 policy.stream().map(from -> from == null ? null : from.toString()).toList(),
-                history(sheet, SettingStore.CAP, store)));
+                history(sheet, SettingStore.CAP, store), store.policyChanges(sheet)));
     }
 
     private static Map<String, String> gradeTerms(String sheetId, LocalDate today, SettingStore store) {

@@ -45,7 +45,8 @@ import { useAsOf } from '../../session/session';
  *  policy version: the number of changes made to its policy settings (the rounding, the floor, the cap, the terms, the
  *  late percent and the clerk limit). `policyFrom` is each policy version's from-date (yyyy-MM-dd), in the order made,
  *  null for one with no from-date (it counts always). `capFrom` is the caps recorded, oldest from-date first: a person's
- *  cap is the one in force on the date of their latest claim that counts. */
+ *  cap is the one in force on the date of their latest claim that counts. `policyChange` is the change each policy
+ *  version made, as key=value, in the order made. */
 export type Settings = { clerkLimit: string | null; floor: string; terms: string; latePct: string; policyDate: string | null;
   periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; proofThreshold: string | null;
   floorFrom: Dated[]; latePctFrom: Dated[]; perms: Record<string, string | null>;
@@ -56,7 +57,7 @@ export type Settings = { clerkLimit: string | null; floor: string; terms: string
   escalateAfter: string | null; reviewSla: string | null; proofKinds: string | null; defaultGrade: string | null;
   gradeClerkLimit: Record<string, string | null>; scoreMid: string | null; scoreHigh: string | null;
   scoreLog: string | null; maxOpen: string | null; pendingSla: string | null;
-  policyVersion: string; policyFrom: (string | null)[]; capFrom: Dated[] };
+  policyVersion: string; policyFrom: (string | null)[]; capFrom: Dated[]; policyChange: string[] };
 
 /** A setting's value recorded from a date (yyyy-MM-dd); a null value is blank. */
 export type Dated = { from: string; value: string | null };

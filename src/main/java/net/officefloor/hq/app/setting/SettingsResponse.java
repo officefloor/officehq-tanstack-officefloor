@@ -56,6 +56,7 @@ import java.util.Map;
  *  (the rounding, the floor, the cap, the terms, the late percent and the clerk limit), 0 for none.
  *  {@code policyFrom} is each policy version's from-date, in the order made, null for one with no from-date (it
  *  counts always): the version in force on a claim's date is the number of them on or before it.
+ *  {@code policyChange} is the change each policy version made, as key=value, in the order made.
  *  {@code capFrom} is the caps recorded, oldest from-date first (a person's cap is the one in force on the date of
  *  their latest claim that counts). */
 public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
@@ -67,7 +68,7 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
         List<Dated> roundingFrom, String reviewThreshold, String escalateAfter, String reviewSla,
         String proofKinds, String defaultGrade, Map<String, String> gradeClerkLimit,
         String scoreMid, String scoreHigh, String scoreLog, String maxOpen, String pendingSla,
-        String policyVersion, List<String> policyFrom, List<Dated> capFrom) {
+        String policyVersion, List<String> policyFrom, List<Dated> capFrom, List<String> policyChange) {
 
     /** A value recorded from a date (yyyy-MM-dd). */
     public record Dated(String from, String value) {

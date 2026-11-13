@@ -413,6 +413,15 @@ public class SettingStore {
                 (rs, n) -> rs.getObject("from_date", LocalDate.class), sheetId);
     }
 
+    /** The change each of the sheet's policy versions made, as key=value (blank for a null value), in the order
+     *  made; as of a date, those made while the sheet's today was on or before it. */
+    public List<String> policyChanges(String sheetId) {
+        return jdbc.query("SELECT setting_key, setting_value FROM policy_version WHERE sheet_id = ?"
+                + (asOf == null ? "" : " AND made_on <= DATE '" + asOf + "'") + " ORDER BY version",
+                (rs, n) -> rs.getString("setting_key") + "="
+                        + (rs.getString("setting_value") == null ? "" : rs.getString("setting_value")), sheetId);
+    }
+
     /** Records a change to a policy setting as the sheet's next policy version. */
     public void addPolicyVersion(String sheetId, String key, String value, LocalDate from) {
         Integer last = jdbc.queryForObject("SELECT MAX(version) FROM policy_version WHERE sheet_id = ?",
