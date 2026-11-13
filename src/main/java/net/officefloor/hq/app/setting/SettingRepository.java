@@ -41,7 +41,7 @@ public class SettingRepository {
         DatedSettings dated = dated(sheetId);
         return new Settings(sheetId, dated.clerkLimitOn(today), dated.floorOn(today), dated.termsOn(today),
                 dated.gradeTermsOn(today), dated.latePctOn(today), policyDate(sheetId), periodNumberingFrom(sheetId),
-                dated.capOn(today), dated.proofThresholdOn(today), roles, dated);
+                dated.capOn(today), dated.proofThresholdOn(today), roles, dated, permissions(sheetId));
     }
 
     /** The sheet's dated settings: every value recorded, by key and from-date. */
@@ -91,6 +91,23 @@ public class SettingRepository {
     /** Set the sheet's period numbering from date (null: blank, off). */
     public void savePeriodNumberingFrom(String sheetId, LocalDate from) {
         jdbc.update("UPDATE sheet SET period_numbering_from = ? WHERE id = ?", from == null ? null : Date.valueOf(from), sheetId);
+    }
+
+    /** The sheet's permission matrix: the roles set for each action, as shown (an action with none keeps the standing rule). */
+    public Permissions permissions(String sheetId) {
+        Map<String, String> set = new LinkedHashMap<>();
+        jdbc.query("SELECT action, roles FROM permission WHERE sheet_id = ?", (rs) -> {
+            set.put(rs.getString("action"), rs.getString("roles"));
+        }, sheetId);
+        return new Permissions(set);
+    }
+
+    /** Set the roles allowed the action on the sheet ("": blank, back to the standing rule). */
+    public void savePermission(String sheetId, String action, String roles) {
+        jdbc.update("DELETE FROM permission WHERE sheet_id = ? AND action = ?", sheetId, action);
+        if (!roles.isEmpty()) {
+            jdbc.update("INSERT INTO permission (sheet_id, action, roles) VALUES (?, ?, ?)", sheetId, action, roles);
+        }
     }
 
     /** Give the user name its role on the sheet, replacing any it had. */

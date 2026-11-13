@@ -17,18 +17,23 @@ import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.setting.DatedSettings;
+import net.officefloor.hq.app.setting.Permissions;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
+import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * Closes the period, fixing its due-total as it stands now: the dues (figures plus any late charge, as they are now) of
- * the claims dated in it that count by their status at the period's end, added up (n/a skipped), and each person's share of it (0.00 for a person with none). Refused (400) when it is already closed.
+ * the claims dated in it that count by their status at the period's end, added up (n/a skipped), and each person's share of it (0.00 for a person with none). Refused (400) when it is already closed, or when the permission matrix does not allow the user's role closing.
  */
 public class ClosePeriod {
     public void close(@Val Period period, ClaimRepository claims, ClaimLogRepository logs, PersonRepository people, RateRepository rates,
-            SettingRepository settings, SheetRepository sheets, Out<Period> closed) throws InvalidPeriodException {
+            SettingRepository settings, SheetRepository sheets, @RequestParam("user") String user, Out<Period> closed) throws InvalidPeriodException {
+        if (!settings.find(period.sheetId()).may(user, Permissions.CLOSE)) {
+            throw new InvalidPeriodException("The user's role is not allowed to close a period.");
+        }
         if (period.closed()) {
             throw new InvalidPeriodException("The period " + period.name() + " is already closed.");
         }

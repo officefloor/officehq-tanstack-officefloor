@@ -57,8 +57,8 @@ export function Periods() {
         name,
         message:
           action === 'close'
-            ? 'That period could not be closed.'
-            : 'That period could not be reopened: only a steward can reopen a closed period.',
+            ? 'That period could not be closed: it is already closed, or your role is not allowed to close a period.'
+            : 'That period could not be reopened: it is not closed, or your role is not allowed to reopen a period.',
       }),
   });
 

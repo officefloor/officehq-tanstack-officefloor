@@ -19,9 +19,10 @@ export type UserRole = { user: string; role: string };
  * claim whose due is above the one in force on its date is settled or approved only once it has a proof), and the roles
  * given to user names. The clerk limit, floor, terms, grade terms, late percent, cap and proof threshold are those in force on the sheet's
  * today; `history` holds every value recorded for them, by key (floor, late-pct, terms, terms-<grade>, clerk-limit,
- * cap, proof-threshold), oldest from-date first (value '': blank).
+ * cap, proof-threshold), oldest from-date first (value '': blank). `permissions` is the permission matrix: by action, the
+ * roles allowed it, comma separated ('': blank, the standing rule); it is not dated.
  */
-export type Settings = { clerkLimit: string | null; floor: string; terms: number; gradeTerms: Record<string, number>; latePct: string; policyDate: string; periodNumberingFrom: string; cap: string; proofThreshold: string; roles: UserRole[]; history: Record<string, FromValue[]> };
+export type Settings = { clerkLimit: string | null; floor: string; terms: number; gradeTerms: Record<string, number>; latePct: string; policyDate: string; periodNumberingFrom: string; cap: string; proofThreshold: string; roles: UserRole[]; history: Record<string, FromValue[]>; permissions: Record<string, string> };
 
 /** A dated setting's value recorded from a date (yyyy-MM-dd); '': blank. */
 export type FromValue = { from: string; value: string };
@@ -46,6 +47,22 @@ export const DEFAULT_LATE_PCT = '0.00';
 
 /** The roles a user name can be given. */
 export const ROLES = ['clerk', 'steward'];
+
+/** The actions the permission matrix covers. */
+export const PERMISSION_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'];
+
+/** The roles allowed an action when its permission entry is blank. */
+export const STANDING_PERMISSIONS: Record<string, string> = {
+  open: 'clerk,steward',
+  settle: 'clerk,steward',
+  void: 'clerk,steward',
+  reassign: 'steward',
+  close: 'clerk,steward',
+  reopen: 'steward',
+};
+
+/** Roles as a permission entry takes them: clerk or steward, comma separated. */
+export const ROLE_LIST = /^\s*(clerk|steward)\s*(,\s*(clerk|steward)\s*)*$/i;
 
 /** 0.00 or more, with at most two decimals. */
 export const AMOUNT = /^(\d{1,13}(\.\d{1,2})?|\.\d{1,2})$/;

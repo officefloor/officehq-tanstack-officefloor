@@ -19,7 +19,9 @@ const ACTIONS: Array<{ action: Action; label: string }> = [
 ];
 
 const REFUSED: Partial<Record<Action, string>> = {
-  settle: ' (the user who opened it cannot settle it, and one whose due is above the proof threshold needs a proof)',
+  open: ' (your role may not be allowed to open a claim)',
+  settle: ' (the user who opened it cannot settle it, one whose due is above the proof threshold needs a proof, and your role may not be allowed to settle)',
+  void: ' (your role may not be allowed to void a claim)',
   approve: ' (only a steward approves a pending claim, and not the user who opened it; one whose due is above the proof threshold needs a proof)',
   reject: ' (only a steward rejects a pending claim, and a reason is required)',
   resettle: ' (only a steward re-settles a settled claim)',
@@ -27,9 +29,9 @@ const REFUSED: Partial<Record<Action, string>> = {
 
 // A claim's status and the buttons that change it. Every button is shown; the server refuses a
 // change the status does not allow, and the refusal shows as the claim's error. A clerk's settle
-// above the clerk limit makes the claim PENDING; a reject sends the reason typed beside it. A steward
-// moves a DRAFT, OPEN or PENDING claim to the person chosen beside the Move button. A steward
-// re-settles a SETTLED claim, freezing it again at today's figure. An OPEN claim is deferred to the
+// above the clerk limit makes the claim PENDING; a reject sends the reason typed beside it. A role
+// allowed to reassign (standing rule: a steward) moves a DRAFT, OPEN or PENDING claim to the person chosen beside the
+// Move button. A steward re-settles a SETTLED claim, freezing it again at today's figure. An OPEN claim is deferred to the
 // date typed beside the Defer button. The Add proof button raises the claim's proofs count by one (not on a
 // SETTLED or VOID claim, nor one dated in a closed period).
 export function ClaimStatus({ claim }: { claim: Claim }) {
@@ -66,7 +68,7 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
     },
     onError: () =>
-      setError(`This ${claim.status} claim cannot be moved (only a steward moves a DRAFT, OPEN or PENDING claim).`),
+      setError(`This ${claim.status} claim cannot be moved (only a DRAFT, OPEN or PENDING claim is moved, by a role allowed to reassign).`),
   });
 
   const defer = useMutation({

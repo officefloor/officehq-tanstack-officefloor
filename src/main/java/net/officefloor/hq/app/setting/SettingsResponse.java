@@ -8,10 +8,10 @@ import java.util.Map;
  * The settings as the screen reads them: the clerk limit (null: no limit), the floor, the terms in days, the terms set for
  * each grade that has its own (by grade), the late percent, the policy date ("": blank, the sheet's today), the period
  * numbering from date ("": off), the cap ("": none), the proof threshold ("": none) — the dated ones as in force on the sheet's today — each role given,
- * by user name, and every dated value recorded, by key, oldest from-date first (value "": blank).
+ * by user name, the permission matrix (by action, the roles allowed it; "": blank, the standing rule), and every dated value recorded, by key, oldest from-date first (value "": blank).
  */
 public record SettingsResponse(String clerkLimit, String floor, int terms, Map<String, Integer> gradeTerms, String latePct, String policyDate, String periodNumberingFrom, String cap, String proofThreshold, List<RoleResponse> roles,
-        Map<String, List<FromValueResponse>> history) {
+        Map<String, List<FromValueResponse>> history, Map<String, String> permissions) {
 
     public record RoleResponse(String user, String role) {
     }
@@ -34,6 +34,7 @@ public record SettingsResponse(String clerkLimit, String floor, int terms, Map<S
                 settings.cap() == null ? "" : settings.cap().toPlainString(),
                 settings.proofThreshold() == null ? "" : settings.proofThreshold().toPlainString(),
                 settings.roles().stream().map((r) -> new RoleResponse(r.user(), r.role().label())).toList(),
-                history);
+                history,
+                settings.permissions().entries());
     }
 }

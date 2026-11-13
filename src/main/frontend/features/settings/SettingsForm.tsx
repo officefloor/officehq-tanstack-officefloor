@@ -11,6 +11,9 @@ import {
   DEFAULT_LATE_PCT,
   DEFAULT_TERMS,
   PERCENT,
+  PERMISSION_ACTIONS,
+  ROLE_LIST,
+  STANDING_PERMISSIONS,
   settingsKey,
   useSettings,
 } from './settings';
@@ -36,6 +39,7 @@ type SettingsInput = {
   capFrom?: string;
   proofThresholdFrom?: string;
   gradeTermsFrom?: Record<string, string>;
+  permissions?: Record<string, string>;
 };
 
 /** The from-date field of each dated setting, by its key as the screen names it (terms-A for a grade's terms). */
@@ -63,7 +67,8 @@ const UNTOUCHED: Touched = {
   proofThreshold: false,
 };
 
-// The sheet's clerk limit (blank: no limit), floor, terms, each grade's terms (blank: the sheet's), late percent and policy date (blank: today) and period numbering from date (blank: off) and cap (blank: none) and proof threshold (blank: none) in force, and the form that sets them. Saving sends
+// The sheet's clerk limit (blank: no limit), floor, terms, each grade's terms (blank: the sheet's), late percent and policy date (blank: today) and period numbering from date (blank: off) and cap (blank: none) and proof threshold (blank: none) in force, and the
+// permission matrix (by action, the roles allowed it; blank: the standing rule; not dated), and the form that sets them. Saving sends
 // only the fields touched since the last save, so a blank field left alone changes nothing. A dated setting (the clerk
 // limit, floor, terms, each grade's terms, late percent, cap and proof threshold) is recorded from the date typed beside it (blank: the
 // sheet's today); the value shown is the one in force on the sheet's today.
@@ -81,6 +86,8 @@ export function SettingsForm() {
   const [periodNumberingFrom, setPeriodNumberingFrom] = useState('');
   const [cap, setCap] = useState('');
   const [proofThreshold, setProofThreshold] = useState('');
+  const [perms, setPerms] = useState<Record<string, string>>({});
+  const [touchedPerms, setTouchedPerms] = useState<Record<string, boolean>>({});
   const [froms, setFroms] = useState<Froms>({});
   const [touched, setTouched] = useState<Touched>(UNTOUCHED);
   const [error, setError] = useState('');
@@ -101,6 +108,8 @@ export function SettingsForm() {
       setPeriodNumberingFrom('');
       setCap('');
       setProofThreshold('');
+      setPerms({});
+      setTouchedPerms({});
       setFroms({});
       setTouched(UNTOUCHED);
       setError('');
@@ -234,6 +243,15 @@ export function SettingsForm() {
       input.proofThreshold = value;
       input.proofThresholdFrom = datedFrom('proof-threshold');
     }
+    for (const a of PERMISSION_ACTIONS) {
+      if (!touchedPerms[a]) continue;
+      const value = (perms[a] ?? '').trim();
+      if (value !== '' && !ROLE_LIST.test(value)) {
+        setError(`Type the roles allowed to ${a} as clerk or steward, comma separated, or leave it blank for the standing rule.`);
+        return;
+      }
+      input.permissions = { ...input.permissions, [a]: value };
+    }
     if (
       input.clerkLimit === undefined &&
       input.floor === undefined &&
@@ -243,7 +261,8 @@ export function SettingsForm() {
       input.policyDate === undefined &&
       input.periodNumberingFrom === undefined &&
       input.cap === undefined &&
-      input.proofThreshold === undefined
+      input.proofThreshold === undefined &&
+      input.permissions === undefined
     )
       return;
     once(() => save.mutateAsync(input));
@@ -284,6 +303,11 @@ export function SettingsForm() {
       <p>
         Proof threshold: <span data-testid="setting-proof-threshold-current">{settings?.proofThreshold ?? ''}</span>
       </p>
+      {PERMISSION_ACTIONS.map((a) => (
+        <p key={a}>
+          Roles allowed to {a}: <span data-testid={`setting-perm-${a}-current`}>{settings?.permissions?.[a] ?? ''}</span>
+        </p>
+      ))}
       <form onSubmit={submit} data-testid="settings-form">
         <input
           data-testid="setting-clerk-limit"
@@ -395,6 +419,20 @@ export function SettingsForm() {
           }}
         />
         {fromField('proof-threshold', 'Proof threshold')}
+        {PERMISSION_ACTIONS.map((a) => (
+          <input
+            key={a}
+            data-testid={`setting-perm-${a}`}
+            placeholder={`Roles allowed to ${a}, comma separated (blank: ${STANDING_PERMISSIONS[a]})`}
+            value={perms[a] ?? ''}
+            onFocus={() => setTouchedPerms((t) => ({ ...t, [a]: true }))}
+            onChange={(e) => {
+              setPerms((v) => ({ ...v, [a]: e.target.value }));
+              setTouchedPerms((t) => ({ ...t, [a]: true }));
+              setError('');
+            }}
+          />
+        ))}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>

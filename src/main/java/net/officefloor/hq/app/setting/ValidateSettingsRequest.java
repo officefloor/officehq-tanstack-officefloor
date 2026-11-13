@@ -28,7 +28,7 @@ public class ValidateSettingsRequest {
     public void validate(@RequestBody @Valid SettingsRequest request, Out<ClerkLimit> limit, Out<Floor> floor,
             Out<Terms> terms, Out<LatePct> latePct, Out<PolicyDate> policyDate,
             Out<PeriodNumberingFrom> periodNumberingFrom, Out<GradeTerms> gradeTerms, Out<Cap> cap,
-            Out<ProofThreshold> proofThreshold)
+            Out<ProofThreshold> proofThreshold, Out<PermissionChanges> permissions)
             throws InvalidSettingException {
         limit.set(clerkLimit(request.clerkLimit(), from(request.clerkLimitFrom(), "clerk limit")));
         floor.set(floor(request.floor(), from(request.floorFrom(), "floor")));
@@ -39,6 +39,7 @@ public class ValidateSettingsRequest {
         gradeTerms.set(gradeTerms(request.gradeTerms(), request.gradeTermsFrom()));
         cap.set(cap(request.cap(), from(request.capFrom(), "cap")));
         proofThreshold.set(proofThreshold(request.proofThreshold(), from(request.proofThresholdFrom(), "proof threshold")));
+        permissions.set(permissions(request.permissions()));
     }
 
     /** A from-date typed with a setting (null: left out or blank, the sheet's today). */
@@ -52,6 +53,32 @@ public class ValidateSettingsRequest {
         } catch (DateTimeParseException e) {
             throw new InvalidSettingException("The " + what + " from-date must be a date (yyyy-MM-dd), or blank.");
         }
+    }
+
+    private static PermissionChanges permissions(Map<String, String> requested) throws InvalidSettingException {
+        Map<String, String> entries = new LinkedHashMap<>();
+        if (requested == null) {
+            return new PermissionChanges(entries);
+        }
+        for (String action : requested.keySet()) {
+            if (!Permissions.ACTIONS.contains(action)) {
+                throw new InvalidSettingException("Permissions can only be set for open, settle, void, reassign, close or reopen.");
+            }
+        }
+        for (String action : Permissions.ACTIONS) {
+            if (!requested.containsKey(action)) {
+                continue;
+            }
+            String value = requested.get(action) == null ? "" : requested.get(action).trim();
+            if (value.isEmpty()) {
+                entries.put(action, "");
+            } else if (Permissions.parse(value) == null) {
+                throw new InvalidSettingException("The roles for " + action + " must be clerk or steward, comma separated, or blank.");
+            } else {
+                entries.put(action, Permissions.label(value));
+            }
+        }
+        return new PermissionChanges(entries);
     }
 
     private static Cap cap(String requested, LocalDate from) throws InvalidSettingException {
