@@ -1,0 +1,125 @@
+diff --git a/src/main/frontend/features/settings/policy.slot.tsx b/src/main/frontend/features/settings/policy.slot.tsx
+new file mode 100644
+index 000000000..a8f54cf61
+--- /dev/null
++++ b/src/main/frontend/features/settings/policy.slot.tsx
+@@ -0,0 +1,42 @@
++import { useState } from 'react';
++import { HomeMain } from '../../slots/defs/homeMain';
++import { useCurrentSheet } from '../../session/session';
++import { useClaims } from '../claims/claims';
++import { policyOf, useSettings } from './settings';
++
++// The sheet's policy versions, one line per version, oldest first: the version, its from-date (start for one with
++// none), the key=value it changed, and how many of the sheet's claims have it as their policy version (the version
++// in force on the claim's date, as each claim row shows it).
++function PolicyViewer() {
++  const [sheet] = useCurrentSheet();
++  const settings = useSettings(sheet);
++  const claims = useClaims(sheet);
++  const [shown, setShown] = useState(false);
++  const policy = policyOf(settings.data);
++  const counts = new Map<number, number>();
++  for (const c of claims.data ?? []) {
++    const version = policy?.(c.date) ?? 0;
++    counts.set(version, (counts.get(version) ?? 0) + 1);
++  }
++  const froms = settings.data?.policyFrom ?? [];
++  const changes = settings.data?.policyChange ?? [];
++  return (
++    <section data-testid="policy">
++      <h2>Policy versions</h2>
++      <button type="button" data-testid="policy-show" onClick={() => setShown(true)}>
++        Show policy versions
++      </button>
++      {shown && (
++        <ul>
++          {changes.map((change, i) => (
++            <li key={i + 1} data-testid="policy-line">
++              {`${i + 1} ${froms[i] ?? 'start'} ${change} ${counts.get(i + 1) ?? 0}`}
++            </li>
++          ))}
++        </ul>
++      )}
++    </section>
++  );
++}
++
++export const contribution = HomeMain.fill({ order: 49, Component: PolicyViewer });
+diff --git a/src/main/frontend/features/settings/settings.ts b/src/main/frontend/features/settings/settings.ts
+index 3bd21ae48..598661f98 100644
+--- a/src/main/frontend/features/settings/settings.ts
++++ b/src/main/frontend/features/settings/settings.ts
+@@ -45,7 +45,8 @@ import { useAsOf } from '../../session/session';
+  *  policy version: the number of changes made to its policy settings (the rounding, the floor, the cap, the terms, the
+  *  late percent and the clerk limit). `policyFrom` is each policy version's from-date (yyyy-MM-dd), in the order made,
+  *  null for one with no from-date (it counts always). `capFrom` is the caps recorded, oldest from-date first: a person's
+- *  cap is the one in force on the date of their latest claim that counts. */
++ *  cap is the one in force on the date of their latest claim that counts. `policyChange` is the change each policy
++ *  version made, as key=value, in the order made. */
+ export type Settings = { clerkLimit: string | null; floor: string; terms: string; latePct: string; policyDate: string | null;
+   periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; proofThreshold: string | null;
+   floorFrom: Dated[]; latePctFrom: Dated[]; perms: Record<string, string | null>;
+@@ -56,7 +57,7 @@ export type Settings = { clerkLimit: string | null; floor: string; terms: string
+   escalateAfter: string | null; reviewSla: string | null; proofKinds: string | null; defaultGrade: string | null;
+   gradeClerkLimit: Record<string, string | null>; scoreMid: string | null; scoreHigh: string | null;
+   scoreLog: string | null; maxOpen: string | null; pendingSla: string | null;
+-  policyVersion: string; policyFrom: (string | null)[]; capFrom: Dated[] };
++  policyVersion: string; policyFrom: (string | null)[]; capFrom: Dated[]; policyChange: string[] };
+ 
+ /** A setting's value recorded from a date (yyyy-MM-dd); a null value is blank. */
+ export type Dated = { from: string; value: string | null };
+diff --git a/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java b/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
+index a18b7ca98..24c6595f5 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
+@@ -43,7 +43,7 @@ public class RespondWithSettings {
+                 store.find(sheet, SettingStore.SCORE_LOG), store.find(sheet, SettingStore.MAX_OPEN),
+                 store.find(sheet, SettingStore.PENDING_SLA), String.valueOf(policy.size()),
+                 policy.stream().map(from -> from == null ? null : from.toString()).toList(),
+-                history(sheet, SettingStore.CAP, store)));
++                history(sheet, SettingStore.CAP, store), store.policyChanges(sheet)));
+     }
+ 
+     private static Map<String, String> gradeTerms(String sheetId, LocalDate today, SettingStore store) {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingStore.java b/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
+index 31d8aa321..6643a2308 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
+@@ -413,6 +413,15 @@ public class SettingStore {
+                 (rs, n) -> rs.getObject("from_date", LocalDate.class), sheetId);
+     }
+ 
++    /** The change each of the sheet's policy versions made, as key=value (blank for a null value), in the order
++     *  made; as of a date, those made while the sheet's today was on or before it. */
++    public List<String> policyChanges(String sheetId) {
++        return jdbc.query("SELECT setting_key, setting_value FROM policy_version WHERE sheet_id = ?"
++                + (asOf == null ? "" : " AND made_on <= DATE '" + asOf + "'") + " ORDER BY version",
++                (rs, n) -> rs.getString("setting_key") + "="
++                        + (rs.getString("setting_value") == null ? "" : rs.getString("setting_value")), sheetId);
++    }
++
+     /** Records a change to a policy setting as the sheet's next policy version. */
+     public void addPolicyVersion(String sheetId, String key, String value, LocalDate from) {
+         Integer last = jdbc.queryForObject("SELECT MAX(version) FROM policy_version WHERE sheet_id = ?",
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+index 99cfcc319..3dea61a86 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+@@ -56,6 +56,7 @@ import java.util.Map;
+  *  (the rounding, the floor, the cap, the terms, the late percent and the clerk limit), 0 for none.
+  *  {@code policyFrom} is each policy version's from-date, in the order made, null for one with no from-date (it
+  *  counts always): the version in force on a claim's date is the number of them on or before it.
++ *  {@code policyChange} is the change each policy version made, as key=value, in the order made.
+  *  {@code capFrom} is the caps recorded, oldest from-date first (a person's cap is the one in force on the date of
+  *  their latest claim that counts). */
+ public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
+@@ -67,7 +68,7 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
+         List<Dated> roundingFrom, String reviewThreshold, String escalateAfter, String reviewSla,
+         String proofKinds, String defaultGrade, Map<String, String> gradeClerkLimit,
+         String scoreMid, String scoreHigh, String scoreLog, String maxOpen, String pendingSla,
+-        String policyVersion, List<String> policyFrom, List<Dated> capFrom) {
++        String policyVersion, List<String> policyFrom, List<Dated> capFrom, List<String> policyChange) {
+ 
+     /** A value recorded from a date (yyyy-MM-dd). */
+     public record Dated(String from, String value) {
