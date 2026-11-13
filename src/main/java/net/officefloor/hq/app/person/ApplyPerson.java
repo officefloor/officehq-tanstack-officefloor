@@ -10,6 +10,6 @@ public class ApplyPerson {
         if (request.version() != null && request.version() != person.version()) {
             throw new StalePersonException(person.name());
         }
-        updated.set(new Person(person.id(), person.sheetId(), request.name(), request.grade(), person.version()));
+        updated.set(person.withNameAndGrade(request.name(), request.grade()));
     }
 }

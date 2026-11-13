@@ -15,7 +15,8 @@ import org.springframework.web.bind.annotation.RequestParam;
  * Moves the claim to the action's status; refused (400) when the claim's status does not allow it.
  * Opening gives the claim the sheet's next number; voiding clears it (the number is not reused).
  * Opening records the user who opened it; that user cannot settle it (four eyes).
- * Settling fixes the claim's due at its person's grade's rate in force on the claim's date; with no rate it stays live.
+ * Settling fixes the claim's due at its person's grade's rate in force on the claim's date — or, when a statement
+ * bound the claim, at the figure it was bound to; with no figure it stays live.
  */
 public class ApplyClaimAction {
     public void apply(@PathVariable("action") String action, @RequestParam("user") String user, @Val Claim claim, SheetRepository sheets,
@@ -43,6 +44,9 @@ public class ApplyClaimAction {
     }
 
     private static BigDecimal settledDue(Claim claim, PersonRepository people, RateRepository rates) {
+        if (claim.stated()) {
+            return claim.statedDue();
+        }
         Person person = people.find(claim.sheetId(), claim.personId());
         BigDecimal rate = person == null ? null
                 : Rate.inForce(rates.findAll(claim.sheetId()), person.grade(), claim.date());

@@ -8,14 +8,33 @@ import java.time.LocalDate;
  * A claim a person has on a sheet. {@code id} is null until the claim is first saved; {@code number}
  * is null unless the claim has been opened (a draft has none, and voiding clears it). {@code due} is the
  * due fixed when the claim was settled, or null while it is live (not settled, or settled with no rate).
- * {@code openedBy} is the user who opened the claim, or null while it is a draft.
+ * {@code openedBy} is the user who opened the claim, or null while it is a draft. {@code stated} is whether
+ * its person's last statement bound it to a figure, {@code statedDue} (null: n/a) — it then shows and totals
+ * that figure, not its live one.
  */
 public record Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
-        ClaimStatus status, Integer number, BigDecimal due, String openedBy) {
+        ClaimStatus status, Integer number, BigDecimal due, String openedBy, boolean stated, BigDecimal statedDue) {
 
     /** The same claim with another status, number, fixed due and opener. */
     public Claim withStatus(ClaimStatus next, Integer nextNumber, BigDecimal nextDue, String nextOpenedBy) {
-        return new Claim(id, sheetId, personId, amount, date, note, next, nextNumber, nextDue, nextOpenedBy);
+        return new Claim(id, sheetId, personId, amount, date, note, next, nextNumber, nextDue, nextOpenedBy, stated,
+                statedDue);
+    }
+
+    /** Whether the claim counts toward the totals: only OPEN and SETTLED claims do. */
+    public boolean counts() {
+        return status == ClaimStatus.OPEN || status == ClaimStatus.SETTLED;
+    }
+
+    /**
+     * The claim's figure (null: n/a): the due fixed when it was settled, else the figure its statement bound
+     * it to, else its amount at the given live rate (null: none).
+     */
+    public BigDecimal figure(BigDecimal liveRate) {
+        if (due != null) {
+            return due;
+        }
+        return stated ? statedDue : due(amount, liveRate);
     }
 
     /** An amount times a percent rate, divided by 100, rounded half to even to two decimals; null with no rate. */

@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.claim;
 
+import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -12,7 +13,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, due, opened_by";
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, due, opened_by, stated, stated_due";
 
     private final JdbcTemplate jdbc;
 
@@ -55,13 +56,25 @@ public class ClaimRepository {
             return ps;
         }, keys);
         return new Claim(keys.getKey().longValue(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
-                claim.note(), claim.status(), claim.number(), claim.due(), claim.openedBy());
+                claim.note(), claim.status(), claim.number(), claim.due(), claim.openedBy(), false, null);
+    }
+
+    /** The person's claims, newest first. */
+    public List<Claim> findForPerson(String sheetId, long personId) {
+        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY id DESC",
+                ClaimRepository::map, sheetId, personId);
+    }
+
+    /** Bind the claim to a statement's figure (null: n/a), or unbind it (live again) when not stated. */
+    public void bindStatement(Claim claim, boolean stated, BigDecimal statedDue) {
+        jdbc.update("UPDATE claim SET stated = ?, stated_due = ? WHERE id = ? AND sheet_id = ?",
+                stated, stated ? statedDue : null, claim.id(), claim.sheetId());
     }
 
     private static Claim map(ResultSet rs, int n) throws SQLException {
         return new Claim(rs.getLong("id"), rs.getString("sheet_id"), rs.getLong("person_id"),
                 rs.getBigDecimal("amount").setScale(2), rs.getDate("claim_date").toLocalDate(), rs.getString("note"),
                 ClaimStatus.valueOf(rs.getString("status")), rs.getObject("claim_number", Integer.class),
-                rs.getBigDecimal("due"), rs.getString("opened_by"));
+                rs.getBigDecimal("due"), rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"));
     }
 }

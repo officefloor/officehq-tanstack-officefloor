@@ -1,8 +1,10 @@
 package net.officefloor.hq.app.person;
 
+import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDate;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -10,6 +12,8 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class PersonRepository {
+
+    private static final String COLUMNS = "id, sheet_id, name, grade, version, statement_count, stated_total, statement_date";
 
     private final JdbcTemplate jdbc;
 
@@ -19,13 +23,13 @@ public class PersonRepository {
 
     /** The sheet's people, in the order they were added. */
     public List<Person> findAll(String sheetId) {
-        return jdbc.query("SELECT id, sheet_id, name, grade, version FROM person WHERE sheet_id = ? ORDER BY id",
+        return jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? ORDER BY id",
                 PersonRepository::map, sheetId);
     }
 
     /** The person with this id on this sheet, or null. */
     public Person find(String sheetId, long id) {
-        List<Person> found = jdbc.query("SELECT id, sheet_id, name, grade, version FROM person WHERE sheet_id = ? AND id = ?",
+        List<Person> found = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND id = ?",
                 PersonRepository::map, sheetId, id);
         return found.isEmpty() ? null : found.get(0);
     }
@@ -48,7 +52,8 @@ public class PersonRepository {
                     "UPDATE person SET name = ?, grade = ?, version = version + 1 WHERE id = ? AND sheet_id = ? AND version = ?",
                     person.name(), person.grade(), person.id(), person.sheetId(), person.version());
             return n == 0 ? null
-                    : new Person(person.id(), person.sheetId(), person.name(), person.grade(), person.version() + 1);
+                    : new Person(person.id(), person.sheetId(), person.name(), person.grade(), person.version() + 1,
+                            person.statementCount(), person.statedTotal(), person.statementDate());
         }
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
@@ -59,11 +64,22 @@ public class PersonRepository {
             ps.setString(3, person.grade());
             return ps;
         }, keys);
-        return new Person(keys.getKey().longValue(), person.sheetId(), person.name(), person.grade(), 0);
+        return new Person(keys.getKey().longValue(), person.sheetId(), person.name(), person.grade(), 0, 0, null, null);
+    }
+
+    /**
+     * Record a statement just taken of the person: one more statement, with its due-total and date; the
+     * person as stored. Not an edit, so it leaves the version alone.
+     */
+    public Person recordStatement(Person person, String statedTotal, LocalDate date) {
+        jdbc.update("UPDATE person SET statement_count = statement_count + 1, stated_total = ?, statement_date = ?"
+                + " WHERE id = ? AND sheet_id = ?", statedTotal, Date.valueOf(date), person.id(), person.sheetId());
+        return find(person.sheetId(), person.id());
     }
 
     private static Person map(ResultSet rs, int n) throws SQLException {
         return new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"),
-                rs.getInt("version"));
+                rs.getInt("version"), rs.getInt("statement_count"), rs.getString("stated_total"),
+                rs.getObject("statement_date", LocalDate.class));
     }
 }

@@ -62,20 +62,28 @@ export function due(amount: string, rate: string | undefined): string {
   return (cents / 100).toFixed(2);
 }
 
-/** A claim's figure: the due fixed when it was settled, else its amount at the rate in force on its date for the grade. */
+/**
+ * A claim's figure: the due fixed when it was settled, else the figure its statement bound it to,
+ * else its amount at the rate in force on its date for the grade.
+ */
 export function claimDue(claim: Claim, rates: Rate[], grade: string): string {
-  return claim.due ?? due(claim.amount, rateFor(rates, grade, claim.date));
+  if (claim.due !== null) return claim.due;
+  if (claim.stated) return claim.statedDue ?? NA;
+  return due(claim.amount, rateFor(rates, grade, claim.date));
 }
+
+/** Whether a claim keeps a figure whatever the rates: fixed when settled, or bound by a statement. */
+const keepsFigure = (c: Claim) => c.due !== null || (c.stated && c.statedDue !== null);
 
 /**
  * A person's due-total: the figures of their claims that count, added up (0.00 with none). With no
- * rate in force on the sheet's today for their grade it is n/a, unless a settled claim keeps a
- * figure: then it is the figures there are, added up.
+ * rate in force on the sheet's today for their grade it is n/a, unless a settled or stated claim
+ * keeps a figure: then it is the figures there are, added up.
  */
 export function personDue(claims: Claim[], rates: Rate[], grade: string, today: string): string {
   const counted = claims.filter(counts);
   const figures = counted.map((c) => claimDue(c, rates, grade));
-  if (rateFor(rates, grade, today) === undefined && !counted.some((c) => c.due !== null)) {
+  if (rateFor(rates, grade, today) === undefined && !counted.some(keepsFigure)) {
     return NA;
   }
   return total(figures);
