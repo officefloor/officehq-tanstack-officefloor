@@ -18,14 +18,19 @@ export function usePersonError(personId: number, kind = ''): [string, (message: 
   const row = `${sheet}:${personId}`;
   const key = kind ? `${row}:${kind}` : row;
   const error = useSyncExternalStore(subscribe, () => errors.get(key) ?? '');
-  const setError = (message: string) => {
-    for (const k of [...errors.keys()]) {
-      if (k === row || k.startsWith(`${row}:`)) errors.delete(k);
-    }
-    if (message) errors.set(key, message);
-    listeners.forEach((l) => l());
-  };
+  const setError = (message: string) => setPersonError(sheet, personId, message, kind);
   return [error, setError];
+}
+
+/** Set (or, with '', clear) a person row's error from outside the row, as a bulk action does. */
+export function setPersonError(sheet: string, personId: number, message: string, kind = '') {
+  const row = `${sheet}:${personId}`;
+  const key = kind ? `${row}:${kind}` : row;
+  for (const k of [...errors.keys()]) {
+    if (k === row || k.startsWith(`${row}:`)) errors.delete(k);
+  }
+  if (message) errors.set(key, message);
+  listeners.forEach((l) => l());
 }
 
 /** The person row's error, when there is one. */
