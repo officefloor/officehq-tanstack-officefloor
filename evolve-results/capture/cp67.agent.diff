@@ -1,0 +1,107 @@
+diff --git a/src/main/frontend/features/active/PersonActive.tsx b/src/main/frontend/features/active/PersonActive.tsx
+new file mode 100644
+index 000000000..828285f3b
+--- /dev/null
++++ b/src/main/frontend/features/active/PersonActive.tsx
+@@ -0,0 +1,11 @@
++import { useClaims } from '../claims/claims';
++import type { Person } from '../people/people';
++import { useDueRules } from '../settings/settings';
++import { isActive } from './active';
++
++// Whether a person is active: yes or no.
++export function PersonActive({ person }: { person: Person }) {
++  const rules = useDueRules();
++  const claims = (useClaims().data ?? []).filter((c) => c.personId === person.id);
++  return <td data-testid="person-active">{isActive(claims, person.holds, rules.today) ? 'yes' : 'no'}</td>;
++}
+diff --git a/src/main/frontend/features/active/active.slot.tsx b/src/main/frontend/features/active/active.slot.tsx
+new file mode 100644
+index 000000000..78dae907b
+--- /dev/null
++++ b/src/main/frontend/features/active/active.slot.tsx
+@@ -0,0 +1,7 @@
++import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
++import { PersonActive } from './PersonActive';
++
++export const contributions = [
++  PersonColumnHeads.fill({ order: 21, Component: () => <th>Active</th> }),
++  PersonColumns.fill({ order: 21, Component: PersonActive }),
++];
+diff --git a/src/main/frontend/features/active/active.ts b/src/main/frontend/features/active/active.ts
+new file mode 100644
+index 000000000..6b9f2ceda
+--- /dev/null
++++ b/src/main/frontend/features/active/active.ts
+@@ -0,0 +1,20 @@
++import { counts, isOpen } from '../claims/claims';
++import type { Claim } from '../claims/claims';
++import type { Hold } from '../people/people';
++
++/** How many days back from the sheet's today, today included, a claim keeps its person active. */
++export const ACTIVE_DAYS = 30;
++
++/** The first date (yyyy-MM-dd) of the active window ending on the sheet's today. */
++const windowStart = (today: string) =>
++  new Date(Date.parse(`${today}T00:00:00Z`) - (ACTIVE_DAYS - 1) * 86_400_000).toISOString().slice(0, 10);
++
++/**
++ * Whether a person is active: they have an OPEN or PENDING claim that counts (not one a hold covers, nor a
++ * deferred one) dated within the 30 days up to and including the sheet's today. `claims` are theirs.
++ */
++export function isActive(claims: Claim[], holds: Hold[], today: string): boolean {
++  if (today === '') return false;
++  const from = windowStart(today);
++  return claims.some((c) => isOpen(c) && counts(c, holds, today) && c.date >= from && c.date <= today);
++}
+diff --git a/src/main/frontend/features/summary/Summary.tsx b/src/main/frontend/features/summary/Summary.tsx
+index 14bffdd04..71e9a6df7 100644
+--- a/src/main/frontend/features/summary/Summary.tsx
++++ b/src/main/frontend/features/summary/Summary.tsx
+@@ -1,3 +1,4 @@
++import { isActive } from '../active/active';
+ import { useClaims } from '../claims/claims';
+ import { GRADES, usePeople } from '../people/people';
+ import { periodDue, usePeriods } from '../periods/periods';
+@@ -9,7 +10,7 @@ import { useDueRules } from '../settings/settings';
+ const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
+ 
+ // The sheet at a glance, worked out from the same figures the list shows. Per grade: the people on it
+-// today (retired people left out) and their due-totals added up (skipping n/a). Per period: its
++// today (retired people left out), their due-totals added up (skipping n/a) and how many of them are active. Per period: its
+ // due-total. Per status: how many claims have it.
+ export function Summary() {
+   const [user] = useCurrentUser();
+@@ -22,7 +23,7 @@ export function Summary() {
+ 
+   if (!user || !sheet) return null;
+ 
+-  const active = people.filter((p) => !p.retired);
++  const current = people.filter((p) => !p.retired);
+   return (
+     <section data-testid="summary">
+       <table>
+@@ -31,11 +32,12 @@ export function Summary() {
+             <th>Grade</th>
+             <th>People</th>
+             <th>Due total</th>
++            <th>Active</th>
+           </tr>
+         </thead>
+         <tbody>
+           {GRADES.map((g) => {
+-            const on = active.filter((p) => p.grade === g);
++            const on = current.filter((p) => p.grade === g);
+             const dues = on.map((p) =>
+               personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, p.holds, rules),
+             );
+@@ -44,6 +46,9 @@ export function Summary() {
+                 <td>{g}</td>
+                 <td data-testid={`summary-grade-${g}-count`}>{on.length}</td>
+                 <td data-testid={`summary-grade-${g}-due-total`}>{total(dues)}</td>
++                <td data-testid={`summary-grade-${g}-active`}>
++                  {on.filter((p) => isActive(claims.filter((c) => c.personId === p.id), p.holds, rules.today)).length}
++                </td>
+               </tr>
+             );
+           })}
