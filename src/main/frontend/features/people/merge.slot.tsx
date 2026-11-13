@@ -77,7 +77,60 @@ function PersonMerge({ person }: { person: Person }) {
   );
 }
 
+function MergeUndoHead() {
+  return <th>Undo merge</th>;
+}
+
+// The button that undoes the last merge into this person: the action of the steward who merged, on the
+// sheet-today it was made. The merged person is back at the end of the list with the claims that came
+// from them and their own aliases. A refused undo shows its error until the next action is taken.
+function PersonMergeUndo({ person }: { person: Person }) {
+  const [user] = useCurrentUser();
+  const [sheet] = useCurrentSheet();
+  const queryClient = useQueryClient();
+
+  const undo = useMutation({
+    mutationKey: personActionKey(sheet, person.id),
+    mutationFn: () =>
+      postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/merge-undo`, { user }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: poolsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: [...sheetKey(sheet), 'watches'] }),
+      ]);
+    },
+  });
+
+  const latest = useLatestPersonAction(sheet, person.id);
+
+  return (
+    <td>
+      <button
+        type="button"
+        data-testid="person-merge-undo"
+        disabled={undo.isPending}
+        onClick={() => {
+          undo.reset();
+          undo.mutate();
+        }}
+      >
+        Undo merge
+      </button>
+      {undo.isError && undo.submittedAt >= latest && (
+        <span data-testid="person-error" role="alert">
+          {' '}
+          {undo.error instanceof HttpError && undo.error.reason ? `${undo.error.reason}.` : 'The merge undo was refused.'}
+        </span>
+      )}
+    </td>
+  );
+}
+
 export const contributions = [
   PersonColumnHeads.fill({ order: 19.9, Component: MergeHead }),
   PersonColumns.fill({ order: 19.9, Component: PersonMerge }),
+  PersonColumnHeads.fill({ order: 19.91, Component: MergeUndoHead }),
+  PersonColumns.fill({ order: 19.91, Component: PersonMergeUndo }),
 ];
