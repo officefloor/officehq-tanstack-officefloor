@@ -1,0 +1,199 @@
+diff --git a/src/main/java/db/migration/V58__claim_fixed_terms.java b/src/main/java/db/migration/V58__claim_fixed_terms.java
+new file mode 100644
+index 000000000..6381fa8d8
+--- /dev/null
++++ b/src/main/java/db/migration/V58__claim_fixed_terms.java
+@@ -0,0 +1,39 @@
++package db.migration;
++
++import java.time.LocalDate;
++import java.util.HashMap;
++import java.util.List;
++import java.util.Map;
++import java.util.Set;
++import net.officefloor.hq.app.holiday.HolidayRepository;
++import org.flywaydb.core.api.migration.BaseJavaMigration;
++import org.flywaydb.core.api.migration.Context;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.jdbc.datasource.SingleConnectionDataSource;
++
++/**
++ * The terms (business days) a claim's due-by was fixed with, kept so the due-by can be worked out again when a holiday
++ * is added. An existing claim takes the business days from its date to its stored due-by, over the sheet's holidays as
++ * they stand now.
++ */
++public class V58__claim_fixed_terms extends BaseJavaMigration {
++
++    private record Row(long id, String sheetId, LocalDate date, LocalDate dueBy) {
++    }
++
++    @Override
++    public void migrate(Context context) {
++        JdbcTemplate jdbc = new JdbcTemplate(new SingleConnectionDataSource(context.getConnection(), true));
++        jdbc.execute("ALTER TABLE claim ADD COLUMN fixed_terms INT NOT NULL DEFAULT 0");
++        List<Row> rows = jdbc.query("SELECT id, sheet_id, claim_date, due_by FROM claim",
++                (rs, n) -> new Row(rs.getLong("id"), rs.getString("sheet_id"),
++                        rs.getDate("claim_date").toLocalDate(), rs.getDate("due_by").toLocalDate()));
++        HolidayRepository holidayRepository = new HolidayRepository(jdbc);
++        Map<String, Set<LocalDate>> holidays = new HashMap<>();
++        for (Row row : rows) {
++            Set<LocalDate> sheetHolidays = holidays.computeIfAbsent(row.sheetId(), holidayRepository::dates);
++            jdbc.update("UPDATE claim SET fixed_terms = ? WHERE id = ?",
++                    HolidayRepository.businessDaysBetween(sheetHolidays, row.date(), row.dueBy()), row.id());
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index e08456c10..9943e821f 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -12,6 +12,7 @@ import java.util.List;
+ import java.util.Locale;
+ import java.util.Map;
+ import java.util.Set;
++import net.officefloor.hq.app.holiday.HolidayRepository;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.jdbc.support.GeneratedKeyHolder;
+ import org.springframework.stereotype.Repository;
+@@ -23,8 +24,11 @@ public class ClaimRepository {
+ 
+     private final JdbcTemplate jdbc;
+ 
+-    public ClaimRepository(JdbcTemplate jdbc) {
++    private final HolidayRepository holidays;
++
++    public ClaimRepository(JdbcTemplate jdbc, HolidayRepository holidays) {
+         this.jdbc = jdbc;
++        this.holidays = holidays;
+     }
+ 
+     /** The sheet's claims, newest first. */
+@@ -48,10 +52,13 @@ public class ClaimRepository {
+                     claim.due(), claim.openedBy(), claim.corrects(), claim.id(), claim.sheetId());
+             return claim;
+         }
++        // The terms its due-by is fixed with: the business days to it over the sheet's holidays as they stand now.
++        int fixedTerms = HolidayRepository.businessDaysBetween(holidays.dates(claim.sheetId()), claim.date(),
++                claim.dueBy());
+         GeneratedKeyHolder keys = new GeneratedKeyHolder();
+         jdbc.update(con -> {
+             PreparedStatement ps = con.prepareStatement(
+-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, corrects, due_by, claim_number, opened_by, split_from) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
++                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, corrects, due_by, claim_number, opened_by, split_from, fixed_terms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                     new String[] { "id" });
+             ps.setString(1, claim.sheetId());
+             ps.setLong(2, claim.personId());
+@@ -64,6 +71,7 @@ public class ClaimRepository {
+             ps.setString(9, claim.number());
+             ps.setString(10, claim.openedBy());
+             ps.setString(11, claim.splitFrom());
++            ps.setInt(12, fixedTerms);
+             return ps;
+         }, keys);
+         return new Claim(keys.getKey().longValue(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
+@@ -71,6 +79,22 @@ public class ClaimRepository {
+                 claim.corrects(), claim.dueBy(), null, 0, claim.splitFrom());
+     }
+ 
++    /**
++     * Works out again, from its date and the terms it was fixed with over the sheet's holidays as they stand now, the
++     * due-by of every claim on the sheet that is not SETTLED or VOID and is due by on or after {@code from}.
++     */
++    public void refixDueBys(String sheetId, LocalDate from) {
++        Set<LocalDate> sheetHolidays = holidays.dates(sheetId);
++        jdbc.query("SELECT id, claim_date, fixed_terms FROM claim WHERE sheet_id = ? AND status NOT IN ('SETTLED', 'VOID') AND due_by >= ?",
++                (rs, n) -> new long[] { rs.getLong("id"), rs.getDate("claim_date").toLocalDate().toEpochDay(),
++                        rs.getInt("fixed_terms") },
++                sheetId, Date.valueOf(from)).forEach((row) -> jdbc.update(
++                        "UPDATE claim SET due_by = ? WHERE id = ? AND sheet_id = ?",
++                        Date.valueOf(HolidayRepository.businessDaysAfter(sheetHolidays, LocalDate.ofEpochDay(row[1]),
++                                (int) row[2])),
++                        row[0], sheetId));
++    }
++
+     /** Records the user as the last to edit the claim. */
+     public void markEdited(String sheetId, long id, String user) {
+         jdbc.update("UPDATE claim SET edited_by = ? WHERE id = ? AND sheet_id = ?", user, id, sheetId);
+diff --git a/src/main/java/net/officefloor/hq/app/holiday/HolidayRepository.java b/src/main/java/net/officefloor/hq/app/holiday/HolidayRepository.java
+index 078a93ea9..da3a0c349 100644
+--- a/src/main/java/net/officefloor/hq/app/holiday/HolidayRepository.java
++++ b/src/main/java/net/officefloor/hq/app/holiday/HolidayRepository.java
+@@ -63,6 +63,18 @@ public class HolidayRepository {
+         return day;
+     }
+ 
++    /** How many business days there are after {@code from} up to and including {@code to}: the terms that fix
++     * {@code to} as the due-by of a claim dated {@code from} (0 when {@code to} is not after {@code from}). */
++    public static int businessDaysBetween(Set<LocalDate> holidays, LocalDate from, LocalDate to) {
++        int days = 0;
++        for (LocalDate day = from.plusDays(1); !day.isAfter(to); day = day.plusDays(1)) {
++            if (isBusinessDay(holidays, day)) {
++                days++;
++            }
++        }
++        return days;
++    }
++
+     private static boolean isBusinessDay(Set<LocalDate> holidays, LocalDate day) {
+         DayOfWeek dow = day.getDayOfWeek();
+         return dow != DayOfWeek.SATURDAY && dow != DayOfWeek.SUNDAY && !holidays.contains(day);
+diff --git a/src/main/java/net/officefloor/hq/app/holiday/RefixDueBys.java b/src/main/java/net/officefloor/hq/app/holiday/RefixDueBys.java
+new file mode 100644
+index 000000000..d9b07e212
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/holiday/RefixDueBys.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app.holiday;
++
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.plugin.variable.Val;
++
++/**
++ * Works out again the due-by of every claim on the sheet that is not SETTLED or VOID and is due by on or after the new
++ * holiday: from the claim's date, with the terms it was fixed with, over the holidays now on the sheet.
++ */
++public class RefixDueBys {
++    public void refix(@Val Holiday holiday, ClaimRepository claims) {
++        claims.refixDueBys(holiday.sheetId(), holiday.date());
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/holidays.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/holidays.POST.yml
+index f7f0672ac..43781da7a 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/holidays.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/holidays.POST.yml
+@@ -1,5 +1,7 @@
+ # Add a date (yyyy-mm-dd) to the sheet's holidays (HOLIDAY_ADDED); a date not yyyy-mm-dd or one already on the
+-# list is refused (400). Responds with the sheet's holidays, earliest first.
++# list is refused (400). Every claim that is not SETTLED or VOID and is due by on or after the new holiday has its due-by
++# worked out again from its date, with the terms it was fixed with, over the holidays now on the sheet; ROLLUP/TOTALS
++# follow HOLIDAY_ADDED when any figure moved. Responds with the sheet's holidays, earliest first.
+ archived:
+   class: net.officefloor.hq.app.sheet.CheckNotArchived
+   next: viewer
+@@ -13,14 +15,26 @@ load:
+ validate:
+   class: net.officefloor.hq.app.holiday.ValidateHolidayRequest
+   govern: [ transaction ]
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  govern: [ transaction ]
+   next: save
+ save:
+   class: net.officefloor.hq.app.holiday.SaveHoliday
+   govern: [ transaction ]
++  next: refix
++refix:
++  class: net.officefloor.hq.app.holiday.RefixDueBys
++  govern: [ transaction ]
+   next: audit
+ audit:
+   class: net.officefloor.hq.app.holiday.AuditHolidayAdded
+   govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
+   next: holidays
+ holidays:
+   class: net.officefloor.hq.app.holiday.LoadHolidays
