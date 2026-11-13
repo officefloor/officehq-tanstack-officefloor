@@ -5,7 +5,9 @@ import net.officefloor.web.ObjectResponse;
 
 /** Responds with the person as they arrived on the other sheet. */
 public class RespondWithTransfer {
-    public void respond(@Val Transferred transferred, ObjectResponse<PersonResponse> response) {
-        response.send(PersonResponse.from(transferred.person()));
+    public void respond(@Val Transferred transferred, PersonRepository people, NameTree tree,
+            ObjectResponse<PersonResponse> response) {
+        Person person = transferred.person();
+        response.send(PersonResponse.from(person, tree.clashing(person, people.aliases(person.sheetId(), person.id()))));
     }
 }

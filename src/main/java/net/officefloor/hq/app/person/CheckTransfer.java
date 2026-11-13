@@ -2,6 +2,7 @@ package net.officefloor.hq.app.person;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import net.officefloor.hq.app.setting.Role;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
@@ -11,11 +12,13 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * Refuses (400) a transfer unless a steward transfers a person who is not retired to another sheet, not archived,
- * where no one has their name or any of their aliases as a name or alias, nor their contact; publishes the transfer.
+ * where no one has their name or any of their aliases as a name or alias, nor on any other sheet of its tree (but
+ * their own entries), nor their contact; publishes the transfer.
  */
 public class CheckTransfer {
     public void check(@RequestParam("user") String user, @Val Person person, @Val TransferRequest request,
-            SettingRepository settings, SheetRepository sheets, PersonRepository people, Out<Transfer> transfer)
+            SettingRepository settings, SheetRepository sheets, PersonRepository people, NameTree tree,
+            Out<Transfer> transfer)
             throws InvalidPersonException {
         if (settings.find(person.sheetId()).roleOf(user) != Role.STEWARD) {
             throw new InvalidPersonException("Only a steward may transfer people.");
@@ -33,9 +36,13 @@ public class CheckTransfer {
         List<String> names = new ArrayList<>();
         names.add(person.name());
         names.addAll(people.aliases(person.sheetId(), person.id()));
+        Set<String> treeTaken = tree.taken(to, person.id());
         for (String name : names) {
             if (people.nameTaken(to, name, null)) {
                 throw new InvalidPersonException("The other sheet already has " + name + ".");
+            }
+            if (NameTree.clashing(treeTaken, name, List.of())) {
+                throw new InvalidPersonException("A sheet related to the other sheet already has " + name + ".");
             }
         }
         if (person.contact() != null && people.contactTaken(to, person.contact(), null)) {
