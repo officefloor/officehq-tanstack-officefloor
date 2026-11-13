@@ -9,8 +9,8 @@ import java.util.function.Function;
 /**
  * What an overdue claim is charged: for every full 30 days it is overdue (its due-by, fixed when it was created, plus
  * the grace days of its person's grade in force on its date, before the sheet's today), the late percent in force on
- * that boundary date (the due-by plus the grace plus 30, 60, 90 ... days) of its figure,
- * rounded like the claim's due, the charges added up; a boundary whose percent is 0.00 adds nothing. Never bound by a
+ * that boundary date (the due-by plus the grace plus 30, 60, 90 ... days) of its figure plus the charges of the
+ * boundaries before it (compounding), rounded like the claim's due, the charges added up; a boundary whose percent is 0.00 adds nothing. Never bound by a
  * statement: it follows the sheet's today until the claim is settled. A correction, and a deferred claim, is never charged.
  */
 public record LateCharge(Function<LocalDate, BigDecimal> pctOn, Function<Claim, Integer> graceOf, LocalDate today) {
@@ -35,7 +35,7 @@ public record LateCharge(Function<LocalDate, BigDecimal> pctOn, Function<Claim, 
         for (long period = 1; period <= periods; period++) {
             BigDecimal pct = pctOn.apply(lateFrom.plusDays(period * PERIOD_DAYS));
             if (pct.signum() != 0) {
-                charge = charge.add(Claim.due(figure, pct, mode));
+                charge = charge.add(Claim.due(figure.add(charge), pct, mode));
             }
         }
         return charge;
