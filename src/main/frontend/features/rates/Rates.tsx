@@ -8,6 +8,7 @@ import { useSheetToday } from '../session/sheetToday';
 import { NA, PERCENT, rateFor, ratesKey, useRates } from './rates';
 import type { Rate, RateInput } from './rates';
 import { useOneAtATime } from '../../query/useOneAtATime';
+import { RatePreview } from './RatePreview';
 
 const EMPTY: RateInput = { grade: 'A', rate: '', from: '', to: '' };
 
@@ -137,6 +138,7 @@ export function Rates() {
         </button>
         {error && <span data-testid="rate-form-error">{error}</span>}
       </form>
+      <RatePreview />
     </section>
   );
 }

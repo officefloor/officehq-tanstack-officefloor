@@ -216,3 +216,33 @@ export function personSplit(
     total(counted.filter(keep).map((c) => claimDue(c, rates, grades, rules)));
   return { settled: dues((c) => c.status === 'SETTLED'), open: dues((c) => c.status !== 'SETTLED') };
 }
+
+/**
+ * What a candidate rate for a grade would do: of the OPEN and PENDING claims whose person is on that grade on the
+ * claim's date, how many would show a different due were that the grade's only rate on every date, and the
+ * differences (new due minus current due, n/a as 0.00) added up. A claim bound by a statement keeps its figure.
+ */
+export function ratePreview(
+  claims: Claim[],
+  gradesOf: (personId: number) => GradeFrom[],
+  rates: Rate[],
+  grade: string,
+  rate: string,
+  rules: DueRules,
+): { count: number; diff: string } {
+  const candidate: Rate[] = [...rates.filter((r) => r.grade !== grade), { grade, rate, from: null, to: null }];
+  const cents = (d: string) => (d === NA ? 0 : hundredths(d));
+  let count = 0;
+  let diff = 0;
+  for (const c of claims) {
+    if (c.status !== 'OPEN' && c.status !== 'PENDING') continue;
+    const grades = gradesOf(c.personId);
+    if (gradeOn(grades, c.date) !== grade) continue;
+    const now = claimDue(c, rates, grades, rules);
+    const then = claimDue(c, candidate, grades, rules);
+    if (now === then) continue;
+    count++;
+    diff += cents(then) - cents(now);
+  }
+  return { count, diff: (diff / 100).toFixed(2) };
+}
