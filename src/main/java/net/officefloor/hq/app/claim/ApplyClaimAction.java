@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RequestParam;
  * Moves the claim to the action's status; refused (400) when the claim's status does not allow it.
  * Opening gives the claim the sheet's next number; a voided claim keeps its number (it is never reused). While the
  * sheet's period numbering from date is set and its today is on or after it, opening instead gives the claim the next
- * number within the period containing its date (P1-1, P1-2, ...), or within the claims in no period (X-1, ...).
+ * number within the period containing its due-by (P1-1, P1-2, ...), or within the claims in no period (X-1, ...).
  * Opening, settling and voiding are refused (400) to a role the sheet's permission matrix does not allow them.
  * Opening records the user who opened it; that user cannot settle it (four eyes). A deferred claim cannot be settled.
  * Settling fixes the claim's due at the greater of the sheet's floor in force on its date and its figure — at its person's grade's rate in force on the claim's date,
@@ -116,7 +116,7 @@ public class ApplyClaimAction {
         if (from == null || sheets.today(claim.sheetId()).isBefore(from)) {
             return String.valueOf(sheets.nextClaimNumber(claim.sheetId()));
         }
-        Period period = periods.findAll(claim.sheetId()).stream().filter((p) -> p.contains(claim.date())).findFirst()
+        Period period = periods.findAll(claim.sheetId()).stream().filter((p) -> p.contains(claim.dueBy())).findFirst()
                 .orElse(null);
         String prefix = period == null ? "X" : period.name();
         String key = period == null ? "" : period.name().toLowerCase();

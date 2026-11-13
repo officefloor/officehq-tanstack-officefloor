@@ -25,7 +25,7 @@ export const bound = (c: Claim) => c.stated && c.status !== 'PENDING';
 
 /**
  * A claim as the store holds it: the amount with two decimals, the date as yyyy-MM-dd; its number
- * is the sheet's next one when it was opened (1, 2, ...; under period numbering, the next within its period: P1-1, X-1), null while a draft (a voided claim keeps it); its due is the
+ * is the sheet's next one when it was opened (1, 2, ...; under period numbering, the next within its period (the one containing its due-by): P1-1, X-1), null while a draft (a voided claim keeps it); its due is the
  * one fixed when it was settled (two decimals), null while it is live; openedBy is the user who
  * opened it, null while a draft; stated is whether its person's last statement bound it to a figure,
  * statedDue that figure (two decimals; null: n/a) — it then shows and totals that, not its live figure;
@@ -37,7 +37,7 @@ export const bound = (c: Claim) => c.stated && c.status !== 'PENDING';
  * settled or approved only once it has one);
  * splitFrom is the number of the claim it was split off, null when it was not split off one;
  * lockedBy is the user whose open editor locks it for every other user, null when it is not locked;
- * lateEntry is whether it was added while the period containing its date was soft-closed.
+ * lateEntry is whether it was added while the period containing its due-by was soft-closed.
  */
 export type Claim = {
   id: number;

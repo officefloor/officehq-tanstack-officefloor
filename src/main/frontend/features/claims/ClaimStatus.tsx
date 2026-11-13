@@ -34,7 +34,7 @@ const REFUSED: Partial<Record<Action, string>> = {
 // allowed to reassign (standing rule: a steward) moves a DRAFT, OPEN or PENDING claim to the person chosen beside the
 // Move button. A steward re-settles a SETTLED claim, freezing it again at today's figure. An OPEN claim is deferred to the
 // date typed beside the Defer button. The Add proof button raises the claim's proofs count by one (not on a
-// SETTLED or VOID claim, nor one dated in a closed period). The Split button splits the amount typed beside it off an
+// SETTLED or VOID claim, nor one due by a date in a closed period). The Split button splits the amount typed beside it off an
 // OPEN claim into a new OPEN claim of the same person (more than 0.00 and less than the claim's amount). A steward
 // re-dates an OPEN or PENDING claim to the date typed beside the Re-date button.
 export function ClaimStatus({ claim }: { claim: Claim }) {
@@ -115,7 +115,7 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
     },
     onError: () =>
       setError(
-        `This ${claim.status} claim cannot be re-dated to that date (only a steward re-dates an OPEN or PENDING claim, not after its person's retirement, nor in or into a closed period).`,
+        `This ${claim.status} claim cannot be re-dated to that date (only a steward re-dates an OPEN or PENDING claim, not after its person's retirement, nor one due by a date in a closed period).`,
       ),
   });
 

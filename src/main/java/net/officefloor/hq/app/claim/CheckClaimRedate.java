@@ -1,7 +1,6 @@
 package net.officefloor.hq.app.claim;
 
 import java.time.LocalDate;
-import net.officefloor.hq.app.period.Period;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
@@ -13,7 +12,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * Refuses (400) a re-date unless a steward re-dates an OPEN or PENDING claim to a date neither after its person's
- * retirement date nor inside a closed period; publishes the re-date.
+ * retirement date (it keeps its due-by, so its period: a new date in a closed period is allowed); publishes the re-date.
  */
 public class CheckClaimRedate {
     public void check(@RequestParam("user") String user, @Val Claim claim, @Val NewClaimDate newDate,
@@ -30,10 +29,6 @@ public class CheckClaimRedate {
         if (person != null && person.retiredBefore(date)) {
             throw new InvalidClaimException(
                     person.name() + " is retired from " + person.retiredFrom() + ": no claim can be dated " + date + ".");
-        }
-        Period closed = periods.closedOn(claim.sheetId(), date);
-        if (closed != null) {
-            throw new InvalidClaimException("The date " + date + " is in the closed period " + closed.name() + ".");
         }
         redating.set(new Redating(claim.date(), date));
     }

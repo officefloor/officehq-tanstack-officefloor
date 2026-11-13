@@ -13,7 +13,7 @@ import net.officefloor.hq.app.person.Person;
  * A period of a sheet: its name (unique on the sheet) and its from and to dates, both inclusive. A closed
  * period keeps the due-total fixed when it was closed ({@code closedTotal}; null while open) and each person's
  * due-total for it then ({@code personTotals}, by person id; empty while open). A soft-closed period
- * ({@code softClosed}; never also {@code closed}) keeps its figures fixed the same way, but claims dated in it can
+ * ({@code softClosed}; never also {@code closed}) keeps its figures fixed the same way, but claims due by a date in it can
  * still be added and changed.
  */
 public record Period(String sheetId, String name, LocalDate from, LocalDate to, boolean closed,
@@ -57,13 +57,13 @@ public record Period(String sheetId, String name, LocalDate from, LocalDate to, 
     }
 
     /**
-     * Whether the claim counts toward the period: dated in it and OPEN, PENDING or SETTLED at the period's end, left
+     * Whether the claim counts toward the period: due by a date in it and OPEN, PENDING or SETTLED at the period's end, left
      * out as the live rules say while it is deferred on today, or when it was open then, is open still, a hold of its
      * person covers it (or their retirement date is reached) and no statement binds it (a hold leaves out only open
      * claims). A settled claim voided since leaves it.
      */
     public boolean counts(Claim claim, List<ClaimLogLine> log, Person person, LocalDate today) {
-        if (!contains(claim.date())) {
+        if (!contains(claim.dueBy())) {
             return false;
         }
         ClaimStatus then = statusAtEnd(claim, log);

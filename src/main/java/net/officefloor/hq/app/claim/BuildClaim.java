@@ -13,7 +13,7 @@ public class BuildClaim {
     public void build(@Val ClaimInput input, @Val Person person, SheetRepository sheets, SettingRepository settings,
             Out<Claim> claim) {
         LocalDate date = input.date() != null ? input.date() : sheets.entryDate(person.sheetId());
-        LocalDate dueBy = date.plusDays(person.termsOn(settings.dated(person.sheetId()), date));
+        LocalDate dueBy = NewDueBy.of(date, person, settings);
         claim.set(new Claim(null, person.sheetId(), person.id(), input.amount(), date, input.note(), ClaimStatus.DRAFT,
                 null, null, null, false, null, input.corrects(), dueBy));
     }

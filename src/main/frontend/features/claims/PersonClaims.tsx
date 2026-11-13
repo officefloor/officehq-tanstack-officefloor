@@ -9,7 +9,7 @@ import { SIGNED_AMOUNT, claimsKey, useClaims } from './claims';
 import type { Claim, ClaimInput } from './claims';
 import { useOneAtATime } from '../../query/useOneAtATime';
 import { setClaimError } from './claimError';
-import { usePeriods } from '../periods/periods';
+import { contains, usePeriods } from '../periods/periods';
 import { useSettings } from '../settings/settings';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '' };
@@ -19,7 +19,7 @@ const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '' };
 // other user and fills the form with the claim's values; a refusal (not editable, a viewer, or
 // locked by another user) shows as the claim's error. Saving or cancelling the editor releases the
 // lock. A claim the signed-in user holds the lock on comes back with its editor open when the sheet
-// is loaded again. A refusal the screen can see (not a DRAFT, dated in a closed period, a viewer, locked
+// is loaded again. A refusal the screen can see (not a DRAFT, due by a date in a closed period, a viewer, locked
 // by another user) shows at once; otherwise the editor opens at once and the lock is taken behind it —
 // a save waits for it, and a refused lock closes the editor and shows the claim's error.
 export function PersonClaims({ person }: { person: Person }) {
@@ -80,14 +80,14 @@ export function PersonClaims({ person }: { person: Person }) {
   });
 
   const refused = (c: Claim) =>
-    `This ${c.status} claim cannot be edited (only a DRAFT outside a closed period, not by a viewer, nor while another user is editing it).`;
+    `This ${c.status} claim cannot be edited (only a DRAFT not due in a closed period, not by a viewer, nor while another user is editing it).`;
 
   // Why the edit button is refused, from what the screen holds; '' when the server is asked.
   const refusal = (c: Claim) =>
     c.status !== 'DRAFT' ||
     viewer ||
     (c.lockedBy !== null && c.lockedBy !== user) ||
-    periods.some((p) => p.closed && p.from <= c.date && c.date <= p.to)
+    periods.some((p) => p.closed && contains(p, c.dueBy))
       ? refused(c)
       : '';
 

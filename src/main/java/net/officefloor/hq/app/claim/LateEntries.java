@@ -6,7 +6,7 @@ import net.officefloor.hq.app.person.Person;
 import org.springframework.stereotype.Component;
 
 /**
- * Marks a claim just added a late entry when the period containing its date is soft-closed, recorded as LATE_ENTRY
+ * Marks a claim just added a late entry when the period containing its due-by is soft-closed, recorded as LATE_ENTRY
  * (after its CLAIM_ADDED); nothing otherwise. Used by the claim form, the quick-add and the paste.
  */
 @Component
@@ -23,7 +23,7 @@ public class LateEntries {
     }
 
     public void mark(Claim claim, Person person, String user) {
-        if (periods.softClosedOn(claim.sheetId(), claim.date()) == null) {
+        if (periods.softClosedOn(claim.sheetId(), claim.dueBy()) == null) {
             return;
         }
         claims.markLateEntry(claim);

@@ -10,6 +10,7 @@ import net.officefloor.hq.app.claim.ClaimLogRepository;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.LateEntries;
+import net.officefloor.hq.app.claim.NewDueBy;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
@@ -31,7 +32,7 @@ public class SavePastedClaims {
         for (PastedLine line : pasted.lines()) {
             Person person = line.person();
             LocalDate date = line.input().date() != null ? line.input().date() : sheets.entryDate(person.sheetId());
-            LocalDate dueBy = date.plusDays(person.termsOn(settings.dated(person.sheetId()), date));
+            LocalDate dueBy = NewDueBy.of(date, person, settings);
             Claim claim = claims.save(new Claim(null, person.sheetId(), person.id(), line.input().amount(), date,
                     line.input().note(), ClaimStatus.DRAFT, null, null, null, false, null, line.input().corrects(),
                     dueBy));

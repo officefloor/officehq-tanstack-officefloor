@@ -71,14 +71,14 @@ export const countsInPeriod = (period: Period, c: Claim, holds: Person['holds'],
 };
 
 /**
- * A person's due-total for a period: the dues (late charges included, as shown now) of their claims dated in it
+ * A person's due-total for a period: the dues (late charges included, as shown now) of their claims due by a date in it
  * that count by their status at the period's end, added up; a closed period keeps the figure fixed when it was
  * closed or soft-closed (0.00 for a person added since).
  */
 export function personPeriodDue(period: Period, person: Person, claims: Claim[], rates: Rate[], rules: DueRules): string {
   if (period.closed || period.soft) return period.personTotals?.[String(person.id)] ?? '0.00';
   const figures = claims
-    .filter((c) => c.personId === person.id && contains(period, c.date) && countsInPeriod(period, c, liveHolds(person, rules.today), rules.today))
+    .filter((c) => c.personId === person.id && contains(period, c.dueBy) && countsInPeriod(period, c, liveHolds(person, rules.today), rules.today))
     .map((c) => claimDue(c, rates, person.grades, rules));
   return total(figures);
 }
