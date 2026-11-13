@@ -52,7 +52,11 @@ export function PersonForm() {
       close();
       await queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
     },
-    onError: () => setError('That person could not be saved.'),
+    onError: (_e, input) => {
+      const key = input.name.trim().toLowerCase();
+      const taken = people.data?.some((p) => p.id !== editing && p.name.trim().toLowerCase() === key);
+      setError(taken ? 'That name is already in use.' : 'That person could not be saved.');
+    },
   });
 
   if (!user || !sheet) return null;

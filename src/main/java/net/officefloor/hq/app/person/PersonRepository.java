@@ -3,7 +3,6 @@ package net.officefloor.hq.app.person;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.List;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -31,6 +30,14 @@ public class PersonRepository {
         return found.isEmpty() ? null : found.get(0);
     }
 
+    /** Whether a person other than {@code exceptId} on the sheet has this name, ignoring case. */
+    public boolean nameTaken(String sheetId, String name, Long exceptId) {
+        Integer n = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND name_key = LOWER(?) AND (? IS NULL OR id <> ?)",
+                Integer.class, sheetId, name, exceptId, exceptId);
+        return n != null && n > 0;
+    }
+
     /** Insert a new person (null id) or update an existing one; the person as stored. */
     public Person save(Person person) {
         if (person.id() != null) {
@@ -41,7 +48,7 @@ public class PersonRepository {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade) VALUES (?, ?, ?)", Statement.RETURN_GENERATED_KEYS);
+                    "INSERT INTO person (sheet_id, name, grade) VALUES (?, ?, ?)", new String[] { "id" });
             ps.setString(1, person.sheetId());
             ps.setString(2, person.name());
             ps.setString(3, person.grade());

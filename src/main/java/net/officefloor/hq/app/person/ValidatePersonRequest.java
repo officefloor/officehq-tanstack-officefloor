@@ -11,8 +11,8 @@ public class ValidatePersonRequest {
 
     public void validate(@RequestBody @Valid PersonRequest request, Out<PersonRequest> body)
             throws InvalidPersonException {
-        // The name is kept as typed; only a blank one is refused.
-        String name = request.name() == null ? "" : request.name();
+        // The name is kept without surrounding spaces; a blank one is refused.
+        String name = request.name() == null ? "" : request.name().strip();
         if (name.isBlank()) {
             throw new InvalidPersonException("A name is required.");
         }
