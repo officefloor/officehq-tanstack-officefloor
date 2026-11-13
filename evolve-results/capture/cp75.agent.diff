@@ -1,0 +1,216 @@
+diff --git a/src/main/frontend/features/people/BulkGrade.tsx b/src/main/frontend/features/people/BulkGrade.tsx
+new file mode 100644
+index 000000000..26e980310
+--- /dev/null
++++ b/src/main/frontend/features/people/BulkGrade.tsx
+@@ -0,0 +1,82 @@
++import { useState } from 'react';
++import { useQueryClient } from '@tanstack/react-query';
++import { putJson } from '../../api/http';
++import { useOneAtATime } from '../../query/useOneAtATime';
++import { sheetKey, useCurrentSheet, useCurrentUser } from '../session/session';
++import { GRADES, usePeople } from './people';
++import type { Person } from './people';
++import { setPersonError } from './personError';
++import { useSelectedPeople } from './selection';
++
++// Gives every ticked person a grade from a date (blank: the sheet's today), one after another in list
++// order. Each goes through the person's own edit, exactly as the person form saves it (keeping their
++// name and terms, from the version listed), so it is audited and rolled up the same way. One the server
++// refuses is left as it is and shows the refusal on its row; the count is of those changed.
++export function BulkGrade() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const people = usePeople().data ?? [];
++  const [selected, , clear] = useSelectedPeople();
++  const [grade, setGrade] = useState<string>(GRADES[0]);
++  const [from, setFrom] = useState('');
++  const [graded, setGraded] = useState<number | undefined>(undefined);
++  const [busy, setBusy] = useState(false);
++  const queryClient = useQueryClient();
++  const once = useOneAtATime();
++
++  if (!user || !sheet) return null;
++
++  const run = async () => {
++    setGraded(undefined);
++    setBusy(true);
++    const ordered = people.filter((p) => selected.has(p.id));
++    let changed = 0;
++    try {
++      for (const p of ordered) {
++        setPersonError(sheet, p.id, '');
++        try {
++          await putJson<Person>(
++            `/api/sheets/${encodeURIComponent(sheet)}/people/${p.id}?user=${encodeURIComponent(user)}`,
++            { name: p.name, grade, gradeFrom: from, terms: p.terms == null ? '' : String(p.terms), version: p.version },
++          );
++          changed++;
++        } catch {
++          setPersonError(sheet, p.id, 'That person could not be given the grade.');
++        }
++      }
++      clear();
++      await queryClient.invalidateQueries({ queryKey: sheetKey(sheet) });
++    } finally {
++      setBusy(false);
++      setGraded(changed);
++    }
++  };
++
++  return (
++    <p>
++      <select data-testid="bulk-grade" value={grade} onChange={(e) => setGrade(e.target.value)}>
++        {GRADES.map((g) => (
++          <option key={g} value={g}>
++            {g}
++          </option>
++        ))}
++      </select>{' '}
++      <input
++        data-testid="bulk-grade-from"
++        type="date"
++        title="Grade from (blank: the sheet's today)"
++        value={from}
++        onChange={(e) => setFrom(e.target.value)}
++      />{' '}
++      <button type="button" data-testid="bulk-grade-apply" disabled={busy} onClick={() => once(run)}>
++        Grade selected people
++      </button>
++      {graded !== undefined && (
++        <>
++          {' '}
++          Changed <span data-testid="bulk-graded">{graded}</span>
++        </>
++      )}
++    </p>
++  );
++}
+diff --git a/src/main/frontend/features/people/PersonSelect.tsx b/src/main/frontend/features/people/PersonSelect.tsx
+new file mode 100644
+index 000000000..70131ddd8
+--- /dev/null
++++ b/src/main/frontend/features/people/PersonSelect.tsx
+@@ -0,0 +1,17 @@
++import type { Person } from './people';
++import { useSelectedPeople } from './selection';
++
++// The checkbox that ticks a person for a bulk action (BulkGrade).
++export function PersonSelect({ person }: { person: Person }) {
++  const [selected, set] = useSelectedPeople();
++  return (
++    <td>
++      <input
++        type="checkbox"
++        data-testid="person-select"
++        checked={selected.has(person.id)}
++        onChange={(e) => set(person.id, e.target.checked)}
++      />
++    </td>
++  );
++}
+diff --git a/src/main/frontend/features/people/home.slot.tsx b/src/main/frontend/features/people/home.slot.tsx
+index ef42060cc..b78f1f33e 100644
+--- a/src/main/frontend/features/people/home.slot.tsx
++++ b/src/main/frontend/features/people/home.slot.tsx
+@@ -1,8 +1,10 @@
+ import { HomeMain } from '../../slots/defs/homeMain';
++import { BulkGrade } from './BulkGrade';
+ import { PeopleList } from './PeopleList';
+ import { PersonForm } from './PersonForm';
+ 
+ export const contributions = [
+   HomeMain.fill({ order: 10, Component: PersonForm }),
+   HomeMain.fill({ order: 20, Component: PeopleList }),
++  HomeMain.fill({ order: 24, Component: BulkGrade }),
+ ];
+diff --git a/src/main/frontend/features/people/personError.tsx b/src/main/frontend/features/people/personError.tsx
+index 19cb34010..be18cb0c1 100644
+--- a/src/main/frontend/features/people/personError.tsx
++++ b/src/main/frontend/features/people/personError.tsx
+@@ -18,16 +18,21 @@ export function usePersonError(personId: number, kind = ''): [string, (message:
+   const row = `${sheet}:${personId}`;
+   const key = kind ? `${row}:${kind}` : row;
+   const error = useSyncExternalStore(subscribe, () => errors.get(key) ?? '');
+-  const setError = (message: string) => {
+-    for (const k of [...errors.keys()]) {
+-      if (k === row || k.startsWith(`${row}:`)) errors.delete(k);
+-    }
+-    if (message) errors.set(key, message);
+-    listeners.forEach((l) => l());
+-  };
++  const setError = (message: string) => setPersonError(sheet, personId, message, kind);
+   return [error, setError];
+ }
+ 
++/** Set (or, with '', clear) a person row's error from outside the row, as a bulk action does. */
++export function setPersonError(sheet: string, personId: number, message: string, kind = '') {
++  const row = `${sheet}:${personId}`;
++  const key = kind ? `${row}:${kind}` : row;
++  for (const k of [...errors.keys()]) {
++    if (k === row || k.startsWith(`${row}:`)) errors.delete(k);
++  }
++  if (message) errors.set(key, message);
++  listeners.forEach((l) => l());
++}
++
+ /** The person row's error, when there is one. */
+ export function PersonError({ personId }: { personId: number }) {
+   const [error] = usePersonError(personId);
+diff --git a/src/main/frontend/features/people/select.slot.tsx b/src/main/frontend/features/people/select.slot.tsx
+new file mode 100644
+index 000000000..d315005e4
+--- /dev/null
++++ b/src/main/frontend/features/people/select.slot.tsx
+@@ -0,0 +1,7 @@
++import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
++import { PersonSelect } from './PersonSelect';
++
++export const contributions = [
++  PersonColumnHeads.fill({ order: -10, Component: () => <th>Select</th> }),
++  PersonColumns.fill({ order: -10, Component: PersonSelect }),
++];
+diff --git a/src/main/frontend/features/people/selection.ts b/src/main/frontend/features/people/selection.ts
+new file mode 100644
+index 000000000..388ce74e7
+--- /dev/null
++++ b/src/main/frontend/features/people/selection.ts
+@@ -0,0 +1,38 @@
++import { useNavigate, useSearch } from '@tanstack/react-router';
++
++/** The ids of the people ticked for a bulk action, kept in the URL as a comma list under `people`. */
++export function useSelectedPeople(): [Set<number>, (id: number, on: boolean) => void, () => void] {
++  const search = useSearch({ strict: false }) as Record<string, unknown>;
++  const navigate = useNavigate();
++  const selected = parse(search.people);
++
++  // Each change is applied to the URL as it is then, so ticks in quick succession never clobber each other.
++  const update = (change: (ids: Set<number>) => void) => {
++    void navigate({
++      to: '.',
++      search: (prev: Record<string, unknown>) => {
++        const ids = parse(prev.people);
++        change(ids);
++        const next = { ...prev };
++        if (ids.size === 0) delete next.people;
++        else next.people = [...ids].join(',');
++        return next;
++      },
++      replace: true,
++    });
++  };
++
++  const set = (id: number, on: boolean) => update((ids) => (on ? ids.add(id) : ids.delete(id)));
++  const clear = () => update((ids) => ids.clear());
++  return [selected, set, clear];
++}
++
++function parse(raw: unknown): Set<number> {
++  return new Set(
++    String(raw ?? '')
++      .split(',')
++      .filter((s) => s !== '')
++      .map(Number)
++      .filter((n) => !Number.isNaN(n)),
++  );
++}
