@@ -2,11 +2,12 @@ import { HomeMain } from '../../slots/defs/homeMain';
 import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
 import { useCurrentSheet } from '../../session/session';
 import { type Person, usePeople } from '../people/people';
-import { dueTotal } from '../rates/rates';
+import { trimmedTotal } from '../rates/rates';
 import { cutTotal, usePools } from './pools';
 import { useFigure } from '../locale/locale';
 
-// A person's cut total (see `cutTotal`) and the sheet's cut total (everyone's added up).
+// A person's cut total (see `cutTotal`) and the sheet's cut total (everyone's added up, trimmed of the single
+// highest and lowest when three or more people have one).
 
 function CutHead() {
   return <th>Cut total</th>;
@@ -27,7 +28,7 @@ function CutTotal() {
   return (
     <p>
       Cut total{' '}
-      <strong data-testid="rollup-cut-total">{fig(dueTotal((people.data ?? []).map((p) => cutTotal(pools.data ?? [], p.id))))}</strong>
+      <strong data-testid="rollup-cut-total">{fig(trimmedTotal((people.data ?? []).map((p) => cutTotal(pools.data ?? [], p.id))))}</strong>
     </p>
   );
 }

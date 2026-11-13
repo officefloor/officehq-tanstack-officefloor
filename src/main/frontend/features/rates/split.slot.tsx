@@ -6,12 +6,12 @@ import { useSheetToday } from '../sheet/sheet';
 import { live, useClaims } from '../claims/claims';
 import { floorOf, useSettings } from '../settings/settings';
 import { lateOf } from '../overdue/overdue';
-import { dueTotal, personSplit, useRates } from './rates';
+import { personSplit, trimmedTotal, useRates } from './rates';
 import { useFigure } from '../locale/locale';
 import { useShared } from './due.slot';
 
 // A person's settled-total and open-total (their due-total before the cap, split by status), and the
-// sheet's: everyone's added up, not trimmed.
+// sheet's: everyone's added up, trimmed of the single highest and lowest when three or more people have one.
 function SplitHead() {
   return (
     <>
@@ -21,8 +21,9 @@ function SplitHead() {
   );
 }
 
-export function useSplit() {
-  const [sheet] = useCurrentSheet();
+export function useSplit(of?: string) {
+  const [current] = useCurrentSheet();
+  const sheet = of ?? current;
   const claims = useClaims(sheet);
   const rates = useRates(sheet);
   const today = useSheetToday(sheet);
@@ -58,8 +59,8 @@ function SplitTotal() {
   const figures = (people.data ?? []).map(useSplit());
   return (
     <p>
-      Settled total <strong data-testid="rollup-settled-total">{fig(dueTotal(figures.map((f) => f.settled)))}</strong>{' '}
-      Open total <strong data-testid="rollup-open-total">{fig(dueTotal(figures.map((f) => f.open)))}</strong>
+      Settled total <strong data-testid="rollup-settled-total">{fig(trimmedTotal(figures.map((f) => f.settled)))}</strong>{' '}
+      Open total <strong data-testid="rollup-open-total">{fig(trimmedTotal(figures.map((f) => f.open)))}</strong>
     </p>
   );
 }

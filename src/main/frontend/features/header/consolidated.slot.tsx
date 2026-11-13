@@ -8,11 +8,16 @@ import { usePersonDue } from '../rates/due.slot';
 import { useOverdue } from '../overdue/overdue.slot';
 import { useFigure } from '../locale/locale';
 import { useGradeCodes } from '../grades/grades';
+import { useSplit } from '../rates/split.slot';
+import { cutTotal, usePools } from '../pools/pools';
 
 type Figures = {
   people: string[][];
   due: string[];
   overdue: string[];
+  settled: string[];
+  open: string[];
+  cut: string[];
   gradeDue: Record<string, string[]>;
   statuses: Record<string, number>;
 };
@@ -21,6 +26,9 @@ const noFigures = (): Figures => ({
   people: [],
   due: [],
   overdue: [],
+  settled: [],
+  open: [],
+  cut: [],
   gradeDue: Object.fromEntries(GRADES.map((g) => [g, [] as string[]])),
   statuses: Object.fromEntries(STATUSES.map((s) => [s, 0])),
 });
@@ -55,11 +63,17 @@ function Consolidate({ sheets, sofar }: { sheets: string[]; sofar: Figures }) {
   const today = useSheetToday(first);
   const personDue = usePersonDue(first);
   const grades = useGradeCodes(first);
+  const split = useSplit(first);
+  const pools = usePools(first);
+  const splits = (people.data ?? []).map(split);
   const active = (people.data ?? []).filter((p) => !p.retired);
   const figures: Figures = {
     people: [...sofar.people, ...(people.data ?? []).map((p) => [p.name, ...p.aliases].map(nameKey))],
     due: [...sofar.due, ...(people.data ?? []).map(personDue)],
     overdue: [...sofar.overdue, ...(people.data ?? []).map((p) => overdueOf(p).total)],
+    settled: [...sofar.settled, ...splits.map((f) => f.settled)],
+    open: [...sofar.open, ...splits.map((f) => f.open)],
+    cut: [...sofar.cut, ...(people.data ?? []).map((p) => cutTotal(pools.data ?? [], p.id))],
     gradeDue: Object.fromEntries(
       // Every grade of the sheets so far and of this one: a grade a sheet lacks has no one on it there.
       [...new Set([...Object.keys(sofar.gradeDue), ...grades])].map((g) => [g, [...(sofar.gradeDue[g] ?? []), ...active.filter((p) => gradeOn(p.grades, today) === g).map(personDue)]]),
@@ -71,7 +85,10 @@ function Consolidate({ sheets, sofar }: { sheets: string[]; sofar: Figures }) {
     <>
       People <strong data-testid="consolidated-people-count">{distinctPeople(figures.people)}</strong>{' '}
       Due total <strong data-testid="consolidated-due-total">{fig(trimmedTotal(figures.due))}</strong>{' '}
-      Overdue total <strong data-testid="consolidated-overdue-total">{fig(trimmedTotal(figures.overdue))}</strong>
+      Overdue total <strong data-testid="consolidated-overdue-total">{fig(trimmedTotal(figures.overdue))}</strong>{' '}
+      Settled total <strong data-testid="consolidated-settled-total">{fig(trimmedTotal(figures.settled))}</strong>{' '}
+      Open total <strong data-testid="consolidated-open-total">{fig(trimmedTotal(figures.open))}</strong>{' '}
+      Cut total <strong data-testid="consolidated-cut-total">{fig(trimmedTotal(figures.cut))}</strong>
       {Object.keys(figures.gradeDue).map((g) => (
         <span key={g}>
           {' '}Grade {g} due total{' '}
@@ -89,7 +106,7 @@ function Consolidate({ sheets, sofar }: { sheets: string[]; sofar: Figures }) {
 
 // The consolidated figures over the sheet and all its descendants: their people, each counted once across the
 // tree (people whose names or aliases match are one person); the due- and overdue-totals of every person of
-// the tree added up, skipping n/a, trimmed once of the single highest and lowest when three or more have one; per grade, the due-totals of the people on it on their sheet's today
+// the tree, and their settled-, open- and cut totals, added up, skipping n/a, trimmed once of the single highest and lowest when three or more have one; per grade, the due-totals of the people on it on their sheet's today
 // (retired people left out) added up; and per status, how many claims have it. While the screen has an as-of date, every sheet of the tree is read
 // as it stood at the end of that day, with that date as its today. A sheet with no children shows its own.
 function ConsolidatedFigures() {
