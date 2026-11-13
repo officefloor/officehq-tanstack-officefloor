@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson } from '../../api/http';
-import { useCurrentSheet } from '../session/session';
+import { useCurrentSheet, useCurrentUser } from '../session/session';
 import type { Person } from '../people/people';
 import { AMOUNT, claimsKey, useClaims } from './claims';
 import type { Claim, ClaimInput } from './claims';
@@ -12,6 +12,7 @@ const EMPTY: ClaimInput = { amount: '', date: '', note: '' };
 // A person's claims, newest first, and the form that adds one — or, while a claim's editor is
 // open, saves that claim's changes. Opening an editor fills the form with the claim's values.
 export function PersonClaims({ person }: { person: Person }) {
+  const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const claims = (useClaims().data ?? []).filter((c) => c.personId === person.id);
   const [form, setForm] = useState<ClaimInput>(EMPTY);
@@ -28,8 +29,8 @@ export function PersonClaims({ person }: { person: Person }) {
   const save = useMutation({
     mutationFn: (input: ClaimInput) =>
       editing === undefined
-        ? postJson<Claim>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/claims`, input)
-        : putJson<Claim>(`/api/sheets/${encodeURIComponent(sheet)}/claims/${editing}`, input),
+        ? postJson<Claim>(`/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/claims?user=${encodeURIComponent(user)}`, input)
+        : putJson<Claim>(`/api/sheets/${encodeURIComponent(sheet)}/claims/${editing}?user=${encodeURIComponent(user)}`, input),
     onSuccess: async () => {
       close();
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });

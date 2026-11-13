@@ -46,8 +46,8 @@ export function PersonForm() {
   const save = useMutation({
     mutationFn: (input: PersonInput) =>
       editing === undefined
-        ? postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people`, input)
-        : putJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${editing}`, input),
+        ? postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people?user=${encodeURIComponent(user)}`, input)
+        : putJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${editing}?user=${encodeURIComponent(user)}`, input),
     onSuccess: async () => {
       close();
       await queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
