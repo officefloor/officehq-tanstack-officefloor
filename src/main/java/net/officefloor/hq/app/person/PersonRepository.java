@@ -134,6 +134,25 @@ public class PersonRepository {
     public Person recordStatement(Person person, String statedTotal, LocalDate date) {
         jdbc.update("UPDATE person SET statement_count = statement_count + 1, stated_total = ?, statement_date = ?"
                 + " WHERE id = ? AND sheet_id = ?", statedTotal, Date.valueOf(date), person.id(), person.sheetId());
+        jdbc.update("INSERT INTO person_statement (sheet_id, person_id, seq, stated_total, statement_date) VALUES (?, ?,"
+                + " (SELECT statement_count FROM person WHERE id = ? AND sheet_id = ?), ?, ?)", person.sheetId(),
+                person.id(), person.id(), person.sheetId(), statedTotal, Date.valueOf(date));
+        return find(person.sheetId(), person.id());
+    }
+
+    /**
+     * Cancel the person's last statement: one statement fewer, showing the due-total and date of the one before it
+     * (none when it is not known); the person as stored. Not an edit, so it leaves the version alone.
+     */
+    public Person cancelStatement(Person person) {
+        jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ? AND seq = ?", person.sheetId(),
+                person.id(), person.statementCount());
+        List<Map<String, Object>> before = jdbc.queryForList("SELECT stated_total, statement_date FROM person_statement"
+                + " WHERE sheet_id = ? AND person_id = ? AND seq = ?", person.sheetId(), person.id(),
+                person.statementCount() - 1);
+        jdbc.update("UPDATE person SET statement_count = statement_count - 1, stated_total = ?, statement_date = ?"
+                + " WHERE id = ? AND sheet_id = ?", before.isEmpty() ? null : before.get(0).get("stated_total"),
+                before.isEmpty() ? null : before.get(0).get("statement_date"), person.id(), person.sheetId());
         return find(person.sheetId(), person.id());
     }
 

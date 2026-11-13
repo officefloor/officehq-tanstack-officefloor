@@ -20,7 +20,7 @@ public class AutoClosePeriods {
             return;
         }
         for (Period period : periods.findAll(sheet.id()).stream().sorted(Comparator.comparing(Period::to)).toList()) {
-            if (period.closed() || !period.to().plusDays(graceDays).isBefore(sheet.today())) {
+            if (period.fixed() || !period.to().plusDays(graceDays).isBefore(sheet.today())) {
                 continue;
             }
             Period closed = closer.close(period);

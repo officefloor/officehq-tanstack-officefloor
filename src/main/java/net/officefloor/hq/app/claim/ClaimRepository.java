@@ -90,6 +90,12 @@ public class ClaimRepository {
                 stated, stated ? statedDue : null, claim.id(), claim.sheetId());
     }
 
+    /** Unbind (live again) each of the person's claims bound by their last statement. */
+    public void unbindStatement(String sheetId, long personId) {
+        jdbc.update("UPDATE claim SET stated = FALSE, stated_due = NULL WHERE sheet_id = ? AND person_id = ? AND stated",
+                sheetId, personId);
+    }
+
     /** Defer the claim until its {@code deferredUntil}. */
     public void defer(Claim claim) {
         jdbc.update("UPDATE claim SET deferred_until = ? WHERE id = ? AND sheet_id = ?",

@@ -8,7 +8,8 @@ import { usePersonError } from '../people/personError';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 
 // A person's statements: how many were taken, the last one's due-total and date, and the button that
-// takes one — recording their due-total now and binding each counting claim to its figure now.
+// takes one — recording their due-total now and binding each counting claim to its figure now — and the
+// button a steward cancels the last one with, making the claims it bound live again.
 export function PersonStatement({ person }: { person: Person }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -31,6 +32,21 @@ export function PersonStatement({ person }: { person: Person }) {
     onError: () => setError('The statement could not be taken.'),
   });
 
+  const cancel = useMutation({
+    mutationFn: () =>
+      postJson<Person>(
+        `/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/statement-cancel?user=${encodeURIComponent(user)}`,
+        {},
+      ),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+      ]);
+    },
+    onError: () => setError('The statement could not be cancelled.'),
+  });
+
   return (
     <td>
       <span data-testid="person-statement-count">{person.statementCount}</span>{' '}
@@ -46,6 +62,17 @@ export function PersonStatement({ person }: { person: Person }) {
         }}
       >
         Statement
+      </button>
+      <button
+        type="button"
+        data-testid="person-unstate"
+        disabled={cancel.isPending}
+        onClick={() => {
+          setError('');
+          once(() => cancel.mutateAsync());
+        }}
+      >
+        Cancel statement
       </button>
     </td>
   );
