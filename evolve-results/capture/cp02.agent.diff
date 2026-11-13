@@ -1,0 +1,450 @@
+diff --git a/src/main/frontend/api/http.ts b/src/main/frontend/api/http.ts
+index 2db5d7ab8..3aba447d2 100644
+--- a/src/main/frontend/api/http.ts
++++ b/src/main/frontend/api/http.ts
+@@ -19,3 +19,11 @@ export function postJson<T>(path: string, body: unknown): Promise<T> {
+     body: JSON.stringify(body),
+   });
+ }
++
++export function putJson<T>(path: string, body: unknown): Promise<T> {
++  return send<T>(path, {
++    method: 'PUT',
++    headers: { 'Content-Type': 'application/json' },
++    body: JSON.stringify(body),
++  });
++}
+diff --git a/src/main/frontend/features/session/SheetToday.tsx b/src/main/frontend/features/session/SheetToday.tsx
+new file mode 100644
+index 000000000..30cac3fda
+--- /dev/null
++++ b/src/main/frontend/features/session/SheetToday.tsx
+@@ -0,0 +1,63 @@
++import { useState } from 'react';
++import type { FormEvent } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { putJson } from '../../api/http';
++import { sheetInfoKey, sheetKey, useCurrentSheet, useCurrentUser } from './session';
++import type { SheetInfo } from './session';
++import { useSheetToday } from './sheetToday';
++
++// The sheet's own "today": shown, and changed by typing a date and saving. A blank date resets it
++// to the real date.
++export function SheetToday() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const today = useSheetToday();
++  const [date, setDate] = useState('');
++  const [error, setError] = useState('');
++  const queryClient = useQueryClient();
++
++  const save = useMutation({
++    mutationFn: (value: string) =>
++      putJson<SheetInfo>(`/api/sheets/${encodeURIComponent(sheet)}/today`, { today: value }),
++    onSuccess: async (saved) => {
++      queryClient.setQueryData(sheetInfoKey(saved.id), saved);
++      // Everything that depends on the date is kept under the sheet's key.
++      await queryClient.invalidateQueries({ queryKey: sheetKey(saved.id) });
++    },
++    onError: () => setError('That date could not be set as today.'),
++  });
++
++  if (!user || !sheet) return null;
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    const trimmed = date.trim();
++    setError('');
++    if (trimmed && !/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
++      setError('Type a date as yyyy-mm-dd.');
++      return;
++    }
++    save.mutate(trimmed);
++  };
++
++  return (
++    <form onSubmit={submit}>
++      <span>
++        Today: <strong data-testid="sheet-today">{today}</strong>{' '}
++      </span>
++      <input
++        data-testid="sheet-today-input"
++        placeholder="yyyy-mm-dd"
++        value={date}
++        onChange={(e) => {
++          setDate(e.target.value);
++          setError('');
++        }}
++      />
++      <button type="submit" data-testid="sheet-today-save" disabled={save.isPending}>
++        Set today
++      </button>
++      {error && <span data-testid="sheet-error">{error}</span>}
++    </form>
++  );
++}
+diff --git a/src/main/frontend/features/session/header.slot.tsx b/src/main/frontend/features/session/header.slot.tsx
+index 6d8dea0d3..18bb697e0 100644
+--- a/src/main/frontend/features/session/header.slot.tsx
++++ b/src/main/frontend/features/session/header.slot.tsx
+@@ -1,8 +1,10 @@
+ import { AppHeader } from '../../slots/defs/appHeader';
+ import { SheetPicker } from './SheetPicker';
++import { SheetToday } from './SheetToday';
+ import { SignIn } from './SignIn';
+ 
+ export const contributions = [
+   AppHeader.fill({ order: 0, Component: SignIn }),
+   AppHeader.fill({ order: 10, Component: SheetPicker }),
++  AppHeader.fill({ order: 20, Component: SheetToday }),
+ ];
+diff --git a/src/main/frontend/features/session/session.ts b/src/main/frontend/features/session/session.ts
+index 162bc50b2..de6bab4a1 100644
+--- a/src/main/frontend/features/session/session.ts
++++ b/src/main/frontend/features/session/session.ts
+@@ -7,3 +7,9 @@ export const useCurrentSheet = () => useSearchParam('sheet', asString);
+ 
+ /** The query key under which everything kept per sheet lives; re-loading a sheet invalidates it. */
+ export const sheetKey = (sheet: string) => ['sheet', sheet] as const;
++
++/** A sheet as the store holds it: its id and its own "today" (yyyy-MM-dd). */
++export type SheetInfo = { id: string; today: string };
++
++/** The query key for the sheet itself; under sheetKey, so re-loading the sheet re-reads it. */
++export const sheetInfoKey = (sheet: string) => [...sheetKey(sheet), 'info'] as const;
+diff --git a/src/main/frontend/features/session/sheetToday.ts b/src/main/frontend/features/session/sheetToday.ts
+new file mode 100644
+index 000000000..57eb94f7d
+--- /dev/null
++++ b/src/main/frontend/features/session/sheetToday.ts
+@@ -0,0 +1,18 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { sheetInfoKey, useCurrentSheet } from './session';
++import type { SheetInfo } from './session';
++
++/**
++ * The active sheet's today (yyyy-MM-dd), or '' while it loads. Every date-dependent decision and
++ * every default date on screen uses this — never `new Date()`.
++ */
++export function useSheetToday(): string {
++  const [sheet] = useCurrentSheet();
++  const info = useQuery({
++    queryKey: sheetInfoKey(sheet),
++    queryFn: () => getJson<SheetInfo>(`/api/sheets/${encodeURIComponent(sheet)}`),
++    enabled: !!sheet,
++  });
++  return info.data?.today ?? '';
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/ApplySheetToday.java b/src/main/java/net/officefloor/hq/app/sheet/ApplySheetToday.java
+new file mode 100644
+index 000000000..afbc726c6
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/ApplySheetToday.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app.sheet;
++
++import java.time.LocalDate;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++public class ApplySheetToday {
++    public void apply(@Val LocalDate today, @Val Sheet sheet, Out<Sheet> updated) {
++        updated.set(new Sheet(sheet.id(), today));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/HandleInvalidToday.java b/src/main/java/net/officefloor/hq/app/sheet/HandleInvalidToday.java
+new file mode 100644
+index 000000000..a280ffbe0
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/HandleInvalidToday.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleInvalidToday {
++    public void handle(@Parameter InvalidTodayException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.BAD_REQUEST));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/HandleSheetNotFound.java b/src/main/java/net/officefloor/hq/app/sheet/HandleSheetNotFound.java
+new file mode 100644
+index 000000000..eb4be0bdd
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/HandleSheetNotFound.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleSheetNotFound {
++    public void handle(@Parameter SheetNotFoundException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.NOT_FOUND));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/InvalidTodayException.java b/src/main/java/net/officefloor/hq/app/sheet/InvalidTodayException.java
+new file mode 100644
+index 000000000..3d2f0029f
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/InvalidTodayException.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.sheet;
++
++public class InvalidTodayException extends Exception {
++    public InvalidTodayException(String value) {
++        super("Not a date: " + value);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/LoadSheet.java b/src/main/java/net/officefloor/hq/app/sheet/LoadSheet.java
+new file mode 100644
+index 000000000..e73eaf7aa
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/LoadSheet.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++
++public class LoadSheet {
++    public void load(@PathVariable("sheetId") String sheetId, SheetRepository repository, Out<Sheet> sheet)
++            throws SheetNotFoundException {
++        Sheet found = repository.find(sheetId);
++        if (found == null) {
++            throw new SheetNotFoundException(sheetId);
++        }
++        sheet.set(found);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+index 3eb98c560..a4173be65 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+@@ -5,6 +5,6 @@ import net.officefloor.web.ObjectResponse;
+ 
+ public class RespondWithSheet {
+     public void respond(@Val Sheet sheet, ObjectResponse<SheetResponse> response) {
+-        response.send(new SheetResponse(sheet.id()));
++        response.send(SheetResponse.from(sheet));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SaveSheet.java b/src/main/java/net/officefloor/hq/app/sheet/SaveSheet.java
+new file mode 100644
+index 000000000..8e9e37875
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/SaveSheet.java
+@@ -0,0 +1,9 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.plugin.variable.Val;
++
++public class SaveSheet {
++    public void save(@Val Sheet sheet, SheetRepository repository) {
++        repository.save(sheet);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/Sheet.java b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+index 0832c5aff..8cf28129f 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+@@ -1,5 +1,10 @@
+ package net.officefloor.hq.app.sheet;
+ 
+-/** A sheet: the unit everything else in the app is kept under. */
+-public record Sheet(String id) {
++import java.time.LocalDate;
++
++/**
++ * A sheet: the unit everything else in the app is kept under. {@code today} is the sheet's own
++ * date — every date-dependent decision and every default date uses it, never the real clock.
++ */
++public record Sheet(String id, LocalDate today) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetNotFoundException.java b/src/main/java/net/officefloor/hq/app/sheet/SheetNotFoundException.java
+new file mode 100644
+index 000000000..f5fff9795
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetNotFoundException.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.sheet;
++
++public class SheetNotFoundException extends Exception {
++    public SheetNotFoundException(String id) {
++        super("No sheet " + id);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+index 704952ba0..83b37c514 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+@@ -1,5 +1,8 @@
+ package net.officefloor.hq.app.sheet;
+ 
++import java.sql.Date;
++import java.time.LocalDate;
++import java.util.List;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.stereotype.Repository;
+ 
+@@ -12,9 +15,30 @@ public class SheetRepository {
+         this.jdbc = jdbc;
+     }
+ 
+-    /** The sheet with this id, created empty when it was never loaded before. */
++    /** The sheet with this id, created empty (today = the real date) when it was never loaded before. */
+     public Sheet ensure(String id) {
+-        jdbc.update("MERGE INTO sheet (id) KEY (id) VALUES (?)", id);
+-        return new Sheet(id);
++        jdbc.update("INSERT INTO sheet (id, today) SELECT ?, ? WHERE NOT EXISTS (SELECT 1 FROM sheet WHERE id = ?)",
++                id, Date.valueOf(LocalDate.now()), id);
++        return find(id);
++    }
++
++    /** The sheet with this id, or null when it was never loaded. */
++    public Sheet find(String id) {
++        List<Sheet> found = jdbc.query("SELECT id, today FROM sheet WHERE id = ?",
++                (rs, n) -> new Sheet(rs.getString("id"), rs.getDate("today").toLocalDate()), id);
++        return found.isEmpty() ? null : found.get(0);
++    }
++
++    /**
++     * The sheet's today. Use this — never {@code LocalDate.now()} — for any date-dependent decision
++     * or default date in the sheet.
++     */
++    public LocalDate today(String id) {
++        Sheet sheet = find(id);
++        return sheet == null ? LocalDate.now() : sheet.today();
++    }
++
++    public void save(Sheet sheet) {
++        jdbc.update("UPDATE sheet SET today = ? WHERE id = ?", Date.valueOf(sheet.today()), sheet.id());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java b/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java
+index 158c563b8..d4c2365e9 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java
+@@ -1,4 +1,8 @@
+ package net.officefloor.hq.app.sheet;
+ 
+-public record SheetResponse(String id) {
++public record SheetResponse(String id, String today) {
++
++    public static SheetResponse from(Sheet sheet) {
++        return new SheetResponse(sheet.id(), sheet.today().toString());
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/TodayRequest.java b/src/main/java/net/officefloor/hq/app/sheet/TodayRequest.java
+new file mode 100644
+index 000000000..a3dbc080d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/TodayRequest.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.sheet;
++
++import jakarta.validation.constraints.Size;
++
++/** A new today for a sheet, as yyyy-MM-dd; blank resets it to the real date. */
++public record TodayRequest(@Size(max = 20) String today) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/ValidateTodayRequest.java b/src/main/java/net/officefloor/hq/app/sheet/ValidateTodayRequest.java
+new file mode 100644
+index 000000000..4cbfa7dc2
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/ValidateTodayRequest.java
+@@ -0,0 +1,22 @@
++package net.officefloor.hq.app.sheet;
++
++import jakarta.validation.Valid;
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ValidateTodayRequest {
++    public void validate(@RequestBody @Valid TodayRequest request, Out<LocalDate> today) throws InvalidTodayException {
++        String value = request.today() == null ? "" : request.today().trim();
++        if (value.isEmpty()) {
++            today.set(LocalDate.now()); // the default: the real date
++            return;
++        }
++        try {
++            today.set(LocalDate.parse(value));
++        } catch (DateTimeParseException e) {
++            throw new InvalidTodayException(value);
++        }
++    }
++}
+diff --git a/src/main/resources/db/migration/V2__sheet_today.sql b/src/main/resources/db/migration/V2__sheet_today.sql
+new file mode 100644
+index 000000000..59ccca01f
+--- /dev/null
++++ b/src/main/resources/db/migration/V2__sheet_today.sql
+@@ -0,0 +1,5 @@
++-- Each sheet has its own "today": every date-dependent decision and default date uses it, never the
++-- real clock. It starts as the real date when the sheet is first loaded.
++ALTER TABLE sheet ADD COLUMN today DATE;
++UPDATE sheet SET today = CURRENT_DATE WHERE today IS NULL;
++ALTER TABLE sheet ALTER COLUMN today SET NOT NULL;
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.sheet.InvalidTodayException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.sheet.InvalidTodayException.yml
+new file mode 100644
+index 000000000..b77c945bb
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.sheet.InvalidTodayException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.sheet.HandleInvalidToday
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.sheet.SheetNotFoundException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.sheet.SheetNotFoundException.yml
+new file mode 100644
+index 000000000..226961b3e
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.sheet.SheetNotFoundException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.sheet.HandleSheetNotFound
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}.GET.yml
+new file mode 100644
+index 000000000..ba40a1cf1
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}.GET.yml
+@@ -0,0 +1,8 @@
++# Read a sheet (its id and today) as the store holds it now.
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ readonly-transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.sheet.RespondWithSheet
++  govern: [ readonly-transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+new file mode 100644
+index 000000000..0b6224048
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+@@ -0,0 +1,19 @@
++# Change the sheet's today; a blank date resets it to the real date.
++validate:
++  class: net.officefloor.hq.app.sheet.ValidateTodayRequest
++  next: load
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ transaction ]
++  next: apply
++apply:
++  class: net.officefloor.hq.app.sheet.ApplySheetToday
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.sheet.SaveSheet
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.sheet.RespondWithSheet
++  govern: [ transaction ]
