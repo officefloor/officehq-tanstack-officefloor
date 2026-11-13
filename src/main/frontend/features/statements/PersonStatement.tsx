@@ -1,10 +1,10 @@
-import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { useOneAtATime } from '../../query/useOneAtATime';
 import { claimsKey } from '../claims/claims';
 import { peopleKey } from '../people/people';
 import type { Person } from '../people/people';
+import { usePersonError } from '../people/personError';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 
 // A person's statements: how many were taken, the last one's due-total and date, and the button that
@@ -12,7 +12,7 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
 export function PersonStatement({ person }: { person: Person }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
-  const [error, setError] = useState('');
+  const [, setError] = usePersonError(person.id);
   const queryClient = useQueryClient();
   const once = useOneAtATime();
 
@@ -47,7 +47,6 @@ export function PersonStatement({ person }: { person: Person }) {
       >
         Statement
       </button>
-      {error && <span data-testid="person-error">{error}</span>}
     </td>
   );
 }

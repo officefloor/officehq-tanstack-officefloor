@@ -1,14 +1,17 @@
 import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
-import { useEditingPerson, usePeople } from './people';
+import { PersonError } from './personError';
+import { useEditingPerson, usePeople, useShowRetired } from './people';
 
 // Every person on the sheet, in the order they were added, each with their name and grade and
-// the columns features add (slots/defs/personColumns.ts).
+// the columns features add (slots/defs/personColumns.ts). Retired people are left out unless the
+// show-retired toggle is on.
 export function PeopleList() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const [, setEditing] = useEditingPerson();
   const people = usePeople();
+  const [showRetired] = useShowRetired();
 
   if (!user || !sheet) return null;
 
@@ -23,7 +26,7 @@ export function PeopleList() {
         </tr>
       </thead>
       <tbody>
-        {(people.data ?? []).map((p) => (
+        {(people.data ?? []).filter((p) => showRetired || !p.retired).map((p) => (
           <tr key={p.id} data-testid={`person-row-${p.id}`}>
             <td data-testid="person-name" style={{ whiteSpace: 'pre' }}>
               {p.name}
@@ -34,6 +37,7 @@ export function PeopleList() {
               <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => setEditing(p.id)}>
                 Edit
               </button>
+              <PersonError personId={p.id} />
             </td>
           </tr>
         ))}

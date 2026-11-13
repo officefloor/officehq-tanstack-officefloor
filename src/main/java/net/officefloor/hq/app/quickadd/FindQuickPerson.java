@@ -11,6 +11,6 @@ public class FindQuickPerson {
     public void find(@Val QuickAddRequest request, @Val Sheet sheet, PersonRepository repository,
             Out<Person> person) {
         Person found = repository.findByName(sheet.id(), request.name());
-        person.set(found != null ? found : new Person(null, sheet.id(), request.name(), "A", 0, 0, null, null));
+        person.set(found != null ? found : new Person(null, sheet.id(), request.name(), "A", 0, 0, null, null, null));
     }
 }

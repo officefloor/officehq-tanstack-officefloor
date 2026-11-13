@@ -1,11 +1,15 @@
 package net.officefloor.hq.app.person;
 
-/** A person as the screen shows them; the last statement's due-total and date are null before the first. */
+/**
+ * A person as the screen shows them; the last statement's due-total and date are null before the first, and
+ * {@code retiredFrom} is null while they are not retired.
+ */
 public record PersonResponse(long id, String name, String grade, int version, int statementCount, String statedTotal,
-        String statementDate) {
+        String statementDate, boolean retired, String retiredFrom) {
 
     public static PersonResponse from(Person person) {
         return new PersonResponse(person.id(), person.name(), person.grade(), person.version(), person.statementCount(),
-                person.statedTotal(), person.statementDate() == null ? null : person.statementDate().toString());
+                person.statedTotal(), person.statementDate() == null ? null : person.statementDate().toString(),
+                person.retired(),                 person.retiredFrom() == null ? null : person.retiredFrom().toString());
     }
 }

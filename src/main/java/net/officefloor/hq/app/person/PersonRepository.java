@@ -13,7 +13,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PersonRepository {
 
-    private static final String COLUMNS = "id, sheet_id, name, grade, version, statement_count, stated_total, statement_date";
+    private static final String COLUMNS = "id, sheet_id, name, grade, version, statement_count, stated_total, statement_date, retired_from";
 
     private final JdbcTemplate jdbc;
 
@@ -60,7 +60,8 @@ public class PersonRepository {
                     person.name(), person.grade(), person.id(), person.sheetId(), person.version());
             return n == 0 ? null
                     : new Person(person.id(), person.sheetId(), person.name(), person.grade(), person.version() + 1,
-                            person.statementCount(), person.statedTotal(), person.statementDate());
+                            person.statementCount(), person.statedTotal(), person.statementDate(),
+                            person.retiredFrom());
         }
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
@@ -71,7 +72,8 @@ public class PersonRepository {
             ps.setString(3, person.grade());
             return ps;
         }, keys);
-        return new Person(keys.getKey().longValue(), person.sheetId(), person.name(), person.grade(), 0, 0, null, null);
+        return new Person(keys.getKey().longValue(), person.sheetId(), person.name(), person.grade(), 0, 0, null, null,
+                null);
     }
 
     /**
@@ -84,9 +86,17 @@ public class PersonRepository {
         return find(person.sheetId(), person.id());
     }
 
+    /** Retire the person from this date; the person as stored. Not an edit, so it leaves the version alone. */
+    public Person retire(Person person, LocalDate from) {
+        jdbc.update("UPDATE person SET retired_from = ? WHERE id = ? AND sheet_id = ?", Date.valueOf(from), person.id(),
+                person.sheetId());
+        return find(person.sheetId(), person.id());
+    }
+
     private static Person map(ResultSet rs, int n) throws SQLException {
         return new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"),
                 rs.getInt("version"), rs.getInt("statement_count"), rs.getString("stated_total"),
-                rs.getObject("statement_date", LocalDate.class));
+                rs.getObject("statement_date", LocalDate.class),
+                rs.getObject("retired_from", LocalDate.class));
     }
 }
