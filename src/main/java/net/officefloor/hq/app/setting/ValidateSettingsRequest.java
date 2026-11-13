@@ -28,7 +28,8 @@ public class ValidateSettingsRequest {
     public void validate(@RequestBody @Valid SettingsRequest request, Out<ClerkLimit> limit, Out<Floor> floor,
             Out<Terms> terms, Out<LatePct> latePct, Out<PolicyDate> policyDate,
             Out<PeriodNumberingFrom> periodNumberingFrom, Out<EntryDate> entryDate, Out<GradeTerms> gradeTerms, Out<Cap> cap,
-            Out<ProofThreshold> proofThreshold, Out<NoteThreshold> noteThreshold, Out<PermissionChanges> permissions, Out<GraceDays> graceDays)
+            Out<ProofThreshold> proofThreshold, Out<NoteThreshold> noteThreshold, Out<PermissionChanges> permissions, Out<GraceDays> graceDays,
+            Out<GradeGrace> gradeGrace)
             throws InvalidSettingException {
         limit.set(clerkLimit(request.clerkLimit(), from(request.clerkLimitFrom(), "clerk limit")));
         floor.set(floor(request.floor(), from(request.floorFrom(), "floor")));
@@ -43,6 +44,7 @@ public class ValidateSettingsRequest {
         noteThreshold.set(noteThreshold(request.noteThreshold(), from(request.noteThresholdFrom(), "note threshold")));
         permissions.set(permissions(request.permissions()));
         graceDays.set(graceDays(request.graceDays()));
+        gradeGrace.set(gradeGrace(request.gradeGrace(), request.gradeGraceFrom()));
     }
 
     /** A from-date typed with a setting (null: left out or blank, the sheet's today). */
@@ -96,6 +98,33 @@ public class ValidateSettingsRequest {
             throw new InvalidSettingException("The grace days must be a whole number of days, 0 or more, or blank.");
         }
         return new GraceDays(true, Integer.parseInt(value));
+    }
+
+    private static GradeGrace gradeGrace(Map<String, String> requested, Map<String, String> requestedFrom)
+            throws InvalidSettingException {
+        Map<String, Integer> grace = new LinkedHashMap<>();
+        Map<String, LocalDate> from = new LinkedHashMap<>();
+        if (requested == null) {
+            return new GradeGrace(grace, from);
+        }
+        for (String grade : requested.keySet().stream().sorted().toList()) {
+            if (!GRADES.contains(grade)) {
+                throw new InvalidSettingException("Grace days can only be set for grade A, B or C.");
+            }
+            String value = requested.get(grade) == null ? "" : requested.get(grade).trim();
+            if (value.isEmpty()) {
+                grace.put(grade, null);
+            } else if (!DAYS.matcher(value).matches()) {
+                throw new InvalidSettingException("The grace days for a grade must be a whole number of days, 0 or more, or blank.");
+            } else {
+                grace.put(grade, Integer.parseInt(value));
+            }
+            LocalDate gradeFrom = from(requestedFrom == null ? null : requestedFrom.get(grade), "grade " + grade + " grace");
+            if (gradeFrom != null) {
+                from.put(grade, gradeFrom);
+            }
+        }
+        return new GradeGrace(grace, from);
     }
 
     private static Cap cap(String requested, LocalDate from) throws InvalidSettingException {

@@ -117,7 +117,13 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
 
     /** Whether the claim is overdue on the given today: OPEN (or PENDING), not deferred, with its due-by before that day. */
     public boolean overdue(LocalDate today) {
-        return status.open() && !deferred(today) && dueBy != null && today != null && dueBy.isBefore(today);
+        return overdue(today, 0);
+    }
+
+    /** Whether the claim is overdue on the given today with the grace days: its due-by plus them before that day. */
+    public boolean overdue(LocalDate today, int grace) {
+        return status.open() && !deferred(today) && dueBy != null && today != null
+                && dueBy.plusDays(grace).isBefore(today);
     }
 
     /** Whether a statement binds the claim now: it was stated and is not PENDING. */

@@ -71,11 +71,11 @@ public class RollupService {
                 claimed = claimed.add(claim.amount());
                 kept |= claim.keepsFigure();
                 BigDecimal figure = claim.due(Rate.inForce(sheetRates, person.gradeOn(claim.date()), claim.date()),
-                        dated.floorOn(claim.date()), dated.lateCharge(today), rounding);
+                        dated.floorOn(claim.date()), dated.lateCharge(today, person), rounding);
                 if (figure != null) {
                     kept = true;
                     due = due.add(figure);
-                    if (claim.overdue(today)) {
+                    if (claim.overdue(today, dated.graceFor(person, claim))) {
                         overdue = overdue.add(figure);
                     }
                 }

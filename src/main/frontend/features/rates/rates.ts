@@ -6,6 +6,7 @@ import { lateBoundary, latePeriods } from '../overdue/dueBy';
 import { gradeOn } from '../people/people';
 import type { GradeFrom, Hold } from '../people/people';
 import { sheetKey, useCurrentSheet } from '../session/session';
+import { claimGrace } from '../settings/settings';
 import type { DueRules } from '../settings/settings';
 
 /**
@@ -102,15 +103,16 @@ function claimFigure(claim: Claim, rates: Rate[], grades: GradeFrom[], rules: Du
 
 /**
  * The late charge on a figure: for every full 30 days the claim is overdue, the late percent in force on that boundary date
- * (its due-by plus 30, 60, 90 ... days) of it, rounded like the claim's due, the charges added up (a boundary at 0.00 adds
+ * (its due-by plus the grace days of its person's grade on its date plus 30, 60, 90 ... days) of it, rounded like the claim's due, the charges added up (a boundary at 0.00 adds
  * nothing); 0.00 when it is not overdue, and always for a correction.
  */
-export function lateCharge(claim: Claim, figure: string, rules: DueRules): string {
+export function lateCharge(claim: Claim, figure: string, grades: GradeFrom[], rules: DueRules): string {
   if (claim.corrects !== null) return '0.00';
-  const periods = latePeriods(claim, rules.today);
+  const grace = claimGrace(claim, grades, rules);
+  const periods = latePeriods(claim, rules.today, grace);
   const charges: string[] = [];
   for (let period = 1; period <= periods; period++) {
-    const pct = hundredths(rules.latePctOn(lateBoundary(claim, period)));
+    const pct = hundredths(rules.latePctOn(lateBoundary(claim, period, grace)));
     if (pct !== 0) charges.push(percentOf(hundredths(figure), pct, roundingFor(claim, rules)));
   }
   return total(charges);
@@ -125,7 +127,7 @@ export function claimDue(claim: Claim, rates: Rate[], grades: GradeFrom[], rules
   if (claim.due !== null) return claim.due;
   const figure = claimFigure(claim, rates, grades, rules);
   if (figure === NA || claim.corrects !== null) return figure;
-  return floored(total([figure, lateCharge(claim, figure, rules)]), rules.floorOn(claim.date));
+  return floored(total([figure, lateCharge(claim, figure, grades, rules)]), rules.floorOn(claim.date));
 }
 
 /** Whether a claim keeps a figure whatever the rates: fixed when settled, or bound by a statement. */

@@ -6,13 +6,15 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
+import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.LateCharge;
+import net.officefloor.hq.app.person.Person;
 
 /**
- * A sheet's dated settings: for each key (floor, late-pct, terms, terms-&lt;grade&gt;, clerk-limit, cap, proof-threshold, note-threshold) the values
+ * A sheet's dated settings: for each key (floor, late-pct, terms, terms-&lt;grade&gt;, grace-&lt;grade&gt;, clerk-limit, cap, proof-threshold, note-threshold) the values
  * recorded, by from-date (a value null: blank). The value in force on a date is the one with the latest from-date on or
  * before it; before every from-date it is the sheet's starting value (floor 1.00, late percent 0.00, terms 14; none
- * for the clerk limit, the cap, the proof threshold, the note threshold and a grade's own terms).
+ * for the clerk limit, the cap, the proof threshold, the note threshold, a grade's own terms and a grade's grace days).
  */
 public record DatedSettings(Map<String, NavigableMap<LocalDate, String>> values) {
 
@@ -23,6 +25,7 @@ public record DatedSettings(Map<String, NavigableMap<LocalDate, String>> values)
     public static final String CAP = "cap";
     public static final String PROOF_THRESHOLD = "proof-threshold";
     public static final String NOTE_THRESHOLD = "note-threshold";
+    public static final String GRACE = "grace";
 
     /** The key of a grade's own terms. */
     public static String gradeTerms(String grade) {
@@ -68,6 +71,31 @@ public record DatedSettings(Map<String, NavigableMap<LocalDate, String>> values)
     /** What an overdue claim is charged on the given today: the late percent in force on each 30-day boundary. */
     public LateCharge lateCharge(LocalDate today) {
         return new LateCharge(this::latePctOn, today);
+    }
+
+    /**
+     * What an overdue claim of the person (null: none, no grace) is charged on the given today: the late percent in
+     * force on each 30-day boundary, counted from its due-by plus the grace of the person's grade on its date.
+     */
+    public LateCharge lateCharge(LocalDate today, Person person) {
+        return person == null ? lateCharge(today) : new LateCharge(this::latePctOn, (claim) -> graceFor(person, claim), today);
+    }
+
+    /** The key of a grade's grace days. */
+    public static String gradeGrace(String grade) {
+        return GRACE + "-" + grade;
+    }
+
+    /** The grade's grace days in force on the date (null: none). */
+    public Integer graceOn(String grade, LocalDate date) {
+        String value = grade == null ? null : on(gradeGrace(grade), date);
+        return value == null ? null : Integer.valueOf(value);
+    }
+
+    /** The grace days for the person's claim: those of the person's grade in force on its date, in force then; else 0. */
+    public int graceFor(Person person, Claim claim) {
+        Integer grace = graceOn(person.gradeOn(claim.date()), claim.date());
+        return grace == null ? 0 : grace;
     }
 
     /** The sheet's terms in days in force on the date. */

@@ -16,7 +16,9 @@ import {
   STANDING_PERMISSIONS,
   settingsKey,
   useSettings,
+  valueOn,
 } from './settings';
+import { useSheetToday } from '../session/sheetToday';
 import type { Settings } from './settings';
 import { useOneAtATime } from '../../query/useOneAtATime';
 import { GRADES } from '../people/people';
@@ -42,6 +44,8 @@ type SettingsInput = {
   proofThresholdFrom?: string;
   noteThresholdFrom?: string;
   gradeTermsFrom?: Record<string, string>;
+  gradeGrace?: Record<string, string>;
+  gradeGraceFrom?: Record<string, string>;
   permissions?: Record<string, string>;
   graceDays?: string;
 };
@@ -86,6 +90,9 @@ export function SettingsForm() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const settings = useSettings().data;
+  const today = useSheetToday();
+  const [gradeGrace, setGradeGrace] = useState<Record<string, string>>({});
+  const [touchedGrace, setTouchedGrace] = useState<Record<string, boolean>>({});
   const [clerkLimit, setClerkLimit] = useState('');
   const [floor, setFloor] = useState('');
   const [terms, setTerms] = useState('');
@@ -116,6 +123,8 @@ export function SettingsForm() {
       setTerms('');
       setGradeTerms({});
       setTouchedGrades({});
+      setGradeGrace({});
+      setTouchedGrace({});
       setLatePct('');
       setPolicyDate('');
       setPeriodNumberingFrom('');
@@ -166,6 +175,7 @@ export function SettingsForm() {
       ['floor', 'floor'],
       ['terms', 'terms'],
       ...GRADES.map((g) => [`terms-${g}`, `terms for grade ${g}`]),
+      ...GRADES.map((g) => [`grace-${g}`, `grace days for grade ${g}`]),
       ['late-pct', 'late percent'],
       ['cap', 'cap'],
       ['proof-threshold', 'proof threshold'],
@@ -214,6 +224,17 @@ export function SettingsForm() {
       input.gradeTerms = { ...input.gradeTerms, [g]: value };
       const from = datedFrom(`terms-${g}`);
       if (from) input.gradeTermsFrom = { ...input.gradeTermsFrom, [g]: from };
+    }
+    for (const g of GRADES) {
+      if (!touchedGrace[g]) continue;
+      const value = (gradeGrace[g] ?? '').trim();
+      if (value !== '' && !DAYS.test(value)) {
+        setError(`Type grace days for grade ${g} of 0 or more whole days, or leave them blank for none.`);
+        return;
+      }
+      input.gradeGrace = { ...input.gradeGrace, [g]: value };
+      const from = datedFrom(`grace-${g}`);
+      if (from) input.gradeGraceFrom = { ...input.gradeGraceFrom, [g]: from };
     }
     if (touched.latePct) {
       const value = latePct.trim();
@@ -299,6 +320,7 @@ export function SettingsForm() {
       input.floor === undefined &&
       input.terms === undefined &&
       input.gradeTerms === undefined &&
+      input.gradeGrace === undefined &&
       input.latePct === undefined &&
       input.policyDate === undefined &&
       input.periodNumberingFrom === undefined &&
@@ -329,6 +351,14 @@ export function SettingsForm() {
           Terms for grade {g} (days):{' '}
           <span data-testid={`setting-terms-${g}-current`}>
             {settings ? (settings.gradeTerms[g] ?? settings.terms) : ''}
+          </span>
+        </p>
+      ))}
+      {GRADES.map((g) => (
+        <p key={g}>
+          Grace days for grade {g}:{' '}
+          <span data-testid={`setting-grace-${g}-current`}>
+            {settings ? valueOn(settings.history[`grace-${g}`], today, '') : ''}
           </span>
         </p>
       ))}
@@ -413,6 +443,22 @@ export function SettingsForm() {
               }}
             />
             {fromField(`terms-${g}`, `Terms for grade ${g}`)}
+          </span>
+        ))}
+        {GRADES.map((g) => (
+          <span key={g}>
+            <input
+              data-testid={`setting-grace-${g}`}
+              placeholder={`Grace days for grade ${g} after a claim's due-by (blank: none)`}
+              value={gradeGrace[g] ?? ''}
+              onFocus={() => setTouchedGrace((t) => ({ ...t, [g]: true }))}
+              onChange={(e) => {
+                setGradeGrace((v) => ({ ...v, [g]: e.target.value }));
+                setTouchedGrace((t) => ({ ...t, [g]: true }));
+                setError('');
+              }}
+            />
+            {fromField(`grace-${g}`, `Grace days for grade ${g}`)}
           </span>
         ))}
         <input

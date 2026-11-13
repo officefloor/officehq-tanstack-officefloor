@@ -28,7 +28,7 @@ public final class ClaimDueNow {
                 : Rate.inForce(rates.findAll(claim.sheetId()), person.gradeOn(claim.date()), claim.date());
         LocalDate today = sheets.today(claim.sheetId());
         DatedSettings dated = settings.dated(claim.sheetId());
-        return claim.due(rate, dated.floorOn(claim.date()), dated.lateCharge(today),
+        return claim.due(rate, dated.floorOn(claim.date()), dated.lateCharge(today, person),
                 settings.rounding(claim.sheetId(), today, claims.findForPerson(claim.sheetId(), claim.personId())));
     }
 }

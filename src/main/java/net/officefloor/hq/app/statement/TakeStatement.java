@@ -80,7 +80,7 @@ public class TakeStatement {
             counted++;
             kept |= fixed || figure != null;
             if (figure != null) {
-                total = total.add(claim.due(rate, dated.floorOn(claim.date()), dated.lateCharge(on), rounding));
+                total = total.add(claim.due(rate, dated.floorOn(claim.date()), dated.lateCharge(on, thenPerson), rounding));
             }
         }
         for (Claim claim : personClaims) {

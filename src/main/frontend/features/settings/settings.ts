@@ -4,6 +4,8 @@ import { getJson } from '../../api/http';
 import { sheetKey, useCurrentSheet } from '../session/session';
 import { useSheetToday } from '../session/sheetToday';
 import { useClaims } from '../claims/claims';
+import { gradeOn } from '../people/people';
+import type { GradeFrom } from '../people/people';
 
 /** A role given to a user name: clerk, steward or viewer (sees everything, changes nothing). A name with none given is a clerk. */
 export type UserRole = { user: string; role: string };
@@ -20,7 +22,7 @@ export type UserRole = { user: string; role: string };
  * claim whose due is above the one in force on its date is settled or approved only once it has a proof), the note threshold (two decimals; '': none — a
  * claim whose due is above the one in force on its date is opened only with a note), and the roles
  * given to user names. The clerk limit, floor, terms, grade terms, late percent, cap, proof threshold and note threshold are those in force on the sheet's
- * today; `history` holds every value recorded for them, by key (floor, late-pct, terms, terms-<grade>, clerk-limit,
+ * today; `history` holds every value recorded for them, by key (floor, late-pct, terms, terms-<grade>, grace-<grade>, clerk-limit,
  * cap, proof-threshold, note-threshold), oldest from-date first (value '': blank). `permissions` is the permission matrix: by action, the
  * roles allowed it, comma separated ('': blank, the standing rule); it is not dated.
  * `graceDays` is the grace days (whole days; '': off — when the sheet's today is changed, an open period whose
@@ -97,6 +99,14 @@ export function useSettings() {
   });
 }
 
+/**
+ * The grace days of the grade of a claim's person in force on its date, in force on that date (0: none): the claim is
+ * overdue only once its due-by plus them is before the sheet's today.
+ */
+export function claimGrace(claim: { date: string }, grades: GradeFrom[], rules: DueRules): number {
+  return rules.graceOn(gradeOn(grades, claim.date), claim.date);
+}
+
 /** The sheet's floor (two decimals): a claim's live due is at least it. */
 export function useFloor(): string {
   return useSettings().data?.floor ?? DEFAULT_FLOOR;
@@ -107,13 +117,15 @@ export function useFloor(): string {
 export const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
- * What a claim's due is worked out from: the floor and late percent in force on a claim's date, the sheet's today, its policy
+ * What a claim's due is worked out from: the floor and late percent in force on a claim's date, the grace days of a grade
+ * in force on a date (0: none), the sheet's today, its policy
  * date in force (blank: today), its cap in force on today ('': none) and the dates of its claims by number (a correction rounds by the date
  * of the claim it corrects).
  */
 export type DueRules = {
   floorOn: (date: string) => string;
   latePctOn: (date: string) => string;
+  graceOn: (grade: string | undefined, date: string) => number;
   today: string;
   policyDate: string;
   cap: string;
@@ -132,9 +144,14 @@ export function useDueRules(): DueRules {
   const history = settings?.history;
   const floorOn = useCallback((date: string) => valueOn(history?.floor, date, DEFAULT_FLOOR), [history]);
   const latePctOn = useCallback((date: string) => valueOn(history?.['late-pct'], date, DEFAULT_LATE_PCT), [history]);
+  const graceOn = useCallback(
+    (grade: string | undefined, date: string) => (grade ? Number(valueOn(history?.[`grace-${grade}`], date, '0')) : 0),
+    [history],
+  );
   return {
     floorOn,
     latePctOn,
+    graceOn,
     today,
     policyDate: settings?.policyDate || today,
     cap: settings?.cap ?? '',
