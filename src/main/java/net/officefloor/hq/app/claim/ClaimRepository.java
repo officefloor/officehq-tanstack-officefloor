@@ -322,6 +322,7 @@ public class ClaimRepository {
             long id = RowCopy.copy(jdbc, "claim", old, changed);
             jdbc.update("UPDATE claim_log SET sheet_id = ?, claim_id = ? WHERE claim_id = ?", to, id, old);
             jdbc.update("UPDATE claim_comment SET sheet_id = ?, claim_id = ? WHERE claim_id = ?", to, id, old);
+            jdbc.update("UPDATE claim_line SET sheet_id = ?, claim_id = ? WHERE claim_id = ?", to, id, old);
             jdbc.update("DELETE FROM claim_lock WHERE sheet_id = ? AND claim_id = ?", sheetId, old);
             jdbc.update("DELETE FROM claim WHERE id = ?", old);
             String tags = tags(to, id);

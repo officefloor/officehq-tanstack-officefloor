@@ -46,7 +46,9 @@ export const bound = (c: Claim) => c.stated && c.status !== 'PENDING';
  * tags are its tags (lower-cased, no repeats), sorted; empty when it has none;
  * voidReason is the reason from the sheet's void reasons it was voided with, null when none;
  * comments are its comments, oldest first: the user who wrote each, the sheet's today then and its text;
- * batch is the number of the bulk settle batch that settled it (SETTLED or PENDING), null when it was settled one at a time or never.
+ * batch is the number of the bulk settle batch that settled it (SETTLED or PENDING), null when it was settled one at a time or never;
+ * lines are its lines, in the order added: a DRAFT's label, quantity and unit amount; a claim with lines has their
+ * quantities times their unit amounts, added up, as its amount.
  */
 export type Claim = {
   id: number;
@@ -74,7 +76,11 @@ export type Claim = {
   voidReason: string | null;
   comments: ClaimComment[];
   batch: number | null;
+  lines: ClaimLine[];
 };
+
+/** A line of a claim: its label, its quantity (a whole number, at least 1) and its unit amount (two decimals). */
+export type ClaimLine = { label: string; qty: number; unit: string };
 
 /** A comment on a claim: the user who wrote it, the sheet's today then (yyyy-MM-dd) and its text. */
 export type ClaimComment = { by: string; date: string; text: string };

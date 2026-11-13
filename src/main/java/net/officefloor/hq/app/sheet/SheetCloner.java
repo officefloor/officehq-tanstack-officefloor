@@ -124,7 +124,7 @@ public class SheetCloner {
 
     /**
      * Copy the claims, person by person in the order of the list and each person's in the order they were added, with
-     * their logs; figures a statement bound are lost. Each claim that had a number takes the clone's next one, in the
+     * their logs and lines; figures a statement bound are lost. Each claim that had a number takes the clone's next one, in the
      * order they were opened (the sheet's today then, then the order copied); a correction or split naming one of them
      * names its new number.
      */
@@ -144,6 +144,8 @@ public class SheetCloner {
             changed.put("batch", null);
             long id = RowCopy.copy(jdbc, "claim", old, changed);
             RowCopy.copyAll(jdbc, "claim_log", "claim_id = ?", List.of(old), "id",
+                    Map.of("sheet_id", to, "claim_id", id));
+            RowCopy.copyAll(jdbc, "claim_line", "claim_id = ?", List.of(old), "id",
                     Map.of("sheet_id", to, "claim_id", id));
             Object opened = row.get("opened") != null ? row.get("opened") : row.get("claim_date");
             copied.add(new ClaimRepository.Moved(id, (String) row.get("claim_number"),
