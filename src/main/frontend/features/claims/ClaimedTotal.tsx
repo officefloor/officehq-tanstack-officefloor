@@ -1,5 +1,6 @@
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { usePeople } from '../people/people';
+import { useSheetToday } from '../session/sheetToday';
 import { claimed, holdsById, useClaims } from './claims';
 
 // The sheet's claimed-total: everyone's counting claims added up (open ones a hold covers left out).
@@ -8,12 +9,13 @@ export function ClaimedTotal() {
   const [sheet] = useCurrentSheet();
   const claims = useClaims();
   const people = usePeople().data ?? [];
+  const today = useSheetToday();
 
   if (!user || !sheet) return null;
 
   return (
     <p>
-      Claimed total: <strong data-testid="rollup-claimed-total">{claimed(claims.data ?? [], holdsById(people))}</strong>
+      Claimed total: <strong data-testid="rollup-claimed-total">{claimed(claims.data ?? [], holdsById(people), today)}</strong>
     </p>
   );
 }

@@ -36,7 +36,7 @@ public class TakeStatement {
         List<Claim> personClaims = claims.findForPerson(person.sheetId(), person.id());
         Rounding rounding = settings.rounding(person.sheetId(), today, personClaims);
         for (Claim claim : personClaims) {
-            if (!person.counts(claim)) {
+            if (!person.counts(claim, today)) {
                 claims.bindStatement(claim, false, null);
                 continue;
             }

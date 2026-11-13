@@ -52,7 +52,7 @@ export const periodOf = (periods: Period[], date: string) => periods.find((p) =>
 export function personPeriodDue(period: Period, person: Person, claims: Claim[], rates: Rate[], rules: DueRules): string {
   if (period.closed) return period.personTotals?.[String(person.id)] ?? '0.00';
   const figures = claims
-    .filter((c) => c.personId === person.id && counts(c, person.holds) && contains(period, c.date))
+    .filter((c) => c.personId === person.id && counts(c, person.holds, rules.today) && contains(period, c.date))
     .map((c) => claimDue(c, rates, person.grades, rules));
   return total(figures);
 }

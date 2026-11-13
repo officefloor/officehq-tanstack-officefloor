@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RequestParam;
  * Opening gives the claim the sheet's next number; a voided claim keeps its number (it is never reused). While the
  * sheet's period numbering from date is set and its today is on or after it, opening instead gives the claim the next
  * number within the period containing its date (P1-1, P1-2, ...), or within the claims in no period (X-1, ...).
- * Opening records the user who opened it; that user cannot settle it (four eyes).
+ * Opening records the user who opened it; that user cannot settle it (four eyes). A deferred claim cannot be settled.
  * Settling fixes the claim's due at its person's grade's rate in force on the claim's date, raised to the sheet's floor and rounded by its policy date — or, when a statement
  * bound the claim, at the figure it was bound to — plus the late charge it has then, if overdue, frozen in; with no
  * figure it stays live. A clerk settling a claim whose due is above the sheet's clerk limit (a due of n/a is within any
@@ -39,6 +39,9 @@ public class ApplyClaimAction {
         }
         if (!found.allowedFrom(claim.status())) {
             throw new InvalidClaimException("A " + claim.status() + " claim cannot be " + found.to() + ".");
+        }
+        if (found == ClaimAction.SETTLE && claim.deferred(sheets.today(claim.sheetId()))) {
+            throw new InvalidClaimException("The claim is deferred until " + claim.deferredUntil() + ": it cannot be settled yet.");
         }
         if (found == ClaimAction.SETTLE && user.equals(claim.openedBy())) {
             throw new InvalidClaimException("The user who opened a claim cannot settle it.");

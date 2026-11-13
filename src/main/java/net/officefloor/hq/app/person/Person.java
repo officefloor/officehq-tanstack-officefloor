@@ -64,11 +64,11 @@ public record Person(Long id, String sheetId, String name, String grade, int ver
     }
 
     /**
-     * Whether the claim counts toward this person's live totals: their open claims dated within a hold do not,
-     * unless a statement binds them.
+     * Whether the claim counts toward this person's live totals on the given today: a claim deferred then does not,
+     * nor do their open claims dated within a hold, unless a statement binds them.
      */
-    public boolean counts(Claim claim) {
-        return claim.counts(!claim.bound() && holds.stream().anyMatch((h) -> h.covers(claim.date())));
+    public boolean counts(Claim claim, LocalDate today) {
+        return !claim.deferred(today) && claim.counts(!claim.bound() && holds.stream().anyMatch((h) -> h.covers(claim.date())));
     }
 
     /** Whether the person is retired: a retirement date is set, whatever the date. */

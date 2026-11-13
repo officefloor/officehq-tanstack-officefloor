@@ -63,7 +63,7 @@ public class RollupService {
             BigDecimal overdue = BigDecimal.ZERO.setScale(2);
             boolean kept = false;
             for (Claim claim : sheetClaims) {
-                if (claim.personId() != person.id() || !person.counts(claim)) {
+                if (claim.personId() != person.id() || !person.counts(claim, today)) {
                     continue;
                 }
                 claimed = claimed.add(claim.amount());

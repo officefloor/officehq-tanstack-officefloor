@@ -13,7 +13,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, due, opened_by, stated, stated_due, corrects, due_by";
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until";
 
     private final JdbcTemplate jdbc;
 
@@ -85,11 +85,18 @@ public class ClaimRepository {
                 stated, stated ? statedDue : null, claim.id(), claim.sheetId());
     }
 
+    /** Defer the claim until its {@code deferredUntil}. */
+    public void defer(Claim claim) {
+        jdbc.update("UPDATE claim SET deferred_until = ? WHERE id = ? AND sheet_id = ?",
+                Date.valueOf(claim.deferredUntil()), claim.id(), claim.sheetId());
+    }
+
     private static Claim map(ResultSet rs, int n) throws SQLException {
         return new Claim(rs.getLong("id"), rs.getString("sheet_id"), rs.getLong("person_id"),
                 rs.getBigDecimal("amount").setScale(2), rs.getDate("claim_date").toLocalDate(), rs.getString("note"),
                 ClaimStatus.valueOf(rs.getString("status")), rs.getString("claim_number"),
                 rs.getBigDecimal("due"), rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
-                rs.getString("corrects"), rs.getDate("due_by").toLocalDate());
+                rs.getString("corrects"), rs.getDate("due_by").toLocalDate(),
+                rs.getDate("deferred_until") == null ? null : rs.getDate("deferred_until").toLocalDate());
     }
 }

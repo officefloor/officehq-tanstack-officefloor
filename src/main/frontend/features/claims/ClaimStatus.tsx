@@ -29,13 +29,15 @@ const REFUSED: Partial<Record<Action, string>> = {
 // change the status does not allow, and the refusal shows as the claim's error. A clerk's settle
 // above the clerk limit makes the claim PENDING; a reject sends the reason typed beside it. A steward
 // moves a DRAFT, OPEN or PENDING claim to the person chosen beside the Move button. A steward
-// re-settles a SETTLED claim, freezing it again at today's figure.
+// re-settles a SETTLED claim, freezing it again at today's figure. An OPEN claim is deferred to the
+// date typed beside the Defer button.
 export function ClaimStatus({ claim }: { claim: Claim }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const [error, setError] = useState('');
   const [reason, setReason] = useState('');
   const [moveTo, setMoveTo] = useState('');
+  const [deferTo, setDeferTo] = useState('');
   const others = (usePeople().data ?? []).filter((p) => p.id !== claim.personId);
   const queryClient = useQueryClient();
   const once = useOneAtATime();
@@ -64,6 +66,19 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
     },
     onError: () =>
       setError(`This ${claim.status} claim cannot be moved (only a steward moves a DRAFT, OPEN or PENDING claim).`),
+  });
+
+  const defer = useMutation({
+    mutationFn: (until: string) =>
+      putJson<Claim>(`/api/sheets/${encodeURIComponent(sheet)}/claims/${claim.id}/deferral?user=${encodeURIComponent(user)}`, {
+        until,
+      }),
+    onSuccess: async () => {
+      setDeferTo('');
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+    },
+    onError: () =>
+      setError(`This ${claim.status} claim cannot be deferred to that date (only an OPEN claim, to a date after today, outside a closed period).`),
   });
 
   return (
@@ -123,6 +138,32 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
         }}
       >
         Move
+      </button>
+      <input
+        data-testid="claim-defer-date"
+        aria-label="Defer until"
+        placeholder="defer until yyyy-mm-dd"
+        value={deferTo}
+        onChange={(e) => {
+          setDeferTo(e.target.value);
+          setError('');
+        }}
+      />
+      <button
+        type="button"
+        data-testid="claim-defer"
+        disabled={defer.isPending}
+        onClick={() => {
+          setError('');
+          const until = deferTo.trim();
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(until)) {
+            setError('Type the date to defer the claim until as yyyy-mm-dd.');
+            return;
+          }
+          once(() => defer.mutateAsync(until));
+        }}
+      >
+        Defer
       </button>
       {error && <span data-testid="claim-error">{error}</span>}
     </>

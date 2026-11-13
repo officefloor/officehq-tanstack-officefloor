@@ -14,22 +14,31 @@ import java.time.LocalDate;
  * within its period (P1-1, X-1). {@code corrects} is, for a correction, the number of the claim it corrects (null:
  * not a correction). {@code dueBy} is fixed when the claim is created: its date plus the terms of its person's
  * grade in force on that date; it does not change when the terms or its date change later. While PENDING the claim is not bound: it shows and totals its live figure, and is bound again
- * once rejected (back to OPEN) when the statement included it.
+ * once rejected (back to OPEN) when the statement included it. {@code deferredUntil} is the date an OPEN claim is
+ * deferred until (null: never deferred): while the sheet's today is before it the claim is {@link #deferred deferred}.
  */
 public record Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
         ClaimStatus status, String number, BigDecimal due, String openedBy, boolean stated, BigDecimal statedDue,
-        String corrects, LocalDate dueBy) {
+        String corrects, LocalDate dueBy, LocalDate deferredUntil) {
+
+    /** A claim never deferred. */
+    public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
+            ClaimStatus status, String number, BigDecimal due, String openedBy, boolean stated, BigDecimal statedDue,
+            String corrects, LocalDate dueBy) {
+        this(id, sheetId, personId, amount, date, note, status, number, due, openedBy, stated, statedDue, corrects,
+                dueBy, null);
+    }
 
     /** The same claim with another status, number, fixed due and opener. */
     public Claim withStatus(ClaimStatus next, String nextNumber, BigDecimal nextDue, String nextOpenedBy) {
         return new Claim(id, sheetId, personId, amount, date, note, next, nextNumber, nextDue, nextOpenedBy, stated,
-                statedDue, corrects, dueBy);
+                statedDue, corrects, dueBy, deferredUntil);
     }
 
     /** The same claim as an open claim bound by no statement: live, with no fixed due. */
     public Claim asOpenUnbound() {
         return new Claim(id, sheetId, personId, amount, date, note, ClaimStatus.OPEN, number, null, openedBy, false,
-                null, corrects, dueBy);
+                null, corrects, dueBy, deferredUntil);
     }
 
     /** Whether the claim is a correction: a negative amount naming the settled claim it corrects. */
@@ -47,9 +56,23 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
         return status == ClaimStatus.SETTLED || (status.open() && !held);
     }
 
-    /** Whether the claim is overdue on the given today: OPEN (or PENDING) with its due-by before that day. */
+    /**
+     * Whether the claim is deferred on the given today: OPEN, deferred until a date after that day. A deferred claim
+     * counts in no total, is not overdue, cannot be settled and is left unbound by a statement.
+     */
+    public boolean deferred(LocalDate today) {
+        return status == ClaimStatus.OPEN && deferredUntil != null && today != null && today.isBefore(deferredUntil);
+    }
+
+    /** The same claim deferred until the date. */
+    public Claim deferTo(LocalDate until) {
+        return new Claim(id, sheetId, personId, amount, date, note, status, number, due, openedBy, stated, statedDue,
+                corrects, dueBy, until);
+    }
+
+    /** Whether the claim is overdue on the given today: OPEN (or PENDING), not deferred, with its due-by before that day. */
     public boolean overdue(LocalDate today) {
-        return status.open() && dueBy != null && today != null && dueBy.isBefore(today);
+        return status.open() && !deferred(today) && dueBy != null && today != null && dueBy.isBefore(today);
     }
 
     /** Whether a statement binds the claim now: it was stated and is not PENDING. */

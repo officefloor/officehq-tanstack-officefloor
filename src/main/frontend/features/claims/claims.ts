@@ -13,6 +13,13 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'PENDING' | 'SETTLED' | 'VOID';
 /** Whether a claim is open: OPEN, or PENDING (handled like an open claim). */
 export const isOpen = (c: Claim) => c.status === 'OPEN' || c.status === 'PENDING';
 
+/**
+ * Whether a claim is deferred on the sheet's `today`: OPEN, deferred until a date after it. A deferred claim counts
+ * in no total, is not overdue, cannot be settled and is left unbound by a statement.
+ */
+export const deferred = (c: Claim, today: string) =>
+  c.status === 'OPEN' && c.deferredUntil !== null && today !== '' && today < c.deferredUntil;
+
 /** Whether a statement binds the claim now: it was stated and is not PENDING (a pending claim shows its live figure). */
 export const bound = (c: Claim) => c.stated && c.status !== 'PENDING';
 
@@ -24,7 +31,8 @@ export const bound = (c: Claim) => c.stated && c.status !== 'PENDING';
  * statedDue that figure (two decimals; null: n/a) — it then shows and totals that, not its live figure;
  * corrects is, for a correction (a negative amount), the number of the settled claim it corrects, null otherwise;
  * dueBy (yyyy-MM-dd) is fixed when it was created: its date plus the terms of its person's grade in force on it;
- * log is its status log, oldest first: each status it has had, the user who gave it, the sheet's today then and its due then.
+ * log is its status log, oldest first: each status it has had, the user who gave it, the sheet's today then and its due then;
+ * deferredUntil (yyyy-MM-dd) is the date it was deferred until, null when it never was.
  */
 export type Claim = {
   id: number;
@@ -41,6 +49,7 @@ export type Claim = {
   corrects: string | null;
   dueBy: string;
   log: ClaimLogLine[];
+  deferredUntil: string | null;
 };
 
 /** A line of a claim's status log: the status, the user, the sheet's today (yyyy-MM-dd) and the due then (two decimals, or n/a). */
@@ -48,10 +57,12 @@ export type ClaimLogLine = { status: ClaimStatus; by: string; date: string; due:
 
 /**
  * Whether a claim counts toward claimed, due-total and every live total: only OPEN, PENDING and SETTLED do,
- * and an open (or pending) one not when one of its person's `holds` covers its date and no statement binds it.
+ * and an open (or pending) one not when one of its person's `holds` covers its date and no statement binds it,
+ * nor while it is deferred on the sheet's `today`.
  */
-export const counts = (c: Claim, holds: Hold[] = []) =>
-  c.status === 'SETTLED' || (isOpen(c) && (bound(c) || !holds.some((h) => covers(h, c.date))));
+export const counts = (c: Claim, holds: Hold[], today: string) =>
+  c.status === 'SETTLED' ||
+  (isOpen(c) && !deferred(c, today) && (bound(c) || !holds.some((h) => covers(h, c.date))));
 
 /** Each person's holds, by id: their open claims dated within one count in no live total. */
 export const holdsById = (people: { id: number; holds: Hold[] }[]) => new Map(people.map((p) => [p.id, p.holds]));
@@ -79,7 +90,7 @@ export function useClaims() {
 }
 
 /** The sum of the counted claims' amounts, with two decimals; added in cents so it is exact. `holds` holds each person's holds. */
-export function claimed(claims: Claim[], holds: Map<number, Hold[]>): string {
-  const cents = claims.filter((c) => counts(c, holds.get(c.personId))).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
+export function claimed(claims: Claim[], holds: Map<number, Hold[]>, today: string): string {
+  const cents = claims.filter((c) => counts(c, holds.get(c.personId) ?? [], today)).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
   return (cents / 100).toFixed(2);
 }

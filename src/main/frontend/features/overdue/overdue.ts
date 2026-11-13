@@ -19,6 +19,6 @@ export function personOverdue(
   holds: Hold[],
   rules: DueRules,
 ): { count: number; total: string } {
-  const late = claims.filter((c) => counts(c, holds) && overdue(c, rules.today));
+  const late = claims.filter((c) => counts(c, holds, rules.today) && overdue(c, rules.today));
   return { count: late.length, total: total(late.map((c) => claimDue(c, rates, grades, rules))) };
 }

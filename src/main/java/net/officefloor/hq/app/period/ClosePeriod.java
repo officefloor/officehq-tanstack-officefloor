@@ -44,7 +44,7 @@ public class ClosePeriod {
         }
         for (Claim claim : sheetClaims) {
             Person person = byId.get(claim.personId());
-            if (person == null || !person.counts(claim) || !period.contains(claim.date())) {
+            if (person == null || !person.counts(claim, today) || !period.contains(claim.date())) {
                 continue;
             }
             BigDecimal figure = claim.due(Rate.inForce(sheetRates, person.gradeOn(claim.date()), claim.date()),

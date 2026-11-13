@@ -166,7 +166,7 @@ function personSum(
   holds: Hold[],
   rules: DueRules,
 ): string {
-  const counted = claims.filter((c) => counts(c, holds));
+  const counted = claims.filter((c) => counts(c, holds, rules.today));
   const figures = counted.map((c) => claimDue(c, rates, grades, rules));
   const anyFigure = counted.some(keepsFigure) || figures.some((f) => f !== NA);
   if (rateFor(rates, gradeOn(grades, rules.today), rules.today) === undefined && !anyFigure) {
