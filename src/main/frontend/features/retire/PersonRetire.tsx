@@ -8,7 +8,8 @@ import { usePersonError } from '../people/personError';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 
 // Whether the person is retired and from when, and the date and button that retire them (a blank
-// date is the sheet's today). A retired person's claims keep counting; one dated after is refused.
+// date is the sheet's today). From the day the date is reached, a retired person's open and pending claims leave
+// the live totals (settled and statement-bound ones still count); one dated after the date is refused.
 export function PersonRetire({ person }: { person: Person }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();

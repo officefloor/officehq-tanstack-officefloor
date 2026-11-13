@@ -1,5 +1,5 @@
 import { useClaims } from '../claims/claims';
-import { gradeOn, usePeople } from '../people/people';
+import { gradeOn, liveHolds, usePeople } from '../people/people';
 import { personDue, useRates } from '../rates/rates';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { useSheetToday } from '../session/sheetToday';
@@ -27,7 +27,7 @@ export function ExportPeople() {
   const download = () => {
     const lines = [['name', 'grade', 'retired-from', 'due-total']];
     for (const p of people) {
-      const due = personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, p.holds, rules);
+      const due = personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, liveHolds(p, rules.today), rules);
       lines.push([p.name, gradeOn(p.grades, today) ?? p.grade, p.retiredFrom ?? '', due]);
     }
     const csv = lines.map((l) => l.map(csvField).join(',') + '\n').join('');

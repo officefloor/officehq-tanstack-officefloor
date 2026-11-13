@@ -1,6 +1,6 @@
 import { isActive } from '../active/active';
 import { useClaims } from '../claims/claims';
-import { GRADES, usePeople } from '../people/people';
+import { GRADES, liveHolds, usePeople } from '../people/people';
 import { periodDue, usePeriods } from '../periods/periods';
 import { personDue, total, useRates } from '../rates/rates';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
@@ -39,7 +39,7 @@ export function Summary() {
           {GRADES.map((g) => {
             const on = current.filter((p) => p.grade === g);
             const dues = on.map((p) =>
-              personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, p.holds, rules),
+              personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, liveHolds(p, rules.today), rules),
             );
             return (
               <tr key={g}>
@@ -47,7 +47,7 @@ export function Summary() {
                 <td data-testid={`summary-grade-${g}-count`}>{on.length}</td>
                 <td data-testid={`summary-grade-${g}-due-total`}>{total(dues)}</td>
                 <td data-testid={`summary-grade-${g}-active`}>
-                  {on.filter((p) => isActive(claims.filter((c) => c.personId === p.id), p.holds, rules.today)).length}
+                  {on.filter((p) => isActive(claims.filter((c) => c.personId === p.id), liveHolds(p, rules.today), rules.today)).length}
                 </td>
               </tr>
             );

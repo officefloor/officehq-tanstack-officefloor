@@ -1,6 +1,6 @@
 import { useClaims } from '../claims/claims';
 import { personOverdue } from '../overdue/overdue';
-import { usePeople } from '../people/people';
+import { liveHolds, usePeople } from '../people/people';
 import { personDue, trimmedTotal, useRates } from '../rates/rates';
 import { useDueRules } from '../settings/settings';
 
@@ -16,8 +16,8 @@ export function HeaderCounters() {
   const rules = useDueRules();
 
   const mine = (id: number) => claims.filter((c) => c.personId === id);
-  const dues = people.map((p) => personDue(mine(p.id), rates, p.grades, p.holds, rules));
-  const overdue = people.map((p) => personOverdue(mine(p.id), rates, p.grades, p.holds, rules).total);
+  const dues = people.map((p) => personDue(mine(p.id), rates, p.grades, liveHolds(p, rules.today), rules));
+  const overdue = people.map((p) => personOverdue(mine(p.id), rates, p.grades, liveHolds(p, rules.today), rules).total);
   return (
     <p data-testid="header-counters">
       People: <strong data-testid="header-people-count">{people.length}</strong>

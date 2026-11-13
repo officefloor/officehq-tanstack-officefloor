@@ -6,5 +6,5 @@ import { claimed, holdsById, useClaims } from './claims';
 export function PersonClaimed({ person }: { person: Person }) {
   const claims = (useClaims().data ?? []).filter((c) => c.personId === person.id);
   const today = useSheetToday();
-  return <td data-testid="person-claimed">{claimed(claims, holdsById([person]), today)}</td>;
+  return <td data-testid="person-claimed">{claimed(claims, holdsById([person], today), today)}</td>;
 }

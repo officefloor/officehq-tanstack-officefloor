@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { bound, deferred, isOpen } from '../claims/claims';
 import type { Claim, ClaimStatus } from '../claims/claims';
-import { covers } from '../people/people';
+import { covers, liveHolds } from '../people/people';
 import type { Person } from '../people/people';
 import { claimDue, total } from '../rates/rates';
 import type { Rate } from '../rates/rates';
@@ -78,7 +78,7 @@ export const countsInPeriod = (period: Period, c: Claim, holds: Person['holds'],
 export function personPeriodDue(period: Period, person: Person, claims: Claim[], rates: Rate[], rules: DueRules): string {
   if (period.closed || period.soft) return period.personTotals?.[String(person.id)] ?? '0.00';
   const figures = claims
-    .filter((c) => c.personId === person.id && contains(period, c.date) && countsInPeriod(period, c, person.holds, rules.today))
+    .filter((c) => c.personId === person.id && contains(period, c.date) && countsInPeriod(period, c, liveHolds(person, rules.today), rules.today))
     .map((c) => claimDue(c, rates, person.grades, rules));
   return total(figures);
 }

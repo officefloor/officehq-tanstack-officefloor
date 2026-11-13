@@ -25,6 +25,14 @@ export type Hold = { from: string | null; to: string | null };
 export const covers = (h: Hold, date: string) => (h.from === null || h.from <= date) && (h.to === null || date <= h.to);
 
 /**
+ * The holds that apply to a person's live totals on the sheet's `today`: their own, and — from the day their
+ * retirement date is reached — one covering every date, so their open and pending claims leave the totals as a
+ * hold's would (settled ones, and ones a statement binds, still count).
+ */
+export const liveHolds = (p: { holds: Hold[]; retiredFrom: string | null }, today: string): Hold[] =>
+  p.retiredFrom !== null && today !== '' && today >= p.retiredFrom ? [...p.holds, { from: null, to: null }] : p.holds;
+
+/**
  * A person on the sheet as the store holds them; `grade` is the one in force on the sheet's today and
  * `grades` every grade recorded for them, each from its from-date; `version` counts their saves. `statementCount` counts
  * the statements taken of them; `statedTotal` is the last one's due-total and `statementDate` the

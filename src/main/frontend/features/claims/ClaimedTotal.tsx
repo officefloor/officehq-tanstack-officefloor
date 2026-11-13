@@ -15,7 +15,7 @@ export function ClaimedTotal() {
 
   return (
     <p>
-      Claimed total: <strong data-testid="rollup-claimed-total">{claimed(claims.data ?? [], holdsById(people), today)}</strong>
+      Claimed total: <strong data-testid="rollup-claimed-total">{claimed(claims.data ?? [], holdsById(people, today), today)}</strong>
     </p>
   );
 }

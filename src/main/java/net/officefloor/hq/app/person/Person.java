@@ -93,7 +93,20 @@ public record Person(Long id, String sheetId, String name, String grade, int ver
      * nor do their open claims dated within a hold, unless a statement binds them.
      */
     public boolean counts(Claim claim, LocalDate today) {
-        return !claim.deferred(today) && claim.counts(!claim.bound() && holds.stream().anyMatch((h) -> h.covers(claim.date())));
+        return !claim.deferred(today) && claim.counts(!claim.bound() && heldOn(claim.date(), today));
+    }
+
+    /**
+     * Whether the person's open claims on this date are held on the given today: a hold covers the date, or their
+     * retirement date has been reached (then all of them are, as a hold's would be).
+     */
+    public boolean heldOn(LocalDate date, LocalDate today) {
+        return retiredOn(today) || holds.stream().anyMatch((h) -> h.covers(date));
+    }
+
+    /** Whether the person's retirement date has been reached on the given today (on or after it). */
+    public boolean retiredOn(LocalDate today) {
+        return retiredFrom != null && today != null && !today.isBefore(retiredFrom);
     }
 
     /** Whether the person is retired: a retirement date is set, whatever the date. */

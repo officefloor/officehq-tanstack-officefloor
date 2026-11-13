@@ -1,5 +1,5 @@
 import { useClaims } from '../claims/claims';
-import { usePeople } from '../people/people';
+import { liveHolds, usePeople } from '../people/people';
 import { trimmedTotal, useRates } from '../rates/rates';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { useDueRules } from '../settings/settings';
@@ -17,7 +17,7 @@ export function OverdueTotals() {
   if (!user || !sheet) return null;
 
   const each = people.map((p) =>
-    personOverdue(claims.filter((c) => c.personId === p.id), rates, p.grades, p.holds, rules),
+    personOverdue(claims.filter((c) => c.personId === p.id), rates, p.grades, liveHolds(p, rules.today), rules),
   );
   return (
     <p>

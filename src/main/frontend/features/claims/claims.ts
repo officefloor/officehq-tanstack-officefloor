@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { covers } from '../people/people';
+import { covers, liveHolds } from '../people/people';
 import type { Hold } from '../people/people';
 import { sheetKey, useCurrentSheet } from '../session/session';
 
@@ -73,8 +73,9 @@ export const counts = (c: Claim, holds: Hold[], today: string) =>
   c.status === 'SETTLED' ||
   (isOpen(c) && !deferred(c, today) && (bound(c) || !holds.some((h) => covers(h, c.date))));
 
-/** Each person's holds, by id: their open claims dated within one count in no live total. */
-export const holdsById = (people: { id: number; holds: Hold[] }[]) => new Map(people.map((p) => [p.id, p.holds]));
+/** Each person's live holds on the sheet's `today`, by id: their open claims dated within one count in no live total. */
+export const holdsById = (people: { id: number; holds: Hold[]; retiredFrom: string | null }[], today: string) =>
+  new Map(people.map((p) => [p.id, liveHolds(p, today)]));
 
 /** The fields the claim form submits; a blank date is the sheet's today; corrects names, by number, the claim a correction corrects. */
 export type ClaimInput = { amount: string; date: string; note: string; corrects: string };

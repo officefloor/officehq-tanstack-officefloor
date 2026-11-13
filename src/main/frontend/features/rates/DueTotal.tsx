@@ -1,5 +1,5 @@
 import { useClaims } from '../claims/claims';
-import { usePeople } from '../people/people';
+import { liveHolds, usePeople } from '../people/people';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { useDueRules } from '../settings/settings';
 import { personDue, trimmedTotal, useRates } from './rates';
@@ -15,7 +15,7 @@ export function DueTotal() {
 
   if (!user || !sheet) return null;
 
-  const dues = people.map((p) => personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, p.holds, rules));
+  const dues = people.map((p) => personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, liveHolds(p, rules.today), rules));
   return (
     <p>
       Due total: <strong data-testid="rollup-due-total">{trimmedTotal(dues)}</strong>

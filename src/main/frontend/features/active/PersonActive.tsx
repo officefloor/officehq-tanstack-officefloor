@@ -1,4 +1,5 @@
 import { useClaims } from '../claims/claims';
+import { liveHolds } from '../people/people';
 import type { Person } from '../people/people';
 import { useDueRules } from '../settings/settings';
 import { isActive } from './active';
@@ -7,5 +8,5 @@ import { isActive } from './active';
 export function PersonActive({ person }: { person: Person }) {
   const rules = useDueRules();
   const claims = (useClaims().data ?? []).filter((c) => c.personId === person.id);
-  return <td data-testid="person-active">{isActive(claims, person.holds, rules.today) ? 'yes' : 'no'}</td>;
+  return <td data-testid="person-active">{isActive(claims, liveHolds(person, rules.today), rules.today) ? 'yes' : 'no'}</td>;
 }
