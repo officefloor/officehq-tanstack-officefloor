@@ -9,7 +9,7 @@ import { useOneAtATime } from '../../query/useOneAtATime';
 import { useClaimError } from './claimError';
 import { useVoidReasons } from '../voidreasons/voidReasons';
 
-type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle';
+type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle' | 'delete' | 'restore';
 
 const ACTIONS: Array<{ action: Action; label: string }> = [
   { action: 'open', label: 'Open' },
@@ -18,6 +18,8 @@ const ACTIONS: Array<{ action: Action; label: string }> = [
   { action: 'reject', label: 'Reject' },
   { action: 'void', label: 'Void' },
   { action: 'resettle', label: 'Re-settle' },
+  { action: 'delete', label: 'Delete' },
+  { action: 'restore', label: 'Restore' },
 ];
 
 const REFUSED: Partial<Record<Action, string>> = {
@@ -27,6 +29,8 @@ const REFUSED: Partial<Record<Action, string>> = {
   approve: ' (only a steward approves a pending claim, and not the user who opened it; one whose due is above the proof threshold needs a proof)',
   reject: ' (only a steward rejects a pending claim, and a reason is required)',
   resettle: ' (only a steward re-settles a settled claim)',
+  delete: ' (only a DRAFT claim not due in a closed period is deleted)',
+  restore: ' (a deleted claim is restored only on the day it was deleted)',
 };
 
 // A claim's status and the buttons that change it. Every button is shown; the server refuses a
@@ -38,7 +42,8 @@ const REFUSED: Partial<Record<Action, string>> = {
 // SETTLED or VOID claim, nor one due by a date in a closed period). The Split button splits the amount typed beside it off an
 // OPEN claim into a new OPEN claim of the same person (more than 0.00 and less than the claim's amount). A steward
 // re-dates an OPEN or PENDING claim to the date typed beside the Re-date button. While the sheet has void reasons, a void
-// sends the reason chosen beside it (none chosen: the server refuses it).
+// sends the reason chosen beside it (none chosen: the server refuses it). Delete sets a DRAFT claim aside as DELETED;
+// Restore makes it a DRAFT again, only on the sheet's today it was deleted.
 export function ClaimStatus({ claim }: { claim: Claim }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();

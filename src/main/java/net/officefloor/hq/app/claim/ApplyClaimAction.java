@@ -37,6 +37,8 @@ import org.springframework.web.bind.annotation.RequestParam;
  * status log's latest SETTLED date); it keeps its number and its frozen due, which leaves every total.
  * While the sheet's void reasons list is not empty, a void is refused (400) without a reason chosen from it; a reason
  * not on the list is always refused.
+ * Deleting sets a DRAFT claim aside as DELETED (counting nowhere); restoring makes it a DRAFT again, only while the
+ * sheet's today is the day it was deleted (the status log's latest DELETED date).
  */
 public class ApplyClaimAction {
 
@@ -94,6 +96,14 @@ public class ApplyClaimAction {
             List<String> reasons = voidReasons.findAll(claim.sheetId());
             if (request.reason().isEmpty() ? !reasons.isEmpty() : !reasons.contains(request.reason())) {
                 throw new InvalidClaimException("A void needs a reason chosen from the sheet's void reasons.");
+            }
+        }
+        if (found == ClaimAction.RESTORE) {
+            LocalDate deletedOn = logs.find(claim.sheetId(), claim.id()).stream()
+                    .filter((l) -> l.status() == ClaimStatus.DELETED).map(ClaimLogLine::date)
+                    .reduce((a, b) -> b).orElse(null);
+            if (deletedOn == null || !sheets.today(claim.sheetId()).equals(deletedOn)) {
+                throw new InvalidClaimException("A deleted claim can be restored only on the day it was deleted.");
             }
         }
         if (found == ClaimAction.REJECT && request.reason().isEmpty()) {

@@ -113,9 +113,9 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
                 corrects, dueBy, deferredUntil, proofs + 1, splitFrom);
     }
 
-    /** Whether a proof can be added to the claim: it is neither SETTLED nor VOID. */
+    /** Whether a proof can be added to the claim: it is neither SETTLED, VOID nor DELETED. */
     public boolean takesProof() {
-        return status != ClaimStatus.SETTLED && status != ClaimStatus.VOID;
+        return status != ClaimStatus.SETTLED && status != ClaimStatus.VOID && status != ClaimStatus.DELETED;
     }
 
     /** Whether the claim is overdue on the given today: OPEN (or PENDING), not deferred, with its due-by before that day. */
