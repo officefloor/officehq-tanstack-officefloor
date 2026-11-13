@@ -1,0 +1,229 @@
+diff --git a/src/main/frontend/features/patrons/PersonPatrons.tsx b/src/main/frontend/features/patrons/PersonPatrons.tsx
+index 0e8d48dd0..5a696211a 100644
+--- a/src/main/frontend/features/patrons/PersonPatrons.tsx
++++ b/src/main/frontend/features/patrons/PersonPatrons.tsx
+@@ -9,16 +9,17 @@ import { usePersonError } from '../people/personError';
+ import { NA, total } from '../rates/rates';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ import { useDueRules } from '../settings/settings';
+-import { patronIdsOf, patronsKey, usePatrons } from './patrons';
++import { patronsKey, patronsOf, usePatrons } from './patrons';
+ import type { Patron } from './patrons';
+ 
+-// A person's patrons (their names, sorted) and the select and button that name one more: anyone else on
++// A person's patrons (each as their name and share, sorted by name) and the select and button that name one more: anyone else on
+ // the sheet who is not already their patron.
+ export function PersonPatrons({ person }: { person: Person }) {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+   const people = usePeople().data ?? [];
+-  const ids = patronIdsOf(usePatrons().data ?? [], person.id);
++  const mine = patronsOf(usePatrons().data ?? [], person.id);
++  const ids = mine.map((p) => p.patronId);
+   const [chosen, setChosen] = useState('');
+   const [error, setError] = usePersonError(person.id, 'patron');
+   const queryClient = useQueryClient();
+@@ -26,8 +27,9 @@ export function PersonPatrons({ person }: { person: Person }) {
+ 
+   const names = people
+     .filter((p) => ids.includes(p.id))
+-    .map((p) => p.name)
+-    .sort((a, b) => a.localeCompare(b));
++    .map((p) => ({ name: p.name, share: mine.find((m) => m.patronId === p.id)?.share ?? '' }))
++    .sort((a, b) => a.name.localeCompare(b.name))
++    .map((p) => `${p.name} ${p.share}`);
+   const offered = people.filter((p) => p.id !== person.id && !ids.includes(p.id));
+ 
+   const add = useMutation({
+@@ -85,15 +87,31 @@ const BACKING_DAYS = 90;
+ const backingStart = (today: string) =>
+   new Date(Date.parse(`${today}T00:00:00Z`) - (BACKING_DAYS - 1) * 86_400_000).toISOString().slice(0, 10);
+ 
+-// A person's backing: their patrons' SETTLED claims dated within the 90 days up to and including the sheet's
+-// today, each at the figure frozen when it was settled, added up; 0.00 with none.
++// A person's backing: for each patron, their figure (their SETTLED claims dated within the 90 days up to and
++// including the sheet's today, each at the figure frozen when it was settled, added up) times their share divided
++// by 100; those added up and rounded half to even to two decimals; 0.00 with none.
+ export function PersonBacking({ person }: { person: Person }) {
+-  const ids = patronIdsOf(usePatrons().data ?? [], person.id);
++  const mine = patronsOf(usePatrons().data ?? [], person.id);
+   const today = useDueRules().today;
+   const claims = useClaims().data ?? [];
+   const from = today === '' ? '' : backingStart(today);
+-  const dues = claims
+-    .filter((c) => ids.includes(c.personId) && c.status === 'SETTLED' && today !== '' && c.date >= from && c.date <= today)
+-    .map((c) => c.due ?? NA);
+-  return <td data-testid="person-backing">{total(dues)}</td>;
++  const figureOf = (patronId: number) =>
++    total(
++      claims
++        .filter((c) => c.personId === patronId && c.status === 'SETTLED' && today !== '' && c.date >= from && c.date <= today)
++        .map((c) => c.due ?? NA),
++    );
++  const products = mine.reduce((sum, p) => sum + hundredths(figureOf(p.patronId)) * hundredths(p.share), 0);
++  return <td data-testid="person-backing">{halfEven(products)}</td>;
++}
++
++/** A two-decimal value as whole hundredths, exactly. */
++const hundredths = (value: string) => Math.round(Number(value) * 100);
++
++/** Cents times basis points (/ 10000) as a two-decimal value, rounded half to even. */
++function halfEven(product: number): string {
++  const whole = Math.floor(Math.abs(product) / 10000);
++  const rest = Math.abs(product) - whole * 10000;
++  const up = rest > 5000 || (rest === 5000 && whole % 2 === 1);
++  return ((Math.sign(product) * (whole + (up ? 1 : 0))) / 100).toFixed(2);
+ }
+diff --git a/src/main/frontend/features/patrons/patrons.ts b/src/main/frontend/features/patrons/patrons.ts
+index fe34991f0..e88232891 100644
+--- a/src/main/frontend/features/patrons/patrons.ts
++++ b/src/main/frontend/features/patrons/patrons.ts
+@@ -2,8 +2,11 @@ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ import { sheetKey, useCurrentSheet } from '../session/session';
+ 
+-/** That the person `personId` names `patronId`, another person on the sheet, as a patron. */
+-export type Patron = { personId: number; patronId: number };
++/**
++ * That the person `personId` names `patronId`, another person on the sheet, as a patron, with the patron's share
++ * (two decimals) of the person's 100.00.
++ */
++export type Patron = { personId: number; patronId: number; share: string };
+ 
+ /** The query key for the sheet's patrons; under sheetKey, so re-loading the sheet re-reads them. */
+ export const patronsKey = (sheet: string) => [...sheetKey(sheet), 'patrons'] as const;
+@@ -18,6 +21,5 @@ export function usePatrons() {
+   });
+ }
+ 
+-/** The ids of the person's patrons. */
+-export const patronIdsOf = (patrons: Patron[], personId: number) =>
+-  patrons.filter((p) => p.personId === personId).map((p) => p.patronId);
++/** The person's patrons, in the order they were named. */
++export const patronsOf = (patrons: Patron[], personId: number) => patrons.filter((p) => p.personId === personId);
+diff --git a/src/main/java/net/officefloor/hq/app/patron/PatronRepository.java b/src/main/java/net/officefloor/hq/app/patron/PatronRepository.java
+index d16081f4a..c6698c1fa 100644
+--- a/src/main/java/net/officefloor/hq/app/patron/PatronRepository.java
++++ b/src/main/java/net/officefloor/hq/app/patron/PatronRepository.java
+@@ -16,7 +16,7 @@ public class PatronRepository {
+     /** The sheet's people's patrons, by person and then in the order they were named. */
+     public List<Patron> findAll(String sheetId) {
+         return jdbc.query(
+-                "SELECT sheet_id, person_id, patron_id FROM person_patron WHERE sheet_id = ? ORDER BY person_id, patron_id",
++                "SELECT sheet_id, person_id, patron_id FROM person_patron WHERE sheet_id = ? ORDER BY person_id, seq",
+                 (rs, n) -> new Patron(rs.getString("sheet_id"), rs.getLong("person_id"), rs.getLong("patron_id")),
+                 sheetId);
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/patron/PatronResponse.java b/src/main/java/net/officefloor/hq/app/patron/PatronResponse.java
+index 3b08ca337..894827896 100644
+--- a/src/main/java/net/officefloor/hq/app/patron/PatronResponse.java
++++ b/src/main/java/net/officefloor/hq/app/patron/PatronResponse.java
+@@ -1,9 +1,37 @@
+ package net.officefloor.hq.app.patron;
+ 
+-/** A person and one of their patrons, as the screen reads them. */
+-public record PatronResponse(long personId, long patronId) {
++import java.math.BigDecimal;
++import java.math.RoundingMode;
++import java.util.ArrayList;
++import java.util.LinkedHashMap;
++import java.util.List;
++import java.util.Map;
+ 
+-    public static PatronResponse from(Patron patron) {
+-        return new PatronResponse(patron.personId(), patron.patronId());
++/**
++ * A person and one of their patrons, with the patron's share, as the screen reads them. A person's 100.00 is split
++ * equally among their patrons in the order they were named, each share rounded half to even to two decimals; the
++ * remainder (100.00 less the shares added up) goes to the first named.
++ */
++public record PatronResponse(long personId, long patronId, String share) {
++
++    private static final BigDecimal HUNDRED = new BigDecimal("100.00");
++
++    /** The patrons (by person, then in the order named) with their shares, in the same order. */
++    public static List<PatronResponse> from(List<Patron> patrons) {
++        Map<Long, List<Patron>> byPerson = new LinkedHashMap<>();
++        for (Patron patron : patrons) {
++            byPerson.computeIfAbsent(patron.personId(), k -> new ArrayList<>()).add(patron);
++        }
++        List<PatronResponse> responses = new ArrayList<>();
++        for (List<Patron> named : byPerson.values()) {
++            BigDecimal share = HUNDRED.divide(BigDecimal.valueOf(named.size()), 2, RoundingMode.HALF_EVEN);
++            BigDecimal first = HUNDRED.subtract(share.multiply(BigDecimal.valueOf(named.size()))).add(share);
++            for (int i = 0; i < named.size(); i++) {
++                Patron patron = named.get(i);
++                responses.add(new PatronResponse(patron.personId(), patron.patronId(),
++                        (i == 0 ? first : share).toPlainString()));
++            }
++        }
++        return responses;
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/patron/RespondWithPatron.java b/src/main/java/net/officefloor/hq/app/patron/RespondWithPatron.java
+index fdb4231bf..dc0c56419 100644
+--- a/src/main/java/net/officefloor/hq/app/patron/RespondWithPatron.java
++++ b/src/main/java/net/officefloor/hq/app/patron/RespondWithPatron.java
+@@ -3,8 +3,11 @@ package net.officefloor.hq.app.patron;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
+ 
++/** The patron just named, with its share among the person's patrons now. */
+ public class RespondWithPatron {
+-    public void respond(@Val Patron patron, ObjectResponse<PatronResponse> response) {
+-        response.send(PatronResponse.from(patron));
++    public void respond(@Val Patron patron, PatronRepository patrons, ObjectResponse<PatronResponse> response) {
++        response.send(PatronResponse.from(patrons.findAll(patron.sheetId())).stream()
++                .filter(p -> p.personId() == patron.personId() && p.patronId() == patron.patronId()).findFirst()
++                .orElseThrow());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/patron/RespondWithPatrons.java b/src/main/java/net/officefloor/hq/app/patron/RespondWithPatrons.java
+index cf88167ef..ec9a599b5 100644
+--- a/src/main/java/net/officefloor/hq/app/patron/RespondWithPatrons.java
++++ b/src/main/java/net/officefloor/hq/app/patron/RespondWithPatrons.java
+@@ -6,6 +6,6 @@ import net.officefloor.web.ObjectResponse;
+ 
+ public class RespondWithPatrons {
+     public void respond(@Val List<Patron> patrons, ObjectResponse<List<PatronResponse>> response) {
+-        response.send(patrons.stream().map(PatronResponse::from).toList());
++        response.send(PatronResponse.from(patrons));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 0672c5827..da11cb7c5 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -188,7 +188,7 @@ public class PersonRepository {
+ 
+     /**
+      * Merge the person ({@code from}, their claims already moved) into the other: their name and then their aliases,
+-     * in the order added, become the other's newest aliases; their patrons are added to the other's (not the other,
++     * in the order added, become the other's newest aliases; their patrons are added after the other's, in the order named (not the other,
+      * no repeats); anyone naming them as patron names the other instead (not themselves, no repeats); their pool
+      * memberships move to the other (shares added where the other is already a member). Their statements, grades,
+      * holds, watchers and contact are dropped with them.
+@@ -210,11 +210,11 @@ public class PersonRepository {
+ 
+         jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id) SELECT sheet_id, ?, patron_id"
+                 + " FROM person_patron p WHERE sheet_id = ? AND person_id = ? AND patron_id <> ? AND NOT EXISTS"
+-                + " (SELECT 1 FROM person_patron q WHERE q.person_id = ? AND q.patron_id = p.patron_id)",
++                + " (SELECT 1 FROM person_patron q WHERE q.person_id = ? AND q.patron_id = p.patron_id) ORDER BY seq",
+                 kept, sheetId, gone, kept, kept);
+         jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id) SELECT sheet_id, person_id, ?"
+                 + " FROM person_patron p WHERE sheet_id = ? AND patron_id = ? AND person_id <> ? AND NOT EXISTS"
+-                + " (SELECT 1 FROM person_patron q WHERE q.person_id = p.person_id AND q.patron_id = ?)",
++                + " (SELECT 1 FROM person_patron q WHERE q.person_id = p.person_id AND q.patron_id = ?) ORDER BY seq",
+                 kept, sheetId, gone, kept, kept);
+         jdbc.update("DELETE FROM person_patron WHERE sheet_id = ? AND (person_id = ? OR patron_id = ?)", sheetId, gone,
+                 gone);
+diff --git a/src/main/resources/db/migration/V65__patron_share.sql b/src/main/resources/db/migration/V65__patron_share.sql
+new file mode 100644
+index 000000000..5478e3821
+--- /dev/null
++++ b/src/main/resources/db/migration/V65__patron_share.sql
+@@ -0,0 +1,4 @@
++-- The order a person named their patrons in (seq order): 100.00 is split equally among a person's patrons, each share
++-- rounded half to even to two decimals, the remainder going to the first named. Existing patrons keep their old
++-- (patron id) order.
++ALTER TABLE person_patron ADD COLUMN seq BIGINT AUTO_INCREMENT;
