@@ -96,7 +96,9 @@ public class RollupService {
                     if (lateness.overdue(claim)) {
                         overdue = overdue.add(figure);
                     }
-                    if (claim.getStatus() == ClaimStatus.SETTLED) {
+                    // The score's settled figures leave out corrections.
+                    if (claim.getStatus() == ClaimStatus.SETTLED
+                            && (claim.getCorrects() == null || claim.getCorrects().isBlank())) {
                         settled = settled.add(figure);
                     }
                 }
@@ -278,8 +280,8 @@ public class RollupService {
                                 || !person.retiredOn(today)));
     }
 
-    /** A person's score: their settled-total (0 while their due-total is n/a) divided by 100, less 5 for every
-     *  overdue claim of theirs that counts, rounded half to even to a whole number. */
+    /** A person's score: their settled-total leaving out corrections (0 while their due-total is n/a) divided by
+     *  100, less 5 for every overdue claim of theirs that counts, rounded half to even to a whole number. */
     private static String score(BigDecimal settled, int overdueCount) {
         return settled.movePointLeft(2).subtract(BigDecimal.valueOf(5L * overdueCount))
                 .setScale(0, RoundingMode.HALF_EVEN).toPlainString();

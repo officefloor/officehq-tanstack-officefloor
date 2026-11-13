@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { asOfKey, asOfPath, sheetKey } from '../sheet/sheet';
 import { useAsOf } from '../../session/session';
-import { type Claim, counts, isBound, isCorrection } from '../claims/claims';
+import { type Claim, correctsAnother, counts, isBound, isCorrection } from '../claims/claims';
 import { type Grades, gradeOn } from '../people/people';
 
 /** A grade's rate: `pct` is a percent with two decimals; `from` (yyyy-MM-dd) is the date it applies
@@ -283,12 +283,18 @@ export function personSplit(
   today: string | undefined,
   floor: Floor,
   late?: Late,
-): { settled: string; open: string } {
-  if (uncappedDue(claims, rates, grades, today, floor, late) === NA) return { settled: format(0n), open: format(0n) };
+): { settled: string; open: string; scored: string } {
+  if (uncappedDue(claims, rates, grades, today, floor, late) === NA)
+    return { settled: format(0n), open: format(0n), scored: format(0n) };
   const mine = claims.filter(counts);
   const total = (keep: (c: Claim) => boolean) =>
     dueTotal(mine.filter(keep).map((c) => claimDue(c, rates, grades, floor, late)));
-  return { settled: total((c) => c.status === 'SETTLED'), open: total((c) => c.status !== 'SETTLED') };
+  return {
+    settled: total((c) => c.status === 'SETTLED'),
+    open: total((c) => c.status !== 'SETTLED'),
+    // The settled figures the score counts: corrections left out.
+    scored: total((c) => c.status === 'SETTLED' && !correctsAnother(c)),
+  };
 }
 
 /** A person's due on a tag: the sum of the dues (skipping n/a) of their claims that count that carry it, or

@@ -5,7 +5,7 @@ import { useOverdue } from '../overdue/overdue.slot';
 import { useSettings } from '../settings/settings';
 import { useCurrentSheet } from '../../session/session';
 
-// A person's score: their settled-total divided by 100, minus 5 for every overdue claim of theirs that counts,
+// A person's score: their settled-total, leaving out corrections, divided by 100, minus 5 for every overdue claim of theirs that counts,
 // rounded half to even to a whole number.
 function ScoreHead() {
   return <th>Score</th>;
@@ -26,9 +26,9 @@ export function score(settled: string, overdue: number): string {
 }
 
 function PersonScore({ person }: { person: Person }) {
-  const { settled } = useSplit()(person);
+  const { scored } = useSplit()(person);
   const { count } = useOverdue()(person);
-  return <td data-testid="person-score">{score(settled, count)}</td>;
+  return <td data-testid="person-score">{score(scored, count)}</td>;
 }
 
 function BandHead() {
@@ -46,9 +46,9 @@ export function band(score: string, mid: string | null | undefined, high: string
 function PersonBand({ person }: { person: Person }) {
   const [sheet] = useCurrentSheet();
   const settings = useSettings(sheet);
-  const { settled } = useSplit()(person);
+  const { scored } = useSplit()(person);
   const { count } = useOverdue()(person);
-  return <td data-testid="person-band">{band(score(settled, count), settings.data?.scoreMid, settings.data?.scoreHigh)}</td>;
+  return <td data-testid="person-band">{band(score(scored, count), settings.data?.scoreMid, settings.data?.scoreHigh)}</td>;
 }
 
 export const contributions = [
