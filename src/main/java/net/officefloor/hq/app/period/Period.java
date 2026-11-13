@@ -12,14 +12,21 @@ import net.officefloor.hq.app.person.Person;
 /**
  * A period of a sheet: its name (unique on the sheet) and its from and to dates, both inclusive. A closed
  * period keeps the due-total fixed when it was closed ({@code closedTotal}; null while open) and each person's
- * due-total for it then ({@code personTotals}, by person id; empty while open).
+ * due-total for it then ({@code personTotals}, by person id; empty while open). A soft-closed period
+ * ({@code softClosed}; never also {@code closed}) keeps its figures fixed the same way, but claims dated in it can
+ * still be added and changed.
  */
 public record Period(String sheetId, String name, LocalDate from, LocalDate to, boolean closed,
-        BigDecimal closedTotal, Map<Long, BigDecimal> personTotals) {
+        BigDecimal closedTotal, Map<Long, BigDecimal> personTotals, boolean softClosed) {
 
     /** A new, open period. */
     public Period(String sheetId, String name, LocalDate from, LocalDate to) {
-        this(sheetId, name, from, to, false, null, Map.of());
+        this(sheetId, name, from, to, false, null, Map.of(), false);
+    }
+
+    /** Whether the period's figures are fixed: it is closed or soft-closed. */
+    public boolean fixed() {
+        return closed || softClosed;
     }
 
     /** Whether the period shares a day with the other. */
@@ -71,16 +78,21 @@ public record Period(String sheetId, String name, LocalDate from, LocalDate to, 
 
     /** The same period, closed with its due-total and each person's due-total fixed. */
     public Period close(BigDecimal total, Map<Long, BigDecimal> perPerson) {
-        return new Period(sheetId, name, from, to, true, total, Map.copyOf(perPerson));
+        return new Period(sheetId, name, from, to, true, total, Map.copyOf(perPerson), false);
+    }
+
+    /** The same period, soft-closed with its due-total and each person's due-total fixed. */
+    public Period softClose(BigDecimal total, Map<Long, BigDecimal> perPerson) {
+        return new Period(sheetId, name, from, to, false, total, Map.copyOf(perPerson), true);
     }
 
     /** The same period with these fixed per-person due-totals. */
     public Period withPersonTotals(Map<Long, BigDecimal> perPerson) {
-        return new Period(sheetId, name, from, to, closed, closedTotal, Map.copyOf(perPerson));
+        return new Period(sheetId, name, from, to, closed, closedTotal, Map.copyOf(perPerson), softClosed);
     }
 
     /** The same period, open again with its due-total live. */
     public Period reopen() {
-        return new Period(sheetId, name, from, to, false, null, Map.of());
+        return new Period(sheetId, name, from, to, false, null, Map.of(), false);
     }
 }

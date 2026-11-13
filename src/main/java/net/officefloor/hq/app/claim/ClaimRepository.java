@@ -5,7 +5,9 @@ import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
@@ -104,6 +106,23 @@ public class ClaimRepository {
     public void saveProofs(Claim claim) {
         jdbc.update("UPDATE claim SET proofs = ? WHERE id = ? AND sheet_id = ?", claim.proofs(), claim.id(),
                 claim.sheetId());
+    }
+
+    /** Mark the claim a late entry: added while the period containing its date was soft-closed. */
+    public void markLateEntry(Claim claim) {
+        jdbc.update("UPDATE claim SET late_entry = TRUE WHERE id = ? AND sheet_id = ?", claim.id(), claim.sheetId());
+    }
+
+    /** Whether the claim is a late entry. */
+    public boolean lateEntry(String sheetId, long id) {
+        return !jdbc.queryForList("SELECT id FROM claim WHERE sheet_id = ? AND id = ? AND late_entry", Long.class,
+                sheetId, id).isEmpty();
+    }
+
+    /** The ids of the sheet's late-entry claims. */
+    public Set<Long> lateEntries(String sheetId) {
+        return new HashSet<>(jdbc.queryForList("SELECT id FROM claim WHERE sheet_id = ? AND late_entry", Long.class,
+                sheetId));
     }
 
     private static Claim map(ResultSet rs, int n) throws SQLException {

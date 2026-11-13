@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * Reopens the period, making its due-total live again. Refused (400) when the permission matrix does not allow the user's role reopening (standing rule: a steward) or the period
- * is not closed.
+ * is neither closed nor soft-closed.
  */
 public class ReopenPeriod {
     public void reopen(@Val Period period, @RequestParam("user") String user, SettingRepository settings,
@@ -16,7 +16,7 @@ public class ReopenPeriod {
         if (!settings.find(period.sheetId()).may(user, Permissions.REOPEN)) {
             throw new InvalidPeriodException("The user's role is not allowed to reopen a period.");
         }
-        if (!period.closed()) {
+        if (!period.fixed()) {
             throw new InvalidPeriodException("The period " + period.name() + " is not closed.");
         }
         reopened.set(period.reopen());

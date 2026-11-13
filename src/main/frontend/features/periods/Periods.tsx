@@ -61,7 +61,7 @@ export function Periods() {
   // The period whose close or reopen was refused, and why; cleared by the next action on a period.
   const [rowError, setRowError] = useState<{ name: string; message: string } | null>(null);
   const act = useMutation({
-    mutationFn: ({ name, action }: { name: string; action: 'close' | 'reopen' }) =>
+    mutationFn: ({ name, action }: { name: string; action: 'close' | 'soft-close' | 'reopen' }) =>
       postJson<Period>(
         `/api/sheets/${encodeURIComponent(sheet)}/periods/${encodeURIComponent(name)}/${action}?user=${encodeURIComponent(user)}`,
         {},
@@ -75,7 +75,9 @@ export function Periods() {
         message:
           action === 'close'
             ? 'That period could not be closed: it is already closed, or your role is not allowed to close a period.'
-            : 'That period could not be reopened: it is not closed, or your role is not allowed to reopen a period.',
+            : action === 'soft-close'
+              ? 'That period could not be soft-closed: it is already closed or soft-closed, or your role is not allowed to close a period.'
+              : 'That period could not be reopened: it is not closed, or your role is not allowed to reopen a period.',
       }),
   });
 
@@ -146,7 +148,7 @@ export function Periods() {
               <td data-testid="period-from">{p.from}</td>
               <td data-testid="period-to">{p.to}</td>
               <td data-testid="period-due-total">{periodDue(p, claims, people, rates, rules)}</td>
-              <td data-testid="period-closed">{p.closed ? 'yes' : 'no'}</td>
+              <td data-testid="period-closed">{p.closed ? 'yes' : p.soft ? 'soft' : 'no'}</td>
               <td>
                 <button
                   type="button"
@@ -158,6 +160,17 @@ export function Periods() {
                   }}
                 >
                   Close
+                </button>
+                <button
+                  type="button"
+                  data-testid="period-soft-close"
+                  disabled={act.isPending}
+                  onClick={() => {
+                    setRowError(null);
+                    once(() => act.mutateAsync({ name: p.name, action: 'soft-close' }));
+                  }}
+                >
+                  Soft close
                 </button>
                 <button
                   type="button"

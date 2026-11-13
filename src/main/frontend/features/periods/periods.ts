@@ -12,7 +12,8 @@ import type { DueRules } from '../settings/settings';
 /**
  * A period as the store holds it: its name (unique on the sheet), its from and to dates (yyyy-MM-dd),
  * both inclusive, whether it is closed and, when closed, the due-total fixed then (null while open) and each
- * person's due-total fixed then, by person id (empty while open).
+ * person's due-total fixed then, by person id (empty while open). A soft-closed period (soft; never also closed)
+ * keeps its figures fixed the same way, while claims dated in it can still be added and changed.
  */
 export type Period = {
   name: string;
@@ -21,6 +22,7 @@ export type Period = {
   closed: boolean;
   closedTotal: string | null;
   personTotals: Record<string, string>;
+  soft: boolean;
 };
 
 /** The fields the period form submits. */
@@ -71,10 +73,10 @@ export const countsInPeriod = (period: Period, c: Claim, holds: Person['holds'],
 /**
  * A person's due-total for a period: the dues (late charges included, as shown now) of their claims dated in it
  * that count by their status at the period's end, added up; a closed period keeps the figure fixed when it was
- * closed (0.00 for a person added since).
+ * closed or soft-closed (0.00 for a person added since).
  */
 export function personPeriodDue(period: Period, person: Person, claims: Claim[], rates: Rate[], rules: DueRules): string {
-  if (period.closed) return period.personTotals?.[String(person.id)] ?? '0.00';
+  if (period.closed || period.soft) return period.personTotals?.[String(person.id)] ?? '0.00';
   const figures = claims
     .filter((c) => c.personId === person.id && contains(period, c.date) && countsInPeriod(period, c, person.holds, rules.today))
     .map((c) => claimDue(c, rates, person.grades, rules));

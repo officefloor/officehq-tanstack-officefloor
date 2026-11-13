@@ -48,6 +48,15 @@ public class PeriodCloser {
 
     /** The same period, closed with its due-total and each person's due-total fixed as they stand now. */
     public Period close(Period period) {
+        return fix(period, false);
+    }
+
+    /** The same period, soft-closed with its due-total and each person's due-total fixed as they stand now. */
+    public Period softClose(Period period) {
+        return fix(period, true);
+    }
+
+    private Period fix(Period period, boolean soft) {
         Map<Long, Person> byId = people.findAll(period.sheetId()).stream()
                 .collect(Collectors.toMap(Person::id, Function.identity()));
         List<Rate> sheetRates = rates.findAll(period.sheetId());
@@ -73,6 +82,6 @@ public class PeriodCloser {
                 perPerson.merge(person.id(), figure, BigDecimal::add);
             }
         }
-        return period.close(total, perPerson);
+        return soft ? period.softClose(total, perPerson) : period.close(total, perPerson);
     }
 }

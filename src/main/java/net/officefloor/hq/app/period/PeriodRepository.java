@@ -13,7 +13,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PeriodRepository {
 
-    private static final String COLUMNS = "sheet_id, name, from_date, to_date, closed, closed_total";
+    private static final String COLUMNS = "sheet_id, name, from_date, to_date, closed, closed_total, soft_closed";
 
     private final JdbcTemplate jdbc;
 
@@ -54,15 +54,20 @@ public class PeriodRepository {
         return findAll(sheetId).stream().filter((p) -> p.closed() && p.contains(date)).findFirst().orElse(null);
     }
 
+    /** The sheet's soft-closed period containing the date, or null. */
+    public Period softClosedOn(String sheetId, LocalDate date) {
+        return findAll(sheetId).stream().filter((p) -> p.softClosed() && p.contains(date)).findFirst().orElse(null);
+    }
+
     public void insert(Period period) {
         jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date) VALUES (?, ?, ?, ?)",
                 period.sheetId(), period.name(), period.from(), period.to());
     }
 
-    /** Store the period's closed flag, fixed due-total (null when reopened) and fixed per-person due-totals. */
+    /** Store the period's closed and soft-closed flags, fixed due-total (null when reopened) and fixed per-person due-totals. */
     public void saveClosed(Period period) {
-        jdbc.update("UPDATE period SET closed = ?, closed_total = ? WHERE sheet_id = ? AND name = ?",
-                period.closed(), period.closedTotal(), period.sheetId(), period.name());
+        jdbc.update("UPDATE period SET closed = ?, closed_total = ?, soft_closed = ? WHERE sheet_id = ? AND name = ?",
+                period.closed(), period.closedTotal(), period.softClosed(), period.sheetId(), period.name());
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_name = ?",
                 period.sheetId(), period.name());
         period.personTotals().forEach((personId, total) -> jdbc.update(
@@ -72,6 +77,7 @@ public class PeriodRepository {
 
     private static Period map(ResultSet rs, int n) throws SQLException {
         return new Period(rs.getString("sheet_id"), rs.getString("name"), rs.getObject("from_date", LocalDate.class),
-                rs.getObject("to_date", LocalDate.class), rs.getBoolean("closed"), rs.getBigDecimal("closed_total"), Map.of());
+                rs.getObject("to_date", LocalDate.class), rs.getBoolean("closed"), rs.getBigDecimal("closed_total"), Map.of(),
+                rs.getBoolean("soft_closed"));
     }
 }
