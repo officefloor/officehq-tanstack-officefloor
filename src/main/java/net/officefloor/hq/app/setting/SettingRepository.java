@@ -40,7 +40,7 @@ public class SettingRepository {
         LocalDate today = found.isEmpty() || found.get(0) == null ? LocalDate.now() : found.get(0).toLocalDate();
         DatedSettings dated = dated(sheetId);
         return new Settings(sheetId, dated.clerkLimitOn(today), dated.floorOn(today), dated.termsOn(today),
-                dated.gradeTermsOn(today), dated.latePctOn(today), policyDate(sheetId), periodNumberingFrom(sheetId),
+                dated.gradeTermsOn(today), dated.latePctOn(today), policyDate(sheetId), periodNumberingFrom(sheetId), entryDate(sheetId),
                 dated.capOn(today), dated.proofThresholdOn(today), roles, dated, permissions(sheetId), graceDays(sheetId),
                 today, delegations(sheetId));
     }
@@ -92,6 +92,18 @@ public class SettingRepository {
     /** Set the sheet's period numbering from date (null: blank, off). */
     public void savePeriodNumberingFrom(String sheetId, LocalDate from) {
         jdbc.update("UPDATE sheet SET period_numbering_from = ? WHERE id = ?", from == null ? null : Date.valueOf(from), sheetId);
+    }
+
+    /** The sheet's entry date (null: blank, off). */
+    public LocalDate entryDate(String sheetId) {
+        List<Date> date = jdbc.query("SELECT entry_date FROM sheet WHERE id = ?",
+                (rs, n) -> rs.getDate("entry_date"), sheetId);
+        return date.isEmpty() || date.get(0) == null ? null : date.get(0).toLocalDate();
+    }
+
+    /** Set the sheet's entry date (null: blank, off). */
+    public void saveEntryDate(String sheetId, LocalDate entryDate) {
+        jdbc.update("UPDATE sheet SET entry_date = ? WHERE id = ?", entryDate == null ? null : Date.valueOf(entryDate), sheetId);
     }
 
     /** The sheet's grace days (null: blank, off). */

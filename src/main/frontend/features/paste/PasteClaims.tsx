@@ -9,8 +9,8 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
 
 type PasteResult = { added: number };
 
-// The paste box: lines of name,amount,date,note (the note may hold commas, a blank date is the sheet's
-// today, the note may be left off), each a DRAFT claim for the named person on the sheet. The server
+// The paste box: lines of name,amount,date,note (the note may hold commas, a blank date is the sheet's entry date,
+// else its today, the note may be left off), each a DRAFT claim for the named person on the sheet. The server
 // checks every line with the claim form's rules first, so one refused line adds nothing.
 export function PasteClaims() {
   const [user] = useCurrentUser();

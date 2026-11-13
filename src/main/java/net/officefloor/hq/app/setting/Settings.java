@@ -11,6 +11,7 @@ import java.util.Map;
  * other grade uses the sheet's terms), its late percent (an overdue claim gains it of its figure
  * every full 30 days), its rounding policy date (null: blank, the sheet's
  * today), its period numbering from date (null: off; on or after it, an opened claim is numbered within its period)
+ * its entry date (null: off; a new claim left without a date takes it instead of the sheet's today)
  * its cap (null: none; a person's due-total is at most it), its proof threshold (null: none; a claim whose due is above
  * the one in force on its date is settled or approved only once it has a proof) the roles given to user names (any other name is a clerk) and its
  * permission matrix (the roles allowed each of open, settle, void, reassign, close and reopen) and its grace days (null: off;
@@ -20,7 +21,7 @@ import java.util.Map;
  * order made; one in force on {@code today} (the sheet's today) makes its user act as a steward in every rule.
  */
 public record Settings(String sheetId, BigDecimal clerkLimit, BigDecimal floor, int terms, Map<String, Integer> gradeTerms, BigDecimal latePct,
-        LocalDate policyDate, LocalDate periodNumberingFrom, BigDecimal cap, BigDecimal proofThreshold, List<UserRole> roles, DatedSettings dated, Permissions permissions, Integer graceDays,
+        LocalDate policyDate, LocalDate periodNumberingFrom, LocalDate entryDate, BigDecimal cap, BigDecimal proofThreshold, List<UserRole> roles, DatedSettings dated, Permissions permissions, Integer graceDays,
         LocalDate today, List<Delegation> delegations) {
 
     /** The role the user name acts in: steward while a delegation to it is in force on today, else its given role. */

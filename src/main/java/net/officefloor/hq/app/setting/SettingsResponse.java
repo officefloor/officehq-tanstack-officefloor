@@ -8,10 +8,10 @@ import java.util.Map;
 /**
  * The settings as the screen reads them: the clerk limit (null: no limit), the floor, the terms in days, the terms set for
  * each grade that has its own (by grade), the late percent, the policy date ("": blank, the sheet's today), the period
- * numbering from date ("": off), the cap ("": none), the proof threshold ("": none), the note threshold ("": none) — the dated ones as in force on the sheet's today — each role given,
+ * numbering from date ("": off), the entry date ("": off), the cap ("": none), the proof threshold ("": none), the note threshold ("": none) — the dated ones as in force on the sheet's today — each role given,
  * by user name, the permission matrix (by action, the roles allowed it; "": blank, the standing rule), and every dated value recorded, by key, oldest from-date first (value "": blank), the grace days ("": off) and the steward role delegated, in the order made.
  */
-public record SettingsResponse(String clerkLimit, String floor, int terms, Map<String, Integer> gradeTerms, String latePct, String policyDate, String periodNumberingFrom, String cap, String proofThreshold, String noteThreshold, List<RoleResponse> roles,
+public record SettingsResponse(String clerkLimit, String floor, int terms, Map<String, Integer> gradeTerms, String latePct, String policyDate, String periodNumberingFrom, String entryDate, String cap, String proofThreshold, String noteThreshold, List<RoleResponse> roles,
         Map<String, List<FromValueResponse>> history, Map<String, String> permissions, String graceDays,
         List<DelegationResponse> delegations) {
 
@@ -37,6 +37,7 @@ public record SettingsResponse(String clerkLimit, String floor, int terms, Map<S
                 settings.latePct().toPlainString(),
                 settings.policyDate() == null ? "" : settings.policyDate().toString(),
                 settings.periodNumberingFrom() == null ? "" : settings.periodNumberingFrom().toString(),
+                settings.entryDate() == null ? "" : settings.entryDate().toString(),
                 settings.cap() == null ? "" : settings.cap().toPlainString(),
                 settings.proofThreshold() == null ? "" : settings.proofThreshold().toPlainString(),
                 noteThreshold == null ? "" : noteThreshold.toPlainString(),

@@ -30,6 +30,7 @@ type SettingsInput = {
   latePct?: string;
   policyDate?: string;
   periodNumberingFrom?: string;
+  entryDate?: string;
   cap?: string;
   proofThreshold?: string;
   noteThreshold?: string;
@@ -55,6 +56,7 @@ type Touched = {
   latePct: boolean;
   policyDate: boolean;
   periodNumberingFrom: boolean;
+  entryDate: boolean;
   cap: boolean;
   proofThreshold: boolean;
   noteThreshold: boolean;
@@ -68,13 +70,14 @@ const UNTOUCHED: Touched = {
   latePct: false,
   policyDate: false,
   periodNumberingFrom: false,
+  entryDate: false,
   cap: false,
   proofThreshold: false,
   noteThreshold: false,
   graceDays: false,
 };
 
-// The sheet's clerk limit (blank: no limit), floor, terms, each grade's terms (blank: the sheet's), late percent and policy date (blank: today) and period numbering from date (blank: off) and cap (blank: none) and proof threshold (blank: none) and note threshold (blank: none) in force, and the
+// The sheet's clerk limit (blank: no limit), floor, terms, each grade's terms (blank: the sheet's), late percent and policy date (blank: today) and period numbering from date (blank: off) and entry date (blank: off) and cap (blank: none) and proof threshold (blank: none) and note threshold (blank: none) in force, and the
 // permission matrix (by action, the roles allowed it; blank: the standing rule; not dated), and the grace days (blank: off; not dated), and the form that sets them. Saving sends
 // only the fields touched since the last save, so a blank field left alone changes nothing. A dated setting (the clerk
 // limit, floor, terms, each grade's terms, late percent, cap, proof threshold and note threshold) is recorded from the date typed beside it (blank: the
@@ -91,6 +94,7 @@ export function SettingsForm() {
   const [latePct, setLatePct] = useState('');
   const [policyDate, setPolicyDate] = useState('');
   const [periodNumberingFrom, setPeriodNumberingFrom] = useState('');
+  const [entryDate, setEntryDate] = useState('');
   const [cap, setCap] = useState('');
   const [proofThreshold, setProofThreshold] = useState('');
   const [noteThreshold, setNoteThreshold] = useState('');
@@ -115,6 +119,7 @@ export function SettingsForm() {
       setLatePct('');
       setPolicyDate('');
       setPeriodNumberingFrom('');
+      setEntryDate('');
       setCap('');
       setProofThreshold('');
       setNoteThreshold('');
@@ -237,6 +242,14 @@ export function SettingsForm() {
       }
       input.periodNumberingFrom = value;
     }
+    if (touched.entryDate) {
+      const value = entryDate.trim();
+      if (value !== '' && !DATE.test(value)) {
+        setError('Type an entry date as yyyy-MM-dd, or leave it blank for off.');
+        return;
+      }
+      input.entryDate = value;
+    }
     if (touched.cap) {
       const value = cap.trim();
       if (value !== '' && !AMOUNT.test(value)) {
@@ -289,6 +302,7 @@ export function SettingsForm() {
       input.latePct === undefined &&
       input.policyDate === undefined &&
       input.periodNumberingFrom === undefined &&
+      input.entryDate === undefined &&
       input.cap === undefined &&
       input.proofThreshold === undefined &&
       input.noteThreshold === undefined &&
@@ -327,6 +341,9 @@ export function SettingsForm() {
       <p>
         Period numbering from:{' '}
         <span data-testid="setting-period-numbering-from-current">{settings?.periodNumberingFrom ?? ''}</span>
+      </p>
+      <p>
+        Entry date: <span data-testid="setting-entry-date-current">{settings?.entryDate ?? ''}</span>
       </p>
       <p>
         Cap: <span data-testid="setting-cap-current">{settings?.cap ?? ''}</span>
@@ -429,6 +446,17 @@ export function SettingsForm() {
           onChange={(e) => {
             setPeriodNumberingFrom(e.target.value);
             setTouched((t) => ({ ...t, periodNumberingFrom: true }));
+            setError('');
+          }}
+        />
+        <input
+          data-testid="setting-entry-date"
+          placeholder="Entry date of a new claim, yyyy-MM-dd (blank: off, the sheet's today)"
+          value={entryDate}
+          onFocus={() => setTouched((t) => ({ ...t, entryDate: true }))}
+          onChange={(e) => {
+            setEntryDate(e.target.value);
+            setTouched((t) => ({ ...t, entryDate: true }));
             setError('');
           }}
         />

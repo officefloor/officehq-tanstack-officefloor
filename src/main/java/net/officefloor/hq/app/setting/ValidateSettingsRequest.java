@@ -27,7 +27,7 @@ public class ValidateSettingsRequest {
 
     public void validate(@RequestBody @Valid SettingsRequest request, Out<ClerkLimit> limit, Out<Floor> floor,
             Out<Terms> terms, Out<LatePct> latePct, Out<PolicyDate> policyDate,
-            Out<PeriodNumberingFrom> periodNumberingFrom, Out<GradeTerms> gradeTerms, Out<Cap> cap,
+            Out<PeriodNumberingFrom> periodNumberingFrom, Out<EntryDate> entryDate, Out<GradeTerms> gradeTerms, Out<Cap> cap,
             Out<ProofThreshold> proofThreshold, Out<NoteThreshold> noteThreshold, Out<PermissionChanges> permissions, Out<GraceDays> graceDays)
             throws InvalidSettingException {
         limit.set(clerkLimit(request.clerkLimit(), from(request.clerkLimitFrom(), "clerk limit")));
@@ -36,6 +36,7 @@ public class ValidateSettingsRequest {
         latePct.set(latePct(request.latePct(), from(request.latePctFrom(), "late percent")));
         policyDate.set(policyDate(request.policyDate()));
         periodNumberingFrom.set(periodNumberingFrom(request.periodNumberingFrom()));
+        entryDate.set(entryDate(request.entryDate()));
         gradeTerms.set(gradeTerms(request.gradeTerms(), request.gradeTermsFrom()));
         cap.set(cap(request.cap(), from(request.capFrom(), "cap")));
         proofThreshold.set(proofThreshold(request.proofThreshold(), from(request.proofThresholdFrom(), "proof threshold")));
@@ -220,6 +221,21 @@ public class ValidateSettingsRequest {
             return new PolicyDate(true, LocalDate.parse(value));
         } catch (DateTimeParseException e) {
             throw new InvalidSettingException("The policy date must be a date (yyyy-MM-dd), or blank.");
+        }
+    }
+
+    private static EntryDate entryDate(String requested) throws InvalidSettingException {
+        if (requested == null) {
+            return new EntryDate(false, null);
+        }
+        String value = requested.trim();
+        if (value.isEmpty()) {
+            return new EntryDate(true, null);
+        }
+        try {
+            return new EntryDate(true, LocalDate.parse(value));
+        } catch (DateTimeParseException e) {
+            throw new InvalidSettingException("The entry date must be a date (yyyy-MM-dd), or blank.");
         }
     }
 

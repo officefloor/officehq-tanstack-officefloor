@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 /**
  * Checks the bar on the person and claim forms' terms before anything is written: a blank name, or an
- * amount the claim form refuses, is refused. The claim is dated the sheet's today, with an empty note.
+ * amount the claim form refuses, is refused. The claim is dated the sheet's entry date, else its today, with an empty note.
  */
 public class ValidateQuickAddRequest {
     public void validate(@RequestBody @Valid QuickAddRequest request, Out<QuickAddRequest> body,

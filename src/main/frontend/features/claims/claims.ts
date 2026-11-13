@@ -77,7 +77,7 @@ export const counts = (c: Claim, holds: Hold[], today: string) =>
 export const holdsById = (people: { id: number; holds: Hold[]; retiredFrom: string | null }[], today: string) =>
   new Map(people.map((p) => [p.id, liveHolds(p, today)]));
 
-/** The fields the claim form submits; a blank date is the sheet's today; corrects names, by number, the claim a correction corrects. */
+/** The fields the claim form submits; a blank date is the sheet's entry date, else its today; corrects names, by number, the claim a correction corrects. */
 export type ClaimInput = { amount: string; date: string; note: string; corrects: string };
 
 /** 0.00 or more, with at most two decimals. */

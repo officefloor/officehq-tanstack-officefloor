@@ -41,6 +41,14 @@ public class SheetRepository {
     }
 
     /**
+     * The date a new claim left without one takes: the sheet's entry date while it is set, else its today.
+     */
+    public LocalDate entryDate(String id) {
+        List<Date> found = jdbc.query("SELECT entry_date FROM sheet WHERE id = ?", (rs, n) -> rs.getDate("entry_date"), id);
+        return found.isEmpty() || found.get(0) == null ? today(id) : found.get(0).toLocalDate();
+    }
+
+    /**
      * Takes the sheet's next claim number (1 for its first) in one atomic statement, so two claims
      * opened at the same moment never get the same number; a number taken is never given out again.
      */
