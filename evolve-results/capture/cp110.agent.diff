@@ -1,0 +1,274 @@
+diff --git a/src/main/frontend/features/counters/ConsolidatedFigures.tsx b/src/main/frontend/features/counters/ConsolidatedFigures.tsx
+new file mode 100644
+index 000000000..e3a9b98be
+--- /dev/null
++++ b/src/main/frontend/features/counters/ConsolidatedFigures.tsx
+@@ -0,0 +1,64 @@
++import { useQuery } from '@tanstack/react-query';
++import { getJson } from '../../api/http';
++import { useClaims } from '../claims/claims';
++import type { Claim } from '../claims/claims';
++import { usePeople } from '../people/people';
++import type { Person } from '../people/people';
++import { total, useRates } from '../rates/rates';
++import type { Rate } from '../rates/rates';
++import { sheetKey, useCurrentSheet } from '../session/session';
++import type { SheetInfo } from '../session/session';
++import { dueRules, useDueRules } from '../settings/settings';
++import type { Settings } from '../settings/settings';
++import { sheetTotals } from './HeaderCounters';
++
++/** One sheet's figures: how many people, its due-total and overdue-total as that sheet shows them. */
++type Figures = { people: number; due: string; overdue: string };
++
++/** The query key for the figures of the sheet's descendants; under sheetKey, so re-loading the sheet re-reads them. */
++export const descendantFiguresKey = (sheet: string) => [...sheetKey(sheet), 'descendant-figures'] as const;
++
++/** A descendant's figures, worked out from what the store holds for it, by its own today and rules. */
++async function figuresOf(sheet: string): Promise<Figures> {
++  const path = `/api/sheets/${encodeURIComponent(sheet)}`;
++  const [info, people, claims, rates, settings] = await Promise.all([
++    getJson<SheetInfo>(path),
++    getJson<Person[]>(`${path}/people`),
++    getJson<Claim[]>(`${path}/claims`),
++    getJson<Rate[]>(`${path}/rates`),
++    getJson<Settings>(`${path}/settings`),
++  ]);
++  return { people: people.length, ...sheetTotals(people, claims, rates, dueRules(settings, info.today, claims)) };
++}
++
++/** The figures of each of the sheet's descendants (its children, theirs and so on). */
++function useDescendantFigures() {
++  const [sheet] = useCurrentSheet();
++  return useQuery({
++    queryKey: descendantFiguresKey(sheet),
++    queryFn: async () => {
++      const ids = await getJson<string[]>(`/api/sheets/${encodeURIComponent(sheet)}/descendants`);
++      return Promise.all(ids.map(figuresOf));
++    },
++    enabled: !!sheet,
++  });
++}
++
++// The consolidated figures over the sheet and all its descendants: the people counted, and each sheet's
++// due-total and overdue-total as that sheet shows them, added up. A sheet with no children shows its own.
++export function ConsolidatedFigures() {
++  const people = usePeople().data ?? [];
++  const claims = useClaims().data ?? [];
++  const rates = useRates().data ?? [];
++  const rules = useDueRules();
++  const descendants = useDescendantFigures().data ?? [];
++
++  const all: Figures[] = [{ people: people.length, ...sheetTotals(people, claims, rates, rules) }, ...descendants];
++  return (
++    <p data-testid="consolidated-figures">
++      Consolidated — People: <strong data-testid="consolidated-people-count">{all.reduce((n, f) => n + f.people, 0)}</strong>
++      {' · '}Due: <strong data-testid="consolidated-due-total">{total(all.map((f) => f.due))}</strong>
++      {' · '}Overdue: <strong data-testid="consolidated-overdue-total">{total(all.map((f) => f.overdue))}</strong>
++    </p>
++  );
++}
+diff --git a/src/main/frontend/features/counters/HeaderCounters.tsx b/src/main/frontend/features/counters/HeaderCounters.tsx
+index 51e8e04a5..7ff577f25 100644
+--- a/src/main/frontend/features/counters/HeaderCounters.tsx
++++ b/src/main/frontend/features/counters/HeaderCounters.tsx
+@@ -1,12 +1,24 @@
+ import { useClaims } from '../claims/claims';
++import type { Claim } from '../claims/claims';
+ import { personOverdue } from '../overdue/overdue';
+ import { liveHolds, usePeople } from '../people/people';
++import type { Person } from '../people/people';
+ import { personDue, trimmedTotal, useRates } from '../rates/rates';
++import type { Rate } from '../rates/rates';
+ import { useDueRules } from '../settings/settings';
++import type { DueRules } from '../settings/settings';
+ 
+ /** The statuses counted, as in the summary; one no claim reaches yet still shows, as 0. */
+ const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
+ 
++/** A sheet's due-total and overdue-total as its header shows them. */
++export function sheetTotals(people: Person[], claims: Claim[], rates: Rate[], rules: DueRules): { due: string; overdue: string } {
++  const mine = (id: number) => claims.filter((c) => c.personId === id);
++  const dues = people.map((p) => personDue(mine(p.id), rates, p.grades, liveHolds(p, rules.today), rules));
++  const overdue = people.map((p) => personOverdue(mine(p.id), rates, p.grades, liveHolds(p, rules.today), rules).total);
++  return { due: trimmedTotal(dues), overdue: trimmedTotal(overdue) };
++}
++
+ // The sheet's counters, always in the header: everyone on it (retired people included), its claims per
+ // status, and its due-total and overdue-total — each worked out exactly as the figure it repeats.
+ export function HeaderCounters() {
+@@ -15,9 +27,7 @@ export function HeaderCounters() {
+   const rates = useRates().data ?? [];
+   const rules = useDueRules();
+ 
+-  const mine = (id: number) => claims.filter((c) => c.personId === id);
+-  const dues = people.map((p) => personDue(mine(p.id), rates, p.grades, liveHolds(p, rules.today), rules));
+-  const overdue = people.map((p) => personOverdue(mine(p.id), rates, p.grades, liveHolds(p, rules.today), rules).total);
++  const totals = sheetTotals(people, claims, rates, rules);
+   return (
+     <p data-testid="header-counters">
+       People: <strong data-testid="header-people-count">{people.length}</strong>
+@@ -27,8 +37,8 @@ export function HeaderCounters() {
+           {s}: <strong data-testid={`header-claims-${s}-count`}>{claims.filter((c) => c.status === s).length}</strong>
+         </span>
+       ))}
+-      {' · '}Due: <strong data-testid="header-due-total">{trimmedTotal(dues)}</strong>
+-      {' · '}Overdue: <strong data-testid="header-overdue-total">{trimmedTotal(overdue)}</strong>
++      {' · '}Due: <strong data-testid="header-due-total">{totals.due}</strong>
++      {' · '}Overdue: <strong data-testid="header-overdue-total">{totals.overdue}</strong>
+     </p>
+   );
+ }
+diff --git a/src/main/frontend/features/counters/consolidated.slot.tsx b/src/main/frontend/features/counters/consolidated.slot.tsx
+new file mode 100644
+index 000000000..2aca1fe37
+--- /dev/null
++++ b/src/main/frontend/features/counters/consolidated.slot.tsx
+@@ -0,0 +1,4 @@
++import { AppHeader } from '../../slots/defs/appHeader';
++import { ConsolidatedFigures } from './ConsolidatedFigures';
++
++export const contribution = AppHeader.fill({ order: 31, Component: ConsolidatedFigures });
+diff --git a/src/main/frontend/features/settings/settings.ts b/src/main/frontend/features/settings/settings.ts
+index 40ac462b9..c8de19c3b 100644
+--- a/src/main/frontend/features/settings/settings.ts
++++ b/src/main/frontend/features/settings/settings.ts
+@@ -1,9 +1,10 @@
+-import { useCallback, useMemo } from 'react';
++import { useMemo } from 'react';
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ import { sheetKey, useCurrentSheet } from '../session/session';
+ import { useSheetToday } from '../session/sheetToday';
+ import { useClaims } from '../claims/claims';
++import type { Claim } from '../claims/claims';
+ import { gradeOn } from '../people/people';
+ import type { GradeFrom } from '../people/people';
+ 
+@@ -139,24 +140,19 @@ export function useDueRules(): DueRules {
+   const settings = useSettings().data;
+   const today = useSheetToday();
+   const claims = useClaims().data;
+-  const claimDates = useMemo(
+-    () => new Map((claims ?? []).filter((c) => c.number !== null).map((c) => [c.number!, c.date])),
+-    [claims],
+-  );
++  return useMemo(() => dueRules(settings, today, claims ?? []), [settings, today, claims]);
++}
++
++/** A sheet's rules for working out a claim's due, from its settings, its today and its claims. */
++export function dueRules(settings: Settings | undefined, today: string, claims: Claim[]): DueRules {
+   const history = settings?.history;
+-  const floorOn = useCallback((date: string) => valueOn(history?.floor, date, DEFAULT_FLOOR), [history]);
+-  const latePctOn = useCallback((date: string) => valueOn(history?.['late-pct'], date, DEFAULT_LATE_PCT), [history]);
+-  const graceOn = useCallback(
+-    (grade: string | undefined, date: string) => (grade ? Number(valueOn(history?.[`grace-${grade}`], date, '0')) : 0),
+-    [history],
+-  );
+   return {
+-    floorOn,
+-    latePctOn,
+-    graceOn,
++    floorOn: (date: string) => valueOn(history?.floor, date, DEFAULT_FLOOR),
++    latePctOn: (date: string) => valueOn(history?.['late-pct'], date, DEFAULT_LATE_PCT),
++    graceOn: (grade: string | undefined, date: string) => (grade ? Number(valueOn(history?.[`grace-${grade}`], date, '0')) : 0),
+     today,
+     policyDate: settings?.policyDate || today,
+     cap: settings?.cap ?? '',
+-    claimDates,
++    claimDates: new Map(claims.filter((c) => c.number !== null).map((c) => [c.number!, c.date])),
+   };
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/Descendants.java b/src/main/java/net/officefloor/hq/app/sheet/Descendants.java
+new file mode 100644
+index 000000000..9618f99f6
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/Descendants.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.sheet;
++
++import java.util.List;
++
++/** A sheet's descendants' ids: its children, their children and so on, nearest first. */
++public record Descendants(List<String> ids) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/LoadDescendants.java b/src/main/java/net/officefloor/hq/app/sheet/LoadDescendants.java
+new file mode 100644
+index 000000000..9c502f620
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/LoadDescendants.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++public class LoadDescendants {
++    public void load(@Val Sheet sheet, SheetRepository repository, Out<Descendants> descendants) {
++        descendants.set(new Descendants(repository.descendants(sheet.id())));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RespondWithDescendants.java b/src/main/java/net/officefloor/hq/app/sheet/RespondWithDescendants.java
+new file mode 100644
+index 000000000..96282f0c6
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/RespondWithDescendants.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app.sheet;
++
++import java.util.List;
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithDescendants {
++    public void respond(@Val Descendants descendants, ObjectResponse<List<String>> response) {
++        response.send(descendants.ids());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+index ad92e4bcc..b0f121cbf 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+@@ -86,6 +86,24 @@ public class SheetRepository {
+         return found.isEmpty() ? null : found.get(0);
+     }
+ 
++    /**
++     * The sheet's descendants: its children (the sheets naming it as their parent), their children and so on,
++     * each once, nearest first; the sheet itself never, even where parents loop back to it.
++     */
++    public List<String> descendants(String id) {
++        java.util.LinkedHashSet<String> found = new java.util.LinkedHashSet<>();
++        java.util.ArrayDeque<String> todo = new java.util.ArrayDeque<>(List.of(id));
++        while (!todo.isEmpty()) {
++            String at = todo.poll();
++            for (String child : jdbc.queryForList("SELECT id FROM PUBLIC.sheet WHERE parent_id = ? ORDER BY id", String.class, at)) {
++                if (!child.equals(id) && found.add(child)) {
++                    todo.add(child);
++                }
++            }
++        }
++        return List.copyOf(found);
++    }
++
+     /** Whether the sheet is archived: every change to an archived sheet is refused. */
+     public boolean isArchived(String id) {
+         Sheet sheet = find(id);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/descendants.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/descendants.GET.yml
+new file mode 100644
+index 000000000..16792034c
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/descendants.GET.yml
+@@ -0,0 +1,12 @@
++# The sheet's descendants' ids: its children (the sheets naming it as their parent), theirs and so on, nearest first.
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ readonly-transaction ]
++  next: descendants
++descendants:
++  class: net.officefloor.hq.app.sheet.LoadDescendants
++  govern: [ readonly-transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.sheet.RespondWithDescendants
++  govern: [ readonly-transaction ]
