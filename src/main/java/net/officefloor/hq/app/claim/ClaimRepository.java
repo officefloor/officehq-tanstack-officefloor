@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import net.officefloor.hq.app.holiday.HolidayRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
@@ -23,8 +24,11 @@ public class ClaimRepository {
 
     private final JdbcTemplate jdbc;
 
-    public ClaimRepository(JdbcTemplate jdbc) {
+    private final HolidayRepository holidays;
+
+    public ClaimRepository(JdbcTemplate jdbc, HolidayRepository holidays) {
         this.jdbc = jdbc;
+        this.holidays = holidays;
     }
 
     /** The sheet's claims, newest first. */
@@ -48,10 +52,13 @@ public class ClaimRepository {
                     claim.due(), claim.openedBy(), claim.corrects(), claim.id(), claim.sheetId());
             return claim;
         }
+        // The terms its due-by is fixed with: the business days to it over the sheet's holidays as they stand now.
+        int fixedTerms = HolidayRepository.businessDaysBetween(holidays.dates(claim.sheetId()), claim.date(),
+                claim.dueBy());
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, corrects, due_by, claim_number, opened_by, split_from) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, corrects, due_by, claim_number, opened_by, split_from, fixed_terms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, claim.sheetId());
             ps.setLong(2, claim.personId());
@@ -64,11 +71,28 @@ public class ClaimRepository {
             ps.setString(9, claim.number());
             ps.setString(10, claim.openedBy());
             ps.setString(11, claim.splitFrom());
+            ps.setInt(12, fixedTerms);
             return ps;
         }, keys);
         return new Claim(keys.getKey().longValue(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
                 claim.note(), claim.status(), claim.number(), claim.due(), claim.openedBy(), false, null,
                 claim.corrects(), claim.dueBy(), null, 0, claim.splitFrom());
+    }
+
+    /**
+     * Works out again, from its date and the terms it was fixed with over the sheet's holidays as they stand now, the
+     * due-by of every claim on the sheet that is not SETTLED or VOID and is due by on or after {@code from}.
+     */
+    public void refixDueBys(String sheetId, LocalDate from) {
+        Set<LocalDate> sheetHolidays = holidays.dates(sheetId);
+        jdbc.query("SELECT id, claim_date, fixed_terms FROM claim WHERE sheet_id = ? AND status NOT IN ('SETTLED', 'VOID') AND due_by >= ?",
+                (rs, n) -> new long[] { rs.getLong("id"), rs.getDate("claim_date").toLocalDate().toEpochDay(),
+                        rs.getInt("fixed_terms") },
+                sheetId, Date.valueOf(from)).forEach((row) -> jdbc.update(
+                        "UPDATE claim SET due_by = ? WHERE id = ? AND sheet_id = ?",
+                        Date.valueOf(HolidayRepository.businessDaysAfter(sheetHolidays, LocalDate.ofEpochDay(row[1]),
+                                (int) row[2])),
+                        row[0], sheetId));
     }
 
     /** Records the user as the last to edit the claim. */

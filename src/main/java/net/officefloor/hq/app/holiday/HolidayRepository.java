@@ -63,6 +63,18 @@ public class HolidayRepository {
         return day;
     }
 
+    /** How many business days there are after {@code from} up to and including {@code to}: the terms that fix
+     * {@code to} as the due-by of a claim dated {@code from} (0 when {@code to} is not after {@code from}). */
+    public static int businessDaysBetween(Set<LocalDate> holidays, LocalDate from, LocalDate to) {
+        int days = 0;
+        for (LocalDate day = from.plusDays(1); !day.isAfter(to); day = day.plusDays(1)) {
+            if (isBusinessDay(holidays, day)) {
+                days++;
+            }
+        }
+        return days;
+    }
+
     private static boolean isBusinessDay(Set<LocalDate> holidays, LocalDate day) {
         DayOfWeek dow = day.getDayOfWeek();
         return dow != DayOfWeek.SATURDAY && dow != DayOfWeek.SUNDAY && !holidays.contains(day);
