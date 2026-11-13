@@ -1,7 +1,10 @@
 package net.officefloor.hq.app.importpeople;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import net.officefloor.hq.app.person.ApplyPerson;
 import net.officefloor.hq.app.person.BuildPerson;
 import net.officefloor.hq.app.person.CheckPersonNameUnique;
 import net.officefloor.hq.app.person.InvalidPersonException;
@@ -9,29 +12,59 @@ import net.officefloor.hq.app.person.NameTree;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.person.PersonRequest;
+import net.officefloor.hq.app.person.PersonTermsChange;
+import net.officefloor.hq.app.person.StalePersonException;
 import net.officefloor.hq.app.sheet.Sheet;
+import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /**
- * Builds each imported person as the person form does and checks them with its rules against the sheet and its tree
- * (names, aliases, contacts). Any line refused refuses the whole import, before anything is written.
+ * Builds each imported person and checks them with the person form's rules against the sheet and its tree (names,
+ * aliases, contacts). A line whose name is a person's name or alias on the sheet updates that person as the form's
+ * edit does (grade from the sheet's today; terms and contact only when the line gives them); any other line adds a
+ * person as the form's add does. Two lines for the same person, or any line refused, refuse the whole import, before
+ * anything is written.
  */
 public class CheckImportedPeopleUnique {
     public void check(@Val ImportedPeople imported, @Val Sheet sheet, PersonRepository repository, NameTree tree,
-            Out<ImportedPersons> built) throws InvalidPersonException {
-        List<Person> people = new ArrayList<>();
+            SheetRepository sheets, Out<ImportedPersons> built) throws InvalidPersonException {
+        List<ImportedPersons.Entry> people = new ArrayList<>();
+        Set<Long> updating = new HashSet<>();
         int number = 0;
         for (PersonRequest request : imported.people()) {
             number++;
-            Person[] person = new Person[1];
-            new BuildPerson().build(request, sheet, value -> person[0] = value);
             try {
+                Person existing = repository.findByName(sheet.id(), request.name());
+                if (existing == null) {
+                    Person[] person = new Person[1];
+                    new BuildPerson().build(request, sheet, value -> person[0] = value);
+                    new CheckPersonNameUnique().check(person[0], repository, tree);
+                    people.add(new ImportedPersons.Entry(person[0], null));
+                    continue;
+                }
+                if (!updating.add(existing.id())) {
+                    throw new InvalidPersonException("The person " + existing.name()
+                            + " is already given by an earlier line.");
+                }
+                PersonRequest edit = new PersonRequest(existing.name(), request.grade(), "", null,
+                        request.termsDays() != null ? request.terms()
+                                : existing.terms() == null ? "" : String.valueOf(existing.terms()),
+                        request.contactOrNull() != null ? request.contact()
+                                : existing.contact() == null ? "" : existing.contact());
+                Person[] person = new Person[1];
+                PersonTermsChange[] change = new PersonTermsChange[1];
+                try {
+                    new ApplyPerson().apply(edit, existing, sheets, value -> person[0] = value,
+                            value -> change[0] = value);
+                } catch (StalePersonException e) {
+                    throw new InvalidPersonException(e.getMessage());
+                }
                 new CheckPersonNameUnique().check(person[0], repository, tree);
+                people.add(new ImportedPersons.Entry(person[0], change[0]));
             } catch (InvalidPersonException e) {
                 throw new InvalidPersonException("Person " + number + ": " + e.getMessage());
             }
-            people.add(person[0]);
         }
         built.set(new ImportedPersons(people));
     }

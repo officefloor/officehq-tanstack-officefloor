@@ -7,17 +7,17 @@ import { peopleKey } from '../people/people';
 import type { Person } from '../people/people';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 
-type ImportResult = { added: number };
+type ImportResult = { added: number; updated: number };
 
-// The import box: lines of name,grade,terms,contact (terms and contact may be left off or blank), each a person
-// added as the person form adds them. The server checks every line with the form's rules first, so one refused
-// line adds nothing.
+// The import box: lines of name,grade,terms,contact (terms and contact may be left off or blank). A line naming a
+// person on the sheet (by name or alias) updates them as the person form's edit does; any other adds a person.
+// The server checks every line with the form's rules first, so one refused line writes nothing.
 export function ImportPeople() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const [text, setText] = useState('');
   const [error, setError] = useState('');
-  const [added, setAdded] = useState<number | undefined>(undefined);
+  const [result, setResult] = useState<ImportResult | undefined>(undefined);
   const once = useOneAtATime();
   const queryClient = useQueryClient();
 
@@ -27,12 +27,12 @@ export function ImportPeople() {
         `/api/sheets/${encodeURIComponent(sheet)}/import-people?user=${encodeURIComponent(user)}`,
         { text: pasted },
       ),
-    onSuccess: async (result) => {
+    onSuccess: async (imported) => {
       setText('');
       // Re-read people first, then show them with the count in one render.
       const people = await getJson<Person[]>(`/api/sheets/${encodeURIComponent(sheet)}/people`);
       queryClient.setQueryData(peopleKey(sheet), people);
-      setAdded(result.added);
+      setResult(imported);
     },
     onError: () => setError('Nothing was imported: every line must be a person the person form takes.'),
   });
@@ -42,7 +42,7 @@ export function ImportPeople() {
   const submit = (e: FormEvent) => {
     e.preventDefault();
     setError('');
-    setAdded(undefined);
+    setResult(undefined);
     if (!text.trim()) {
       setError('Paste at least one line of name,grade,terms,contact.');
       return;
@@ -65,10 +65,11 @@ export function ImportPeople() {
       <button type="submit" data-testid="import-submit" disabled={importPeople.isPending}>
         Import people
       </button>
-      {added !== undefined && (
+      {result !== undefined && (
         <>
           {' '}
-          Added <span data-testid="import-added">{added}</span>
+          Added <span data-testid="import-added">{result.added}</span>, updated{' '}
+          <span data-testid="import-updated">{result.updated}</span>
         </>
       )}
       {error && <span data-testid="import-error">{error}</span>}
