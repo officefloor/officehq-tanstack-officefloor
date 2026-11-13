@@ -41,7 +41,7 @@ public class SettingRepository {
         DatedSettings dated = dated(sheetId);
         return new Settings(sheetId, dated.clerkLimitOn(today), dated.floorOn(today), dated.termsOn(today),
                 dated.gradeTermsOn(today), dated.latePctOn(today), policyDate(sheetId), periodNumberingFrom(sheetId),
-                dated.capOn(today), roles, dated);
+                dated.capOn(today), dated.proofThresholdOn(today), roles, dated);
     }
 
     /** The sheet's dated settings: every value recorded, by key and from-date. */

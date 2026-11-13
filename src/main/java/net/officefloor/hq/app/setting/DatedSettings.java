@@ -9,10 +9,10 @@ import java.util.NavigableMap;
 import net.officefloor.hq.app.claim.LateCharge;
 
 /**
- * A sheet's dated settings: for each key (floor, late-pct, terms, terms-&lt;grade&gt;, clerk-limit, cap) the values
+ * A sheet's dated settings: for each key (floor, late-pct, terms, terms-&lt;grade&gt;, clerk-limit, cap, proof-threshold) the values
  * recorded, by from-date (a value null: blank). The value in force on a date is the one with the latest from-date on or
  * before it; before every from-date it is the sheet's starting value (floor 1.00, late percent 0.00, terms 14; none
- * for the clerk limit, the cap and a grade's own terms).
+ * for the clerk limit, the cap, the proof threshold and a grade's own terms).
  */
 public record DatedSettings(Map<String, NavigableMap<LocalDate, String>> values) {
 
@@ -21,6 +21,7 @@ public record DatedSettings(Map<String, NavigableMap<LocalDate, String>> values)
     public static final String TERMS = "terms";
     public static final String CLERK_LIMIT = "clerk-limit";
     public static final String CAP = "cap";
+    public static final String PROOF_THRESHOLD = "proof-threshold";
 
     /** The key of a grade's own terms. */
     public static String gradeTerms(String grade) {
@@ -109,6 +110,21 @@ public record DatedSettings(Map<String, NavigableMap<LocalDate, String>> values)
     public BigDecimal capOn(LocalDate date) {
         String value = on(CAP, date);
         return value == null ? null : new BigDecimal(value).setScale(2);
+    }
+
+    /** The proof threshold in force on the date (null: none). */
+    public BigDecimal proofThresholdOn(LocalDate date) {
+        String value = on(PROOF_THRESHOLD, date);
+        return value == null ? null : new BigDecimal(value).setScale(2);
+    }
+
+    /**
+     * Whether a claim of the date with this due (null: n/a) needs a proof to be settled or approved: its due is above
+     * the proof threshold in force on its date.
+     */
+    public boolean needsProof(LocalDate date, BigDecimal due) {
+        BigDecimal threshold = proofThresholdOn(date);
+        return threshold != null && due != null && due.compareTo(threshold) > 0;
     }
 
     /** Every value recorded, by key, oldest from-date first. */

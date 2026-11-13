@@ -27,7 +27,8 @@ public class ValidateSettingsRequest {
 
     public void validate(@RequestBody @Valid SettingsRequest request, Out<ClerkLimit> limit, Out<Floor> floor,
             Out<Terms> terms, Out<LatePct> latePct, Out<PolicyDate> policyDate,
-            Out<PeriodNumberingFrom> periodNumberingFrom, Out<GradeTerms> gradeTerms, Out<Cap> cap)
+            Out<PeriodNumberingFrom> periodNumberingFrom, Out<GradeTerms> gradeTerms, Out<Cap> cap,
+            Out<ProofThreshold> proofThreshold)
             throws InvalidSettingException {
         limit.set(clerkLimit(request.clerkLimit(), from(request.clerkLimitFrom(), "clerk limit")));
         floor.set(floor(request.floor(), from(request.floorFrom(), "floor")));
@@ -37,6 +38,7 @@ public class ValidateSettingsRequest {
         periodNumberingFrom.set(periodNumberingFrom(request.periodNumberingFrom()));
         gradeTerms.set(gradeTerms(request.gradeTerms(), request.gradeTermsFrom()));
         cap.set(cap(request.cap(), from(request.capFrom(), "cap")));
+        proofThreshold.set(proofThreshold(request.proofThreshold(), from(request.proofThresholdFrom(), "proof threshold")));
     }
 
     /** A from-date typed with a setting (null: left out or blank, the sheet's today). */
@@ -64,6 +66,20 @@ public class ValidateSettingsRequest {
             throw new InvalidSettingException("The cap must be 0.00 or more, with at most two decimals, or blank.");
         }
         return new Cap(true, new BigDecimal(value).setScale(2), from);
+    }
+
+    private static ProofThreshold proofThreshold(String requested, LocalDate from) throws InvalidSettingException {
+        if (requested == null) {
+            return new ProofThreshold(false, null, null);
+        }
+        String value = requested.trim();
+        if (value.isEmpty()) {
+            return new ProofThreshold(true, null, from);
+        }
+        if (!AMOUNT.matcher(value).matches()) {
+            throw new InvalidSettingException("The proof threshold must be 0.00 or more, with at most two decimals, or blank.");
+        }
+        return new ProofThreshold(true, new BigDecimal(value).setScale(2), from);
     }
 
     private static ClerkLimit clerkLimit(String requested, LocalDate from) throws InvalidSettingException {

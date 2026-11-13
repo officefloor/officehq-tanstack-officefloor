@@ -15,12 +15,13 @@ export type UserRole = { user: string; role: string };
  * for each grade that has its own (by grade; any other grade uses the sheet's terms), the late percent (two decimals) an overdue claim
  * gains of its figure every full 30 days, the rounding policy date (yyyy-MM-dd; '': blank, the
  * sheet's today), the period numbering from date (yyyy-MM-dd; '': off — on or after it, an opened claim is
- * numbered within its period), the cap (two decimals; '': none — a person's due-total is at most it), and the roles
- * given to user names. The clerk limit, floor, terms, grade terms, late percent and cap are those in force on the sheet's
+ * numbered within its period), the cap (two decimals; '': none — a person's due-total is at most it), the proof threshold (two decimals; '': none — a
+ * claim whose due is above the one in force on its date is settled or approved only once it has a proof), and the roles
+ * given to user names. The clerk limit, floor, terms, grade terms, late percent, cap and proof threshold are those in force on the sheet's
  * today; `history` holds every value recorded for them, by key (floor, late-pct, terms, terms-<grade>, clerk-limit,
- * cap), oldest from-date first (value '': blank).
+ * cap, proof-threshold), oldest from-date first (value '': blank).
  */
-export type Settings = { clerkLimit: string | null; floor: string; terms: number; gradeTerms: Record<string, number>; latePct: string; policyDate: string; periodNumberingFrom: string; cap: string; roles: UserRole[]; history: Record<string, FromValue[]> };
+export type Settings = { clerkLimit: string | null; floor: string; terms: number; gradeTerms: Record<string, number>; latePct: string; policyDate: string; periodNumberingFrom: string; cap: string; proofThreshold: string; roles: UserRole[]; history: Record<string, FromValue[]> };
 
 /** A dated setting's value recorded from a date (yyyy-MM-dd); '': blank. */
 export type FromValue = { from: string; value: string };

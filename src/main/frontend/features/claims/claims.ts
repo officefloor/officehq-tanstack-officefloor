@@ -32,7 +32,9 @@ export const bound = (c: Claim) => c.stated && c.status !== 'PENDING';
  * corrects is, for a correction (a negative amount), the number of the settled claim it corrects, null otherwise;
  * dueBy (yyyy-MM-dd) is fixed when it was created: its date plus the terms of its person's grade in force on it;
  * log is its status log, oldest first: each status it has had, the user who gave it, the sheet's today then and its due then;
- * deferredUntil (yyyy-MM-dd) is the date it was deferred until, null when it never was.
+ * deferredUntil (yyyy-MM-dd) is the date it was deferred until, null when it never was;
+ * proofs is how many proofs it has been given (a claim whose due is above the proof threshold in force on its date is
+ * settled or approved only once it has one).
  */
 export type Claim = {
   id: number;
@@ -50,6 +52,7 @@ export type Claim = {
   dueBy: string;
   log: ClaimLogLine[];
   deferredUntil: string | null;
+  proofs: number;
 };
 
 /** A line of a claim's status log: the status, the user, the sheet's today (yyyy-MM-dd) and the due then (two decimals, or n/a). */

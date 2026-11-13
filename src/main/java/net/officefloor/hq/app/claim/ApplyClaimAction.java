@@ -23,7 +23,8 @@ import org.springframework.web.bind.annotation.RequestParam;
  * Settling fixes the claim's due at its person's grade's rate in force on the claim's date, raised to the sheet's floor and rounded by its policy date — or, when a statement
  * bound the claim, at the figure it was bound to — plus the late charge it has then, if overdue, frozen in; with no
  * figure it stays live. A clerk settling a claim whose due is above the sheet's clerk limit (a due of n/a is within any
- * limit) makes it PENDING instead, live and unfixed. Only a steward approves a PENDING claim (fixing its due at its live
+ * limit) makes it PENDING instead, live and unfixed. A claim with no proofs whose due is above the sheet's proof threshold in
+ * force on its date is refused settling or approving — before the clerk limit is considered, so it never goes PENDING. Only a steward approves a PENDING claim (fixing its due at its live
  * figure, plus any late charge, at that moment) — not the user who opened it — or rejects it, with a reason, back to OPEN.
  * Only a steward re-settles a SETTLED claim, fixing its due again at the figure it would have today as an open claim
  * bound by no statement (today's rates, grades, floor and late charge); its previous due is kept for the audit.
@@ -60,6 +61,11 @@ public class ApplyClaimAction {
             throw new InvalidClaimException("A reason is required to reject a claim.");
         }
         BigDecimal due = found.settles() ? settledDue(found == ClaimAction.RESETTLE ? claim.asOpenUnbound() : claim, sheets, people, rates, settings, claims) : claim.due();
+        if ((found == ClaimAction.SETTLE || found == ClaimAction.APPROVE) && claim.proofs() == 0
+                && settings.dated(claim.sheetId()).needsProof(claim.date(), due)) {
+            throw new InvalidClaimException("The claim's due is above the proof threshold: it needs a proof to be "
+                    + (found == ClaimAction.SETTLE ? "settled" : "approved") + ".");
+        }
         if (found == ClaimAction.SETTLE && !settings.find(claim.sheetId()).maySettle(user, due)) {
             found = ClaimAction.PEND;
             due = null;

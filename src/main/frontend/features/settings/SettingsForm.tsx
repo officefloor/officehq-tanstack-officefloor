@@ -28,11 +28,13 @@ type SettingsInput = {
   policyDate?: string;
   periodNumberingFrom?: string;
   cap?: string;
+  proofThreshold?: string;
   clerkLimitFrom?: string;
   floorFrom?: string;
   termsFrom?: string;
   latePctFrom?: string;
   capFrom?: string;
+  proofThresholdFrom?: string;
   gradeTermsFrom?: Record<string, string>;
 };
 
@@ -47,6 +49,7 @@ type Touched = {
   policyDate: boolean;
   periodNumberingFrom: boolean;
   cap: boolean;
+  proofThreshold: boolean;
 };
 
 const UNTOUCHED: Touched = {
@@ -57,11 +60,12 @@ const UNTOUCHED: Touched = {
   policyDate: false,
   periodNumberingFrom: false,
   cap: false,
+  proofThreshold: false,
 };
 
-// The sheet's clerk limit (blank: no limit), floor, terms, each grade's terms (blank: the sheet's), late percent and policy date (blank: today) and period numbering from date (blank: off) and cap (blank: none) in force, and the form that sets them. Saving sends
+// The sheet's clerk limit (blank: no limit), floor, terms, each grade's terms (blank: the sheet's), late percent and policy date (blank: today) and period numbering from date (blank: off) and cap (blank: none) and proof threshold (blank: none) in force, and the form that sets them. Saving sends
 // only the fields touched since the last save, so a blank field left alone changes nothing. A dated setting (the clerk
-// limit, floor, terms, each grade's terms, late percent and cap) is recorded from the date typed beside it (blank: the
+// limit, floor, terms, each grade's terms, late percent, cap and proof threshold) is recorded from the date typed beside it (blank: the
 // sheet's today); the value shown is the one in force on the sheet's today.
 export function SettingsForm() {
   const [user] = useCurrentUser();
@@ -76,6 +80,7 @@ export function SettingsForm() {
   const [policyDate, setPolicyDate] = useState('');
   const [periodNumberingFrom, setPeriodNumberingFrom] = useState('');
   const [cap, setCap] = useState('');
+  const [proofThreshold, setProofThreshold] = useState('');
   const [froms, setFroms] = useState<Froms>({});
   const [touched, setTouched] = useState<Touched>(UNTOUCHED);
   const [error, setError] = useState('');
@@ -95,6 +100,7 @@ export function SettingsForm() {
       setPolicyDate('');
       setPeriodNumberingFrom('');
       setCap('');
+      setProofThreshold('');
       setFroms({});
       setTouched(UNTOUCHED);
       setError('');
@@ -137,6 +143,7 @@ export function SettingsForm() {
       ...GRADES.map((g) => [`terms-${g}`, `terms for grade ${g}`]),
       ['late-pct', 'late percent'],
       ['cap', 'cap'],
+      ['proof-threshold', 'proof threshold'],
     ]) {
       if (fromOf(key) === null) {
         setError(`Type the ${label} from-date as yyyy-MM-dd, or leave it blank for the sheet's today.`);
@@ -218,6 +225,15 @@ export function SettingsForm() {
       input.cap = value;
       input.capFrom = datedFrom('cap');
     }
+    if (touched.proofThreshold) {
+      const value = proofThreshold.trim();
+      if (value !== '' && !AMOUNT.test(value)) {
+        setError('Type a proof threshold of 0.00 or more, with at most two decimals, or leave it blank for none.');
+        return;
+      }
+      input.proofThreshold = value;
+      input.proofThresholdFrom = datedFrom('proof-threshold');
+    }
     if (
       input.clerkLimit === undefined &&
       input.floor === undefined &&
@@ -226,7 +242,8 @@ export function SettingsForm() {
       input.latePct === undefined &&
       input.policyDate === undefined &&
       input.periodNumberingFrom === undefined &&
-      input.cap === undefined
+      input.cap === undefined &&
+      input.proofThreshold === undefined
     )
       return;
     once(() => save.mutateAsync(input));
@@ -263,6 +280,9 @@ export function SettingsForm() {
       </p>
       <p>
         Cap: <span data-testid="setting-cap-current">{settings?.cap ?? ''}</span>
+      </p>
+      <p>
+        Proof threshold: <span data-testid="setting-proof-threshold-current">{settings?.proofThreshold ?? ''}</span>
       </p>
       <form onSubmit={submit} data-testid="settings-form">
         <input
@@ -363,6 +383,18 @@ export function SettingsForm() {
           }}
         />
         {fromField('cap', 'Cap')}
+        <input
+          data-testid="setting-proof-threshold"
+          placeholder="Proof threshold on a claim's due (blank: none)"
+          value={proofThreshold}
+          onFocus={() => setTouched((t) => ({ ...t, proofThreshold: true }))}
+          onChange={(e) => {
+            setProofThreshold(e.target.value);
+            setTouched((t) => ({ ...t, proofThreshold: true }));
+            setError('');
+          }}
+        />
+        {fromField('proof-threshold', 'Proof threshold')}
         <button type="submit" data-testid="settings-save" disabled={save.isPending}>
           Save settings
         </button>

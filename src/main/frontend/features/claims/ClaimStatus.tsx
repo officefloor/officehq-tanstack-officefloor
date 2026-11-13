@@ -19,8 +19,8 @@ const ACTIONS: Array<{ action: Action; label: string }> = [
 ];
 
 const REFUSED: Partial<Record<Action, string>> = {
-  settle: ' (the user who opened it cannot settle it)',
-  approve: ' (only a steward approves a pending claim, and not the user who opened it)',
+  settle: ' (the user who opened it cannot settle it, and one whose due is above the proof threshold needs a proof)',
+  approve: ' (only a steward approves a pending claim, and not the user who opened it; one whose due is above the proof threshold needs a proof)',
   reject: ' (only a steward rejects a pending claim, and a reason is required)',
   resettle: ' (only a steward re-settles a settled claim)',
 };
@@ -30,7 +30,8 @@ const REFUSED: Partial<Record<Action, string>> = {
 // above the clerk limit makes the claim PENDING; a reject sends the reason typed beside it. A steward
 // moves a DRAFT, OPEN or PENDING claim to the person chosen beside the Move button. A steward
 // re-settles a SETTLED claim, freezing it again at today's figure. An OPEN claim is deferred to the
-// date typed beside the Defer button.
+// date typed beside the Defer button. The Add proof button raises the claim's proofs count by one (not on a
+// SETTLED or VOID claim, nor one dated in a closed period).
 export function ClaimStatus({ claim }: { claim: Claim }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -79,6 +80,16 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
     },
     onError: () =>
       setError(`This ${claim.status} claim cannot be deferred to that date (only an OPEN claim, to a date after today, outside a closed period).`),
+  });
+
+  const proof = useMutation({
+    mutationFn: () =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheet)}/claims/${claim.id}/proofs?user=${encodeURIComponent(user)}`, {}),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+    },
+    onError: () =>
+      setError(`This ${claim.status} claim cannot be given a proof (not a SETTLED or VOID claim, nor one in a closed period).`),
   });
 
   return (
@@ -164,6 +175,18 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
         }}
       >
         Defer
+      </button>
+      Proofs: <span data-testid="claim-proofs">{claim.proofs}</span>{' '}
+      <button
+        type="button"
+        data-testid="claim-proof"
+        disabled={proof.isPending}
+        onClick={() => {
+          setError('');
+          once(() => proof.mutateAsync());
+        }}
+      >
+        Add proof
       </button>
       {error && <span data-testid="claim-error">{error}</span>}
     </>

@@ -16,10 +16,19 @@ import java.time.LocalDate;
  * grade in force on that date; it does not change when the terms or its date change later. While PENDING the claim is not bound: it shows and totals its live figure, and is bound again
  * once rejected (back to OPEN) when the statement included it. {@code deferredUntil} is the date an OPEN claim is
  * deferred until (null: never deferred): while the sheet's today is before it the claim is {@link #deferred deferred}.
+ * {@code proofs} is how many proofs the claim has been given.
  */
 public record Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
         ClaimStatus status, String number, BigDecimal due, String openedBy, boolean stated, BigDecimal statedDue,
-        String corrects, LocalDate dueBy, LocalDate deferredUntil) {
+        String corrects, LocalDate dueBy, LocalDate deferredUntil, int proofs) {
+
+    /** A claim with no proofs. */
+    public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
+            ClaimStatus status, String number, BigDecimal due, String openedBy, boolean stated, BigDecimal statedDue,
+            String corrects, LocalDate dueBy, LocalDate deferredUntil) {
+        this(id, sheetId, personId, amount, date, note, status, number, due, openedBy, stated, statedDue, corrects,
+                dueBy, deferredUntil, 0);
+    }
 
     /** A claim never deferred. */
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
@@ -32,13 +41,13 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
     /** The same claim with another status, number, fixed due and opener. */
     public Claim withStatus(ClaimStatus next, String nextNumber, BigDecimal nextDue, String nextOpenedBy) {
         return new Claim(id, sheetId, personId, amount, date, note, next, nextNumber, nextDue, nextOpenedBy, stated,
-                statedDue, corrects, dueBy, deferredUntil);
+                statedDue, corrects, dueBy, deferredUntil, proofs);
     }
 
     /** The same claim as an open claim bound by no statement: live, with no fixed due. */
     public Claim asOpenUnbound() {
         return new Claim(id, sheetId, personId, amount, date, note, ClaimStatus.OPEN, number, null, openedBy, false,
-                null, corrects, dueBy, deferredUntil);
+                null, corrects, dueBy, deferredUntil, proofs);
     }
 
     /** Whether the claim is a correction: a negative amount naming the settled claim it corrects. */
@@ -67,7 +76,18 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
     /** The same claim deferred until the date. */
     public Claim deferTo(LocalDate until) {
         return new Claim(id, sheetId, personId, amount, date, note, status, number, due, openedBy, stated, statedDue,
-                corrects, dueBy, until);
+                corrects, dueBy, until, proofs);
+    }
+
+    /** The same claim with one more proof. */
+    public Claim withProof() {
+        return new Claim(id, sheetId, personId, amount, date, note, status, number, due, openedBy, stated, statedDue,
+                corrects, dueBy, deferredUntil, proofs + 1);
+    }
+
+    /** Whether a proof can be added to the claim: it is neither SETTLED nor VOID. */
+    public boolean takesProof() {
+        return status != ClaimStatus.SETTLED && status != ClaimStatus.VOID;
     }
 
     /** Whether the claim is overdue on the given today: OPEN (or PENDING), not deferred, with its due-by before that day. */
