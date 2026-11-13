@@ -378,23 +378,48 @@ public class SettingStore {
         return entry == null ? null : entry.getValue();
     }
 
-    /** The most a clerk may settle a claim's due at (the one in force on the sheet's today), or null for no limit. */
-    public BigDecimal clerkLimit(String sheetId) {
-        String value = find(sheetId, CLERK_LIMIT);
+    /** The most a clerk may settle a claim dated on the date at (the one in force on that date), or null for no limit. */
+    public BigDecimal clerkLimit(String sheetId, LocalDate date) {
+        String value = findOn(sheetId, CLERK_LIMIT, date);
         return value == null ? null : new BigDecimal(value);
     }
 
-    /** The most a clerk may settle a claim's due at for a person of the grade: the grade's own limit in force on
-     *  the sheet's today when one is set, else the sheet's; null for no limit. */
-    public BigDecimal clerkLimit(String sheetId, String grade) {
-        String own = grade == null ? null : find(sheetId, CLERK_LIMIT_PREFIX + grade);
-        return own != null ? new BigDecimal(own) : clerkLimit(sheetId);
+    /** The most a clerk may settle a claim dated on the date at for a person of the grade: the grade's own limit in
+     *  force on that date when one is set, else the sheet's; null for no limit. */
+    public BigDecimal clerkLimit(String sheetId, String grade, LocalDate date) {
+        String own = grade == null ? null : findOn(sheetId, CLERK_LIMIT_PREFIX + grade, date);
+        return own != null ? new BigDecimal(own) : clerkLimit(sheetId, date);
     }
 
-    /** The most a person's due-total may be (the one in force on the sheet's today), or null for no cap. */
-    public BigDecimal cap(String sheetId) {
-        String value = find(sheetId, CAP);
-        return value == null ? null : new BigDecimal(value);
+    /** The most a person's due-total may be, in force on each date (a person's cap is the one on the date of their
+     *  latest claim that counts), or null for no cap then. Read once, for many people. */
+    public Function<LocalDate, BigDecimal> caps(String sheetId) {
+        NavigableMap<LocalDate, String> history = history(sheetId, CAP);
+        return date -> {
+            String value = on(history, date);
+            return value == null ? null : new BigDecimal(value);
+        };
+    }
+
+    /** The policy settings, versioned together: every change to one of them is a new policy version. */
+    public static final List<String> POLICY_KEYS = List.of(ROUNDING, FLOOR, CAP, TERMS, LATE_PCT, CLERK_LIMIT);
+
+    /** The from-dates of the sheet's policy versions, in the order made (null for one with no from-date: it counts
+     *  always); as of a date, those made while the sheet's today was on or before it. Their number is the current
+     *  version; the version in force on a date is the number of them on or before it. */
+    public List<LocalDate> policyFroms(String sheetId) {
+        return jdbc.query("SELECT from_date FROM policy_version WHERE sheet_id = ?"
+                + (asOf == null ? "" : " AND made_on <= DATE '" + asOf + "'") + " ORDER BY version",
+                (rs, n) -> rs.getObject("from_date", LocalDate.class), sheetId);
+    }
+
+    /** Records a change to a policy setting as the sheet's next policy version. */
+    public void addPolicyVersion(String sheetId, String key, String value, LocalDate from) {
+        Integer last = jdbc.queryForObject("SELECT MAX(version) FROM policy_version WHERE sheet_id = ?",
+                Integer.class, sheetId);
+        jdbc.update("INSERT INTO policy_version (sheet_id, version, setting_key, setting_value, from_date, made_on) "
+                + "VALUES (?, ?, ?, ?, ?, ?)", sheetId, last == null ? 1 : last + 1, key, value, from,
+                sheets.today(sheetId));
     }
 
     /** The due above which a claim dated on the date needs a proof before it is settled or approved (the

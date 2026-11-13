@@ -62,6 +62,8 @@ public class SheetCloneStore {
                 + "SELECT ?, setting_key, setting_value FROM sheet_setting WHERE sheet_id = ?", to, from);
         jdbc.update("INSERT INTO sheet_setting_from (sheet_id, setting_key, from_date, setting_value) "
                 + "SELECT ?, setting_key, from_date, setting_value FROM sheet_setting_from WHERE sheet_id = ?", to, from);
+        jdbc.update("INSERT INTO policy_version (sheet_id, version, setting_key, setting_value, from_date, made_on) "
+                + "SELECT ?, version, setting_key, setting_value, from_date, made_on FROM policy_version WHERE sheet_id = ?", to, from);
         jdbc.update("INSERT INTO sheet_role (sheet_id, user_name, role) "
                 + "SELECT ?, user_name, role FROM sheet_role WHERE sheet_id = ?", to, from);
         jdbc.update("INSERT INTO rate (sheet_id, grade, pct, from_date, to_date, version, forward_seq) "

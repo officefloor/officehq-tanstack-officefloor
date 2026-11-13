@@ -44,14 +44,20 @@ import java.util.Map;
  *  {@code defaultGrade} is the grade the quick-add bar and an import line with a blank grade give a new person, null
  *  when blank (then A; not dated).
  *  {@code gradeClerkLimit} is each grade's clerk limit in force on the sheet's today, by grade, null when it has none
- *  (a claim's clerk limit is its person's grade's on the sheet's today when one is set, else the sheet's).
+ *  (a claim's clerk limit is its person's grade's in force on its date when one is set, else the sheet's then).
  *  {@code scoreMid} and {@code scoreHigh} are the whole-number scores at or above which a person's band is MID and
  *  HIGH, null when blank (no band while either is; not dated).
  *  {@code scoreLog} is on while moving the sheet's today records each person's score, null when blank (not dated).
  *  {@code maxOpen} is the most OPEN or PENDING claims a person may have for another to be opened, null for none
  *  (not dated).
  *  {@code pendingSla} is the whole days after its pending day a claim in PENDING may stay there before it is late,
- *  null for none (not dated). */
+ *  null for none (not dated).
+ *  {@code policyVersion} is the sheet's current policy version: the number of changes made to its policy settings
+ *  (the rounding, the floor, the cap, the terms, the late percent and the clerk limit), 0 for none.
+ *  {@code policyFrom} is each policy version's from-date, in the order made, null for one with no from-date (it
+ *  counts always): the version in force on a claim's date is the number of them on or before it.
+ *  {@code capFrom} is the caps recorded, oldest from-date first (a person's cap is the one in force on the date of
+ *  their latest claim that counts). */
 public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
         String periodNumberingFrom, Map<String, String> gradeTerms, String cap, String proofThreshold, List<Dated> floorFrom,
         List<Dated> latePctFrom, Map<String, String> perms, String graceDays,
@@ -60,7 +66,8 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
         String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding,
         List<Dated> roundingFrom, String reviewThreshold, String escalateAfter, String reviewSla,
         String proofKinds, String defaultGrade, Map<String, String> gradeClerkLimit,
-        String scoreMid, String scoreHigh, String scoreLog, String maxOpen, String pendingSla) {
+        String scoreMid, String scoreHigh, String scoreLog, String maxOpen, String pendingSla,
+        String policyVersion, List<String> policyFrom, List<Dated> capFrom) {
 
     /** A value recorded from a date (yyyy-MM-dd). */
     public record Dated(String from, String value) {

@@ -10,6 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimLogStore;
@@ -33,7 +34,7 @@ import org.springframework.stereotype.Service;
  * list order (by their positions), then TOTALS sheet=<id> by=<user> claimed-total=<0.00> due-total=<0.00>
  * overdue-total=<0.00> when any of the sheet's totals changed; the sheet's due-total and overdue-total leave out
  * the single highest and the single lowest person's figure when three or more people have one (n/a is no figure). A person's overdue-total is the due (late charge
- * included, skipping n/a) of their counting claims that are OPEN or PENDING with a due-by (plus any grace days of their grade, see {@link Lateness}) before today. A person's due-total is at most the sheet's cap less their cut total (see {@link PoolCuts#totals}), not below 0.00; a shared claim's
+ * included, skipping n/a) of their counting claims that are OPEN or PENDING with a due-by (plus any grace days of their grade, see {@link Lateness}) before today. A person's due-total is at most the sheet's cap in force on the date of their latest claim that counts (else on today) less their cut total (see {@link PoolCuts#totals}), not below 0.00; a shared claim's
  * holders' parts (see {@link Shares}: at their own grade's rate, frozen once settled) count in their due-total and settled figures, not in its person's. A change that moves no figure records nothing here.
  * After those lines, while the sheet's alert threshold is set, ALERT sheet=<id> by=<user> name=<name> due-total=<0.00>
  * for each person whose due-total the change took from at or below it (or no due-total) to above it, in list order.
@@ -68,8 +69,8 @@ public class RollupService {
     public Rollup snapshot(String sheetId) {
         LocalDate today = sheets.today(sheetId);
         List<Claim> all = claims.list(sheetId);
-        BigDecimal cap = settings.cap(sheetId);
-        Map<Long, BigDecimal> cutTotals = cap == null ? Map.of() : cuts.totals(sheetId);
+        Function<LocalDate, BigDecimal> caps = settings.caps(sheetId);
+        Map<Long, BigDecimal> cutTotals = settings.history(sheetId, SettingStore.CAP).isEmpty() ? Map.of() : cuts.totals(sheetId);
         Lateness lateness = lateness(sheetId, today, all);
         Map<Long, Rollup.Figures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
@@ -116,6 +117,8 @@ public class RollupService {
             BigDecimal due = BigDecimal.ZERO.setScale(2);
             BigDecimal overdue = BigDecimal.ZERO.setScale(2);
             BigDecimal settled = BigDecimal.ZERO.setScale(2);
+            // The date of their latest claim that counts: their cap is the one in force on it (else on today).
+            LocalDate latest = null;
             int overdueCount = 0;
             boolean fixed = false;
             for (Claim claim : all) {
@@ -130,6 +133,9 @@ public class RollupService {
                 // A held claim stays in claimed, but leaves the due figures while held.
                 if (!counts(claim, person, today)) {
                     continue;
+                }
+                if (latest == null || claim.getDate().isAfter(latest)) {
+                    latest = claim.getDate();
                 }
                 BigDecimal figure = lateness.due(claim, rates.forClaim(claim).find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()));
                 if (lateness.overdue(claim)) {
@@ -163,6 +169,7 @@ public class RollupService {
             boolean na = rates.find(sheetId, person.gradeOn(today), today) == null && !fixed;
             claimedTotal = claimedTotal.add(claimed);
             overdues.add(overdue);
+            BigDecimal cap = caps.apply(latest != null ? latest : today);
             due = SettingStore.capped(due, SettingStore.capLess(cap, cutTotals.get(person.getId())));
             if (!na) {
                 dues.add(due);

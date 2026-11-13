@@ -6,7 +6,7 @@ import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns
 import { type Person, peopleKey, usePeople } from '../people/people';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { claimDue, useRates } from '../rates/rates';
-import { floorOf, useSettings } from '../settings/settings';
+import { floorOf, policyOf, useSettings } from '../settings/settings';
 import { periodOf, usePeriods } from '../periods/periods';
 import { useSheetToday } from '../sheet/sheet';
 import { dueBy, lateOf, overdue, pendingLate, reviewLate } from '../overdue/overdue';
@@ -67,6 +67,7 @@ function PersonClaims({ person }: { person: Person }) {
   const rates = useRates(sheet);
   const settings = useSettings(sheet).data;
   const floor = floorOf(settings);
+  const policy = policyOf(settings);
   const today = useSheetToday(sheet);
   const periods = usePeriods(sheet);
   const [fields, setFields] = useState<Fields>(EMPTY);
@@ -842,6 +843,7 @@ function PersonClaims({ person }: { person: Person }) {
               <span data-testid="claim-tags">{c.tags.join(', ')}</span>{' '}
               <span data-testid="claim-period">{periodOf(periods.data, c.dueBy)?.name ?? ''}</span>{' '}
               <span data-testid="claim-due">{fig(claimDue(c, rates.data, person.grades, floor, lateOf(settings, today, [person])))}</span>{' '}
+              <span data-testid="claim-policy">{policy?.(c.date) ?? ''}</span>{' '}
               <span data-testid="claim-due-by">{dueBy(c)}</span>{' '}
               <span data-testid="claim-overdue">{overdue(c, today, lateOf(settings, today, [person])) ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-status">{c.status}</span>{' '}

@@ -120,6 +120,9 @@ function SheetSettings() {
   return (
     <section data-testid="settings">
       <h2>Settings</h2>
+      <p>
+        Policy version <strong data-testid="policy-version">{settings.data?.policyVersion ?? ''}</strong>
+      </p>
       <form
         data-testid="settings-form"
         onSubmit={(e) => {

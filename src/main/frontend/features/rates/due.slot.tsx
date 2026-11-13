@@ -3,8 +3,8 @@ import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns
 import { type Person, usePeople } from '../people/people';
 import { useCurrentSheet } from '../../session/session';
 import { useSheetToday } from '../sheet/sheet';
-import { live, useClaims } from '../claims/claims';
-import { floorOf, useSettings } from '../settings/settings';
+import { counts, live, useClaims } from '../claims/claims';
+import { capOf, floorOf, useSettings } from '../settings/settings';
 import { lateOf } from '../overdue/overdue';
 import { type Shared, capLess, personDue, personExcess, sharedParts, trimmedTotal, useRates } from './rates';
 import { cutTotal, usePools } from '../pools/pools';
@@ -83,13 +83,22 @@ export function usePersonDue(of?: string): (person: Person) => string {
 }
 
 /** The cap each person's due-total on the sheet (the current sheet's unless another is named) is held to: the
- *  sheet's cap less their cut total (see `capLess`). */
+ *  sheet's cap in force on the date of their latest claim that counts (else on the sheet's today) less their cut
+ *  total (see `capLess`). */
 export function useCapOf(of?: string): (person: Person) => string | null | undefined {
   const [current] = useCurrentSheet();
   const sheet = of ?? current;
-  const cap = useSettings(sheet).data?.cap;
+  const settings = useSettings(sheet).data;
+  const capOn = capOf(settings);
+  const claims = useClaims(sheet);
+  const today = useSheetToday(sheet);
   const pools = usePools(sheet).data ?? [];
-  return (p: Person) => capLess(cap, cutTotal(pools, p.id));
+  return (p: Person) => {
+    const dates = live((claims.data ?? []).filter((c) => c.personId === p.id), [p]).filter(counts).map((c) => c.date);
+    const latest = dates.reduce<string | undefined>((a, d) => (a === undefined || d > a ? d : a), undefined) ?? today;
+    const cap = capOn === undefined ? undefined : latest === undefined ? settings?.cap : capOn(latest);
+    return capLess(cap, cutTotal(pools, p.id));
+  };
 }
 
 /** What claims shared with or by each person on the sheet (the current sheet's unless another is named) move in

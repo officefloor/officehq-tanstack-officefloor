@@ -21,6 +21,7 @@ public class RespondWithSettings {
         LocalDate on = History.date(asOf);
         SettingStore store = on == null ? settings : settings.asOf(on);
         LocalDate today = on == null ? sheets.today(sheet) : on;
+        List<LocalDate> policy = store.policyFroms(sheet);
         response.send(new SettingsResponse(store.find(sheet, SettingStore.CLERK_LIMIT),
                 store.floors(sheet).apply(today).setScale(2).toPlainString(),
                 String.valueOf(store.terms(sheet, today)),
@@ -40,7 +41,9 @@ public class RespondWithSettings {
                 store.find(sheet, SettingStore.DEFAULT_GRADE), gradeClerkLimit(sheet, today, store),
                 store.find(sheet, SettingStore.SCORE_MID), store.find(sheet, SettingStore.SCORE_HIGH),
                 store.find(sheet, SettingStore.SCORE_LOG), store.find(sheet, SettingStore.MAX_OPEN),
-                store.find(sheet, SettingStore.PENDING_SLA)));
+                store.find(sheet, SettingStore.PENDING_SLA), String.valueOf(policy.size()),
+                policy.stream().map(from -> from == null ? null : from.toString()).toList(),
+                history(sheet, SettingStore.CAP, store)));
     }
 
     private static Map<String, String> gradeTerms(String sheetId, LocalDate today, SettingStore store) {

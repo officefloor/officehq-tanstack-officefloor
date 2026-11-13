@@ -41,7 +41,11 @@ import { useAsOf } from '../../session/session';
  *  they are not dated. `scoreLog` is on while moving the sheet's today records each person's score in the audit
  *  file, null when blank; it is not dated. `maxOpen` is the most OPEN or PENDING claims a person may have for
  *  another to be opened, null for none; it is not dated. `pendingSla` is the whole days after its pending day a claim
- *  in PENDING may stay there before it is late, null for none; it is not dated. */
+ *  in PENDING may stay there before it is late, null for none; it is not dated. `policyVersion` is the sheet's current
+ *  policy version: the number of changes made to its policy settings (the rounding, the floor, the cap, the terms, the
+ *  late percent and the clerk limit). `policyFrom` is each policy version's from-date (yyyy-MM-dd), in the order made,
+ *  null for one with no from-date (it counts always). `capFrom` is the caps recorded, oldest from-date first: a person's
+ *  cap is the one in force on the date of their latest claim that counts. */
 export type Settings = { clerkLimit: string | null; floor: string; terms: string; latePct: string; policyDate: string | null;
   periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; proofThreshold: string | null;
   floorFrom: Dated[]; latePctFrom: Dated[]; perms: Record<string, string | null>;
@@ -51,7 +55,8 @@ export type Settings = { clerkLimit: string | null; floor: string; terms: string
   alertThreshold: string | null; rounding: string | null; roundingFrom: Dated[]; reviewThreshold: string | null;
   escalateAfter: string | null; reviewSla: string | null; proofKinds: string | null; defaultGrade: string | null;
   gradeClerkLimit: Record<string, string | null>; scoreMid: string | null; scoreHigh: string | null;
-  scoreLog: string | null; maxOpen: string | null; pendingSla: string | null };
+  scoreLog: string | null; maxOpen: string | null; pendingSla: string | null;
+  policyVersion: string; policyFrom: (string | null)[]; capFrom: Dated[] };
 
 /** A setting's value recorded from a date (yyyy-MM-dd); a null value is blank. */
 export type Dated = { from: string; value: string | null };
@@ -77,6 +82,17 @@ export function floorOf(settings: Settings | undefined): ((date: string) => stri
 /** The late percent in force on each date; undefined until the settings are read. */
 export function latePctOf(settings: Settings | undefined): ((date: string) => string) | undefined {
   return settings && ((date) => valueOn(settings.latePctFrom, date, STARTING_LATE_PCT));
+}
+
+/** The cap in force on each date (two decimals), null for none; undefined until the settings are read. */
+export function capOf(settings: Settings | undefined): ((date: string) => string | null) | undefined {
+  return settings && ((date) => valueOn(settings.capFrom ?? [], date, '') || null);
+}
+
+/** The policy version in force on each date: the number of versions whose from-date is on or before it (one with
+ *  no from-date counts always); undefined until the settings are read. */
+export function policyOf(settings: Settings | undefined): ((date: string) => number) | undefined {
+  return settings && ((date) => (settings.policyFrom ?? []).filter((from) => from === null || from <= date).length);
 }
 
 /** The rounding mode in force on each date ('half-up', 'half-even', or '' for none); undefined until the settings are read. */

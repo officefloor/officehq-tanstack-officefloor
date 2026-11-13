@@ -164,8 +164,9 @@ public class CheckClerkLimit {
             return false;
         }
         Person person = people.find(claim.getSheetId(), claim.getPersonId());
+        // The limit in force on the claim's own date, for the person's grade then.
         BigDecimal limit = settings.clerkLimit(claim.getSheetId(),
-                person == null ? null : person.gradeOn(sheets.today(claim.getSheetId())));
+                person == null ? null : person.gradeOn(claim.getDate()), claim.getDate());
         if (limit == null) {
             return false;
         }

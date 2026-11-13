@@ -111,6 +111,8 @@ public class TakeStatement {
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         boolean fixed = holds;
         int counted = 0;
+        // The date of their latest claim that counts: their cap is the one in force on it (else on the date).
+        LocalDate latest = null;
         for (Claim live : bound) {
             // The claim as it stood then (itself when taken now); null when it was not theirs then.
             Claim claim = was.get(live.getId());
@@ -121,6 +123,9 @@ public class TakeStatement {
             BigDecimal figure = null;
             boolean na = false;
             if (counts) {
+                if (latest == null || claim.getDate().isAfter(latest)) {
+                    latest = claim.getDate();
+                }
                 figure = ClaimFigure.of(claim, rates.forClaim(claim).find(sheetId, then.gradeOn(claim.getDate()), claim.getDate()), rounding);
                 counted++;
                 if (figure != null) {
@@ -146,7 +151,7 @@ public class TakeStatement {
         total = total.add(held);
         boolean na = rates.find(sheetId, then.gradeOn(on), on) == null && !fixed;
         Statement statement = new Statement(person.getId(), on,
-                na ? null : SettingStore.capped(total, settings.cap(sheetId)), counted);
+                na ? null : SettingStore.capped(total, settings.caps(sheetId).apply(latest != null ? latest : on)), counted);
         statements.add(sheetId, statement, request.user());
         statementOut.set(statement);
     }
