@@ -71,6 +71,18 @@ public class ClaimRepository {
                 claim.corrects(), claim.dueBy(), null, 0, claim.splitFrom());
     }
 
+    /** Records the user as the last to edit the claim. */
+    public void markEdited(String sheetId, long id, String user) {
+        jdbc.update("UPDATE claim SET edited_by = ? WHERE id = ? AND sheet_id = ?", user, id, sheetId);
+    }
+
+    /** The user who last edited the claim, or null when it was never edited. */
+    public String editedBy(String sheetId, long id) {
+        List<String> found = jdbc.queryForList("SELECT edited_by FROM claim WHERE sheet_id = ? AND id = ?",
+                String.class, sheetId, id);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
     /** The person's claims, newest first. */
     public List<Claim> findForPerson(String sheetId, long personId) {
         return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY listed DESC, id DESC",

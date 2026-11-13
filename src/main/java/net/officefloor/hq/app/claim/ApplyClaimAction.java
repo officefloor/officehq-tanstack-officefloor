@@ -22,7 +22,8 @@ import org.springframework.web.bind.annotation.RequestParam;
  * sheet's period numbering from date is set and its today is on or after it, opening instead gives the claim the next
  * number within the period containing its due-by (P1-1, P1-2, ...), or within the claims in no period (X-1, ...).
  * Opening, settling and voiding are refused (400) to a role the sheet's permission matrix does not allow them.
- * Opening records the user who opened it; that user cannot settle it (four eyes). A deferred claim cannot be settled.
+ * Opening records the user who opened it; that user cannot settle it (four eyes). Nor can the user who last edited
+ * it (through its editor or its row's amount entry) settle or approve it. A deferred claim cannot be settled.
  * Settling fixes the claim's due at the greater of the sheet's floor in force on its date and its figure — at its person's grade's rate in force on the claim's date,
  * rounded by its policy date, or, when a statement bound the claim, the figure it was bound to — plus the late charge it has then, if overdue, frozen in; with no
  * figure it stays live. A clerk settling a claim whose due is above the sheet's clerk limit (a due of n/a is within any
@@ -65,6 +66,10 @@ public class ApplyClaimAction {
         }
         if (found == ClaimAction.APPROVE && user.equals(claim.openedBy())) {
             throw new InvalidClaimException("The user who opened a claim cannot approve it.");
+        }
+        if ((found == ClaimAction.SETTLE || found == ClaimAction.APPROVE)
+                && user.equals(claims.editedBy(claim.sheetId(), claim.id()))) {
+            throw new InvalidClaimException("The user who last edited a claim cannot " + action + " it.");
         }
         if ((found == ClaimAction.APPROVE || found == ClaimAction.REJECT)
                 && settings.find(claim.sheetId()).roleOf(user) != Role.STEWARD) {
