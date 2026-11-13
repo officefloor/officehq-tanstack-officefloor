@@ -1,0 +1,508 @@
+diff --git a/src/main/frontend/features/pools/Pools.tsx b/src/main/frontend/features/pools/Pools.tsx
+index 818e0c557..6a760cf73 100644
+--- a/src/main/frontend/features/pools/Pools.tsx
++++ b/src/main/frontend/features/pools/Pools.tsx
+@@ -77,7 +77,7 @@ export function Pools() {
+ 
+ const EMPTY = { personId: '', share: '' };
+ 
+-// A pool's row: its members with their shares, its total share and whether it is balanced, and the form that adds a
++// A pool's row: its members with their shares and cuts of the pot (blank: an unbalanced pool, or no pot), its total share and whether it is balanced, and the form that adds a
+ // member; a person already in the pool, or a share not more than 0.00 and at most 100.00 (two decimals), is refused.
+ function PoolRow({ pool }: { pool: Pool }) {
+   const [user] = useCurrentUser();
+@@ -136,7 +136,7 @@ function PoolRow({ pool }: { pool: Pool }) {
+         {pool.members.map((m) => (
+           <li key={m.personId} data-testid={`pool-member-${pool.name}-${m.personId}`}>
+             <span data-testid="pool-member-name">{m.name}</span> <span data-testid="pool-share">{m.share}</span>
+-            {m.retired && ' (retired)'}
++            {m.retired && ' (retired)'} cut <span data-testid="pool-cut">{m.cut}</span>
+           </li>
+         ))}
+       </ul>
+diff --git a/src/main/frontend/features/pools/pools.ts b/src/main/frontend/features/pools/pools.ts
+index b33fb0d5f..b29fa4764 100644
+--- a/src/main/frontend/features/pools/pools.ts
++++ b/src/main/frontend/features/pools/pools.ts
+@@ -2,8 +2,11 @@ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ import { sheetKey, useCurrentSheet } from '../session/session';
+ 
+-/** A pool's member: the person, their share percent (two decimals) and whether a retirement date is set. */
+-export type PoolMember = { personId: number; name: string; share: string; retired: boolean };
++/**
++ * A pool's member: the person, their share percent (two decimals), whether a retirement date is set and their cut of
++ * the sheet's pot ('': none — the pool is unbalanced, or the sheet has no pot).
++ */
++export type PoolMember = { personId: number; name: string; share: string; retired: boolean; cut: string };
+ 
+ /**
+  * A pool on the sheet: its members in the order they were added, the total share (a retired member's share counts
+diff --git a/src/main/frontend/features/settings/SettingsForm.tsx b/src/main/frontend/features/settings/SettingsForm.tsx
+index 880e33309..36c6aa88d 100644
+--- a/src/main/frontend/features/settings/SettingsForm.tsx
++++ b/src/main/frontend/features/settings/SettingsForm.tsx
+@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+ import { putJson } from '../../api/http';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
++import { poolsKey } from '../pools/pools';
+ import {
+   AMOUNT,
+   DATE,
+@@ -50,6 +51,7 @@ type SettingsInput = {
+   gradeProofThresholdFrom?: Record<string, string>;
+   permissions?: Record<string, string>;
+   graceDays?: string;
++  pot?: string;
+ };
+ 
+ /** The from-date field of each dated setting, by its key as the screen names it (terms-A for a grade's terms). */
+@@ -67,6 +69,7 @@ type Touched = {
+   proofThreshold: boolean;
+   noteThreshold: boolean;
+   graceDays: boolean;
++  pot: boolean;
+ };
+ 
+ const UNTOUCHED: Touched = {
+@@ -81,10 +84,11 @@ const UNTOUCHED: Touched = {
+   proofThreshold: false,
+   noteThreshold: false,
+   graceDays: false,
++  pot: false,
+ };
+ 
+ // The sheet's clerk limit (blank: no limit), floor, terms, each grade's terms (blank: the sheet's), late percent and policy date (blank: today) and period numbering from date (blank: off) and entry date (blank: off) and cap (blank: none) and proof threshold (blank: none) and each grade's proof threshold (blank: the sheet's) and note threshold (blank: none) in force, and the
+-// permission matrix (by action, the roles allowed it; blank: the standing rule; not dated), and the grace days (blank: off; not dated), and the form that sets them. Saving sends
++// permission matrix (by action, the roles allowed it; blank: the standing rule; not dated), and the grace days (blank: off; not dated), and the pot (blank: none; not dated), and the form that sets them. Saving sends
+ // only the fields touched since the last save, so a blank field left alone changes nothing. A dated setting (the clerk
+ // limit, floor, terms, each grade's terms, late percent, cap, proof threshold, each grade's proof threshold and note threshold) is recorded from the date typed beside it (blank: the
+ // sheet's today); the value shown is the one in force on the sheet's today.
+@@ -110,6 +114,7 @@ export function SettingsForm() {
+   const [proofThreshold, setProofThreshold] = useState('');
+   const [noteThreshold, setNoteThreshold] = useState('');
+   const [graceDays, setGraceDays] = useState('');
++  const [pot, setPot] = useState('');
+   const [perms, setPerms] = useState<Record<string, string>>({});
+   const [touchedPerms, setTouchedPerms] = useState<Record<string, boolean>>({});
+   const [froms, setFroms] = useState<Froms>({});
+@@ -139,6 +144,7 @@ export function SettingsForm() {
+       setProofThreshold('');
+       setNoteThreshold('');
+       setGraceDays('');
++      setPot('');
+       setPerms({});
+       setTouchedPerms({});
+       setFroms({});
+@@ -146,6 +152,7 @@ export function SettingsForm() {
+       setError('');
+       queryClient.setQueryData(settingsKey(sheet), saved);
+       await queryClient.invalidateQueries({ queryKey: settingsKey(sheet) });
++      await queryClient.invalidateQueries({ queryKey: poolsKey(sheet) });
+     },
+     onError: () => setError('That setting could not be saved.'),
+   });
+@@ -326,6 +333,14 @@ export function SettingsForm() {
+       }
+       input.graceDays = value;
+     }
++    if (touched.pot) {
++      const value = pot.trim();
++      if (value !== '' && !AMOUNT.test(value)) {
++        setError('Type a pot of 0.00 or more, with at most two decimals, or leave it blank for none.');
++        return;
++      }
++      input.pot = value;
++    }
+     for (const a of PERMISSION_ACTIONS) {
+       if (!touchedPerms[a]) continue;
+       const value = (perms[a] ?? '').trim();
+@@ -350,7 +365,8 @@ export function SettingsForm() {
+       input.gradeProofThreshold === undefined &&
+       input.noteThreshold === undefined &&
+       input.permissions === undefined &&
+-      input.graceDays === undefined
++      input.graceDays === undefined &&
++      input.pot === undefined
+     )
+       return;
+     once(() => save.mutateAsync(input));
+@@ -416,6 +432,9 @@ export function SettingsForm() {
+       <p>
+         Grace days: <span data-testid="setting-grace-days-current">{settings?.graceDays ?? ''}</span>
+       </p>
++      <p>
++        Pot: <span data-testid="setting-pot-current">{settings?.pot ?? ''}</span>
++      </p>
+       {PERMISSION_ACTIONS.map((a) => (
+         <p key={a}>
+           Roles allowed to {a}: <span data-testid={`setting-perm-${a}-current`}>{settings?.permissions?.[a] ?? ''}</span>
+@@ -598,6 +617,17 @@ export function SettingsForm() {
+             setError('');
+           }}
+         />
++        <input
++          data-testid="setting-pot"
++          placeholder="Pot shared out among each balanced pool's members (blank: none)"
++          value={pot}
++          onFocus={() => setTouched((t) => ({ ...t, pot: true }))}
++          onChange={(e) => {
++            setPot(e.target.value);
++            setTouched((t) => ({ ...t, pot: true }));
++            setError('');
++          }}
++        />
+         {PERMISSION_ACTIONS.map((a) => (
+           <input
+             key={a}
+diff --git a/src/main/frontend/features/settings/settings.ts b/src/main/frontend/features/settings/settings.ts
+index 043983e07..3dc01ff19 100644
+--- a/src/main/frontend/features/settings/settings.ts
++++ b/src/main/frontend/features/settings/settings.ts
+@@ -28,8 +28,9 @@ export type UserRole = { user: string; role: string };
+  * `graceDays` is the grace days (whole days; '': off — when the sheet's today is changed, an open period whose
+  * to-date plus them is before the new today is closed); it is not dated.
+  * `delegations` is the steward role delegated to user names, in the order made.
++ * `pot` is the pot ('': none), shared out among each balanced pool's members; it is not dated.
+  */
+-export type Settings = { clerkLimit: string | null; floor: string; terms: number; gradeTerms: Record<string, number>; latePct: string; policyDate: string; periodNumberingFrom: string; entryDate: string; cap: string; proofThreshold: string; noteThreshold: string; roles: UserRole[]; history: Record<string, FromValue[]>; permissions: Record<string, string>; graceDays: string; delegations: Delegation[] };
++export type Settings = { clerkLimit: string | null; floor: string; terms: number; gradeTerms: Record<string, number>; latePct: string; policyDate: string; periodNumberingFrom: string; entryDate: string; cap: string; proofThreshold: string; noteThreshold: string; roles: UserRole[]; history: Record<string, FromValue[]>; permissions: Record<string, string>; graceDays: string; delegations: Delegation[]; pot: string };
+ 
+ /**
+  * The steward role delegated by a steward (`by`) to a user name, from a from-date to a to-date (yyyy-MM-dd), both
+diff --git a/src/main/java/net/officefloor/hq/app/pool/LoadPools.java b/src/main/java/net/officefloor/hq/app/pool/LoadPools.java
+index 2ab3db712..f62a3e35c 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/LoadPools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/LoadPools.java
+@@ -1,11 +1,12 @@
+ package net.officefloor.hq.app.pool;
+ 
++import net.officefloor.hq.app.setting.SettingRepository;
+ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ public class LoadPools {
+-    public void load(@Val Sheet sheet, PoolRepository repository, Out<Pools> pools) {
+-        pools.set(new Pools(repository.findAll(sheet.id())));
++    public void load(@Val Sheet sheet, PoolRepository repository, SettingRepository settings, Out<Pools> pools) {
++        pools.set(new Pools(repository.findAll(sheet.id()), settings.pot(sheet.id())));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java b/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
+index dec75548d..09f373248 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolResponse.java
+@@ -1,24 +1,56 @@
+ package net.officefloor.hq.app.pool;
+ 
+ import java.math.BigDecimal;
++import java.math.RoundingMode;
++import java.util.ArrayList;
+ import java.util.List;
+ 
+ /**
+  * A pool as the screen reads it: its members' shares with two decimals, the total share (a retired member's share,
+- * whatever their retirement date, counts as 0.00) and whether that total is exactly 100.00.
++ * whatever their retirement date, counts as 0.00) and whether that total is exactly 100.00. In a balanced pool, with a
++ * pot, each member's cut is the pot times their share divided by 100, rounded half to even to two decimals (a retired
++ * member's is 0.00); the remainder (the pot less the cuts added up) goes to the member with the largest share, the
++ * earliest added on a tie, so the cuts total exactly the pot. Otherwise a member's cut is "" (none).
+  */
+ public record PoolResponse(long id, String name, List<Member> members, String totalShare, boolean balanced) {
+ 
+-    public record Member(long personId, String name, String share, boolean retired) {
++    public record Member(long personId, String name, String share, boolean retired, String cut) {
+     }
+ 
+     private static final BigDecimal HUNDRED = new BigDecimal("100.00");
+ 
+-    public static PoolResponse from(Pool pool) {
++    public static PoolResponse from(Pool pool, BigDecimal pot) {
+         BigDecimal total = pool.members().stream().filter(m -> !m.retired()).map(PoolMember::share)
+                 .reduce(BigDecimal.ZERO, BigDecimal::add).setScale(2);
+-        return new PoolResponse(pool.id(), pool.name(), pool.members().stream()
+-                .map(m -> new Member(m.personId(), m.name(), m.share().setScale(2).toPlainString(), m.retired()))
+-                .toList(), total.toPlainString(), total.compareTo(HUNDRED) == 0);
++        boolean balanced = total.compareTo(HUNDRED) == 0;
++        List<String> cuts = balanced && pot != null ? cuts(pool.members(), pot) : null;
++        List<Member> members = new ArrayList<>();
++        for (int i = 0; i < pool.members().size(); i++) {
++            PoolMember m = pool.members().get(i);
++            members.add(new Member(m.personId(), m.name(), m.share().setScale(2).toPlainString(), m.retired(),
++                    cuts == null ? "" : cuts.get(i)));
++        }
++        return new PoolResponse(pool.id(), pool.name(), members, total.toPlainString(), balanced);
++    }
++
++    /** Each member's cut of the pot, in the members' order; the remainder goes to the largest share, earliest on a tie. */
++    private static List<String> cuts(List<PoolMember> members, BigDecimal pot) {
++        List<BigDecimal> cuts = new ArrayList<>();
++        BigDecimal sum = BigDecimal.ZERO;
++        int largest = -1;
++        for (int i = 0; i < members.size(); i++) {
++            PoolMember m = members.get(i);
++            BigDecimal cut = m.retired() ? BigDecimal.ZERO.setScale(2)
++                    : pot.multiply(m.share()).divide(HUNDRED).setScale(2, RoundingMode.HALF_EVEN);
++            cuts.add(cut);
++            sum = sum.add(cut);
++            if (!m.retired() && (largest < 0 || m.share().compareTo(members.get(largest).share()) > 0)) {
++                largest = i;
++            }
++        }
++        if (largest >= 0) {
++            cuts.set(largest, cuts.get(largest).add(pot.subtract(sum)));
++        }
++        return cuts.stream().map(BigDecimal::toPlainString).toList();
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/pool/Pools.java b/src/main/java/net/officefloor/hq/app/pool/Pools.java
+index 22c1c9723..2c8f50a75 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/Pools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/Pools.java
+@@ -1,7 +1,8 @@
+ package net.officefloor.hq.app.pool;
+ 
++import java.math.BigDecimal;
+ import java.util.List;
+ 
+-/** The sheet's pools, in the order they were added. */
+-public record Pools(List<Pool> list) {
++/** The sheet's pools, in the order they were added, and the sheet's pot (null: none) shared out among each balanced one's members. */
++public record Pools(List<Pool> list, BigDecimal pot) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+index aad21f490..a9187c572 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
++++ b/src/main/java/net/officefloor/hq/app/pool/RespondWithPools.java
+@@ -4,9 +4,9 @@ import java.util.List;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
+ 
+-/** The sheet's pools as the screen reads them, in the order they were added. */
++/** The sheet's pools as the screen reads them, in the order they were added, with each member's cut of the pot. */
+ public class RespondWithPools {
+     public void respond(@Val Pools pools, ObjectResponse<List<PoolResponse>> response) {
+-        response.send(pools.list().stream().map(PoolResponse::from).toList());
++        response.send(pools.list().stream().map(p -> PoolResponse.from(p, pools.pot())).toList());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/AuditPot.java b/src/main/java/net/officefloor/hq/app/setting/AuditPot.java
+new file mode 100644
+index 000000000..1d9725205
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/setting/AuditPot.java
+@@ -0,0 +1,17 @@
++package net.officefloor.hq.app.setting;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Records the pot just saved (blank: none), even when it is the one the sheet had; nothing when it was left as it is. */
++public class AuditPot {
++    public void audit(@Val Pot pot, @Val Sheet sheet, @RequestParam("user") String user, Audit audit) {
++        if (!pot.given()) {
++            return;
++        }
++        audit.record("SETTING_CHANGED sheet=" + sheet.id() + " by=" + user + " key=pot value="
++                + (pot.value() == null ? "" : pot.value().toPlainString()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Pot.java b/src/main/java/net/officefloor/hq/app/setting/Pot.java
+new file mode 100644
+index 000000000..38188f306
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/setting/Pot.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.setting;
++
++import java.math.BigDecimal;
++
++/** A validated pot with two decimals; {@code value} null: blank, none. {@code given} false: left as it is. */
++public record Pot(boolean given, BigDecimal value) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SavePot.java b/src/main/java/net/officefloor/hq/app/setting/SavePot.java
+new file mode 100644
+index 000000000..f01654906
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/setting/SavePot.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.setting;
++
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++
++public class SavePot {
++    public void save(@Val Pot pot, @Val Sheet sheet, SettingRepository repository) {
++        if (pot.given()) {
++            repository.savePot(sheet.id(), pot.value());
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+index ee94c4548..151ee05db 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingRepository.java
+@@ -42,7 +42,7 @@ public class SettingRepository {
+         return new Settings(sheetId, dated.clerkLimitOn(today), dated.floorOn(today), dated.termsOn(today),
+                 dated.gradeTermsOn(today), dated.latePctOn(today), policyDate(sheetId), periodNumberingFrom(sheetId), entryDate(sheetId),
+                 dated.capOn(today), dated.proofThresholdOn(today), roles, dated, permissions(sheetId), graceDays(sheetId),
+-                today, delegations(sheetId));
++                today, delegations(sheetId), pot(sheetId));
+     }
+ 
+     /** The sheet's dated settings: every value recorded, by key and from-date. */
+@@ -106,6 +106,17 @@ public class SettingRepository {
+         jdbc.update("UPDATE sheet SET entry_date = ? WHERE id = ?", entryDate == null ? null : Date.valueOf(entryDate), sheetId);
+     }
+ 
++    /** The sheet's pot (null: blank, none). */
++    public BigDecimal pot(String sheetId) {
++        List<BigDecimal> pot = jdbc.query("SELECT pot FROM sheet WHERE id = ?", (rs, n) -> rs.getBigDecimal("pot"), sheetId);
++        return pot.isEmpty() || pot.get(0) == null ? null : pot.get(0).setScale(2);
++    }
++
++    /** Set the sheet's pot (null: blank, none). */
++    public void savePot(String sheetId, BigDecimal pot) {
++        jdbc.update("UPDATE sheet SET pot = ? WHERE id = ?", pot, sheetId);
++    }
++
+     /** The sheet's grace days (null: blank, off). */
+     public Integer graceDays(String sheetId) {
+         List<Integer> days = jdbc.query("SELECT grace_days FROM sheet WHERE id = ?",
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Settings.java b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+index 5a8b03c96..c10e2efa4 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Settings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Settings.java
+@@ -19,10 +19,11 @@ import java.util.Map;
+  * The clerk limit, floor, terms, grade terms, late percent, cap and proof threshold are those in force on the sheet's today; {@code dated}
+  * holds every value recorded for them, by from-date. {@code delegations} are the steward role delegated to user names, in the
+  * order made; one in force on {@code today} (the sheet's today) makes its user act as a steward in every rule.
++ * {@code pot} is the sheet's pot (null: none), shared out among each balanced pool's members; it is not dated.
+  */
+ public record Settings(String sheetId, BigDecimal clerkLimit, BigDecimal floor, int terms, Map<String, Integer> gradeTerms, BigDecimal latePct,
+         LocalDate policyDate, LocalDate periodNumberingFrom, LocalDate entryDate, BigDecimal cap, BigDecimal proofThreshold, List<UserRole> roles, DatedSettings dated, Permissions permissions, Integer graceDays,
+-        LocalDate today, List<Delegation> delegations) {
++        LocalDate today, List<Delegation> delegations, BigDecimal pot) {
+ 
+     /** The role the user name acts in: steward while a delegation to it is in force on today, else its given role. */
+     public Role roleOf(String user) {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java b/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
+index 9e955df8a..520c34e3f 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
+@@ -13,7 +13,7 @@ import java.util.Map;
+  * (left out or blank: the sheet's today). The permissions are, by action (open, settle, void, reassign, close, reopen),
+  * the roles allowed it, comma separated (blank: the standing rule); they are not dated. The grace days are whole days,
+  * 0 or more (blank: off); they are not dated. The grade grace days are whole days, 0 or more, by grade, each only for a
+- * grade it carries (blank: none), recorded from their from-date by grade (left out or blank: the sheet's today). The grade
++ * grade it carries (blank: none), recorded from their from-date by grade (left out or blank: the sheet's today). The pot has two decimals at most (blank: none); it is not dated. The grade
+  * proof thresholds have two decimals at most, by grade, each only for a grade it carries (blank: none, the sheet's), recorded
+  * from their from-date by grade (left out or blank: the sheet's today).
+  */
+@@ -29,5 +29,6 @@ public record SettingsRequest(@Size(max = 30) String clerkLimit, @Size(max = 30)
+         @Size(max = 10) Map<String, @Size(max = 30) String> gradeGrace,
+         @Size(max = 10) Map<String, @Size(max = 30) String> gradeGraceFrom,
+         @Size(max = 10) Map<String, @Size(max = 30) String> gradeProofThreshold,
+-        @Size(max = 10) Map<String, @Size(max = 30) String> gradeProofThresholdFrom) {
++        @Size(max = 10) Map<String, @Size(max = 30) String> gradeProofThresholdFrom,
++        @Size(max = 30) String pot) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+index 271f5880a..63f46a30a 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+@@ -9,11 +9,11 @@ import java.util.Map;
+  * The settings as the screen reads them: the clerk limit (null: no limit), the floor, the terms in days, the terms set for
+  * each grade that has its own (by grade), the late percent, the policy date ("": blank, the sheet's today), the period
+  * numbering from date ("": off), the entry date ("": off), the cap ("": none), the proof threshold ("": none), the note threshold ("": none) — the dated ones as in force on the sheet's today — each role given,
+- * by user name, the permission matrix (by action, the roles allowed it; "": blank, the standing rule), and every dated value recorded, by key, oldest from-date first (value "": blank), the grace days ("": off) and the steward role delegated, in the order made.
++ * by user name, the permission matrix (by action, the roles allowed it; "": blank, the standing rule), and every dated value recorded, by key, oldest from-date first (value "": blank), the grace days ("": off), the steward role delegated, in the order made, and the pot ("": none).
+  */
+ public record SettingsResponse(String clerkLimit, String floor, int terms, Map<String, Integer> gradeTerms, String latePct, String policyDate, String periodNumberingFrom, String entryDate, String cap, String proofThreshold, String noteThreshold, List<RoleResponse> roles,
+         Map<String, List<FromValueResponse>> history, Map<String, String> permissions, String graceDays,
+-        List<DelegationResponse> delegations) {
++        List<DelegationResponse> delegations, String pot) {
+ 
+     public record RoleResponse(String user, String role) {
+     }
+@@ -46,6 +46,7 @@ public record SettingsResponse(String clerkLimit, String floor, int terms, Map<S
+                 settings.permissions().entries(),
+                 settings.graceDays() == null ? "" : settings.graceDays().toString(),
+                 settings.delegations().stream().map((d) -> new DelegationResponse(d.user(), d.from().toString(),
+-                        d.to().toString(), d.by())).toList());
++                        d.to().toString(), d.by())).toList(),
++                settings.pot() == null ? "" : settings.pot().toPlainString());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSettingsRequest.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSettingsRequest.java
+index 255807cd3..21110562b 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSettingsRequest.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSettingsRequest.java
+@@ -29,7 +29,7 @@ public class ValidateSettingsRequest {
+             Out<Terms> terms, Out<LatePct> latePct, Out<PolicyDate> policyDate,
+             Out<PeriodNumberingFrom> periodNumberingFrom, Out<EntryDate> entryDate, Out<GradeTerms> gradeTerms, Out<Cap> cap,
+             Out<ProofThreshold> proofThreshold, Out<NoteThreshold> noteThreshold, Out<PermissionChanges> permissions, Out<GraceDays> graceDays,
+-            Out<GradeGrace> gradeGrace, Out<GradeProofThreshold> gradeProofThreshold)
++            Out<GradeGrace> gradeGrace, Out<GradeProofThreshold> gradeProofThreshold, Out<Pot> pot)
+             throws InvalidSettingException {
+         limit.set(clerkLimit(request.clerkLimit(), from(request.clerkLimitFrom(), "clerk limit")));
+         floor.set(floor(request.floor(), from(request.floorFrom(), "floor")));
+@@ -46,6 +46,21 @@ public class ValidateSettingsRequest {
+         graceDays.set(graceDays(request.graceDays()));
+         gradeGrace.set(gradeGrace(request.gradeGrace(), request.gradeGraceFrom()));
+         gradeProofThreshold.set(gradeProofThreshold(request.gradeProofThreshold(), request.gradeProofThresholdFrom()));
++        pot.set(pot(request.pot()));
++    }
++
++    private static Pot pot(String requested) throws InvalidSettingException {
++        if (requested == null) {
++            return new Pot(false, null);
++        }
++        String value = requested.trim();
++        if (value.isEmpty()) {
++            return new Pot(true, null);
++        }
++        if (!AMOUNT.matcher(value).matches()) {
++            throw new InvalidSettingException("The pot must be 0.00 or more, with at most two decimals, or blank.");
++        }
++        return new Pot(true, new BigDecimal(value).setScale(2));
+     }
+ 
+     /** A from-date typed with a setting (null: left out or blank, the sheet's today). */
+diff --git a/src/main/resources/db/migration/V64__pot.sql b/src/main/resources/db/migration/V64__pot.sql
+new file mode 100644
+index 000000000..7cb6e36e9
+--- /dev/null
++++ b/src/main/resources/db/migration/V64__pot.sql
+@@ -0,0 +1,2 @@
++-- The sheet's pot: shared out among the members of each balanced pool by their shares; null: none. Not dated.
++ALTER TABLE sheet ADD COLUMN pot DECIMAL(15, 2);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml
+index 0210c1cd9..b755d4dfa 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml
+@@ -1,4 +1,4 @@
+-# Set the sheet's clerk limit (blank: no limit), its floor (blank: 1.00) and its terms in days (blank: 14) and each grade's own terms in days (blank: none, the sheet's terms) and its late percent (blank: 0.00) and its policy date (blank: the sheet's today) and its period numbering from date (blank: off) and its entry date (blank: off) and its cap (blank: none) and its proof threshold (blank: none) and each grade's proof threshold (blank: none, the sheet's) and its note threshold (blank: none) and its permission matrix (by action, the roles allowed it, comma separated; blank: the standing rule) and its grace days (blank: off) and each grade's grace days (blank: none), each only when the request carries it;
++# Set the sheet's clerk limit (blank: no limit), its floor (blank: 1.00) and its terms in days (blank: 14) and each grade's own terms in days (blank: none, the sheet's terms) and its late percent (blank: 0.00) and its policy date (blank: the sheet's today) and its period numbering from date (blank: off) and its entry date (blank: off) and its cap (blank: none) and its proof threshold (blank: none) and each grade's proof threshold (blank: none, the sheet's) and its note threshold (blank: none) and its permission matrix (by action, the roles allowed it, comma separated; blank: the standing rule) and its grace days (blank: off) and each grade's grace days (blank: none) and its pot (blank: none), each only when the request carries it;
+ # a value that is negative or has more than two decimals (terms: not whole days) is refused (400). A floor, late percent, grade grace, policy date or cap moves the dues (terms do not: a claim's due-by is fixed when it is created), so the
+ # figures it moved are recorded after it.
+ archived:
+@@ -137,6 +137,14 @@ saveGraceDays:
+ auditGraceDays:
+   class: net.officefloor.hq.app.setting.AuditGraceDays
+   govern: [ transaction ]
++  next: savePot
++savePot:
++  class: net.officefloor.hq.app.setting.SavePot
++  govern: [ transaction ]
++  next: auditPot
++auditPot:
++  class: net.officefloor.hq.app.setting.AuditPot
++  govern: [ transaction ]
+   next: rollup
+ rollup:
+   class: net.officefloor.hq.app.rollup.AuditRollup
