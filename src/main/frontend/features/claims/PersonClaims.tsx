@@ -11,6 +11,7 @@ import { useOneAtATime } from '../../query/useOneAtATime';
 import { setClaimError, useClaimError } from './claimError';
 import { contains, usePeriods } from '../periods/periods';
 import { useSettings } from '../settings/settings';
+import { useSheetToday } from '../session/sheetToday';
 import { tagsKey } from '../tags/tags';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
@@ -33,7 +34,12 @@ export function PersonClaims({ person }: { person: Person }) {
   const queryClient = useQueryClient();
   const once = useOneAtATime();
   const periods = usePeriods().data ?? [];
-  const viewer = (useSettings().data?.roles ?? []).some((r) => r.user === user && r.role === 'viewer');
+  const settings = useSettings().data;
+  const today = useSheetToday();
+  // A viewer refused editing, unless a delegation in force on the sheet's today makes them a steward.
+  const viewer =
+    (settings?.roles ?? []).some((r) => r.user === user && r.role === 'viewer') &&
+    !(settings?.delegations ?? []).some((d) => d.user === user && d.from <= today && today <= d.to);
   const editingNow = useRef<number | undefined>(undefined);
   editingNow.current = editing;
   const locking = useRef<Promise<void>>(Promise.resolve());

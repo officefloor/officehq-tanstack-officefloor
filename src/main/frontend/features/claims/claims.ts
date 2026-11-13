@@ -44,7 +44,8 @@ export const bound = (c: Claim) => c.stated && c.status !== 'PENDING';
  * ref is its external reference (unique on the sheet, ignoring case), null when it has none;
  * tags are its tags (lower-cased, no repeats), sorted; empty when it has none;
  * voidReason is the reason from the sheet's void reasons it was voided with, null when none;
- * comments are its comments, oldest first: the user who wrote each, the sheet's today then and its text.
+ * comments are its comments, oldest first: the user who wrote each, the sheet's today then and its text;
+ * batch is the number of the bulk settle batch that settled it (SETTLED or PENDING), null when it was settled one at a time or never.
  */
 export type Claim = {
   id: number;
@@ -71,6 +72,7 @@ export type Claim = {
   tags: string[];
   voidReason: string | null;
   comments: ClaimComment[];
+  batch: number | null;
 };
 
 /** A comment on a claim: the user who wrote it, the sheet's today then (yyyy-MM-dd) and its text. */
@@ -110,6 +112,19 @@ export function useClaims() {
   return useQuery({
     queryKey: claimsKey(sheet),
     queryFn: () => getJson<Claim[]>(`/api/sheets/${encodeURIComponent(sheet)}/claims`),
+    enabled: !!sheet,
+  });
+}
+
+/** The query key for the sheet's last settle batch; under sheetKey, so re-loading the sheet re-reads it. */
+export const settleBatchesKey = (sheet: string) => [...sheetKey(sheet), 'settle-batches'] as const;
+
+/** The sheet's last settle batch number (a bulk settle that settled at least one claim); null when none yet. */
+export function useLastBatch() {
+  const [sheet] = useCurrentSheet();
+  return useQuery({
+    queryKey: settleBatchesKey(sheet),
+    queryFn: () => getJson<{ last: number | null }>(`/api/sheets/${encodeURIComponent(sheet)}/settle-batches`),
     enabled: !!sheet,
   });
 }

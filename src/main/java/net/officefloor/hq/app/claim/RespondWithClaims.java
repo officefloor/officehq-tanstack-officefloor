@@ -10,7 +10,8 @@ import net.officefloor.web.ObjectResponse;
 
 public class RespondWithClaims {
     public void respond(@Val Sheet sheet, @Val List<Claim> claims, ClaimLogRepository logs, ClaimLockRepository locks,
-            ClaimRepository repository, ClaimCommentRepository comments, ObjectResponse<List<ClaimResponse>> response) {
+            ClaimRepository repository, ClaimCommentRepository comments, SettleBatchRepository batches,
+            ObjectResponse<List<ClaimResponse>> response) {
         Map<Long, List<ClaimLogLine>> log = logs.findAll(sheet.id());
         Map<Long, String> locked = locks.findAll(sheet.id());
         Set<Long> late = repository.lateEntries(sheet.id());
@@ -18,11 +19,12 @@ public class RespondWithClaims {
         Map<Long, String> refs = repository.refs(sheet.id());
         Map<Long, String> tags = repository.tagsAll(sheet.id());
         Map<Long, String> voidReasons = repository.voidReasons(sheet.id());
+        Map<Long, Integer> batched = batches.batches(sheet.id());
         Map<Long, List<ClaimComment>> commented = comments.findAll(sheet.id());
         response.send(claims.stream()
                 .map((c) -> ClaimResponse.from(c, log.getOrDefault(c.id(), List.of()), locked.get(c.id()),
                         late.contains(c.id()), reminded.get(c.id()), refs.get(c.id()),
                         tags.get(c.id()), voidReasons.get(c.id()),
-                        commented.getOrDefault(c.id(), List.of()))).toList());
+                        commented.getOrDefault(c.id(), List.of()), batched.get(c.id()))).toList());
     }
 }
