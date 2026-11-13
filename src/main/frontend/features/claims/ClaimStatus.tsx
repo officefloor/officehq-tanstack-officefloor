@@ -4,7 +4,7 @@ import { postJson, putJson } from '../../api/http';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { usePeople } from '../people/people';
 import type { Claim } from './claims';
-import { claimsKey } from './claims';
+import { AMOUNT, claimsKey } from './claims';
 import { useOneAtATime } from '../../query/useOneAtATime';
 
 type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle';
@@ -33,7 +33,8 @@ const REFUSED: Partial<Record<Action, string>> = {
 // allowed to reassign (standing rule: a steward) moves a DRAFT, OPEN or PENDING claim to the person chosen beside the
 // Move button. A steward re-settles a SETTLED claim, freezing it again at today's figure. An OPEN claim is deferred to the
 // date typed beside the Defer button. The Add proof button raises the claim's proofs count by one (not on a
-// SETTLED or VOID claim, nor one dated in a closed period).
+// SETTLED or VOID claim, nor one dated in a closed period). The Split button splits the amount typed beside it off an
+// OPEN claim into a new OPEN claim of the same person (more than 0.00 and less than the claim's amount).
 export function ClaimStatus({ claim }: { claim: Claim }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -41,6 +42,7 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
   const [reason, setReason] = useState('');
   const [moveTo, setMoveTo] = useState('');
   const [deferTo, setDeferTo] = useState('');
+  const [splitAmount, setSplitAmount] = useState('');
   const others = (usePeople().data ?? []).filter((p) => p.id !== claim.personId);
   const queryClient = useQueryClient();
   const once = useOneAtATime();
@@ -82,6 +84,21 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
     },
     onError: () =>
       setError(`This ${claim.status} claim cannot be deferred to that date (only an OPEN claim, to a date after today, outside a closed period).`),
+  });
+
+  const split = useMutation({
+    mutationFn: (amount: string) =>
+      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheet)}/claims/${claim.id}/split?user=${encodeURIComponent(user)}`, {
+        amount,
+      }),
+    onSuccess: async () => {
+      setSplitAmount('');
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+    },
+    onError: () =>
+      setError(
+        `This ${claim.status} claim cannot be split by that amount (only an OPEN claim, not deferred nor in a closed period, by more than 0.00 and less than its amount, by a role allowed to open a claim).`,
+      ),
   });
 
   const proof = useMutation({
@@ -177,6 +194,32 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
         }}
       >
         Defer
+      </button>
+      <input
+        data-testid="claim-split-amount"
+        aria-label="Split amount"
+        placeholder="split off 0.00"
+        value={splitAmount}
+        onChange={(e) => {
+          setSplitAmount(e.target.value);
+          setError('');
+        }}
+      />
+      <button
+        type="button"
+        data-testid="claim-split"
+        disabled={split.isPending}
+        onClick={() => {
+          setError('');
+          const amount = splitAmount.trim();
+          if (!AMOUNT.test(amount)) {
+            setError('Type the amount to split off as 0.00.');
+            return;
+          }
+          once(() => split.mutateAsync(amount));
+        }}
+      >
+        Split
       </button>
       Proofs: <span data-testid="claim-proofs">{claim.proofs}</span>{' '}
       <button

@@ -16,11 +16,20 @@ import java.time.LocalDate;
  * grade in force on that date; it does not change when the terms or its date change later. While PENDING the claim is not bound: it shows and totals its live figure, and is bound again
  * once rejected (back to OPEN) when the statement included it. {@code deferredUntil} is the date an OPEN claim is
  * deferred until (null: never deferred): while the sheet's today is before it the claim is {@link #deferred deferred}.
- * {@code proofs} is how many proofs the claim has been given.
+ * {@code proofs} is how many proofs the claim has been given. {@code splitFrom} is the number of the claim it was split
+ * off (null: not split off another claim).
  */
 public record Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
         ClaimStatus status, String number, BigDecimal due, String openedBy, boolean stated, BigDecimal statedDue,
-        String corrects, LocalDate dueBy, LocalDate deferredUntil, int proofs) {
+        String corrects, LocalDate dueBy, LocalDate deferredUntil, int proofs, String splitFrom) {
+
+    /** A claim not split off another claim. */
+    public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
+            ClaimStatus status, String number, BigDecimal due, String openedBy, boolean stated, BigDecimal statedDue,
+            String corrects, LocalDate dueBy, LocalDate deferredUntil, int proofs) {
+        this(id, sheetId, personId, amount, date, note, status, number, due, openedBy, stated, statedDue, corrects,
+                dueBy, deferredUntil, proofs, null);
+    }
 
     /** A claim with no proofs. */
     public Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
@@ -41,13 +50,22 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
     /** The same claim with another status, number, fixed due and opener. */
     public Claim withStatus(ClaimStatus next, String nextNumber, BigDecimal nextDue, String nextOpenedBy) {
         return new Claim(id, sheetId, personId, amount, date, note, next, nextNumber, nextDue, nextOpenedBy, stated,
-                statedDue, corrects, dueBy, deferredUntil, proofs);
+                statedDue, corrects, dueBy, deferredUntil, proofs, splitFrom);
     }
 
     /** The same claim as an open claim bound by no statement: live, with no fixed due. */
     public Claim asOpenUnbound() {
         return new Claim(id, sheetId, personId, amount, date, note, ClaimStatus.OPEN, number, null, openedBy, false,
-                null, corrects, dueBy, deferredUntil, proofs);
+                null, corrects, dueBy, deferredUntil, proofs, splitFrom);
+    }
+
+    /**
+     * The claim keeping the rest of its amount once the split amount goes to a new claim: it loses any figure a
+     * statement bound it to.
+     */
+    public Claim splitKeeping(BigDecimal rest) {
+        return new Claim(id, sheetId, personId, rest, date, note, status, number, due, openedBy, false, null,
+                corrects, dueBy, deferredUntil, proofs, splitFrom);
     }
 
     /** Whether the claim is a correction: a negative amount naming the settled claim it corrects. */
@@ -76,13 +94,13 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
     /** The same claim deferred until the date. */
     public Claim deferTo(LocalDate until) {
         return new Claim(id, sheetId, personId, amount, date, note, status, number, due, openedBy, stated, statedDue,
-                corrects, dueBy, until, proofs);
+                corrects, dueBy, until, proofs, splitFrom);
     }
 
     /** The same claim with one more proof. */
     public Claim withProof() {
         return new Claim(id, sheetId, personId, amount, date, note, status, number, due, openedBy, stated, statedDue,
-                corrects, dueBy, deferredUntil, proofs + 1);
+                corrects, dueBy, deferredUntil, proofs + 1, splitFrom);
     }
 
     /** Whether a proof can be added to the claim: it is neither SETTLED nor VOID. */

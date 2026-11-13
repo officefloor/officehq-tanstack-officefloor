@@ -9,6 +9,6 @@ public class ApplyClaim {
         updated.set(new Claim(claim.id(), claim.sheetId(), claim.personId(), input.amount(),
                 input.date() != null ? input.date() : sheets.today(claim.sheetId()), input.note(), claim.status(),
                 claim.number(), claim.due(), claim.openedBy(), claim.stated(), claim.statedDue(), input.corrects(),
-                claim.dueBy(), claim.deferredUntil(), claim.proofs()));
+                claim.dueBy(), claim.deferredUntil(), claim.proofs(), claim.splitFrom()));
     }
 }

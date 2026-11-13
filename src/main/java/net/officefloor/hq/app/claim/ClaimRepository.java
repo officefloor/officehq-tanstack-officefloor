@@ -13,7 +13,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs";
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from";
 
     private final JdbcTemplate jdbc;
 
@@ -45,7 +45,7 @@ public class ClaimRepository {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, corrects, due_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, corrects, due_by, claim_number, opened_by, split_from) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, claim.sheetId());
             ps.setLong(2, claim.personId());
@@ -55,11 +55,14 @@ public class ClaimRepository {
             ps.setString(6, claim.status().name());
             ps.setString(7, claim.corrects());
             ps.setDate(8, Date.valueOf(claim.dueBy()));
+            ps.setString(9, claim.number());
+            ps.setString(10, claim.openedBy());
+            ps.setString(11, claim.splitFrom());
             return ps;
         }, keys);
         return new Claim(keys.getKey().longValue(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
                 claim.note(), claim.status(), claim.number(), claim.due(), claim.openedBy(), false, null,
-                claim.corrects(), claim.dueBy());
+                claim.corrects(), claim.dueBy(), null, 0, claim.splitFrom());
     }
 
     /** The person's claims, newest first. */
@@ -104,6 +107,6 @@ public class ClaimRepository {
                 rs.getBigDecimal("due"), rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
                 rs.getString("corrects"), rs.getDate("due_by").toLocalDate(),
                 rs.getDate("deferred_until") == null ? null : rs.getDate("deferred_until").toLocalDate(),
-                rs.getInt("proofs"));
+                rs.getInt("proofs"), rs.getString("split_from"));
     }
 }

@@ -85,7 +85,8 @@ public class ApplyClaimAction {
         updated.set(claim.withStatus(found.to(), next, due, found == ClaimAction.OPEN ? user : claim.openedBy()));
     }
 
-    private static String nextNumber(Claim claim, SheetRepository sheets, SettingRepository settings,
+    /** The number opening the claim gives it now: the sheet's next, or the next within its period under period numbering. */
+    static String nextNumber(Claim claim, SheetRepository sheets, SettingRepository settings,
             PeriodRepository periods) {
         LocalDate from = settings.periodNumberingFrom(claim.sheetId());
         if (from == null || sheets.today(claim.sheetId()).isBefore(from)) {
