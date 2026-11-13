@@ -303,6 +303,33 @@ public class PersonRepository {
         return found;
     }
 
+    /** Store the person's tags (stored form; null: none), adding each to the sheet's tag list. */
+    public void saveTags(String sheetId, long personId, String tags) {
+        jdbc.update("UPDATE person SET tags = ? WHERE id = ? AND sheet_id = ?", tags, personId, sheetId);
+        if (tags != null) {
+            for (String tag : tags.split(",")) {
+                jdbc.update("MERGE INTO claim_tag (sheet_id, tag) KEY (sheet_id, tag) VALUES (?, ?)", sheetId, tag);
+            }
+        }
+    }
+
+    /** The person's tags (stored form), or null. */
+    public String tags(String sheetId, long personId) {
+        List<String> found = jdbc.queryForList("SELECT tags FROM person WHERE sheet_id = ? AND id = ?", String.class,
+                sheetId, personId);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** The tags (stored form) of each person on the sheet that has any, by person id. */
+    public Map<Long, String> tagsAll(String sheetId) {
+        Map<Long, String> found = new HashMap<>();
+        jdbc.query("SELECT id, tags FROM person WHERE sheet_id = ? AND tags IS NOT NULL",
+                (rs) -> {
+                    found.put(rs.getLong("id"), rs.getString("tags"));
+                }, sheetId);
+        return found;
+    }
+
     /** The person's aliases, in the order they were added. */
     public List<String> aliases(String sheetId, long personId) {
         return jdbc.queryForList("SELECT alias FROM person_alias WHERE sheet_id = ? AND person_id = ? ORDER BY id",
@@ -311,7 +338,7 @@ public class PersonRepository {
 
     /**
      * Copy the person to the other sheet as its newest person, with every grade they were given (and its from-date),
-     * their terms, contact, aliases and past retirements, and no statement taken; the new person's id. The person stays on this sheet
+     * their terms, contact, tags (joining its tag list), aliases and past retirements, and no statement taken; the new person's id. The person stays on this sheet
      * until {@link #dropTransferred}.
      */
     public long transfer(Person person, String to) {
@@ -332,6 +359,12 @@ public class PersonRepository {
         changed.put("statement_date", null);
         changed.put("position", jdbc.queryForObject("SELECT " + NEXT_POSITION, Long.class, to));
         long id = RowCopy.copy(jdbc, "person", person.id(), changed);
+        String tags = tags(to, id);
+        if (tags != null) {
+            for (String tag : tags.split(",")) {
+                jdbc.update("MERGE INTO claim_tag (sheet_id, tag) KEY (sheet_id, tag) VALUES (?, ?)", to, tag);
+            }
+        }
         jdbc.update("UPDATE person_grade SET sheet_id = ?, person_id = ? WHERE sheet_id = ? AND person_id = ?", to, id,
                 person.sheetId(), person.id());
         jdbc.update("UPDATE person_alias SET sheet_id = ?, person_id = ? WHERE sheet_id = ? AND person_id = ?", to, id,

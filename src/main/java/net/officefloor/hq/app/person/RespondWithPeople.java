@@ -21,8 +21,10 @@ public class RespondWithPeople {
             }
         }
         Map<Long, String> origins = repository.origins(sheet.id());
+        Map<Long, String> tags = repository.tagsAll(sheet.id());
         response.send(people.stream().map((p) -> PersonResponse.from(p,
-                NameTree.clashing(taken, p.name(), byPerson.getOrDefault(p.id(), List.of())), origins.get(p.id())))
+                NameTree.clashing(taken, p.name(), byPerson.getOrDefault(p.id(), List.of())), origins.get(p.id()),
+                tags.get(p.id())))
                 .toList());
     }
 }

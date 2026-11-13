@@ -38,7 +38,7 @@ export function BulkGrade() {
           await putJson<Person>(
             `/api/sheets/${encodeURIComponent(sheet)}/people/${p.id}?user=${encodeURIComponent(user)}`,
             { name: p.name, grade, gradeFrom: from, terms: p.terms == null ? '' : String(p.terms),
-              contact: p.contact ?? '', version: p.version },
+              contact: p.contact ?? '', tags: p.tags.join(','), version: p.version },
           );
           changed++;
         } catch {

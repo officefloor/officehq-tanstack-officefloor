@@ -51,7 +51,7 @@ public class CheckImportedPeopleUnique {
                         request.termsDays() != null ? request.terms()
                                 : existing.terms() == null ? "" : String.valueOf(existing.terms()),
                         request.contactOrNull() != null ? request.contact()
-                                : existing.contact() == null ? "" : existing.contact());
+                                : existing.contact() == null ? "" : existing.contact(), null);
                 Person[] person = new Person[1];
                 PersonTermsChange[] change = new PersonTermsChange[1];
                 try {

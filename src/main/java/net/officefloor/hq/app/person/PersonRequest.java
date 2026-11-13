@@ -7,10 +7,12 @@ import jakarta.validation.constraints.Size;
  * is in force from (yyyy-mm-dd; blank is the sheet's today, and is kept blank here) and the person's own terms
  * (a whole number of days, 0 or more; blank: none, kept blank here). An edit also sends the version of the person
  * its editor loaded; an add sends none. The contact is kept trimmed and lower-cased (blank: none, kept blank here).
+ * The tags, comma separated, are kept lower-cased, sorted, without repeats (blank: none, kept blank here; not given:
+ * an edit keeps the person's tags).
  */
 public record PersonRequest(@Size(max = 200) String name, @Size(max = 10) String grade,
         @Size(max = 30) String gradeFrom, Integer version, @Size(max = 30) String terms,
-        @Size(max = 200) String contact) {
+        @Size(max = 200) String contact, @Size(max = 1000) String tags) {
 
     /** The terms as a number of days, or null when blank; call only once validated. */
     public Integer termsDays() {
@@ -20,5 +22,10 @@ public record PersonRequest(@Size(max = 200) String name, @Size(max = 10) String
     /** The contact, or null when blank; call only once validated. */
     public String contactOrNull() {
         return contact == null || contact.isEmpty() ? null : contact;
+    }
+
+    /** The tags in their stored form, or null when blank; call only once validated. */
+    public String tagsOrNull() {
+        return tags == null || tags.isEmpty() ? null : tags;
     }
 }

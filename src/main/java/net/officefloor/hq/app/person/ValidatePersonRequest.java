@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.Locale;
 import java.util.Set;
+import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
@@ -36,7 +37,9 @@ public class ValidatePersonRequest {
             throw new InvalidPersonException("The terms must be a whole number of days, 0 or more, or blank.");
         }
         String contact = request.contact() == null ? "" : request.contact().strip().toLowerCase(Locale.ROOT);
+        String tags = request.tags() == null ? null : Claim.tags(request.tags());
         body.set(new PersonRequest(name, grade, from, request.version(),
-                terms.isEmpty() ? "" : String.valueOf(Integer.parseInt(terms)), contact));
+                terms.isEmpty() ? "" : String.valueOf(Integer.parseInt(terms)), contact,
+                request.tags() == null ? null : tags == null ? "" : tags));
     }
 }

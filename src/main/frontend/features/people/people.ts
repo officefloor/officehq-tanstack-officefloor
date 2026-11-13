@@ -44,6 +44,7 @@ export const liveHolds = (p: { holds: Hold[]; retiredFrom: string | null }, toda
  * the sheet's tree (its ancestors and descendants) uses their name or any of their aliases as a name or alias.
  * `origin` is the sheet they were transferred from, null when they were not transferred here. `pastRetirements` are
  * the retirements they were unretired from, oldest first: a claim dated after one's from and before its to is refused.
+ * `tags` are their tags, sorted (none: empty).
  */
 export type Person = {
   id: number;
@@ -63,13 +64,14 @@ export type Person = {
   clashing: boolean;
   origin: string | null;
   pastRetirements: { from: string; to: string }[];
+  tags: string[];
 };
 
 /**
  * The fields the person form submits; a blank `gradeFrom` is the sheet's today, blank `terms` none of their own,
- * blank `contact` none.
+ * blank `contact` none, `tags` comma separated (blank: none).
  */
-export type PersonInput = { name: string; grade: string; gradeFrom: string; terms: string; contact: string };
+export type PersonInput = { name: string; grade: string; gradeFrom: string; terms: string; contact: string; tags: string };
 
 /** The query key for the sheet's people; under sheetKey, so re-loading the sheet re-reads them. */
 export const peopleKey = (sheet: string) => [...sheetKey(sheet), 'people'] as const;

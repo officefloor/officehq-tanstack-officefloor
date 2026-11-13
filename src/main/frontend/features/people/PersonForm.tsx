@@ -4,10 +4,11 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { HttpError, postJson, putJson } from '../../api/http';
 import { useOneAtATime } from '../../query/useOneAtATime';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
+import { tagsKey } from '../tags/tags';
 import { GRADES, peopleKey, useEditingPerson, usePeople } from './people';
 import type { Person, PersonInput } from './people';
 
-const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', contact: '' };
+const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', contact: '', tags: '' };
 
 // The form's values for a person as stored.
 const fill = (p: Person): PersonInput => ({
@@ -16,6 +17,7 @@ const fill = (p: Person): PersonInput => ({
   gradeFrom: '',
   terms: p.terms == null ? '' : String(p.terms),
   contact: p.contact ?? '',
+  tags: p.tags.join(', '),
 });
 
 // Adds a person, or — while a person's editor is open — saves that person's changes. Opening an
@@ -67,7 +69,10 @@ export function PersonForm() {
           }),
     onSuccess: async () => {
       close();
-      await queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: tagsKey(sheet) }),
+      ]);
     },
     onError: async (e, input) => {
       if (e instanceof HttpError && e.status === 409) {
@@ -156,6 +161,13 @@ export function PersonForm() {
         title="The person's contact (blank: none)"
         value={form.contact}
         onChange={(e) => change({ contact: e.target.value })}
+      />
+      <input
+        data-testid="person-form-tags"
+        placeholder="Tags"
+        title="The person's tags, comma separated (blank: none)"
+        value={form.tags}
+        onChange={(e) => change({ tags: e.target.value })}
       />
       <button type="submit" data-testid="person-form-submit" disabled={save.isPending}>
         {editing === undefined ? 'Add person' : 'Save person'}

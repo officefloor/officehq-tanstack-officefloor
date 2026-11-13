@@ -44,7 +44,7 @@ public class ValidateImportPeopleRequest {
             }
             PersonRequest[] person = new PersonRequest[1];
             try {
-                new ValidatePersonRequest().validate(new PersonRequest(name, grade, "", null, terms, contact),
+                new ValidatePersonRequest().validate(new PersonRequest(name, grade, "", null, terms, contact, null),
                         value -> person[0] = value);
             } catch (InvalidPersonException e) {
                 throw new InvalidPersonException("Line " + number + ": " + e.getMessage());
