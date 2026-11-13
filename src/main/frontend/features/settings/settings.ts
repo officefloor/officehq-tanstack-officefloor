@@ -29,8 +29,9 @@ export type UserRole = { user: string; role: string };
  * to-date plus them is before the new today is closed); it is not dated.
  * `delegations` is the steward role delegated to user names, in the order made.
  * `pot` is the pot ('': none), shared out among each balanced pool's members; it is not dated.
+ * `parent` is the parent sheet's id ('': none), whose rates a grade with none of its own in force takes; it is not dated.
  */
-export type Settings = { clerkLimit: string | null; floor: string; terms: number; gradeTerms: Record<string, number>; latePct: string; policyDate: string; periodNumberingFrom: string; entryDate: string; cap: string; proofThreshold: string; noteThreshold: string; roles: UserRole[]; history: Record<string, FromValue[]>; permissions: Record<string, string>; graceDays: string; delegations: Delegation[]; pot: string };
+export type Settings = { clerkLimit: string | null; floor: string; terms: number; gradeTerms: Record<string, number>; latePct: string; policyDate: string; periodNumberingFrom: string; entryDate: string; cap: string; proofThreshold: string; noteThreshold: string; roles: UserRole[]; history: Record<string, FromValue[]>; permissions: Record<string, string>; graceDays: string; delegations: Delegation[]; pot: string; parent: string };
 
 /**
  * The steward role delegated by a steward (`by`) to a user name, from a from-date to a to-date (yyyy-MM-dd), both

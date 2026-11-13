@@ -13,7 +13,7 @@ import java.util.Map;
  * (left out or blank: the sheet's today). The permissions are, by action (open, settle, void, reassign, close, reopen),
  * the roles allowed it, comma separated (blank: the standing rule); they are not dated. The grace days are whole days,
  * 0 or more (blank: off); they are not dated. The grade grace days are whole days, 0 or more, by grade, each only for a
- * grade it carries (blank: none), recorded from their from-date by grade (left out or blank: the sheet's today). The pot has two decimals at most (blank: none); it is not dated. The grade
+ * grade it carries (blank: none), recorded from their from-date by grade (left out or blank: the sheet's today). The pot has two decimals at most (blank: none); it is not dated. The parent is a sheet id (blank: none); it is not dated. The grade
  * proof thresholds have two decimals at most, by grade, each only for a grade it carries (blank: none, the sheet's), recorded
  * from their from-date by grade (left out or blank: the sheet's today).
  */
@@ -30,5 +30,5 @@ public record SettingsRequest(@Size(max = 30) String clerkLimit, @Size(max = 30)
         @Size(max = 10) Map<String, @Size(max = 30) String> gradeGraceFrom,
         @Size(max = 10) Map<String, @Size(max = 30) String> gradeProofThreshold,
         @Size(max = 10) Map<String, @Size(max = 30) String> gradeProofThresholdFrom,
-        @Size(max = 30) String pot) {
+        @Size(max = 30) String pot, @Size(max = 100) String parent) {
 }

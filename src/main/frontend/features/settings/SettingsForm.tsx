@@ -2,8 +2,9 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { putJson } from '../../api/http';
-import { useCurrentSheet, useCurrentUser } from '../session/session';
+import { sheetInfoKey, useCurrentSheet, useCurrentUser } from '../session/session';
 import { poolsKey } from '../pools/pools';
+import { ratesKey } from '../rates/rates';
 import {
   AMOUNT,
   DATE,
@@ -52,6 +53,7 @@ type SettingsInput = {
   permissions?: Record<string, string>;
   graceDays?: string;
   pot?: string;
+  parent?: string;
 };
 
 /** The from-date field of each dated setting, by its key as the screen names it (terms-A for a grade's terms). */
@@ -70,6 +72,7 @@ type Touched = {
   noteThreshold: boolean;
   graceDays: boolean;
   pot: boolean;
+  parent: boolean;
 };
 
 const UNTOUCHED: Touched = {
@@ -85,10 +88,11 @@ const UNTOUCHED: Touched = {
   noteThreshold: false,
   graceDays: false,
   pot: false,
+  parent: false,
 };
 
 // The sheet's clerk limit (blank: no limit), floor, terms, each grade's terms (blank: the sheet's), late percent and policy date (blank: today) and period numbering from date (blank: off) and entry date (blank: off) and cap (blank: none) and proof threshold (blank: none) and each grade's proof threshold (blank: the sheet's) and note threshold (blank: none) in force, and the
-// permission matrix (by action, the roles allowed it; blank: the standing rule; not dated), and the grace days (blank: off; not dated), and the pot (blank: none; not dated), and the form that sets them. Saving sends
+// permission matrix (by action, the roles allowed it; blank: the standing rule; not dated), and the grace days (blank: off; not dated), and the pot (blank: none; not dated), and the parent sheet (blank: none; not dated), and the form that sets them. Saving sends
 // only the fields touched since the last save, so a blank field left alone changes nothing. A dated setting (the clerk
 // limit, floor, terms, each grade's terms, late percent, cap, proof threshold, each grade's proof threshold and note threshold) is recorded from the date typed beside it (blank: the
 // sheet's today); the value shown is the one in force on the sheet's today.
@@ -115,6 +119,7 @@ export function SettingsForm() {
   const [noteThreshold, setNoteThreshold] = useState('');
   const [graceDays, setGraceDays] = useState('');
   const [pot, setPot] = useState('');
+  const [parent, setParent] = useState('');
   const [perms, setPerms] = useState<Record<string, string>>({});
   const [touchedPerms, setTouchedPerms] = useState<Record<string, boolean>>({});
   const [froms, setFroms] = useState<Froms>({});
@@ -145,6 +150,7 @@ export function SettingsForm() {
       setNoteThreshold('');
       setGraceDays('');
       setPot('');
+      setParent('');
       setPerms({});
       setTouchedPerms({});
       setFroms({});
@@ -153,6 +159,8 @@ export function SettingsForm() {
       queryClient.setQueryData(settingsKey(sheet), saved);
       await queryClient.invalidateQueries({ queryKey: settingsKey(sheet) });
       await queryClient.invalidateQueries({ queryKey: poolsKey(sheet) });
+      await queryClient.invalidateQueries({ queryKey: ratesKey(sheet) });
+      await queryClient.invalidateQueries({ queryKey: sheetInfoKey(sheet) });
     },
     onError: () => setError('That setting could not be saved.'),
   });
@@ -341,6 +349,9 @@ export function SettingsForm() {
       }
       input.pot = value;
     }
+    if (touched.parent) {
+      input.parent = parent.trim();
+    }
     for (const a of PERMISSION_ACTIONS) {
       if (!touchedPerms[a]) continue;
       const value = (perms[a] ?? '').trim();
@@ -366,7 +377,8 @@ export function SettingsForm() {
       input.noteThreshold === undefined &&
       input.permissions === undefined &&
       input.graceDays === undefined &&
-      input.pot === undefined
+      input.pot === undefined &&
+      input.parent === undefined
     )
       return;
     once(() => save.mutateAsync(input));
@@ -434,6 +446,9 @@ export function SettingsForm() {
       </p>
       <p>
         Pot: <span data-testid="setting-pot-current">{settings?.pot ?? ''}</span>
+      </p>
+      <p>
+        Parent sheet: <span data-testid="setting-parent-current">{settings?.parent ?? ''}</span>
       </p>
       {PERMISSION_ACTIONS.map((a) => (
         <p key={a}>
@@ -625,6 +640,17 @@ export function SettingsForm() {
           onChange={(e) => {
             setPot(e.target.value);
             setTouched((t) => ({ ...t, pot: true }));
+            setError('');
+          }}
+        />
+        <input
+          data-testid="setting-parent"
+          placeholder="Parent sheet whose rates a grade with none in force takes (blank: none)"
+          value={parent}
+          onFocus={() => setTouched((t) => ({ ...t, parent: true }))}
+          onChange={(e) => {
+            setParent(e.target.value);
+            setTouched((t) => ({ ...t, parent: true }));
             setError('');
           }}
         />

@@ -12,9 +12,10 @@ import type { DueRules } from '../settings/settings';
 /**
  * A grade's rate as the store holds it: a percent with two decimals, in force from its from-date
  * (yyyy-MM-dd; null: from the beginning of time) until the grade's next rate takes over, or through its
- * to-date (null: no end), whichever comes first.
+ * to-date (null: no end), whichever comes first. `sheet` is the sheet it is set on: the sheet's own rates come
+ * first, then those it inherits from its parent, its parent's parent and so on (up to three levels up).
  */
-export type Rate = { grade: string; rate: string; from: string | null; to: string | null };
+export type Rate = { grade: string; rate: string; from: string | null; to: string | null; sheet: string };
 
 /** The fields the rate form submits; a blank from-date is from the beginning of time, a blank to-date no end. */
 export type RateInput = { grade: string; rate: string; from: string; to: string };
@@ -28,7 +29,7 @@ export const PERCENT = /^(\d{1,5}(\.\d{1,2})?|\.\d{1,2})$/;
 /** The query key for the sheet's rates; under sheetKey, so re-loading the sheet re-reads them. */
 export const ratesKey = (sheet: string) => [...sheetKey(sheet), 'rates'] as const;
 
-/** The sheet's rates, by grade and then from-date (from the start first). */
+/** The sheet's rates, by grade and then from-date (from the start first), then those it inherits, nearest parent first. */
 export function useRates() {
   const [sheet] = useCurrentSheet();
   return useQuery({
@@ -41,9 +42,20 @@ export function useRates() {
 /**
  * The grade's rate (two decimals) in force on the date: the one with the latest from-date on or
  * before it, a rate with no from-date applying from the start; undefined when none applies, or when that
- * one's to-date is before the date.
+ * one's to-date is before the date. With inherited rates, the first sheet (own, then the nearest parent up) with
+ * a rate in force gives it.
  */
 export function rateFor(rates: Rate[], grade: string | undefined, date: string): string | undefined {
+  const sheets = [...new Set(rates.map((r) => r.sheet))];
+  for (const sheet of sheets) {
+    const rate = ownRateFor(rates.filter((r) => r.sheet === sheet), grade, date);
+    if (rate !== undefined) return rate;
+  }
+  return undefined;
+}
+
+/** The grade's rate in force on the date among one sheet's rates, as {@link rateFor}. */
+function ownRateFor(rates: Rate[], grade: string | undefined, date: string): string | undefined {
   let found: Rate | undefined;
   for (const r of rates) {
     if (r.grade !== grade || (r.from !== null && r.from > date)) continue;
@@ -230,7 +242,7 @@ export function ratePreview(
   rate: string,
   rules: DueRules,
 ): { count: number; diff: string } {
-  const candidate: Rate[] = [...rates.filter((r) => r.grade !== grade), { grade, rate, from: null, to: null }];
+  const candidate: Rate[] = [...rates.filter((r) => r.grade !== grade), { grade, rate, from: null, to: null, sheet: '' }];
   const cents = (d: string) => (d === NA ? 0 : hundredths(d));
   let count = 0;
   let diff = 0;

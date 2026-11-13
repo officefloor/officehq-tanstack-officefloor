@@ -29,7 +29,7 @@ public class ValidateSettingsRequest {
             Out<Terms> terms, Out<LatePct> latePct, Out<PolicyDate> policyDate,
             Out<PeriodNumberingFrom> periodNumberingFrom, Out<EntryDate> entryDate, Out<GradeTerms> gradeTerms, Out<Cap> cap,
             Out<ProofThreshold> proofThreshold, Out<NoteThreshold> noteThreshold, Out<PermissionChanges> permissions, Out<GraceDays> graceDays,
-            Out<GradeGrace> gradeGrace, Out<GradeProofThreshold> gradeProofThreshold, Out<Pot> pot)
+            Out<GradeGrace> gradeGrace, Out<GradeProofThreshold> gradeProofThreshold, Out<Pot> pot, Out<Parent> parent)
             throws InvalidSettingException {
         limit.set(clerkLimit(request.clerkLimit(), from(request.clerkLimitFrom(), "clerk limit")));
         floor.set(floor(request.floor(), from(request.floorFrom(), "floor")));
@@ -47,6 +47,15 @@ public class ValidateSettingsRequest {
         gradeGrace.set(gradeGrace(request.gradeGrace(), request.gradeGraceFrom()));
         gradeProofThreshold.set(gradeProofThreshold(request.gradeProofThreshold(), request.gradeProofThresholdFrom()));
         pot.set(pot(request.pot()));
+        parent.set(parent(request.parent()));
+    }
+
+    private static Parent parent(String requested) {
+        if (requested == null) {
+            return new Parent(false, null);
+        }
+        String value = requested.trim();
+        return new Parent(true, value.isEmpty() ? null : value);
     }
 
     private static Pot pot(String requested) throws InvalidSettingException {

@@ -42,7 +42,7 @@ public class SettingRepository {
         return new Settings(sheetId, dated.clerkLimitOn(today), dated.floorOn(today), dated.termsOn(today),
                 dated.gradeTermsOn(today), dated.latePctOn(today), policyDate(sheetId), periodNumberingFrom(sheetId), entryDate(sheetId),
                 dated.capOn(today), dated.proofThresholdOn(today), roles, dated, permissions(sheetId), graceDays(sheetId),
-                today, delegations(sheetId), pot(sheetId));
+                today, delegations(sheetId), pot(sheetId), parent(sheetId));
     }
 
     /** The sheet's dated settings: every value recorded, by key and from-date. */
@@ -115,6 +115,17 @@ public class SettingRepository {
     /** Set the sheet's pot (null: blank, none). */
     public void savePot(String sheetId, BigDecimal pot) {
         jdbc.update("UPDATE sheet SET pot = ? WHERE id = ?", pot, sheetId);
+    }
+
+    /** The sheet's parent sheet id (null: none). */
+    public String parent(String sheetId) {
+        List<String> parent = jdbc.query("SELECT parent_id FROM sheet WHERE id = ?", (rs, n) -> rs.getString("parent_id"), sheetId);
+        return parent.isEmpty() ? null : parent.get(0);
+    }
+
+    /** Set the sheet's parent sheet id (null: none). */
+    public void saveParent(String sheetId, String parent) {
+        jdbc.update("UPDATE sheet SET parent_id = ? WHERE id = ?", parent, sheetId);
     }
 
     /** The sheet's grace days (null: blank, off). */

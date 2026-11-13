@@ -4,7 +4,7 @@ import net.officefloor.plugin.variable.Val;
 import net.officefloor.web.ObjectResponse;
 
 public class RespondWithSheet {
-    public void respond(@Val Sheet sheet, ObjectResponse<SheetResponse> response) {
-        response.send(SheetResponse.from(sheet));
+    public void respond(@Val Sheet sheet, SheetRepository repository, ObjectResponse<SheetResponse> response) {
+        response.send(SheetResponse.from(sheet, repository.parent(sheet.id())));
     }
 }

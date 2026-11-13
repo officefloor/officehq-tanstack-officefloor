@@ -16,7 +16,8 @@ const EMPTY: RateInput = { grade: 'A', rate: '', from: '', to: '' };
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 // Each grade's rate in force on the sheet's today (n/a when none is), every rate the sheet has with
-// its from- and to-date, and the form that sets one.
+// its from- and to-date, and the form that sets one. The rate in force may be inherited from a parent sheet;
+// the list shows only the sheet's own.
 export function Rates() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -97,7 +98,7 @@ export function Rates() {
           </tr>
         </thead>
         <tbody>
-          {rates.map((r) => (
+          {rates.filter((r) => r.sheet === sheet).map((r) => (
             <tr key={`${r.grade}-${r.from ?? 'start'}`} data-testid={`rate-row-${r.grade}-${r.from ?? 'start'}`}>
               <td>{r.grade}</td>
               <td data-testid="rate-from">{r.from ?? 'start'}</td>

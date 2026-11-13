@@ -80,6 +80,12 @@ public class SheetRepository {
         }
     }
 
+    /** The sheet's parent sheet id as the store holds it now (null: none); it is not dated, so an as-of view shows it too. */
+    public String parent(String id) {
+        List<String> found = jdbc.query("SELECT parent_id FROM PUBLIC.sheet WHERE id = ?", (rs, n) -> rs.getString("parent_id"), id);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
     /** Whether the sheet is archived: every change to an archived sheet is refused. */
     public boolean isArchived(String id) {
         Sheet sheet = find(id);

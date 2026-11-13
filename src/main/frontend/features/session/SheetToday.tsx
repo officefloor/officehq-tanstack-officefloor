@@ -70,6 +70,9 @@ export function SheetToday() {
       <span>
         {' '}Archived: <strong data-testid="sheet-archived">{info.data ? (info.data.archived ? 'yes' : 'no') : ''}</strong>{' '}
       </span>
+      <span>
+        {' '}Parent: <strong data-testid="sheet-parent">{info.data?.parent ?? ''}</strong>{' '}
+      </span>
       <button
         type="button"
         data-testid="sheet-archive"

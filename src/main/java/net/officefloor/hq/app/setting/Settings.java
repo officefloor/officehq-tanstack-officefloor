@@ -20,10 +20,11 @@ import java.util.Map;
  * holds every value recorded for them, by from-date. {@code delegations} are the steward role delegated to user names, in the
  * order made; one in force on {@code today} (the sheet's today) makes its user act as a steward in every rule.
  * {@code pot} is the sheet's pot (null: none), shared out among each balanced pool's members; it is not dated.
+ * {@code parent} is the sheet's parent sheet id (null: none), whose rates a grade with none of its own in force takes; it is not dated.
  */
 public record Settings(String sheetId, BigDecimal clerkLimit, BigDecimal floor, int terms, Map<String, Integer> gradeTerms, BigDecimal latePct,
         LocalDate policyDate, LocalDate periodNumberingFrom, LocalDate entryDate, BigDecimal cap, BigDecimal proofThreshold, List<UserRole> roles, DatedSettings dated, Permissions permissions, Integer graceDays,
-        LocalDate today, List<Delegation> delegations, BigDecimal pot) {
+        LocalDate today, List<Delegation> delegations, BigDecimal pot, String parent) {
 
     /** The role the user name acts in: steward while a delegation to it is in force on today, else its given role. */
     public Role roleOf(String user) {

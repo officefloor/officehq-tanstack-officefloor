@@ -9,7 +9,7 @@ export const useCurrentSheet = () => useSearchParam('sheet', asString);
 export const sheetKey = (sheet: string) => ['sheet', sheet] as const;
 
 /** A sheet as the store holds it: its id, its own "today" (yyyy-MM-dd) and whether it is archived. */
-export type SheetInfo = { id: string; today: string; archived: boolean };
+export type SheetInfo = { id: string; today: string; archived: boolean; parent: string };
 
 /** The query key for the sheet itself; under sheetKey, so re-loading the sheet re-reads it. */
 export const sheetInfoKey = (sheet: string) => [...sheetKey(sheet), 'info'] as const;
