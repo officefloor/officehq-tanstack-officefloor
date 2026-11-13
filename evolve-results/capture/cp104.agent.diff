@@ -1,0 +1,64 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 9943e821f..ad235f487 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -142,6 +142,12 @@ public class ClaimRepository {
+                 Date.valueOf(claim.deferredUntil()), claim.id(), claim.sheetId());
+     }
+ 
++    /** Store the claim's {@code number}. */
++    public void renumber(Claim claim) {
++        jdbc.update("UPDATE claim SET claim_number = ? WHERE id = ? AND sheet_id = ?",
++                claim.number(), claim.id(), claim.sheetId());
++    }
++
+     /** Store the claim's {@code date} and {@code number}. */
+     public void redate(Claim claim) {
+         jdbc.update("UPDATE claim SET claim_date = ?, claim_number = ? WHERE id = ? AND sheet_id = ?",
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ReassignClaim.java b/src/main/java/net/officefloor/hq/app/claim/ReassignClaim.java
+index 073ff5ffe..bb2d94f0b 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ReassignClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ReassignClaim.java
+@@ -1,12 +1,26 @@
+ package net.officefloor.hq.app.claim;
+ 
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+-/** Moves the claim to its new person, keeping its number and date; it loses any statement figure. */
++/**
++ * Moves the claim to its new person, keeping its date; it loses any statement figure. A numbered claim takes the next
++ * number in the sequence opening would number it in now (the sheet's, or its period's under period numbering); its
++ * old number is never used again. A draft, having no number, gets none.
++ */
+ public class ReassignClaim {
+     public void reassign(@Val Claim claim, @Val Reassignment reassignment, ClaimRepository repository,
+-            Out<Claim> moved) {
+-        moved.set(repository.reassign(claim, reassignment.to().id()));
++            SheetRepository sheets, SettingRepository settings, PeriodRepository periods, Out<Claim> moved) {
++        Claim reassigned = repository.reassign(claim, reassignment.to().id());
++        if (reassigned.number() != null) {
++            String next = ApplyClaimAction.nextNumber(reassigned, sheets, settings, periods);
++            reassigned = reassigned.withStatus(reassigned.status(), next, reassigned.due(), reassigned.openedBy());
++            repository.renumber(reassigned);
++            reassigned = repository.find(reassigned.sheetId(), reassigned.id());
++        }
++        moved.set(reassigned);
+     }
+ }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person.PUT.yml
+index 9eff3c1b4..70304573a 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person.PUT.yml
+@@ -1,7 +1,7 @@
+ # Move a claim to another person on the sheet (the body's personId). Only a steward moves a claim, and only a DRAFT,
+ # OPEN or PENDING one; a SETTLED or VOID claim, the claim's own person, an unknown person or one retired before the
+ # claim's date is refused (400) and writes nothing. A claim dated inside a closed period is refused (400).
+-# The claim keeps its number and date, loses any figure a statement bound it to (live again), and is listed as its
++# The claim keeps its date (a numbered claim takes the next number in its sequence; a draft gets none), loses any figure a statement bound it to (live again), and is listed as its
+ # new person's newest claim.
+ # A bulk move (body bulk=true) takes a claim already that person's as moved instead of refusing it.
+ archived:
