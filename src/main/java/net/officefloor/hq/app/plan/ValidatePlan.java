@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.role.RoleStore;
+import net.officefloor.hq.app.setting.SettingStore;
 import net.officefloor.hq.app.sheet.InvalidSheetException;
 import net.officefloor.hq.app.sheet.SheetStore;
 import net.officefloor.plugin.variable.Out;
@@ -14,13 +15,15 @@ import org.springframework.web.bind.annotation.RequestBody;
 /** Refuses a plan by a viewer, with an amount the claim form would refuse for a claim made from it (one that is
  *  not a number with up to two decimals, or a negative one), an interval that is not a whole number of at least
  *  1, a day of the month that is not a whole number from 1 to 31, both an interval and a day or neither, a bad
- *  date or an end before the start. A blank start is the sheet's today. */
+ *  date, an end before the start or a sheet that is not one of the sheet's descendants. A blank start is the
+ *  sheet's today. */
 public class ValidatePlan {
     private static final Pattern AMOUNT = Pattern.compile("\\d+(\\.\\d{1,2})?");
     private static final Pattern EVERY = Pattern.compile("\\d{1,6}");
 
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody PlanRequest request,
-            SheetStore sheets, Out<PlanInput> body, RoleStore roles) throws InvalidSheetException {
+            SheetStore sheets, Out<PlanInput> body, RoleStore roles,
+            SettingStore settings) throws InvalidSheetException {
         String user = request == null || request.user() == null ? "" : request.user().trim();
         roles.refuseChange(sheetId.trim(), user);
         if (request == null) {
@@ -54,7 +57,12 @@ public class ValidatePlan {
         if (end.isBefore(start)) {
             throw new InvalidSheetException("The end must not be before the start");
         }
-        body.set(new PlanInput(new BigDecimal(amount).setScale(2), start, everyDays, monthDay, end, user));
+        String sheet = request.sheet() == null ? "" : request.sheet().trim();
+        if (!sheet.isEmpty() && !settings.descendants(sheetId.trim()).contains(sheet)) {
+            throw new InvalidSheetException("The sheet must be one of this sheet's descendants");
+        }
+        body.set(new PlanInput(new BigDecimal(amount).setScale(2), start, everyDays, monthDay, end, user,
+                sheet.isEmpty() ? null : sheet));
     }
 
     private static LocalDate date(String text) throws InvalidSheetException {

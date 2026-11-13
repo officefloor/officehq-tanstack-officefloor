@@ -10,8 +10,8 @@ import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { type Plan, plansKey, usePlans } from './plans';
 import { useFigure } from '../locale/locale';
 
-type Fields = { amount: string; start: string; every: string; day: string; end: string };
-const EMPTY: Fields = { amount: '', start: '', every: '', day: '', end: '' };
+type Fields = { amount: string; start: string; every: string; day: string; end: string; sheet: string };
+const EMPTY: Fields = { amount: '', start: '', every: '', day: '', end: '', sheet: '' };
 
 function PlansHead() {
   return <th>Plans</th>;
@@ -99,7 +99,7 @@ function PlanRow({ plan: p, latest }: { plan: Plan; latest: number }) {
 }
 
 // The person's plans, each with how many claims it has made so far and its next five dates, and the form that adds one. A bad
-// amount, interval or day of the month, or an end before the start, is refused with an error on the row until the form is
+// amount, interval or day of the month, an end before the start, or a sheet that is not a descendant, is refused with an error on the row until the form is
 // changed or the next action on the row is taken.
 function PersonPlans({ person }: { person: Person }) {
   const [user] = useCurrentUser();
@@ -144,6 +144,7 @@ function PersonPlans({ person }: { person: Person }) {
         <input data-testid="plan-form-every" placeholder="Every N days" inputMode="numeric" value={fields.every} onChange={set('every')} />
         <input data-testid="plan-form-day" placeholder="Or day of month (1-31)" inputMode="numeric" value={fields.day} onChange={set('day')} />
         <input data-testid="plan-form-end" placeholder="End (yyyy-mm-dd)" value={fields.end} onChange={set('end')} />
+        <input data-testid="plan-form-sheet" placeholder="On descendant sheet (optional)" value={fields.sheet} onChange={set('sheet')} />
         <button type="submit" data-testid="plan-form-submit" disabled={add.isPending}>
           Add plan
         </button>
