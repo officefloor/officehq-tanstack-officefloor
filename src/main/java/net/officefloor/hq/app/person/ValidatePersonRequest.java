@@ -1,6 +1,8 @@
 package net.officefloor.hq.app.person;
 
 import jakarta.validation.Valid;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.Set;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -20,6 +22,14 @@ public class ValidatePersonRequest {
         if (!GRADES.contains(grade)) {
             throw new InvalidPersonException("The grade must be A, B or C.");
         }
-        body.set(new PersonRequest(name, grade, request.version()));
+        String from = request.gradeFrom() == null ? "" : request.gradeFrom().trim();
+        if (!from.isEmpty()) {
+            try {
+                LocalDate.parse(from);
+            } catch (DateTimeParseException e) {
+                throw new InvalidPersonException("The grade's from-date must be yyyy-mm-dd.");
+            }
+        }
+        body.set(new PersonRequest(name, grade, from, request.version()));
     }
 }

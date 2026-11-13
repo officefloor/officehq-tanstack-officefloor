@@ -19,7 +19,8 @@ import net.officefloor.plugin.variable.Val;
  * Takes the person's statement: records their due-total now, binds each of their claims that counts to the
  * figure it has now (a live one raised to the sheet's floor), and unbinds (live again) each that does not. The due-total is their counting claims'
  * dues added up (each figure plus any late charge on it — the charge is never bound, it keeps following the
- * sheet's today); n/a when their grade has no rate on the sheet's today and no counting claim keeps a figure.
+ * sheet's today); n/a when their grade on the sheet's today has no rate there and no counting claim has a figure (kept, or at the
+ * rate for the grade in force on its date).
  */
 public class TakeStatement {
     public void take(@Val Person person, ClaimRepository claims, PersonRepository people, RateRepository rates,
@@ -37,10 +38,10 @@ public class TakeStatement {
                 continue;
             }
             boolean fixed = claim.due() != null || (claim.stated() && claim.statedDue() != null);
-            BigDecimal figure = claim.figure(Rate.inForce(sheetRates, person.grade(), claim.date()), floor);
+            BigDecimal figure = claim.figure(Rate.inForce(sheetRates, person.gradeOn(claim.date()), claim.date()), floor);
             claims.bindStatement(claim, true, figure);
             counted++;
-            kept |= fixed;
+            kept |= fixed || figure != null;
             if (figure != null) {
                 total = total.add(figure).add(late.on(claim, figure));
             }

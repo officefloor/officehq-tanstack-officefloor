@@ -5,8 +5,22 @@ import { sheetKey, useCurrentSheet } from '../session/session';
 
 export const GRADES = ['A', 'B', 'C'] as const;
 
+/** A grade recorded for a person, in force from its from-date (yyyy-MM-dd; null: from the beginning of time). */
+export type GradeFrom = { grade: string; from: string | null };
+
+/** The grade in force on the date (yyyy-MM-dd): the one recorded with the latest from-date on or before it. */
+export function gradeOn(grades: GradeFrom[], date: string): string | undefined {
+  let found: GradeFrom | undefined;
+  for (const g of grades) {
+    if (g.from !== null && g.from > date) continue;
+    if (!found || (found.from ?? '') < (g.from ?? '')) found = g;
+  }
+  return found?.grade;
+}
+
 /**
- * A person on the sheet as the store holds them; `version` counts their saves. `statementCount` counts
+ * A person on the sheet as the store holds them; `grade` is the one in force on the sheet's today and
+ * `grades` every grade recorded for them, each from its from-date; `version` counts their saves. `statementCount` counts
  * the statements taken of them; `statedTotal` is the last one's due-total and `statementDate` the
  * sheet's today when it was taken, both null before the first. `retired` is whether a retirement date is
  * set (whatever the date), `retiredFrom` that date, null while they are not retired. `held` is whether
@@ -16,6 +30,7 @@ export type Person = {
   id: number;
   name: string;
   grade: string;
+  grades: GradeFrom[];
   version: number;
   statementCount: number;
   statedTotal: string | null;
@@ -25,8 +40,8 @@ export type Person = {
   held: boolean;
 };
 
-/** The fields the person form submits. */
-export type PersonInput = { name: string; grade: string };
+/** The fields the person form submits; a blank `gradeFrom` is the sheet's today. */
+export type PersonInput = { name: string; grade: string; gradeFrom: string };
 
 /** The query key for the sheet's people; under sheetKey, so re-loading the sheet re-reads them. */
 export const peopleKey = (sheet: string) => [...sheetKey(sheet), 'people'] as const;

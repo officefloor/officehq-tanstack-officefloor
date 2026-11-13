@@ -38,7 +38,7 @@ public class ClosePeriod {
             if (person == null || !person.counts(claim) || !period.contains(claim.date())) {
                 continue;
             }
-            BigDecimal figure = claim.due(Rate.inForce(sheetRates, person.grade(), claim.date()), floor, late);
+            BigDecimal figure = claim.due(Rate.inForce(sheetRates, person.gradeOn(claim.date()), claim.date()), floor, late);
             if (figure != null) {
                 total = total.add(figure);
             }

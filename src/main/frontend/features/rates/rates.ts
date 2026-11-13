@@ -3,6 +3,8 @@ import { getJson } from '../../api/http';
 import { counts } from '../claims/claims';
 import type { Claim } from '../claims/claims';
 import { latePeriods } from '../overdue/dueBy';
+import { gradeOn } from '../people/people';
+import type { GradeFrom } from '../people/people';
 import { sheetKey, useCurrentSheet } from '../session/session';
 import type { DueRules } from '../settings/settings';
 
@@ -38,7 +40,7 @@ export function useRates() {
  * The grade's rate (two decimals) in force on the date: the one with the latest from-date on or
  * before it, a rate with no from-date applying from the start; undefined when none applies.
  */
-export function rateFor(rates: Rate[], grade: string, date: string): string | undefined {
+export function rateFor(rates: Rate[], grade: string | undefined, date: string): string | undefined {
   let found: Rate | undefined;
   for (const r of rates) {
     if (r.grade !== grade || (r.from !== null && r.from > date)) continue;
@@ -76,11 +78,11 @@ export function floored(value: string, floor: string): string {
 
 /**
  * A claim's figure: the figure its statement bound it to, else its amount at the rate in force on its
- * date for the grade, at least the sheet's floor.
+ * date for the person's grade in force on that date, at least the sheet's floor.
  */
-function claimFigure(claim: Claim, rates: Rate[], grade: string, floor: string): string {
+function claimFigure(claim: Claim, rates: Rate[], grades: GradeFrom[], floor: string): string {
   if (claim.stated) return claim.statedDue ?? NA;
-  return floored(due(claim.amount, rateFor(rates, grade, claim.date)), floor);
+  return floored(due(claim.amount, rateFor(rates, gradeOn(grades, claim.date), claim.date)), floor);
 }
 
 /**
@@ -97,9 +99,9 @@ export function lateCharge(claim: Claim, figure: string, rules: DueRules): strin
  * the late charge on it while it is overdue. The charge is never bound by a statement: it follows the
  * sheet's today.
  */
-export function claimDue(claim: Claim, rates: Rate[], grade: string, rules: DueRules): string {
+export function claimDue(claim: Claim, rates: Rate[], grades: GradeFrom[], rules: DueRules): string {
   if (claim.due !== null) return claim.due;
-  const figure = claimFigure(claim, rates, grade, rules.floor);
+  const figure = claimFigure(claim, rates, grades, rules.floor);
   return figure === NA ? NA : total([figure, lateCharge(claim, figure, rules)]);
 }
 
@@ -108,19 +110,21 @@ const keepsFigure = (c: Claim) => c.due !== null || (c.stated && c.statedDue !==
 
 /**
  * A person's due-total: the figures of their claims that count, added up (0.00 with none). With no
- * rate in force on the sheet's today for their grade it is n/a, unless a settled or stated claim
- * keeps a figure: then it is the figures there are, added up. While they are held, their open claims do not count.
+ * rate in force on the sheet's today for their grade on that day it is n/a, unless a claim has a figure (kept
+ * when settled or stated, or at the rate for the grade in force on its date): then it is the figures there are,
+ * added up. While they are held, their open claims do not count.
  */
 export function personDue(
   claims: Claim[],
   rates: Rate[],
-  grade: string,
+  grades: GradeFrom[],
   held: boolean,
   rules: DueRules,
 ): string {
   const counted = claims.filter((c) => counts(c, held));
-  const figures = counted.map((c) => claimDue(c, rates, grade, rules));
-  if (rateFor(rates, grade, rules.today) === undefined && !counted.some(keepsFigure)) {
+  const figures = counted.map((c) => claimDue(c, rates, grades, rules));
+  const anyFigure = counted.some(keepsFigure) || figures.some((f) => f !== NA);
+  if (rateFor(rates, gradeOn(grades, rules.today), rules.today) === undefined && !anyFigure) {
     return NA;
   }
   return total(figures);

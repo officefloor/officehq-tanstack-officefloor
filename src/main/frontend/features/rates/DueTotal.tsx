@@ -15,7 +15,7 @@ export function DueTotal() {
 
   if (!user || !sheet) return null;
 
-  const dues = people.map((p) => personDue(claims.filter((c) => c.personId === p.id), rates, p.grade, p.held, rules));
+  const dues = people.map((p) => personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, p.held, rules));
   return (
     <p>
       Due total: <strong data-testid="rollup-due-total">{total(dues)}</strong>

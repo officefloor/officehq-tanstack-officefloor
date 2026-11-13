@@ -7,7 +7,7 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { GRADES, peopleKey, useEditingPerson, usePeople } from './people';
 import type { Person, PersonInput } from './people';
 
-const EMPTY: PersonInput = { name: '', grade: 'A' };
+const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '' };
 
 // Adds a person, or — while a person's editor is open — saves that person's changes. Opening an
 // editor fills the form with the person's values and remembers the version it loaded: a save over
@@ -38,7 +38,7 @@ export function PersonForm() {
     }
     filledFor.current = editing;
     version.current = person.version;
-    setForm({ name: person.name, grade: person.grade });
+    setForm({ name: person.name, grade: person.grade, gradeFrom: '' });
     setError('');
   }, [editing, people.data, setEditing]);
 
@@ -67,7 +67,7 @@ export function PersonForm() {
         const current = queryClient.getQueryData<Person[]>(peopleKey(sheet))?.find((p) => p.id === editing);
         if (current) {
           version.current = current.version;
-          setForm({ name: current.name, grade: current.grade });
+          setForm({ name: current.name, grade: current.grade, gradeFrom: '' });
         }
         setError('Someone else saved this person meanwhile; the form now shows their values.');
         return;
@@ -114,6 +114,13 @@ export function PersonForm() {
           </option>
         ))}
       </select>
+      <input
+        data-testid="person-form-grade-from"
+        type="date"
+        title="Grade from (blank: the sheet's today)"
+        value={form.gradeFrom}
+        onChange={(e) => change({ gradeFrom: e.target.value })}
+      />
       <button type="submit" data-testid="person-form-submit" disabled={save.isPending}>
         {editing === undefined ? 'Add person' : 'Save person'}
       </button>

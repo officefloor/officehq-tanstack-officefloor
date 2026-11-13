@@ -2,6 +2,7 @@ import { counts } from '../claims/claims';
 import type { Claim } from '../claims/claims';
 import { claimDue, total } from '../rates/rates';
 import type { Rate } from '../rates/rates';
+import type { GradeFrom } from '../people/people';
 import type { DueRules } from '../settings/settings';
 import { overdue } from './dueBy';
 
@@ -14,10 +15,10 @@ export { dueBy, overdue } from './dueBy';
 export function personOverdue(
   claims: Claim[],
   rates: Rate[],
-  grade: string,
+  grades: GradeFrom[],
   held: boolean,
   rules: DueRules,
 ): { count: number; total: string } {
   const late = claims.filter((c) => counts(c, held) && overdue(c, rules.terms, rules.today));
-  return { count: late.length, total: total(late.map((c) => claimDue(c, rates, grade, rules))) };
+  return { count: late.length, total: total(late.map((c) => claimDue(c, rates, grades, rules))) };
 }

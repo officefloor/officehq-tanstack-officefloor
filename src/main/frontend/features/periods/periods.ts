@@ -43,7 +43,7 @@ export const periodOf = (periods: Period[], date: string) => periods.find((p) =>
  */
 export function periodDue(period: Period, claims: Claim[], people: Person[], rates: Rate[], rules: DueRules): string {
   if (period.closed && period.closedTotal !== null) return period.closedTotal;
-  const grades = new Map(people.map((p) => [p.id, p.grade]));
+  const grades = new Map(people.map((p) => [p.id, p.grades]));
   const held = heldIds(people);
   const figures = claims
     .filter((c) => counts(c, held.has(c.personId)) && contains(period, c.date) && grades.has(c.personId))

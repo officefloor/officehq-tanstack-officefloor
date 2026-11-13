@@ -7,5 +7,5 @@ import { claimDue, useRates } from './rates';
 export function ClaimDue({ claim, person }: { claim: Claim; person: Person }) {
   const rates = useRates().data ?? [];
   const rules = useDueRules();
-  return <span data-testid="claim-due">{claimDue(claim, rates, person.grade, rules)}</span>;
+  return <span data-testid="claim-due">{claimDue(claim, rates, person.grades, rules)}</span>;
 }

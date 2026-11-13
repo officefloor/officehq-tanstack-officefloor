@@ -8,7 +8,7 @@ function usePersonOverdue(person: Person) {
   const rates = useRates().data ?? [];
   const rules = useDueRules();
   const claims = (useClaims().data ?? []).filter((c) => c.personId === person.id);
-  return personOverdue(claims, rates, person.grade, person.held, rules);
+  return personOverdue(claims, rates, person.grades, person.held, rules);
 }
 
 // How many of a person's counting claims are overdue.

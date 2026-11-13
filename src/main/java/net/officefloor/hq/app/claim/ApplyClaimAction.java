@@ -48,7 +48,7 @@ public class ApplyClaimAction {
             RateRepository rates, SettingRepository settings) {
         Person person = people.find(claim.sheetId(), claim.personId());
         BigDecimal rate = person == null ? null
-                : Rate.inForce(rates.findAll(claim.sheetId()), person.grade(), claim.date());
+                : Rate.inForce(rates.findAll(claim.sheetId()), person.gradeOn(claim.date()), claim.date());
         return claim.due(rate, settings.floor(claim.sheetId()),
                 settings.lateCharge(claim.sheetId(), sheets.today(claim.sheetId())));
     }
