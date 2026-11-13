@@ -17,9 +17,9 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
         return new Claim(id, sheetId, personId, amount, date, note, next, nextNumber, nextDue);
     }
 
-    /** An amount times a percent rate, divided by 100, rounded half up to two decimals; null with no rate. */
+    /** An amount times a percent rate, divided by 100, rounded half to even to two decimals; null with no rate. */
     public static BigDecimal due(BigDecimal amount, BigDecimal rate) {
-        return rate == null ? null : amount.multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_UP);
+        return rate == null ? null : amount.multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
     }
 
     /** The audit field for the claim's number, " number=<n>", or "" when it has none. */

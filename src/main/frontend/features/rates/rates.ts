@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
+import { counts } from '../claims/claims';
+import type { Claim } from '../claims/claims';
 import { sheetKey, useCurrentSheet } from '../session/session';
 
 /**
@@ -47,14 +49,36 @@ export function rateFor(rates: Rate[], grade: string, date: string): string | un
 const hundredths = (value: string) => Math.round(Number(value) * 100);
 
 /**
- * An amount times a percent rate, divided by 100, rounded half up to two decimals; n/a with no
+ * An amount times a percent rate, divided by 100, rounded half to even to two decimals; n/a with no
  * rate. Worked in whole hundredths so it is exact: cents × basis points / 10000.
  */
 export function due(amount: string, rate: string | undefined): string {
   if (rate === undefined) return NA;
   const product = hundredths(amount) * hundredths(rate);
-  const cents = Math.sign(product) * Math.floor((Math.abs(product) + 5000) / 10000);
+  const whole = Math.floor(Math.abs(product) / 10000);
+  const rest = Math.abs(product) - whole * 10000;
+  const up = rest > 5000 || (rest === 5000 && whole % 2 === 1);
+  const cents = Math.sign(product) * (whole + (up ? 1 : 0));
   return (cents / 100).toFixed(2);
+}
+
+/** A claim's figure: the due fixed when it was settled, else its amount at the rate in force on its date for the grade. */
+export function claimDue(claim: Claim, rates: Rate[], grade: string): string {
+  return claim.due ?? due(claim.amount, rateFor(rates, grade, claim.date));
+}
+
+/**
+ * A person's due-total: the figures of their claims that count, added up (0.00 with none). With no
+ * rate in force on the sheet's today for their grade it is n/a, unless a settled claim keeps a
+ * figure: then it is the figures there are, added up.
+ */
+export function personDue(claims: Claim[], rates: Rate[], grade: string, today: string): string {
+  const counted = claims.filter(counts);
+  const figures = counted.map((c) => claimDue(c, rates, grade));
+  if (rateFor(rates, grade, today) === undefined && !counted.some((c) => c.due !== null)) {
+    return NA;
+  }
+  return total(figures);
 }
 
 /** Dues added up, skipping n/a; with two decimals, added in cents so it is exact. */

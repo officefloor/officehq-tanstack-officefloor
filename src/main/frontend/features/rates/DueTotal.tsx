@@ -1,10 +1,10 @@
-import { claimed, useClaims } from '../claims/claims';
+import { useClaims } from '../claims/claims';
 import { usePeople } from '../people/people';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { useSheetToday } from '../session/sheetToday';
-import { due, rateFor, total, useRates } from './rates';
+import { personDue, total, useRates } from './rates';
 
-// The sheet's due-total: everyone's due-total added up, skipping those with no rate in force on the sheet's today.
+// The sheet's due-total: everyone's due-total added up, skipping those that are n/a.
 export function DueTotal() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -15,9 +15,7 @@ export function DueTotal() {
 
   if (!user || !sheet) return null;
 
-  const dues = people.map((p) =>
-    due(claimed(claims.filter((c) => c.personId === p.id)), rateFor(rates, p.grade, today)),
-  );
+  const dues = people.map((p) => personDue(claims.filter((c) => c.personId === p.id), rates, p.grade, today));
   return (
     <p>
       Due total: <strong data-testid="rollup-due-total">{total(dues)}</strong>
