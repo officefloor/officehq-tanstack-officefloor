@@ -1,0 +1,2 @@
+-- A claim's status: DRAFT -> OPEN -> SETTLED; DRAFT or OPEN -> VOID. SETTLED and VOID are final.
+ALTER TABLE claim ADD COLUMN status VARCHAR(10) DEFAULT 'DRAFT' NOT NULL;

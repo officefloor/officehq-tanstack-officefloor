@@ -12,7 +12,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note";
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status";
 
     private final JdbcTemplate jdbc;
 
@@ -36,28 +36,30 @@ public class ClaimRepository {
     /** Insert a new claim (null id) or update an existing one; the claim as stored. */
     public Claim save(Claim claim) {
         if (claim.id() != null) {
-            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ? WHERE id = ? AND sheet_id = ?",
-                    claim.amount(), Date.valueOf(claim.date()), claim.note(), claim.id(), claim.sheetId());
+            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ? WHERE id = ? AND sheet_id = ?",
+                    claim.amount(), Date.valueOf(claim.date()), claim.note(), claim.status().name(), claim.id(), claim.sheetId());
             return claim;
         }
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note) VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status) VALUES (?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, claim.sheetId());
             ps.setLong(2, claim.personId());
             ps.setBigDecimal(3, claim.amount());
             ps.setDate(4, Date.valueOf(claim.date()));
             ps.setString(5, claim.note());
+            ps.setString(6, claim.status().name());
             return ps;
         }, keys);
         return new Claim(keys.getKey().longValue(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
-                claim.note());
+                claim.note(), claim.status());
     }
 
     private static Claim map(ResultSet rs, int n) throws SQLException {
         return new Claim(rs.getLong("id"), rs.getString("sheet_id"), rs.getLong("person_id"),
-                rs.getBigDecimal("amount").setScale(2), rs.getDate("claim_date").toLocalDate(), rs.getString("note"));
+                rs.getBigDecimal("amount").setScale(2), rs.getDate("claim_date").toLocalDate(), rs.getString("note"),
+                ClaimStatus.valueOf(rs.getString("status")));
     }
 }

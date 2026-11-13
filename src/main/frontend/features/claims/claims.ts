@@ -2,8 +2,14 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { sheetKey, useCurrentSheet } from '../session/session';
 
+/** Where a claim is in its life: DRAFT -> OPEN -> SETTLED; DRAFT or OPEN -> VOID. */
+export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+
 /** A claim as the store holds it: the amount with two decimals, the date as yyyy-MM-dd. */
-export type Claim = { id: number; personId: number; amount: string; date: string; note: string };
+export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus };
+
+/** Whether a claim counts toward claimed, due-total and every total: only OPEN and SETTLED do. */
+export const counts = (c: Claim) => c.status === 'OPEN' || c.status === 'SETTLED';
 
 /** The fields the claim form submits; a blank date is the sheet's today. */
 export type ClaimInput = { amount: string; date: string; note: string };
@@ -24,8 +30,8 @@ export function useClaims() {
   });
 }
 
-/** The sum of the claims' amounts, with two decimals; added in cents so it is exact. */
+/** The sum of the counted claims' amounts, with two decimals; added in cents so it is exact. */
 export function claimed(claims: Claim[]): string {
-  const cents = claims.reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
+  const cents = claims.filter(counts).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
   return (cents / 100).toFixed(2);
 }
