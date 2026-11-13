@@ -1,0 +1,203 @@
+diff --git a/src/main/frontend/features/score/score.slot.tsx b/src/main/frontend/features/score/score.slot.tsx
+index a8ae1e24f..12920a106 100644
+--- a/src/main/frontend/features/score/score.slot.tsx
++++ b/src/main/frontend/features/score/score.slot.tsx
+@@ -2,6 +2,8 @@ import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns
+ import { type Person } from '../people/people';
+ import { useSplit } from '../rates/split.slot';
+ import { useOverdue } from '../overdue/overdue.slot';
++import { useSettings } from '../settings/settings';
++import { useCurrentSheet } from '../../session/session';
+ 
+ // A person's score: their settled-total divided by 100, minus 5 for every overdue claim of theirs that counts,
+ // rounded half to even to a whole number.
+@@ -29,7 +31,29 @@ function PersonScore({ person }: { person: Person }) {
+   return <td data-testid="person-score">{score(settled, count)}</td>;
+ }
+ 
++function BandHead() {
++  return <th>Band</th>;
++}
++
++/** A person's band from their score: HIGH at or above the high threshold, MID at or above the mid one, else LOW;
++ *  blank while either threshold is. */
++export function band(score: string, mid: string | null | undefined, high: string | null | undefined): string {
++  if (mid == null || high == null) return '';
++  const s = BigInt(score);
++  return s >= BigInt(high) ? 'HIGH' : s >= BigInt(mid) ? 'MID' : 'LOW';
++}
++
++function PersonBand({ person }: { person: Person }) {
++  const [sheet] = useCurrentSheet();
++  const settings = useSettings(sheet);
++  const { settled } = useSplit()(person);
++  const { count } = useOverdue()(person);
++  return <td data-testid="person-band">{band(score(settled, count), settings.data?.scoreMid, settings.data?.scoreHigh)}</td>;
++}
++
+ export const contributions = [
+   PersonColumnHeads.fill({ order: 17.2, Component: ScoreHead }),
+   PersonColumns.fill({ order: 17.2, Component: PersonScore }),
++  PersonColumnHeads.fill({ order: 17.3, Component: BandHead }),
++  PersonColumns.fill({ order: 17.3, Component: PersonBand }),
+ ];
+diff --git a/src/main/frontend/features/settings/form.slot.tsx b/src/main/frontend/features/settings/form.slot.tsx
+index ce851e750..da263f7a0 100644
+--- a/src/main/frontend/features/settings/form.slot.tsx
++++ b/src/main/frontend/features/settings/form.slot.tsx
+@@ -18,12 +18,12 @@ const STANDING_PERMS: Record<(typeof PERM_ACTIONS)[number], string> = {
+ 
+ type PermKey = `perm-${(typeof PERM_ACTIONS)[number]}`;
+ 
+-type Key = 'clerk-limit' | 'clerk-limit-A' | 'clerk-limit-B' | 'clerk-limit-C' | 'floor' | 'terms' | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'late-pct' | 'policy-date' | 'period-numbering-from' | 'cap' | 'proof-threshold' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'note-threshold' | 'review-threshold' | 'grace-days' | 'escalate-after' | 'review-sla' | 'entry-date' | 'pot' | 'alert-threshold' | 'parent' | 'fiscal-start-month' | 'rounding' | 'proof-kinds' | 'default-grade' | PermKey;
++type Key = 'clerk-limit' | 'clerk-limit-A' | 'clerk-limit-B' | 'clerk-limit-C' | 'floor' | 'terms' | 'terms-A' | 'terms-B' | 'terms-C' | 'grace-A' | 'grace-B' | 'grace-C' | 'late-pct' | 'policy-date' | 'period-numbering-from' | 'cap' | 'proof-threshold' | 'proof-threshold-A' | 'proof-threshold-B' | 'proof-threshold-C' | 'note-threshold' | 'review-threshold' | 'grace-days' | 'escalate-after' | 'review-sla' | 'entry-date' | 'pot' | 'alert-threshold' | 'parent' | 'fiscal-start-month' | 'rounding' | 'proof-kinds' | 'default-grade' | 'score-mid' | 'score-high' | PermKey;
+ 
+ const GRADES = ['A', 'B', 'C'] as const;
+ 
+ /** The settings that carry a figure: each is saved from a from-date (blank for the sheet's today). */
+-type DatedKey = Exclude<Key, 'policy-date' | 'period-numbering-from' | 'grace-days' | 'escalate-after' | 'review-sla' | 'entry-date' | 'pot' | 'alert-threshold' | 'parent' | 'fiscal-start-month' | 'proof-kinds' | 'default-grade' | PermKey>;
++type DatedKey = Exclude<Key, 'policy-date' | 'period-numbering-from' | 'grace-days' | 'escalate-after' | 'review-sla' | 'entry-date' | 'pot' | 'alert-threshold' | 'parent' | 'fiscal-start-month' | 'proof-kinds' | 'default-grade' | 'score-mid' | 'score-high' | PermKey>;
+ 
+ const NO_FROM: Record<DatedKey, string> = { 'clerk-limit': '', 'clerk-limit-A': '', 'clerk-limit-B': '', 'clerk-limit-C': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'late-pct': '', cap: '', 'proof-threshold': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'note-threshold': '', 'review-threshold': '', rounding: '' };
+ 
+@@ -63,7 +63,7 @@ function SheetSettings() {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+   const settings = useSettings(sheet);
+-  const [values, setValues] = useState<Record<Key, string>>({ 'clerk-limit': '', 'clerk-limit-A': '', 'clerk-limit-B': '', 'clerk-limit-C': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '', cap: '', 'proof-threshold': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'note-threshold': '', 'review-threshold': '', 'grace-days': '', 'escalate-after': '', 'review-sla': '', 'entry-date': '', pot: '', 'alert-threshold': '', parent: '', 'fiscal-start-month': '', rounding: '', 'proof-kinds': '', 'default-grade': '',
++  const [values, setValues] = useState<Record<Key, string>>({ 'clerk-limit': '', 'clerk-limit-A': '', 'clerk-limit-B': '', 'clerk-limit-C': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '', cap: '', 'proof-threshold': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'note-threshold': '', 'review-threshold': '', 'grace-days': '', 'escalate-after': '', 'review-sla': '', 'entry-date': '', pot: '', 'alert-threshold': '', parent: '', 'fiscal-start-month': '', rounding: '', 'proof-kinds': '', 'default-grade': '', 'score-mid': '', 'score-high': '',
+     'perm-open': '', 'perm-settle': '', 'perm-void': '', 'perm-reassign': '', 'perm-close': '', 'perm-reopen': '' });
+   const [froms, setFroms] = useState<Record<DatedKey, string>>(NO_FROM);
+   const [key, setKey] = useState<Key>('clerk-limit');
+@@ -177,6 +177,10 @@ function SheetSettings() {
+         {field('review-sla', 'Review SLA days (blank for none)')}{' '}
+         Entry date <strong data-testid="setting-entry-date-current">{settings.data?.entryDate ?? ''}</strong>{' '}
+         {field('entry-date', 'Entry date YYYY-MM-DD (blank for off)', 'text')}{' '}
++        Score mid <strong data-testid="setting-score-mid-current">{settings.data?.scoreMid ?? ''}</strong>{' '}
++        {field('score-mid', 'Score for MID band (blank for none)')}{' '}
++        Score high <strong data-testid="setting-score-high-current">{settings.data?.scoreHigh ?? ''}</strong>{' '}
++        {field('score-high', 'Score for HIGH band (blank for none)')}{' '}
+         Pot <strong data-testid="setting-pot-current">{fig(settings.data?.pot ?? '')}</strong>{' '}
+         {field('pot', 'Pot (blank for none)')}{' '}
+         Alert threshold <strong data-testid="setting-alert-threshold-current">{fig(settings.data?.alertThreshold ?? '')}</strong>{' '}
+diff --git a/src/main/frontend/features/settings/settings.ts b/src/main/frontend/features/settings/settings.ts
+index 7ba0a3bea..f75a1dc0a 100644
+--- a/src/main/frontend/features/settings/settings.ts
++++ b/src/main/frontend/features/settings/settings.ts
+@@ -36,7 +36,9 @@ import { useAsOf } from '../../session/session';
+  *  (receipt, photo), comma separated, a claim above its proof threshold needs one of each of before it is settled or
+  *  approved, null for none; it is not dated. `defaultGrade` is the grade the quick-add bar and an import line with a
+  *  blank grade give a new person, null when blank (then A); it is not dated. `gradeClerkLimit` is each grade's clerk limit
+- *  in force on the sheet's today, by grade, null when it has none (then the sheet's). */
++ *  in force on the sheet's today, by grade, null when it has none (then the sheet's). `scoreMid` and `scoreHigh` are the
++ *  whole-number scores at or above which a person's band is MID and HIGH, null when blank (no band while either is);
++ *  they are not dated. */
+ export type Settings = { clerkLimit: string | null; floor: string; terms: string; latePct: string; policyDate: string | null;
+   periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; proofThreshold: string | null;
+   floorFrom: Dated[]; latePctFrom: Dated[]; perms: Record<string, string | null>;
+@@ -45,7 +47,7 @@ export type Settings = { clerkLimit: string | null; floor: string; terms: string
+   gradeProofThreshold: Record<string, string | null>; pot: string | null; parent: string | null; fiscalStartMonth: string;
+   alertThreshold: string | null; rounding: string | null; roundingFrom: Dated[]; reviewThreshold: string | null;
+   escalateAfter: string | null; reviewSla: string | null; proofKinds: string | null; defaultGrade: string | null;
+-  gradeClerkLimit: Record<string, string | null> };
++  gradeClerkLimit: Record<string, string | null>; scoreMid: string | null; scoreHigh: string | null };
+ 
+ /** A setting's value recorded from a date (yyyy-MM-dd); a null value is blank. */
+ export type Dated = { from: string; value: string | null };
+diff --git a/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java b/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
+index a64b3607d..0203243a9 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/RespondWithSettings.java
+@@ -37,7 +37,8 @@ public class RespondWithSettings {
+                 store.find(sheet, SettingStore.ROUNDING), history(sheet, SettingStore.ROUNDING, store),
+                 store.find(sheet, SettingStore.REVIEW_THRESHOLD), store.find(sheet, SettingStore.ESCALATE_AFTER),
+                 store.find(sheet, SettingStore.REVIEW_SLA), store.find(sheet, SettingStore.PROOF_KINDS),
+-                store.find(sheet, SettingStore.DEFAULT_GRADE), gradeClerkLimit(sheet, today, store)));
++                store.find(sheet, SettingStore.DEFAULT_GRADE), gradeClerkLimit(sheet, today, store),
++                store.find(sheet, SettingStore.SCORE_MID), store.find(sheet, SettingStore.SCORE_HIGH)));
+     }
+ 
+     private static Map<String, String> gradeTerms(String sheetId, LocalDate today, SettingStore store) {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingStore.java b/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
+index 585d4d390..17b8a2204 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
+@@ -223,6 +223,14 @@ public class SettingStore {
+      *  (not dated). */
+     public static final String REVIEW_SLA = "review-sla";
+ 
++    /** The score at or above which a person's band is MID, while the high one is set too; blank for none
++     *  (a whole number, not dated). */
++    public static final String SCORE_MID = "score-mid";
++
++    /** The score at or above which a person's band is HIGH, while the mid one is set too; blank for none
++     *  (a whole number, not dated). */
++    public static final String SCORE_HIGH = "score-high";
++
+     /** The key of a grade's grace days: grace-A, grace-B or grace-C (dated; blank for none). */
+     public static final String GRACE_PREFIX = "grace-";
+ 
+@@ -298,7 +306,7 @@ public class SettingStore {
+     public static boolean isDated(String key) {
+         return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key)
+                 && !ENTRY_DATE.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
+-                && !DEFAULT_GRADE.equals(key)
++                && !DEFAULT_GRADE.equals(key) && !SCORE_MID.equals(key) && !SCORE_HIGH.equals(key)
+                 && !PROOF_KINDS.equals(key) && !key.startsWith(PERM_PREFIX);
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+index 977b0748f..816bc5368 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsResponse.java
+@@ -44,7 +44,9 @@ import java.util.Map;
+  *  {@code defaultGrade} is the grade the quick-add bar and an import line with a blank grade give a new person, null
+  *  when blank (then A; not dated).
+  *  {@code gradeClerkLimit} is each grade's clerk limit in force on the sheet's today, by grade, null when it has none
+- *  (a claim's clerk limit is its person's grade's on the sheet's today when one is set, else the sheet's). */
++ *  (a claim's clerk limit is its person's grade's on the sheet's today when one is set, else the sheet's).
++ *  {@code scoreMid} and {@code scoreHigh} are the whole-number scores at or above which a person's band is MID and
++ *  HIGH, null when blank (no band while either is; not dated). */
+ public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
+         String periodNumberingFrom, Map<String, String> gradeTerms, String cap, String proofThreshold, List<Dated> floorFrom,
+         List<Dated> latePctFrom, Map<String, String> perms, String graceDays,
+@@ -52,7 +54,8 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
+         Map<String, List<Dated>> gradeGraceFrom, Map<String, String> gradeProofThreshold,
+         String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding,
+         List<Dated> roundingFrom, String reviewThreshold, String escalateAfter, String reviewSla,
+-        String proofKinds, String defaultGrade, Map<String, String> gradeClerkLimit) {
++        String proofKinds, String defaultGrade, Map<String, String> gradeClerkLimit,
++        String scoreMid, String scoreHigh) {
+ 
+     /** A value recorded from a date (yyyy-MM-dd). */
+     public record Dated(String from, String value) {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+index 3c3a3ebd7..c4f9f6a5b 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSetting.java
+@@ -19,6 +19,8 @@ public class ValidateSetting {
+     private static final Pattern LIMIT = Pattern.compile("\\d+(\\.\\d{1,2})?");
+     /** A whole number of days, 0 or more. */
+     private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
++    /** A whole number, which may be negative. */
++    private static final Pattern SCORE = Pattern.compile("-?\\d{1,7}");
+ 
+     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SettingRequest request, Out<SettingInput> body, RoleStore roles,
+             SettingStore settings, SheetStore sheets) throws InvalidSheetException {
+@@ -53,6 +55,16 @@ public class ValidateSetting {
+                     request.user()));
+             return;
+         }
++        if (SettingStore.SCORE_MID.equals(key) || SettingStore.SCORE_HIGH.equals(key)) {
++            String value = request.value() == null ? "" : request.value().trim();
++            if (!value.isEmpty() && !SCORE.matcher(value).matches()) {
++                throw new InvalidSheetException((SettingStore.SCORE_MID.equals(key) ? "The mid" : "The high")
++                        + " score threshold must be a whole number, or blank");
++            }
++            body.set(new SettingInput(key, value.isEmpty() ? null : String.valueOf(Integer.parseInt(value)), null,
++                    request.user()));
++            return;
++        }
+         if (SettingStore.FISCAL_START_MONTH.equals(key)) {
+             String value = request.value() == null ? "" : request.value().trim();
+             int month = value.matches("\\d{1,2}") ? Integer.parseInt(value) : 0;
