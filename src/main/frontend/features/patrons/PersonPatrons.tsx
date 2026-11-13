@@ -6,7 +6,7 @@ import { useClaims } from '../claims/claims';
 import { usePeople } from '../people/people';
 import type { Person } from '../people/people';
 import { usePersonError } from '../people/personError';
-import { personDue, total, useRates } from '../rates/rates';
+import { NA, total } from '../rates/rates';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { useDueRules } from '../settings/settings';
 import { patronIdsOf, patronsKey, usePatrons } from './patrons';
@@ -78,15 +78,22 @@ export function PersonPatrons({ person }: { person: Person }) {
   );
 }
 
-// A person's backing: their patrons' due-totals added up, skipping n/a; 0.00 with no patrons.
+/** How many days back from the sheet's today, today included, a patron's settled claim counts toward backing. */
+const BACKING_DAYS = 90;
+
+/** The first date (yyyy-MM-dd) of the backing window ending on the sheet's today. */
+const backingStart = (today: string) =>
+  new Date(Date.parse(`${today}T00:00:00Z`) - (BACKING_DAYS - 1) * 86_400_000).toISOString().slice(0, 10);
+
+// A person's backing: their patrons' SETTLED claims dated within the 90 days up to and including the sheet's
+// today, each at the figure frozen when it was settled, added up; 0.00 with none.
 export function PersonBacking({ person }: { person: Person }) {
-  const people = usePeople().data ?? [];
   const ids = patronIdsOf(usePatrons().data ?? [], person.id);
-  const rates = useRates().data ?? [];
-  const rules = useDueRules();
+  const today = useDueRules().today;
   const claims = useClaims().data ?? [];
-  const dues = people
-    .filter((p) => ids.includes(p.id))
-    .map((p) => personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, p.holds, rules));
+  const from = today === '' ? '' : backingStart(today);
+  const dues = claims
+    .filter((c) => ids.includes(c.personId) && c.status === 'SETTLED' && today !== '' && c.date >= from && c.date <= today)
+    .map((c) => c.due ?? NA);
   return <td data-testid="person-backing">{total(dues)}</td>;
 }
