@@ -16,7 +16,7 @@ import org.springframework.stereotype.Component;
  * repository reads it unchanged once a request's connection is switched to it), with {@code sheet} a view whose today
  * is the session's {@code @asof} date:
  * <ul>
- * <li>a snapshot: a copy of the sheet's rows as they stood at a moment;</li>
+ * <li>a snapshot: a copy of the sheet's rows (and its pools' members) as they stood at a moment;</li>
  * <li>{@link #LIVE}: the sheet as it stands now;</li>
  * <li>{@link #EMPTY}: nothing on the sheet yet (every setting at its default).</li>
  * </ul>
@@ -49,6 +49,10 @@ public class AsOfSchemas {
                 s.execute("CREATE TABLE " + schema + "." + q(table) + " AS SELECT * FROM PUBLIC." + q(table)
                         + " WHERE SHEET_ID = " + id);
             }
+            for (String table : poolTables(c)) {
+                s.execute("CREATE TABLE " + schema + "." + q(table) + " AS SELECT * FROM PUBLIC." + q(table)
+                        + " WHERE POOL_ID IN (SELECT ID FROM PUBLIC.POOL WHERE SHEET_ID = " + id + ")");
+            }
             s.execute("CREATE TABLE " + schema + ".SHEET_DATA AS SELECT * FROM PUBLIC.SHEET WHERE ID = " + id);
             s.execute("CREATE VIEW " + schema + ".SHEET AS SELECT " + sheetColumns(c, false) + " FROM " + schema
                     + ".SHEET_DATA s");
@@ -74,6 +78,11 @@ public class AsOfSchemas {
                 s.execute("CREATE TABLE " + EMPTY + "." + q(table) + " AS SELECT * FROM PUBLIC." + q(table)
                         + " WITH NO DATA");
             }
+            for (String table : poolTables(c)) {
+                s.execute("CREATE VIEW " + LIVE + "." + q(table) + " AS SELECT * FROM PUBLIC." + q(table));
+                s.execute("CREATE TABLE " + EMPTY + "." + q(table) + " AS SELECT * FROM PUBLIC." + q(table)
+                        + " WITH NO DATA");
+            }
             s.execute("CREATE VIEW " + LIVE + ".SHEET AS SELECT " + sheetColumns(c, false) + " FROM PUBLIC.SHEET s");
             s.execute("CREATE VIEW " + EMPTY + ".SHEET AS SELECT " + sheetColumns(c, true) + " FROM PUBLIC.SHEET s");
         } catch (SQLException e) {
@@ -94,6 +103,22 @@ public class AsOfSchemas {
                 if (!NOT_COPIED.contains(table) && !SHEET.equals(table)) {
                     tables.add(table);
                 }
+            }
+        }
+        return tables;
+    }
+
+    /** Every table kept per pool (each has a POOL_ID column but no SHEET_ID one): kept with the sheet's pools. */
+    private static List<String> poolTables(Connection c) throws SQLException {
+        List<String> tables = new ArrayList<>();
+        try (PreparedStatement p = c.prepareStatement("SELECT t.TABLE_NAME FROM INFORMATION_SCHEMA.TABLES t"
+                + " WHERE t.TABLE_SCHEMA = 'PUBLIC' AND t.TABLE_TYPE = 'BASE TABLE' AND EXISTS (SELECT 1 FROM"
+                + " INFORMATION_SCHEMA.COLUMNS c WHERE c.TABLE_SCHEMA = 'PUBLIC' AND c.TABLE_NAME = t.TABLE_NAME"
+                + " AND c.COLUMN_NAME = 'POOL_ID') AND NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS c"
+                + " WHERE c.TABLE_SCHEMA = 'PUBLIC' AND c.TABLE_NAME = t.TABLE_NAME AND c.COLUMN_NAME = 'SHEET_ID')"
+                + " ORDER BY t.TABLE_NAME"); ResultSet rs = p.executeQuery()) {
+            while (rs.next()) {
+                tables.add(rs.getString(1));
             }
         }
         return tables;

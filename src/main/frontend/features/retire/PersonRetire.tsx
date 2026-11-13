@@ -9,7 +9,9 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
 
 // Whether the person is retired and from when, and the date and button that retire them (a blank
 // date is the sheet's today). From the day the date is reached, a retired person's open and pending claims leave
-// the live totals (settled and statement-bound ones still count); one dated after the date is refused.
+// the live totals (settled and statement-bound ones still count); one dated after the date is refused. A retired
+// person can be unretired on the sheet's today; each past retirement stays on the row as "<from> to <to>", and a
+// claim dated after its from and before its to is refused.
 export function PersonRetire({ person }: { person: Person }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -29,6 +31,18 @@ export function PersonRetire({ person }: { person: Person }) {
       await queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
     },
     onError: () => setError('The person could not be retired.'),
+  });
+
+  const unretire = useMutation({
+    mutationFn: () =>
+      postJson<Person>(
+        `/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/unretire?user=${encodeURIComponent(user)}`,
+        {},
+      ),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
+    },
+    onError: () => setError('Only a retired person can be unretired.'),
   });
 
   const submit = () => {
@@ -56,7 +70,23 @@ export function PersonRetire({ person }: { person: Person }) {
       />
       <button type="button" data-testid="person-retire" disabled={retire.isPending} onClick={submit}>
         Retire
+      </button>{' '}
+      <button
+        type="button"
+        data-testid="person-unretire"
+        disabled={unretire.isPending}
+        onClick={() => {
+          setError('');
+          once(() => unretire.mutateAsync());
+        }}
+      >
+        Unretire
       </button>
+      {person.pastRetirements.map((r, i) => (
+        <div key={i} data-testid="person-retirement-line">
+          {r.from} to {r.to}
+        </div>
+      ))}
     </td>
   );
 }

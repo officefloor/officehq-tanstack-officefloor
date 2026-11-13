@@ -16,11 +16,20 @@ import net.officefloor.hq.app.setting.DatedSettings;
  * live total. {@code grades} are the grades
  * recorded for the person, each from its from-date; {@code grade} is the one in force on the sheet's today.
  * {@code terms} are the person's own terms in days, or null when they have none. {@code contact} is the person's
- * contact, trimmed and lower-cased, or null when they have none.
+ * contact, trimmed and lower-cased, or null when they have none. {@code pastRetirements} are the retirements they
+ * were unretired from, oldest first.
  */
 public record Person(Long id, String sheetId, String name, String grade, int version, int statementCount,
         String statedTotal, LocalDate statementDate, LocalDate retiredFrom, List<Hold> holds, List<GradeFrom> grades,
-        Integer terms, String contact) {
+        Integer terms, String contact, List<PastRetirement> pastRetirements) {
+
+    /** A person never unretired. */
+    public Person(Long id, String sheetId, String name, String grade, int version, int statementCount,
+            String statedTotal, LocalDate statementDate, LocalDate retiredFrom, List<Hold> holds,
+            List<GradeFrom> grades, Integer terms, String contact) {
+        this(id, sheetId, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom, holds,
+                grades, terms, contact, List.of());
+    }
 
     /** A person without a contact. */
     public Person(Long id, String sheetId, String name, String grade, int version, int statementCount,
@@ -59,19 +68,19 @@ public record Person(Long id, String sheetId, String name, String grade, int ver
     /** The same person with another name. */
     public Person withName(String nextName) {
         return new Person(id, sheetId, nextName, grade, version, statementCount, statedTotal, statementDate,
-                retiredFrom, holds, grades, terms, contact);
+                retiredFrom, holds, grades, terms, contact, pastRetirements);
     }
 
     /** The same person with this contact (null: none). */
     public Person withContact(String nextContact) {
         return new Person(id, sheetId, name, grade, version, statementCount, statedTotal, statementDate,
-                retiredFrom, holds, grades, terms, nextContact);
+                retiredFrom, holds, grades, terms, nextContact, pastRetirements);
     }
 
     /** The same person with these terms of their own (null: none). */
     public Person withTerms(Integer nextTerms) {
         return new Person(id, sheetId, name, grade, version, statementCount, statedTotal, statementDate,
-                retiredFrom, holds, grades, nextTerms, contact);
+                retiredFrom, holds, grades, nextTerms, contact, pastRetirements);
     }
 
     /**
@@ -95,7 +104,7 @@ public record Person(Long id, String sheetId, String name, String grade, int ver
         }
         next.add(new GradeFrom(nextGrade, from));
         return new Person(id, sheetId, nextName, gradeOn(next, today, nextGrade), version, statementCount,
-                statedTotal, statementDate, retiredFrom, holds, List.copyOf(next), terms, contact);
+                statedTotal, statementDate, retiredFrom, holds, List.copyOf(next), terms, contact, pastRetirements);
     }
 
     /** Whether the person has any hold, whatever its dates. */
@@ -129,8 +138,21 @@ public record Person(Long id, String sheetId, String name, String grade, int ver
         return retiredFrom != null;
     }
 
-    /** Whether a claim on this date is refused: the person is retired from an earlier date. */
+    /**
+     * Whether a claim on this date is refused: the person is retired from an earlier date, or the date is after the
+     * from-date and before the to-date of a retirement they were unretired from.
+     */
     public boolean retiredBefore(LocalDate date) {
-        return retiredFrom != null && date.isAfter(retiredFrom);
+        return (retiredFrom != null && date.isAfter(retiredFrom))
+                || pastRetirements.stream().anyMatch((r) -> r.refuses(date));
+    }
+
+    /** The retirement refusing a claim on this date, as "from" for a current one or "from to to" for a past one. */
+    public String retirementBefore(LocalDate date) {
+        if (retiredFrom != null && date.isAfter(retiredFrom)) {
+            return String.valueOf(retiredFrom);
+        }
+        return pastRetirements.stream().filter((r) -> r.refuses(date)).findFirst()
+                .map((r) -> r.from() + " to " + r.to()).orElse(null);
     }
 }

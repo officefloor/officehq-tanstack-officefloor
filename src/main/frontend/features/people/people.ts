@@ -42,7 +42,8 @@ export const liveHolds = (p: { holds: Hold[]; retiredFrom: string | null }, toda
  * statement, count in no live total. `terms` is the person's own terms in days, null when they have none;
  * `contact` their contact (trimmed, lower-cased), null when they have none. `clashing` is whether another sheet of
  * the sheet's tree (its ancestors and descendants) uses their name or any of their aliases as a name or alias.
- * `origin` is the sheet they were transferred from, null when they were not transferred here.
+ * `origin` is the sheet they were transferred from, null when they were not transferred here. `pastRetirements` are
+ * the retirements they were unretired from, oldest first: a claim dated after one's from and before its to is refused.
  */
 export type Person = {
   id: number;
@@ -61,6 +62,7 @@ export type Person = {
   contact: string | null;
   clashing: boolean;
   origin: string | null;
+  pastRetirements: { from: string; to: string }[];
 };
 
 /**

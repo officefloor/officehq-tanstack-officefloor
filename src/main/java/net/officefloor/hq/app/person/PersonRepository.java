@@ -91,7 +91,7 @@ public class PersonRepository {
             }
             return new Person(person.id(), person.sheetId(), person.name(), person.grade(), person.version() + 1,
                     person.statementCount(), person.statedTotal(), person.statementDate(), person.retiredFrom(),
-                    person.holds(), person.grades(), person.terms(), person.contact());
+                    person.holds(), person.grades(), person.terms(), person.contact(), person.pastRetirements());
         }
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
@@ -118,8 +118,8 @@ public class PersonRepository {
     }
 
     /**
-     * The people with the grades and holds recorded for them, each showing the grade in force on the sheet's today;
-     * their holds oldest first.
+     * The people with the grades, holds and past retirements recorded for them, each showing the grade in force on
+     * the sheet's today; their holds and past retirements oldest first.
      */
     private List<Person> withGrades(String sheetId, List<Person> found) {
         if (found.isEmpty()) {
@@ -135,6 +135,11 @@ public class PersonRepository {
             holds.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>()).add(new Hold(
                     rs.getObject("from_date", LocalDate.class), rs.getObject("to_date", LocalDate.class)));
         }, sheetId);
+        Map<Long, List<PastRetirement>> retirements = new HashMap<>();
+        jdbc.query("SELECT person_id, from_date, to_date FROM person_retirement WHERE sheet_id = ? ORDER BY id", (rs) -> {
+            retirements.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>()).add(new PastRetirement(
+                    rs.getObject("from_date", LocalDate.class), rs.getObject("to_date", LocalDate.class)));
+        }, sheetId);
         List<LocalDate> today = jdbc.query("SELECT today FROM sheet WHERE id = ?",
                 (rs, n) -> rs.getObject("today", LocalDate.class), sheetId);
         LocalDate on = today.isEmpty() ? LocalDate.now() : today.get(0);
@@ -143,7 +148,8 @@ public class PersonRepository {
             List<GradeFrom> own = grades.getOrDefault(p.id(), List.of(new GradeFrom(p.grade(), null)));
             people.add(new Person(p.id(), p.sheetId(), p.name(), Person.gradeOn(own, on, p.grade()), p.version(),
                     p.statementCount(), p.statedTotal(), p.statementDate(), p.retiredFrom(),
-                    List.copyOf(holds.getOrDefault(p.id(), List.of())), List.copyOf(own), p.terms(), p.contact()));
+                    List.copyOf(holds.getOrDefault(p.id(), List.of())), List.copyOf(own), p.terms(), p.contact(),
+                    List.copyOf(retirements.getOrDefault(p.id(), List.of()))));
         }
         return people;
     }
@@ -184,6 +190,18 @@ public class PersonRepository {
         return find(person.sheetId(), person.id());
     }
 
+    /**
+     * Unretire the retired person on this date, keeping their retirement as a past one up to it; the person as
+     * stored. Not an edit, so it leaves the version alone.
+     */
+    public Person unretire(Person person, LocalDate on) {
+        jdbc.update("INSERT INTO person_retirement (sheet_id, person_id, from_date, to_date) VALUES (?, ?, ?, ?)",
+                person.sheetId(), person.id(), Date.valueOf(person.retiredFrom()), Date.valueOf(on));
+        jdbc.update("UPDATE person SET retired_from = NULL WHERE id = ? AND sheet_id = ?", person.id(),
+                person.sheetId());
+        return find(person.sheetId(), person.id());
+    }
+
     /** Add a hold to the person; the person as stored. Not an edit, so it leaves the version alone. */
     public Person hold(Person person, Hold hold) {
         jdbc.update("INSERT INTO person_hold (sheet_id, person_id, from_date, to_date) VALUES (?, ?, ?, ?)",
@@ -197,7 +215,7 @@ public class PersonRepository {
      * in the order added, become the other's newest aliases; their patrons are added after the other's, in the order named (not the other,
      * no repeats); anyone naming them as patron names the other instead (not themselves, no repeats); their pool
      * memberships move to the other (shares added where the other is already a member). Their statements, grades,
-     * holds, watchers and contact are dropped with them.
+     * holds, past retirements, watchers and contact are dropped with them.
      */
     public void merge(Person from, Person into) {
         String sheetId = from.sheetId();
@@ -235,6 +253,7 @@ public class PersonRepository {
         jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+        jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, gone);
     }
@@ -290,7 +309,7 @@ public class PersonRepository {
 
     /**
      * Copy the person to the other sheet as its newest person, with every grade they were given (and its from-date),
-     * their terms, contact and aliases, and no statement taken; the new person's id. The person stays on this sheet
+     * their terms, contact, aliases and past retirements, and no statement taken; the new person's id. The person stays on this sheet
      * until {@link #dropTransferred}.
      */
     public long transfer(Person person, String to) {
@@ -306,12 +325,14 @@ public class PersonRepository {
                 person.sheetId(), person.id());
         jdbc.update("UPDATE person_alias SET sheet_id = ?, person_id = ? WHERE sheet_id = ? AND person_id = ?", to, id,
                 person.sheetId(), person.id());
+        jdbc.update("UPDATE person_retirement SET sheet_id = ?, person_id = ? WHERE sheet_id = ? AND person_id = ?", to,
+                id, person.sheetId(), person.id());
         return id;
     }
 
     /**
      * Remove the person, transferred to another sheet (their claims already moved), from this sheet entirely: their
-     * statements, holds, patron links either way, pool memberships, watches and closed-period figures go with them.
+     * statements, holds, past retirements, patron links either way, pool memberships, watches and closed-period figures go with them.
      */
     public void dropTransferred(Person person) {
         String sheetId = person.sheetId();
@@ -323,6 +344,7 @@ public class PersonRepository {
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person_alias WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+        jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, gone);

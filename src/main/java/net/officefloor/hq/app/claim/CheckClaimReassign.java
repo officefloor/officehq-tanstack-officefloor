@@ -32,7 +32,7 @@ public class CheckClaimReassign {
         }
         if (to.retiredBefore(claim.date())) {
             throw new InvalidClaimException(
-                    to.name() + " is retired from " + to.retiredFrom() + ": no claim can be dated " + claim.date() + ".");
+                    to.name() + " is retired from " + to.retirementBefore(claim.date()) + ": no claim can be dated " + claim.date() + ".");
         }
         reassignment.set(new Reassignment(people.find(claim.sheetId(), claim.personId()), to));
     }

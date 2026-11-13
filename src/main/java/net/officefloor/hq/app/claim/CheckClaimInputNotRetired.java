@@ -13,7 +13,7 @@ public class CheckClaimInputNotRetired {
         LocalDate date = input.date() != null ? input.date() : sheets.entryDate(sheetId);
         if (person.retiredBefore(date)) {
             throw new InvalidClaimException(
-                    person.name() + " is retired from " + person.retiredFrom() + ": no claim can be dated " + date + ".");
+                    person.name() + " is retired from " + person.retirementBefore(date) + ": no claim can be dated " + date + ".");
         }
     }
 }

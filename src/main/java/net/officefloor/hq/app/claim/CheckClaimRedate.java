@@ -28,7 +28,7 @@ public class CheckClaimRedate {
         Person person = people.find(claim.sheetId(), claim.personId());
         if (person != null && person.retiredBefore(date)) {
             throw new InvalidClaimException(
-                    person.name() + " is retired from " + person.retiredFrom() + ": no claim can be dated " + date + ".");
+                    person.name() + " is retired from " + person.retirementBefore(date) + ": no claim can be dated " + date + ".");
         }
         redating.set(new Redating(claim.date(), date));
     }
