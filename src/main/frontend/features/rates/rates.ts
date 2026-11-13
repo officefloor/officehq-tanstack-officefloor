@@ -2,11 +2,14 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { sheetKey, useCurrentSheet } from '../session/session';
 
-/** A grade's rate as the store holds it: a percent with two decimals. */
-export type Rate = { grade: string; rate: string };
+/**
+ * A grade's rate as the store holds it: a percent with two decimals, in force from its from-date
+ * (yyyy-MM-dd; null: from the beginning of time) until the grade's next rate takes over.
+ */
+export type Rate = { grade: string; rate: string; from: string | null };
 
-/** The fields the rate form submits. */
-export type RateInput = { grade: string; rate: string };
+/** The fields the rate form submits; a blank from-date is from the beginning of time. */
+export type RateInput = { grade: string; rate: string; from: string };
 
 /** What a due shows when its grade has no rate. */
 export const NA = 'n/a';
@@ -17,7 +20,7 @@ export const PERCENT = /^(\d{1,5}(\.\d{1,2})?|\.\d{1,2})$/;
 /** The query key for the sheet's rates; under sheetKey, so re-loading the sheet re-reads them. */
 export const ratesKey = (sheet: string) => [...sheetKey(sheet), 'rates'] as const;
 
-/** The sheet's rates, by grade. */
+/** The sheet's rates, by grade and then from-date (from the start first). */
 export function useRates() {
   const [sheet] = useCurrentSheet();
   return useQuery({
@@ -27,9 +30,17 @@ export function useRates() {
   });
 }
 
-/** The grade's rate (two decimals), or undefined when it has none. */
-export function rateFor(rates: Rate[], grade: string): string | undefined {
-  return rates.find((r) => r.grade === grade)?.rate;
+/**
+ * The grade's rate (two decimals) in force on the date: the one with the latest from-date on or
+ * before it, a rate with no from-date applying from the start; undefined when none applies.
+ */
+export function rateFor(rates: Rate[], grade: string, date: string): string | undefined {
+  let found: Rate | undefined;
+  for (const r of rates) {
+    if (r.grade !== grade || (r.from !== null && r.from > date)) continue;
+    if (!found || (found.from ?? '') < (r.from ?? '')) found = r;
+  }
+  return found?.rate;
 }
 
 /** A two-decimal value as whole hundredths, exactly. */

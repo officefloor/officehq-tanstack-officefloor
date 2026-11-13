@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 /**
  * Moves the claim to the action's status; refused (400) when the claim's status does not allow it.
  * Opening gives the claim the sheet's next number; voiding clears it (the number is not reused).
- * Settling fixes the claim's due at its person's grade's current rate; with no rate it stays live.
+ * Settling fixes the claim's due at its person's grade's rate in force on the claim's date; with no rate it stays live.
  */
 public class ApplyClaimAction {
     public void apply(@PathVariable("action") String action, @Val Claim claim, SheetRepository sheets,
@@ -40,8 +40,7 @@ public class ApplyClaimAction {
     private static BigDecimal settledDue(Claim claim, PersonRepository people, RateRepository rates) {
         Person person = people.find(claim.sheetId(), claim.personId());
         BigDecimal rate = person == null ? null
-                : rates.findAll(claim.sheetId()).stream().filter((r) -> r.grade().equals(person.grade()))
-                        .map(Rate::rate).findFirst().orElse(null);
+                : Rate.inForce(rates.findAll(claim.sheetId()), person.grade(), claim.date());
         return Claim.due(claim.amount(), rate);
     }
 }
