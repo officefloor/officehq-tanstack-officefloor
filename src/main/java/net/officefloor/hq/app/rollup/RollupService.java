@@ -11,12 +11,13 @@ import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import org.springframework.stereotype.Service;
 
 /**
  * Works out a sheet's figures as the screen shows them: a person's claimed is their counting claims' amounts
- * added up; their due-total those claims' figures added up, n/a when their grade has no rate on the sheet's
+ * added up; their due-total those claims' figures (live ones raised to the sheet's floor) added up, n/a when their grade has no rate on the sheet's
  * today and no counting claim keeps a figure. The sheet's totals add these up, skipping n/a.
  */
 @Service
@@ -28,19 +29,22 @@ public class RollupService {
     private final ClaimRepository claims;
     private final RateRepository rates;
     private final SheetRepository sheets;
+    private final SettingRepository settings;
 
     public RollupService(PersonRepository people, ClaimRepository claims, RateRepository rates,
-            SheetRepository sheets) {
+            SheetRepository sheets, SettingRepository settings) {
         this.people = people;
         this.claims = claims;
         this.rates = rates;
         this.sheets = sheets;
+        this.settings = settings;
     }
 
     /** The sheet's figures as the store holds them now. */
     public Rollup compute(String sheetId) {
         LocalDate today = sheets.today(sheetId);
         List<Rate> sheetRates = rates.findAll(sheetId);
+        BigDecimal floor = settings.floor(sheetId);
         List<Claim> sheetClaims = claims.findAll(sheetId);
         Map<Long, Rollup.Figures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
@@ -55,7 +59,7 @@ public class RollupService {
                 }
                 claimed = claimed.add(claim.amount());
                 kept |= claim.due() != null || (claim.stated() && claim.statedDue() != null);
-                BigDecimal figure = claim.figure(Rate.inForce(sheetRates, person.grade(), claim.date()));
+                BigDecimal figure = claim.figure(Rate.inForce(sheetRates, person.grade(), claim.date()), floor);
                 if (figure != null) {
                     due = due.add(figure);
                 }

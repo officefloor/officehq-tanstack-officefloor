@@ -8,13 +8,16 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class SettingRepository {
 
+    /** The floor a sheet starts with. */
+    public static final BigDecimal DEFAULT_FLOOR = new BigDecimal("1.00");
+
     private final JdbcTemplate jdbc;
 
     public SettingRepository(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 
-    /** The sheet's settings: its clerk limit and its roles, by user name. */
+    /** The sheet's settings: its clerk limit, its floor and its roles, by user name. */
     public Settings find(String sheetId) {
         List<BigDecimal> limit = jdbc.query("SELECT clerk_limit FROM sheet WHERE id = ?",
                 (rs, n) -> rs.getBigDecimal("clerk_limit"), sheetId);
@@ -22,7 +25,19 @@ public class SettingRepository {
                 + " ORDER BY user_name", (rs, n) -> new UserRole(rs.getString("sheet_id"), rs.getString("user_name"),
                         Role.valueOf(rs.getString("role"))), sheetId);
         BigDecimal clerkLimit = limit.isEmpty() || limit.get(0) == null ? null : limit.get(0).setScale(2);
-        return new Settings(sheetId, clerkLimit, roles);
+        return new Settings(sheetId, clerkLimit, floor(sheetId), roles);
+    }
+
+    /** The sheet's floor: a claim's live due is at least it (1.00 for a sheet not yet stored). */
+    public BigDecimal floor(String sheetId) {
+        List<BigDecimal> floor = jdbc.query("SELECT due_floor FROM sheet WHERE id = ?",
+                (rs, n) -> rs.getBigDecimal("due_floor"), sheetId);
+        return floor.isEmpty() || floor.get(0) == null ? DEFAULT_FLOOR : floor.get(0).setScale(2);
+    }
+
+    /** Set the sheet's floor. */
+    public void saveFloor(String sheetId, BigDecimal floor) {
+        jdbc.update("UPDATE sheet SET due_floor = ? WHERE id = ?", floor, sheetId);
     }
 
     /** Set the sheet's clerk limit (null: no limit). */

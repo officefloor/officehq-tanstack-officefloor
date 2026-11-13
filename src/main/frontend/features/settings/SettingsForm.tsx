@@ -3,27 +3,33 @@ import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { putJson } from '../../api/http';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
-import { AMOUNT, settingsKey, useSettings } from './settings';
+import { AMOUNT, DEFAULT_FLOOR, settingsKey, useSettings } from './settings';
 import type { Settings } from './settings';
 import { useOneAtATime } from '../../query/useOneAtATime';
 
-// The sheet's clerk limit in force (blank: no limit) and the form that sets it.
+/** The settings the form sends: only those whose field was touched since the last save. */
+type SettingsInput = { clerkLimit?: string; floor?: string };
+
+// The sheet's clerk limit (blank: no limit) and floor in force, and the form that sets them. Saving sends
+// only the fields touched since the last save, so a blank field left alone changes nothing.
 export function SettingsForm() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const settings = useSettings().data;
   const [clerkLimit, setClerkLimit] = useState('');
+  const [floor, setFloor] = useState('');
+  const [touched, setTouched] = useState<{ clerkLimit: boolean; floor: boolean }>({ clerkLimit: false, floor: false });
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
   const once = useOneAtATime();
 
   const save = useMutation({
-    mutationFn: (value: string) =>
-      putJson<Settings>(`/api/sheets/${encodeURIComponent(sheet)}/settings?user=${encodeURIComponent(user)}`, {
-        clerkLimit: value,
-      }),
+    mutationFn: (input: SettingsInput) =>
+      putJson<Settings>(`/api/sheets/${encodeURIComponent(sheet)}/settings?user=${encodeURIComponent(user)}`, input),
     onSuccess: async (saved) => {
       setClerkLimit('');
+      setFloor('');
+      setTouched({ clerkLimit: false, floor: false });
       setError('');
       queryClient.setQueryData(settingsKey(sheet), saved);
       await queryClient.invalidateQueries({ queryKey: settingsKey(sheet) });
@@ -36,12 +42,25 @@ export function SettingsForm() {
   const submit = (e: FormEvent) => {
     e.preventDefault();
     setError('');
-    const value = clerkLimit.trim();
-    if (value !== '' && !AMOUNT.test(value)) {
-      setError('Type a clerk limit of 0.00 or more, with at most two decimals, or leave it blank for no limit.');
-      return;
+    const input: SettingsInput = {};
+    if (touched.clerkLimit) {
+      const value = clerkLimit.trim();
+      if (value !== '' && !AMOUNT.test(value)) {
+        setError('Type a clerk limit of 0.00 or more, with at most two decimals, or leave it blank for no limit.');
+        return;
+      }
+      input.clerkLimit = value;
     }
-    once(() => save.mutateAsync(value));
+    if (touched.floor) {
+      const value = floor.trim();
+      if (value !== '' && !AMOUNT.test(value)) {
+        setError(`Type a floor of 0.00 or more, with at most two decimals, or leave it blank for ${DEFAULT_FLOOR}.`);
+        return;
+      }
+      input.floor = value;
+    }
+    if (input.clerkLimit === undefined && input.floor === undefined) return;
+    once(() => save.mutateAsync(input));
   };
 
   return (
@@ -49,13 +68,29 @@ export function SettingsForm() {
       <p>
         Clerk limit: <span data-testid="setting-clerk-limit-current">{settings?.clerkLimit ?? ''}</span>
       </p>
+      <p>
+        Floor: <span data-testid="setting-floor-current">{settings?.floor ?? ''}</span>
+      </p>
       <form onSubmit={submit} data-testid="settings-form">
         <input
           data-testid="setting-clerk-limit"
           placeholder="Clerk limit (blank: no limit)"
           value={clerkLimit}
+          onFocus={() => setTouched((t) => ({ ...t, clerkLimit: true }))}
           onChange={(e) => {
             setClerkLimit(e.target.value);
+            setTouched((t) => ({ ...t, clerkLimit: true }));
+            setError('');
+          }}
+        />
+        <input
+          data-testid="setting-floor"
+          placeholder={`Floor (blank: ${DEFAULT_FLOOR})`}
+          value={floor}
+          onFocus={() => setTouched((t) => ({ ...t, floor: true }))}
+          onChange={(e) => {
+            setFloor(e.target.value);
+            setTouched((t) => ({ ...t, floor: true }));
             setError('');
           }}
         />

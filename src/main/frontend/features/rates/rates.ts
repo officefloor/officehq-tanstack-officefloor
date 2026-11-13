@@ -62,14 +62,19 @@ export function due(amount: string, rate: string | undefined): string {
   return (cents / 100).toFixed(2);
 }
 
+/** A live due raised to the floor (both two decimals); n/a stays n/a. */
+export function floored(value: string, floor: string): string {
+  return value !== NA && hundredths(value) < hundredths(floor) ? Number(floor).toFixed(2) : value;
+}
+
 /**
  * A claim's figure: the due fixed when it was settled, else the figure its statement bound it to,
- * else its amount at the rate in force on its date for the grade.
+ * else its amount at the rate in force on its date for the grade, at least the sheet's floor.
  */
-export function claimDue(claim: Claim, rates: Rate[], grade: string): string {
+export function claimDue(claim: Claim, rates: Rate[], grade: string, floor: string): string {
   if (claim.due !== null) return claim.due;
   if (claim.stated) return claim.statedDue ?? NA;
-  return due(claim.amount, rateFor(rates, grade, claim.date));
+  return floored(due(claim.amount, rateFor(rates, grade, claim.date)), floor);
 }
 
 /** Whether a claim keeps a figure whatever the rates: fixed when settled, or bound by a statement. */
@@ -80,9 +85,16 @@ const keepsFigure = (c: Claim) => c.due !== null || (c.stated && c.statedDue !==
  * rate in force on the sheet's today for their grade it is n/a, unless a settled or stated claim
  * keeps a figure: then it is the figures there are, added up. While they are held, their open claims do not count.
  */
-export function personDue(claims: Claim[], rates: Rate[], grade: string, today: string, held: boolean): string {
+export function personDue(
+  claims: Claim[],
+  rates: Rate[],
+  grade: string,
+  today: string,
+  held: boolean,
+  floor: string,
+): string {
   const counted = claims.filter((c) => counts(c, held));
-  const figures = counted.map((c) => claimDue(c, rates, grade));
+  const figures = counted.map((c) => claimDue(c, rates, grade, floor));
   if (rateFor(rates, grade, today) === undefined && !counted.some(keepsFigure)) {
     return NA;
   }

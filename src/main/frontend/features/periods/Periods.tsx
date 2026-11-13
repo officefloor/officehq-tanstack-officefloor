@@ -6,6 +6,7 @@ import { useClaims } from '../claims/claims';
 import { usePeople } from '../people/people';
 import { useRates } from '../rates/rates';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
+import { useFloor } from '../settings/settings';
 import { periodDue, periodsKey, usePeriods } from './periods';
 import type { Period, PeriodInput } from './periods';
 import { useOneAtATime } from '../../query/useOneAtATime';
@@ -23,6 +24,7 @@ export function Periods() {
   const claims = useClaims().data ?? [];
   const people = usePeople().data ?? [];
   const rates = useRates().data ?? [];
+  const floor = useFloor();
   const [form, setForm] = useState<PeriodInput>(EMPTY);
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
@@ -98,7 +100,7 @@ export function Periods() {
               <td data-testid="period-name">{p.name}</td>
               <td data-testid="period-from">{p.from}</td>
               <td data-testid="period-to">{p.to}</td>
-              <td data-testid="period-due-total">{periodDue(p, claims, people, rates)}</td>
+              <td data-testid="period-due-total">{periodDue(p, claims, people, rates, floor)}</td>
               <td data-testid="period-closed">{p.closed ? 'yes' : 'no'}</td>
               <td>
                 <button

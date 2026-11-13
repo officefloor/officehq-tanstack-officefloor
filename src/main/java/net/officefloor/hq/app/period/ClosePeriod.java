@@ -11,6 +11,7 @@ import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
@@ -20,20 +21,21 @@ import net.officefloor.plugin.variable.Val;
  */
 public class ClosePeriod {
     public void close(@Val Period period, ClaimRepository claims, PersonRepository people, RateRepository rates,
-            Out<Period> closed) throws InvalidPeriodException {
+            SettingRepository settings, Out<Period> closed) throws InvalidPeriodException {
         if (period.closed()) {
             throw new InvalidPeriodException("The period " + period.name() + " is already closed.");
         }
         Map<Long, Person> byId = people.findAll(period.sheetId()).stream()
                 .collect(Collectors.toMap(Person::id, Function.identity()));
         List<Rate> sheetRates = rates.findAll(period.sheetId());
+        BigDecimal floor = settings.floor(period.sheetId());
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         for (Claim claim : claims.findAll(period.sheetId())) {
             Person person = byId.get(claim.personId());
             if (person == null || !person.counts(claim) || !period.contains(claim.date())) {
                 continue;
             }
-            BigDecimal figure = claim.figure(Rate.inForce(sheetRates, person.grade(), claim.date()));
+            BigDecimal figure = claim.figure(Rate.inForce(sheetRates, person.grade(), claim.date()), floor);
             if (figure != null) {
                 total = total.add(figure);
             }

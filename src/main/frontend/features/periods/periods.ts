@@ -40,12 +40,12 @@ export const periodOf = (periods: Period[], date: string) => periods.find((p) =>
  * open ones left out), added up; a
  * closed period keeps the total fixed when it was closed, whatever the rates do later.
  */
-export function periodDue(period: Period, claims: Claim[], people: Person[], rates: Rate[]): string {
+export function periodDue(period: Period, claims: Claim[], people: Person[], rates: Rate[], floor: string): string {
   if (period.closed && period.closedTotal !== null) return period.closedTotal;
   const grades = new Map(people.map((p) => [p.id, p.grade]));
   const held = heldIds(people);
   const figures = claims
     .filter((c) => counts(c, held.has(c.personId)) && contains(period, c.date) && grades.has(c.personId))
-    .map((c) => claimDue(c, rates, grades.get(c.personId)!));
+    .map((c) => claimDue(c, rates, grades.get(c.personId)!, floor));
   return total(figures);
 }

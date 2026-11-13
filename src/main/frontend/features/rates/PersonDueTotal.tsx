@@ -1,6 +1,7 @@
 import { useClaims } from '../claims/claims';
 import type { Person } from '../people/people';
 import { useSheetToday } from '../session/sheetToday';
+import { useFloor } from '../settings/settings';
 import { personDue, useRates } from './rates';
 
 // A person's due-total: the figures of their claims that count, added up; n/a when their grade has no
@@ -8,6 +9,7 @@ import { personDue, useRates } from './rates';
 export function PersonDueTotal({ person }: { person: Person }) {
   const rates = useRates().data ?? [];
   const today = useSheetToday();
+  const floor = useFloor();
   const claims = (useClaims().data ?? []).filter((c) => c.personId === person.id);
-  return <td data-testid="person-due-total">{personDue(claims, rates, person.grade, today, person.held)}</td>;
+  return <td data-testid="person-due-total">{personDue(claims, rates, person.grade, today, person.held, floor)}</td>;
 }

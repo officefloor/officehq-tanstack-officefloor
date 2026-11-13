@@ -33,18 +33,24 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
 
     /**
      * The claim's figure (null: n/a): the due fixed when it was settled, else the figure its statement bound
-     * it to, else its amount at the given live rate (null: none).
+     * it to, else its amount at the given live rate (null: none), at least the sheet's floor.
      */
-    public BigDecimal figure(BigDecimal liveRate) {
+    public BigDecimal figure(BigDecimal liveRate, BigDecimal floor) {
         if (due != null) {
             return due;
         }
-        return stated ? statedDue : due(amount, liveRate);
+        return stated ? statedDue : due(amount, liveRate, floor);
     }
 
     /** An amount times a percent rate, divided by 100, rounded half to even to two decimals; null with no rate. */
     public static BigDecimal due(BigDecimal amount, BigDecimal rate) {
         return rate == null ? null : amount.multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);
+    }
+
+    /** A live due: {@link #due(BigDecimal, BigDecimal)}, raised to the floor; null with no rate. */
+    public static BigDecimal due(BigDecimal amount, BigDecimal rate, BigDecimal floor) {
+        BigDecimal due = due(amount, rate);
+        return due == null || due.compareTo(floor) >= 0 ? due : floor.setScale(2);
     }
 
     /** The audit field for the claim's number, " number=<n>", or "" when it has none. */

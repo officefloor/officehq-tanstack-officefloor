@@ -3,8 +3,11 @@ package net.officefloor.hq.app.setting;
 import java.math.BigDecimal;
 import java.util.List;
 
-/** A sheet's settings: its clerk limit (null: no limit) and the roles given to user names (any other name is a clerk). */
-public record Settings(String sheetId, BigDecimal clerkLimit, List<UserRole> roles) {
+/**
+ * A sheet's settings: its clerk limit (null: no limit), its floor (a claim's live due is at least it) and the
+ * roles given to user names (any other name is a clerk).
+ */
+public record Settings(String sheetId, BigDecimal clerkLimit, BigDecimal floor, List<UserRole> roles) {
 
     /** The role of the user name: the one given to it, else clerk. */
     public Role roleOf(String user) {
