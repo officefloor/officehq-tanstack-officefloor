@@ -6,6 +6,6 @@ import net.officefloor.plugin.variable.Val;
 
 public class ApplySheetToday {
     public void apply(@Val LocalDate today, @Val Sheet sheet, Out<Sheet> updated) {
-        updated.set(new Sheet(sheet.id(), today));
+        updated.set(new Sheet(sheet.id(), today, sheet.archived()));
     }
 }

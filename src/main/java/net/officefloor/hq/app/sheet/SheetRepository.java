@@ -25,8 +25,9 @@ public class SheetRepository {
 
     /** The sheet with this id, or null when it was never loaded. */
     public Sheet find(String id) {
-        List<Sheet> found = jdbc.query("SELECT id, today FROM sheet WHERE id = ?",
-                (rs, n) -> new Sheet(rs.getString("id"), rs.getDate("today").toLocalDate()), id);
+        List<Sheet> found = jdbc.query("SELECT id, today, archived FROM sheet WHERE id = ?",
+                (rs, n) -> new Sheet(rs.getString("id"), rs.getDate("today").toLocalDate(), rs.getBoolean("archived")),
+                id);
         return found.isEmpty() ? null : found.get(0);
     }
 
@@ -71,7 +72,14 @@ public class SheetRepository {
         }
     }
 
+    /** Whether the sheet is archived: every change to an archived sheet is refused. */
+    public boolean isArchived(String id) {
+        Sheet sheet = find(id);
+        return sheet != null && sheet.archived();
+    }
+
     public void save(Sheet sheet) {
-        jdbc.update("UPDATE sheet SET today = ? WHERE id = ?", Date.valueOf(sheet.today()), sheet.id());
+        jdbc.update("UPDATE sheet SET today = ?, archived = ? WHERE id = ?", Date.valueOf(sheet.today()),
+                sheet.archived(), sheet.id());
     }
 }

@@ -8,11 +8,15 @@ import type { SheetInfo } from './session';
  * every default date on screen uses this — never `new Date()`.
  */
 export function useSheetToday(): string {
+  return useSheetInfo().data?.today ?? '';
+}
+
+/** The active sheet as the store holds it (its id, today and whether it is archived). */
+export function useSheetInfo() {
   const [sheet] = useCurrentSheet();
-  const info = useQuery({
+  return useQuery({
     queryKey: sheetInfoKey(sheet),
     queryFn: () => getJson<SheetInfo>(`/api/sheets/${encodeURIComponent(sheet)}`),
     enabled: !!sheet,
   });
-  return info.data?.today ?? '';
 }

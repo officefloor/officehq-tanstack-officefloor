@@ -1,18 +1,19 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { putJson } from '../../api/http';
+import { postJson, putJson } from '../../api/http';
 import { sheetInfoKey, sheetKey, useCurrentSheet, useCurrentUser } from './session';
 import type { SheetInfo } from './session';
-import { useSheetToday } from './sheetToday';
+import { useSheetInfo, useSheetToday } from './sheetToday';
 import { useOneAtATime } from '../../query/useOneAtATime';
 
 // The sheet's own "today": shown, and changed by typing a date and saving. A blank date resets it
-// to the real date.
+// to the real date. A steward can archive the sheet here: an archived sheet refuses every change.
 export function SheetToday() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const today = useSheetToday();
+  const info = useSheetInfo();
   const [date, setDate] = useState('');
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
@@ -27,6 +28,13 @@ export function SheetToday() {
       await queryClient.invalidateQueries({ queryKey: sheetKey(saved.id) });
     },
     onError: () => setError('That date could not be set as today.'),
+  });
+
+  const archive = useMutation({
+    mutationFn: () =>
+      postJson<SheetInfo>(`/api/sheets/${encodeURIComponent(sheet)}/archive?user=${encodeURIComponent(user)}`, {}),
+    onSuccess: (saved) => queryClient.setQueryData(sheetInfoKey(saved.id), saved),
+    onError: () => setError('The sheet could not be archived.'),
   });
 
   if (!user || !sheet) return null;
@@ -58,6 +66,20 @@ export function SheetToday() {
       />
       <button type="submit" data-testid="sheet-today-save" disabled={save.isPending}>
         Set today
+      </button>
+      <span>
+        {' '}Archived: <strong data-testid="sheet-archived">{info.data ? (info.data.archived ? 'yes' : 'no') : ''}</strong>{' '}
+      </span>
+      <button
+        type="button"
+        data-testid="sheet-archive"
+        disabled={archive.isPending}
+        onClick={() => {
+          setError('');
+          once(() => archive.mutateAsync());
+        }}
+      >
+        Archive sheet
       </button>
       {error && <span data-testid="sheet-error">{error}</span>}
     </form>
