@@ -1,0 +1,129 @@
+diff --git a/src/main/frontend/features/header/consolidated.slot.tsx b/src/main/frontend/features/header/consolidated.slot.tsx
+index 8c371ce95..7a59bb601 100644
+--- a/src/main/frontend/features/header/consolidated.slot.tsx
++++ b/src/main/frontend/features/header/consolidated.slot.tsx
+@@ -1,30 +1,13 @@
+-import { useQuery } from '@tanstack/react-query';
+-import { getJson } from '../../api/http';
+ import { AppHeader } from '../../slots/defs/appHeader';
+-import { useAsOf, useCurrentSheet } from '../../session/session';
+-import { asOfKey, asOfPath, sheetKey } from '../sheet/sheet';
++import { useCurrentSheet } from '../../session/session';
+ import { GRADES, gradeOn, usePeople } from '../people/people';
+ import { STATUSES, statusCount, useClaims } from '../claims/claims';
+-import { useSheetToday } from '../sheet/sheet';
++import { useDescendants, useSheetToday } from '../sheet/sheet';
+ import { dueTotal, trimmedTotal } from '../rates/rates';
+ import { usePersonDue } from '../rates/due.slot';
+ import { useOverdue } from '../overdue/overdue.slot';
+ import { useFigure } from '../locale/locale';
+ 
+-/** Under the sheet's key, so loading the sheet again re-reads its descendants. */
+-const descendantsKey = (sheet: string) => [...sheetKey(sheet), 'descendants'] as const;
+-
+-/** The ids of the sheets naming the sheet as their parent, their children, and so on (as of the screen's
+- *  as-of date, when one is set). */
+-function useDescendants(sheet: string) {
+-  const [asOf] = useAsOf();
+-  return useQuery({
+-    queryKey: asOfKey(descendantsKey(sheet), asOf),
+-    queryFn: () => getJson<string[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/descendants`, asOf)),
+-    enabled: sheet !== '',
+-  });
+-}
+-
+ type Figures = {
+   people: string[][];
+   due: string[];
+diff --git a/src/main/frontend/features/roles/dashboard.slot.tsx b/src/main/frontend/features/roles/dashboard.slot.tsx
+index 01a862b02..fce9043b6 100644
+--- a/src/main/frontend/features/roles/dashboard.slot.tsx
++++ b/src/main/frontend/features/roles/dashboard.slot.tsx
+@@ -2,7 +2,7 @@ import { HomeMain } from '../../slots/defs/homeMain';
+ import { useCurrentSheet, useCurrentUser } from '../../session/session';
+ import { statusCount, useClaims } from '../claims/claims';
+ import { useSheetOverdue } from '../overdue/overdue.slot';
+-import { useSheetToday } from '../sheet/sheet';
++import { useDescendants, useSheetToday } from '../sheet/sheet';
+ import { useDelegations, useRoles } from './roles';
+ 
+ /** Whether the user acts as a steward on the sheet's today (the as-of date under one): steward by role
+@@ -17,20 +17,49 @@ function useIsSteward(sheet: string, user: string): boolean {
+   return delegations.some((d) => d.user === name && d.from <= today && today <= d.to);
+ }
+ 
+-// A steward's dashboard: the sheet's PENDING and REVIEW claims, and its overdue claims that count. A user
+-// who is not a steward (as the screen's as-of date had them) sees the cells empty.
++type Counts = { pending: number; review: number; overdue: number };
++
++/** Adds the first sheet's counts (as that sheet shows them) to those so far, then the rest's, one sheet per
++ *  component so each reads its sheet with the same hooks; shows the sums once every sheet is added. */
++function DashCounts({ sheets, sofar }: { sheets: string[]; sofar: Counts }) {
++  const [first, ...rest] = sheets;
++  const claims = useClaims(first);
++  const overdue = useSheetOverdue(first);
++  const counts: Counts = {
++    pending: sofar.pending + statusCount(claims.data, 'PENDING'),
++    review: sofar.review + statusCount(claims.data, 'REVIEW'),
++    overdue: sofar.overdue + overdue.count,
++  };
++  if (rest.length > 0) return <DashCounts sheets={rest} sofar={counts} />;
++  return (
++    <>
++      Pending <strong data-testid="dash-pending-count">{counts.pending}</strong>{' '}
++      Review <strong data-testid="dash-review-count">{counts.review}</strong>{' '}
++      Overdue <strong data-testid="dash-overdue-count">{counts.overdue}</strong>
++    </>
++  );
++}
++
++// A steward's dashboard: the PENDING and REVIEW claims, and the overdue claims that count, over the sheet and
++// all its descendants (each sheet read as it shows itself). A user who is not a steward of the sheet (as the
++// screen's as-of date had them) sees the cells empty.
+ function StewardDashboard() {
+   const [sheet] = useCurrentSheet();
+   const [user] = useCurrentUser();
+   const steward = useIsSteward(sheet, user);
+-  const claims = useClaims(sheet);
+-  const overdue = useSheetOverdue();
++  const descendants = useDescendants(sheet);
+ 
+   return (
+     <p data-testid="steward-dashboard">
+-      Pending <strong data-testid="dash-pending-count">{steward ? statusCount(claims.data, 'PENDING') : ''}</strong>{' '}
+-      Review <strong data-testid="dash-review-count">{steward ? statusCount(claims.data, 'REVIEW') : ''}</strong>{' '}
+-      Overdue <strong data-testid="dash-overdue-count">{steward ? overdue.count : ''}</strong>
++      {steward && descendants.data ? (
++        <DashCounts key={descendants.data.join(',')} sheets={[sheet, ...descendants.data]} sofar={{ pending: 0, review: 0, overdue: 0 }} />
++      ) : (
++        <>
++          Pending <strong data-testid="dash-pending-count"></strong>{' '}
++          Review <strong data-testid="dash-review-count"></strong>{' '}
++          Overdue <strong data-testid="dash-overdue-count"></strong>
++        </>
++      )}
+     </p>
+   );
+ }
+diff --git a/src/main/frontend/features/sheet/sheet.ts b/src/main/frontend/features/sheet/sheet.ts
+index 30b2054fb..f34930c70 100644
+--- a/src/main/frontend/features/sheet/sheet.ts
++++ b/src/main/frontend/features/sheet/sheet.ts
+@@ -35,3 +35,17 @@ export function useSheetToday(id: string): string | undefined {
+   const data = useSheet(id).data;
+   return data?.asOf ?? data?.today;
+ }
++
++/** Under the sheet's key, so loading the sheet again re-reads its descendants. */
++const descendantsKey = (sheet: string) => [...sheetKey(sheet), 'descendants'] as const;
++
++/** The ids of the sheets naming the sheet as their parent, their children, and so on (as of the screen's
++ *  as-of date, when one is set). */
++export function useDescendants(sheet: string) {
++  const [asOf] = useAsOf();
++  return useQuery({
++    queryKey: asOfKey(descendantsKey(sheet), asOf),
++    queryFn: () => getJson<string[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/descendants`, asOf)),
++    enabled: sheet !== '',
++  });
++}
