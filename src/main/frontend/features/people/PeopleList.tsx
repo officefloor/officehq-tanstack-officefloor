@@ -3,7 +3,7 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { PersonError } from './personError';
 import { useEditingPerson, usePeople, useShowRetired } from './people';
 
-// Every person on the sheet, in the order they were added, each with their name and grade and
+// Every person on the sheet, in their order in the list (their positions), each with their name and grade and
 // the columns features add (slots/defs/personColumns.ts). Retired people are left out unless the
 // show-retired toggle is on.
 export function PeopleList() {

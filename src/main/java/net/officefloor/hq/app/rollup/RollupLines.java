@@ -5,7 +5,7 @@ import net.officefloor.hq.app.Audit;
 
 /**
  * The lines that follow a change's own records: one ROLLUP line per person whose figures it moved (a person new to the
- * sheet counts as moved), in the order they were added, then a TOTALS line when the sheet's totals moved.
+ * sheet counts as moved), in the order of the list, then a TOTALS line when the sheet's totals moved.
  */
 public final class RollupLines {
 

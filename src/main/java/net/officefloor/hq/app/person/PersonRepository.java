@@ -20,15 +20,18 @@ public class PersonRepository {
     private static final String COLUMNS = "p.id, p.sheet_id, p.name, p.grade, p.version, p.statement_count, p.stated_total,"
             + " p.statement_date, p.retired_from, p.terms, p.contact FROM person p";
 
+    /** The position at the end of the sheet's list (the sheet id its one parameter). */
+    private static final String NEXT_POSITION = "(SELECT COALESCE(MAX(position), 0) + 1 FROM person WHERE sheet_id = ?)";
+
     private final JdbcTemplate jdbc;
 
     public PersonRepository(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 
-    /** The sheet's people, in the order they were added. */
+    /** The sheet's people, in their order in the list (by position). */
     public List<Person> findAll(String sheetId) {
-        return withGrades(sheetId, jdbc.query("SELECT " + COLUMNS + " WHERE p.sheet_id = ? ORDER BY p.id",
+        return withGrades(sheetId, jdbc.query("SELECT " + COLUMNS + " WHERE p.sheet_id = ? ORDER BY p.position, p.id",
                 PersonRepository::map, sheetId));
     }
 
@@ -93,12 +96,14 @@ public class PersonRepository {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade, terms, contact) VALUES (?, ?, ?, ?, ?)", new String[] { "id" });
+                    "INSERT INTO person (sheet_id, name, grade, terms, contact, position) VALUES (?, ?, ?, ?, ?, "
+                            + NEXT_POSITION + ")", new String[] { "id" });
             ps.setString(1, person.sheetId());
             ps.setString(2, person.name());
             ps.setString(3, person.grade());
             ps.setObject(4, person.terms());
             ps.setString(5, person.contact());
+            ps.setString(6, person.sheetId());
             return ps;
         }, keys);
         long id = keys.getKey().longValue();
@@ -234,6 +239,32 @@ public class PersonRepository {
         jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, gone);
     }
 
+    /**
+     * Swap the person with the one above (up) or below (down) them in the sheet's list; their new position, counting
+     * from 1, or 0 when there is no one there (the top person moving up, the bottom one down).
+     */
+    public int move(Person person, boolean up) {
+        List<Map<String, Object>> order = jdbc.queryForList(
+                "SELECT id, position FROM person WHERE sheet_id = ? ORDER BY position, id", person.sheetId());
+        int at = -1;
+        for (int i = 0; i < order.size(); i++) {
+            if (((Number) order.get(i).get("id")).longValue() == person.id()) {
+                at = i;
+            }
+        }
+        int to = up ? at - 1 : at + 1;
+        if (at < 0 || to < 0 || to >= order.size()) {
+            return 0;
+        }
+        // the list renumbered 1..n with the two swapped, so no two people ever share a position
+        for (int i = 0; i < order.size(); i++) {
+            long position = i == at ? to + 1 : i == to ? at + 1 : i + 1;
+            jdbc.update("UPDATE person SET position = ? WHERE id = ? AND sheet_id = ?", position,
+                    order.get(i).get("id"), person.sheetId());
+        }
+        return to + 1;
+    }
+
     /** The person's aliases, in the order they were added. */
     public List<String> aliases(String sheetId, long personId) {
         return jdbc.queryForList("SELECT alias FROM person_alias WHERE sheet_id = ? AND person_id = ? ORDER BY id",
@@ -251,6 +282,7 @@ public class PersonRepository {
         changed.put("statement_count", 0);
         changed.put("stated_total", null);
         changed.put("statement_date", null);
+        changed.put("position", jdbc.queryForObject("SELECT " + NEXT_POSITION, Long.class, to));
         long id = RowCopy.copy(jdbc, "person", person.id(), changed);
         jdbc.update("UPDATE person_grade SET sheet_id = ?, person_id = ? WHERE sheet_id = ? AND person_id = ?", to, id,
                 person.sheetId(), person.id());

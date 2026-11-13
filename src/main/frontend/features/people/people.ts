@@ -70,7 +70,7 @@ export type PersonInput = { name: string; grade: string; gradeFrom: string; term
 /** The query key for the sheet's people; under sheetKey, so re-loading the sheet re-reads them. */
 export const peopleKey = (sheet: string) => [...sheetKey(sheet), 'people'] as const;
 
-/** The sheet's people, in the order they were added. */
+/** The sheet's people, in their order in the list (new people go to the end; they can be moved up and down). */
 export function usePeople() {
   const [sheet] = useCurrentSheet();
   return useQuery({
