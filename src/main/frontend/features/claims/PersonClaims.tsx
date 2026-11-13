@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson, putJson } from '../../api/http';
+import { ClaimRowValues } from '../../slots/defs/claimRow';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import type { Person } from '../people/people';
 import { AMOUNT, claimsKey, useClaims } from './claims';
@@ -73,6 +74,7 @@ export function PersonClaims({ person }: { person: Person }) {
             <span data-testid="claim-note" style={{ whiteSpace: 'pre' }}>
               {c.note}
             </span>{' '}
+            <ClaimRowValues.Slot claim={c} person={person} />{' '}
             {editing === c.id ? (
               <button type="button" data-testid="claim-cancel" onClick={close}>
                 Cancel
