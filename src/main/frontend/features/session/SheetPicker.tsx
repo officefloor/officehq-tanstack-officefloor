@@ -16,23 +16,29 @@ export function SheetPicker() {
   const once = useOneAtATime();
   // The current id shows once everything kept for the sheet has been read, so what is on screen
   // under it is what the store holds for that sheet. Checked after the screen's queries have
-  // mounted and started, so a query not yet begun does not count as read.
+  // mounted and started, so a query not yet begun does not count as read. Only a load (or a switch
+  // of sheet) hides it; a re-read some other change starts (a new today, a saved row) leaves the
+  // loaded sheet's id showing.
   const fetching = useIsFetching({ queryKey: sheetKey(sheet) });
   const [shown, setShown] = useState('');
+  const [loads, setLoads] = useState(0);
   useEffect(() => {
     setShown('');
+  }, [sheet, loads]);
+  useEffect(() => {
     if (fetching > 0) return;
     const timer = setTimeout(() => {
       const queries = queryClient.getQueryCache().findAll({ queryKey: sheetKey(sheet) });
       if (queries.every((q) => q.state.fetchStatus === 'idle' && q.state.status !== 'pending')) setShown(sheet);
     }, 0);
     return () => clearTimeout(timer);
-  }, [sheet, fetching, queryClient]);
+  }, [sheet, loads, fetching, queryClient]);
 
   const load = useMutation({
     mutationFn: (sheetId: string) => postJson<{ id: string }>('/api/sheets', { id: sheetId }),
     onSuccess: async ({ id: loaded }) => {
       setSheet(loaded);
+      setLoads((n) => n + 1);
       await queryClient.invalidateQueries({ queryKey: sheetKey(loaded) });
     },
     onError: () => setError('That sheet could not be loaded.'),

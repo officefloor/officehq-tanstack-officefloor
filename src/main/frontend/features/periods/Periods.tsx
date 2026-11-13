@@ -39,6 +39,20 @@ export function Periods() {
     onError: () => setError('That period could not be added: its name must be new and its dates must not overlap another period.'),
   });
 
+  // The period whose close was refused, and why; cleared by the next action on a period.
+  const [rowError, setRowError] = useState<{ name: string; message: string } | null>(null);
+  const close = useMutation({
+    mutationFn: (name: string) =>
+      postJson<Period>(
+        `/api/sheets/${encodeURIComponent(sheet)}/periods/${encodeURIComponent(name)}/close?user=${encodeURIComponent(user)}`,
+        {},
+      ),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: periodsKey(sheet) });
+    },
+    onError: (_e, name) => setRowError({ name, message: 'That period could not be closed.' }),
+  });
+
   if (!user || !sheet) return null;
 
   const submit = (e: FormEvent) => {
@@ -74,6 +88,8 @@ export function Periods() {
             <th>From</th>
             <th>To</th>
             <th>Due</th>
+            <th>Closed</th>
+            <th />
           </tr>
         </thead>
         <tbody>
@@ -83,6 +99,21 @@ export function Periods() {
               <td data-testid="period-from">{p.from}</td>
               <td data-testid="period-to">{p.to}</td>
               <td data-testid="period-due-total">{periodDue(p, claims, people, rates)}</td>
+              <td data-testid="period-closed">{p.closed ? 'yes' : 'no'}</td>
+              <td>
+                <button
+                  type="button"
+                  data-testid="period-close"
+                  disabled={close.isPending}
+                  onClick={() => {
+                    setRowError(null);
+                    once(() => close.mutateAsync(p.name));
+                  }}
+                >
+                  Close
+                </button>
+                {rowError?.name === p.name && <span data-testid="period-error">{rowError.message}</span>}
+              </td>
             </tr>
           ))}
         </tbody>
