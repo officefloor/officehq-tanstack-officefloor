@@ -77,7 +77,7 @@ export function Pools() {
 
 const EMPTY = { personId: '', share: '' };
 
-// A pool's row: its members with their shares, its total share and whether it is balanced, and the form that adds a
+// A pool's row: its members with their shares and cuts of the pot (blank: an unbalanced pool, or no pot), its total share and whether it is balanced, and the form that adds a
 // member; a person already in the pool, or a share not more than 0.00 and at most 100.00 (two decimals), is refused.
 function PoolRow({ pool }: { pool: Pool }) {
   const [user] = useCurrentUser();
@@ -136,7 +136,7 @@ function PoolRow({ pool }: { pool: Pool }) {
         {pool.members.map((m) => (
           <li key={m.personId} data-testid={`pool-member-${pool.name}-${m.personId}`}>
             <span data-testid="pool-member-name">{m.name}</span> <span data-testid="pool-share">{m.share}</span>
-            {m.retired && ' (retired)'}
+            {m.retired && ' (retired)'} cut <span data-testid="pool-cut">{m.cut}</span>
           </li>
         ))}
       </ul>

@@ -29,7 +29,7 @@ public class ValidateSettingsRequest {
             Out<Terms> terms, Out<LatePct> latePct, Out<PolicyDate> policyDate,
             Out<PeriodNumberingFrom> periodNumberingFrom, Out<EntryDate> entryDate, Out<GradeTerms> gradeTerms, Out<Cap> cap,
             Out<ProofThreshold> proofThreshold, Out<NoteThreshold> noteThreshold, Out<PermissionChanges> permissions, Out<GraceDays> graceDays,
-            Out<GradeGrace> gradeGrace, Out<GradeProofThreshold> gradeProofThreshold)
+            Out<GradeGrace> gradeGrace, Out<GradeProofThreshold> gradeProofThreshold, Out<Pot> pot)
             throws InvalidSettingException {
         limit.set(clerkLimit(request.clerkLimit(), from(request.clerkLimitFrom(), "clerk limit")));
         floor.set(floor(request.floor(), from(request.floorFrom(), "floor")));
@@ -46,6 +46,21 @@ public class ValidateSettingsRequest {
         graceDays.set(graceDays(request.graceDays()));
         gradeGrace.set(gradeGrace(request.gradeGrace(), request.gradeGraceFrom()));
         gradeProofThreshold.set(gradeProofThreshold(request.gradeProofThreshold(), request.gradeProofThresholdFrom()));
+        pot.set(pot(request.pot()));
+    }
+
+    private static Pot pot(String requested) throws InvalidSettingException {
+        if (requested == null) {
+            return new Pot(false, null);
+        }
+        String value = requested.trim();
+        if (value.isEmpty()) {
+            return new Pot(true, null);
+        }
+        if (!AMOUNT.matcher(value).matches()) {
+            throw new InvalidSettingException("The pot must be 0.00 or more, with at most two decimals, or blank.");
+        }
+        return new Pot(true, new BigDecimal(value).setScale(2));
     }
 
     /** A from-date typed with a setting (null: left out or blank, the sheet's today). */

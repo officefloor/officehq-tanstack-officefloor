@@ -2,8 +2,11 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { sheetKey, useCurrentSheet } from '../session/session';
 
-/** A pool's member: the person, their share percent (two decimals) and whether a retirement date is set. */
-export type PoolMember = { personId: number; name: string; share: string; retired: boolean };
+/**
+ * A pool's member: the person, their share percent (two decimals), whether a retirement date is set and their cut of
+ * the sheet's pot ('': none — the pool is unbalanced, or the sheet has no pot).
+ */
+export type PoolMember = { personId: number; name: string; share: string; retired: boolean; cut: string };
 
 /**
  * A pool on the sheet: its members in the order they were added, the total share (a retired member's share counts

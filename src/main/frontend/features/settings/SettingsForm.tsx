@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { putJson } from '../../api/http';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
+import { poolsKey } from '../pools/pools';
 import {
   AMOUNT,
   DATE,
@@ -50,6 +51,7 @@ type SettingsInput = {
   gradeProofThresholdFrom?: Record<string, string>;
   permissions?: Record<string, string>;
   graceDays?: string;
+  pot?: string;
 };
 
 /** The from-date field of each dated setting, by its key as the screen names it (terms-A for a grade's terms). */
@@ -67,6 +69,7 @@ type Touched = {
   proofThreshold: boolean;
   noteThreshold: boolean;
   graceDays: boolean;
+  pot: boolean;
 };
 
 const UNTOUCHED: Touched = {
@@ -81,10 +84,11 @@ const UNTOUCHED: Touched = {
   proofThreshold: false,
   noteThreshold: false,
   graceDays: false,
+  pot: false,
 };
 
 // The sheet's clerk limit (blank: no limit), floor, terms, each grade's terms (blank: the sheet's), late percent and policy date (blank: today) and period numbering from date (blank: off) and entry date (blank: off) and cap (blank: none) and proof threshold (blank: none) and each grade's proof threshold (blank: the sheet's) and note threshold (blank: none) in force, and the
-// permission matrix (by action, the roles allowed it; blank: the standing rule; not dated), and the grace days (blank: off; not dated), and the form that sets them. Saving sends
+// permission matrix (by action, the roles allowed it; blank: the standing rule; not dated), and the grace days (blank: off; not dated), and the pot (blank: none; not dated), and the form that sets them. Saving sends
 // only the fields touched since the last save, so a blank field left alone changes nothing. A dated setting (the clerk
 // limit, floor, terms, each grade's terms, late percent, cap, proof threshold, each grade's proof threshold and note threshold) is recorded from the date typed beside it (blank: the
 // sheet's today); the value shown is the one in force on the sheet's today.
@@ -110,6 +114,7 @@ export function SettingsForm() {
   const [proofThreshold, setProofThreshold] = useState('');
   const [noteThreshold, setNoteThreshold] = useState('');
   const [graceDays, setGraceDays] = useState('');
+  const [pot, setPot] = useState('');
   const [perms, setPerms] = useState<Record<string, string>>({});
   const [touchedPerms, setTouchedPerms] = useState<Record<string, boolean>>({});
   const [froms, setFroms] = useState<Froms>({});
@@ -139,6 +144,7 @@ export function SettingsForm() {
       setProofThreshold('');
       setNoteThreshold('');
       setGraceDays('');
+      setPot('');
       setPerms({});
       setTouchedPerms({});
       setFroms({});
@@ -146,6 +152,7 @@ export function SettingsForm() {
       setError('');
       queryClient.setQueryData(settingsKey(sheet), saved);
       await queryClient.invalidateQueries({ queryKey: settingsKey(sheet) });
+      await queryClient.invalidateQueries({ queryKey: poolsKey(sheet) });
     },
     onError: () => setError('That setting could not be saved.'),
   });
@@ -326,6 +333,14 @@ export function SettingsForm() {
       }
       input.graceDays = value;
     }
+    if (touched.pot) {
+      const value = pot.trim();
+      if (value !== '' && !AMOUNT.test(value)) {
+        setError('Type a pot of 0.00 or more, with at most two decimals, or leave it blank for none.');
+        return;
+      }
+      input.pot = value;
+    }
     for (const a of PERMISSION_ACTIONS) {
       if (!touchedPerms[a]) continue;
       const value = (perms[a] ?? '').trim();
@@ -350,7 +365,8 @@ export function SettingsForm() {
       input.gradeProofThreshold === undefined &&
       input.noteThreshold === undefined &&
       input.permissions === undefined &&
-      input.graceDays === undefined
+      input.graceDays === undefined &&
+      input.pot === undefined
     )
       return;
     once(() => save.mutateAsync(input));
@@ -415,6 +431,9 @@ export function SettingsForm() {
       </p>
       <p>
         Grace days: <span data-testid="setting-grace-days-current">{settings?.graceDays ?? ''}</span>
+      </p>
+      <p>
+        Pot: <span data-testid="setting-pot-current">{settings?.pot ?? ''}</span>
       </p>
       {PERMISSION_ACTIONS.map((a) => (
         <p key={a}>
@@ -595,6 +614,17 @@ export function SettingsForm() {
           onChange={(e) => {
             setGraceDays(e.target.value);
             setTouched((t) => ({ ...t, graceDays: true }));
+            setError('');
+          }}
+        />
+        <input
+          data-testid="setting-pot"
+          placeholder="Pot shared out among each balanced pool's members (blank: none)"
+          value={pot}
+          onFocus={() => setTouched((t) => ({ ...t, pot: true }))}
+          onChange={(e) => {
+            setPot(e.target.value);
+            setTouched((t) => ({ ...t, pot: true }));
             setError('');
           }}
         />
