@@ -10,8 +10,11 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 public class ValidateClaimRequest {
 
-    /** 0.00 or more, with at most two decimals. */
-    private static final Pattern AMOUNT = Pattern.compile("\\d+(\\.\\d{1,2})?|\\.\\d{1,2}");
+    /** An amount, negative for a correction, with at most two decimals. */
+    private static final Pattern AMOUNT = Pattern.compile("-?(\\d+(\\.\\d{1,2})?|\\.\\d{1,2})");
+
+    /** A claim number. */
+    private static final Pattern NUMBER = Pattern.compile("\\d{1,9}");
 
     public void validate(@RequestBody @Valid ClaimRequest request, Out<ClaimInput> input) throws InvalidClaimException {
         String amount = request.amount() == null ? "" : request.amount().trim();
@@ -19,7 +22,7 @@ public class ValidateClaimRequest {
             throw new InvalidClaimException("An amount is required.");
         }
         if (!AMOUNT.matcher(amount).matches()) {
-            throw new InvalidClaimException("The amount must be 0.00 or more, with at most two decimals.");
+            throw new InvalidClaimException("The amount must be a number with at most two decimals.");
         }
         String date = request.date() == null ? "" : request.date().trim();
         LocalDate parsed = null;
@@ -31,6 +34,17 @@ public class ValidateClaimRequest {
             }
         }
         String note = request.note() == null ? "" : request.note().strip();
-        input.set(new ClaimInput(new BigDecimal(amount).setScale(2), parsed, note));
+        BigDecimal value = new BigDecimal(amount).setScale(2);
+        String corrects = request.corrects() == null ? "" : request.corrects().trim();
+        Integer number = null;
+        if (value.signum() < 0) {
+            if (!NUMBER.matcher(corrects).matches()) {
+                throw new InvalidClaimException("A negative amount is a correction: name the number of the claim it corrects.");
+            }
+            number = Integer.valueOf(corrects);
+        } else if (!corrects.isEmpty()) {
+            throw new InvalidClaimException("Only a correction (a negative amount) corrects a claim.");
+        }
+        input.set(new ClaimInput(value, parsed, note, number));
     }
 }

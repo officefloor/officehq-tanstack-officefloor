@@ -10,15 +10,22 @@ import java.time.LocalDate;
  * due fixed when the claim was settled, or null while it is live (not settled, or settled with no rate).
  * {@code openedBy} is the user who opened the claim, or null while it is a draft. {@code stated} is whether
  * its person's last statement bound it to a figure, {@code statedDue} (null: n/a) — it then shows and totals
- * that figure, not its live one.
+ * that figure, not its live one. {@code corrects} is, for a correction, the number of the claim it corrects (null:
+ * not a correction).
  */
 public record Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
-        ClaimStatus status, Integer number, BigDecimal due, String openedBy, boolean stated, BigDecimal statedDue) {
+        ClaimStatus status, Integer number, BigDecimal due, String openedBy, boolean stated, BigDecimal statedDue,
+        Integer corrects) {
 
     /** The same claim with another status, number, fixed due and opener. */
     public Claim withStatus(ClaimStatus next, Integer nextNumber, BigDecimal nextDue, String nextOpenedBy) {
         return new Claim(id, sheetId, personId, amount, date, note, next, nextNumber, nextDue, nextOpenedBy, stated,
-                statedDue);
+                statedDue, corrects);
+    }
+
+    /** Whether the claim is a correction: a negative amount naming the settled claim it corrects. */
+    public boolean correction() {
+        return corrects != null;
     }
 
     /** Whether the claim counts toward the totals: only OPEN and SETTLED claims do. */
@@ -33,13 +40,17 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
 
     /**
      * The claim's figure (null: n/a): the due fixed when it was settled, else the figure its statement bound
-     * it to, else its amount at the given live rate (null: none), at least the sheet's floor.
+     * it to, else its amount at the given live rate (null: none), at least the sheet's floor — a correction has
+     * no floor.
      */
     public BigDecimal figure(BigDecimal liveRate, BigDecimal floor) {
         if (due != null) {
             return due;
         }
-        return stated ? statedDue : due(amount, liveRate, floor);
+        if (stated) {
+            return statedDue;
+        }
+        return correction() ? due(amount, liveRate) : due(amount, liveRate, floor);
     }
 
     /**

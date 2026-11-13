@@ -13,7 +13,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, due, opened_by, stated, stated_due";
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, due, opened_by, stated, stated_due, corrects";
 
     private final JdbcTemplate jdbc;
 
@@ -37,15 +37,15 @@ public class ClaimRepository {
     /** Insert a new claim (null id) or update an existing one; the claim as stored. */
     public Claim save(Claim claim) {
         if (claim.id() != null) {
-            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, due = ?, opened_by = ? WHERE id = ? AND sheet_id = ?",
+            jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, claim_number = ?, due = ?, opened_by = ?, corrects = ? WHERE id = ? AND sheet_id = ?",
                     claim.amount(), Date.valueOf(claim.date()), claim.note(), claim.status().name(), claim.number(),
-                    claim.due(), claim.openedBy(), claim.id(), claim.sheetId());
+                    claim.due(), claim.openedBy(), claim.corrects(), claim.id(), claim.sheetId());
             return claim;
         }
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status) VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, corrects) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, claim.sheetId());
             ps.setLong(2, claim.personId());
@@ -53,10 +53,12 @@ public class ClaimRepository {
             ps.setDate(4, Date.valueOf(claim.date()));
             ps.setString(5, claim.note());
             ps.setString(6, claim.status().name());
+            ps.setObject(7, claim.corrects(), java.sql.Types.INTEGER);
             return ps;
         }, keys);
         return new Claim(keys.getKey().longValue(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
-                claim.note(), claim.status(), claim.number(), claim.due(), claim.openedBy(), false, null);
+                claim.note(), claim.status(), claim.number(), claim.due(), claim.openedBy(), false, null,
+                claim.corrects());
     }
 
     /** The person's claims, newest first. */
@@ -75,6 +77,7 @@ public class ClaimRepository {
         return new Claim(rs.getLong("id"), rs.getString("sheet_id"), rs.getLong("person_id"),
                 rs.getBigDecimal("amount").setScale(2), rs.getDate("claim_date").toLocalDate(), rs.getString("note"),
                 ClaimStatus.valueOf(rs.getString("status")), rs.getObject("claim_number", Integer.class),
-                rs.getBigDecimal("due"), rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"));
+                rs.getBigDecimal("due"), rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
+                rs.getObject("corrects", Integer.class));
     }
 }
