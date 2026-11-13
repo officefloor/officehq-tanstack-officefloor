@@ -38,6 +38,15 @@ public class SheetRepository {
         return sheet == null ? LocalDate.now() : sheet.today();
     }
 
+    /**
+     * Takes the sheet's next claim number (1 for its first) in one atomic statement, so two claims
+     * opened at the same moment never get the same number; a number taken is never given out again.
+     */
+    public int nextClaimNumber(String id) {
+        return jdbc.queryForObject("SELECT last_claim_number FROM FINAL TABLE "
+                + "(UPDATE sheet SET last_claim_number = last_claim_number + 1 WHERE id = ?)", Integer.class, id);
+    }
+
     public void save(Sheet sheet) {
         jdbc.update("UPDATE sheet SET today = ? WHERE id = ?", Date.valueOf(sheet.today()), sheet.id());
     }

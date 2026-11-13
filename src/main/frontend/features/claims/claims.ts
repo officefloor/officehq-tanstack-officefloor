@@ -5,8 +5,19 @@ import { sheetKey, useCurrentSheet } from '../session/session';
 /** Where a claim is in its life: DRAFT -> OPEN -> SETTLED; DRAFT or OPEN -> VOID. */
 export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 
-/** A claim as the store holds it: the amount with two decimals, the date as yyyy-MM-dd. */
-export type Claim = { id: number; personId: number; amount: string; date: string; note: string; status: ClaimStatus };
+/**
+ * A claim as the store holds it: the amount with two decimals, the date as yyyy-MM-dd; its number
+ * is the sheet's next one when it was opened, null while a draft and once voided.
+ */
+export type Claim = {
+  id: number;
+  personId: number;
+  amount: string;
+  date: string;
+  note: string;
+  status: ClaimStatus;
+  number: number | null;
+};
 
 /** Whether a claim counts toward claimed, due-total and every total: only OPEN and SETTLED do. */
 export const counts = (c: Claim) => c.status === 'OPEN' || c.status === 'SETTLED';

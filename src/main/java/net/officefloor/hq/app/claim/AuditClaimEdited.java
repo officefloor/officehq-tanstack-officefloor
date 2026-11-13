@@ -12,6 +12,6 @@ public class AuditClaimEdited {
         Person person = people.find(claim.sheetId(), claim.personId());
         audit.record("CLAIM_EDITED sheet=" + claim.sheetId() + " by=" + user + " person="
                 + (person == null ? "" : person.name()) + " amount=" + claim.amount().setScale(2).toPlainString()
-                + " date=" + claim.date());
+                + " date=" + claim.date() + Claim.auditNumber(claim.number()));
     }
 }
