@@ -8,11 +8,13 @@ import { openingsKey } from '../openings/openings';
 import { periodsKey } from './periods';
 
 type GenerateResult = { generated: number };
+type UndoResult = { fy: string; removed: number };
 
 // The year end rollover (a steward only): a fiscal year (yyyy) with periods on the sheet generates the next
 // fiscal year's twelve months as the fiscal year generator does, and carries each person's open figure at the
 // end of the old year into the new year's first period as an opening balance. The count of periods made shows
-// once it answers (gone while it runs).
+// once it answers (gone while it runs). The steward who made the last rollover may undo it on the sheet-today it
+// was made, while no claim is dated in a period it generated; a refused rollover or undo shows the one error.
 function Rollover() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -29,10 +31,22 @@ function Rollover() {
   });
   const submit = useSubmitOnce(rollover);
 
+  const undo = useMutation({
+    mutationFn: () =>
+      postJson<UndoResult>(`/api/sheets/${encodeURIComponent(sheet)}/periods/rollover-undo`, { user }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: periodsKey(sheet) });
+      void queryClient.invalidateQueries({ queryKey: openingsKey(sheet) });
+    },
+  });
+  const submitUndo = useSubmitOnce(undo);
+  const failed = rollover.isError ? rollover.error : undo.isError ? undo.error : null;
+
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
+        undo.reset();
         submit(year);
       }}
     >
@@ -44,6 +58,7 @@ function Rollover() {
         onChange={(e) => {
           setYear(e.target.value);
           rollover.reset();
+          undo.reset();
         }}
       />
       <button type="submit" data-testid="rollover" disabled={rollover.isPending}>
@@ -55,10 +70,22 @@ function Rollover() {
           Made <strong data-testid="rollover-made">{rollover.data.generated}</strong>
         </>
       )}
-      {rollover.isError && (
+      {' '}
+      <button
+        type="button"
+        data-testid="rollover-undo"
+        disabled={undo.isPending}
+        onClick={() => {
+          rollover.reset();
+          submitUndo(undefined);
+        }}
+      >
+        Undo last rollover
+      </button>
+      {failed && (
         <span data-testid="rollover-error" role="alert">
           {' '}
-          {rollover.error instanceof HttpError && rollover.error.reason ? `${rollover.error.reason}.` : 'The rollover was refused.'}
+          {failed instanceof HttpError && failed.reason ? `${failed.reason}.` : 'The rollover was refused.'}
         </span>
       )}
     </form>
