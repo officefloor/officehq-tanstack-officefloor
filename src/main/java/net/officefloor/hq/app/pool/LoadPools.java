@@ -7,6 +7,6 @@ import net.officefloor.plugin.variable.Val;
 
 public class LoadPools {
     public void load(@Val Sheet sheet, PoolRepository repository, SettingRepository settings, Out<Pools> pools) {
-        pools.set(new Pools(repository.findAll(sheet.id()), settings.pot(sheet.id())));
+        pools.set(new Pools(repository.findAll(sheet.id(), sheet.today()), settings.pot(sheet.id())));
     }
 }

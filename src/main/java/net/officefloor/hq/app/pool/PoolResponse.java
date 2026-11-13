@@ -8,9 +8,11 @@ import java.util.List;
 /**
  * A pool as the screen reads it: its members' shares with two decimals, the total share (a retired member's share,
  * whatever their retirement date, counts as 0.00) and whether that total is exactly 100.00. In a balanced pool, with a
- * pot, each member's cut is the pot times their share divided by 100, rounded half to even to two decimals (a retired
- * member's is 0.00); the remainder (the pot less the cuts added up) goes to the member with the largest share, the
- * earliest added on a tie, so the cuts total exactly the pot. Otherwise a member's cut is "" (none). A member is a
+ * pot, each member with a cut (neither retired nor held on the sheet's today) gets the pot times their share divided by
+ * the shares of the members with a cut added up, rounded half to even to two decimals (a retired or held member's is
+ * 0.00, so a hold spreads its share over the others); the remainder (the pot less the cuts added up) goes to the member
+ * with a cut with the largest share, the earliest added on a tie, so the cuts total exactly the pot (when no member has
+ * a cut, each is 0.00). Otherwise a member's cut is "" (none). A member is a
  * person ({@code personId}) or another pool ({@code poolId}); the pool's pot is the sheet's when it is a member of no
  * pool, else its cut in the pool above (null: none).
  */
@@ -49,16 +51,18 @@ public record PoolResponse(long id, String name, List<Member> members, String to
             return null;
         }
         List<PoolMember> members = pool.members();
+        BigDecimal base = members.stream().filter(PoolMember::cut).map(PoolMember::share)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
         List<BigDecimal> cuts = new ArrayList<>();
         BigDecimal sum = BigDecimal.ZERO;
         int largest = -1;
         for (int i = 0; i < members.size(); i++) {
             PoolMember m = members.get(i);
-            BigDecimal cut = m.retired() ? BigDecimal.ZERO.setScale(2)
-                    : pot.multiply(m.share()).divide(HUNDRED).setScale(2, RoundingMode.HALF_EVEN);
+            BigDecimal cut = !m.cut() ? BigDecimal.ZERO.setScale(2)
+                    : pot.multiply(m.share()).divide(base, 2, RoundingMode.HALF_EVEN);
             cuts.add(cut);
             sum = sum.add(cut);
-            if (!m.retired() && (largest < 0 || m.share().compareTo(members.get(largest).share()) > 0)) {
+            if (m.cut() && (largest < 0 || m.share().compareTo(members.get(largest).share()) > 0)) {
                 largest = i;
             }
         }
