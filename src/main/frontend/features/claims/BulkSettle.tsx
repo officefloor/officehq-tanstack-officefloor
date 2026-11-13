@@ -9,9 +9,10 @@ import { useSelectedClaims } from './selection';
 import { useOneAtATime } from '../../query/useOneAtATime';
 
 // Settles every ticked claim, one after another in list order (people in their order, each one's
-// claims newest first), as the signed-in user. Each goes through the claim's own settle action, so a
-// clerk's settle above the clerk limit makes it PENDING and still counts as settled; one the server
-// refuses is left as it is and counted as refused. Every settle carries one token for the whole bulk settle, so the
+// claims newest first), as the signed-in user — all or nothing: the server first checks every one, and
+// if any would be refused none is settled and every one counts as refused. Each goes through the claim's
+// own settle action, so a clerk's settle above the clerk limit makes it PENDING and still counts as
+// settled; afterwards the bulk settle's BATCH_SETTLED line is written. Every settle carries one token for the whole bulk settle, so the
 // claims it settles share one batch number (the sheet's next, taken by the first); beside the button is the sheet's last.
 export function BulkSettle() {
   const [user] = useCurrentUser();
@@ -34,20 +35,32 @@ export function BulkSettle() {
     let settled = 0;
     let refused = 0;
     const batch = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    const base = `/api/sheets/${encodeURIComponent(sheet)}`;
+    const asUser = `?user=${encodeURIComponent(user)}`;
     try {
-      for (const c of ordered) {
+      // All or nothing: a ticked claim no longer listed (gone from the sheet), or one the server would refuse to
+      // settle, refuses every one and nothing is settled.
+      let allowed = ordered.length === selected.size;
+      if (allowed && ordered.length > 0) {
         try {
-          await postJson<Claim>(
-            `/api/sheets/${encodeURIComponent(sheet)}/claims/${c.id}/settle?user=${encodeURIComponent(user)}`,
-            { batch },
-          );
-          settled++;
+          await postJson(`${base}/settle-batches/check${asUser}`, { claimIds: ordered.map((c) => c.id), batch });
         } catch {
-          refused++;
+          allowed = false;
         }
       }
-      // A ticked claim no longer listed (gone from the sheet) cannot be settled.
-      refused += selected.size - ordered.length;
+      if (!allowed) {
+        refused = selected.size;
+      } else {
+        for (const c of ordered) {
+          try {
+            await postJson<Claim>(`${base}/claims/${c.id}/settle${asUser}`, { batch });
+            settled++;
+          } catch {
+            refused++;
+          }
+        }
+        if (settled > 0) await postJson(`${base}/settle-batches/done${asUser}`, { batch });
+      }
       clear();
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),

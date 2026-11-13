@@ -31,6 +31,13 @@ public class SettleBatchRepository {
         return next;
     }
 
+    /** The batch number the bulk settle with the token took, or null when it settled nothing. */
+    public Integer numberOf(String sheetId, String token) {
+        List<Integer> found = jdbc.queryForList("SELECT number FROM settle_batch WHERE sheet_id = ? AND token = ?",
+                Integer.class, sheetId, token);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
     /** The sheet's last batch number, or null when it has had none. */
     public Integer last(String sheetId) {
         List<Integer> found = jdbc.queryForList("SELECT last_batch FROM sheet WHERE id = ?", Integer.class, sheetId);
