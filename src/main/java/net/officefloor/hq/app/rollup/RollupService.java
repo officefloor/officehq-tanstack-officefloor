@@ -15,6 +15,7 @@ import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.ClaimStore;
 import net.officefloor.hq.app.claim.Lateness;
 import net.officefloor.hq.app.claim.Rounding;
+import net.officefloor.hq.app.claim.Shares;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonStore;
 import net.officefloor.hq.app.rate.RateStore;
@@ -29,7 +30,8 @@ import org.springframework.stereotype.Service;
  * list order (by their positions), then TOTALS sheet=<id> by=<user> claimed-total=<0.00> due-total=<0.00>
  * overdue-total=<0.00> when any of the sheet's totals changed; the sheet's due-total and overdue-total leave out
  * the single highest and the single lowest person's figure when three or more people have one (n/a is no figure). A person's overdue-total is the due (late charge
- * included, skipping n/a) of their counting claims that are OPEN or PENDING with a due-by (plus any grace days of their grade, see {@link Lateness}) before today. A person's due-total is at most the sheet's cap. A change that moves no figure records nothing here.
+ * included, skipping n/a) of their counting claims that are OPEN or PENDING with a due-by (plus any grace days of their grade, see {@link Lateness}) before today. A person's due-total is at most the sheet's cap; a shared claim's
+ * holders' parts (see {@link Shares}) count in their due-total and settled figures, not in its person's. A change that moves no figure records nothing here.
  * After those lines, while the sheet's alert threshold is set, ALERT sheet=<id> by=<user> name=<name> due-total=<0.00>
  * for each person whose due-total the change took from at or below it (or no due-total) to above it, in list order.
  */
@@ -67,6 +69,32 @@ public class RollupService {
         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
         List<BigDecimal> dues = new ArrayList<>();
         List<BigDecimal> overdues = new ArrayList<>();
+        // The parts of the shared claims that count: each claim's parts added up, and each holder's.
+        Map<Long, BigDecimal> shared = new HashMap<>();
+        Map<Long, BigDecimal> heldDue = new HashMap<>();
+        Map<Long, BigDecimal> heldSettled = new HashMap<>();
+        Map<Long, Person> byId = new HashMap<>();
+        people.list(sheetId).forEach(p -> byId.put(p.getId(), p));
+        for (Claim claim : all) {
+            Person owner = byId.get(claim.getPersonId());
+            List<Shares.Share> holders = Shares.list(claim.getShares());
+            if (holders.isEmpty() || owner == null || !countsClaimed(claim, owner, today) || !counts(claim, owner, today)) {
+                continue;
+            }
+            BigDecimal figure = lateness.due(claim, rates.forClaim(claim).find(sheetId, owner.gradeOn(claim.getDate()), claim.getDate()));
+            if (figure == null) {
+                continue;
+            }
+            for (Shares.Share holder : holders) {
+                BigDecimal part = Shares.part(figure, holder.share());
+                shared.merge(claim.getId(), part, BigDecimal::add);
+                heldDue.merge(holder.personId(), part, BigDecimal::add);
+                if (claim.getStatus() == ClaimStatus.SETTLED
+                        && (claim.getCorrects() == null || claim.getCorrects().isBlank())) {
+                    heldSettled.merge(holder.personId(), part, BigDecimal::add);
+                }
+            }
+        }
         for (Person person : people.list(sheetId)) {
             BigDecimal claimed = BigDecimal.ZERO.setScale(2);
             BigDecimal due = BigDecimal.ZERO.setScale(2);
@@ -92,14 +120,16 @@ public class RollupService {
                     overdueCount++;
                 }
                 if (figure != null) {
-                    due = due.add(figure);
+                    // The holders' parts of a shared claim are theirs, not its person's.
+                    BigDecimal own = figure.subtract(shared.getOrDefault(claim.getId(), BigDecimal.ZERO));
+                    due = due.add(own);
                     if (lateness.overdue(claim)) {
                         overdue = overdue.add(figure);
                     }
                     // The score's settled figures leave out corrections.
                     if (claim.getStatus() == ClaimStatus.SETTLED
                             && (claim.getCorrects() == null || claim.getCorrects().isBlank())) {
-                        settled = settled.add(figure);
+                        settled = settled.add(own);
                     }
                 }
                 // A figure at a grade other than the one in force today, or at a rate that ended before
@@ -107,6 +137,12 @@ public class RollupService {
                 fixed |= claim.getSettledDue() != null || (claim.isBound() && claim.getStatedDue() != null)
                         || (figure != null && (!person.gradeOn(claim.getDate()).equals(person.gradeOn(today))
                                 || rates.forClaim(claim).endsBefore(sheetId, person.gradeOn(claim.getDate()), claim.getDate(), today)));
+            }
+            // Parts of claims shared with them follow the claims' people's rates, not today's grade's.
+            if (heldDue.containsKey(person.getId())) {
+                due = due.add(heldDue.get(person.getId()));
+                settled = settled.add(heldSettled.getOrDefault(person.getId(), BigDecimal.ZERO));
+                fixed = true;
             }
             boolean na = rates.find(sheetId, person.gradeOn(today), today) == null && !fixed;
             claimedTotal = claimedTotal.add(claimed);

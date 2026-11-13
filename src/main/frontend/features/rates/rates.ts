@@ -215,7 +215,8 @@ export function claimDue(
   return charge === undefined ? floored : format(hundredths(floored) + hundredths(charge));
 }
 
-/** A person's due-total: the sum of the figures of their claims that count, at most the sheet's cap
+/** A person's due-total: the sum of the figures of their claims that count, moved by the claims shared with or by
+ *  them (see `Shared`), at most the sheet's cap
  *  (two decimals; null or undefined for none). n/a when their grade
  *  in force on the sheet's today has no rate then, unless a claim that counts keeps a fixed (settled or
  *  stated) figure, or a figure at another grade (the one in force on its date), or at a rate that ended before today;
@@ -228,8 +229,9 @@ export function personDue(
   floor: Floor,
   late?: Late,
   cap?: string | null,
+  shared?: Shared,
 ): string {
-  const total = uncappedDue(claims, rates, grades, today, floor, late);
+  const total = uncappedDue(claims, rates, grades, today, floor, late, shared);
   return total === NA || cap == null || hundredths(total) <= hundredths(cap) ? total : format(hundredths(cap));
 }
 
@@ -243,8 +245,9 @@ export function personExcess(
   floor: Floor,
   late?: Late,
   cap?: string | null,
+  shared?: Shared,
 ): string {
-  const total = uncappedDue(claims, rates, grades, today, floor, late);
+  const total = uncappedDue(claims, rates, grades, today, floor, late, shared);
   return total === NA || cap == null || hundredths(total) <= hundredths(cap)
     ? format(0n)
     : format(hundredths(total) - hundredths(cap));
@@ -258,6 +261,7 @@ function uncappedDue(
   today: string | undefined,
   floor: Floor,
   late?: Late,
+  shared?: Shared,
 ): string {
   const mine = claims.filter(counts);
   const now = gradeOn(grades, today);
@@ -267,10 +271,54 @@ function uncappedDue(
     return rateOf(theirs, grade, c.date) !== undefined
       && (grade !== now || (today !== undefined && endsBefore(theirs, grade, c.date, today)));
   };
-  if (rateOf(rates, now, today) === undefined && !mine.some((c) => fixed(c) || elsewhere(c))) {
+  if (rateOf(rates, now, today) === undefined && !shared?.holds && !mine.some((c) => fixed(c) || elsewhere(c))) {
     return NA;
   }
-  return dueTotal(mine.map((c) => claimDue(c, rates, grades, floor, late)));
+  return dueTotal([...mine.map((c) => claimDue(c, rates, grades, floor, late)), shared?.settled ?? NA, shared?.open ?? NA]);
+}
+
+/** What claims shared with or by a person move in their figures: the parts of the claims shared with them less the
+ *  parts of theirs held by others, of SETTLED claims (`scored` leaving out corrections) and of OPEN or PENDING ones,
+ *  two decimals each; and whether they hold a part with a figure, which keeps their due-total from n/a, as it
+ *  follows the claim's person's rate. */
+export type Shared = { settled: string; open: string; scored: string; holds: boolean };
+
+/** Each person's `Shared`, by id: a holder's part of a shared claim that counts (`claims` already filtered to those
+ *  live) is its due (as its person's row shows it, skipping n/a) times their share divided by 100, rounded half to even. */
+export function sharedParts(
+  claims: Claim[],
+  people: { id: number; grades: Grades }[],
+  rates: Rate[] | undefined,
+  floor: Floor,
+  late: Late | undefined,
+): Map<number, Shared> {
+  const moves = new Map<number, { settled: bigint; open: bigint; scored: bigint; holds: boolean }>();
+  const of = (id: number) => {
+    let m = moves.get(id);
+    if (m === undefined) moves.set(id, (m = { settled: 0n, open: 0n, scored: 0n, holds: false }));
+    return m;
+  };
+  const byId = new Map(people.map((p) => [p.id, p]));
+  for (const c of claims) {
+    const owner = byId.get(c.personId);
+    if (owner === undefined || !c.shares?.length || !counts(c)) continue;
+    const figure = claimDue(c, rates, owner.grades, floor, late);
+    if (figure === NA) continue;
+    for (const h of c.shares) {
+      const part = hundredths(sharedTotal([{ figure, share: h.share }]));
+      const key = c.status === 'SETTLED' ? 'settled' : 'open';
+      const holder = of(h.personId);
+      const own = of(c.personId);
+      holder[key] += part;
+      own[key] -= part;
+      holder.holds = true;
+      if (key === 'settled' && !correctsAnother(c)) {
+        holder.scored += part;
+        own.scored -= part;
+      }
+    }
+  }
+  return new Map(Array.from(moves, ([id, m]) => [id, { settled: format(m.settled), open: format(m.open), scored: format(m.scored), holds: m.holds }]));
 }
 
 /** A person's settled-total and open-total: the sum of the dues (skipping n/a) of their claims that count
@@ -283,17 +331,18 @@ export function personSplit(
   today: string | undefined,
   floor: Floor,
   late?: Late,
+  shared?: Shared,
 ): { settled: string; open: string; scored: string } {
-  if (uncappedDue(claims, rates, grades, today, floor, late) === NA)
+  if (uncappedDue(claims, rates, grades, today, floor, late, shared) === NA)
     return { settled: format(0n), open: format(0n), scored: format(0n) };
   const mine = claims.filter(counts);
-  const total = (keep: (c: Claim) => boolean) =>
-    dueTotal(mine.filter(keep).map((c) => claimDue(c, rates, grades, floor, late)));
+  const total = (keep: (c: Claim) => boolean, part: string | undefined) =>
+    dueTotal([...mine.filter(keep).map((c) => claimDue(c, rates, grades, floor, late)), part ?? NA]);
   return {
-    settled: total((c) => c.status === 'SETTLED'),
-    open: total((c) => c.status !== 'SETTLED'),
+    settled: total((c) => c.status === 'SETTLED', shared?.settled),
+    open: total((c) => c.status !== 'SETTLED', shared?.open),
     // The settled figures the score counts: corrections left out.
-    scored: total((c) => c.status === 'SETTLED' && !correctsAnother(c)),
+    scored: total((c) => c.status === 'SETTLED' && !correctsAnother(c), shared?.scored),
   };
 }
 

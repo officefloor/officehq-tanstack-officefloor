@@ -38,6 +38,7 @@ public class ClaimStore {
         claim.setHeld(rs.getBoolean("held"));
         claim.setRef(rs.getString("ref"));
         claim.setTags(rs.getString("tags"));
+        claim.setShares(rs.getString("shares"));
         claim.setVoidReason(rs.getString("void_reason"));
         claim.setEditedBy(rs.getString("edited_by"));
         claim.setBatch(rs.getObject("settle_batch", Long.class));
@@ -256,6 +257,19 @@ public class ClaimStore {
             claim.setHeld(!claim.isHeld());
         }
         return toggled;
+    }
+
+    /** Stores the claim shared as {@code shares} (see {@link Shares}); false when another user changed its shares
+     *  first, or it was moved on to SETTLED, VOID or DELETED. */
+    public boolean share(Claim claim, String shares) {
+        boolean stored = jdbc.update("UPDATE claim SET shares = ? WHERE sheet_id = ? AND id = ? AND COALESCE(shares, '') = ?"
+                + " AND status NOT IN (?, ?, ?)", shares, claim.getSheetId(), claim.getId(),
+                claim.getShares() == null ? "" : claim.getShares(), ClaimStatus.SETTLED.name(), ClaimStatus.VOID.name(),
+                ClaimStatus.DELETED.name()) == 1;
+        if (stored) {
+            claim.setShares(shares);
+        }
+        return stored;
     }
 
     /** Marks the stored claim escalated; false when it already was (it is escalated once only). */

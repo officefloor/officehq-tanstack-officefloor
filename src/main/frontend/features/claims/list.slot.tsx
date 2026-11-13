@@ -163,6 +163,7 @@ function PersonClaims({ person }: { person: Person }) {
     remind.reset();
     waive.reset();
     hold.reset();
+    share.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -194,6 +195,7 @@ function PersonClaims({ person }: { person: Person }) {
     remind.reset();
     waive.reset();
     hold.reset();
+    share.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -223,6 +225,7 @@ function PersonClaims({ person }: { person: Person }) {
     remind.reset();
     waive.reset();
     hold.reset();
+    share.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -253,6 +256,7 @@ function PersonClaims({ person }: { person: Person }) {
     remind.reset();
     waive.reset();
     hold.reset();
+    share.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -279,6 +283,7 @@ function PersonClaims({ person }: { person: Person }) {
     remind.reset();
     waive.reset();
     hold.reset();
+    share.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -308,6 +313,7 @@ function PersonClaims({ person }: { person: Person }) {
     remind.reset();
     waive.reset();
     hold.reset();
+    share.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -337,6 +343,7 @@ function PersonClaims({ person }: { person: Person }) {
     remind.reset();
     waive.reset();
     hold.reset();
+    share.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -345,6 +352,41 @@ function PersonClaims({ person }: { person: Person }) {
     redate.reset();
     inline.reset();
     hold.mutate(id);
+  };
+  // Sharing a claim with another person at a share percent: each holder's figures count their part of its due,
+  // its person's the rest.
+  const [shareWith, setShareWith] = useState<Record<number, string>>({});
+  const [sharePcts, setSharePcts] = useState<Record<number, string>>({});
+  const share = useMutation({
+    mutationFn: (d: { id: number; person: string; share: string }) =>
+      postJson<Claim>(`${base}/claims/${d.id}/share`, { person: d.person, share: d.share, user }),
+    onSuccess: async (_, d) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+      ]);
+      setSharePcts((a) => ({ ...a, [d.id]: '' }));
+    },
+  });
+  const shareClaim = (id: number) => {
+    move.reset();
+    lock.reset();
+    setUneditable(undefined);
+    reassign.reset();
+    resettle.reset();
+    defer.reset();
+    remind.reset();
+    waive.reset();
+    hold.reset();
+    comment.reset();
+    line.reset();
+    proof.reset();
+    split.reset();
+    partSettle.reset();
+    redate.reset();
+    inline.reset();
+    share.reset();
+    share.mutate({ id, person: shareWith[id] ?? '', share: (sharePcts[id] ?? '').trim() });
   };
   // A comment is kept on the claim, in any status, with its writer and the sheet's today; not an empty one.
   const comment = useMutation({
@@ -365,6 +407,7 @@ function PersonClaims({ person }: { person: Person }) {
     remind.reset();
     waive.reset();
     hold.reset();
+    share.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -396,6 +439,7 @@ function PersonClaims({ person }: { person: Person }) {
     remind.reset();
     waive.reset();
     hold.reset();
+    share.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -430,6 +474,7 @@ function PersonClaims({ person }: { person: Person }) {
     remind.reset();
     waive.reset();
     hold.reset();
+    share.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -461,6 +506,7 @@ function PersonClaims({ person }: { person: Person }) {
     remind.reset();
     waive.reset();
     hold.reset();
+    share.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -492,6 +538,7 @@ function PersonClaims({ person }: { person: Person }) {
     remind.reset();
     waive.reset();
     hold.reset();
+    share.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -523,6 +570,7 @@ function PersonClaims({ person }: { person: Person }) {
     remind.reset();
     waive.reset();
     hold.reset();
+    share.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -561,6 +609,7 @@ function PersonClaims({ person }: { person: Person }) {
     remind.reset();
     waive.reset();
     hold.reset();
+    share.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -587,6 +636,8 @@ function PersonClaims({ person }: { person: Person }) {
                   ? waive.error
                 : hold.isError && hold.variables === id
                   ? hold.error
+                : share.isError && share.variables?.id === id
+                  ? share.error
                 : comment.isError && comment.variables?.id === id
                   ? comment.error
                 : line.isError && line.variables?.id === id
@@ -608,6 +659,8 @@ function PersonClaims({ person }: { person: Person }) {
     return error instanceof HttpError && error.reason ? `${error.reason}.` : 'The change was refused.';
   };
 
+  const nameOf = (id: number) => (people.data ?? []).find((p) => p.id === id)?.name ?? '';
+
   const set = (key: keyof Fields) => (e: ChangeEvent<HTMLInputElement>) => {
     setFields({ ...fields, [key]: e.target.value });
     save.reset();
@@ -625,6 +678,7 @@ function PersonClaims({ person }: { person: Person }) {
     remind.reset();
     waive.reset();
     hold.reset();
+    share.reset();
     comment.reset();
     line.reset();
     proof.reset();
@@ -697,6 +751,9 @@ function PersonClaims({ person }: { person: Person }) {
               <span data-testid="claim-reminded">{c.remindedOn ?? ''}</span>{' '}
               <span data-testid="claim-waived">{c.waived ? 'yes' : 'no'}</span>{' '}
               <span data-testid="claim-held">{c.held ? 'yes' : 'no'}</span>{' '}
+              <span data-testid="claim-shares">
+                {(c.shares ?? []).map((h) => `${nameOf(h.personId)} ${h.share}`).join(', ')}
+              </span>{' '}
               <span data-testid="claim-split-from">{c.splitFrom ?? ''}</span>{' '}
               <span data-testid="claim-batch">{c.batch ?? ''}</span>{' '}
               <span data-testid="claim-late-entry">{c.lateEntry ? 'yes' : 'no'}</span>{' '}
@@ -843,6 +900,34 @@ function PersonClaims({ person }: { person: Person }) {
               </button>{' '}
               <button type="button" data-testid="claim-hold" disabled={hold.isPending} onClick={() => holdClaim(c.id)}>
                 {c.held ? 'Release' : 'Hold'}
+              </button>{' '}
+              <select
+                data-testid="claim-share-select"
+                aria-label="Share with"
+                value={shareWith[c.id] ?? ''}
+                onChange={(e) => {
+                  setShareWith({ ...shareWith, [c.id]: e.target.value });
+                  if (share.variables?.id === c.id) share.reset();
+                }}
+              >
+                <option value="">(share with)</option>
+                {(people.data ?? []).map((p) => (
+                  <option key={p.id} value={String(p.id)}>{p.name}</option>
+                ))}
+              </select>{' '}
+              <input
+                data-testid="claim-share-pct"
+                placeholder="Share %"
+                aria-label="Share percent"
+                inputMode="decimal"
+                value={sharePcts[c.id] ?? ''}
+                onChange={(e) => {
+                  setSharePcts({ ...sharePcts, [c.id]: e.target.value });
+                  if (share.variables?.id === c.id) share.reset();
+                }}
+              />{' '}
+              <button type="button" data-testid="claim-share-add" disabled={share.isPending} onClick={() => shareClaim(c.id)}>
+                Share
               </button>{' '}
               <input
                 data-testid="claim-date-new"

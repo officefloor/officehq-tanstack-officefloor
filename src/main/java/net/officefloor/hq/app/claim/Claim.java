@@ -34,6 +34,7 @@ public class Claim {
     private boolean held;
     private String ref;
     private String tags;
+    private String shares;
     private String voidReason;
     private String editedBy;
     private Long batch;
@@ -137,6 +138,10 @@ public class Claim {
     /** Its tags (see {@link Tags}): sorted, comma separated; null when it has none. */
     public String getTags() { return tags; }
     public void setTags(String tags) { this.tags = tags; }
+
+    /** The people it is shared with and their shares, as stored (see {@link Shares}); null when shared with nobody. */
+    public String getShares() { return shares; }
+    public void setShares(String shares) { this.shares = shares; }
     /** The reason it was voided with, from the sheet's list then; null when not voided, or voided while the list was empty. */
     public String getVoidReason() { return voidReason; }
     public void setVoidReason(String voidReason) { this.voidReason = voidReason; }

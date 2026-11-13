@@ -81,6 +81,9 @@ export type Claim = {
   waived: boolean;
   /** Whether it is held. A held claim still counts in every total. */
   held: boolean;
+  /** The people it is shared with (by id) and their share percents (two decimals), in the order shared; empty when none.
+   *  Each holder's figures count their part of its due (see `sharedParts`), its person's the due less the parts. */
+  shares: { personId: number; share: string }[];
 };
 
 /** A correction: a claim with a negative amount, which has no floor and no late charge. */

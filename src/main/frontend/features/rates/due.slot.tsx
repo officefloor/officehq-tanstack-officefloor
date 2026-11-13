@@ -6,7 +6,7 @@ import { useSheetToday } from '../sheet/sheet';
 import { live, useClaims } from '../claims/claims';
 import { floorOf, useSettings } from '../settings/settings';
 import { lateOf } from '../overdue/overdue';
-import { personDue, personExcess, trimmedTotal, useRates } from './rates';
+import { type Shared, personDue, personExcess, sharedParts, trimmedTotal, useRates } from './rates';
 import { useFigure } from '../locale/locale';
 import { useColumnShown } from '../columns/columns';
 
@@ -26,9 +26,10 @@ function PersonDue({ person }: { person: Person }) {
   const today = useSheetToday(sheet);
   const settings = useSettings(sheet).data;
   const floor = floorOf(settings);
+  const shared = useShared()(person);
   const mine = live((claims.data ?? []).filter((c) => c.personId === person.id), [person]);
   if (!shown('due-total')) return null;
-  return <td data-testid="person-due-total">{fig(personDue(mine, rates.data, person.grades, today, floor, lateOf(settings, today, [person]), settings?.cap))}</td>;
+  return <td data-testid="person-due-total">{fig(personDue(mine, rates.data, person.grades, today, floor, lateOf(settings, today, [person]), settings?.cap, shared))}</td>;
 }
 
 function ExcessHead() {
@@ -44,11 +45,12 @@ function PersonExcess({ person }: { person: Person }) {
   const rates = useRates(sheet);
   const today = useSheetToday(sheet);
   const settings = useSettings(sheet).data;
+  const shared = useShared()(person);
   const mine = live((claims.data ?? []).filter((c) => c.personId === person.id), [person]);
   if (!shown('excess')) return null;
   return (
     <td data-testid="person-excess">
-      {fig(personExcess(mine, rates.data, person.grades, today, floorOf(settings), lateOf(settings, today, [person]), settings?.cap))}
+      {fig(personExcess(mine, rates.data, person.grades, today, floorOf(settings), lateOf(settings, today, [person]), settings?.cap, shared))}
     </td>
   );
 }
@@ -71,8 +73,23 @@ export function usePersonDue(of?: string): (person: Person) => string {
   const today = useSheetToday(sheet);
   const settings = useSettings(sheet).data;
   const floor = floorOf(settings);
+  const shared = useShared(sheet);
   return (p: Person) =>
-    personDue(live((claims.data ?? []).filter((c) => c.personId === p.id), [p]), rates.data, p.grades, today, floor, lateOf(settings, today, [p]), settings?.cap);
+    personDue(live((claims.data ?? []).filter((c) => c.personId === p.id), [p]), rates.data, p.grades, today, floor, lateOf(settings, today, [p]), settings?.cap, shared(p));
+}
+
+/** What claims shared with or by each person on the sheet (the current sheet's unless another is named) move in
+ *  their figures (see `sharedParts`); undefined for a person no shared claim touches. */
+export function useShared(of?: string): (person: Person) => Shared | undefined {
+  const [current] = useCurrentSheet();
+  const sheet = of ?? current;
+  const people = usePeople(sheet).data ?? [];
+  const claims = useClaims(sheet);
+  const rates = useRates(sheet);
+  const today = useSheetToday(sheet);
+  const settings = useSettings(sheet).data;
+  const parts = sharedParts(live(claims.data ?? [], people), people, rates.data, floorOf(settings), lateOf(settings, today, people));
+  return (p: Person) => parts.get(p.id);
 }
 
 function DueTotal() {

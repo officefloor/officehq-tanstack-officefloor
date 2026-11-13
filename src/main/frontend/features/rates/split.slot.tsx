@@ -8,6 +8,7 @@ import { floorOf, useSettings } from '../settings/settings';
 import { lateOf } from '../overdue/overdue';
 import { dueTotal, personSplit, useRates } from './rates';
 import { useFigure } from '../locale/locale';
+import { useShared } from './due.slot';
 
 // A person's settled-total and open-total (their due-total before the cap, split by status), and the
 // sheet's: everyone's added up, not trimmed.
@@ -26,6 +27,7 @@ export function useSplit() {
   const rates = useRates(sheet);
   const today = useSheetToday(sheet);
   const settings = useSettings(sheet).data;
+  const shared = useShared(sheet);
   return (person: Person) =>
     personSplit(
       live((claims.data ?? []).filter((c) => c.personId === person.id), [person]),
@@ -34,6 +36,7 @@ export function useSplit() {
       today,
       floorOf(settings),
       lateOf(settings, today, [person]),
+      shared(person),
     );
 }
 
