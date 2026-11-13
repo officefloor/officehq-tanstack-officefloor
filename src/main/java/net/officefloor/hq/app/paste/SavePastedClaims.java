@@ -30,7 +30,7 @@ public class SavePastedClaims {
         for (PastedLine line : pasted.lines()) {
             Person person = line.person();
             LocalDate date = line.input().date() != null ? line.input().date() : sheets.today(person.sheetId());
-            LocalDate dueBy = date.plusDays(settings.dated(person.sheetId()).termsFor(person.gradeOn(date), date));
+            LocalDate dueBy = date.plusDays(person.termsOn(settings.dated(person.sheetId()), date));
             Claim claim = claims.save(new Claim(null, person.sheetId(), person.id(), line.input().amount(), date,
                     line.input().note(), ClaimStatus.DRAFT, null, null, null, false, null, line.input().corrects(),
                     dueBy));

@@ -7,12 +7,13 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
-/** A new DRAFT claim; its due-by is fixed now: its date plus the terms of its person's grade in force on that date. */
+/** A new DRAFT claim; its due-by is fixed now: its date plus the person's own terms, else
+ * those of their grade, else the sheet's, each as in force on that date. */
 public class BuildClaim {
     public void build(@Val ClaimInput input, @Val Person person, SheetRepository sheets, SettingRepository settings,
             Out<Claim> claim) {
         LocalDate date = input.date() != null ? input.date() : sheets.today(person.sheetId());
-        LocalDate dueBy = date.plusDays(settings.dated(person.sheetId()).termsFor(person.gradeOn(date), date));
+        LocalDate dueBy = date.plusDays(person.termsOn(settings.dated(person.sheetId()), date));
         claim.set(new Claim(null, person.sheetId(), person.id(), input.amount(), date, input.note(), ClaimStatus.DRAFT,
                 null, null, null, false, null, input.corrects(), dueBy));
     }

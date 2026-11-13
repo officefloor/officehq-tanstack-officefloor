@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import net.officefloor.hq.app.claim.Claim;
+import net.officefloor.hq.app.setting.DatedSettings;
 
 /**
  * A person on a sheet. {@code id} is null until the person is first saved; {@code version} counts its saves.
@@ -14,9 +15,19 @@ import net.officefloor.hq.app.claim.Claim;
  * the person's holds, oldest first: their open claims dated within one, and not bound by a statement, count in no
  * live total. {@code grades} are the grades
  * recorded for the person, each from its from-date; {@code grade} is the one in force on the sheet's today.
+ * {@code terms} are the person's own terms in days, or null when they have none.
  */
 public record Person(Long id, String sheetId, String name, String grade, int version, int statementCount,
-        String statedTotal, LocalDate statementDate, LocalDate retiredFrom, List<Hold> holds, List<GradeFrom> grades) {
+        String statedTotal, LocalDate statementDate, LocalDate retiredFrom, List<Hold> holds, List<GradeFrom> grades,
+        Integer terms) {
+
+    /** A person without terms of their own. */
+    public Person(Long id, String sheetId, String name, String grade, int version, int statementCount,
+            String statedTotal, LocalDate statementDate, LocalDate retiredFrom, List<Hold> holds,
+            List<GradeFrom> grades) {
+        this(id, sheetId, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom, holds,
+                grades, null);
+    }
 
     /** A person whose only grade applies from the beginning of time. */
     public Person(Long id, String sheetId, String name, String grade, int version, int statementCount,
@@ -39,7 +50,21 @@ public record Person(Long id, String sheetId, String name, String grade, int ver
     /** The same person with another name. */
     public Person withName(String nextName) {
         return new Person(id, sheetId, nextName, grade, version, statementCount, statedTotal, statementDate,
-                retiredFrom, holds, grades);
+                retiredFrom, holds, grades, terms);
+    }
+
+    /** The same person with these terms of their own (null: none). */
+    public Person withTerms(Integer nextTerms) {
+        return new Person(id, sheetId, name, grade, version, statementCount, statedTotal, statementDate,
+                retiredFrom, holds, grades, nextTerms);
+    }
+
+    /**
+     * The terms a claim of the person's dated on the date is due by: their own, else those of their grade in force
+     * on the date, else the sheet's in force on it.
+     */
+    public int termsOn(DatedSettings settings, LocalDate date) {
+        return terms != null ? terms : settings.termsFor(gradeOn(date), date);
     }
 
     /**
@@ -55,7 +80,7 @@ public record Person(Long id, String sheetId, String name, String grade, int ver
         }
         next.add(new GradeFrom(nextGrade, from));
         return new Person(id, sheetId, nextName, gradeOn(next, today, nextGrade), version, statementCount,
-                statedTotal, statementDate, retiredFrom, holds, List.copyOf(next));
+                statedTotal, statementDate, retiredFrom, holds, List.copyOf(next), terms);
     }
 
     /** Whether the person has any hold, whatever its dates. */

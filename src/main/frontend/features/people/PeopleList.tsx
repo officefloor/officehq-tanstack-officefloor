@@ -21,6 +21,7 @@ export function PeopleList() {
         <tr>
           <th>Name</th>
           <th>Grade</th>
+          <th>Terms</th>
           <PersonColumnHeads.Slot />
           <th />
         </tr>
@@ -32,6 +33,7 @@ export function PeopleList() {
               {p.name}
             </td>
             <td data-testid="person-grade">{p.grade}</td>
+            <td data-testid="person-terms">{p.terms ?? ''}</td>
             <PersonColumns.Slot person={p} />
             <td>
               <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => setEditing(p.id)}>

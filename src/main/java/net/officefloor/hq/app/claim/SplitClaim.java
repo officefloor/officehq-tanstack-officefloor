@@ -41,8 +41,9 @@ public class SplitClaim {
         claims.save(original);
         claims.bindStatement(original, false, null);
         Person person = people.find(claim.sheetId(), claim.personId());
-        LocalDate dueBy = claim.date().plusDays(settings.dated(claim.sheetId())
-                .termsFor(person == null ? null : person.gradeOn(claim.date()), claim.date()));
+        LocalDate dueBy = claim.date().plusDays(person == null
+                ? settings.dated(claim.sheetId()).termsFor(null, claim.date())
+                : person.termsOn(settings.dated(claim.sheetId()), claim.date()));
         String number = ApplyClaimAction.nextNumber(claim, sheets, settings, periods);
         Claim saved = claims.save(new Claim(null, claim.sheetId(), claim.personId(), off, claim.date(), claim.note(),
                 ClaimStatus.OPEN, number, null, user, false, null, null, dueBy, null, 0, claim.number()));
