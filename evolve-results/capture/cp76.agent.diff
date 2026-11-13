@@ -1,0 +1,68 @@
+diff --git a/src/main/java/net/officefloor/hq/app/Audit.java b/src/main/java/net/officefloor/hq/app/Audit.java
+index 96e5fd4da..f0ebe70a7 100644
+--- a/src/main/java/net/officefloor/hq/app/Audit.java
++++ b/src/main/java/net/officefloor/hq/app/Audit.java
+@@ -23,13 +23,13 @@ import org.springframework.stereotype.Service;
+  * SYNC) so a test reads the record immediately.
+  *
+  * A change made by a user acting as a steward by delegation (one in force on the sheet's today) ends with
+- * {@code for=<the steward who delegated>}; lines that only report figures (ROLLUP, TOTALS, ALERT) do not.
++ * {@code for=<the steward who delegated>}; lines that only report figures (ROLLUP, TOTALS, ALERT, SNAPSHOT) do not.
+  */
+ @Service
+ public class Audit {
+ 
+     /** The events that only report figures: never marked for a delegator. */
+-    private static final Set<String> FIGURES = Set.of("ROLLUP", "TOTALS", "ALERT");
++    private static final Set<String> FIGURES = Set.of("ROLLUP", "TOTALS", "ALERT", "SNAPSHOT");
+ 
+     /** A record's event, sheet and user: "EVENT sheet=<id> by=<user> ...". */
+     private static final Pattern HEAD = Pattern.compile("^(\\S+) sheet=(\\S+) by=(\\S+)");
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/AuditSnapshot.java b/src/main/java/net/officefloor/hq/app/rollup/AuditSnapshot.java
+new file mode 100644
+index 000000000..5459b5ca3
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rollup/AuditSnapshot.java
+@@ -0,0 +1,20 @@
++package net.officefloor.hq.app.rollup;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/**
++ * Before the sheet's today changes, records one SNAPSHOT line per person, in list order, with their due-total as it
++ * stood on the day being left.
++ */
++public class AuditSnapshot {
++    public void audit(@Val RollupBefore before, @PathVariable("sheetId") String sheetId,
++            @RequestParam("user") String user, Audit audit) {
++        for (Rollup.Figures figures : before.rollup().people().values()) {
++            audit.record("SNAPSHOT sheet=" + sheetId + " by=" + user + " name=" + figures.name()
++                    + " due-total=" + figures.dueTotal());
++        }
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+index f8ec00c60..2765aa826 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+@@ -1,5 +1,5 @@
+ # Change the sheet's today; a blank date resets it to the real date. The sheet is kept as it stood at the end of the
+-# old today first (a statement can be taken as of it). Once it is set, every open period whose to-date
++# old today first (a statement can be taken as of it), and each person's due-total on it is recorded as SNAPSHOT, in list order. Once it is set, every open period whose to-date
+ # plus the sheet's grace days (blank: off) is before the new today is closed, in order of their to-dates, as a close by hand would. Every claim lock on the sheet is released.
+ archived:
+   class: net.officefloor.hq.app.sheet.CheckNotArchived
+@@ -17,6 +17,10 @@ load:
+ before:
+   class: net.officefloor.hq.app.rollup.SnapshotRollup
+   govern: [ transaction ]
++  next: snapshot
++snapshot:
++  class: net.officefloor.hq.app.rollup.AuditSnapshot
++  govern: [ transaction ]
+   next: day
+ day:
+   class: net.officefloor.hq.app.asof.RecordSheetDay
