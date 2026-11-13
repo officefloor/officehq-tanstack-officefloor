@@ -21,7 +21,7 @@ const ACTIONS: Array<{ action: Action; label: string }> = [
 const REFUSED: Partial<Record<Action, string>> = {
   open: ' (your role may not be allowed to open a claim)',
   settle: ' (the user who opened it cannot settle it, one whose due is above the proof threshold needs a proof, and your role may not be allowed to settle)',
-  void: ' (your role may not be allowed to void a claim)',
+  void: ' (your role may not be allowed to void a claim; only a steward voids a settled claim, within 7 days of its settlement)',
   approve: ' (only a steward approves a pending claim, and not the user who opened it; one whose due is above the proof threshold needs a proof)',
   reject: ' (only a steward rejects a pending claim, and a reason is required)',
   resettle: ' (only a steward re-settles a settled claim)',

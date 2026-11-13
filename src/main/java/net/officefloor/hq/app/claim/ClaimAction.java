@@ -11,7 +11,8 @@ public enum ClaimAction {
     PEND(null, ClaimStatus.PENDING, "CLAIM_PENDING", ClaimStatus.OPEN),
     APPROVE("approve", ClaimStatus.SETTLED, "CLAIM_APPROVED", ClaimStatus.PENDING),
     REJECT("reject", ClaimStatus.OPEN, "CLAIM_REJECTED", ClaimStatus.PENDING),
-    VOID("void", ClaimStatus.VOID, "CLAIM_VOIDED", ClaimStatus.DRAFT, ClaimStatus.OPEN, ClaimStatus.PENDING),
+    VOID("void", ClaimStatus.VOID, "CLAIM_VOIDED", ClaimStatus.DRAFT, ClaimStatus.OPEN, ClaimStatus.PENDING,
+            ClaimStatus.SETTLED),
     RESETTLE("resettle", ClaimStatus.SETTLED, "CLAIM_RESETTLED", ClaimStatus.SETTLED);
 
     private final String path;

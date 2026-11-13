@@ -29,12 +29,18 @@ import org.springframework.web.bind.annotation.RequestParam;
  * figure, plus any late charge, at that moment) — not the user who opened it — or rejects it, with a reason, back to OPEN.
  * Only a steward re-settles a SETTLED claim, fixing its due again at the figure it would have today as an open claim
  * bound by no statement (today's rates, grades, floor and late charge); its previous due is kept for the audit.
+ * Only a steward voids a SETTLED claim, and only while the sheet's today is within 7 days of its settlement (the
+ * status log's latest SETTLED date); it keeps its number and its frozen due, which leaves every total.
  */
 public class ApplyClaimAction {
+
+    /** How many days after its settlement (the status log's SETTLED date) a steward may still void a SETTLED claim. */
+    static final int VOID_SETTLED_DAYS = 7;
+
     public void apply(@PathVariable("action") String action, @RequestParam("user") String user, @Val Claim claim,
             @Val ClaimActionRequest request, SheetRepository sheets,
             PersonRepository people, RateRepository rates, SettingRepository settings, PeriodRepository periods,
-            ClaimRepository claims, Out<ClaimAction> applied, Out<ClaimNumber> number, Out<PreviousDue> previous, Out<Claim> updated) throws InvalidClaimException {
+            ClaimRepository claims, ClaimLogRepository logs, Out<ClaimAction> applied, Out<ClaimNumber> number, Out<PreviousDue> previous, Out<Claim> updated) throws InvalidClaimException {
         ClaimAction found = ClaimAction.of(action);
         if (found == null) {
             throw new InvalidClaimException("No such claim action: " + action);
@@ -62,6 +68,18 @@ public class ApplyClaimAction {
         if (found == ClaimAction.RESETTLE && settings.find(claim.sheetId()).roleOf(user) != Role.STEWARD) {
             throw new InvalidClaimException("Only a steward can re-settle a settled claim.");
         }
+        if (found == ClaimAction.VOID && claim.status() == ClaimStatus.SETTLED) {
+            if (settings.find(claim.sheetId()).roleOf(user) != Role.STEWARD) {
+                throw new InvalidClaimException("Only a steward can void a settled claim.");
+            }
+            LocalDate settledOn = logs.find(claim.sheetId(), claim.id()).stream()
+                    .filter((l) -> l.status() == ClaimStatus.SETTLED).map(ClaimLogLine::date)
+                    .reduce((a, b) -> b).orElse(null);
+            if (settledOn == null || sheets.today(claim.sheetId()).isAfter(settledOn.plusDays(VOID_SETTLED_DAYS))) {
+                throw new InvalidClaimException("A settled claim can be voided only within " + VOID_SETTLED_DAYS
+                        + " days of its settlement.");
+            }
+        }
         if (found == ClaimAction.REJECT && request.reason().isEmpty()) {
             throw new InvalidClaimException("A reason is required to reject a claim.");
         }
@@ -80,7 +98,7 @@ public class ApplyClaimAction {
             default -> claim.number();
         };
         applied.set(found);
-        previous.set(new PreviousDue(claim.due()));
+        previous.set(new PreviousDue(claim.due(), claim.status() == ClaimStatus.SETTLED));
         number.set(new ClaimNumber(next));
         updated.set(claim.withStatus(found.to(), next, due, found == ClaimAction.OPEN ? user : claim.openedBy()));
     }
