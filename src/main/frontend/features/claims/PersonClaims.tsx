@@ -13,6 +13,7 @@ import { contains, usePeriods } from '../periods/periods';
 import { useSettings } from '../settings/settings';
 import { useSheetToday } from '../session/sheetToday';
 import { tagsKey } from '../tags/tags';
+import { useTemplates } from '../templates/templates';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
 
@@ -43,6 +44,8 @@ export function PersonClaims({ person }: { person: Person }) {
   const editingNow = useRef<number | undefined>(undefined);
   editingNow.current = editing;
   const locking = useRef<Promise<void>>(Promise.resolve());
+  const templates = useTemplates().data ?? [];
+  const [template, setTemplate] = useState('');
 
   const claimsUrl = `/api/sheets/${encodeURIComponent(sheet)}/claims`;
 
@@ -88,6 +91,33 @@ export function PersonClaims({ person }: { person: Person }) {
     },
     onError: () => setError('That claim could not be saved.'),
   });
+
+  // A DRAFT claim from the chosen template: its amount and note as they are now, with no date, by the claim form's
+  // rules; a refusal shows as the claim form's error.
+  const fromTemplate = useMutation({
+    mutationFn: (name: string) =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheet)}/people/${person.id}/template-claims?user=${encodeURIComponent(user)}`,
+        { template: name },
+      ),
+    onSuccess: async () => {
+      setError('');
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: tagsKey(sheet) }),
+      ]);
+    },
+    onError: () => setError('A claim could not be added from that template.'),
+  });
+
+  const addFromTemplate = () => {
+    setError('');
+    if (!template) {
+      setError('Choose a claim template.');
+      return;
+    }
+    once(() => fromTemplate.mutateAsync(template));
+  };
 
   const refused = (c: Claim) =>
     `This ${c.status} claim cannot be edited (only a DRAFT not due in a closed period, not by a viewer, nor while another user is editing it).`;
@@ -214,6 +244,24 @@ export function PersonClaims({ person }: { person: Person }) {
         />
         <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
           {editing === undefined ? 'Add claim' : 'Save claim'}
+        </button>
+        <select
+          data-testid="claim-template-select"
+          value={template}
+          onChange={(e) => {
+            setTemplate(e.target.value);
+            setError('');
+          }}
+        >
+          <option value="">Template…</option>
+          {templates.map((t) => (
+            <option key={t.name} value={t.name}>
+              {t.name}
+            </option>
+          ))}
+        </select>
+        <button type="button" data-testid="claim-template-add" disabled={fromTemplate.isPending} onClick={addFromTemplate}>
+          Add from template
         </button>
         {error && <span data-testid="claim-form-error">{error}</span>}
       </form>
