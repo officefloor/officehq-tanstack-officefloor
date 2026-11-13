@@ -214,7 +214,9 @@ public class PersonRepository {
      * Merge the person ({@code from}, their claims already moved) into the other: their name and then their aliases,
      * in the order added, become the other's newest aliases; their patrons are added after the other's, in the order named (not the other,
      * no repeats); anyone naming them as patron names the other instead (not themselves, no repeats); their pool
-     * memberships and plans move to the other (shares added where the other is already a member). Their statements, grades,
+     * memberships and plans move to the other (shares added where the other is already a member). Their statements join
+     * the other's, before them: the other's count is both counts added, and the other's last statement stays theirs (or,
+     * having none, becomes the merged person's). Their grades,
      * holds, past retirements, watchers and contact are dropped with them.
      */
     public void merge(Person from, Person into) {
@@ -252,7 +254,7 @@ public class PersonRepository {
 
         jdbc.update("UPDATE person_plan SET person_id = ? WHERE sheet_id = ? AND person_id = ?", kept, sheetId, gone);
 
-        jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+        mergeStatements(sheetId, gone, kept);
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
@@ -330,6 +332,29 @@ public class PersonRepository {
         return found;
     }
 
+    /**
+     * Give the kept person the gone person's statements, before their own: the kept person's count becomes both
+     * counts added, and their last statement stays theirs (or, having none, becomes the gone person's).
+     */
+    private void mergeStatements(String sheetId, long gone, long kept) {
+        int goneCount = jdbc.queryForObject("SELECT statement_count FROM person WHERE sheet_id = ? AND id = ?",
+                Integer.class, sheetId, gone);
+        if (goneCount > 0) {
+            // shifted through negatives so no two statements of the kept person share a seq on the way
+            jdbc.update("UPDATE person_statement SET seq = -(seq + ?) WHERE sheet_id = ? AND person_id = ?", goneCount,
+                    sheetId, kept);
+            jdbc.update("UPDATE person_statement SET seq = -seq WHERE sheet_id = ? AND person_id = ?", sheetId, kept);
+            jdbc.update("UPDATE person_statement SET person_id = ? WHERE sheet_id = ? AND person_id = ?", kept, sheetId,
+                    gone);
+            jdbc.update("UPDATE person k SET stated_total = (SELECT g.stated_total FROM person g WHERE g.id = ?),"
+                    + " statement_date = (SELECT g.statement_date FROM person g WHERE g.id = ?)"
+                    + " WHERE k.sheet_id = ? AND k.id = ? AND k.statement_count = 0", gone, gone, sheetId, kept);
+            jdbc.update("UPDATE person SET statement_count = statement_count + ? WHERE sheet_id = ? AND id = ?",
+                    goneCount, sheetId, kept);
+        }
+        jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+    }
+
     /** The person's aliases, in the order they were added. */
     public List<String> aliases(String sheetId, long personId) {
         return jdbc.queryForList("SELECT alias FROM person_alias WHERE sheet_id = ? AND person_id = ? ORDER BY id",
@@ -338,7 +363,7 @@ public class PersonRepository {
 
     /**
      * Copy the person to the other sheet as its newest person, with every grade they were given (and its from-date),
-     * their terms, contact, tags (joining its tag list), aliases and past retirements, and no statement taken; the new person's id. The person stays on this sheet
+     * their terms, contact, tags (joining its tag list), aliases, past retirements and statements; the new person's id. The person stays on this sheet
      * until {@link #dropTransferred}.
      */
     public long transfer(Person person, String to) {
@@ -354,9 +379,6 @@ public class PersonRepository {
         changed.put("sheet_id", to);
         changed.put("name", name);
         changed.put("origin", person.sheetId());
-        changed.put("statement_count", 0);
-        changed.put("stated_total", null);
-        changed.put("statement_date", null);
         changed.put("position", jdbc.queryForObject("SELECT " + NEXT_POSITION, Long.class, to));
         long id = RowCopy.copy(jdbc, "person", person.id(), changed);
         String tags = tags(to, id);
@@ -370,6 +392,8 @@ public class PersonRepository {
         jdbc.update("UPDATE person_alias SET sheet_id = ?, person_id = ? WHERE sheet_id = ? AND person_id = ?", to, id,
                 person.sheetId(), person.id());
         jdbc.update("UPDATE person_retirement SET sheet_id = ?, person_id = ? WHERE sheet_id = ? AND person_id = ?", to,
+                id, person.sheetId(), person.id());
+        jdbc.update("UPDATE person_statement SET sheet_id = ?, person_id = ? WHERE sheet_id = ? AND person_id = ?", to,
                 id, person.sheetId(), person.id());
         return id;
     }

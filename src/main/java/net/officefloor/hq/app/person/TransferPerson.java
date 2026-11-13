@@ -15,9 +15,9 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * Transfers the person to the other sheet: they arrive as its newest person with their grades, terms, contact and
- * aliases (statements, holds, patron links, pool memberships and watches dropped), and their claims arrive in the
- * order they were added, keeping status, dates, notes, frozen figures, tags and logs, losing any figure a statement
- * bound and their references. Each claim that had a number takes the other sheet's next one, in the order the claims
+ * aliases and statements (holds, patron links, pool memberships and watches dropped), and their claims arrive in the
+ * order they were added, keeping status, dates, notes, frozen figures, any figure a statement bound, tags and logs,
+ * losing their references. Each claim that had a number takes the other sheet's next one, in the order the claims
  * were opened; a correction or split that named one of them by number names its new number. They leave this sheet.
  * When they are merged on arrival, they are then merged into that person exactly as {@link MergePerson} does.
  */

@@ -125,6 +125,15 @@ public class ClaimRepository {
         return find(claim.sheetId(), claim.id());
     }
 
+    /**
+     * Move the claim to the person it is merged into: it keeps any figure a statement bound it to and is listed as
+     * their newest claim.
+     */
+    public void moveMerged(Claim claim, long personId) {
+        jdbc.update("UPDATE claim SET person_id = ?, listed = NEXT VALUE FOR claim_listed_seq WHERE id = ? AND sheet_id = ?",
+                personId, claim.id(), claim.sheetId());
+    }
+
     /** Bind the claim to a statement's figure (null: n/a), or unbind it (live again) when not stated. */
     public void bindStatement(Claim claim, boolean stated, BigDecimal statedDue) {
         jdbc.update("UPDATE claim SET stated = ?, stated_due = ? WHERE id = ? AND sheet_id = ?",
@@ -292,7 +301,7 @@ public class ClaimRepository {
 
     /**
      * Copy the person's claims to the other sheet's person, in the order they were added, keeping their status,
-     * dates, notes, frozen figures, tags, logs and comments, losing any figure a statement bound, their references
+     * dates, notes, frozen figures, any figure a statement bound, tags, logs and comments, losing their references
      * and their batch; each claim's tags join the other sheet's tag list. The claims leave this sheet (with any lock
      * on them). Numbers are left as they were, to be given anew ({@link #renumberTransferred}).
      */
@@ -307,8 +316,6 @@ public class ClaimRepository {
             Map<String, Object> changed = new HashMap<>();
             changed.put("sheet_id", to);
             changed.put("person_id", toPersonId);
-            changed.put("stated", false);
-            changed.put("stated_due", null);
             changed.put("external_ref", null);
             changed.put("external_ref_key", null);
             changed.put("batch", null);
