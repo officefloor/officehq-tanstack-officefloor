@@ -2,6 +2,7 @@ package net.officefloor.hq.app.plan;
 
 import java.time.LocalDate;
 import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimAdding;
 import net.officefloor.hq.app.claim.ClaimInput;
 import net.officefloor.hq.app.claim.ClaimLogStore;
@@ -62,8 +63,8 @@ public class GeneratePlanClaims {
                 } catch (InvalidSheetException e) {
                     continue;
                 }
-                ClaimAdding.add(input, person, claims, settings, log, periods, rollups, audit, holidays);
-                plans.markMade(plan.id(), d);
+                Claim claim = ClaimAdding.add(input, person, claims, settings, log, periods, rollups, audit, holidays);
+                plans.markMade(plan.id(), d, claim.getSheetId(), claim.getId());
                 made++;
             }
         }

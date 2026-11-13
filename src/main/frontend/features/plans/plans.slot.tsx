@@ -43,6 +43,9 @@ function PlanRow({ plan: p, latest }: { plan: Plan; latest: number }) {
     mutationFn: (a: string) =>
       postJson<Plan>(`/api/sheets/${encodeURIComponent(sheet)}/plans/${p.id}/amount`, { amount: a, user }),
     onSuccess: async () => {
+      // The change also edits the plan's DRAFT claims, so the claims and people's figures move too.
+      void queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
+      void queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
       await queryClient.invalidateQueries({ queryKey: plansKey(sheet) });
       setAmount('');
     },

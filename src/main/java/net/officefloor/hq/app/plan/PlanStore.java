@@ -89,7 +89,20 @@ public class PlanStore {
         return n != null && n > 0;
     }
 
-    public void markMade(long planId, LocalDate date) {
-        jdbc.update("INSERT INTO plan_made (plan_id, made_on) VALUES (?, ?)", planId, date);
+    /** Marks the plan date made, keeping the claim it made on the sheet. */
+    public void markMade(long planId, LocalDate date, String claimSheet, long claimId) {
+        jdbc.update("INSERT INTO plan_made (plan_id, made_on, claim_sheet, claim_id) VALUES (?, ?, ?, ?)", planId,
+                date, claimSheet, claimId);
+    }
+
+    /** The claims the plan made, by plan date: the sheet each is on and its id. */
+    public List<MadeClaim> madeClaims(long planId) {
+        return jdbc.query("SELECT claim_sheet, claim_id FROM plan_made WHERE plan_id = ? AND claim_id IS NOT NULL"
+                + " ORDER BY made_on", (rs, n) -> new MadeClaim(rs.getString("claim_sheet"), rs.getLong("claim_id")),
+                planId);
+    }
+
+    /** A claim a plan made: the sheet it is on and its id. */
+    public record MadeClaim(String sheetId, long claimId) {
     }
 }
