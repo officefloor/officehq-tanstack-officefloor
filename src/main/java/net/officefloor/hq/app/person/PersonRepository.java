@@ -17,7 +17,7 @@ import org.springframework.stereotype.Repository;
 public class PersonRepository {
 
     private static final String COLUMNS = "p.id, p.sheet_id, p.name, p.grade, p.version, p.statement_count, p.stated_total,"
-            + " p.statement_date, p.retired_from, p.terms FROM person p";
+            + " p.statement_date, p.retired_from, p.terms, p.contact FROM person p";
 
     private final JdbcTemplate jdbc;
 
@@ -54,6 +54,14 @@ public class PersonRepository {
         return n != null && n > 0;
     }
 
+    /** Whether a person other than {@code exceptId} on the sheet has this contact. */
+    public boolean contactTaken(String sheetId, String contact, Long exceptId) {
+        Integer n = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND contact = ? AND (? IS NULL OR id <> ?)",
+                Integer.class, sheetId, contact, exceptId, exceptId);
+        return n != null && n > 0;
+    }
+
     /**
      * Insert a new person (null id) or update an existing one, bumping its version and storing its grades as
      * the person carries them; the person as stored, or null when the stored version is no longer the one the
@@ -62,8 +70,8 @@ public class PersonRepository {
     public Person save(Person person) {
         if (person.id() != null) {
             int n = jdbc.update(
-                    "UPDATE person SET name = ?, terms = ?, version = version + 1 WHERE id = ? AND sheet_id = ? AND version = ?",
-                    person.name(), person.terms(), person.id(), person.sheetId(), person.version());
+                    "UPDATE person SET name = ?, terms = ?, contact = ?, version = version + 1 WHERE id = ? AND sheet_id = ? AND version = ?",
+                    person.name(), person.terms(), person.contact(), person.id(), person.sheetId(), person.version());
             if (n == 0) {
                 return null;
             }
@@ -73,22 +81,23 @@ public class PersonRepository {
             }
             return new Person(person.id(), person.sheetId(), person.name(), person.grade(), person.version() + 1,
                     person.statementCount(), person.statedTotal(), person.statementDate(), person.retiredFrom(),
-                    person.holds(), person.grades(), person.terms());
+                    person.holds(), person.grades(), person.terms(), person.contact());
         }
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO person (sheet_id, name, grade, terms) VALUES (?, ?, ?, ?)", new String[] { "id" });
+                    "INSERT INTO person (sheet_id, name, grade, terms, contact) VALUES (?, ?, ?, ?, ?)", new String[] { "id" });
             ps.setString(1, person.sheetId());
             ps.setString(2, person.name());
             ps.setString(3, person.grade());
             ps.setObject(4, person.terms());
+            ps.setString(5, person.contact());
             return ps;
         }, keys);
         long id = keys.getKey().longValue();
         insertGrade(person.sheetId(), id, new GradeFrom(person.grade(), null));
         return new Person(id, person.sheetId(), person.name(), person.grade(), 0, 0, null, null, null, List.of())
-                .withTerms(person.terms());
+                .withTerms(person.terms()).withContact(person.contact());
     }
 
     private void insertGrade(String sheetId, long personId, GradeFrom grade) {
@@ -122,7 +131,7 @@ public class PersonRepository {
             List<GradeFrom> own = grades.getOrDefault(p.id(), List.of(new GradeFrom(p.grade(), null)));
             people.add(new Person(p.id(), p.sheetId(), p.name(), Person.gradeOn(own, on, p.grade()), p.version(),
                     p.statementCount(), p.statedTotal(), p.statementDate(), p.retiredFrom(),
-                    List.copyOf(holds.getOrDefault(p.id(), List.of())), List.copyOf(own), p.terms()));
+                    List.copyOf(holds.getOrDefault(p.id(), List.of())), List.copyOf(own), p.terms(), p.contact()));
         }
         return people;
     }
@@ -175,6 +184,7 @@ public class PersonRepository {
         return new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"),
                 rs.getInt("version"), rs.getInt("statement_count"), rs.getString("stated_total"),
                 rs.getObject("statement_date", LocalDate.class),
-                rs.getObject("retired_from", LocalDate.class), List.of()).withTerms(rs.getObject("terms", Integer.class));
+                rs.getObject("retired_from", LocalDate.class), List.of()).withTerms(rs.getObject("terms", Integer.class))
+                .withContact(rs.getString("contact"));
     }
 }

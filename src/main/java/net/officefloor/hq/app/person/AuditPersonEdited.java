@@ -10,6 +10,7 @@ public class AuditPersonEdited {
             Audit audit) {
         audit.record("PERSON_EDITED sheet=" + person.sheetId() + " by=" + user + " name=" + person.name()
                 + " grade=" + person.grade()
-                + (termsChange.changed() ? " terms=" + (person.terms() == null ? "" : person.terms()) : ""));
+                + (termsChange.changed() ? " terms=" + (person.terms() == null ? "" : person.terms()) : "")
+                + (termsChange.contactChanged() ? " contact=" + (person.contact() == null ? "" : person.contact()) : ""));
     }
 }

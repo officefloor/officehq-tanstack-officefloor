@@ -6,11 +6,12 @@ import java.util.List;
  * A person as the screen shows them; the last statement's due-total and date are null before the first, and
  * {@code retiredFrom} is null while they are not retired; {@code held} is whether they have any hold, {@code holds}
  * each hold, oldest first. {@code grade} is the grade in force on the sheet's today; {@code grades} every grade
- * recorded, each from its from-date. {@code terms} are the person's own terms in days, null when they have none.
+ * recorded, each from its from-date. {@code terms} are the person's own terms in days, null when they have none;
+ * {@code contact} their contact, null when they have none.
  */
 public record PersonResponse(long id, String name, String grade, int version, int statementCount, String statedTotal,
         String statementDate, boolean retired, String retiredFrom, boolean held,
-        List<Grade> grades, List<HoldDates> holds, Integer terms) {
+        List<Grade> grades, List<HoldDates> holds, Integer terms, String contact) {
 
 
     /** A grade recorded for the person, from its from-date (yyyy-mm-dd; null: from the beginning of time). */
@@ -28,6 +29,7 @@ public record PersonResponse(long id, String name, String grade, int version, in
                 person.held(), person.grades().stream()
                         .map((g) -> new Grade(g.grade(), g.from() == null ? null : g.from().toString())).toList(),
                 person.holds().stream().map((h) -> new HoldDates(h.from() == null ? null : h.from().toString(),
-                        h.to() == null ? null : h.to().toString())).toList(), person.terms());
+                        h.to() == null ? null : h.to().toString())).toList(), person.terms(),
+                person.contact());
     }
 }

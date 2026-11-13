@@ -7,7 +7,16 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { GRADES, peopleKey, useEditingPerson, usePeople } from './people';
 import type { Person, PersonInput } from './people';
 
-const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '' };
+const EMPTY: PersonInput = { name: '', grade: 'A', gradeFrom: '', terms: '', contact: '' };
+
+// The form's values for a person as stored.
+const fill = (p: Person): PersonInput => ({
+  name: p.name,
+  grade: p.grade,
+  gradeFrom: '',
+  terms: p.terms == null ? '' : String(p.terms),
+  contact: p.contact ?? '',
+});
 
 // Adds a person, or — while a person's editor is open — saves that person's changes. Opening an
 // editor fills the form with the person's values and remembers the version it loaded: a save over
@@ -38,7 +47,7 @@ export function PersonForm() {
     }
     filledFor.current = editing;
     version.current = person.version;
-    setForm({ name: person.name, grade: person.grade, gradeFrom: '', terms: person.terms == null ? '' : String(person.terms) });
+    setForm(fill(person));
     setError('');
   }, [editing, people.data, setEditing]);
 
@@ -67,7 +76,7 @@ export function PersonForm() {
         const current = queryClient.getQueryData<Person[]>(peopleKey(sheet))?.find((p) => p.id === editing);
         if (current) {
           version.current = current.version;
-          setForm({ name: current.name, grade: current.grade, gradeFrom: '', terms: current.terms == null ? '' : String(current.terms) });
+          setForm(fill(current));
         }
         setError('Someone else saved this person meanwhile; the form now shows their values.');
         return;
@@ -79,7 +88,15 @@ export function PersonForm() {
         setEditing(undefined);
         setForm(EMPTY);
       }
-      setError(taken ? 'That name is already in use.' : 'That person could not be saved.');
+      const contact = input.contact.trim().toLowerCase();
+      const contactTaken = contact !== '' && people.data?.some((p) => p.id !== editing && p.contact === contact);
+      setError(
+        taken
+          ? 'That name is already in use.'
+          : contactTaken
+            ? 'That contact is already in use.'
+            : 'That person could not be saved.',
+      );
     },
   });
 
@@ -132,6 +149,13 @@ export function PersonForm() {
         title="The person's own terms in days (blank: none)"
         value={form.terms}
         onChange={(e) => change({ terms: e.target.value })}
+      />
+      <input
+        data-testid="person-form-contact"
+        placeholder="Contact"
+        title="The person's contact (blank: none)"
+        value={form.contact}
+        onChange={(e) => change({ contact: e.target.value })}
       />
       <button type="submit" data-testid="person-form-submit" disabled={save.isPending}>
         {editing === undefined ? 'Add person' : 'Save person'}

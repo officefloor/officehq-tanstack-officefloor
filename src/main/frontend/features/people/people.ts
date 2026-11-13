@@ -39,7 +39,8 @@ export const liveHolds = (p: { holds: Hold[]; retiredFrom: string | null }, toda
  * sheet's today when it was taken, both null before the first. `retired` is whether a retirement date is
  * set (whatever the date), `retiredFrom` that date, null while they are not retired. `held` is whether
  * they have any hold, `holds` each hold, oldest first: their open claims dated within one, and not bound by a
- * statement, count in no live total. `terms` is the person's own terms in days, null when they have none.
+ * statement, count in no live total. `terms` is the person's own terms in days, null when they have none;
+ * `contact` their contact (trimmed, lower-cased), null when they have none.
  */
 export type Person = {
   id: number;
@@ -55,10 +56,14 @@ export type Person = {
   held: boolean;
   holds: Hold[];
   terms: number | null;
+  contact: string | null;
 };
 
-/** The fields the person form submits; a blank `gradeFrom` is the sheet's today, blank `terms` none of their own. */
-export type PersonInput = { name: string; grade: string; gradeFrom: string; terms: string };
+/**
+ * The fields the person form submits; a blank `gradeFrom` is the sheet's today, blank `terms` none of their own,
+ * blank `contact` none.
+ */
+export type PersonInput = { name: string; grade: string; gradeFrom: string; terms: string; contact: string };
 
 /** The query key for the sheet's people; under sheetKey, so re-loading the sheet re-reads them. */
 export const peopleKey = (sheet: string) => [...sheetKey(sheet), 'people'] as const;
