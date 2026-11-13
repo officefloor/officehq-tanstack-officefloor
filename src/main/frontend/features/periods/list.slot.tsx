@@ -10,7 +10,7 @@ import { useRates } from '../rates/rates';
 import { fiscalYearOf, floorOf, useSettings } from '../settings/settings';
 import { useSheetToday } from '../sheet/sheet';
 import { lateOf } from '../overdue/overdue';
-import { type Period, periodDue, periodsKey, usePeriods } from './periods';
+import { type Period, periodClaimsCount, periodDue, periodsKey, usePeriods } from './periods';
 import { useFigure } from '../locale/locale';
 
 type Fields = { name: string; from: string; to: string; cap: string };
@@ -25,7 +25,7 @@ type Generate = { range: Range } | { year: string } | { quarters: string };
 // The sheet's periods, each with its due-total (the figures of the claims whose date falls in it and that
 // count by their status at its end, skipping n/a; fixed when the period was closed or soft-closed), its closed yes/soft/no and the buttons that
 // close it, soft-close it and reopen it (as the sheet's permission matrix allows), its locked yes/no and the
-// buttons that lock and unlock it (a steward only), its cap on each person's open
+// buttons that lock and unlock it (a steward only), its count of claims (due-by in it, VOID and DELETED left out), its cap on each person's open
 // claims (blank for none), and the form that adds one.
 function Periods() {
   const fig = useFigure();
@@ -108,6 +108,7 @@ function Periods() {
             <th>Fiscal year</th>
             <th>Cap</th>
             <th>Locked</th>
+            <th>Claims</th>
             <th />
           </tr>
         </thead>
@@ -122,6 +123,7 @@ function Periods() {
               <td data-testid="period-fy">{settings ? fiscalYearOf(p.from, fiscalStart) : ''}</td>
               <td data-testid="period-cap">{fig(p.cap ?? '')}</td>
               <td data-testid="period-locked">{p.locked ? 'yes' : 'no'}</td>
+              <td data-testid="period-claims-count">{periodClaimsCount(p, claims.data)}</td>
               <td>
                 <button type="button" data-testid="period-close" disabled={act.isPending} onClick={() => periodAction(p.name, 'close')}>
                   Close

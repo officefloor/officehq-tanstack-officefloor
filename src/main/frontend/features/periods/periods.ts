@@ -120,6 +120,10 @@ export function personPeriodCarried(
   ]);
 }
 
+/** How many claims belong to the period: those whose due-by falls in it, VOID and DELETED claims left out. */
+export const periodClaimsCount = (period: Period, claims: Claim[] | undefined) =>
+  (claims ?? []).filter((c) => c.status !== 'VOID' && c.status !== 'DELETED' && contains(period, c.dueBy)).length;
+
 /** A period's due-total as the list shows it: the sum of the people's due-totals for it. */
 export function periodDue(
   period: Period,
