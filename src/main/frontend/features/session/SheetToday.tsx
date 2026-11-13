@@ -20,7 +20,7 @@ export function SheetToday() {
 
   const save = useMutation({
     mutationFn: (value: string) =>
-      putJson<SheetInfo>(`/api/sheets/${encodeURIComponent(sheet)}/today`, { today: value }),
+      putJson<SheetInfo>(`/api/sheets/${encodeURIComponent(sheet)}/today?user=${encodeURIComponent(user)}`, { today: value }),
     onSuccess: async (saved) => {
       queryClient.setQueryData(sheetInfoKey(saved.id), saved);
       // Everything that depends on the date is kept under the sheet's key.
