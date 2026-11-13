@@ -11,13 +11,16 @@ public class SettingRepository {
     /** The floor a sheet starts with. */
     public static final BigDecimal DEFAULT_FLOOR = new BigDecimal("1.00");
 
+    /** The terms a sheet starts with, in days. */
+    public static final int DEFAULT_TERMS = 14;
+
     private final JdbcTemplate jdbc;
 
     public SettingRepository(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 
-    /** The sheet's settings: its clerk limit, its floor and its roles, by user name. */
+    /** The sheet's settings: its clerk limit, its floor, its terms and its roles, by user name. */
     public Settings find(String sheetId) {
         List<BigDecimal> limit = jdbc.query("SELECT clerk_limit FROM sheet WHERE id = ?",
                 (rs, n) -> rs.getBigDecimal("clerk_limit"), sheetId);
@@ -25,7 +28,7 @@ public class SettingRepository {
                 + " ORDER BY user_name", (rs, n) -> new UserRole(rs.getString("sheet_id"), rs.getString("user_name"),
                         Role.valueOf(rs.getString("role"))), sheetId);
         BigDecimal clerkLimit = limit.isEmpty() || limit.get(0) == null ? null : limit.get(0).setScale(2);
-        return new Settings(sheetId, clerkLimit, floor(sheetId), roles);
+        return new Settings(sheetId, clerkLimit, floor(sheetId), terms(sheetId), roles);
     }
 
     /** The sheet's floor: a claim's live due is at least it (1.00 for a sheet not yet stored). */
@@ -33,6 +36,17 @@ public class SettingRepository {
         List<BigDecimal> floor = jdbc.query("SELECT due_floor FROM sheet WHERE id = ?",
                 (rs, n) -> rs.getBigDecimal("due_floor"), sheetId);
         return floor.isEmpty() || floor.get(0) == null ? DEFAULT_FLOOR : floor.get(0).setScale(2);
+    }
+
+    /** The sheet's terms in days: a claim is due by its date plus them (14 for a sheet not yet stored). */
+    public int terms(String sheetId) {
+        List<Integer> terms = jdbc.query("SELECT terms FROM sheet WHERE id = ?", (rs, n) -> rs.getInt("terms"), sheetId);
+        return terms.isEmpty() ? DEFAULT_TERMS : terms.get(0);
+    }
+
+    /** Set the sheet's terms. */
+    public void saveTerms(String sheetId, int terms) {
+        jdbc.update("UPDATE sheet SET terms = ? WHERE id = ?", terms, sheetId);
     }
 
     /** Set the sheet's floor. */

@@ -3,14 +3,18 @@ import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { putJson } from '../../api/http';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
-import { AMOUNT, DEFAULT_FLOOR, settingsKey, useSettings } from './settings';
+import { AMOUNT, DAYS, DEFAULT_FLOOR, DEFAULT_TERMS, settingsKey, useSettings } from './settings';
 import type { Settings } from './settings';
 import { useOneAtATime } from '../../query/useOneAtATime';
 
 /** The settings the form sends: only those whose field was touched since the last save. */
-type SettingsInput = { clerkLimit?: string; floor?: string };
+type SettingsInput = { clerkLimit?: string; floor?: string; terms?: string };
 
-// The sheet's clerk limit (blank: no limit) and floor in force, and the form that sets them. Saving sends
+type Touched = { clerkLimit: boolean; floor: boolean; terms: boolean };
+
+const UNTOUCHED: Touched = { clerkLimit: false, floor: false, terms: false };
+
+// The sheet's clerk limit (blank: no limit), floor and terms in force, and the form that sets them. Saving sends
 // only the fields touched since the last save, so a blank field left alone changes nothing.
 export function SettingsForm() {
   const [user] = useCurrentUser();
@@ -18,7 +22,8 @@ export function SettingsForm() {
   const settings = useSettings().data;
   const [clerkLimit, setClerkLimit] = useState('');
   const [floor, setFloor] = useState('');
-  const [touched, setTouched] = useState<{ clerkLimit: boolean; floor: boolean }>({ clerkLimit: false, floor: false });
+  const [terms, setTerms] = useState('');
+  const [touched, setTouched] = useState<Touched>(UNTOUCHED);
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
   const once = useOneAtATime();
@@ -29,7 +34,8 @@ export function SettingsForm() {
     onSuccess: async (saved) => {
       setClerkLimit('');
       setFloor('');
-      setTouched({ clerkLimit: false, floor: false });
+      setTerms('');
+      setTouched(UNTOUCHED);
       setError('');
       queryClient.setQueryData(settingsKey(sheet), saved);
       await queryClient.invalidateQueries({ queryKey: settingsKey(sheet) });
@@ -59,7 +65,15 @@ export function SettingsForm() {
       }
       input.floor = value;
     }
-    if (input.clerkLimit === undefined && input.floor === undefined) return;
+    if (touched.terms) {
+      const value = terms.trim();
+      if (value !== '' && !DAYS.test(value)) {
+        setError(`Type terms of 0 or more whole days, or leave them blank for ${DEFAULT_TERMS}.`);
+        return;
+      }
+      input.terms = value;
+    }
+    if (input.clerkLimit === undefined && input.floor === undefined && input.terms === undefined) return;
     once(() => save.mutateAsync(input));
   };
 
@@ -70,6 +84,9 @@ export function SettingsForm() {
       </p>
       <p>
         Floor: <span data-testid="setting-floor-current">{settings?.floor ?? ''}</span>
+      </p>
+      <p>
+        Terms (days): <span data-testid="setting-terms-current">{settings?.terms ?? ''}</span>
       </p>
       <form onSubmit={submit} data-testid="settings-form">
         <input
@@ -91,6 +108,17 @@ export function SettingsForm() {
           onChange={(e) => {
             setFloor(e.target.value);
             setTouched((t) => ({ ...t, floor: true }));
+            setError('');
+          }}
+        />
+        <input
+          data-testid="setting-terms"
+          placeholder={`Terms in days (blank: ${DEFAULT_TERMS})`}
+          value={terms}
+          onFocus={() => setTouched((t) => ({ ...t, terms: true }))}
+          onChange={(e) => {
+            setTerms(e.target.value);
+            setTouched((t) => ({ ...t, terms: true }));
             setError('');
           }}
         />

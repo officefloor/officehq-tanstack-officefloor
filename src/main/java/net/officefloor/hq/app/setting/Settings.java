@@ -4,10 +4,11 @@ import java.math.BigDecimal;
 import java.util.List;
 
 /**
- * A sheet's settings: its clerk limit (null: no limit), its floor (a claim's live due is at least it) and the
+ * A sheet's settings: its clerk limit (null: no limit), its floor (a claim's live due is at least it), its terms
+ * (a claim is due by its date plus this many days) and the
  * roles given to user names (any other name is a clerk).
  */
-public record Settings(String sheetId, BigDecimal clerkLimit, BigDecimal floor, List<UserRole> roles) {
+public record Settings(String sheetId, BigDecimal clerkLimit, BigDecimal floor, int terms, List<UserRole> roles) {
 
     /** The role of the user name: the one given to it, else clerk. */
     public Role roleOf(String user) {
