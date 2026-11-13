@@ -9,5 +9,5 @@ export function PersonDueTotal({ person }: { person: Person }) {
   const rates = useRates().data ?? [];
   const today = useSheetToday();
   const claims = (useClaims().data ?? []).filter((c) => c.personId === person.id);
-  return <td data-testid="person-due-total">{personDue(claims, rates, person.grade, today)}</td>;
+  return <td data-testid="person-due-total">{personDue(claims, rates, person.grade, today, person.held)}</td>;
 }

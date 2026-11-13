@@ -27,7 +27,7 @@ public class TakeStatement {
         boolean kept = false;
         int counted = 0;
         for (Claim claim : claims.findForPerson(person.sheetId(), person.id())) {
-            if (!claim.counts()) {
+            if (!person.counts(claim)) {
                 claims.bindStatement(claim, false, null);
                 continue;
             }

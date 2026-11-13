@@ -9,7 +9,8 @@ export const GRADES = ['A', 'B', 'C'] as const;
  * A person on the sheet as the store holds them; `version` counts their saves. `statementCount` counts
  * the statements taken of them; `statedTotal` is the last one's due-total and `statementDate` the
  * sheet's today when it was taken, both null before the first. `retired` is whether a retirement date is
- * set (whatever the date), `retiredFrom` that date, null while they are not retired.
+ * set (whatever the date), `retiredFrom` that date, null while they are not retired. `held` is whether
+ * they are on hold: their open claims then count in no live total.
  */
 export type Person = {
   id: number;
@@ -21,6 +22,7 @@ export type Person = {
   statementDate: string | null;
   retired: boolean;
   retiredFrom: string | null;
+  held: boolean;
 };
 
 /** The fields the person form submits. */

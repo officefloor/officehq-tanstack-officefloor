@@ -1,20 +1,27 @@
 package net.officefloor.hq.app.person;
 
 import java.time.LocalDate;
+import net.officefloor.hq.app.claim.Claim;
 
 /**
  * A person on a sheet. {@code id} is null until the person is first saved; {@code version} counts its saves.
  * {@code statementCount} counts the statements taken; {@code statedTotal} is the last one's due-total
  * (n/a when it had none) and {@code statementDate} the sheet's today when it was taken, both null before the first.
- * {@code retiredFrom} is the date the person is retired from, or null when they are not retired.
+ * {@code retiredFrom} is the date the person is retired from, or null when they are not retired. {@code held} is
+ * whether the person is on hold: their open claims then count in no live total.
  */
 public record Person(Long id, String sheetId, String name, String grade, int version, int statementCount,
-        String statedTotal, LocalDate statementDate, LocalDate retiredFrom) {
+        String statedTotal, LocalDate statementDate, LocalDate retiredFrom, boolean held) {
 
     /** The same person with another name and grade. */
     public Person withNameAndGrade(String nextName, String nextGrade) {
         return new Person(id, sheetId, nextName, nextGrade, version, statementCount, statedTotal, statementDate,
-                retiredFrom);
+                retiredFrom, held);
+    }
+
+    /** Whether the claim counts toward this person's live totals: a held person's open claims do not. */
+    public boolean counts(Claim claim) {
+        return claim.counts(held);
     }
 
     /** Whether the person is retired: a retirement date is set, whatever the date. */

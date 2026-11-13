@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { counts } from '../claims/claims';
+import { counts, heldIds } from '../claims/claims';
 import type { Claim } from '../claims/claims';
 import type { Person } from '../people/people';
 import { claimDue, total } from '../rates/rates';
@@ -36,14 +36,16 @@ export const contains = (p: Period, date: string) => p.from <= date && date <= p
 export const periodOf = (periods: Period[], date: string) => periods.find((p) => contains(p, date));
 
 /**
- * A period's due-total: the figures of the claims that count whose date falls in it, added up; a
+ * A period's due-total: the figures of the claims that count whose date falls in it (a held person's
+ * open ones left out), added up; a
  * closed period keeps the total fixed when it was closed, whatever the rates do later.
  */
 export function periodDue(period: Period, claims: Claim[], people: Person[], rates: Rate[]): string {
   if (period.closed && period.closedTotal !== null) return period.closedTotal;
   const grades = new Map(people.map((p) => [p.id, p.grade]));
+  const held = heldIds(people);
   const figures = claims
-    .filter((c) => counts(c) && contains(period, c.date) && grades.has(c.personId))
+    .filter((c) => counts(c, held.has(c.personId)) && contains(period, c.date) && grades.has(c.personId))
     .map((c) => claimDue(c, rates, grades.get(c.personId)!));
   return total(figures);
 }

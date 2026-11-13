@@ -26,6 +26,11 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
         return status == ClaimStatus.OPEN || status == ClaimStatus.SETTLED;
     }
 
+    /** Whether the claim counts toward the live totals when its person is held or not: a held person's open claims do not. */
+    public boolean counts(boolean held) {
+        return status == ClaimStatus.SETTLED || (status == ClaimStatus.OPEN && !held);
+    }
+
     /**
      * The claim's figure (null: n/a): the due fixed when it was settled, else the figure its statement bound
      * it to, else its amount at the given live rate (null: none).

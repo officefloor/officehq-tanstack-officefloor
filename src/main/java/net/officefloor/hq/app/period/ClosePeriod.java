@@ -30,7 +30,7 @@ public class ClosePeriod {
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         for (Claim claim : claims.findAll(period.sheetId())) {
             Person person = byId.get(claim.personId());
-            if (person == null || !claim.counts() || !period.contains(claim.date())) {
+            if (person == null || !person.counts(claim) || !period.contains(claim.date())) {
                 continue;
             }
             BigDecimal figure = claim.figure(Rate.inForce(sheetRates, person.grade(), claim.date()));

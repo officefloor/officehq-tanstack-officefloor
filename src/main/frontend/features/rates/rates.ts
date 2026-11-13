@@ -78,10 +78,10 @@ const keepsFigure = (c: Claim) => c.due !== null || (c.stated && c.statedDue !==
 /**
  * A person's due-total: the figures of their claims that count, added up (0.00 with none). With no
  * rate in force on the sheet's today for their grade it is n/a, unless a settled or stated claim
- * keeps a figure: then it is the figures there are, added up.
+ * keeps a figure: then it is the figures there are, added up. While they are held, their open claims do not count.
  */
-export function personDue(claims: Claim[], rates: Rate[], grade: string, today: string): string {
-  const counted = claims.filter(counts);
+export function personDue(claims: Claim[], rates: Rate[], grade: string, today: string, held: boolean): string {
+  const counted = claims.filter((c) => counts(c, held));
   const figures = counted.map((c) => claimDue(c, rates, grade));
   if (rateFor(rates, grade, today) === undefined && !counted.some(keepsFigure)) {
     return NA;

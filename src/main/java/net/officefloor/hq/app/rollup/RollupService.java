@@ -50,7 +50,7 @@ public class RollupService {
             BigDecimal due = BigDecimal.ZERO.setScale(2);
             boolean kept = false;
             for (Claim claim : sheetClaims) {
-                if (claim.personId() != person.id() || !claim.counts()) {
+                if (claim.personId() != person.id() || !person.counts(claim)) {
                     continue;
                 }
                 claimed = claimed.add(claim.amount());
