@@ -1,0 +1,105 @@
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 8e0544692..7b72644fb 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -195,3 +195,21 @@ export function trimmedTotal(dues: string[]): string {
+   const kept = cents.length >= 3 ? cents.slice(1, -1) : cents;
+   return (kept.reduce((sum, c) => sum + c, 0) / 100).toFixed(2);
+ }
++
++/**
++ * A person's settled-total and open-total: the dues of their SETTLED claims that count (at their frozen figures,
++ * corrections included), and of their OPEN and PENDING ones that count, each added up (skipping n/a, not capped) —
++ * together their due-total before the cap.
++ */
++export function personSplit(
++  claims: Claim[],
++  rates: Rate[],
++  grades: GradeFrom[],
++  holds: Hold[],
++  rules: DueRules,
++): { settled: string; open: string } {
++  const counted = claims.filter((c) => counts(c, holds, rules.today));
++  const dues = (keep: (c: Claim) => boolean) =>
++    total(counted.filter(keep).map((c) => claimDue(c, rates, grades, rules)));
++  return { settled: dues((c) => c.status === 'SETTLED'), open: dues((c) => c.status !== 'SETTLED') };
++}
+diff --git a/src/main/frontend/features/split/PersonSplit.tsx b/src/main/frontend/features/split/PersonSplit.tsx
+new file mode 100644
+index 000000000..a14dde4fb
+--- /dev/null
++++ b/src/main/frontend/features/split/PersonSplit.tsx
+@@ -0,0 +1,22 @@
++import { useClaims } from '../claims/claims';
++import { liveHolds } from '../people/people';
++import type { Person } from '../people/people';
++import { personSplit, useRates } from '../rates/rates';
++import { useDueRules } from '../settings/settings';
++
++function usePersonSplit(person: Person) {
++  const rates = useRates().data ?? [];
++  const rules = useDueRules();
++  const claims = (useClaims().data ?? []).filter((c) => c.personId === person.id);
++  return personSplit(claims, rates, person.grades, liveHolds(person, rules.today), rules);
++}
++
++// The dues of a person's settled counting claims, added up.
++export function PersonSettledTotal({ person }: { person: Person }) {
++  return <td data-testid="person-settled-total">{usePersonSplit(person).settled}</td>;
++}
++
++// The dues of a person's open (and pending) counting claims, added up.
++export function PersonOpenTotal({ person }: { person: Person }) {
++  return <td data-testid="person-open-total">{usePersonSplit(person).open}</td>;
++}
+diff --git a/src/main/frontend/features/split/SplitTotals.tsx b/src/main/frontend/features/split/SplitTotals.tsx
+new file mode 100644
+index 000000000..c44ab346e
+--- /dev/null
++++ b/src/main/frontend/features/split/SplitTotals.tsx
+@@ -0,0 +1,27 @@
++import { useClaims } from '../claims/claims';
++import { liveHolds, usePeople } from '../people/people';
++import { personSplit, total, useRates } from '../rates/rates';
++import { useCurrentSheet, useCurrentUser } from '../session/session';
++import { useDueRules } from '../settings/settings';
++
++// The sheet's settled-total and open-total: everyone's added up (not trimmed).
++export function SplitTotals() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const people = usePeople().data ?? [];
++  const claims = useClaims().data ?? [];
++  const rates = useRates().data ?? [];
++  const rules = useDueRules();
++
++  if (!user || !sheet) return null;
++
++  const each = people.map((p) =>
++    personSplit(claims.filter((c) => c.personId === p.id), rates, p.grades, liveHolds(p, rules.today), rules),
++  );
++  return (
++    <p>
++      Settled total: <strong data-testid="rollup-settled-total">{total(each.map((s) => s.settled))}</strong>, open
++      total: <strong data-testid="rollup-open-total">{total(each.map((s) => s.open))}</strong>
++    </p>
++  );
++}
+diff --git a/src/main/frontend/features/split/split.slot.tsx b/src/main/frontend/features/split/split.slot.tsx
+new file mode 100644
+index 000000000..1c61a1778
+--- /dev/null
++++ b/src/main/frontend/features/split/split.slot.tsx
+@@ -0,0 +1,12 @@
++import { HomeMain } from '../../slots/defs/homeMain';
++import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
++import { PersonOpenTotal, PersonSettledTotal } from './PersonSplit';
++import { SplitTotals } from './SplitTotals';
++
++export const contributions = [
++  PersonColumnHeads.fill({ order: 15.2, Component: () => <th>Settled</th> }),
++  PersonColumns.fill({ order: 15.2, Component: PersonSettledTotal }),
++  PersonColumnHeads.fill({ order: 15.3, Component: () => <th>Open</th> }),
++  PersonColumns.fill({ order: 15.3, Component: PersonOpenTotal }),
++  HomeMain.fill({ order: 42, Component: SplitTotals }),
++];
