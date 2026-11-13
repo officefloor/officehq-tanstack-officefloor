@@ -86,6 +86,24 @@ public class SheetRepository {
         return found.isEmpty() ? null : found.get(0);
     }
 
+    /**
+     * The sheet's descendants: its children (the sheets naming it as their parent), their children and so on,
+     * each once, nearest first; the sheet itself never, even where parents loop back to it.
+     */
+    public List<String> descendants(String id) {
+        java.util.LinkedHashSet<String> found = new java.util.LinkedHashSet<>();
+        java.util.ArrayDeque<String> todo = new java.util.ArrayDeque<>(List.of(id));
+        while (!todo.isEmpty()) {
+            String at = todo.poll();
+            for (String child : jdbc.queryForList("SELECT id FROM PUBLIC.sheet WHERE parent_id = ? ORDER BY id", String.class, at)) {
+                if (!child.equals(id) && found.add(child)) {
+                    todo.add(child);
+                }
+            }
+        }
+        return List.copyOf(found);
+    }
+
     /** Whether the sheet is archived: every change to an archived sheet is refused. */
     public boolean isArchived(String id) {
         Sheet sheet = find(id);

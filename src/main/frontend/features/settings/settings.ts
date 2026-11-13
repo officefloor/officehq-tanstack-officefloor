@@ -1,9 +1,10 @@
-import { useCallback, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { sheetKey, useCurrentSheet } from '../session/session';
 import { useSheetToday } from '../session/sheetToday';
 import { useClaims } from '../claims/claims';
+import type { Claim } from '../claims/claims';
 import { gradeOn } from '../people/people';
 import type { GradeFrom } from '../people/people';
 
@@ -139,24 +140,19 @@ export function useDueRules(): DueRules {
   const settings = useSettings().data;
   const today = useSheetToday();
   const claims = useClaims().data;
-  const claimDates = useMemo(
-    () => new Map((claims ?? []).filter((c) => c.number !== null).map((c) => [c.number!, c.date])),
-    [claims],
-  );
+  return useMemo(() => dueRules(settings, today, claims ?? []), [settings, today, claims]);
+}
+
+/** A sheet's rules for working out a claim's due, from its settings, its today and its claims. */
+export function dueRules(settings: Settings | undefined, today: string, claims: Claim[]): DueRules {
   const history = settings?.history;
-  const floorOn = useCallback((date: string) => valueOn(history?.floor, date, DEFAULT_FLOOR), [history]);
-  const latePctOn = useCallback((date: string) => valueOn(history?.['late-pct'], date, DEFAULT_LATE_PCT), [history]);
-  const graceOn = useCallback(
-    (grade: string | undefined, date: string) => (grade ? Number(valueOn(history?.[`grace-${grade}`], date, '0')) : 0),
-    [history],
-  );
   return {
-    floorOn,
-    latePctOn,
-    graceOn,
+    floorOn: (date: string) => valueOn(history?.floor, date, DEFAULT_FLOOR),
+    latePctOn: (date: string) => valueOn(history?.['late-pct'], date, DEFAULT_LATE_PCT),
+    graceOn: (grade: string | undefined, date: string) => (grade ? Number(valueOn(history?.[`grace-${grade}`], date, '0')) : 0),
     today,
     policyDate: settings?.policyDate || today,
     cap: settings?.cap ?? '',
-    claimDates,
+    claimDates: new Map(claims.filter((c) => c.number !== null).map((c) => [c.number!, c.date])),
   };
 }
