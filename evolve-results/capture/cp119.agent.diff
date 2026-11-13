@@ -1,0 +1,66 @@
+diff --git a/src/main/frontend/features/pools/CutTotals.tsx b/src/main/frontend/features/pools/CutTotals.tsx
+new file mode 100644
+index 000000000..348b26a38
+--- /dev/null
++++ b/src/main/frontend/features/pools/CutTotals.tsx
+@@ -0,0 +1,26 @@
++import type { Person } from '../people/people';
++import { usePeople } from '../people/people';
++import { useCurrentSheet, useCurrentUser } from '../session/session';
++import { cutTotal, personCuts, usePools } from './pools';
++
++// A person's cut total: their cuts across every pool they are a member of, added up.
++export function PersonCutTotal({ person }: { person: Person }) {
++  const pools = usePools().data ?? [];
++  return <td data-testid="person-cut-total">{cutTotal(personCuts(pools, person.id))}</td>;
++}
++
++// The sheet's cut total: everyone's cut total added up.
++export function CutTotal() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const people = usePeople().data ?? [];
++  const pools = usePools().data ?? [];
++
++  if (!user || !sheet) return null;
++
++  return (
++    <p>
++      Cut total: <strong data-testid="rollup-cut-total">{cutTotal(people.map((p) => cutTotal(personCuts(pools, p.id))))}</strong>
++    </p>
++  );
++}
+diff --git a/src/main/frontend/features/pools/cuts.slot.tsx b/src/main/frontend/features/pools/cuts.slot.tsx
+new file mode 100644
+index 000000000..606af6c25
+--- /dev/null
++++ b/src/main/frontend/features/pools/cuts.slot.tsx
+@@ -0,0 +1,9 @@
++import { HomeMain } from '../../slots/defs/homeMain';
++import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
++import { CutTotal, PersonCutTotal } from './CutTotals';
++
++export const contributions = [
++  PersonColumnHeads.fill({ order: 15.7, Component: () => <th>Cut</th> }),
++  PersonColumns.fill({ order: 15.7, Component: PersonCutTotal }),
++  HomeMain.fill({ order: 43, Component: CutTotal }),
++];
+diff --git a/src/main/frontend/features/pools/pools.ts b/src/main/frontend/features/pools/pools.ts
+index 1bb84c64a..1b742806b 100644
+--- a/src/main/frontend/features/pools/pools.ts
++++ b/src/main/frontend/features/pools/pools.ts
+@@ -34,3 +34,14 @@ export function usePools() {
+     enabled: !!sheet,
+   });
+ }
++
++/** Two-decimal cuts added up, skipping blank ones; added in cents so it is exact. */
++export function cutTotal(cuts: string[]): string {
++  const cents = cuts.filter((c) => c !== '').reduce((sum, c) => sum + Math.round(Number(c) * 100), 0);
++  return (cents / 100).toFixed(2);
++}
++
++/** A person's cuts across every pool they are a member of (a pool showing no cut adds nothing). */
++export function personCuts(pools: Pool[], personId: number): string[] {
++  return pools.flatMap((p) => p.members.filter((m) => m.personId === personId).map((m) => m.cut));
++}
