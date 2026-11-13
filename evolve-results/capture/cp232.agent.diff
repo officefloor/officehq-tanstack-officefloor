@@ -1,0 +1,73 @@
+diff --git a/src/main/frontend/features/compare/compare.slot.tsx b/src/main/frontend/features/compare/compare.slot.tsx
+index 53e889a37..33e71a893 100644
+--- a/src/main/frontend/features/compare/compare.slot.tsx
++++ b/src/main/frontend/features/compare/compare.slot.tsx
+@@ -34,7 +34,7 @@ function CompareLines({ other }: { other: string }) {
+     <ul>
+       {grades.map((g) => (
+         <li key={g} data-testid="compare-line">
+-          {g} {fig(mine[g])} {fig(theirs[g])}
++          {g} {fig(mine[g] ?? dueTotal([]))} {fig(theirs[g] ?? dueTotal([]))}
+         </li>
+       ))}
+     </ul>
+diff --git a/src/main/java/net/officefloor/hq/app/grade/MergeGrade.java b/src/main/java/net/officefloor/hq/app/grade/MergeGrade.java
+index 1f58149e6..91a56bbba 100644
+--- a/src/main/java/net/officefloor/hq/app/grade/MergeGrade.java
++++ b/src/main/java/net/officefloor/hq/app/grade/MergeGrade.java
+@@ -17,7 +17,9 @@ import org.springframework.web.bind.annotation.PathVariable;
+ 
+ /** Records GRADE_MERGED, then gives every person on the merged grade (in force on the sheet's today) the other
+  *  grade from the sheet's today, in list order, exactly as the person form's edit would, each recorded as
+- *  PERSON_EDITED and then how it moved the sheet's figures; then how the merge as a whole moved them. */
++ *  PERSON_EDITED and then how it moved the sheet's figures. The merge is retroactive: every grade record of each
++ *  person moved that is on the merged grade then becomes the other, whatever its date. Then how the merge as a
++ *  whole moved the figures. */
+ public class MergeGrade {
+     public void merge(@PathVariable("sheetId") String sheetId, @Val GradeMergeInput input, PersonStore store,
+             SheetStore sheets, RollupService rollups, Audit audit, GradeStore grades, Out<GradeMergeResult> result)
+@@ -41,6 +43,9 @@ public class MergeGrade {
+                     + " grade=" + person.gradeOn(today));
+             rollups.record(sheet, input.user(), before);
+         }
++        for (Person person : moved) {
++            store.regrade(person, input.from(), input.into());
++        }
+         rollups.record(sheet, input.user(), merging);
+         result.set(new GradeMergeResult(input.from(), input.into(), moved.size()));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonStore.java b/src/main/java/net/officefloor/hq/app/person/PersonStore.java
+index 77cef8e29..40b4e35c5 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonStore.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonStore.java
+@@ -319,6 +319,14 @@ public class PersonStore {
+         return n == 1;
+     }
+ 
++    /** Makes every grade record of the person on {@code from} one of {@code into}, whatever its from-date (in the
++     *  person too), keeping its from-date. */
++    public void regrade(Person person, String from, String into) {
++        jdbc.update("UPDATE person_grade SET grade = ? WHERE sheet_id = ? AND person_id = ? AND grade = ?", into,
++                person.getSheetId(), person.getId(), from);
++        person.getGrades().replaceAll((date, grade) -> grade.equals(from) ? into : grade);
++    }
++
+     /** Stores the person's dated terms from the date, replacing any from the same date. */
+     public void recordTerms(Person person, LocalDate from) {
+         jdbc.update("MERGE INTO person_terms (sheet_id, person_id, from_date, terms) KEY (person_id, from_date)"
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades/merge.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades/merge.POST.yml
+index e245b0a1f..f911fef57 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades/merge.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/grades/merge.POST.yml
+@@ -2,8 +2,9 @@
+ # steward may; anyone else, the same grade twice, a grade the sheet does not have, or an archived sheet is refused
+ # (400) and nothing is stored. Recorded as GRADE_MERGED from=<grade> into=<grade>; then every person whose grade
+ # in force on the sheet's today is the merged grade is given the other from the sheet's today, in list order,
+-# exactly as the person form's edit would (PERSON_EDITED, then how it moved the sheet's figures), and then how
+-# the merge as a whole moved them. A retired into-grade is refused as the person form's edit would. Answers {from, into, merged}.
++# exactly as the person form's edit would (PERSON_EDITED, then how it moved the sheet's figures); then every grade
++# record of each person moved on the merged grade, whatever its date, becomes the other (retroactive); and then how
++# the merge as a whole moved the figures. A retired into-grade is refused as the person form's edit would. Answers {from, into, merged}.
+ validate:
+   class: net.officefloor.hq.app.grade.ValidateGradeMerge
+   next: merge
