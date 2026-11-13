@@ -18,7 +18,7 @@ public record PoolResponse(long id, String name, List<MemberResponse> members, S
 
     /** A member's cut as it stood at the end of a period whose to-date is on or before the sheet's today (the
      *  pool, its members, the pot and the holds as they were then, with that day as the sheet's today), null when
-     *  there was none. In the periods' order. */
+     *  there was none; for a closed or soft-closed period, whatever its to-date, the cut fixed when it was closed. In the periods' order. */
     public record PeriodCut(String period, String cut) {
     }
 }

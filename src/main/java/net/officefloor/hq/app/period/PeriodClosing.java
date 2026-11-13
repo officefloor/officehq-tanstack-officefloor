@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import net.officefloor.hq.app.pool.PoolCuts;
 import net.officefloor.hq.app.rollup.RollupService;
 import net.officefloor.hq.app.sheet.InvalidSheetException;
 
@@ -14,22 +15,24 @@ public final class PeriodClosing {
     }
 
     /** Closes the open (or soft-closed) period, fixing its due-total and each person's due-total and carried figure in it
-     *  (with their opening balance for it added)
-     *  as they are now; refused when it was closed meanwhile. Shared by a close by hand and the auto close of a new today. */
-    public static PeriodResponse fix(String sheet, PeriodResponse period, PeriodStore store, RollupService rollups)
+     *  (with their opening balance for it added),
+     *  and every pool member's cut in it, as they are now; refused when it was closed meanwhile. Shared by a close by hand and the auto close of a new today. */
+    public static PeriodResponse fix(String sheet, PeriodResponse period, PeriodStore store, RollupService rollups,
+            PoolCuts cuts)
             throws InvalidSheetException {
-        return fix(sheet, period, store, rollups, false);
+        return fix(sheet, period, store, rollups, cuts, false);
     }
 
     /** Soft-closes the open period, fixing its figures as {@link #fix} does while leaving its claims open
      *  to change; refused when it was closed or soft-closed meanwhile. */
-    public static PeriodResponse fixSoft(String sheet, PeriodResponse period, PeriodStore store, RollupService rollups)
+    public static PeriodResponse fixSoft(String sheet, PeriodResponse period, PeriodStore store, RollupService rollups,
+            PoolCuts cuts)
             throws InvalidSheetException {
-        return fix(sheet, period, store, rollups, true);
+        return fix(sheet, period, store, rollups, cuts, true);
     }
 
     private static PeriodResponse fix(String sheet, PeriodResponse period, PeriodStore store, RollupService rollups,
-            boolean soft) throws InvalidSheetException {
+            PoolCuts cuts, boolean soft) throws InvalidSheetException {
         LocalDate from = LocalDate.parse(period.from());
         LocalDate to = LocalDate.parse(period.to());
         Map<Long, BigDecimal> people = rollups.dueBetweenByPerson(sheet, from, to);
@@ -43,6 +46,7 @@ public final class PeriodClosing {
         }
         store.dropPersonTotals(sheet, period.name());
         store.fixPersonTotals(sheet, period.name(), people, carried);
+        cuts.fix(sheet, period.name());
         return PeriodResponse.of(period.name(), from, to, !soft, total, people, soft, period.cap(), carried,
                 period.locked());
     }

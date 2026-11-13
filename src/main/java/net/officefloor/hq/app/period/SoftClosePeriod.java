@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.period;
 
+import net.officefloor.hq.app.pool.PoolCuts;
 import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.role.RoleStore;
 import net.officefloor.hq.app.rollup.RollupService;
@@ -16,7 +17,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 public class SoftClosePeriod {
     public void softClose(@PathVariable("sheetId") String sheetId, @PathVariable("periodName") String periodName,
             @Val CloseRequest request, PeriodStore store, RoleStore roles, SettingStore settings, RollupService rollups,
-            Out<PeriodResponse> closed) throws InvalidSheetException {
+            PoolCuts cuts, Out<PeriodResponse> closed) throws InvalidSheetException {
         String sheet = sheetId.trim();
         Role role = roles.find(sheet, request.user());
         if (!settings.allows(sheet, "close", role)) {
@@ -29,6 +30,6 @@ public class SoftClosePeriod {
         if (period.closed() || period.soft()) {
             throw new InvalidSheetException("The period " + period.name() + " is already closed");
         }
-        closed.set(PeriodClosing.fixSoft(sheet, period, store, rollups));
+        closed.set(PeriodClosing.fixSoft(sheet, period, store, rollups, cuts));
     }
 }

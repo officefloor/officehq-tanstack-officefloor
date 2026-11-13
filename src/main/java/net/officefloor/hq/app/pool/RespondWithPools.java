@@ -31,25 +31,31 @@ import org.springframework.web.bind.annotation.RequestParam;
  *  the negated crew id), its lead then its members each with an equal share of 100.00 (split as patrons' shares
  *  are, the remainder on the lead), and no dates. Each member also has its cut as it stood at the end of each
  *  period whose to-date is on or before that day (the pools, members, pot and holds as they were then, with the
- *  to-date as the sheet's today), null when it had none. */
+ *  to-date as the sheet's today), null when it had none; for a closed or soft-closed period (whatever its to-date),
+ *  the cut fixed when it was closed instead (see {@link PoolCuts}). */
 public class RespondWithPools {
     private static final BigDecimal HUNDRED = new BigDecimal("100.00");
 
     public void respond(@PathVariable("sheetId") String sheetId,
             @RequestParam(name = "asOf", required = false) String asOf, PoolStore store, SettingStore settings,
-            PersonStore people, SheetStore sheets, CrewStore crews, PeriodStore periods,
+            PersonStore people, SheetStore sheets, CrewStore crews, PeriodStore periods, PoolCuts fixedCuts,
             ObjectResponse<List<PoolResponse>> response) {
         String sheet = sheetId.trim();
         LocalDate on = History.date(asOf);
         LocalDate today = on == null ? sheets.today(sheet) : on;
         Cuts now = cuts(sheet, on, today, store, settings, people, crews);
-        // each period ended by today, with the cuts as they stood at its end (that day as the sheet's today)
-        List<PeriodResponse> ended = (on == null ? periods.list(sheet) : periods.listAsOf(sheet, on)).stream()
-                .filter(p -> !LocalDate.parse(p.to()).isAfter(today)).toList();
-        Map<String, Cuts> then = new LinkedHashMap<>();
-        for (PeriodResponse p : ended) {
+        // each closed or soft-closed period with the cuts fixed when it was closed; each other period ended by
+        // today with the cuts as they stood at its end (that day as the sheet's today)
+        Map<String, java.util.function.BiFunction<Long, PoolStore.Member, String>> then = new LinkedHashMap<>();
+        for (PeriodResponse p : on == null ? periods.list(sheet) : periods.listAsOf(sheet, on)) {
             LocalDate end = LocalDate.parse(p.to());
-            then.put(p.name(), cuts(sheet, end, end, store, settings, people, crews));
+            if (p.closed() || p.soft()) {
+                List<PoolCuts.Fixed> fixed = fixedCuts.fixed(sheet, p.name());
+                then.put(p.name(), (poolId, m) -> PoolCuts.cutOf(fixed, poolId, m));
+            } else if (!end.isAfter(today)) {
+                Cuts c = cuts(sheet, end, end, store, settings, people, crews);
+                then.put(p.name(), c::cutOf);
+            }
         }
         response.send(now.pools.stream().map(p -> {
             List<PoolStore.Member> ms = now.members.getOrDefault(p.id(), List.of());
@@ -58,7 +64,7 @@ public class RespondWithPools {
             for (int i = 0; i < ms.size(); i++) {
                 PoolStore.Member m = ms.get(i);
                 List<PoolResponse.PeriodCut> periodCuts = new ArrayList<>();
-                then.forEach((name, c) -> periodCuts.add(new PoolResponse.PeriodCut(name, c.cutOf(p.id(), m))));
+                then.forEach((name, c) -> periodCuts.add(new PoolResponse.PeriodCut(name, c.apply(p.id(), m))));
                 shown.add(new PoolResponse.MemberResponse(m.personId(), m.memberPoolId(), m.name(),
                         m.share().setScale(2).toPlainString(), m.retired(),
                         cs == null || cs.get(i) == null ? null : cs.get(i).toPlainString(),
@@ -73,7 +79,7 @@ public class RespondWithPools {
 
     /** The sheet's pools, their members and the members' cuts, as they stood at the end of {@code on} (now when
      *  null), with {@code today} as the sheet's today. */
-    private record Cuts(List<PoolStore.Pool> pools, Map<Long, List<PoolStore.Member>> members,
+    record Cuts(List<PoolStore.Pool> pools, Map<Long, List<PoolStore.Member>> members,
             Map<Long, List<BigDecimal>> cuts, Set<Long> crewPools) {
 
         /** The member's cut in the pool (matched by the person or member pool), null when it had none. */
@@ -90,7 +96,7 @@ public class RespondWithPools {
         }
     }
 
-    private static Cuts cuts(String sheet, LocalDate on, LocalDate today, PoolStore store, SettingStore settings,
+    static Cuts cuts(String sheet, LocalDate on, LocalDate today, PoolStore store, SettingStore settings,
             PersonStore people, CrewStore crews) {
         BigDecimal sheetPot = (on == null ? settings : settings.asOf(on)).pot(sheet);
         Map<Long, List<PoolStore.Member>> members = store.members(sheet, on);
