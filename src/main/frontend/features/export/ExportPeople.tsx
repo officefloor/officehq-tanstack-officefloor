@@ -6,7 +6,7 @@ import { useSheetToday } from '../session/sheetToday';
 import { useDueRules } from '../settings/settings';
 
 /** A CSV field: wrapped in double quotes, with any quote inside doubled, when it holds a comma, a quote or a line break. */
-function csvField(value: string): string {
+export function csvField(value: string): string {
   return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 }
 
