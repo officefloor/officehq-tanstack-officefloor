@@ -6,6 +6,7 @@ import net.officefloor.web.ObjectResponse;
 public class RespondWithPerson {
     public void respond(@Val Person person, PersonRepository people, NameTree tree,
             ObjectResponse<PersonResponse> response) {
-        response.send(PersonResponse.from(person, tree.clashing(person, people.aliases(person.sheetId(), person.id()))));
+        response.send(PersonResponse.from(person, tree.clashing(person, people.aliases(person.sheetId(), person.id())),
+                people.origin(person.sheetId(), person.id())));
     }
 }

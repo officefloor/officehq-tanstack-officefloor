@@ -265,6 +265,23 @@ public class PersonRepository {
         return to + 1;
     }
 
+    /** The sheet the person was transferred from, or null when they were not transferred here. */
+    public String origin(String sheetId, long personId) {
+        List<String> found = jdbc.queryForList("SELECT origin FROM person WHERE sheet_id = ? AND id = ?", String.class,
+                sheetId, personId);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** The sheet each transferred person on the sheet came from, by person id (those not transferred left out). */
+    public Map<Long, String> origins(String sheetId) {
+        Map<Long, String> found = new HashMap<>();
+        jdbc.query("SELECT id, origin FROM person WHERE sheet_id = ? AND origin IS NOT NULL",
+                (rs) -> {
+                    found.put(rs.getLong("id"), rs.getString("origin"));
+                }, sheetId);
+        return found;
+    }
+
     /** The person's aliases, in the order they were added. */
     public List<String> aliases(String sheetId, long personId) {
         return jdbc.queryForList("SELECT alias FROM person_alias WHERE sheet_id = ? AND person_id = ? ORDER BY id",
@@ -279,6 +296,7 @@ public class PersonRepository {
     public long transfer(Person person, String to) {
         Map<String, Object> changed = new HashMap<>();
         changed.put("sheet_id", to);
+        changed.put("origin", person.sheetId());
         changed.put("statement_count", 0);
         changed.put("stated_total", null);
         changed.put("statement_date", null);

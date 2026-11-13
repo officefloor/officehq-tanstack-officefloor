@@ -8,12 +8,13 @@ import java.util.List;
  * each hold, oldest first. {@code grade} is the grade in force on the sheet's today; {@code grades} every grade
  * recorded, each from its from-date. {@code terms} are the person's own terms in days, null when they have none;
  * {@code contact} their contact, null when they have none. {@code clashing} is whether another sheet of the sheet's
- * tree uses their name or any of their aliases as a name or alias.
+ * tree uses their name or any of their aliases as a name or alias. {@code origin} is the sheet they were transferred
+ * from, null when they were not transferred here.
  */
 public record PersonResponse(long id, String name, String grade, int version, int statementCount, String statedTotal,
         String statementDate, boolean retired, String retiredFrom, boolean held,
         List<Grade> grades, List<HoldDates> holds, Integer terms, String contact,
-        boolean clashing) {
+        boolean clashing, String origin) {
 
 
     /** A grade recorded for the person, from its from-date (yyyy-mm-dd; null: from the beginning of time). */
@@ -24,7 +25,7 @@ public record PersonResponse(long id, String name, String grade, int version, in
     public record HoldDates(String from, String to) {
     }
 
-    public static PersonResponse from(Person person, boolean clashing) {
+    public static PersonResponse from(Person person, boolean clashing, String origin) {
         return new PersonResponse(person.id(), person.name(), person.grade(), person.version(), person.statementCount(),
                 person.statedTotal(), person.statementDate() == null ? null : person.statementDate().toString(),
                 person.retired(), person.retiredFrom() == null ? null : person.retiredFrom().toString(),
@@ -32,6 +33,6 @@ public record PersonResponse(long id, String name, String grade, int version, in
                         .map((g) -> new Grade(g.grade(), g.from() == null ? null : g.from().toString())).toList(),
                 person.holds().stream().map((h) -> new HoldDates(h.from() == null ? null : h.from().toString(),
                         h.to() == null ? null : h.to().toString())).toList(), person.terms(),
-                person.contact(), clashing);
+                person.contact(), clashing, origin);
     }
 }

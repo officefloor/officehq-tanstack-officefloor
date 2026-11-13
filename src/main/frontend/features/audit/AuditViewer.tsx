@@ -5,7 +5,8 @@ import { getJson } from '../../api/http';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 
 // The audit viewer: the sheet's audit lines as the file holds them, newest first. A name in the filter
-// keeps only the lines about that person (name= or person=, case and surrounding spaces ignored).
+// keeps only the lines about that person (name= or person=, case and surrounding spaces ignored), followed, for a
+// person transferred here, by the lines about them from the sheet they came from (newest first).
 // Read on each press of the show button; the old lines are gone while it reads.
 export function AuditViewer() {
   const [user] = useCurrentUser();

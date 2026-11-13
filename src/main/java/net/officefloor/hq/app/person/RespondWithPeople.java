@@ -12,7 +12,7 @@ import net.officefloor.web.ObjectResponse;
 
 public class RespondWithPeople {
     public void respond(@Val Sheet sheet, @Val List<Person> people, AliasRepository aliases, NameTree tree,
-            ObjectResponse<List<PersonResponse>> response) {
+            PersonRepository repository, ObjectResponse<List<PersonResponse>> response) {
         Set<String> taken = tree.taken(sheet.id());
         Map<Long, List<String>> byPerson = new HashMap<>();
         if (!taken.isEmpty()) {
@@ -20,7 +20,9 @@ public class RespondWithPeople {
                 byPerson.computeIfAbsent(a.personId(), (k) -> new java.util.ArrayList<>()).add(a.alias());
             }
         }
+        Map<Long, String> origins = repository.origins(sheet.id());
         response.send(people.stream().map((p) -> PersonResponse.from(p,
-                NameTree.clashing(taken, p.name(), byPerson.getOrDefault(p.id(), List.of())))).toList());
+                NameTree.clashing(taken, p.name(), byPerson.getOrDefault(p.id(), List.of())), origins.get(p.id())))
+                .toList());
     }
 }
