@@ -6,6 +6,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -70,6 +74,46 @@ public class Audit {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    /**
+     * The sheet's lines exactly as the file holds them, newest first. With a name (not blank), only the lines about
+     * that person: those carrying {@code name=<name>} or {@code person=<name>}, compared as names are (case and
+     * surrounding spaces ignored). Reads the file; keeps no record of its own.
+     */
+    public synchronized List<String> lines(String sheetId, String name) {
+        String wanted = name == null ? "" : name.strip().toLowerCase(Locale.ROOT);
+        List<String> found = new ArrayList<>();
+        try {
+            if (!Files.exists(file)) {
+                return found;
+            }
+            for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+                Matcher head = HEAD.matcher(line);
+                if (head.find() && head.group(2).equals(sheetId) && (wanted.isEmpty() || isAbout(line, wanted))) {
+                    found.add(line);
+                }
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+        Collections.reverse(found);
+        return found;
+    }
+
+    /** Whether the line carries name=<wanted> or person=<wanted> (wanted is lower case), the value ending the line or followed by a space. */
+    private static boolean isAbout(String line, String wanted) {
+        String lower = line.toLowerCase(Locale.ROOT);
+        for (String key : List.of(" name=", " person=")) {
+            String field = key + wanted;
+            for (int at = lower.indexOf(field); at >= 0; at = lower.indexOf(field, at + 1)) {
+                int end = at + field.length();
+                if (end == lower.length() || lower.charAt(end) == ' ') {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /** Remove the audit file. */
