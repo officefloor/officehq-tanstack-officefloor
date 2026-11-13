@@ -1,7 +1,9 @@
+import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { useEditingPerson, usePeople } from './people';
 
-// Every person on the sheet, in the order they were added, each with their name and grade.
+// Every person on the sheet, in the order they were added, each with their name and grade and
+// the columns features add (slots/defs/personColumns.ts).
 export function PeopleList() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -16,6 +18,7 @@ export function PeopleList() {
         <tr>
           <th>Name</th>
           <th>Grade</th>
+          <PersonColumnHeads.Slot />
           <th />
         </tr>
       </thead>
@@ -26,6 +29,7 @@ export function PeopleList() {
               {p.name}
             </td>
             <td data-testid="person-grade">{p.grade}</td>
+            <PersonColumns.Slot person={p} />
             <td>
               <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => setEditing(p.id)}>
                 Edit
