@@ -8,6 +8,6 @@ import net.officefloor.plugin.variable.Val;
 public class BuildClaim {
     public void build(@Val ClaimInput input, @Val Person person, SheetRepository sheets, Out<Claim> claim) {
         claim.set(new Claim(null, person.sheetId(), person.id(), input.amount(),
-                input.date() != null ? input.date() : sheets.today(person.sheetId()), input.note(), ClaimStatus.DRAFT, null, null));
+                input.date() != null ? input.date() : sheets.today(person.sheetId()), input.note(), ClaimStatus.DRAFT, null, null, null));
     }
 }

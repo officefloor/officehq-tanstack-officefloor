@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useIsFetching, useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { sheetKey, useCurrentSheet, useCurrentUser } from './session';
 
@@ -12,6 +12,20 @@ export function SheetPicker() {
   const [id, setId] = useState('');
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
+  // The current id shows once everything kept for the sheet has been read, so what is on screen
+  // under it is what the store holds for that sheet. Checked after the screen's queries have
+  // mounted and started, so a query not yet begun does not count as read.
+  const fetching = useIsFetching({ queryKey: sheetKey(sheet) });
+  const [shown, setShown] = useState('');
+  useEffect(() => {
+    setShown('');
+    if (fetching > 0) return;
+    const timer = setTimeout(() => {
+      const queries = queryClient.getQueryCache().findAll({ queryKey: sheetKey(sheet) });
+      if (queries.every((q) => q.state.fetchStatus === 'idle' && q.state.status !== 'pending')) setShown(sheet);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [sheet, fetching, queryClient]);
 
   const load = useMutation({
     mutationFn: (sheetId: string) => postJson<{ id: string }>('/api/sheets', { id: sheetId }),
@@ -38,7 +52,7 @@ export function SheetPicker() {
   return (
     <form onSubmit={submit}>
       <span>
-        Sheet: <strong data-testid="sheet-current-id">{sheet}</strong>{' '}
+        Sheet: <strong data-testid="sheet-current-id">{shown}</strong>{' '}
       </span>
       <input
         data-testid="sheet-id-input"

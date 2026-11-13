@@ -30,7 +30,7 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
     },
-    onError: (_e, action) => setError(`A ${claim.status} claim cannot be changed by ${action}.`),
+    onError: (_e, action) => setError(`This ${claim.status} claim cannot be changed by ${action}${action === 'settle' ? ' (the user who opened it cannot settle it)' : ''}.`),
   });
 
   return (

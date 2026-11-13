@@ -8,7 +8,8 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 /**
  * A claim as the store holds it: the amount with two decimals, the date as yyyy-MM-dd; its number
  * is the sheet's next one when it was opened, null while a draft and once voided; its due is the
- * one fixed when it was settled (two decimals), null while it is live.
+ * one fixed when it was settled (two decimals), null while it is live; openedBy is the user who
+ * opened it, null while a draft.
  */
 export type Claim = {
   id: number;
@@ -19,6 +20,7 @@ export type Claim = {
   status: ClaimStatus;
   number: number | null;
   due: string | null;
+  openedBy: string | null;
 };
 
 /** Whether a claim counts toward claimed, due-total and every total: only OPEN and SETTLED do. */
