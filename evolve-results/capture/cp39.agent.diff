@@ -1,0 +1,340 @@
+diff --git a/src/main/frontend/features/claims/ClaimLog.tsx b/src/main/frontend/features/claims/ClaimLog.tsx
+new file mode 100644
+index 000000000..232b5605c
+--- /dev/null
++++ b/src/main/frontend/features/claims/ClaimLog.tsx
+@@ -0,0 +1,14 @@
++import type { Claim } from './claims';
++
++// The claim's status log, oldest first: one line per status it has had.
++export function ClaimLog({ claim }: { claim: Claim }) {
++  return (
++    <ol>
++      {(claim.log ?? []).map((l, i) => (
++        <li key={i} data-testid="claim-log-line">
++          {`${l.status} by ${l.by} on ${l.date} due=${l.due}`}
++        </li>
++      ))}
++    </ol>
++  );
++}
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 0091e64fd..91998497d 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -21,7 +21,8 @@ export const bound = (c: Claim) => c.stated && c.status !== 'PENDING';
+  * opened it, null while a draft; stated is whether its person's last statement bound it to a figure,
+  * statedDue that figure (two decimals; null: n/a) — it then shows and totals that, not its live figure;
+  * corrects is, for a correction (a negative amount), the number of the settled claim it corrects, null otherwise;
+- * dueBy (yyyy-MM-dd) is fixed when it was created: its date plus the terms of its person's grade in force on it.
++ * dueBy (yyyy-MM-dd) is fixed when it was created: its date plus the terms of its person's grade in force on it;
++ * log is its status log, oldest first: each status it has had, the user who gave it, the sheet's today then and its due then.
+  */
+ export type Claim = {
+   id: number;
+@@ -37,8 +38,12 @@ export type Claim = {
+   statedDue: string | null;
+   corrects: string | null;
+   dueBy: string;
++  log: ClaimLogLine[];
+ };
+ 
++/** A line of a claim's status log: the status, the user, the sheet's today (yyyy-MM-dd) and the due then (two decimals, or n/a). */
++export type ClaimLogLine = { status: ClaimStatus; by: string; date: string; due: string };
++
+ /**
+  * Whether a claim counts toward claimed, due-total and every live total: only OPEN, PENDING and SETTLED do,
+  * and an open (or pending) one not while its person is held.
+diff --git a/src/main/frontend/features/claims/log.slot.tsx b/src/main/frontend/features/claims/log.slot.tsx
+new file mode 100644
+index 000000000..262ec803b
+--- /dev/null
++++ b/src/main/frontend/features/claims/log.slot.tsx
+@@ -0,0 +1,4 @@
++import { ClaimRowValues } from '../../slots/defs/claimRow';
++import { ClaimLog } from './ClaimLog';
++
++export const contribution = ClaimRowValues.fill({ order: 40, Component: ClaimLog });
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java
+index 5b1cf6491..e4a0f2d3e 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java
+@@ -4,9 +4,7 @@ import java.math.BigDecimal;
+ import java.time.LocalDate;
+ import net.officefloor.hq.app.period.Period;
+ import net.officefloor.hq.app.period.PeriodRepository;
+-import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
+-import net.officefloor.hq.app.rate.Rate;
+ import net.officefloor.hq.app.rate.RateRepository;
+ import net.officefloor.hq.app.setting.Role;
+ import net.officefloor.hq.app.setting.SettingRepository;
+@@ -82,11 +80,6 @@ public class ApplyClaimAction {
+ 
+     private static BigDecimal settledDue(Claim claim, SheetRepository sheets, PersonRepository people,
+             RateRepository rates, SettingRepository settings, ClaimRepository claims) {
+-        Person person = people.find(claim.sheetId(), claim.personId());
+-        BigDecimal rate = person == null ? null
+-                : Rate.inForce(rates.findAll(claim.sheetId()), person.gradeOn(claim.date()), claim.date());
+-        LocalDate today = sheets.today(claim.sheetId());
+-        return claim.due(rate, settings.floor(claim.sheetId()), settings.lateCharge(claim.sheetId(), today),
+-                settings.rounding(claim.sheetId(), today, claims.findForPerson(claim.sheetId(), claim.personId())));
++        return ClaimDueNow.of(claim, sheets, people, rates, settings, claims);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimDueNow.java b/src/main/java/net/officefloor/hq/app/claim/ClaimDueNow.java
+new file mode 100644
+index 000000000..b50be8037
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimDueNow.java
+@@ -0,0 +1,31 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++import java.time.LocalDate;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.Rate;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
++
++/**
++ * A claim's due as the screen shows it at this moment (null: n/a): its fixed due, else its figure at its person's
++ * grade's rate in force on its date, raised to the sheet's floor and rounded by its policy date — or the figure a
++ * statement bound it to — plus the late charge it has on the sheet's today, if overdue.
++ */
++public final class ClaimDueNow {
++
++    private ClaimDueNow() {
++    }
++
++    public static BigDecimal of(Claim claim, SheetRepository sheets, PersonRepository people, RateRepository rates,
++            SettingRepository settings, ClaimRepository claims) {
++        Person person = people.find(claim.sheetId(), claim.personId());
++        BigDecimal rate = person == null ? null
++                : Rate.inForce(rates.findAll(claim.sheetId()), person.gradeOn(claim.date()), claim.date());
++        LocalDate today = sheets.today(claim.sheetId());
++        return claim.due(rate, settings.floor(claim.sheetId()), settings.lateCharge(claim.sheetId(), today),
++                settings.rounding(claim.sheetId(), today, claims.findForPerson(claim.sheetId(), claim.personId())));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimLogLine.java b/src/main/java/net/officefloor/hq/app/claim/ClaimLogLine.java
+new file mode 100644
+index 000000000..e834572a3
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimLogLine.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.claim;
++
++import java.time.LocalDate;
++
++/** One line of a claim's status log: the status, the user who gave it, the sheet's today then and the claim's due then (two decimals, or n/a). */
++public record ClaimLogLine(long claimId, ClaimStatus status, String by, LocalDate date, String due) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimLogRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimLogRepository.java
+new file mode 100644
+index 000000000..58f74419b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimLogRepository.java
+@@ -0,0 +1,42 @@
++package net.officefloor.hq.app.claim;
++
++import java.sql.Date;
++import java.util.LinkedHashMap;
++import java.util.List;
++import java.util.Map;
++import java.util.ArrayList;
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Repository;
++
++/** The claims' status logs, each oldest first. */
++@Repository
++public class ClaimLogRepository {
++
++    private final JdbcTemplate jdbc;
++
++    public ClaimLogRepository(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    public void append(String sheetId, ClaimLogLine line) {
++        jdbc.update("INSERT INTO claim_log (sheet_id, claim_id, status, by_user, log_date, due) VALUES (?, ?, ?, ?, ?, ?)",
++                sheetId, line.claimId(), line.status().name(), line.by(), Date.valueOf(line.date()), line.due());
++    }
++
++    /** The sheet's status logs by claim id, each oldest first. */
++    public Map<Long, List<ClaimLogLine>> findAll(String sheetId) {
++        Map<Long, List<ClaimLogLine>> logs = new LinkedHashMap<>();
++        jdbc.query("SELECT claim_id, status, by_user, log_date, due FROM claim_log WHERE sheet_id = ? ORDER BY id",
++                (rs) -> {
++                    ClaimLogLine line = new ClaimLogLine(rs.getLong("claim_id"), ClaimStatus.valueOf(rs.getString("status")),
++                            rs.getString("by_user"), rs.getDate("log_date").toLocalDate(), rs.getString("due"));
++                    logs.computeIfAbsent(line.claimId(), (k) -> new ArrayList<>()).add(line);
++                }, sheetId);
++        return logs;
++    }
++
++    /** The claim's status log, oldest first. */
++    public List<ClaimLogLine> find(String sheetId, long claimId) {
++        return findAll(sheetId).getOrDefault(claimId, List.of());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+index e265ae7e8..895f32922 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+@@ -1,17 +1,25 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.util.List;
++
+ /** A claim as the screen shows it: the amount with two decimals, the date as yyyy-MM-dd, the status by name,
+  * the number null unless it has one, the due fixed at settling (two decimals) or null while it is live,
+  * the user who opened it or null while it is a draft, whether a statement bound it and the figure it bound
+- * it to (two decimals; null: n/a), and the number of the claim a correction corrects (null: not a correction), and its due-by fixed when it was created (yyyy-MM-dd). */
++ * it to (two decimals; null: n/a), and the number of the claim a correction corrects (null: not a correction), and its due-by fixed when it was created (yyyy-MM-dd), and its status log, oldest first. */
+ public record ClaimResponse(long id, long personId, String amount, String date, String note, String status, String number,
+-        String due, String openedBy, boolean stated, String statedDue, String corrects, String dueBy) {
++        String due, String openedBy, boolean stated, String statedDue, String corrects, String dueBy,
++        List<LogLine> log) {
++
++    /** A line of the status log: the status, the user who gave it, the sheet's today then and the due then. */
++    public record LogLine(String status, String by, String date, String due) {
++    }
+ 
+-    public static ClaimResponse from(Claim claim) {
++    public static ClaimResponse from(Claim claim, List<ClaimLogLine> log) {
+         return new ClaimResponse(claim.id(), claim.personId(), claim.amount().toPlainString(),
+                 claim.date().toString(), claim.note(), claim.status().name(), claim.number(),
+                 claim.due() == null ? null : claim.due().setScale(2).toPlainString(), claim.openedBy(),
+                 claim.stated(), claim.statedDue() == null ? null : claim.statedDue().setScale(2).toPlainString(),
+-                claim.corrects(), claim.dueBy().toString());
++                claim.corrects(), claim.dueBy().toString(),
++                log.stream().map((l) -> new LogLine(l.status().name(), l.by(), l.date().toString(), l.due())).toList());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/LogClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/LogClaimStatus.java
+new file mode 100644
+index 000000000..99273ecbe
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/LogClaimStatus.java
+@@ -0,0 +1,19 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Appends the claim's new status to its log: by the user, on the sheet's today, with its due at this moment. */
++public class LogClaimStatus {
++    public void log(@Val Claim claim, @RequestParam("user") String user, SheetRepository sheets, PersonRepository people,
++            RateRepository rates, SettingRepository settings, ClaimRepository claims, ClaimLogRepository logs) {
++        BigDecimal due = ClaimDueNow.of(claim, sheets, people, rates, settings, claims);
++        logs.append(claim.sheetId(), new ClaimLogLine(claim.id(), claim.status(), user, sheets.today(claim.sheetId()),
++                due == null ? "n/a" : due.setScale(2).toPlainString()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RespondWithClaim.java b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaim.java
+index d46129f4e..b98e21781 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RespondWithClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaim.java
+@@ -4,7 +4,7 @@ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
+ 
+ public class RespondWithClaim {
+-    public void respond(@Val Claim claim, ObjectResponse<ClaimResponse> response) {
+-        response.send(ClaimResponse.from(claim));
++    public void respond(@Val Claim claim, ClaimLogRepository logs, ObjectResponse<ClaimResponse> response) {
++        response.send(ClaimResponse.from(claim, logs.find(claim.sheetId(), claim.id())));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java
+index 3447d98ba..e6ae64734 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java
+@@ -1,11 +1,15 @@
+ package net.officefloor.hq.app.claim;
+ 
+ import java.util.List;
++import java.util.Map;
++import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
+ 
+ public class RespondWithClaims {
+-    public void respond(@Val List<Claim> claims, ObjectResponse<List<ClaimResponse>> response) {
+-        response.send(claims.stream().map(ClaimResponse::from).toList());
++    public void respond(@Val Sheet sheet, @Val List<Claim> claims, ClaimLogRepository logs,
++            ObjectResponse<List<ClaimResponse>> response) {
++        Map<Long, List<ClaimLogLine>> log = logs.findAll(sheet.id());
++        response.send(claims.stream().map((c) -> ClaimResponse.from(c, log.getOrDefault(c.id(), List.of()))).toList());
+     }
+ }
+diff --git a/src/main/resources/db/migration/V29__claim_log.sql b/src/main/resources/db/migration/V29__claim_log.sql
+new file mode 100644
+index 000000000..4b1f16acc
+--- /dev/null
++++ b/src/main/resources/db/migration/V29__claim_log.sql
+@@ -0,0 +1,12 @@
++-- A claim's status log: one line per status it has had, oldest first (id order) — the status, the user who
++-- gave it, the sheet's today then, and the claim's due as computed at that moment ('n/a' when it had none).
++CREATE TABLE claim_log (
++    id BIGINT AUTO_INCREMENT PRIMARY KEY,
++    sheet_id VARCHAR(100) NOT NULL REFERENCES sheet (id),
++    claim_id BIGINT NOT NULL REFERENCES claim (id),
++    status VARCHAR(20) NOT NULL,
++    by_user VARCHAR(200) NOT NULL,
++    log_date DATE NOT NULL,
++    due VARCHAR(30) NOT NULL
++);
++CREATE INDEX claim_log_sheet ON claim_log (sheet_id, claim_id, id);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
+index d18a3f65d..682dea33e 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
+@@ -27,6 +27,10 @@ apply:
+ save:
+   class: net.officefloor.hq.app.claim.SaveClaim
+   govern: [ transaction ]
++  next: log
++log:
++  class: net.officefloor.hq.app.claim.LogClaimStatus
++  govern: [ transaction ]
+   next: audit
+ audit:
+   class: net.officefloor.hq.app.claim.AuditClaimAction
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+index 3d3b7b99f..103fe9486 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+@@ -31,6 +31,10 @@ build:
+ save:
+   class: net.officefloor.hq.app.claim.SaveClaim
+   govern: [ transaction ]
++  next: log
++log:
++  class: net.officefloor.hq.app.claim.LogClaimStatus
++  govern: [ transaction ]
+   next: audit
+ audit:
+   class: net.officefloor.hq.app.claim.AuditClaimAdded
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-claims.POST.yml
+index 71dfeafd9..63413c002 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-claims.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-claims.POST.yml
+@@ -44,6 +44,10 @@ build:
+ save:
+   class: net.officefloor.hq.app.claim.SaveClaim
+   govern: [ transaction ]
++  next: log
++log:
++  class: net.officefloor.hq.app.claim.LogClaimStatus
++  govern: [ transaction ]
+   next: audit
+ audit:
+   class: net.officefloor.hq.app.claim.AuditClaimAdded
