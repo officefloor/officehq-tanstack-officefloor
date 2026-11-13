@@ -1,0 +1,249 @@
+diff --git a/src/main/frontend/features/importpeople/ImportPeople.tsx b/src/main/frontend/features/importpeople/ImportPeople.tsx
+index f2f147372..274b9ec2c 100644
+--- a/src/main/frontend/features/importpeople/ImportPeople.tsx
++++ b/src/main/frontend/features/importpeople/ImportPeople.tsx
+@@ -7,17 +7,17 @@ import { peopleKey } from '../people/people';
+ import type { Person } from '../people/people';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ 
+-type ImportResult = { added: number };
++type ImportResult = { added: number; updated: number };
+ 
+-// The import box: lines of name,grade,terms,contact (terms and contact may be left off or blank), each a person
+-// added as the person form adds them. The server checks every line with the form's rules first, so one refused
+-// line adds nothing.
++// The import box: lines of name,grade,terms,contact (terms and contact may be left off or blank). A line naming a
++// person on the sheet (by name or alias) updates them as the person form's edit does; any other adds a person.
++// The server checks every line with the form's rules first, so one refused line writes nothing.
+ export function ImportPeople() {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+   const [text, setText] = useState('');
+   const [error, setError] = useState('');
+-  const [added, setAdded] = useState<number | undefined>(undefined);
++  const [result, setResult] = useState<ImportResult | undefined>(undefined);
+   const once = useOneAtATime();
+   const queryClient = useQueryClient();
+ 
+@@ -27,12 +27,12 @@ export function ImportPeople() {
+         `/api/sheets/${encodeURIComponent(sheet)}/import-people?user=${encodeURIComponent(user)}`,
+         { text: pasted },
+       ),
+-    onSuccess: async (result) => {
++    onSuccess: async (imported) => {
+       setText('');
+       // Re-read people first, then show them with the count in one render.
+       const people = await getJson<Person[]>(`/api/sheets/${encodeURIComponent(sheet)}/people`);
+       queryClient.setQueryData(peopleKey(sheet), people);
+-      setAdded(result.added);
++      setResult(imported);
+     },
+     onError: () => setError('Nothing was imported: every line must be a person the person form takes.'),
+   });
+@@ -42,7 +42,7 @@ export function ImportPeople() {
+   const submit = (e: FormEvent) => {
+     e.preventDefault();
+     setError('');
+-    setAdded(undefined);
++    setResult(undefined);
+     if (!text.trim()) {
+       setError('Paste at least one line of name,grade,terms,contact.');
+       return;
+@@ -65,10 +65,11 @@ export function ImportPeople() {
+       <button type="submit" data-testid="import-submit" disabled={importPeople.isPending}>
+         Import people
+       </button>
+-      {added !== undefined && (
++      {result !== undefined && (
+         <>
+           {' '}
+-          Added <span data-testid="import-added">{added}</span>
++          Added <span data-testid="import-added">{result.added}</span>, updated{' '}
++          <span data-testid="import-updated">{result.updated}</span>
+         </>
+       )}
+       {error && <span data-testid="import-error">{error}</span>}
+diff --git a/src/main/java/net/officefloor/hq/app/importpeople/CheckImportedPeopleUnique.java b/src/main/java/net/officefloor/hq/app/importpeople/CheckImportedPeopleUnique.java
+index 1fa73feea..cf80e8fb5 100644
+--- a/src/main/java/net/officefloor/hq/app/importpeople/CheckImportedPeopleUnique.java
++++ b/src/main/java/net/officefloor/hq/app/importpeople/CheckImportedPeopleUnique.java
+@@ -1,7 +1,10 @@
+ package net.officefloor.hq.app.importpeople;
+ 
+ import java.util.ArrayList;
++import java.util.HashSet;
+ import java.util.List;
++import java.util.Set;
++import net.officefloor.hq.app.person.ApplyPerson;
+ import net.officefloor.hq.app.person.BuildPerson;
+ import net.officefloor.hq.app.person.CheckPersonNameUnique;
+ import net.officefloor.hq.app.person.InvalidPersonException;
+@@ -9,29 +12,59 @@ import net.officefloor.hq.app.person.NameTree;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.person.PersonRequest;
++import net.officefloor.hq.app.person.PersonTermsChange;
++import net.officefloor.hq.app.person.StalePersonException;
+ import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.hq.app.sheet.SheetRepository;
+ import net.officefloor.plugin.variable.Out;
+ import net.officefloor.plugin.variable.Val;
+ 
+ /**
+- * Builds each imported person as the person form does and checks them with its rules against the sheet and its tree
+- * (names, aliases, contacts). Any line refused refuses the whole import, before anything is written.
++ * Builds each imported person and checks them with the person form's rules against the sheet and its tree (names,
++ * aliases, contacts). A line whose name is a person's name or alias on the sheet updates that person as the form's
++ * edit does (grade from the sheet's today; terms and contact only when the line gives them); any other line adds a
++ * person as the form's add does. Two lines for the same person, or any line refused, refuse the whole import, before
++ * anything is written.
+  */
+ public class CheckImportedPeopleUnique {
+     public void check(@Val ImportedPeople imported, @Val Sheet sheet, PersonRepository repository, NameTree tree,
+-            Out<ImportedPersons> built) throws InvalidPersonException {
+-        List<Person> people = new ArrayList<>();
++            SheetRepository sheets, Out<ImportedPersons> built) throws InvalidPersonException {
++        List<ImportedPersons.Entry> people = new ArrayList<>();
++        Set<Long> updating = new HashSet<>();
+         int number = 0;
+         for (PersonRequest request : imported.people()) {
+             number++;
+-            Person[] person = new Person[1];
+-            new BuildPerson().build(request, sheet, value -> person[0] = value);
+             try {
++                Person existing = repository.findByName(sheet.id(), request.name());
++                if (existing == null) {
++                    Person[] person = new Person[1];
++                    new BuildPerson().build(request, sheet, value -> person[0] = value);
++                    new CheckPersonNameUnique().check(person[0], repository, tree);
++                    people.add(new ImportedPersons.Entry(person[0], null));
++                    continue;
++                }
++                if (!updating.add(existing.id())) {
++                    throw new InvalidPersonException("The person " + existing.name()
++                            + " is already given by an earlier line.");
++                }
++                PersonRequest edit = new PersonRequest(existing.name(), request.grade(), "", null,
++                        request.termsDays() != null ? request.terms()
++                                : existing.terms() == null ? "" : String.valueOf(existing.terms()),
++                        request.contactOrNull() != null ? request.contact()
++                                : existing.contact() == null ? "" : existing.contact());
++                Person[] person = new Person[1];
++                PersonTermsChange[] change = new PersonTermsChange[1];
++                try {
++                    new ApplyPerson().apply(edit, existing, sheets, value -> person[0] = value,
++                            value -> change[0] = value);
++                } catch (StalePersonException e) {
++                    throw new InvalidPersonException(e.getMessage());
++                }
+                 new CheckPersonNameUnique().check(person[0], repository, tree);
++                people.add(new ImportedPersons.Entry(person[0], change[0]));
+             } catch (InvalidPersonException e) {
+                 throw new InvalidPersonException("Person " + number + ": " + e.getMessage());
+             }
+-            people.add(person[0]);
+         }
+         built.set(new ImportedPersons(people));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/importpeople/ImportResult.java b/src/main/java/net/officefloor/hq/app/importpeople/ImportResult.java
+index dce4ad2df..f001f9276 100644
+--- a/src/main/java/net/officefloor/hq/app/importpeople/ImportResult.java
++++ b/src/main/java/net/officefloor/hq/app/importpeople/ImportResult.java
+@@ -1,5 +1,5 @@
+ package net.officefloor.hq.app.importpeople;
+ 
+-/** How many people an import added. */
+-public record ImportResult(int added) {
++/** How many people an import added, and how many it updated. */
++public record ImportResult(int added, int updated) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/importpeople/ImportedPersons.java b/src/main/java/net/officefloor/hq/app/importpeople/ImportedPersons.java
+index df863240e..b13fabd35 100644
+--- a/src/main/java/net/officefloor/hq/app/importpeople/ImportedPersons.java
++++ b/src/main/java/net/officefloor/hq/app/importpeople/ImportedPersons.java
+@@ -2,7 +2,15 @@ package net.officefloor.hq.app.importpeople;
+ 
+ import java.util.List;
+ import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonTermsChange;
+ 
+ /** The imported people, built and checked but not yet saved, in order. */
+-public record ImportedPersons(List<Person> people) {
++public record ImportedPersons(List<Entry> people) {
++
++    /** A person to add (no terms change) or an existing person as the import updates them (with its terms change). */
++    public record Entry(Person person, PersonTermsChange termsChange) {
++        public boolean update() {
++            return termsChange != null;
++        }
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/importpeople/SaveImportedPeople.java b/src/main/java/net/officefloor/hq/app/importpeople/SaveImportedPeople.java
+index 616137106..51b36f1c0 100644
+--- a/src/main/java/net/officefloor/hq/app/importpeople/SaveImportedPeople.java
++++ b/src/main/java/net/officefloor/hq/app/importpeople/SaveImportedPeople.java
+@@ -2,8 +2,10 @@ package net.officefloor.hq.app.importpeople;
+ 
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.person.AuditPersonAdded;
++import net.officefloor.hq.app.person.AuditPersonEdited;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.person.StalePersonException;
+ import net.officefloor.hq.app.rollup.Rollup;
+ import net.officefloor.hq.app.rollup.RollupLines;
+ import net.officefloor.hq.app.rollup.RollupService;
+@@ -12,20 +14,30 @@ import net.officefloor.plugin.variable.Val;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /**
+- * Adds each imported person, in order, as the person form's add does: saved, recorded as PERSON_ADDED and followed by
+- * the rollup lines that add moved.
++ * Saves each imported person, in order, as the person form does: a new one added and recorded as PERSON_ADDED, an
++ * existing one updated and recorded as PERSON_EDITED, each followed by the rollup lines that save moved.
+  */
+ public class SaveImportedPeople {
+     public void save(@Val ImportedPersons imported, @RequestParam("user") String user, PersonRepository repository,
+-            RollupService rollups, Audit audit, Out<ImportResult> result) {
++            RollupService rollups, Audit audit, Out<ImportResult> result) throws StalePersonException {
+         int added = 0;
+-        for (Person person : imported.people()) {
++        int updated = 0;
++        for (ImportedPersons.Entry entry : imported.people()) {
++            Person person = entry.person();
+             Rollup before = rollups.compute(person.sheetId());
+             Person stored = repository.save(person);
+-            new AuditPersonAdded().audit(stored, user, audit);
++            if (entry.update()) {
++                if (stored == null) {
++                    throw new StalePersonException(person.name());
++                }
++                new AuditPersonEdited().audit(stored, entry.termsChange(), user, audit);
++                updated++;
++            } else {
++                new AuditPersonAdded().audit(stored, user, audit);
++                added++;
++            }
+             RollupLines.record(before, rollups.compute(person.sheetId()), person.sheetId(), user, audit);
+-            added++;
+         }
+-        result.set(new ImportResult(added));
++        result.set(new ImportResult(added, updated));
+     }
+ }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/import-people.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/import-people.POST.yml
+index bdd95488d..a916af583 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/import-people.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/import-people.POST.yml
+@@ -1,7 +1,9 @@
+ # Import: a person per line of name,grade,terms,contact (terms and contact may be absent or blank), in order. Every
+ # line is checked first with the person form's rules (and no name or contact may repeat within the import); any line
+-# refused refuses the whole import (400) and nothing is added. Each is added as the form adds them (PERSON_ADDED and
+-# its rollup lines). Answers how many people were added.
++# refused refuses the whole import (400) and nothing is written. A line whose name is a person's name or alias on the
++# sheet updates that person as the form's edit does (grade from the sheet's today; terms and contact only when given;
++# PERSON_EDITED); any other line is added as the form adds them (PERSON_ADDED); each followed by its rollup lines.
++# Answers how many people were added and how many updated.
+ archived:
+   class: net.officefloor.hq.app.sheet.CheckNotArchived
+   next: viewer
