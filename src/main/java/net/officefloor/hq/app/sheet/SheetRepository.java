@@ -3,6 +3,7 @@ package net.officefloor.hq.app.sheet;
 import java.sql.Date;
 import java.time.LocalDate;
 import java.util.List;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -45,6 +46,29 @@ public class SheetRepository {
     public int nextClaimNumber(String id) {
         return jdbc.queryForObject("SELECT last_claim_number FROM FINAL TABLE "
                 + "(UPDATE sheet SET last_claim_number = last_claim_number + 1 WHERE id = ?)", Integer.class, id);
+    }
+
+    /**
+     * Takes the next number (1 for its first) of one of the sheet's per-period sequences: {@code key} is the
+     * period's name in lower case, or "" for the claims in no period. A number taken is never given out again.
+     */
+    public int nextPeriodClaimNumber(String id, String key) {
+        for (int attempt = 0; ; attempt++) {
+            List<Integer> taken = jdbc.queryForList("SELECT last_number FROM FINAL TABLE (UPDATE period_claim_number"
+                    + " SET last_number = last_number + 1 WHERE sheet_id = ? AND seq_key = ?)", Integer.class, id, key);
+            if (!taken.isEmpty()) {
+                return taken.get(0);
+            }
+            try {
+                jdbc.update("INSERT INTO period_claim_number (sheet_id, seq_key, last_number) VALUES (?, ?, 1)", id, key);
+                return 1;
+            } catch (DuplicateKeyException e) {
+                if (attempt > 0) {
+                    throw e;
+                }
+                // another request started the sequence at the same moment: take the next from it
+            }
+        }
     }
 
     public void save(Sheet sheet) {

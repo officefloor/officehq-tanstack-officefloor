@@ -63,7 +63,7 @@ export function PersonClaims({ person }: { person: Person }) {
 
   const edit = (c: Claim) => {
     setEditing(c.id);
-    setForm({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects === null ? '' : String(c.corrects) });
+    setForm({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects ?? '' });
     setError('');
   };
 

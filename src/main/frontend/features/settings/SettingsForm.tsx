@@ -8,13 +8,34 @@ import type { Settings } from './settings';
 import { useOneAtATime } from '../../query/useOneAtATime';
 
 /** The settings the form sends: only those whose field was touched since the last save. */
-type SettingsInput = { clerkLimit?: string; floor?: string; terms?: string; latePct?: string; policyDate?: string };
+type SettingsInput = {
+  clerkLimit?: string;
+  floor?: string;
+  terms?: string;
+  latePct?: string;
+  policyDate?: string;
+  periodNumberingFrom?: string;
+};
 
-type Touched = { clerkLimit: boolean; floor: boolean; terms: boolean; latePct: boolean; policyDate: boolean };
+type Touched = {
+  clerkLimit: boolean;
+  floor: boolean;
+  terms: boolean;
+  latePct: boolean;
+  policyDate: boolean;
+  periodNumberingFrom: boolean;
+};
 
-const UNTOUCHED: Touched = { clerkLimit: false, floor: false, terms: false, latePct: false, policyDate: false };
+const UNTOUCHED: Touched = {
+  clerkLimit: false,
+  floor: false,
+  terms: false,
+  latePct: false,
+  policyDate: false,
+  periodNumberingFrom: false,
+};
 
-// The sheet's clerk limit (blank: no limit), floor, terms, late percent and policy date (blank: today) in force, and the form that sets them. Saving sends
+// The sheet's clerk limit (blank: no limit), floor, terms, late percent and policy date (blank: today) and period numbering from date (blank: off) in force, and the form that sets them. Saving sends
 // only the fields touched since the last save, so a blank field left alone changes nothing.
 export function SettingsForm() {
   const [user] = useCurrentUser();
@@ -25,6 +46,7 @@ export function SettingsForm() {
   const [terms, setTerms] = useState('');
   const [latePct, setLatePct] = useState('');
   const [policyDate, setPolicyDate] = useState('');
+  const [periodNumberingFrom, setPeriodNumberingFrom] = useState('');
   const [touched, setTouched] = useState<Touched>(UNTOUCHED);
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
@@ -39,6 +61,7 @@ export function SettingsForm() {
       setTerms('');
       setLatePct('');
       setPolicyDate('');
+      setPeriodNumberingFrom('');
       setTouched(UNTOUCHED);
       setError('');
       queryClient.setQueryData(settingsKey(sheet), saved);
@@ -93,12 +116,21 @@ export function SettingsForm() {
       }
       input.policyDate = value;
     }
+    if (touched.periodNumberingFrom) {
+      const value = periodNumberingFrom.trim();
+      if (value !== '' && !DATE.test(value)) {
+        setError('Type a period numbering from date as yyyy-MM-dd, or leave it blank for off.');
+        return;
+      }
+      input.periodNumberingFrom = value;
+    }
     if (
       input.clerkLimit === undefined &&
       input.floor === undefined &&
       input.terms === undefined &&
       input.latePct === undefined &&
-      input.policyDate === undefined
+      input.policyDate === undefined &&
+      input.periodNumberingFrom === undefined
     )
       return;
     once(() => save.mutateAsync(input));
@@ -120,6 +152,10 @@ export function SettingsForm() {
       </p>
       <p>
         Policy date: <span data-testid="setting-policy-date-current">{settings?.policyDate ?? ''}</span>
+      </p>
+      <p>
+        Period numbering from:{' '}
+        <span data-testid="setting-period-numbering-from-current">{settings?.periodNumberingFrom ?? ''}</span>
       </p>
       <form onSubmit={submit} data-testid="settings-form">
         <input
@@ -174,6 +210,17 @@ export function SettingsForm() {
           onChange={(e) => {
             setPolicyDate(e.target.value);
             setTouched((t) => ({ ...t, policyDate: true }));
+            setError('');
+          }}
+        />
+        <input
+          data-testid="setting-period-numbering-from"
+          placeholder="Period numbering from, yyyy-MM-dd (blank: off)"
+          value={periodNumberingFrom}
+          onFocus={() => setTouched((t) => ({ ...t, periodNumberingFrom: true }))}
+          onChange={(e) => {
+            setPeriodNumberingFrom(e.target.value);
+            setTouched((t) => ({ ...t, periodNumberingFrom: true }));
             setError('');
           }}
         />

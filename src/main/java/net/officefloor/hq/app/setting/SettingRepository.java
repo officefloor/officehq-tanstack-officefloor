@@ -36,7 +36,7 @@ public class SettingRepository {
                 + " ORDER BY user_name", (rs, n) -> new UserRole(rs.getString("sheet_id"), rs.getString("user_name"),
                         Role.valueOf(rs.getString("role"))), sheetId);
         BigDecimal clerkLimit = limit.isEmpty() || limit.get(0) == null ? null : limit.get(0).setScale(2);
-        return new Settings(sheetId, clerkLimit, floor(sheetId), terms(sheetId), latePct(sheetId), policyDate(sheetId), roles);
+        return new Settings(sheetId, clerkLimit, floor(sheetId), terms(sheetId), latePct(sheetId), policyDate(sheetId), periodNumberingFrom(sheetId), roles);
     }
 
     /** The sheet's floor: a claim's live due is at least it (1.00 for a sheet not yet stored). */
@@ -80,6 +80,18 @@ public class SettingRepository {
     /** Set the sheet's rounding policy date (null: blank, the sheet's today). */
     public void savePolicyDate(String sheetId, LocalDate policyDate) {
         jdbc.update("UPDATE sheet SET policy_date = ? WHERE id = ?", policyDate == null ? null : Date.valueOf(policyDate), sheetId);
+    }
+
+    /** The sheet's period numbering from date (null: blank, off). */
+    public LocalDate periodNumberingFrom(String sheetId) {
+        List<Date> date = jdbc.query("SELECT period_numbering_from FROM sheet WHERE id = ?",
+                (rs, n) -> rs.getDate("period_numbering_from"), sheetId);
+        return date.isEmpty() || date.get(0) == null ? null : date.get(0).toLocalDate();
+    }
+
+    /** Set the sheet's period numbering from date (null: blank, off). */
+    public void savePeriodNumberingFrom(String sheetId, LocalDate from) {
+        jdbc.update("UPDATE sheet SET period_numbering_from = ? WHERE id = ?", from == null ? null : Date.valueOf(from), sheetId);
     }
 
     /** Set the sheet's late percent. */

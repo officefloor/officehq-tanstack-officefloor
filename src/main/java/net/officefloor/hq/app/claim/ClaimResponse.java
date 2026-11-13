@@ -4,8 +4,8 @@ package net.officefloor.hq.app.claim;
  * the number null unless it has one, the due fixed at settling (two decimals) or null while it is live,
  * the user who opened it or null while it is a draft, whether a statement bound it and the figure it bound
  * it to (two decimals; null: n/a), and the number of the claim a correction corrects (null: not a correction). */
-public record ClaimResponse(long id, long personId, String amount, String date, String note, String status, Integer number,
-        String due, String openedBy, boolean stated, String statedDue, Integer corrects) {
+public record ClaimResponse(long id, long personId, String amount, String date, String note, String status, String number,
+        String due, String openedBy, boolean stated, String statedDue, String corrects) {
 
     public static ClaimResponse from(Claim claim) {
         return new ClaimResponse(claim.id(), claim.personId(), claim.amount().toPlainString(),

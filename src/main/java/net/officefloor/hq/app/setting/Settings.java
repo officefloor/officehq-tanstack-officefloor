@@ -8,10 +8,11 @@ import java.util.List;
  * A sheet's settings: its clerk limit (null: no limit), its floor (a claim's live due is at least it), its terms
  * (a claim is due by its date plus this many days), its late percent (an overdue claim gains it of its figure
  * every full 30 days), its rounding policy date (null: blank, the sheet's
- * today) and the roles given to user names (any other name is a clerk).
+ * today), its period numbering from date (null: off; on or after it, an opened claim is numbered within its period)
+ * and the roles given to user names (any other name is a clerk).
  */
 public record Settings(String sheetId, BigDecimal clerkLimit, BigDecimal floor, int terms, BigDecimal latePct,
-        LocalDate policyDate, List<UserRole> roles) {
+        LocalDate policyDate, LocalDate periodNumberingFrom, List<UserRole> roles) {
 
     /** The role of the user name: the one given to it, else clerk. */
     public Role roleOf(String user) {

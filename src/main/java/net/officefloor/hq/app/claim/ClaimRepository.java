@@ -53,7 +53,7 @@ public class ClaimRepository {
             ps.setDate(4, Date.valueOf(claim.date()));
             ps.setString(5, claim.note());
             ps.setString(6, claim.status().name());
-            ps.setObject(7, claim.corrects(), java.sql.Types.INTEGER);
+            ps.setString(7, claim.corrects());
             return ps;
         }, keys);
         return new Claim(keys.getKey().longValue(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
@@ -76,8 +76,8 @@ public class ClaimRepository {
     private static Claim map(ResultSet rs, int n) throws SQLException {
         return new Claim(rs.getLong("id"), rs.getString("sheet_id"), rs.getLong("person_id"),
                 rs.getBigDecimal("amount").setScale(2), rs.getDate("claim_date").toLocalDate(), rs.getString("note"),
-                ClaimStatus.valueOf(rs.getString("status")), rs.getObject("claim_number", Integer.class),
+                ClaimStatus.valueOf(rs.getString("status")), rs.getString("claim_number"),
                 rs.getBigDecimal("due"), rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
-                rs.getObject("corrects", Integer.class));
+                rs.getString("corrects"));
     }
 }

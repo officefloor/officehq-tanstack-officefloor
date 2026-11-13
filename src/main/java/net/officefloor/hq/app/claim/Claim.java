@@ -10,15 +10,16 @@ import java.time.LocalDate;
  * due fixed when the claim was settled, or null while it is live (not settled, or settled with no rate).
  * {@code openedBy} is the user who opened the claim, or null while it is a draft. {@code stated} is whether
  * its person's last statement bound it to a figure, {@code statedDue} (null: n/a) — it then shows and totals
- * that figure, not its live one. {@code corrects} is, for a correction, the number of the claim it corrects (null:
+ * that figure, not its live one. {@code number} is sheet-wide (1, 2, ...) or, under period numbering,
+ * within its period (P1-1, X-1). {@code corrects} is, for a correction, the number of the claim it corrects (null:
  * not a correction).
  */
 public record Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
-        ClaimStatus status, Integer number, BigDecimal due, String openedBy, boolean stated, BigDecimal statedDue,
-        Integer corrects) {
+        ClaimStatus status, String number, BigDecimal due, String openedBy, boolean stated, BigDecimal statedDue,
+        String corrects) {
 
     /** The same claim with another status, number, fixed due and opener. */
-    public Claim withStatus(ClaimStatus next, Integer nextNumber, BigDecimal nextDue, String nextOpenedBy) {
+    public Claim withStatus(ClaimStatus next, String nextNumber, BigDecimal nextDue, String nextOpenedBy) {
         return new Claim(id, sheetId, personId, amount, date, note, next, nextNumber, nextDue, nextOpenedBy, stated,
                 statedDue, corrects);
     }
@@ -75,7 +76,7 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
     }
 
     /** The audit field for the claim's number, " number=<n>", or "" when it has none. */
-    public static String auditNumber(Integer number) {
+    public static String auditNumber(String number) {
         return number == null ? "" : " number=" + number;
     }
 }

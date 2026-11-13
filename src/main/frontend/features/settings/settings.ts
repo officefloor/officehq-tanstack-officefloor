@@ -13,10 +13,11 @@ export type UserRole = { user: string; role: string };
  * which a clerk cannot settle a claim, the floor (two decimals), below which no live due goes, the terms
  * (whole days) a claim is due by after its date, the late percent (two decimals) an overdue claim
  * gains of its figure every full 30 days, the rounding policy date (yyyy-MM-dd; '': blank, the
- * sheet's today), and the roles
+ * sheet's today), the period numbering from date (yyyy-MM-dd; '': off — on or after it, an opened claim is
+ * numbered within its period), and the roles
  * given to user names.
  */
-export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string; roles: UserRole[] };
+export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string; periodNumberingFrom: string; roles: UserRole[] };
 
 /** The floor a sheet starts with: a claim's live due is at least it. */
 export const DEFAULT_FLOOR = '1.00';
@@ -76,7 +77,7 @@ export type DueRules = {
   latePct: string;
   today: string;
   policyDate: string;
-  claimDates: Map<number, string>;
+  claimDates: Map<string, string>;
 };
 
 /** The sheet's rules for working out a claim's due. */

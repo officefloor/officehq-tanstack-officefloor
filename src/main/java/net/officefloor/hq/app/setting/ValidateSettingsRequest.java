@@ -20,13 +20,15 @@ public class ValidateSettingsRequest {
     private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
 
     public void validate(@RequestBody @Valid SettingsRequest request, Out<ClerkLimit> limit, Out<Floor> floor,
-            Out<Terms> terms, Out<LatePct> latePct, Out<PolicyDate> policyDate)
+            Out<Terms> terms, Out<LatePct> latePct, Out<PolicyDate> policyDate,
+            Out<PeriodNumberingFrom> periodNumberingFrom)
             throws InvalidSettingException {
         limit.set(clerkLimit(request.clerkLimit()));
         floor.set(floor(request.floor()));
         terms.set(terms(request.terms()));
         latePct.set(latePct(request.latePct()));
         policyDate.set(policyDate(request.policyDate()));
+        periodNumberingFrom.set(periodNumberingFrom(request.periodNumberingFrom()));
     }
 
     private static ClerkLimit clerkLimit(String requested) throws InvalidSettingException {
@@ -83,6 +85,21 @@ public class ValidateSettingsRequest {
             return new PolicyDate(true, LocalDate.parse(value));
         } catch (DateTimeParseException e) {
             throw new InvalidSettingException("The policy date must be a date (yyyy-MM-dd), or blank.");
+        }
+    }
+
+    private static PeriodNumberingFrom periodNumberingFrom(String requested) throws InvalidSettingException {
+        if (requested == null) {
+            return new PeriodNumberingFrom(false, null);
+        }
+        String value = requested.trim();
+        if (value.isEmpty()) {
+            return new PeriodNumberingFrom(true, null);
+        }
+        try {
+            return new PeriodNumberingFrom(true, LocalDate.parse(value));
+        } catch (DateTimeParseException e) {
+            throw new InvalidSettingException("The period numbering from date must be a date (yyyy-MM-dd), or blank.");
         }
     }
 

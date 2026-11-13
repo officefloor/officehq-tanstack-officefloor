@@ -11,11 +11,11 @@ import java.util.Map;
  * policy date rounds half up, one dated on or after it half to even. A correction rounds by the date of the claim it
  * corrects, not its own; {@code dates} holds the claims' dates by number.
  */
-public record Rounding(LocalDate policyDate, Map<Integer, LocalDate> dates) {
+public record Rounding(LocalDate policyDate, Map<String, LocalDate> dates) {
 
     /** The rounding by the policy date for the given claims (those a correction may name). */
     public static Rounding of(LocalDate policyDate, List<Claim> claims) {
-        Map<Integer, LocalDate> dates = new HashMap<>();
+        Map<String, LocalDate> dates = new HashMap<>();
         for (Claim claim : claims) {
             if (claim.number() != null) {
                 dates.put(claim.number(), claim.date());

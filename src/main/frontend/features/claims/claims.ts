@@ -7,7 +7,7 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
 
 /**
  * A claim as the store holds it: the amount with two decimals, the date as yyyy-MM-dd; its number
- * is the sheet's next one when it was opened, null while a draft (a voided claim keeps it); its due is the
+ * is the sheet's next one when it was opened (1, 2, ...; under period numbering, the next within its period: P1-1, X-1), null while a draft (a voided claim keeps it); its due is the
  * one fixed when it was settled (two decimals), null while it is live; openedBy is the user who
  * opened it, null while a draft; stated is whether its person's last statement bound it to a figure,
  * statedDue that figure (two decimals; null: n/a) — it then shows and totals that, not its live figure;
@@ -20,12 +20,12 @@ export type Claim = {
   date: string;
   note: string;
   status: ClaimStatus;
-  number: number | null;
+  number: string | null;
   due: string | null;
   openedBy: string | null;
   stated: boolean;
   statedDue: string | null;
-  corrects: number | null;
+  corrects: string | null;
 };
 
 /**

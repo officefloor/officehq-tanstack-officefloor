@@ -5,5 +5,5 @@ import java.time.LocalDate;
 
 /** A validated claim request; {@code date} is null when it was left blank (the sheet's today); {@code corrects}
  * is the number of the claim a correction (a negative amount) corrects, null for any other claim. */
-public record ClaimInput(BigDecimal amount, LocalDate date, String note, Integer corrects) {
+public record ClaimInput(BigDecimal amount, LocalDate date, String note, String corrects) {
 }

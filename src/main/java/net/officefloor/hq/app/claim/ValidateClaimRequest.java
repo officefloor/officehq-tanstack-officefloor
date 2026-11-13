@@ -13,8 +13,8 @@ public class ValidateClaimRequest {
     /** An amount, negative for a correction, with at most two decimals. */
     private static final Pattern AMOUNT = Pattern.compile("-?(\\d+(\\.\\d{1,2})?|\\.\\d{1,2})");
 
-    /** A claim number. */
-    private static final Pattern NUMBER = Pattern.compile("\\d{1,9}");
+    /** A claim number: sheet-wide (1, 2, ...) or within a period (P1-1, X-1). */
+    private static final Pattern NUMBER = Pattern.compile("\\d{1,9}|.{1,110}-\\d{1,9}");
 
     public void validate(@RequestBody @Valid ClaimRequest request, Out<ClaimInput> input) throws InvalidClaimException {
         String amount = request.amount() == null ? "" : request.amount().trim();
@@ -36,12 +36,12 @@ public class ValidateClaimRequest {
         String note = request.note() == null ? "" : request.note().strip();
         BigDecimal value = new BigDecimal(amount).setScale(2);
         String corrects = request.corrects() == null ? "" : request.corrects().trim();
-        Integer number = null;
+        String number = null;
         if (value.signum() < 0) {
             if (!NUMBER.matcher(corrects).matches()) {
                 throw new InvalidClaimException("A negative amount is a correction: name the number of the claim it corrects.");
             }
-            number = Integer.valueOf(corrects);
+            number = corrects;
         } else if (!corrects.isEmpty()) {
             throw new InvalidClaimException("Only a correction (a negative amount) corrects a claim.");
         }
