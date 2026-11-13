@@ -1,0 +1,97 @@
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java
+index 17dc063a1..f375005b5 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java
+@@ -22,7 +22,8 @@ import org.springframework.web.bind.annotation.RequestParam;
+  * sheet's period numbering from date is set and its today is on or after it, opening instead gives the claim the next
+  * number within the period containing its due-by (P1-1, P1-2, ...), or within the claims in no period (X-1, ...).
+  * Opening, settling and voiding are refused (400) to a role the sheet's permission matrix does not allow them.
+- * Opening records the user who opened it; that user cannot settle it (four eyes). A deferred claim cannot be settled.
++ * Opening records the user who opened it; that user cannot settle it (four eyes). Nor can the user who last edited
++ * it (through its editor or its row's amount entry) settle or approve it. A deferred claim cannot be settled.
+  * Settling fixes the claim's due at the greater of the sheet's floor in force on its date and its figure — at its person's grade's rate in force on the claim's date,
+  * rounded by its policy date, or, when a statement bound the claim, the figure it was bound to — plus the late charge it has then, if overdue, frozen in; with no
+  * figure it stays live. A clerk settling a claim whose due is above the sheet's clerk limit (a due of n/a is within any
+@@ -66,6 +67,10 @@ public class ApplyClaimAction {
+         if (found == ClaimAction.APPROVE && user.equals(claim.openedBy())) {
+             throw new InvalidClaimException("The user who opened a claim cannot approve it.");
+         }
++        if ((found == ClaimAction.SETTLE || found == ClaimAction.APPROVE)
++                && user.equals(claims.editedBy(claim.sheetId(), claim.id()))) {
++            throw new InvalidClaimException("The user who last edited a claim cannot " + action + " it.");
++        }
+         if ((found == ClaimAction.APPROVE || found == ClaimAction.REJECT)
+                 && settings.find(claim.sheetId()).roleOf(user) != Role.STEWARD) {
+             throw new InvalidClaimException("Only a steward can " + action + " a pending claim.");
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index de8df7ca0..e08456c10 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -71,6 +71,18 @@ public class ClaimRepository {
+                 claim.corrects(), claim.dueBy(), null, 0, claim.splitFrom());
+     }
+ 
++    /** Records the user as the last to edit the claim. */
++    public void markEdited(String sheetId, long id, String user) {
++        jdbc.update("UPDATE claim SET edited_by = ? WHERE id = ? AND sheet_id = ?", user, id, sheetId);
++    }
++
++    /** The user who last edited the claim, or null when it was never edited. */
++    public String editedBy(String sheetId, long id) {
++        List<String> found = jdbc.queryForList("SELECT edited_by FROM claim WHERE sheet_id = ? AND id = ?",
++                String.class, sheetId, id);
++        return found.isEmpty() ? null : found.get(0);
++    }
++
+     /** The person's claims, newest first. */
+     public List<Claim> findForPerson(String sheetId, long personId) {
+         return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY listed DESC, id DESC",
+diff --git a/src/main/java/net/officefloor/hq/app/claim/MarkClaimEdited.java b/src/main/java/net/officefloor/hq/app/claim/MarkClaimEdited.java
+new file mode 100644
+index 000000000..d53e0e46b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/MarkClaimEdited.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Records the user as the claim's last editor (four eyes: they cannot then settle or approve it). */
++public class MarkClaimEdited {
++    public void mark(@Val Claim claim, @RequestParam("user") String user, ClaimRepository claims) {
++        claims.markEdited(claim.sheetId(), claim.id(), user);
++    }
++}
+diff --git a/src/main/resources/db/migration/V57__claim_edited_by.sql b/src/main/resources/db/migration/V57__claim_edited_by.sql
+new file mode 100644
+index 000000000..b6030b038
+--- /dev/null
++++ b/src/main/resources/db/migration/V57__claim_edited_by.sql
+@@ -0,0 +1,3 @@
++-- The user who last edited a claim through its editor or its row's amount entry (four eyes: they cannot settle or
++-- approve it). Null until the claim is first edited.
++ALTER TABLE claim ADD COLUMN edited_by VARCHAR(255);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+index b2138b710..6c215cf98 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+@@ -5,6 +5,7 @@
+ # An external reference another claim on the sheet has, ignoring case, is refused (400); a blank one clears it.
+ # Tags replace the claim's (blank: none), as on an add.
+ # A correction is refused (400) on the same terms as an add.
++# The editing user is recorded as the claim's last editor: they cannot settle or approve it.
+ # A claim another user has locked (their editor is open on it) is refused (400); a save releases the user's lock.
+ archived:
+   class: net.officefloor.hq.app.sheet.CheckNotArchived
+@@ -58,6 +59,10 @@ apply:
+ save:
+   class: net.officefloor.hq.app.claim.SaveClaim
+   govern: [ transaction ]
++  next: edited
++edited:
++  class: net.officefloor.hq.app.claim.MarkClaimEdited
++  govern: [ transaction ]
+   next: ref
+ ref:
+   class: net.officefloor.hq.app.claim.SaveClaimRef
