@@ -6,7 +6,7 @@ import { periodDue, usePeriods } from '../periods/periods';
 import { difference, dueTotal, personDue, useRates } from '../rates/rates';
 import { floorOf, useSettings } from '../settings/settings';
 import { useSheetToday } from '../sheet/sheet';
-import { lateOf, reviewLate } from '../overdue/overdue';
+import { lateOf, pendingLate, reviewLate } from '../overdue/overdue';
 import { useVoidReasons } from '../voidreasons/voidreasons';
 import { useFigure } from '../locale/locale';
 import { useCapOf, useShared } from '../rates/due.slot';
@@ -16,7 +16,8 @@ import { useGradeCodes } from '../grades/grades';
 // today (retired people excluded), their due-totals added up (skipping n/a) and how many of them are
 // active; per period, its due-total and its change from the period before it by start date (none for
 // the earliest); per status, how many claims have it; per void reason on the list,
-// how many VOID claims were voided with it; and how many REVIEW claims are past the review SLA (review-late).
+// how many VOID claims were voided with it; and how many REVIEW claims are past the review SLA (review-late)
+// and how many PENDING claims are past the pending SLA (pending-late).
 function Summary() {
   const fig = useFigure();
   const [sheet] = useCurrentSheet();
@@ -110,6 +111,12 @@ function Summary() {
             <td>Review late</td>
             <td data-testid="summary-review-late-count">
               {(claims.data ?? []).filter((c) => reviewLate(c, today, settings?.reviewSla)).length}
+            </td>
+          </tr>
+          <tr>
+            <td>Pending late</td>
+            <td data-testid="summary-pending-late-count">
+              {(claims.data ?? []).filter((c) => pendingLate(c, today, settings?.pendingSla)).length}
             </td>
           </tr>
         </tbody>

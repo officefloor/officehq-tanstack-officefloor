@@ -77,6 +77,9 @@ export type Claim = {
   added: number;
   /** The date (yyyy-MM-dd) it went to REVIEW on, the sheet's today then (its review day); null when it never went to REVIEW. */
   reviewOn: string | null;
+  /** The date (yyyy-MM-dd) it last went to PENDING on, the sheet's today then (its pending day); null when it never went
+   *  to PENDING. */
+  pendingOn: string | null;
   /** Whether a steward waived its late charge: it bears none from then on, whatever its overdue state. */
   waived: boolean;
   /** Whether it is held. A held claim still counts in every total. */

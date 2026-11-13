@@ -34,6 +34,7 @@ public class ClaimStore {
         claim.setRemindedOn(rs.getObject("reminded_on", LocalDate.class));
         claim.setEscalated(rs.getBoolean("escalated"));
         claim.setReviewOn(rs.getObject("review_on", LocalDate.class));
+        claim.setPendingOn(rs.getObject("pending_on", LocalDate.class));
         claim.setWaived(rs.getBoolean("waived"));
         claim.setHeld(rs.getBoolean("held"));
         claim.setRef(rs.getString("ref"));
@@ -423,6 +424,13 @@ public class ClaimStore {
         claim.setReviewOn(today);
     }
 
+    /** Records the sheet's today as the day the claim went to PENDING on (its pending day), the latest time. */
+    public void markPending(Claim claim, LocalDate today) {
+        jdbc.update("UPDATE claim SET pending_on = ? WHERE sheet_id = ? AND id = ?", today == null ? null : Date.valueOf(today),
+                claim.getSheetId(), claim.getId());
+        claim.setPendingOn(today);
+    }
+
     /** Records the bulk settle batch the claim was settled in. */
     public void markBatch(Claim claim, long batch) {
         jdbc.update("UPDATE claim SET settle_batch = ? WHERE sheet_id = ? AND id = ?", batch, claim.getSheetId(), claim.getId());
@@ -580,9 +588,10 @@ public class ClaimStore {
             return ps;
         }, keys);
         long id = keys.getKey().longValue();
-        jdbc.update("UPDATE claim SET added_seq = ?, escalated = ?, review_on = ?, waived = ?, proof_photos = ?, held = ?, review_user = ? WHERE sheet_id = ? AND id = ?",
+        jdbc.update("UPDATE claim SET added_seq = ?, escalated = ?, review_on = ?, waived = ?, proof_photos = ?, held = ?, review_user = ?, pending_on = ? WHERE sheet_id = ? AND id = ?",
                 claim.getAddedSeq(), claim.isEscalated(), claim.getReviewOn() == null ? null : Date.valueOf(claim.getReviewOn()),
                 claim.isWaived(), claim.getProofPhotos(), claim.isHeld(), claim.getReviewUser(),
+                claim.getPendingOn() == null ? null : Date.valueOf(claim.getPendingOn()),
                 toSheet, id);
         jdbc.update("INSERT INTO claim_log (sheet_id, claim_id, status, by_user, log_date, due) "
                 + "SELECT ?, ?, status, by_user, log_date, due FROM claim_log WHERE sheet_id = ? AND claim_id = ? ORDER BY id",

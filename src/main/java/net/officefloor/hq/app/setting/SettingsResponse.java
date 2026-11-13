@@ -49,7 +49,9 @@ import java.util.Map;
  *  HIGH, null when blank (no band while either is; not dated).
  *  {@code scoreLog} is on while moving the sheet's today records each person's score, null when blank (not dated).
  *  {@code maxOpen} is the most OPEN or PENDING claims a person may have for another to be opened, null for none
- *  (not dated). */
+ *  (not dated).
+ *  {@code pendingSla} is the whole days after its pending day a claim in PENDING may stay there before it is late,
+ *  null for none (not dated). */
 public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
         String periodNumberingFrom, Map<String, String> gradeTerms, String cap, String proofThreshold, List<Dated> floorFrom,
         List<Dated> latePctFrom, Map<String, String> perms, String graceDays,
@@ -58,7 +60,7 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
         String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding,
         List<Dated> roundingFrom, String reviewThreshold, String escalateAfter, String reviewSla,
         String proofKinds, String defaultGrade, Map<String, String> gradeClerkLimit,
-        String scoreMid, String scoreHigh, String scoreLog, String maxOpen) {
+        String scoreMid, String scoreHigh, String scoreLog, String maxOpen, String pendingSla) {
 
     /** A value recorded from a date (yyyy-MM-dd). */
     public record Dated(String from, String value) {

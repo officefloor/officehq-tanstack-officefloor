@@ -28,6 +28,13 @@ export function reviewLate(claim: Claim, today: string | undefined, sla: string 
     && plusDays(claim.reviewOn, Number(sla)) < today;
 }
 
+/** Whether the claim is pending-late: it is PENDING and its pending day plus the sheet's pending SLA (whole days; null
+ *  or blank for none) is before the sheet's today. */
+export function pendingLate(claim: Claim, today: string | undefined, sla: string | null | undefined): boolean {
+  return claim.status === 'PENDING' && claim.pendingOn != null && today !== undefined && sla != null && sla !== ''
+    && plusDays(claim.pendingOn, Number(sla)) < today;
+}
+
 /** How many full 30 days the claim is overdue on the sheet's today, counted from its due-by plus any grace (0 when it is not overdue). */
 export function latePeriods(claim: Claim, today: string | undefined, late?: Late): number {
   if (today === undefined || !overdue(claim, today, late)) return 0;

@@ -223,6 +223,10 @@ public class SettingStore {
      *  (not dated). */
     public static final String REVIEW_SLA = "review-sla";
 
+    /** The whole days after its pending day a claim in PENDING may stay there before it is late; blank for none
+     *  (not dated). */
+    public static final String PENDING_SLA = "pending-sla";
+
     /** The most OPEN or PENDING claims a person may have for another to be opened; blank for none (a whole
      *  number, not dated). */
     public static final String MAX_OPEN = "max-open";
@@ -312,7 +316,7 @@ public class SettingStore {
 
     /** Whether the key's values are recorded from a from-date. */
     public static boolean isDated(String key) {
-        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key)
+        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key) && !PENDING_SLA.equals(key)
                 && !MAX_OPEN.equals(key)
                 && !ENTRY_DATE.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
                 && !DEFAULT_GRADE.equals(key) && !SCORE_MID.equals(key) && !SCORE_HIGH.equals(key) && !SCORE_LOG.equals(key)

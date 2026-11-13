@@ -30,6 +30,7 @@ public class Claim {
     private LocalDate remindedOn;
     private boolean escalated;
     private LocalDate reviewOn;
+    private LocalDate pendingOn;
     private boolean waived;
     private boolean held;
     private String ref;
@@ -127,6 +128,9 @@ public class Claim {
     /** The sheet's today the claim went to REVIEW on (its review day); null when it never went to REVIEW. */
     public LocalDate getReviewOn() { return reviewOn; }
     public void setReviewOn(LocalDate reviewOn) { this.reviewOn = reviewOn; }
+    /** The sheet's today the claim last went to PENDING on (its pending day); null when it never went to PENDING. */
+    public LocalDate getPendingOn() { return pendingOn; }
+    public void setPendingOn(LocalDate pendingOn) { this.pendingOn = pendingOn; }
     /** Whether a steward waived its late charge: it bears none from then on, whatever its overdue state. */
     public boolean isWaived() { return waived; }
     public void setWaived(boolean waived) { this.waived = waived; }

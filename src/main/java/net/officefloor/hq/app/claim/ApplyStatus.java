@@ -91,6 +91,9 @@ public class ApplyStatus {
         if (to == ClaimStatus.REVIEW) {
             store.markReview(claim, sheets.today(claim.getSheetId()));
         }
+        if (to == ClaimStatus.PENDING) {
+            store.markPending(claim, sheets.today(claim.getSheetId()));
+        }
         if (to == ClaimStatus.SETTLED) {
             claim.setSettledDue(settledDue);
         }
