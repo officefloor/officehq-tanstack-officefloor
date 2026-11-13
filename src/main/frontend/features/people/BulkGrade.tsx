@@ -31,9 +31,9 @@ export function BulkGrade() {
     setBusy(true);
     const ordered = people.filter((p) => selected.has(p.id));
     let changed = 0;
+    for (const p of ordered) setPersonError(sheet, p.id, '');
     try {
       for (const p of ordered) {
-        setPersonError(sheet, p.id, '');
         try {
           await putJson<Person>(
             `/api/sheets/${encodeURIComponent(sheet)}/people/${p.id}?user=${encodeURIComponent(user)}`,

@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { postJson } from '../../api/http';
+import { getJson, postJson } from '../../api/http';
 import { useOneAtATime } from '../../query/useOneAtATime';
 import { claimsKey } from '../claims/claims';
+import type { Claim } from '../claims/claims';
 import { peopleKey } from '../people/people';
+import type { Person } from '../people/people';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 
 type PasteResult = { added: number };
@@ -29,10 +31,14 @@ export function PasteClaims() {
       ),
     onSuccess: async (result) => {
       setText('');
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
-        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+      // Re-read people and claims first, then show them with the count in one render: the new rows never
+      // show before the count does.
+      const [people, claims] = await Promise.all([
+        getJson<Person[]>(`/api/sheets/${encodeURIComponent(sheet)}/people`),
+        getJson<Claim[]>(`/api/sheets/${encodeURIComponent(sheet)}/claims`),
       ]);
+      queryClient.setQueryData(peopleKey(sheet), people);
+      queryClient.setQueryData(claimsKey(sheet), claims);
       setAdded(result.added);
     },
     onError: () => setError('Nothing was added: every line must be a claim the claim form takes, for a name on the sheet.'),

@@ -5,9 +5,9 @@ import net.officefloor.hq.app.holiday.HolidayRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.setting.SettingRepository;
 
-/** The due-by a claim of the person on the date is fixed with when it is created: its date plus the person's own
- * terms, else those of their grade, else the sheet's, each as in force on that date; when that falls on one of the
- * sheet's holidays (as the list stands now), the next day that is not one. */
+/** The due-by a claim of the person on the date is fixed with when it is created: the terms-th business day after its
+ * date — skipping Saturdays, Sundays and the sheet's holidays (as the list stands now) — for the person's own terms,
+ * else those of their grade, else the sheet's, each as in force on that date. */
 public final class NewDueBy {
 
     private NewDueBy() {
@@ -15,7 +15,7 @@ public final class NewDueBy {
 
     public static LocalDate of(LocalDate date, Person person, SettingRepository settings,
             HolidayRepository holidays) {
-        return holidays.nextWorkingDay(person.sheetId(),
-                date.plusDays(person.termsOn(settings.dated(person.sheetId()), date)));
+        return holidays.businessDaysAfter(person.sheetId(), date,
+                person.termsOn(settings.dated(person.sheetId()), date));
     }
 }

@@ -12,8 +12,9 @@ import java.time.LocalDate;
  * its person's last statement bound it to a figure, {@code statedDue} (null: n/a) — it then shows and totals
  * that figure, not its live one. {@code number} is sheet-wide (1, 2, ...) or, under period numbering,
  * within its period (P1-1, X-1). {@code corrects} is, for a correction, the number of the claim it corrects (null:
- * not a correction). {@code dueBy} is fixed when the claim is created: its date plus its person's own terms, else
- * those of their grade, else the sheet's, each in force on that date; it does not change when the terms or its date change later. While PENDING the claim is not bound: it shows and totals its live figure, and is bound again
+ * not a correction). {@code dueBy} is fixed when the claim is created: the terms-th business day after its date (skipping Saturdays,
+ * Sundays and the sheet's holidays) for its person's own terms, else those of their grade, else the sheet's, each in
+ * force on that date; it does not change when the terms or its date change later. While PENDING the claim is not bound: it shows and totals its live figure, and is bound again
  * once rejected (back to OPEN) when the statement included it. {@code deferredUntil} is the date an OPEN claim is
  * deferred until (null: never deferred): while the sheet's today is before it the claim is {@link #deferred deferred}.
  * {@code proofs} is how many proofs the claim has been given. {@code splitFrom} is the number of the claim it was split

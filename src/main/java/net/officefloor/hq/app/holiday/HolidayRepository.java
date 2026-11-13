@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.holiday;
 
 import java.sql.Date;
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.util.HashSet;
 import java.util.List;
@@ -34,16 +35,36 @@ public class HolidayRepository {
                 Date.valueOf(holiday.date()));
     }
 
-    /** The date, or when it is one of the sheet's holidays, the next day after it that is not. */
-    public LocalDate nextWorkingDay(String sheetId, LocalDate date) {
+    /** The sheet's holidays as they stand now. */
+    public Set<LocalDate> dates(String sheetId) {
         Set<LocalDate> holidays = new HashSet<>();
         for (Holiday h : findAll(sheetId)) {
             holidays.add(h.date());
         }
+        return holidays;
+    }
+
+    /** The {@code days}-th business day after the date on the sheet: counting from the day after it, skipping every
+     * Saturday, Sunday and one of the sheet's holidays (as the list stands now); the date itself when {@code days} is 0. */
+    public LocalDate businessDaysAfter(String sheetId, LocalDate date, int days) {
+        return businessDaysAfter(dates(sheetId), date, days);
+    }
+
+    /** The {@code days}-th business day after the date, skipping every Saturday, Sunday and one of the holidays. */
+    public static LocalDate businessDaysAfter(Set<LocalDate> holidays, LocalDate date, int days) {
         LocalDate day = date;
-        while (holidays.contains(day)) {
+        int left = days;
+        while (left > 0) {
             day = day.plusDays(1);
+            if (isBusinessDay(holidays, day)) {
+                left--;
+            }
         }
         return day;
+    }
+
+    private static boolean isBusinessDay(Set<LocalDate> holidays, LocalDate day) {
+        DayOfWeek dow = day.getDayOfWeek();
+        return dow != DayOfWeek.SATURDAY && dow != DayOfWeek.SUNDAY && !holidays.contains(day);
     }
 }
