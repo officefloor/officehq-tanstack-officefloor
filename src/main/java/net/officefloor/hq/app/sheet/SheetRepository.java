@@ -18,8 +18,8 @@ public class SheetRepository {
 
     /** The sheet with this id, created empty (today = the real date) when it was never loaded before. */
     public Sheet ensure(String id) {
-        jdbc.update("INSERT INTO sheet (id, today) SELECT ?, ? WHERE NOT EXISTS (SELECT 1 FROM sheet WHERE id = ?)",
-                id, Date.valueOf(LocalDate.now()), id);
+        jdbc.update("INSERT INTO sheet (id, today, started) SELECT ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM sheet WHERE id = ?)",
+                id, Date.valueOf(LocalDate.now()), Date.valueOf(LocalDate.now()), id);
         return find(id);
     }
 
