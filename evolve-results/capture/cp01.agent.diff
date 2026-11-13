@@ -1,0 +1,320 @@
+diff --git a/src/main/frontend/features/session/SheetPicker.tsx b/src/main/frontend/features/session/SheetPicker.tsx
+new file mode 100644
+index 000000000..b37625ff6
+--- /dev/null
++++ b/src/main/frontend/features/session/SheetPicker.tsx
+@@ -0,0 +1,58 @@
++import { useState } from 'react';
++import type { FormEvent } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { sheetKey, useCurrentSheet, useCurrentUser } from './session';
++
++// Choose a sheet by typing its id and loading it. Loading an id never used before starts an empty
++// sheet; loading one again re-reads what the store holds for it now.
++export function SheetPicker() {
++  const [user] = useCurrentUser();
++  const [sheet, setSheet] = useCurrentSheet();
++  const [id, setId] = useState('');
++  const [error, setError] = useState('');
++  const queryClient = useQueryClient();
++
++  const load = useMutation({
++    mutationFn: (sheetId: string) => postJson<{ id: string }>('/api/sheets', { id: sheetId }),
++    onSuccess: async ({ id: loaded }) => {
++      setSheet(loaded);
++      await queryClient.invalidateQueries({ queryKey: sheetKey(loaded) });
++    },
++    onError: () => setError('That sheet could not be loaded.'),
++  });
++
++  if (!user) return null;
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    const trimmed = id.trim();
++    setError('');
++    if (!trimmed) {
++      setError('Type a sheet id to load.');
++      return;
++    }
++    load.mutate(trimmed);
++  };
++
++  return (
++    <form onSubmit={submit}>
++      <span>
++        Sheet: <strong data-testid="sheet-current-id">{sheet}</strong>{' '}
++      </span>
++      <input
++        data-testid="sheet-id-input"
++        placeholder="Sheet id"
++        value={id}
++        onChange={(e) => {
++          setId(e.target.value);
++          setError('');
++        }}
++      />
++      <button type="submit" data-testid="sheet-load" disabled={load.isPending}>
++        Load
++      </button>
++      {error && <span data-testid="sheet-error">{error}</span>}
++    </form>
++  );
++}
+diff --git a/src/main/frontend/features/session/SignIn.tsx b/src/main/frontend/features/session/SignIn.tsx
+new file mode 100644
+index 000000000..d264447ca
+--- /dev/null
++++ b/src/main/frontend/features/session/SignIn.tsx
+@@ -0,0 +1,50 @@
++import { useState } from 'react';
++import type { FormEvent } from 'react';
++import { useCurrentUser } from './session';
++
++// Sign in by typing a name; there is no password.
++export function SignIn() {
++  const [user, setUser] = useCurrentUser();
++  const [name, setName] = useState('');
++  const [error, setError] = useState('');
++
++  if (user) {
++    return (
++      <span>
++        Signed in as <strong data-testid="current-user">{user}</strong>{' '}
++        <button type="button" data-testid="signout" onClick={() => setUser(undefined)}>
++          Sign out
++        </button>
++      </span>
++    );
++  }
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    const trimmed = name.trim();
++    if (!trimmed) {
++      setError('Type a name to sign in.');
++      return;
++    }
++    setError('');
++    setUser(trimmed);
++  };
++
++  return (
++    <form onSubmit={submit}>
++      <input
++        data-testid="signin-name"
++        placeholder="Your name"
++        value={name}
++        onChange={(e) => {
++          setName(e.target.value);
++          setError('');
++        }}
++      />
++      <button type="submit" data-testid="signin-submit">
++        Sign in
++      </button>
++      {error && <span data-testid="signin-error">{error}</span>}
++    </form>
++  );
++}
+diff --git a/src/main/frontend/features/session/header.slot.tsx b/src/main/frontend/features/session/header.slot.tsx
+new file mode 100644
+index 000000000..6d8dea0d3
+--- /dev/null
++++ b/src/main/frontend/features/session/header.slot.tsx
+@@ -0,0 +1,8 @@
++import { AppHeader } from '../../slots/defs/appHeader';
++import { SheetPicker } from './SheetPicker';
++import { SignIn } from './SignIn';
++
++export const contributions = [
++  AppHeader.fill({ order: 0, Component: SignIn }),
++  AppHeader.fill({ order: 10, Component: SheetPicker }),
++];
+diff --git a/src/main/frontend/features/session/session.ts b/src/main/frontend/features/session/session.ts
+new file mode 100644
+index 000000000..162bc50b2
+--- /dev/null
++++ b/src/main/frontend/features/session/session.ts
+@@ -0,0 +1,9 @@
++import { asString, useSearchParam } from '../../url/useSearchParam';
++
++// The session lives in the URL: `user` is the signed-in name, `sheet` the active sheet id. Each
++// browser keeps its own, so two users on one sheet act independently.
++export const useCurrentUser = () => useSearchParam('user', asString);
++export const useCurrentSheet = () => useSearchParam('sheet', asString);
++
++/** The query key under which everything kept per sheet lives; re-loading a sheet invalidates it. */
++export const sheetKey = (sheet: string) => ['sheet', sheet] as const;
+diff --git a/src/main/frontend/routes/__root.tsx b/src/main/frontend/routes/__root.tsx
+index f1bac6342..eceffa828 100644
+--- a/src/main/frontend/routes/__root.tsx
++++ b/src/main/frontend/routes/__root.tsx
+@@ -1,8 +1,9 @@
+ import { Outlet, createRootRouteWithContext } from '@tanstack/react-router';
+ import type { QueryClient } from '@tanstack/react-query';
++import { AppHeader } from '../slots/defs/appHeader';
+ import { AppNav } from '../slots/defs/appNav';
+ 
+-// The shell. It renders the nav region (filled from app.nav) and the matched route's component
++// The shell. It renders the header region (filled from app.header), the nav region (filled from app.nav) and the matched route's component
+ // (from routes/); it reads no page list and holds no view state — URL search params carry what is
+ // open or filtered.
+ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
+@@ -15,6 +16,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
+ function AppShell() {
+   return (
+     <div data-testid="app-root">
++      <header data-testid="app-header">
++        <AppHeader.Slot />
++      </header>
+       <nav data-testid="app-nav">
+         <AppNav.Slot />
+       </nav>
+diff --git a/src/main/frontend/slots/defs/appHeader.ts b/src/main/frontend/slots/defs/appHeader.ts
+new file mode 100644
+index 000000000..fba875553
+--- /dev/null
++++ b/src/main/frontend/slots/defs/appHeader.ts
+@@ -0,0 +1,4 @@
++import { defineSlot } from '../Slot';
++
++/** The shell's header bar, above the nav: who is signed in and which sheet is active. */
++export const AppHeader = defineSlot('app.header');
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/EnsureSheet.java b/src/main/java/net/officefloor/hq/app/sheet/EnsureSheet.java
+new file mode 100644
+index 000000000..33a98d017
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/EnsureSheet.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++
++public class EnsureSheet {
++    public void ensure(@Val SheetRequest request, SheetRepository repository, Out<Sheet> sheet) {
++        sheet.set(repository.ensure(request.id()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+new file mode 100644
+index 000000000..3eb98c560
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+@@ -0,0 +1,10 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.plugin.variable.Val;
++import net.officefloor.web.ObjectResponse;
++
++public class RespondWithSheet {
++    public void respond(@Val Sheet sheet, ObjectResponse<SheetResponse> response) {
++        response.send(new SheetResponse(sheet.id()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/Sheet.java b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+new file mode 100644
+index 000000000..0832c5aff
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.sheet;
++
++/** A sheet: the unit everything else in the app is kept under. */
++public record Sheet(String id) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+new file mode 100644
+index 000000000..704952ba0
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+@@ -0,0 +1,20 @@
++package net.officefloor.hq.app.sheet;
++
++import org.springframework.jdbc.core.JdbcTemplate;
++import org.springframework.stereotype.Repository;
++
++@Repository
++public class SheetRepository {
++
++    private final JdbcTemplate jdbc;
++
++    public SheetRepository(JdbcTemplate jdbc) {
++        this.jdbc = jdbc;
++    }
++
++    /** The sheet with this id, created empty when it was never loaded before. */
++    public Sheet ensure(String id) {
++        jdbc.update("MERGE INTO sheet (id) KEY (id) VALUES (?)", id);
++        return new Sheet(id);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetRequest.java b/src/main/java/net/officefloor/hq/app/sheet/SheetRequest.java
+new file mode 100644
+index 000000000..36f5f48f7
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetRequest.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.sheet;
++
++import jakarta.validation.constraints.NotBlank;
++import jakarta.validation.constraints.Size;
++
++public record SheetRequest(@NotBlank @Size(max = 100) String id) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java b/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java
+new file mode 100644
+index 000000000..158c563b8
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java
+@@ -0,0 +1,4 @@
++package net.officefloor.hq.app.sheet;
++
++public record SheetResponse(String id) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/ValidateSheetRequest.java b/src/main/java/net/officefloor/hq/app/sheet/ValidateSheetRequest.java
+new file mode 100644
+index 000000000..2a0503ffa
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/ValidateSheetRequest.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app.sheet;
++
++import jakarta.validation.Valid;
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.RequestBody;
++
++public class ValidateSheetRequest {
++    public void validate(@RequestBody @Valid SheetRequest request, Out<SheetRequest> body) {
++        body.set(new SheetRequest(request.id().trim()));
++    }
++}
+diff --git a/src/main/resources/db/migration/V1__sheet.sql b/src/main/resources/db/migration/V1__sheet.sql
+new file mode 100644
+index 000000000..bc184d097
+--- /dev/null
++++ b/src/main/resources/db/migration/V1__sheet.sql
+@@ -0,0 +1,4 @@
++-- A sheet is created the first time its id is loaded; everything else is kept per sheet.
++CREATE TABLE sheet (
++    id VARCHAR(100) PRIMARY KEY
++);
+diff --git a/src/main/resources/officefloor/rest/api/sheets.POST.yml b/src/main/resources/officefloor/rest/api/sheets.POST.yml
+new file mode 100644
+index 000000000..2eeb94f64
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets.POST.yml
+@@ -0,0 +1,11 @@
++# Load a sheet by id: a sheet never loaded before is created empty.
++validate:
++  class: net.officefloor.hq.app.sheet.ValidateSheetRequest
++  next: ensure
++ensure:
++  class: net.officefloor.hq.app.sheet.EnsureSheet
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.sheet.RespondWithSheet
++  govern: [ transaction ]
