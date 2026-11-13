@@ -8,6 +8,8 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import net.officefloor.hq.app.claim.Claim;
+import net.officefloor.hq.app.claim.ClaimLogLine;
+import net.officefloor.hq.app.claim.ClaimLogRepository;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.claim.Rounding;
 import net.officefloor.hq.app.person.Person;
@@ -21,11 +23,11 @@ import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
 /**
- * Closes the period, fixing its due-total as it stands now: the dues (figures plus any late charge) of the counting
- * claims dated in it, added up (n/a skipped), and each person's share of it (0.00 for a person with none). Refused (400) when it is already closed.
+ * Closes the period, fixing its due-total as it stands now: the dues (figures plus any late charge, as they are now) of
+ * the claims dated in it that count by their status at the period's end, added up (n/a skipped), and each person's share of it (0.00 for a person with none). Refused (400) when it is already closed.
  */
 public class ClosePeriod {
-    public void close(@Val Period period, ClaimRepository claims, PersonRepository people, RateRepository rates,
+    public void close(@Val Period period, ClaimRepository claims, ClaimLogRepository logs, PersonRepository people, RateRepository rates,
             SettingRepository settings, SheetRepository sheets, Out<Period> closed) throws InvalidPeriodException {
         if (period.closed()) {
             throw new InvalidPeriodException("The period " + period.name() + " is already closed.");
@@ -36,6 +38,7 @@ public class ClosePeriod {
         DatedSettings dated = settings.dated(period.sheetId());
         LocalDate today = sheets.today(period.sheetId());
         List<Claim> sheetClaims = claims.findAll(period.sheetId());
+        Map<Long, List<ClaimLogLine>> sheetLogs = logs.findAll(period.sheetId());
         Rounding rounding = settings.rounding(period.sheetId(), today, sheetClaims);
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         Map<Long, BigDecimal> perPerson = new HashMap<>();
@@ -44,7 +47,7 @@ public class ClosePeriod {
         }
         for (Claim claim : sheetClaims) {
             Person person = byId.get(claim.personId());
-            if (person == null || !person.counts(claim, today) || !period.contains(claim.date())) {
+            if (person == null || !period.counts(claim, sheetLogs.getOrDefault(claim.id(), List.of()), person, today)) {
                 continue;
             }
             BigDecimal figure = claim.due(Rate.inForce(sheetRates, person.gradeOn(claim.date()), claim.date()),

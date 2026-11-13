@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
-import { counts } from '../claims/claims';
-import type { Claim } from '../claims/claims';
+import { bound, deferred } from '../claims/claims';
+import type { Claim, ClaimStatus } from '../claims/claims';
+import { covers } from '../people/people';
 import type { Person } from '../people/people';
 import { claimDue, total } from '../rates/rates';
 import type { Rate } from '../rates/rates';
@@ -45,14 +46,37 @@ export const contains = (p: Period, date: string) => p.from <= date && date <= p
 export const periodOf = (periods: Period[], date: string) => periods.find((p) => contains(p, date));
 
 /**
- * A person's due-total for a period: the dues (late charges included) of their claims that count whose date falls
- * in it (open ones a hold covers left out), added up; a closed period keeps the figure fixed when it was closed
- * (0.00 for a person added since).
+ * The status a claim had at the end of the day (yyyy-MM-dd), as its status log records it: the last line logged on
+ * or before it; undefined when it was added after. A claim with no log at all is taken at its status now.
+ */
+export function statusAt(c: Claim, date: string): ClaimStatus | undefined {
+  if (c.log.length === 0) return c.status;
+  let status: ClaimStatus | undefined;
+  for (const line of c.log) if (line.date <= date) status = line.status;
+  return status;
+}
+
+/**
+ * Whether a claim counts toward a period: by the status it had at the end of the period's last day (OPEN, PENDING
+ * or SETTLED then), left out as the live rules say while it is deferred, or when it was open then and one of its
+ * person's `holds` covers its date and no statement binds it.
+ */
+export const countsInPeriod = (period: Period, c: Claim, holds: Person['holds'], today: string) => {
+  const then = statusAt(c, period.to);
+  if (then === 'SETTLED') return true;
+  if (then !== 'OPEN' && then !== 'PENDING') return false;
+  return !deferred(c, today) && (bound(c) || !holds.some((h) => covers(h, c.date)));
+};
+
+/**
+ * A person's due-total for a period: the dues (late charges included, as shown now) of their claims dated in it
+ * that count by their status at the period's end, added up; a closed period keeps the figure fixed when it was
+ * closed (0.00 for a person added since).
  */
 export function personPeriodDue(period: Period, person: Person, claims: Claim[], rates: Rate[], rules: DueRules): string {
   if (period.closed) return period.personTotals?.[String(person.id)] ?? '0.00';
   const figures = claims
-    .filter((c) => c.personId === person.id && counts(c, person.holds, rules.today) && contains(period, c.date))
+    .filter((c) => c.personId === person.id && contains(period, c.date) && countsInPeriod(period, c, person.holds, rules.today))
     .map((c) => claimDue(c, rates, person.grades, rules));
   return total(figures);
 }
