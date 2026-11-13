@@ -1,7 +1,7 @@
 import { useClaims } from '../claims/claims';
 import { personOverdue } from '../overdue/overdue';
 import { usePeople } from '../people/people';
-import { personDue, total, useRates } from '../rates/rates';
+import { personDue, trimmedTotal, useRates } from '../rates/rates';
 import { useDueRules } from '../settings/settings';
 
 /** The statuses counted, as in the summary; one no claim reaches yet still shows, as 0. */
@@ -27,8 +27,8 @@ export function HeaderCounters() {
           {s}: <strong data-testid={`header-claims-${s}-count`}>{claims.filter((c) => c.status === s).length}</strong>
         </span>
       ))}
-      {' · '}Due: <strong data-testid="header-due-total">{total(dues)}</strong>
-      {' · '}Overdue: <strong data-testid="header-overdue-total">{total(overdue)}</strong>
+      {' · '}Due: <strong data-testid="header-due-total">{trimmedTotal(dues)}</strong>
+      {' · '}Overdue: <strong data-testid="header-overdue-total">{trimmedTotal(overdue)}</strong>
     </p>
   );
 }

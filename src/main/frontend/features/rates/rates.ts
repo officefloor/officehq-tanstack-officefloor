@@ -186,3 +186,13 @@ export function total(dues: string[]): string {
   const cents = dues.filter((d) => d !== NA).reduce((sum, d) => sum + hundredths(d), 0);
   return (cents / 100).toFixed(2);
 }
+
+/**
+ * A sheet's due-total or overdue-total: the people's figures added up, skipping n/a — leaving out the single
+ * highest and the single lowest figure when three or more people have one.
+ */
+export function trimmedTotal(dues: string[]): string {
+  const cents = dues.filter((d) => d !== NA).map(hundredths).sort((a, b) => a - b);
+  const kept = cents.length >= 3 ? cents.slice(1, -1) : cents;
+  return (kept.reduce((sum, c) => sum + c, 0) / 100).toFixed(2);
+}

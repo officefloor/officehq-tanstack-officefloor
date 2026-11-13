@@ -1,11 +1,11 @@
 import { useClaims } from '../claims/claims';
 import { usePeople } from '../people/people';
-import { total, useRates } from '../rates/rates';
+import { trimmedTotal, useRates } from '../rates/rates';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { useDueRules } from '../settings/settings';
 import { personOverdue } from './overdue';
 
-// The sheet's overdue count and overdue-total: everyone's added up.
+// The sheet's overdue count and overdue-total: everyone's added up (the total trimmed of the highest and lowest).
 export function OverdueTotals() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -22,7 +22,7 @@ export function OverdueTotals() {
   return (
     <p>
       Overdue: <strong data-testid="rollup-overdue-count">{each.reduce((n, o) => n + o.count, 0)}</strong>, totalling{' '}
-      <strong data-testid="rollup-overdue-total">{total(each.map((o) => o.total))}</strong>
+      <strong data-testid="rollup-overdue-total">{trimmedTotal(each.map((o) => o.total))}</strong>
     </p>
   );
 }

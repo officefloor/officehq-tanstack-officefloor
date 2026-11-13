@@ -2,6 +2,7 @@ package net.officefloor.hq.app.rollup;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -23,7 +24,8 @@ import org.springframework.stereotype.Service;
  * added up; their due-total those claims' dues (live figures raised to the floor in force on each claim's date and rounded by its policy date, plus
  * any late charge, at the late percent in force on each 30-day boundary, on the overdue ones) added up, at most the cap in force on the sheet's today; n/a when their grade on the sheet's today has no
  * rate there and no counting claim has a figure (kept, or at the rate for the grade in force on its date). Their overdue-total
- * is the dues of their overdue counting claims added up (skipping n/a, not capped). The sheet's totals add these up, skipping n/a.
+ * is the dues of their overdue counting claims added up (skipping n/a, not capped). The sheet's totals add these up, skipping n/a;
+ * its due-total and overdue-total leave out the single highest and lowest person's figure when three or more have one.
  */
 @Service
 public class RollupService {
@@ -55,8 +57,8 @@ public class RollupService {
         Rounding rounding = settings.rounding(sheetId, today, sheetClaims);
         Map<Long, Rollup.Figures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
-        BigDecimal dueTotal = BigDecimal.ZERO.setScale(2);
-        BigDecimal overdueTotal = BigDecimal.ZERO.setScale(2);
+        List<BigDecimal> dues = new ArrayList<>();
+        List<BigDecimal> overdues = new ArrayList<>();
         for (Person person : people.findAll(sheetId)) {
             BigDecimal claimed = BigDecimal.ZERO.setScale(2);
             BigDecimal due = BigDecimal.ZERO.setScale(2);
@@ -82,12 +84,22 @@ public class RollupService {
             due = Cap.apply(cap, due);
             claimedTotal = claimedTotal.add(claimed);
             if (!na) {
-                dueTotal = dueTotal.add(due);
+                dues.add(due);
             }
-            overdueTotal = overdueTotal.add(overdue);
+            overdues.add(overdue);
             figures.put(person.id(), new Rollup.Figures(person.name(), show(claimed), na ? NA : show(due), show(overdue)));
         }
-        return new Rollup(figures, show(claimedTotal), show(dueTotal), show(overdueTotal));
+        return new Rollup(figures, show(claimedTotal), show(trimmedTotal(dues)), show(trimmedTotal(overdues)));
+    }
+
+    /** The figures added up, leaving out the single highest and single lowest when there are three or more. */
+    private static BigDecimal trimmedTotal(List<BigDecimal> values) {
+        List<BigDecimal> sorted = new ArrayList<>(values);
+        sorted.sort(null);
+        if (sorted.size() >= 3) {
+            sorted = sorted.subList(1, sorted.size() - 1);
+        }
+        return sorted.stream().reduce(BigDecimal.ZERO.setScale(2), BigDecimal::add);
     }
 
     private static String show(BigDecimal value) {
