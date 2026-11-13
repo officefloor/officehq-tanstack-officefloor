@@ -1,0 +1,18 @@
+package net.officefloor.hq.app.setting;
+
+import java.math.BigDecimal;
+import java.util.List;
+
+/** A sheet's settings: its clerk limit (null: no limit) and the roles given to user names (any other name is a clerk). */
+public record Settings(String sheetId, BigDecimal clerkLimit, List<UserRole> roles) {
+
+    /** The role of the user name: the one given to it, else clerk. */
+    public Role roleOf(String user) {
+        return roles.stream().filter((r) -> r.user().equals(user)).map(UserRole::role).findFirst().orElse(Role.CLERK);
+    }
+
+    /** Whether the user may settle a claim with this due (null: n/a, within any limit). */
+    public boolean maySettle(String user, BigDecimal due) {
+        return roleOf(user) == Role.STEWARD || clerkLimit == null || due == null || due.compareTo(clerkLimit) <= 0;
+    }
+}
