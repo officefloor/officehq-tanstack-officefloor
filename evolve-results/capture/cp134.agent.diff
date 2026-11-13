@@ -1,0 +1,136 @@
+diff --git a/src/main/frontend/features/people/PeopleList.tsx b/src/main/frontend/features/people/PeopleList.tsx
+index 810d41a16..25bd605d6 100644
+--- a/src/main/frontend/features/people/PeopleList.tsx
++++ b/src/main/frontend/features/people/PeopleList.tsx
+@@ -1,9 +1,16 @@
+ import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ import { PersonError } from './personError';
+-import { useEditingPerson, usePeople, useShowRetired } from './people';
++import { useClaims } from '../claims/claims';
++import { NA, personDue, useRates } from '../rates/rates';
++import { useDueRules } from '../settings/settings';
++import { liveHolds, nameKey, useEditingPerson, usePeople, usePeopleSort, useShowRetired } from './people';
++import type { Person, SortKey } from './people';
+ 
+-// Every person on the sheet, in their order in the list (their positions), each with their name and grade and
++/** Orders a and b by key: negative, zero or positive. */
++const compare = (a: string | number, b: string | number) => (a < b ? -1 : a > b ? 1 : 0);
++
++// Every person on the sheet, in their order in the list (their positions) or sorted as this screen chose, each with their name and grade and
+ // the columns features add (slots/defs/personColumns.ts). Retired people are left out unless the
+ // show-retired toggle is on.
+ export function PeopleList() {
+@@ -12,6 +19,8 @@ export function PeopleList() {
+   const [, setEditing] = useEditingPerson();
+   const people = usePeople();
+   const [showRetired] = useShowRetired();
++  const [sort] = usePeopleSort();
++  const sortKey = useSortKey(sort);
+ 
+   if (!user || !sheet) return null;
+ 
+@@ -29,7 +38,7 @@ export function PeopleList() {
+         </tr>
+       </thead>
+       <tbody>
+-        {(people.data ?? []).filter((p) => showRetired || !p.retired).map((p) => (
++        {sorted((people.data ?? []).filter((p) => showRetired || !p.retired), sortKey).map((p) => (
+           <tr key={p.id} data-testid={`person-row-${p.id}`}>
+             <td data-testid="person-name" style={{ whiteSpace: 'pre' }}>
+               {p.name}
+@@ -51,3 +60,29 @@ export function PeopleList() {
+     </table>
+   );
+ }
++
++/** The people sorted by their key, ascending; equal keys (and no key) keep list order. */
++function sorted(people: Person[], key: ((p: Person) => string | number) | null): Person[] {
++  if (!key) return people;
++  return people.map((p, i) => ({ p, i, k: key(p) })).sort((a, b) => compare(a.k, b.k) || a.i - b.i).map((e) => e.p);
++}
++
++/** The key a person sorts on: their name as names compare, their grade, or their due-total (n/a last); null: list order. */
++function useSortKey(sort: SortKey): ((p: Person) => string | number) | null {
++  const rates = useRates().data ?? [];
++  const rules = useDueRules();
++  const claims = useClaims().data ?? [];
++  switch (sort) {
++    case 'name':
++      return (p) => nameKey(p.name);
++    case 'grade':
++      return (p) => p.grade;
++    case 'due-total':
++      return (p) => {
++        const total = personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, liveHolds(p, rules.today), rules);
++        return total === NA ? Infinity : Math.round(Number(total) * 100);
++      };
++    default:
++      return null;
++  }
++}
+diff --git a/src/main/frontend/features/people/SortBy.tsx b/src/main/frontend/features/people/SortBy.tsx
+new file mode 100644
+index 000000000..69ca3a6cb
+--- /dev/null
++++ b/src/main/frontend/features/people/SortBy.tsx
+@@ -0,0 +1,24 @@
++import { useCurrentSheet, useCurrentUser } from '../session/session';
++import { SORT_KEYS, usePeopleSort } from './people';
++
++// The select that sorts the people list on this screen only; the list's order (positions) is untouched.
++export function SortBy() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const [sort, setSort] = usePeopleSort();
++
++  if (!user || !sheet) return null;
++
++  return (
++    <label>
++      Sort by{' '}
++      <select data-testid="sort-by" value={sort} onChange={(e) => setSort(e.target.value === 'added' ? undefined : (e.target.value as typeof sort))}>
++        {SORT_KEYS.map((k) => (
++          <option key={k} value={k}>
++            {k}
++          </option>
++        ))}
++      </select>
++    </label>
++  );
++}
+diff --git a/src/main/frontend/features/people/home.slot.tsx b/src/main/frontend/features/people/home.slot.tsx
+index b78f1f33e..499acaafd 100644
+--- a/src/main/frontend/features/people/home.slot.tsx
++++ b/src/main/frontend/features/people/home.slot.tsx
+@@ -2,9 +2,11 @@ import { HomeMain } from '../../slots/defs/homeMain';
+ import { BulkGrade } from './BulkGrade';
+ import { PeopleList } from './PeopleList';
+ import { PersonForm } from './PersonForm';
++import { SortBy } from './SortBy';
+ 
+ export const contributions = [
+   HomeMain.fill({ order: 10, Component: PersonForm }),
++  HomeMain.fill({ order: 19, Component: SortBy }),
+   HomeMain.fill({ order: 20, Component: PeopleList }),
+   HomeMain.fill({ order: 24, Component: BulkGrade }),
+ ];
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index 6191b44cd..09752c851 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -91,3 +91,14 @@ export const useEditingPerson = () => useSearchParam('person', asNumber);
+ 
+ /** Whether retired people are listed; off until the toggle is turned on, and kept when a sheet is loaded. */
+ export const useShowRetired = () => useSearchParam('retired', asFlag);
++
++/** The keys the people list can be sorted on. */
++export const SORT_KEYS = ['added', 'name', 'grade', 'due-total'] as const;
++export type SortKey = (typeof SORT_KEYS)[number];
++
++/** How this screen sorts the people list; added (their order in the list) until another key is chosen. */
++export const usePeopleSort = () =>
++  useSearchParam<SortKey>('sort', (raw) => (SORT_KEYS as readonly unknown[]).includes(raw) ? (raw as SortKey) : 'added');
++
++/** A name as names are compared: trimmed and lower-cased. */
++export const nameKey = (name: string) => name.trim().toLowerCase();
