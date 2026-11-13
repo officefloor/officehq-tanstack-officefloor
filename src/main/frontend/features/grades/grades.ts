@@ -7,6 +7,9 @@ import { useAsOf } from '../../session/session';
  *  an edit; the people already on it keep it. */
 export type Grade = { grade: string; retired: boolean };
 
+/** A grade merge done: the grade merged, the one it went into and how many people moved. */
+export type GradeMerged = { from: string; into: string; merged: number };
+
 /** Under the sheet's key, so loading the sheet again re-reads its grades. */
 export const gradesKey = (sheet: string) => [...sheetKey(sheet), 'grades'] as const;
 
