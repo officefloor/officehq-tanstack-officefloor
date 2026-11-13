@@ -1,0 +1,57 @@
+diff --git a/src/main/frontend/features/summary/Summary.tsx b/src/main/frontend/features/summary/Summary.tsx
+index 481f6b119..f393d8113 100644
+--- a/src/main/frontend/features/summary/Summary.tsx
++++ b/src/main/frontend/features/summary/Summary.tsx
+@@ -12,7 +12,7 @@ const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
+ 
+ // The sheet at a glance, worked out from the same figures the list shows. Per grade: the people on it
+ // today (retired people left out), their due-totals added up (skipping n/a) and how many of them are active. Per period: its
+-// due-total. Per status: how many claims have it. Per void reason on the list: how many VOID claims were voided with it.
++// due-total and its change from the period before it by start date (none for the earliest). Per status: how many claims have it. Per void reason on the list: how many VOID claims were voided with it.
+ export function Summary() {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+@@ -26,6 +26,14 @@ export function Summary() {
+   if (!user || !sheet) return null;
+ 
+   const current = people.filter((p) => !p.retired);
++  const periodDues = new Map(periods.map((p) => [p.name, periodDue(p, claims, people, rates, rules)]));
++  const byStart = [...periods].sort((a, b) => a.from.localeCompare(b.from));
++  const periodChange = new Map(
++    byStart.map((p, i) => [
++      p.name,
++      i === 0 ? '' : (cents(periodDues.get(p.name)!) - cents(periodDues.get(byStart[i - 1].name)!)) / 100,
++    ]),
++  );
+   return (
+     <section data-testid="summary">
+       <table>
+@@ -61,13 +69,15 @@ export function Summary() {
+           <tr>
+             <th>Period</th>
+             <th>Due total</th>
++            <th>Change</th>
+           </tr>
+         </thead>
+         <tbody>
+           {periods.map((p) => (
+             <tr key={p.name}>
+               <td>{p.name}</td>
+-              <td data-testid={`summary-period-${p.name}-due-total`}>{periodDue(p, claims, people, rates, rules)}</td>
++              <td data-testid={`summary-period-${p.name}-due-total`}>{periodDues.get(p.name)}</td>
++              <td data-testid={`summary-period-${p.name}-change`}>{formatChange(periodChange.get(p.name))}</td>
+             </tr>
+           ))}
+         </tbody>
+@@ -109,3 +119,11 @@ export function Summary() {
+     </section>
+   );
+ }
++
++/** A two-decimal value as whole hundredths, exactly. */
++const cents = (value: string) => Math.round(Number(value) * 100);
++
++/** A change in due-total, two decimals with a minus sign when lower; nothing for the earliest period. */
++function formatChange(change: number | string | undefined): string {
++  return typeof change === 'number' ? (change === 0 ? '0.00' : change.toFixed(2)) : '';
++}
