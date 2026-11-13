@@ -1,0 +1,83 @@
+diff --git a/src/main/frontend/features/settings/form.slot.tsx b/src/main/frontend/features/settings/form.slot.tsx
+index 8936760e8..1fbce5e69 100644
+--- a/src/main/frontend/features/settings/form.slot.tsx
++++ b/src/main/frontend/features/settings/form.slot.tsx
+@@ -9,11 +9,11 @@ import { ratesKey } from '../rates/rates';
+ import { type Settings, settingsKey, useSettings } from './settings';
+ import { useFigure } from '../locale/locale';
+ 
+-const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'] as const;
++const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen', 'today'] as const;
+ 
+ /** The standing rule each action keeps while its permission is blank. */
+ const STANDING_PERMS: Record<(typeof PERM_ACTIONS)[number], string> = {
+-  open: 'clerk,steward', settle: 'clerk,steward', void: 'clerk,steward', reassign: 'steward', close: 'clerk,steward', reopen: 'steward',
++  open: 'clerk,steward', settle: 'clerk,steward', void: 'clerk,steward', reassign: 'steward', close: 'clerk,steward', reopen: 'steward', today: 'clerk,steward',
+ };
+ 
+ type PermKey = `perm-${(typeof PERM_ACTIONS)[number]}`;
+@@ -70,7 +70,7 @@ function SheetSettings() {
+   const [sheet] = useCurrentSheet();
+   const settings = useSettings(sheet);
+   const [values, setValues] = useState<Record<Key, string>>({ 'clerk-limit': '', 'clerk-limit-A': '', 'clerk-limit-B': '', 'clerk-limit-C': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '', cap: '', 'proof-threshold': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'note-threshold': '', 'review-threshold': '', 'grace-days': '', 'escalate-after': '', 'review-sla': '', 'pending-sla': '', 'entry-date': '', pot: '', 'alert-threshold': '', parent: '', 'fiscal-start-month': '', rounding: '', 'proof-kinds': '', 'default-grade': '', 'score-mid': '', 'score-high': '', 'score-log': '', 'max-open': '',
+-    'perm-open': '', 'perm-settle': '', 'perm-void': '', 'perm-reassign': '', 'perm-close': '', 'perm-reopen': '' });
++    'perm-open': '', 'perm-settle': '', 'perm-void': '', 'perm-reassign': '', 'perm-close': '', 'perm-reopen': '', 'perm-today': '' });
+   const [froms, setFroms] = useState<Record<DatedKey, string>>(NO_FROM);
+   const [key, setKey] = useState<Key>('clerk-limit');
+   const queryClient = useQueryClient();
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingStore.java b/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
+index a37c31143..f066e995b 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingStore.java
+@@ -258,10 +258,11 @@ public class SettingStore {
+     public static final Map<String, List<Role>> STANDING_PERMS = Map.of(
+             "open", List.of(Role.CLERK, Role.STEWARD), "settle", List.of(Role.CLERK, Role.STEWARD),
+             "void", List.of(Role.CLERK, Role.STEWARD), "close", List.of(Role.CLERK, Role.STEWARD),
+-            "reassign", List.of(Role.STEWARD), "reopen", List.of(Role.STEWARD));
++            "reassign", List.of(Role.STEWARD), "reopen", List.of(Role.STEWARD),
++            "today", List.of(Role.CLERK, Role.STEWARD));
+ 
+     /** The actions of the permission matrix, in the order the screen shows them. */
+-    public static final List<String> PERM_ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
++    public static final List<String> PERM_ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen", "today");
+ 
+     /** The late percent a sheet has until one is set. */
+     public static final BigDecimal DEFAULT_LATE_PCT = new BigDecimal("0.00");
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/ValidateToday.java b/src/main/java/net/officefloor/hq/app/sheet/ValidateToday.java
+index fc0a2264b..c6bb83693 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/ValidateToday.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/ValidateToday.java
+@@ -2,14 +2,20 @@ package net.officefloor.hq.app.sheet;
+ 
+ import java.time.LocalDate;
+ import java.time.format.DateTimeParseException;
++import net.officefloor.hq.app.role.Role;
+ import net.officefloor.hq.app.role.RoleStore;
++import net.officefloor.hq.app.setting.SettingStore;
+ import net.officefloor.plugin.variable.Out;
+ import org.springframework.web.bind.annotation.PathVariable;
+ import org.springframework.web.bind.annotation.RequestBody;
+ 
+ public class ValidateToday {
+-    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody TodayRequest request, Out<LocalDate> today, Out<TodayRequest> body, RoleStore roles) throws InvalidSheetException {
++    public void validate(@PathVariable("sheetId") String sheetId, @RequestBody TodayRequest request, Out<LocalDate> today, Out<TodayRequest> body, RoleStore roles, SettingStore settings) throws InvalidSheetException {
+         roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
++        Role role = roles.find(sheetId.trim(), request == null || request.user() == null ? "" : request.user().trim());
++        if (!settings.allows(sheetId.trim(), "today", role)) {
++            throw new InvalidSheetException("A " + role.shown() + " may not change the sheet's today");
++        }
+         String text = request == null || request.today() == null ? "" : request.today().trim();
+         body.set(request);
+         try {
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
+index a478dc557..d0bcd0972 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.POST.yml
+@@ -1,5 +1,6 @@
+ # POST /api/sheets/{sheetId}/today — set the sheet's today (body: {today: yyyy-MM-dd, user}).
+-# A date that does not parse is refused (400) and nothing is stored. A new today first records one
++# A date that does not parse, or a user whose role the permission matrix (perm-today; by default anyone
++# but a viewer) does not allow, is refused (400) and nothing is stored. A new today first records one
+ # SNAPSHOT line per person (their due-total on the day being left), preceded while the score log is on
+ # by one SCORE line per person (their score on that day), then only the ROLLUP/TOTALS lines
+ # of the figures it moved. With grace days set, every
