@@ -1,29 +1,12 @@
-import { useQuery } from '@tanstack/react-query';
-import { getJson } from '../../api/http';
 import { AppHeader } from '../../slots/defs/appHeader';
-import { useAsOf, useCurrentSheet } from '../../session/session';
-import { asOfKey, asOfPath, sheetKey } from '../sheet/sheet';
+import { useCurrentSheet } from '../../session/session';
 import { GRADES, gradeOn, usePeople } from '../people/people';
 import { STATUSES, statusCount, useClaims } from '../claims/claims';
-import { useSheetToday } from '../sheet/sheet';
+import { useDescendants, useSheetToday } from '../sheet/sheet';
 import { dueTotal, trimmedTotal } from '../rates/rates';
 import { usePersonDue } from '../rates/due.slot';
 import { useOverdue } from '../overdue/overdue.slot';
 import { useFigure } from '../locale/locale';
-
-/** Under the sheet's key, so loading the sheet again re-reads its descendants. */
-const descendantsKey = (sheet: string) => [...sheetKey(sheet), 'descendants'] as const;
-
-/** The ids of the sheets naming the sheet as their parent, their children, and so on (as of the screen's
- *  as-of date, when one is set). */
-function useDescendants(sheet: string) {
-  const [asOf] = useAsOf();
-  return useQuery({
-    queryKey: asOfKey(descendantsKey(sheet), asOf),
-    queryFn: () => getJson<string[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/descendants`, asOf)),
-    enabled: sheet !== '',
-  });
-}
 
 type Figures = {
   people: string[][];

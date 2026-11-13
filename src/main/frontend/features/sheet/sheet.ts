@@ -35,3 +35,17 @@ export function useSheetToday(id: string): string | undefined {
   const data = useSheet(id).data;
   return data?.asOf ?? data?.today;
 }
+
+/** Under the sheet's key, so loading the sheet again re-reads its descendants. */
+const descendantsKey = (sheet: string) => [...sheetKey(sheet), 'descendants'] as const;
+
+/** The ids of the sheets naming the sheet as their parent, their children, and so on (as of the screen's
+ *  as-of date, when one is set). */
+export function useDescendants(sheet: string) {
+  const [asOf] = useAsOf();
+  return useQuery({
+    queryKey: asOfKey(descendantsKey(sheet), asOf),
+    queryFn: () => getJson<string[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/descendants`, asOf)),
+    enabled: sheet !== '',
+  });
+}
