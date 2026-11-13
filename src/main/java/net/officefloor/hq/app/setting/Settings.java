@@ -16,14 +16,32 @@ import java.util.Map;
  * permission matrix (the roles allowed each of open, settle, void, reassign, close and reopen) and its grace days (null: off;
  * when its today is changed, an open period whose to-date plus them is before the new today is closed).
  * The clerk limit, floor, terms, grade terms, late percent, cap and proof threshold are those in force on the sheet's today; {@code dated}
- * holds every value recorded for them, by from-date.
+ * holds every value recorded for them, by from-date. {@code delegations} are the steward role delegated to user names, in the
+ * order made; one in force on {@code today} (the sheet's today) makes its user act as a steward in every rule.
  */
 public record Settings(String sheetId, BigDecimal clerkLimit, BigDecimal floor, int terms, Map<String, Integer> gradeTerms, BigDecimal latePct,
-        LocalDate policyDate, LocalDate periodNumberingFrom, BigDecimal cap, BigDecimal proofThreshold, List<UserRole> roles, DatedSettings dated, Permissions permissions, Integer graceDays) {
+        LocalDate policyDate, LocalDate periodNumberingFrom, BigDecimal cap, BigDecimal proofThreshold, List<UserRole> roles, DatedSettings dated, Permissions permissions, Integer graceDays,
+        LocalDate today, List<Delegation> delegations) {
 
-    /** The role of the user name: the one given to it, else clerk. */
+    /** The role the user name acts in: steward while a delegation to it is in force on today, else its given role. */
     public Role roleOf(String user) {
+        return delegatorOf(user) != null ? Role.STEWARD : givenRoleOf(user);
+    }
+
+    /** The role given to the user name, else clerk (a delegation aside). */
+    public Role givenRoleOf(String user) {
         return roles.stream().filter((r) -> r.user().equals(user)).map(UserRole::role).findFirst().orElse(Role.CLERK);
+    }
+
+    /** The steward who delegated the role to the user name by the latest delegation in force on today, else null. */
+    public String delegatorOf(String user) {
+        String by = null;
+        for (Delegation d : delegations) {
+            if (d.user().equals(user) && d.covers(today)) {
+                by = d.by();
+            }
+        }
+        return by;
     }
 
     /** Whether the user's role is allowed the action (open, settle, void, reassign, close or reopen) by the permission matrix. */

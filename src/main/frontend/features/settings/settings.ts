@@ -23,8 +23,15 @@ export type UserRole = { user: string; role: string };
  * roles allowed it, comma separated ('': blank, the standing rule); it is not dated.
  * `graceDays` is the grace days (whole days; '': off — when the sheet's today is changed, an open period whose
  * to-date plus them is before the new today is closed); it is not dated.
+ * `delegations` is the steward role delegated to user names, in the order made.
  */
-export type Settings = { clerkLimit: string | null; floor: string; terms: number; gradeTerms: Record<string, number>; latePct: string; policyDate: string; periodNumberingFrom: string; cap: string; proofThreshold: string; roles: UserRole[]; history: Record<string, FromValue[]>; permissions: Record<string, string>; graceDays: string };
+export type Settings = { clerkLimit: string | null; floor: string; terms: number; gradeTerms: Record<string, number>; latePct: string; policyDate: string; periodNumberingFrom: string; cap: string; proofThreshold: string; roles: UserRole[]; history: Record<string, FromValue[]>; permissions: Record<string, string>; graceDays: string; delegations: Delegation[] };
+
+/**
+ * The steward role delegated by a steward (`by`) to a user name, from a from-date to a to-date (yyyy-MM-dd), both
+ * inclusive: while the sheet's today is inside them the user acts as a steward.
+ */
+export type Delegation = { user: string; from: string; to: string; by: string };
 
 /** A dated setting's value recorded from a date (yyyy-MM-dd); '': blank. */
 export type FromValue = { from: string; value: string };

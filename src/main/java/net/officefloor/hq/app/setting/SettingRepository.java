@@ -41,7 +41,8 @@ public class SettingRepository {
         DatedSettings dated = dated(sheetId);
         return new Settings(sheetId, dated.clerkLimitOn(today), dated.floorOn(today), dated.termsOn(today),
                 dated.gradeTermsOn(today), dated.latePctOn(today), policyDate(sheetId), periodNumberingFrom(sheetId),
-                dated.capOn(today), dated.proofThresholdOn(today), roles, dated, permissions(sheetId), graceDays(sheetId));
+                dated.capOn(today), dated.proofThresholdOn(today), roles, dated, permissions(sheetId), graceDays(sheetId),
+                today, delegations(sheetId));
     }
 
     /** The sheet's dated settings: every value recorded, by key and from-date. */
@@ -120,6 +121,29 @@ public class SettingRepository {
         if (!roles.isEmpty()) {
             jdbc.update("INSERT INTO permission (sheet_id, action, roles) VALUES (?, ?, ?)", sheetId, action, roles);
         }
+    }
+
+    /** The steward role delegated on the sheet, in the order made. */
+    public List<Delegation> delegations(String sheetId) {
+        return jdbc.query("SELECT sheet_id, user_name, from_date, to_date, by_user FROM delegation WHERE sheet_id = ?"
+                + " ORDER BY id", (rs, n) -> new Delegation(rs.getString("sheet_id"), rs.getString("user_name"),
+                        rs.getDate("from_date").toLocalDate(), rs.getDate("to_date").toLocalDate(), rs.getString("by_user")),
+                sheetId);
+    }
+
+    /** The steward who delegated the role to the user name by the latest delegation in force on the sheet's today, else null. */
+    public String delegatorOf(String sheetId, String user) {
+        List<String> found = jdbc.query("SELECT d.by_user FROM delegation d JOIN sheet s ON s.id = d.sheet_id"
+                + " WHERE d.sheet_id = ? AND d.user_name = ? AND s.today BETWEEN d.from_date AND d.to_date"
+                + " ORDER BY d.id DESC LIMIT 1", (rs, n) -> rs.getString("by_user"), sheetId, user);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** Record the steward role delegated. */
+    public void saveDelegation(Delegation delegation) {
+        jdbc.update("INSERT INTO delegation (sheet_id, user_name, from_date, to_date, by_user) VALUES (?, ?, ?, ?, ?)",
+                delegation.sheetId(), delegation.user(), Date.valueOf(delegation.from()), Date.valueOf(delegation.to()),
+                delegation.by());
     }
 
     /** Give the user name its role on the sheet, replacing any it had. */
