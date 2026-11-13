@@ -16,7 +16,7 @@ public class ReassignClaim {
             SheetRepository sheets, SettingRepository settings, PeriodRepository periods, Out<Claim> moved) {
         Claim reassigned = repository.reassign(claim, reassignment.to().id());
         if (reassigned.number() != null) {
-            String next = ApplyClaimAction.nextNumber(reassigned, sheets, settings, periods);
+            String next = ClaimNumbers.next(reassigned, sheets, settings, periods);
             reassigned = reassigned.withStatus(reassigned.status(), next, reassigned.due(), reassigned.openedBy());
             repository.renumber(reassigned);
             reassigned = repository.find(reassigned.sheetId(), reassigned.id());

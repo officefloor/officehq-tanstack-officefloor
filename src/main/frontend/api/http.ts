@@ -37,6 +37,11 @@ export function getJson<T>(path: string): Promise<T> {
   return send<T>(path);
 }
 
+/** Read the store as it holds it now, even while the screen shows the sheet as of a date. */
+export function getLiveJson<T>(path: string): Promise<T> {
+  return send<T>(path);
+}
+
 export function postJson<T>(path: string, body: unknown): Promise<T> {
   return send<T>(path, {
     method: 'POST',

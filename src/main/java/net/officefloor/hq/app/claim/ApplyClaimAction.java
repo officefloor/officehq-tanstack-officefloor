@@ -3,7 +3,6 @@ package net.officefloor.hq.app.claim;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
-import net.officefloor.hq.app.period.Period;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
@@ -116,7 +115,7 @@ public class ApplyClaimAction {
             due = null;
         }
         String next = switch (found) {
-            case OPEN -> nextNumber(claim, sheets, settings, periods);
+            case OPEN -> ClaimNumbers.next(claim, sheets, settings, periods);
             default -> claim.number();
         };
         applied.set(found);
@@ -129,20 +128,6 @@ public class ApplyClaimAction {
     static String proofGrade(Claim claim, PersonRepository people) {
         Person person = people.find(claim.sheetId(), claim.personId());
         return person == null ? null : person.gradeOn(claim.date());
-    }
-
-    /** The number opening the claim gives it now: the sheet's next, or the next within its period under period numbering. */
-    static String nextNumber(Claim claim, SheetRepository sheets, SettingRepository settings,
-            PeriodRepository periods) {
-        LocalDate from = settings.periodNumberingFrom(claim.sheetId());
-        if (from == null || sheets.today(claim.sheetId()).isBefore(from)) {
-            return String.valueOf(sheets.nextClaimNumber(claim.sheetId()));
-        }
-        Period period = periods.findAll(claim.sheetId()).stream().filter((p) -> p.contains(claim.dueBy())).findFirst()
-                .orElse(null);
-        String prefix = period == null ? "X" : period.name();
-        String key = period == null ? "" : period.name().toLowerCase();
-        return prefix + "-" + sheets.nextPeriodClaimNumber(claim.sheetId(), key);
     }
 
     private static BigDecimal settledDue(Claim claim, SheetRepository sheets, PersonRepository people,

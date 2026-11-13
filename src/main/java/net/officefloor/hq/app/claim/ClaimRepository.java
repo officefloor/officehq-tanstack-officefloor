@@ -13,6 +13,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import net.officefloor.hq.app.holiday.HolidayRepository;
+import net.officefloor.hq.app.RowCopy;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
@@ -280,6 +281,66 @@ public class ClaimRepository {
     /** Every tag ever given to a claim on the sheet, sorted. */
     public List<String> usedTags(String sheetId) {
         return jdbc.queryForList("SELECT tag FROM claim_tag WHERE sheet_id = ? ORDER BY tag", String.class, sheetId);
+    }
+
+    /**
+     * A claim moved to another sheet by a transfer: its id there, the number it had on its old sheet (null: none)
+     * and the old sheet's today when it was opened (its date when that is not known).
+     */
+    public record Moved(long id, String number, LocalDate opened) {
+    }
+
+    /**
+     * Copy the person's claims to the other sheet's person, in the order they were added, keeping their status,
+     * dates, notes, frozen figures, tags, logs and comments, losing any figure a statement bound, their references
+     * and their batch; each claim's tags join the other sheet's tag list. The claims leave this sheet (with any lock
+     * on them). Numbers are left as they were, to be given anew ({@link #renumberTransferred}).
+     */
+    public List<Moved> transfer(String sheetId, long personId, String to, long toPersonId) {
+        List<Long> ids = jdbc.queryForList("SELECT id FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY id",
+                Long.class, sheetId, personId);
+        List<Moved> moved = new java.util.ArrayList<>();
+        for (long old : ids) {
+            Map<String, Object> was = jdbc.queryForMap("SELECT c.claim_number, c.claim_date, (SELECT MIN(l.log_date)"
+                    + " FROM claim_log l WHERE l.claim_id = c.id AND l.status = 'OPEN') AS opened FROM claim c"
+                    + " WHERE c.id = ?", old);
+            Map<String, Object> changed = new HashMap<>();
+            changed.put("sheet_id", to);
+            changed.put("person_id", toPersonId);
+            changed.put("stated", false);
+            changed.put("stated_due", null);
+            changed.put("external_ref", null);
+            changed.put("external_ref_key", null);
+            changed.put("batch", null);
+            long id = RowCopy.copy(jdbc, "claim", old, changed);
+            jdbc.update("UPDATE claim_log SET sheet_id = ?, claim_id = ? WHERE claim_id = ?", to, id, old);
+            jdbc.update("UPDATE claim_comment SET sheet_id = ?, claim_id = ? WHERE claim_id = ?", to, id, old);
+            jdbc.update("DELETE FROM claim_lock WHERE sheet_id = ? AND claim_id = ?", sheetId, old);
+            jdbc.update("DELETE FROM claim WHERE id = ?", old);
+            String tags = tags(to, id);
+            if (tags != null) {
+                for (String tag : tags.split(",")) {
+                    jdbc.update("MERGE INTO claim_tag (sheet_id, tag) KEY (sheet_id, tag) VALUES (?, ?)", to, tag);
+                }
+            }
+            Object opened = was.get("opened") != null ? was.get("opened") : was.get("claim_date");
+            moved.add(new Moved(id, (String) was.get("claim_number"),
+                    opened instanceof Date d ? d.toLocalDate() : (LocalDate) opened));
+        }
+        return moved;
+    }
+
+    /**
+     * Give the claims moved to the sheet their new numbers ({@code numbers}: old number to new); a correction or a
+     * split that named an old number among them names the new one, and names none when it named a claim left behind.
+     */
+    public void renumberTransferred(String sheetId, List<Moved> moved, Map<String, String> numbers) {
+        for (Moved m : moved) {
+            Map<String, Object> row = jdbc.queryForMap("SELECT corrects, split_from FROM claim WHERE id = ?", m.id());
+            jdbc.update("UPDATE claim SET claim_number = ?, corrects = ?, split_from = ? WHERE id = ? AND sheet_id = ?",
+                    m.number() == null ? null : numbers.get(m.number()), numbers.get((String) row.get("corrects")),
+                    numbers.get((String) row.get("split_from")), m.id(), sheetId);
+        }
     }
 
     private static Claim map(ResultSet rs, int n) throws SQLException {

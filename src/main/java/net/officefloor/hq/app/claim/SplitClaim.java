@@ -49,7 +49,7 @@ public class SplitClaim {
                 : NewDueBy.of(claim.date(), person, settings, holidays);
         Claim made = new Claim(null, claim.sheetId(), claim.personId(), off, claim.date(), claim.note(),
                 ClaimStatus.OPEN, null, null, user, false, null, null, dueBy, null, 0, claim.number());
-        String number = ApplyClaimAction.nextNumber(made, sheets, settings, periods);
+        String number = ClaimNumbers.next(made, sheets, settings, periods);
         Claim saved = claims.save(made.withStatus(ClaimStatus.OPEN, number, null, user));
         claims.saveTags(saved, claims.tags(claim.sheetId(), claim.id()));
         if (claims.lateEntry(claim.sheetId(), claim.id())) {

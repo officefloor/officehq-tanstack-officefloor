@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import net.officefloor.hq.app.RowCopy;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
@@ -230,6 +231,50 @@ public class PersonRepository {
         jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+        jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, gone);
+    }
+
+    /** The person's aliases, in the order they were added. */
+    public List<String> aliases(String sheetId, long personId) {
+        return jdbc.queryForList("SELECT alias FROM person_alias WHERE sheet_id = ? AND person_id = ? ORDER BY id",
+                String.class, sheetId, personId);
+    }
+
+    /**
+     * Copy the person to the other sheet as its newest person, with every grade they were given (and its from-date),
+     * their terms, contact and aliases, and no statement taken; the new person's id. The person stays on this sheet
+     * until {@link #dropTransferred}.
+     */
+    public long transfer(Person person, String to) {
+        Map<String, Object> changed = new HashMap<>();
+        changed.put("sheet_id", to);
+        changed.put("statement_count", 0);
+        changed.put("stated_total", null);
+        changed.put("statement_date", null);
+        long id = RowCopy.copy(jdbc, "person", person.id(), changed);
+        jdbc.update("UPDATE person_grade SET sheet_id = ?, person_id = ? WHERE sheet_id = ? AND person_id = ?", to, id,
+                person.sheetId(), person.id());
+        jdbc.update("UPDATE person_alias SET sheet_id = ?, person_id = ? WHERE sheet_id = ? AND person_id = ?", to, id,
+                person.sheetId(), person.id());
+        return id;
+    }
+
+    /**
+     * Remove the person, transferred to another sheet (their claims already moved), from this sheet entirely: their
+     * statements, holds, patron links either way, pool memberships, watches and closed-period figures go with them.
+     */
+    public void dropTransferred(Person person) {
+        String sheetId = person.sheetId();
+        long gone = person.id();
+        jdbc.update("DELETE FROM person_patron WHERE sheet_id = ? AND (person_id = ? OR patron_id = ?)", sheetId, gone,
+                gone);
+        jdbc.update("DELETE FROM pool_member WHERE person_id = ?", gone);
+        jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+        jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+        jdbc.update("DELETE FROM person_alias WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+        jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+        jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+        jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, gone);
     }
 
