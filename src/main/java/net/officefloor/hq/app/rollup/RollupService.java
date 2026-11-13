@@ -5,9 +5,11 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimLogStore;
@@ -32,7 +34,7 @@ import org.springframework.stereotype.Service;
  * overdue-total=<0.00> when any of the sheet's totals changed; the sheet's due-total and overdue-total leave out
  * the single highest and the single lowest person's figure when three or more people have one (n/a is no figure). A person's overdue-total is the due (late charge
  * included, skipping n/a) of their counting claims that are OPEN or PENDING with a due-by (plus any grace days of their grade, see {@link Lateness}) before today. A person's due-total is at most the sheet's cap less their cut total (see {@link PoolCuts#totals}), not below 0.00; a shared claim's
- * holders' parts (see {@link Shares}) count in their due-total and settled figures, not in its person's. A change that moves no figure records nothing here.
+ * holders' parts (see {@link Shares}: at their own grade's rate, frozen once settled) count in their due-total and settled figures, not in its person's. A change that moves no figure records nothing here.
  * After those lines, while the sheet's alert threshold is set, ALERT sheet=<id> by=<user> name=<name> due-total=<0.00>
  * for each person whose due-total the change took from at or below it (or no due-total) to above it, in list order.
  */
@@ -77,6 +79,7 @@ public class RollupService {
         Map<Long, BigDecimal> shared = new HashMap<>();
         Map<Long, BigDecimal> heldDue = new HashMap<>();
         Map<Long, BigDecimal> heldSettled = new HashMap<>();
+        Set<Long> heldFixed = new HashSet<>();
         Map<Long, Person> byId = new HashMap<>();
         people.list(sheetId).forEach(p -> byId.put(p.getId(), p));
         for (Claim claim : all) {
@@ -90,7 +93,16 @@ public class RollupService {
                 continue;
             }
             for (Shares.Share holder : holders) {
-                BigDecimal part = Shares.part(figure, holder.share());
+                Person held = byId.get(holder.personId());
+                String grade = held == null ? null : held.gradeOn(claim.getDate());
+                BigDecimal pct = grade == null ? null : rates.forClaim(claim).find(sheetId, grade, claim.getDate());
+                BigDecimal part = Shares.part(claim, figure, holder.share(), pct, lateness.rounding());
+                // A frozen part, or one at a grade other than the holder's today or at a rate that ended before
+                // today, does not hang on today's grade's rate.
+                if (claim.getStatus() == ClaimStatus.SETTLED || (pct != null && (!grade.equals(held.gradeOn(today))
+                        || rates.forClaim(claim).endsBefore(sheetId, grade, claim.getDate(), today)))) {
+                    heldFixed.add(holder.personId());
+                }
                 shared.merge(claim.getId(), part, BigDecimal::add);
                 heldDue.merge(holder.personId(), part, BigDecimal::add);
                 if (claim.getStatus() == ClaimStatus.SETTLED
@@ -142,11 +154,11 @@ public class RollupService {
                         || (figure != null && (!person.gradeOn(claim.getDate()).equals(person.gradeOn(today))
                                 || rates.forClaim(claim).endsBefore(sheetId, person.gradeOn(claim.getDate()), claim.getDate(), today)));
             }
-            // Parts of claims shared with them follow the claims' people's rates, not today's grade's.
+            // Parts of claims shared with them follow their own grade's rate on the claims' dates (frozen once settled).
             if (heldDue.containsKey(person.getId())) {
                 due = due.add(heldDue.get(person.getId()));
                 settled = settled.add(heldSettled.getOrDefault(person.getId(), BigDecimal.ZERO));
-                fixed = true;
+                fixed |= heldFixed.contains(person.getId());
             }
             boolean na = rates.find(sheetId, person.gradeOn(today), today) == null && !fixed;
             claimedTotal = claimedTotal.add(claimed);

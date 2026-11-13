@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimFigure;
+import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.ClaimStore;
 import net.officefloor.hq.app.claim.Lateness;
 import net.officefloor.hq.app.claim.Rounding;
@@ -27,7 +28,8 @@ import net.officefloor.plugin.variable.Val;
  *  keeps the due it was bound to) and unbinding the rest. A settled claim keeps its fixed figure. The due-total is
  *  at most the sheet's cap. As in the sheet's figures (see {@link RollupService}), the parts of their counting claims
  *  shared with other people are left out of it, and their parts of other people's counting claims shared with them are
- *  added to it (those claims are not theirs to bind, nor counted among their claims).
+ *  added to it, at their own grade's rate (frozen once settled; see {@link Shares}) (those claims are not theirs to
+ *  bind, nor counted among their claims).
  *  <p>
  *  Taken as of a date (on or before the sheet's today), everything is as it stood at the end of that date
  *  (see {@link net.officefloor.hq.app.history.History}): their claims that counted then are bound to their
@@ -91,11 +93,18 @@ public class TakeStatement {
                 continue;
             }
             for (Shares.Share holder : holders) {
-                BigDecimal part = Shares.part(figure, holder.share());
+                Person whom = holder.personId() == then.getId() ? then
+                        : asOf == null ? people.find(sheetId, holder.personId()) : people.findAsOf(sheetId, holder.personId(), asOf);
+                String grade = whom == null ? null : whom.gradeOn(claim.getDate());
+                BigDecimal pct = grade == null ? null : rates.forClaim(claim).find(sheetId, grade, claim.getDate());
+                BigDecimal part = Shares.part(claim, figure, holder.share(), pct, rounding);
                 shared.merge(claim.getId(), part, BigDecimal::add);
                 if (holder.personId() == then.getId()) {
                     held = held.add(part);
-                    holds = true;
+                    // A frozen part, or one at a grade other than theirs on the date or at a rate that ended
+                    // before it, does not hang on that grade's rate.
+                    holds |= claim.getStatus() == ClaimStatus.SETTLED || (pct != null && (!grade.equals(then.gradeOn(on))
+                            || rates.forClaim(claim).endsBefore(sheetId, grade, claim.getDate(), on)));
                 }
             }
         }

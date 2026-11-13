@@ -287,18 +287,35 @@ function uncappedDue(
 
 /** What claims shared with or by a person move in their figures: the parts of the claims shared with them less the
  *  parts of theirs held by others, of SETTLED claims (`scored` leaving out corrections) and of OPEN or PENDING ones,
- *  two decimals each; and whether they hold a part with a figure, which keeps their due-total from n/a, as it
- *  follows the claim's person's rate. */
+ *  two decimals each; and whether they hold a part that keeps their due-total from n/a: a frozen one, or one at a
+ *  grade other than theirs today, or at a rate that ended before today. */
 export type Shared = { settled: string; open: string; scored: string; holds: boolean };
 
+/** A holder's part of a claim's amount: amount × share ÷ 100 × pct ÷ 100, rounded half to even (half up when
+ *  `halfUp`) to two decimals; 0.00 when there is no rate. */
+export function sharePart(amount: string, share: string, pct: string | undefined, halfUp = false): string {
+  if (pct === undefined) return format(0n);
+  // amount, share and pct (each in hundredths) multiplied, ÷ 100000000 gives cents (the two ÷ 100 included).
+  const product = hundredths(amount) * hundredths(share) * hundredths(pct);
+  const abs = product < 0n ? -product : product;
+  const rest = abs % 100000000n;
+  let cents = abs / 100000000n;
+  if (rest > 50000000n || (rest === 50000000n && (halfUp || cents % 2n === 1n))) cents += 1n;
+  return format(product < 0n ? -cents : cents);
+}
+
 /** Each person's `Shared`, by id: a holder's part of a shared claim that counts (`claims` already filtered to those
- *  live) is its due (as its person's row shows it, skipping n/a) times their share divided by 100, rounded half to even. */
+ *  live) whose due (as its person's row shows it) is not n/a is its amount times their share divided by 100, times
+ *  the rate of the holder's own grade in force on the claim's date divided by 100, rounded like the claim (0.00 when
+ *  their grade has no rate); a SETTLED claim's parts are frozen: its due times each share divided by 100, rounded
+ *  half to even. */
 export function sharedParts(
   claims: Claim[],
   people: { id: number; grades: Grades }[],
   rates: Rate[] | undefined,
   floor: Floor,
   late: Late | undefined,
+  today?: string,
 ): Map<number, Shared> {
   const moves = new Map<number, { settled: bigint; open: bigint; scored: bigint; holds: boolean }>();
   const of = (id: number) => {
@@ -312,14 +329,26 @@ export function sharedParts(
     if (owner === undefined || !c.shares?.length || !counts(c)) continue;
     const figure = claimDue(c, rates, owner.grades, floor, late);
     if (figure === NA) continue;
+    const frozen = c.status === 'SETTLED';
     for (const h of c.shares) {
-      const part = hundredths(sharedTotal([{ figure, share: h.share }]));
-      const key = c.status === 'SETTLED' ? 'settled' : 'open';
+      const grades = byId.get(h.personId)?.grades;
+      const grade = grades === undefined ? undefined : gradeOn(grades, c.date);
+      const theirs = ratesFor(rates, c);
+      const pct = grade === undefined ? undefined : rateOf(theirs, grade, c.date);
+      const part = hundredths(frozen
+        ? sharedTotal([{ figure, share: h.share }])
+        : sharePart(c.amount, h.share, pct, late?.halfUp?.(c) ?? false));
+      const key = frozen ? 'settled' : 'open';
       const holder = of(h.personId);
       const own = of(c.personId);
       holder[key] += part;
       own[key] -= part;
-      holder.holds = true;
+      // A frozen part, or one at a grade other than the holder's today or at a rate that ended before today, does
+      // not hang on today's grade's rate.
+      if (frozen || (pct !== undefined && grade !== undefined
+        && (grade !== gradeOn(grades!, today) || (today !== undefined && endsBefore(theirs, grade, c.date, today))))) {
+        holder.holds = true;
+      }
       if (key === 'settled' && !correctsAnother(c)) {
         holder.scored += part;
         own.scored -= part;

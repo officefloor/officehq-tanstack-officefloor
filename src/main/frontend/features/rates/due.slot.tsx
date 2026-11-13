@@ -102,7 +102,7 @@ export function useShared(of?: string): (person: Person) => Shared | undefined {
   const rates = useRates(sheet);
   const today = useSheetToday(sheet);
   const settings = useSettings(sheet).data;
-  const parts = sharedParts(live(claims.data ?? [], people), people, rates.data, floorOf(settings), lateOf(settings, today, people));
+  const parts = sharedParts(live(claims.data ?? [], people), people, rates.data, floorOf(settings), lateOf(settings, today, people), today);
   return (p: Person) => parts.get(p.id);
 }
 
