@@ -1,0 +1,393 @@
+diff --git a/src/main/frontend/features/session/SheetToday.tsx b/src/main/frontend/features/session/SheetToday.tsx
+index 829a3a7df..81b0bbbe2 100644
+--- a/src/main/frontend/features/session/SheetToday.tsx
++++ b/src/main/frontend/features/session/SheetToday.tsx
+@@ -20,7 +20,7 @@ export function SheetToday() {
+ 
+   const save = useMutation({
+     mutationFn: (value: string) =>
+-      putJson<SheetInfo>(`/api/sheets/${encodeURIComponent(sheet)}/today`, { today: value }),
++      putJson<SheetInfo>(`/api/sheets/${encodeURIComponent(sheet)}/today?user=${encodeURIComponent(user)}`, { today: value }),
+     onSuccess: async (saved) => {
+       queryClient.setQueryData(sheetInfoKey(saved.id), saved);
+       // Everything that depends on the date is kept under the sheet's key.
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/AuditRollup.java b/src/main/java/net/officefloor/hq/app/rollup/AuditRollup.java
+new file mode 100644
+index 000000000..54aba7cc5
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rollup/AuditRollup.java
+@@ -0,0 +1,31 @@
++package net.officefloor.hq.app.rollup;
++
++import java.util.Map;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/**
++ * Follows a change's own records with one ROLLUP line per person whose figures it moved (a person new to the
++ * sheet counts as moved), in the order they were added, then a TOTALS line when the sheet's totals moved.
++ */
++public class AuditRollup {
++    public void audit(@Val RollupBefore before, @PathVariable("sheetId") String sheetId,
++            @RequestParam("user") String user, RollupService rollups, Audit audit) {
++        Rollup was = before.rollup();
++        Rollup now = rollups.compute(sheetId);
++        String prefix = " sheet=" + sheetId + " by=" + user;
++        for (Map.Entry<Long, Rollup.Figures> entry : now.people().entrySet()) {
++            Rollup.Figures figures = entry.getValue();
++            if (!figures.sameAs(was.people().get(entry.getKey()))) {
++                audit.record("ROLLUP" + prefix + " person=" + figures.name() + " claimed=" + figures.claimed()
++                        + " due-total=" + figures.dueTotal());
++            }
++        }
++        if (!now.claimedTotal().equals(was.claimedTotal()) || !now.dueTotal().equals(was.dueTotal())) {
++            audit.record("TOTALS" + prefix + " claimed-total=" + now.claimedTotal() + " due-total="
++                    + now.dueTotal());
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/Rollup.java b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+new file mode 100644
+index 000000000..df0849785
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rollup/Rollup.java
+@@ -0,0 +1,19 @@
++package net.officefloor.hq.app.rollup;
++
++import java.util.Map;
++
++/**
++ * A sheet's figures at one moment: each person's claimed and due-total (by person id, in the order they were
++ * added) and the sheet's claimed-total and due-total, each as shown (two decimals; a due-total may be n/a).
++ */
++public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueTotal) {
++
++    /** A person's name and figures. */
++    public record Figures(String name, String claimed, String dueTotal) {
++
++        /** Whether the figures are the same as the other's, whatever the name. */
++        public boolean sameAs(Figures other) {
++            return other != null && claimed.equals(other.claimed) && dueTotal.equals(other.dueTotal);
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/RollupBefore.java b/src/main/java/net/officefloor/hq/app/rollup/RollupBefore.java
+new file mode 100644
+index 000000000..19db6d3b6
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rollup/RollupBefore.java
+@@ -0,0 +1,5 @@
++package net.officefloor.hq.app.rollup;
++
++/** The sheet's figures taken before a change, to tell afterwards which of them it moved. */
++public record RollupBefore(Rollup rollup) {
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/RollupService.java b/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
+new file mode 100644
+index 000000000..03200ede6
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
+@@ -0,0 +1,76 @@
++package net.officefloor.hq.app.rollup;
++
++import java.math.BigDecimal;
++import java.time.LocalDate;
++import java.util.LinkedHashMap;
++import java.util.List;
++import java.util.Map;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.Rate;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.sheet.SheetRepository;
++import org.springframework.stereotype.Service;
++
++/**
++ * Works out a sheet's figures as the screen shows them: a person's claimed is their counting claims' amounts
++ * added up; their due-total those claims' figures added up, n/a when their grade has no rate on the sheet's
++ * today and no counting claim keeps a figure. The sheet's totals add these up, skipping n/a.
++ */
++@Service
++public class RollupService {
++
++    private static final String NA = "n/a";
++
++    private final PersonRepository people;
++    private final ClaimRepository claims;
++    private final RateRepository rates;
++    private final SheetRepository sheets;
++
++    public RollupService(PersonRepository people, ClaimRepository claims, RateRepository rates,
++            SheetRepository sheets) {
++        this.people = people;
++        this.claims = claims;
++        this.rates = rates;
++        this.sheets = sheets;
++    }
++
++    /** The sheet's figures as the store holds them now. */
++    public Rollup compute(String sheetId) {
++        LocalDate today = sheets.today(sheetId);
++        List<Rate> sheetRates = rates.findAll(sheetId);
++        List<Claim> sheetClaims = claims.findAll(sheetId);
++        Map<Long, Rollup.Figures> figures = new LinkedHashMap<>();
++        BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
++        BigDecimal dueTotal = BigDecimal.ZERO.setScale(2);
++        for (Person person : people.findAll(sheetId)) {
++            BigDecimal claimed = BigDecimal.ZERO.setScale(2);
++            BigDecimal due = BigDecimal.ZERO.setScale(2);
++            boolean kept = false;
++            for (Claim claim : sheetClaims) {
++                if (claim.personId() != person.id() || !claim.counts()) {
++                    continue;
++                }
++                claimed = claimed.add(claim.amount());
++                kept |= claim.due() != null || (claim.stated() && claim.statedDue() != null);
++                BigDecimal figure = claim.figure(Rate.inForce(sheetRates, person.grade(), claim.date()));
++                if (figure != null) {
++                    due = due.add(figure);
++                }
++            }
++            boolean na = Rate.inForce(sheetRates, person.grade(), today) == null && !kept;
++            claimedTotal = claimedTotal.add(claimed);
++            if (!na) {
++                dueTotal = dueTotal.add(due);
++            }
++            figures.put(person.id(), new Rollup.Figures(person.name(), show(claimed), na ? NA : show(due)));
++        }
++        return new Rollup(figures, show(claimedTotal), show(dueTotal));
++    }
++
++    private static String show(BigDecimal value) {
++        return value.setScale(2).toPlainString();
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/SnapshotRollup.java b/src/main/java/net/officefloor/hq/app/rollup/SnapshotRollup.java
+new file mode 100644
+index 000000000..b5c4b5fb2
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rollup/SnapshotRollup.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app.rollup;
++
++import net.officefloor.plugin.variable.Out;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Takes the sheet's figures before the change, so its rollup can tell which of them it moved. */
++public class SnapshotRollup {
++    public void snapshot(@PathVariable("sheetId") String sheetId, RollupService rollups, Out<RollupBefore> before) {
++        before.set(new RollupBefore(rollups.compute(sheetId)));
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+index 90190e945..081b2535b 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+@@ -5,6 +5,10 @@ validate:
+ load:
+   class: net.officefloor.hq.app.claim.LoadClaim
+   govern: [ transaction ]
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  govern: [ transaction ]
+   next: apply
+ apply:
+   class: net.officefloor.hq.app.claim.ApplyClaim
+@@ -17,6 +21,10 @@ save:
+ audit:
+   class: net.officefloor.hq.app.claim.AuditClaimEdited
+   govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.claim.RespondWithClaim
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
+index 6fdcff0cf..94c65f0fd 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
+@@ -3,6 +3,10 @@
+ load:
+   class: net.officefloor.hq.app.claim.LoadClaim
+   govern: [ transaction ]
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  govern: [ transaction ]
+   next: apply
+ apply:
+   class: net.officefloor.hq.app.claim.ApplyClaimAction
+@@ -15,6 +19,10 @@ save:
+ audit:
+   class: net.officefloor.hq.app.claim.AuditClaimAction
+   govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.claim.RespondWithClaim
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+index 08d04d00c..8c73ba5de 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+@@ -5,6 +5,10 @@ validate:
+ load:
+   class: net.officefloor.hq.app.sheet.LoadSheet
+   govern: [ transaction ]
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  govern: [ transaction ]
+   next: build
+ build:
+   class: net.officefloor.hq.app.person.BuildPerson
+@@ -21,6 +25,10 @@ save:
+ audit:
+   class: net.officefloor.hq.app.person.AuditPersonAdded
+   govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.person.RespondWithPerson
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+index 30a321d57..fb720d079 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+@@ -6,6 +6,10 @@ validate:
+ load:
+   class: net.officefloor.hq.app.person.LoadPerson
+   govern: [ transaction ]
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  govern: [ transaction ]
+   next: apply
+ apply:
+   class: net.officefloor.hq.app.person.ApplyPerson
+@@ -22,6 +26,10 @@ save:
+ audit:
+   class: net.officefloor.hq.app.person.AuditPersonEdited
+   govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.person.RespondWithPerson
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+index 50582f79f..ea6cb3ebf 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+@@ -5,6 +5,10 @@ validate:
+ load:
+   class: net.officefloor.hq.app.person.LoadPerson
+   govern: [ transaction ]
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  govern: [ transaction ]
+   next: build
+ build:
+   class: net.officefloor.hq.app.claim.BuildClaim
+@@ -17,6 +21,10 @@ save:
+ audit:
+   class: net.officefloor.hq.app.claim.AuditClaimAdded
+   govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.claim.RespondWithClaim
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml
+index a8c4563f3..a6aabc4bc 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml
+@@ -3,6 +3,10 @@
+ load:
+   class: net.officefloor.hq.app.person.LoadPerson
+   govern: [ transaction ]
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  govern: [ transaction ]
+   next: take
+ take:
+   class: net.officefloor.hq.app.statement.TakeStatement
+@@ -11,6 +15,10 @@ take:
+ audit:
+   class: net.officefloor.hq.app.statement.AuditStatement
+   govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.person.RespondWithPerson
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.PUT.yml
+index 93014728e..dc54535bc 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.PUT.yml
+@@ -5,6 +5,10 @@ validate:
+ load:
+   class: net.officefloor.hq.app.sheet.LoadSheet
+   govern: [ transaction ]
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  govern: [ transaction ]
+   next: build
+ build:
+   class: net.officefloor.hq.app.rate.BuildRate
+@@ -17,6 +21,10 @@ save:
+ audit:
+   class: net.officefloor.hq.app.rate.AuditRateSet
+   govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.rate.RespondWithRate
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+index 0b6224048..8c56eca00 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+@@ -5,6 +5,10 @@ validate:
+ load:
+   class: net.officefloor.hq.app.sheet.LoadSheet
+   govern: [ transaction ]
++  next: before
++before:
++  class: net.officefloor.hq.app.rollup.SnapshotRollup
++  govern: [ transaction ]
+   next: apply
+ apply:
+   class: net.officefloor.hq.app.sheet.ApplySheetToday
+@@ -13,6 +17,10 @@ apply:
+ save:
+   class: net.officefloor.hq.app.sheet.SaveSheet
+   govern: [ transaction ]
++  next: rollup
++rollup:
++  class: net.officefloor.hq.app.rollup.AuditRollup
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.sheet.RespondWithSheet
