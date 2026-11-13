@@ -2,6 +2,8 @@ import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns
 import { type Person } from '../people/people';
 import { useSplit } from '../rates/split.slot';
 import { useOverdue } from '../overdue/overdue.slot';
+import { useSettings } from '../settings/settings';
+import { useCurrentSheet } from '../../session/session';
 
 // A person's score: their settled-total divided by 100, minus 5 for every overdue claim of theirs that counts,
 // rounded half to even to a whole number.
@@ -29,7 +31,29 @@ function PersonScore({ person }: { person: Person }) {
   return <td data-testid="person-score">{score(settled, count)}</td>;
 }
 
+function BandHead() {
+  return <th>Band</th>;
+}
+
+/** A person's band from their score: HIGH at or above the high threshold, MID at or above the mid one, else LOW;
+ *  blank while either threshold is. */
+export function band(score: string, mid: string | null | undefined, high: string | null | undefined): string {
+  if (mid == null || high == null) return '';
+  const s = BigInt(score);
+  return s >= BigInt(high) ? 'HIGH' : s >= BigInt(mid) ? 'MID' : 'LOW';
+}
+
+function PersonBand({ person }: { person: Person }) {
+  const [sheet] = useCurrentSheet();
+  const settings = useSettings(sheet);
+  const { settled } = useSplit()(person);
+  const { count } = useOverdue()(person);
+  return <td data-testid="person-band">{band(score(settled, count), settings.data?.scoreMid, settings.data?.scoreHigh)}</td>;
+}
+
 export const contributions = [
   PersonColumnHeads.fill({ order: 17.2, Component: ScoreHead }),
   PersonColumns.fill({ order: 17.2, Component: PersonScore }),
+  PersonColumnHeads.fill({ order: 17.3, Component: BandHead }),
+  PersonColumns.fill({ order: 17.3, Component: PersonBand }),
 ];

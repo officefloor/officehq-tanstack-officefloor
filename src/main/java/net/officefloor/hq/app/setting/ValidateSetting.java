@@ -19,6 +19,8 @@ public class ValidateSetting {
     private static final Pattern LIMIT = Pattern.compile("\\d+(\\.\\d{1,2})?");
     /** A whole number of days, 0 or more. */
     private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
+    /** A whole number, which may be negative. */
+    private static final Pattern SCORE = Pattern.compile("-?\\d{1,7}");
 
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SettingRequest request, Out<SettingInput> body, RoleStore roles,
             SettingStore settings, SheetStore sheets) throws InvalidSheetException {
@@ -48,6 +50,16 @@ public class ValidateSetting {
                 throw new InvalidSheetException((SettingStore.GRACE_DAYS.equals(key) ? "The grace days"
                         : SettingStore.REVIEW_SLA.equals(key) ? "The review SLA" : "The escalation gap")
                         + " must be a whole number of days, 0 or more, or blank");
+            }
+            body.set(new SettingInput(key, value.isEmpty() ? null : String.valueOf(Integer.parseInt(value)), null,
+                    request.user()));
+            return;
+        }
+        if (SettingStore.SCORE_MID.equals(key) || SettingStore.SCORE_HIGH.equals(key)) {
+            String value = request.value() == null ? "" : request.value().trim();
+            if (!value.isEmpty() && !SCORE.matcher(value).matches()) {
+                throw new InvalidSheetException((SettingStore.SCORE_MID.equals(key) ? "The mid" : "The high")
+                        + " score threshold must be a whole number, or blank");
             }
             body.set(new SettingInput(key, value.isEmpty() ? null : String.valueOf(Integer.parseInt(value)), null,
                     request.user()));
