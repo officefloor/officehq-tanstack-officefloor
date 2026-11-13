@@ -4,7 +4,7 @@ import { HttpError, postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
-import { useSheetToday } from '../sheet/sheet';
+import { sheetKey, useSheetToday } from '../sheet/sheet';
 import { NA, type Rate, rateOf, ratesKey, useRates } from './rates';
 import { useFigure } from '../locale/locale';
 import { useGradeCodes } from '../grades/grades';
@@ -36,6 +36,15 @@ function Rates() {
     },
   });
   const submit = useSubmitOnce(save);
+  // Only a steward may withdraw a rate: its newest version goes, and the one before it (if any) applies again.
+  const withdraw = useMutation({
+    mutationFn: (r: { grade: string; from: string | null }) =>
+      postJson<Rate[]>(`/api/sheets/${encodeURIComponent(sheet)}/rates/withdraw`, { grade: r.grade, from: r.from ?? '', user }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: sheetKey(sheet) });
+    },
+  });
+  const refused = save.isError ? save.error : withdraw.isError ? withdraw.error : null;
 
   return (
     <section data-testid="rates">
@@ -64,6 +73,7 @@ function Rates() {
             <th>To</th>
             <th>Rate %</th>
             <th>Versions</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -74,6 +84,20 @@ function Rates() {
               <td data-testid="rate-to">{r.to ?? ''}</td>
               <td data-testid="rate-pct">{fig(r.pct)}</td>
               <td data-testid="rate-version">{r.version ?? 1}</td>
+              <td>
+                <button
+                  type="button"
+                  data-testid="rate-withdraw"
+                  disabled={withdraw.isPending}
+                  onClick={() => {
+                    save.reset();
+                    withdraw.reset();
+                    withdraw.mutate({ grade: r.grade, from: r.from });
+                  }}
+                >
+                  Withdraw
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -82,6 +106,7 @@ function Rates() {
         data-testid="rate-form"
         onSubmit={(e) => {
           e.preventDefault();
+          withdraw.reset();
           submit({ grade, pct, from, to });
         }}
       >
@@ -91,6 +116,7 @@ function Rates() {
           onChange={(e) => {
             setGrade(e.target.value);
             save.reset();
+            withdraw.reset();
           }}
         >
           {grades.map((g) => (
@@ -107,6 +133,7 @@ function Rates() {
           onChange={(e) => {
             setPct(e.target.value);
             save.reset();
+            withdraw.reset();
           }}
         />
         <input
@@ -116,6 +143,7 @@ function Rates() {
           onChange={(e) => {
             setFrom(e.target.value);
             save.reset();
+            withdraw.reset();
           }}
         />
         <input
@@ -125,15 +153,16 @@ function Rates() {
           onChange={(e) => {
             setTo(e.target.value);
             save.reset();
+            withdraw.reset();
           }}
         />
         <button type="submit" data-testid="rate-form-submit" disabled={save.isPending}>
           Set rate
         </button>
-        {save.isError && (
+        {refused && (
           <span data-testid="rate-form-error" role="alert">
             {' '}
-            {save.error instanceof HttpError && save.error.reason ? `${save.error.reason}.` : 'The rate was refused.'}
+            {refused instanceof HttpError && refused.reason ? `${refused.reason}.` : 'The rate was refused.'}
           </span>
         )}
       </form>

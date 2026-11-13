@@ -222,6 +222,26 @@ public class RateStore {
                 sheetId, grade, at, to, pct, version, forward);
     }
 
+    /** Withdraws the newest version of the grade's rate from the date (null for from the beginning of time): the
+     *  version before it, when there is one, is in force again; with none, the rate is gone. */
+    public void withdraw(String sheetId, String grade, LocalDate from) {
+        LocalDate at = from == null ? START : from;
+        int version = version(sheetId, grade, from);
+        jdbc.update("DELETE FROM rate_version WHERE sheet_id = ? AND grade = ? AND from_date = ? AND version = ?",
+                sheetId, grade, at, version);
+        List<Object[]> before = jdbc.query("SELECT pct, to_date, forward_seq FROM rate_version WHERE sheet_id = ? AND grade = ?"
+                + " AND from_date = ? AND version = ?",
+                (rs, i) -> new Object[] {rs.getBigDecimal("pct"), rs.getObject("to_date", LocalDate.class), rs.getObject("forward_seq", Long.class)},
+                sheetId, grade, at, version - 1);
+        if (before.isEmpty()) {
+            jdbc.update("DELETE FROM rate WHERE sheet_id = ? AND grade = ? AND from_date = ?", sheetId, grade, at);
+        } else {
+            Object[] v = before.get(0);
+            jdbc.update("UPDATE rate SET pct = ?, to_date = ?, version = ?, forward_seq = ? WHERE sheet_id = ? AND grade = ? AND from_date = ?",
+                    v[0], v[1], version - 1, v[2], sheetId, grade, at);
+        }
+    }
+
     /** When the sheet's rate of the grade from the date (null for from the beginning of time) was saved, when it
      *  is forward-only; else null. */
     public Long forward(String sheetId, String grade, LocalDate from) {
