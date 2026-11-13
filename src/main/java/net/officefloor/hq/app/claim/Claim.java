@@ -36,7 +36,7 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
         return status.open() || status == ClaimStatus.SETTLED;
     }
 
-    /** Whether the claim counts toward the live totals when its person is held or not: a held person's open (and pending) claims do not. */
+    /** Whether the claim counts toward the live totals when a hold on its person covers it or not: a held open (or pending) claim does not. */
     public boolean counts(boolean held) {
         return status == ClaimStatus.SETTLED || (status.open() && !held);
     }

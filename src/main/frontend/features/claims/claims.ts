@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
+import { covers } from '../people/people';
+import type { Hold } from '../people/people';
 import { sheetKey, useCurrentSheet } from '../session/session';
 
 /**
@@ -46,12 +48,13 @@ export type ClaimLogLine = { status: ClaimStatus; by: string; date: string; due:
 
 /**
  * Whether a claim counts toward claimed, due-total and every live total: only OPEN, PENDING and SETTLED do,
- * and an open (or pending) one not while its person is held.
+ * and an open (or pending) one not when one of its person's `holds` covers its date and no statement binds it.
  */
-export const counts = (c: Claim, held = false) => c.status === 'SETTLED' || (isOpen(c) && !held);
+export const counts = (c: Claim, holds: Hold[] = []) =>
+  c.status === 'SETTLED' || (isOpen(c) && (bound(c) || !holds.some((h) => covers(h, c.date))));
 
-/** The ids of the people on hold, whose open claims count in no live total. */
-export const heldIds = (people: { id: number; held: boolean }[]) => new Set(people.filter((p) => p.held).map((p) => p.id));
+/** Each person's holds, by id: their open claims dated within one count in no live total. */
+export const holdsById = (people: { id: number; holds: Hold[] }[]) => new Map(people.map((p) => [p.id, p.holds]));
 
 /** The fields the claim form submits; a blank date is the sheet's today; corrects names, by number, the claim a correction corrects. */
 export type ClaimInput = { amount: string; date: string; note: string; corrects: string };
@@ -75,8 +78,8 @@ export function useClaims() {
   });
 }
 
-/** The sum of the counted claims' amounts, with two decimals; added in cents so it is exact. `held` holds the people on hold. */
-export function claimed(claims: Claim[], held: Set<number>): string {
-  const cents = claims.filter((c) => counts(c, held.has(c.personId))).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
+/** The sum of the counted claims' amounts, with two decimals; added in cents so it is exact. `holds` holds each person's holds. */
+export function claimed(claims: Claim[], holds: Map<number, Hold[]>): string {
+  const cents = claims.filter((c) => counts(c, holds.get(c.personId))).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
   return (cents / 100).toFixed(2);
 }

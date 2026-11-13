@@ -9,5 +9,5 @@ export function PersonDueTotal({ person }: { person: Person }) {
   const rates = useRates().data ?? [];
   const rules = useDueRules();
   const claims = (useClaims().data ?? []).filter((c) => c.personId === person.id);
-  return <td data-testid="person-due-total">{personDue(claims, rates, person.grades, person.held, rules)}</td>;
+  return <td data-testid="person-due-total">{personDue(claims, rates, person.grades, person.holds, rules)}</td>;
 }

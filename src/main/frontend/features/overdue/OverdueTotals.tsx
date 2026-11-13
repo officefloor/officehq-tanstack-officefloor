@@ -17,7 +17,7 @@ export function OverdueTotals() {
   if (!user || !sheet) return null;
 
   const each = people.map((p) =>
-    personOverdue(claims.filter((c) => c.personId === p.id), rates, p.grades, p.held, rules),
+    personOverdue(claims.filter((c) => c.personId === p.id), rates, p.grades, p.holds, rules),
   );
   return (
     <p>

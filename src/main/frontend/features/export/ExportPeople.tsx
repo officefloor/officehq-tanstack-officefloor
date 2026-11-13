@@ -27,7 +27,7 @@ export function ExportPeople() {
   const download = () => {
     const lines = [['name', 'grade', 'retired-from', 'due-total']];
     for (const p of people) {
-      const due = personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, p.held, rules);
+      const due = personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, p.holds, rules);
       lines.push([p.name, gradeOn(p.grades, today) ?? p.grade, p.retiredFrom ?? '', due]);
     }
     const csv = lines.map((l) => l.map(csvField).join(',') + '\n').join('');

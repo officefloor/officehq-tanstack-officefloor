@@ -37,7 +37,7 @@ export function Summary() {
           {GRADES.map((g) => {
             const on = active.filter((p) => p.grade === g);
             const dues = on.map((p) =>
-              personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, p.held, rules),
+              personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, p.holds, rules),
             );
             return (
               <tr key={g}>

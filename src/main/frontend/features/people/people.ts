@@ -18,13 +18,20 @@ export function gradeOn(grades: GradeFrom[], date: string): string | undefined {
   return found?.grade;
 }
 
+/** A hold on a person, from its from-date to its to-date, both inclusive (yyyy-MM-dd; null: open-ended). */
+export type Hold = { from: string | null; to: string | null };
+
+/** Whether a hold covers the date (yyyy-MM-dd). */
+export const covers = (h: Hold, date: string) => (h.from === null || h.from <= date) && (h.to === null || date <= h.to);
+
 /**
  * A person on the sheet as the store holds them; `grade` is the one in force on the sheet's today and
  * `grades` every grade recorded for them, each from its from-date; `version` counts their saves. `statementCount` counts
  * the statements taken of them; `statedTotal` is the last one's due-total and `statementDate` the
  * sheet's today when it was taken, both null before the first. `retired` is whether a retirement date is
  * set (whatever the date), `retiredFrom` that date, null while they are not retired. `held` is whether
- * they are on hold: their open claims then count in no live total.
+ * they have any hold, `holds` each hold, oldest first: their open claims dated within one, and not bound by a
+ * statement, count in no live total.
  */
 export type Person = {
   id: number;
@@ -38,6 +45,7 @@ export type Person = {
   retired: boolean;
   retiredFrom: string | null;
   held: boolean;
+  holds: Hold[];
 };
 
 /** The fields the person form submits; a blank `gradeFrom` is the sheet's today. */

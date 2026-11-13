@@ -4,7 +4,7 @@ import { bound, counts } from '../claims/claims';
 import type { Claim } from '../claims/claims';
 import { latePeriods } from '../overdue/dueBy';
 import { gradeOn } from '../people/people';
-import type { GradeFrom } from '../people/people';
+import type { GradeFrom, Hold } from '../people/people';
 import { sheetKey, useCurrentSheet } from '../session/session';
 import type { DueRules } from '../settings/settings';
 
@@ -127,16 +127,16 @@ const keepsFigure = (c: Claim) => c.due !== null || (bound(c) && c.statedDue !==
  * A person's due-total: the figures of their claims that count, added up (0.00 with none). With no
  * rate in force on the sheet's today for their grade on that day it is n/a, unless a claim has a figure (kept
  * when settled or stated, or at the rate for the grade in force on its date): then it is the figures there are,
- * added up. While they are held, their open claims do not count.
+ * added up. Their open claims a hold covers (not bound by a statement) do not count.
  */
 export function personDue(
   claims: Claim[],
   rates: Rate[],
   grades: GradeFrom[],
-  held: boolean,
+  holds: Hold[],
   rules: DueRules,
 ): string {
-  const counted = claims.filter((c) => counts(c, held));
+  const counted = claims.filter((c) => counts(c, holds));
   const figures = counted.map((c) => claimDue(c, rates, grades, rules));
   const anyFigure = counted.some(keepsFigure) || figures.some((f) => f !== NA);
   if (rateFor(rates, gradeOn(grades, rules.today), rules.today) === undefined && !anyFigure) {

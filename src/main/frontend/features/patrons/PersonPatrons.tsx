@@ -87,6 +87,6 @@ export function PersonBacking({ person }: { person: Person }) {
   const claims = useClaims().data ?? [];
   const dues = people
     .filter((p) => ids.includes(p.id))
-    .map((p) => personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, p.held, rules));
+    .map((p) => personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, p.holds, rules));
   return <td data-testid="person-backing">{total(dues)}</td>;
 }

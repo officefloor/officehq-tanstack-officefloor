@@ -10,17 +10,18 @@ import net.officefloor.hq.app.claim.Claim;
  * A person on a sheet. {@code id} is null until the person is first saved; {@code version} counts its saves.
  * {@code statementCount} counts the statements taken; {@code statedTotal} is the last one's due-total
  * (n/a when it had none) and {@code statementDate} the sheet's today when it was taken, both null before the first.
- * {@code retiredFrom} is the date the person is retired from, or null when they are not retired. {@code held} is
- * whether the person is on hold: their open claims then count in no live total. {@code grades} are the grades
+ * {@code retiredFrom} is the date the person is retired from, or null when they are not retired. {@code holds} are
+ * the person's holds, oldest first: their open claims dated within one, and not bound by a statement, count in no
+ * live total. {@code grades} are the grades
  * recorded for the person, each from its from-date; {@code grade} is the one in force on the sheet's today.
  */
 public record Person(Long id, String sheetId, String name, String grade, int version, int statementCount,
-        String statedTotal, LocalDate statementDate, LocalDate retiredFrom, boolean held, List<GradeFrom> grades) {
+        String statedTotal, LocalDate statementDate, LocalDate retiredFrom, List<Hold> holds, List<GradeFrom> grades) {
 
     /** A person whose only grade applies from the beginning of time. */
     public Person(Long id, String sheetId, String name, String grade, int version, int statementCount,
-            String statedTotal, LocalDate statementDate, LocalDate retiredFrom, boolean held) {
-        this(id, sheetId, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom, held,
+            String statedTotal, LocalDate statementDate, LocalDate retiredFrom, List<Hold> holds) {
+        this(id, sheetId, name, grade, version, statementCount, statedTotal, statementDate, retiredFrom, holds,
                 List.of(new GradeFrom(grade, null)));
     }
 
@@ -38,7 +39,7 @@ public record Person(Long id, String sheetId, String name, String grade, int ver
     /** The same person with another name. */
     public Person withName(String nextName) {
         return new Person(id, sheetId, nextName, grade, version, statementCount, statedTotal, statementDate,
-                retiredFrom, held, grades);
+                retiredFrom, holds, grades);
     }
 
     /**
@@ -54,12 +55,20 @@ public record Person(Long id, String sheetId, String name, String grade, int ver
         }
         next.add(new GradeFrom(nextGrade, from));
         return new Person(id, sheetId, nextName, gradeOn(next, today, nextGrade), version, statementCount,
-                statedTotal, statementDate, retiredFrom, held, List.copyOf(next));
+                statedTotal, statementDate, retiredFrom, holds, List.copyOf(next));
     }
 
-    /** Whether the claim counts toward this person's live totals: a held person's open claims do not. */
+    /** Whether the person has any hold, whatever its dates. */
+    public boolean held() {
+        return !holds.isEmpty();
+    }
+
+    /**
+     * Whether the claim counts toward this person's live totals: their open claims dated within a hold do not,
+     * unless a statement binds them.
+     */
     public boolean counts(Claim claim) {
-        return claim.counts(held);
+        return claim.counts(!claim.bound() && holds.stream().anyMatch((h) -> h.covers(claim.date())));
     }
 
     /** Whether the person is retired: a retirement date is set, whatever the date. */
