@@ -5,6 +5,7 @@ import java.util.List;
 import net.officefloor.hq.app.claim.CheckClaimInputNotRetired;
 import net.officefloor.hq.app.claim.CheckClaimInputPeriodOpen;
 import net.officefloor.hq.app.claim.InvalidClaimException;
+import net.officefloor.hq.app.holiday.HolidayRepository;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
@@ -20,7 +21,7 @@ import net.officefloor.plugin.variable.Val;
  */
 public class FindPastedPeople {
     public void find(@Val PastedLines pasted, @Val Sheet sheet, PersonRepository people, SheetRepository sheets,
-            PeriodRepository periods, SettingRepository settings) throws InvalidClaimException {
+            PeriodRepository periods, SettingRepository settings, HolidayRepository holidays) throws InvalidClaimException {
         List<PastedLine> found = new ArrayList<>();
         int number = 0;
         for (PastedLine line : pasted.lines()) {
@@ -31,7 +32,8 @@ public class FindPastedPeople {
             }
             try {
                 new CheckClaimInputNotRetired().check(line.input(), person, sheet.id(), sheets);
-                new CheckClaimInputPeriodOpen().check(line.input(), person, sheet.id(), sheets, settings, periods);
+                new CheckClaimInputPeriodOpen().check(line.input(), person, sheet.id(), sheets, settings, holidays,
+                        periods);
             } catch (InvalidClaimException e) {
                 throw new InvalidClaimException("Line " + number + ": " + e.getMessage());
             }

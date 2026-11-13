@@ -30,7 +30,8 @@ export const bound = (c: Claim) => c.stated && c.status !== 'PENDING';
  * opened it, null while a draft; stated is whether its person's last statement bound it to a figure,
  * statedDue that figure (two decimals; null: n/a) — it then shows and totals that, not its live figure;
  * corrects is, for a correction (a negative amount), the number of the settled claim it corrects, null otherwise;
- * dueBy (yyyy-MM-dd) is fixed when it was created: its date plus the terms of its person's grade in force on it;
+ * dueBy (yyyy-MM-dd) is fixed when it was created: its date plus the terms of its person's grade in force on it, moved
+ * past any of the sheet's holidays then on the list to the next day that is not one;
  * log is its status log, oldest first: each status it has had, the user who gave it, the sheet's today then and its due then;
  * deferredUntil (yyyy-MM-dd) is the date it was deferred until, null when it never was;
  * proofs is how many proofs it has been given (a claim whose due is above the proof threshold in force on its date is

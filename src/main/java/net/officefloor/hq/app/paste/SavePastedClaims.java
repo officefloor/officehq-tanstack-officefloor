@@ -11,6 +11,7 @@ import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.claim.ClaimStatus;
 import net.officefloor.hq.app.claim.LateEntries;
 import net.officefloor.hq.app.claim.NewDueBy;
+import net.officefloor.hq.app.holiday.HolidayRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
@@ -26,13 +27,13 @@ import org.springframework.web.bind.annotation.RequestParam;
  */
 public class SavePastedClaims {
     public void save(@Val PastedLines pasted, @RequestParam("user") String user, SheetRepository sheets,
-            SettingRepository settings, PersonRepository people, RateRepository rates, ClaimRepository claims,
-            ClaimLogRepository logs, Audit audit, LateEntries lateEntries, Out<PasteResult> result) {
+            SettingRepository settings, HolidayRepository holidays, PersonRepository people, RateRepository rates,
+            ClaimRepository claims, ClaimLogRepository logs, Audit audit, LateEntries lateEntries, Out<PasteResult> result) {
         int added = 0;
         for (PastedLine line : pasted.lines()) {
             Person person = line.person();
             LocalDate date = line.input().date() != null ? line.input().date() : sheets.entryDate(person.sheetId());
-            LocalDate dueBy = NewDueBy.of(date, person, settings);
+            LocalDate dueBy = NewDueBy.of(date, person, settings, holidays);
             Claim claim = claims.save(new Claim(null, person.sheetId(), person.id(), line.input().amount(), date,
                     line.input().note(), ClaimStatus.DRAFT, null, null, null, false, null, line.input().corrects(),
                     dueBy));
