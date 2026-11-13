@@ -1,0 +1,98 @@
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index 5a492ce13..ee8e1009a 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ import { asOfKey, asOfPath, sheetKey } from '../sheet/sheet';
+ import { useAsOf } from '../../session/session';
+-import { type Claim, counts, isBound, isCorrection } from '../claims/claims';
++import { type Claim, correctsAnother, counts, isBound, isCorrection } from '../claims/claims';
+ import { type Grades, gradeOn } from '../people/people';
+ 
+ /** A grade's rate: `pct` is a percent with two decimals; `from` (yyyy-MM-dd) is the date it applies
+@@ -283,12 +283,18 @@ export function personSplit(
+   today: string | undefined,
+   floor: Floor,
+   late?: Late,
+-): { settled: string; open: string } {
+-  if (uncappedDue(claims, rates, grades, today, floor, late) === NA) return { settled: format(0n), open: format(0n) };
++): { settled: string; open: string; scored: string } {
++  if (uncappedDue(claims, rates, grades, today, floor, late) === NA)
++    return { settled: format(0n), open: format(0n), scored: format(0n) };
+   const mine = claims.filter(counts);
+   const total = (keep: (c: Claim) => boolean) =>
+     dueTotal(mine.filter(keep).map((c) => claimDue(c, rates, grades, floor, late)));
+-  return { settled: total((c) => c.status === 'SETTLED'), open: total((c) => c.status !== 'SETTLED') };
++  return {
++    settled: total((c) => c.status === 'SETTLED'),
++    open: total((c) => c.status !== 'SETTLED'),
++    // The settled figures the score counts: corrections left out.
++    scored: total((c) => c.status === 'SETTLED' && !correctsAnother(c)),
++  };
+ }
+ 
+ /** A person's due on a tag: the sum of the dues (skipping n/a) of their claims that count that carry it, or
+diff --git a/src/main/frontend/features/score/score.slot.tsx b/src/main/frontend/features/score/score.slot.tsx
+index 12920a106..daff9ac56 100644
+--- a/src/main/frontend/features/score/score.slot.tsx
++++ b/src/main/frontend/features/score/score.slot.tsx
+@@ -5,7 +5,7 @@ import { useOverdue } from '../overdue/overdue.slot';
+ import { useSettings } from '../settings/settings';
+ import { useCurrentSheet } from '../../session/session';
+ 
+-// A person's score: their settled-total divided by 100, minus 5 for every overdue claim of theirs that counts,
++// A person's score: their settled-total, leaving out corrections, divided by 100, minus 5 for every overdue claim of theirs that counts,
+ // rounded half to even to a whole number.
+ function ScoreHead() {
+   return <th>Score</th>;
+@@ -26,9 +26,9 @@ export function score(settled: string, overdue: number): string {
+ }
+ 
+ function PersonScore({ person }: { person: Person }) {
+-  const { settled } = useSplit()(person);
++  const { scored } = useSplit()(person);
+   const { count } = useOverdue()(person);
+-  return <td data-testid="person-score">{score(settled, count)}</td>;
++  return <td data-testid="person-score">{score(scored, count)}</td>;
+ }
+ 
+ function BandHead() {
+@@ -46,9 +46,9 @@ export function band(score: string, mid: string | null | undefined, high: string
+ function PersonBand({ person }: { person: Person }) {
+   const [sheet] = useCurrentSheet();
+   const settings = useSettings(sheet);
+-  const { settled } = useSplit()(person);
++  const { scored } = useSplit()(person);
+   const { count } = useOverdue()(person);
+-  return <td data-testid="person-band">{band(score(settled, count), settings.data?.scoreMid, settings.data?.scoreHigh)}</td>;
++  return <td data-testid="person-band">{band(score(scored, count), settings.data?.scoreMid, settings.data?.scoreHigh)}</td>;
+ }
+ 
+ export const contributions = [
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/RollupService.java b/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
+index c1d91cf59..51c77f066 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
+@@ -96,7 +96,9 @@ public class RollupService {
+                     if (lateness.overdue(claim)) {
+                         overdue = overdue.add(figure);
+                     }
+-                    if (claim.getStatus() == ClaimStatus.SETTLED) {
++                    // The score's settled figures leave out corrections.
++                    if (claim.getStatus() == ClaimStatus.SETTLED
++                            && (claim.getCorrects() == null || claim.getCorrects().isBlank())) {
+                         settled = settled.add(figure);
+                     }
+                 }
+@@ -278,8 +280,8 @@ public class RollupService {
+                                 || !person.retiredOn(today)));
+     }
+ 
+-    /** A person's score: their settled-total (0 while their due-total is n/a) divided by 100, less 5 for every
+-     *  overdue claim of theirs that counts, rounded half to even to a whole number. */
++    /** A person's score: their settled-total leaving out corrections (0 while their due-total is n/a) divided by
++     *  100, less 5 for every overdue claim of theirs that counts, rounded half to even to a whole number. */
+     private static String score(BigDecimal settled, int overdueCount) {
+         return settled.movePointLeft(2).subtract(BigDecimal.valueOf(5L * overdueCount))
+                 .setScale(0, RoundingMode.HALF_EVEN).toPlainString();
