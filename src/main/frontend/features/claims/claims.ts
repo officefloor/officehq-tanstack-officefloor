@@ -42,7 +42,8 @@ export const bound = (c: Claim) => c.stated && c.status !== 'PENDING';
  * reminded (yyyy-MM-dd) is the last day a reminder was written for it, null when it never was;
  * ref is its external reference (unique on the sheet, ignoring case), null when it has none;
  * tags are its tags (lower-cased, no repeats), sorted; empty when it has none;
- * voidReason is the reason from the sheet's void reasons it was voided with, null when none.
+ * voidReason is the reason from the sheet's void reasons it was voided with, null when none;
+ * comments are its comments, oldest first: the user who wrote each, the sheet's today then and its text.
  */
 export type Claim = {
   id: number;
@@ -68,7 +69,11 @@ export type Claim = {
   ref: string | null;
   tags: string[];
   voidReason: string | null;
+  comments: ClaimComment[];
 };
+
+/** A comment on a claim: the user who wrote it, the sheet's today then (yyyy-MM-dd) and its text. */
+export type ClaimComment = { by: string; date: string; text: string };
 
 /** A line of a claim's status log: the status, the user, the sheet's today (yyyy-MM-dd) and the due then (two decimals, or n/a). */
 export type ClaimLogLine = { status: ClaimStatus; by: string; date: string; due: string };
