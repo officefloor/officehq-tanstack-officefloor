@@ -1,9 +1,9 @@
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet } from '../../session/session';
-import { GRADES } from '../people/people';
 import { useSheetToday } from '../sheet/sheet';
 import { NA, rateOf, useRates } from './rates';
 import { useFigure } from '../locale/locale';
+import { useGradeCodes } from '../grades/grades';
 
 // The rate calendar: for each grade and each month (yyyy-mm) of the calendar year of the sheet's today,
 // the rate in force on the first day of that month (its parent sheets' when it has none), n/a when none.
@@ -11,6 +11,7 @@ function RateCalendar() {
   const fig = useFigure();
   const [sheet] = useCurrentSheet();
   const rates = useRates(sheet);
+  const grades = useGradeCodes(sheet);
   const today = useSheetToday(sheet);
   if (today === undefined) return null;
   const year = today.slice(0, 4);
@@ -28,7 +29,7 @@ function RateCalendar() {
           </tr>
         </thead>
         <tbody>
-          {GRADES.map((g) => (
+          {grades.map((g) => (
             <tr key={g}>
               <td>{g}</td>
               {months.map((m) => (

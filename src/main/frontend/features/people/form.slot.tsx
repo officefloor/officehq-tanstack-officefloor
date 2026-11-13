@@ -4,7 +4,8 @@ import { HttpError, postJson, putJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
-import { GRADES, type Person, peopleKey, useEditingPerson, usePeople } from './people';
+import { type Person, peopleKey, useEditingPerson, usePeople } from './people';
+import { useGradeCodes } from '../grades/grades';
 
 // Adds a person, or edits the one whose editor is open (opening it fills the form with their values
 // and remembers the version it loaded). A save over a version someone else has since saved is
@@ -21,6 +22,7 @@ import { GRADES, type Person, peopleKey, useEditingPerson, usePeople } from './p
 function PersonForm() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
+  const grades = useGradeCodes(sheet);
   const [editing, setEditing] = useEditingPerson();
   const people = usePeople(sheet);
   const [name, setName] = useState('');
@@ -117,7 +119,7 @@ function PersonForm() {
           save.reset();
         }}
       >
-        {GRADES.map((g) => (
+        {grades.map((g) => (
           <option key={g} value={g}>
             {g}
           </option>

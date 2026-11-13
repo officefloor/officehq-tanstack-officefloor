@@ -1,7 +1,7 @@
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet } from '../../session/session';
 import { STATUSES, isActive, live, statusCount, useClaims } from '../claims/claims';
-import { GRADES, gradeOn, usePeople } from '../people/people';
+import { gradeOn, usePeople } from '../people/people';
 import { periodDue, usePeriods } from '../periods/periods';
 import { difference, dueTotal, personDue, useRates } from '../rates/rates';
 import { floorOf, useSettings } from '../settings/settings';
@@ -10,6 +10,7 @@ import { lateOf, reviewLate } from '../overdue/overdue';
 import { useVoidReasons } from '../voidreasons/voidreasons';
 import { useFigure } from '../locale/locale';
 import { useCapOf, useShared } from '../rates/due.slot';
+import { useGradeCodes } from '../grades/grades';
 
 // The sheet at a glance, worked out from the same figures the lists show: per grade, the people on it
 // today (retired people excluded), their due-totals added up (skipping n/a) and how many of them are
@@ -20,6 +21,7 @@ function Summary() {
   const fig = useFigure();
   const [sheet] = useCurrentSheet();
   const people = usePeople(sheet);
+  const grades = useGradeCodes(sheet);
   const claims = useClaims(sheet);
   const periods = usePeriods(sheet);
   const rates = useRates(sheet);
@@ -60,7 +62,7 @@ function Summary() {
           </tr>
         </thead>
         <tbody>
-          {GRADES.map((g) => (
+          {grades.map((g) => (
             <tr key={g}>
               <td>{g}</td>
               <td data-testid={`summary-grade-${g}-count`}>{onGrade(g).length}</td>

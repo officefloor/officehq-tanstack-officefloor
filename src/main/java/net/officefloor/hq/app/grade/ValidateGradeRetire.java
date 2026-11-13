@@ -14,9 +14,7 @@ public class ValidateGradeRetire {
         String user = request == null || request.user() == null ? "" : request.user().trim();
         roles.refuseChange(sheet, user);
         String grade = request == null || request.grade() == null ? "" : request.grade().trim();
-        if (!GradeStore.GRADES.contains(grade)) {
-            throw new InvalidSheetException("The grade must be A, B or C");
-        }
+        grades.refuseUnknown(sheet, grade);
         if (grades.isRetired(sheet, grade)) {
             throw new InvalidSheetException("The grade " + grade + " is already retired");
         }

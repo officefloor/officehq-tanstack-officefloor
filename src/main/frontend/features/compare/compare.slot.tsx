@@ -3,21 +3,23 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet } from '../../session/session';
-import { GRADES, gradeOn, usePeople } from '../people/people';
+import { gradeOn, usePeople } from '../people/people';
 import { dueTotal } from '../rates/rates';
 import { usePersonDue } from '../rates/due.slot';
 import { sheetKey, useSheetToday } from '../sheet/sheet';
 import { useFigure } from '../locale/locale';
+import { useGradeCodes } from '../grades/grades';
 
 /** Per grade, the sheet's summary due-total: the due-totals of the people on it today (retired people left
  *  out) added up, skipping n/a. */
 function useGradeDueTotals(sheet: string): Record<string, string> {
+  const grades = useGradeCodes(sheet);
   const people = usePeople(sheet);
   const today = useSheetToday(sheet);
   const personDue = usePersonDue(sheet);
   const active = (people.data ?? []).filter((p) => !p.retired);
   return Object.fromEntries(
-    GRADES.map((g) => [g, dueTotal(active.filter((p) => gradeOn(p.grades, today) === g).map(personDue))]),
+    grades.map((g) => [g, dueTotal(active.filter((p) => gradeOn(p.grades, today) === g).map(personDue))]),
   );
 }
 
@@ -26,9 +28,11 @@ function CompareLines({ other }: { other: string }) {
   const [sheet] = useCurrentSheet();
   const mine = useGradeDueTotals(sheet);
   const theirs = useGradeDueTotals(other);
+  // Every grade either sheet has, the current sheet's first; a grade a sheet lacks has no one on it.
+  const grades = [...new Set([...Object.keys(mine), ...Object.keys(theirs)])];
   return (
     <ul>
-      {GRADES.map((g) => (
+      {grades.map((g) => (
         <li key={g} data-testid="compare-line">
           {g} {fig(mine[g])} {fig(theirs[g])}
         </li>

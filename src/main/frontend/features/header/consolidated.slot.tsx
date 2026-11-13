@@ -7,6 +7,7 @@ import { dueTotal, trimmedTotal } from '../rates/rates';
 import { usePersonDue } from '../rates/due.slot';
 import { useOverdue } from '../overdue/overdue.slot';
 import { useFigure } from '../locale/locale';
+import { useGradeCodes } from '../grades/grades';
 
 type Figures = {
   people: string[][];
@@ -20,7 +21,7 @@ const noFigures = (): Figures => ({
   people: [],
   due: [],
   overdue: [],
-  gradeDue: Object.fromEntries(GRADES.map((g) => [g, []])),
+  gradeDue: Object.fromEntries(GRADES.map((g) => [g, [] as string[]])),
   statuses: Object.fromEntries(STATUSES.map((s) => [s, 0])),
 });
 
@@ -53,13 +54,15 @@ function Consolidate({ sheets, sofar }: { sheets: string[]; sofar: Figures }) {
   const claims = useClaims(first);
   const today = useSheetToday(first);
   const personDue = usePersonDue(first);
+  const grades = useGradeCodes(first);
   const active = (people.data ?? []).filter((p) => !p.retired);
   const figures: Figures = {
     people: [...sofar.people, ...(people.data ?? []).map((p) => [p.name, ...p.aliases].map(nameKey))],
     due: [...sofar.due, ...(people.data ?? []).map(personDue)],
     overdue: [...sofar.overdue, ...(people.data ?? []).map((p) => overdueOf(p).total)],
     gradeDue: Object.fromEntries(
-      GRADES.map((g) => [g, [...sofar.gradeDue[g], ...active.filter((p) => gradeOn(p.grades, today) === g).map(personDue)]]),
+      // Every grade of the sheets so far and of this one: a grade a sheet lacks has no one on it there.
+      [...new Set([...Object.keys(sofar.gradeDue), ...grades])].map((g) => [g, [...(sofar.gradeDue[g] ?? []), ...active.filter((p) => gradeOn(p.grades, today) === g).map(personDue)]]),
     ),
     statuses: Object.fromEntries(STATUSES.map((s) => [s, sofar.statuses[s] + statusCount(claims.data, s)])),
   };
@@ -69,7 +72,7 @@ function Consolidate({ sheets, sofar }: { sheets: string[]; sofar: Figures }) {
       People <strong data-testid="consolidated-people-count">{distinctPeople(figures.people)}</strong>{' '}
       Due total <strong data-testid="consolidated-due-total">{fig(trimmedTotal(figures.due))}</strong>{' '}
       Overdue total <strong data-testid="consolidated-overdue-total">{fig(trimmedTotal(figures.overdue))}</strong>
-      {GRADES.map((g) => (
+      {Object.keys(figures.gradeDue).map((g) => (
         <span key={g}>
           {' '}Grade {g} due total{' '}
           <strong data-testid={`consolidated-grade-${g}-due-total`}>{fig(dueTotal(figures.gradeDue[g]))}</strong>

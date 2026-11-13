@@ -2,25 +2,23 @@ package net.officefloor.hq.app.person;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
-import java.util.Set;
+import java.util.List;
 import net.officefloor.hq.app.setting.SettingStore;
 import net.officefloor.hq.app.sheet.InvalidSheetException;
 
 /** The person form's rules, shared by the form and the people import. */
 public final class PersonRules {
-    private static final Set<String> GRADES = Set.of("A", "B", "C");
-
     private PersonRules() {
     }
 
-    /** The person form's rules for a name, grade, from-date, terms, terms from-date, contact and tags: the request as stored
+    /** The person form's rules for a name, grade, from-date, terms, terms from-date, contact and tags, with the sheet's grades: the request as stored
      *  (name trimmed, blanks as none, contact lower-cased, tags as {@link net.officefloor.hq.app.claim.Tags} stores them), or refused. */
-    public static PersonRequest check(PersonRequest request) throws InvalidSheetException {
+    public static PersonRequest check(PersonRequest request, List<String> grades) throws InvalidSheetException {
         if (request == null || request.name() == null || request.name().trim().isEmpty()) {
             throw new InvalidSheetException("A name is required");
         }
-        if (request.grade() == null || !GRADES.contains(request.grade())) {
-            throw new InvalidSheetException("The grade must be A, B or C");
+        if (request.grade() == null || !grades.contains(request.grade())) {
+            throw new InvalidSheetException("The grade must be one of " + String.join(", ", grades));
         }
         String from = request.gradeFrom() == null ? "" : request.gradeFrom().trim();
         try {

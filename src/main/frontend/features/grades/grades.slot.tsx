@@ -11,7 +11,9 @@ import { type Grade, type GradeMerged, gradesKey, useGrades } from './grades';
 // The sheet's grades, whether each is retired, and the select a grade is retired with. A grade already
 // retired is refused. A steward merges a grade into another: the server moves everyone on the merged grade
 // to the other from the sheet's today, as the person form would, and the merge done shows once it answers
-// (gone while it runs). The same grade twice, or anyone but a steward, is refused.
+// (gone while it runs). The same grade twice, or anyone but a steward, is refused. A grade is added by its
+// code (trimmed): one to three capital letters not yet a grade; the server refuses anything else. A grade added
+// is listed after A, B and C and shows in every grade select and per-grade figure (see useGradeCodes).
 function Grades() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -39,7 +41,17 @@ function Grades() {
     },
   });
   const submitMerge = useSubmitOnce(merge);
-  const failed = retire.isError ? retire.error : merge.isError ? merge.error : null;
+  const [code, setCode] = useState('');
+  const add = useMutation({
+    mutationFn: (g: string) => postJson<Grade>(`/api/sheets/${encodeURIComponent(sheet)}/grades`, { grade: g, user }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: gradesKey(sheet) });
+    },
+  });
+  const submitAdd = useSubmitOnce(add);
+  const codes = (grades.data ?? []).map((g) => g.grade);
+  const shown = codes.length > 0 ? codes : [...GRADES];
+  const failed = retire.isError ? retire.error : merge.isError ? merge.error : add.isError ? add.error : null;
 
   return (
     <section data-testid="grades">
@@ -69,9 +81,10 @@ function Grades() {
             setGrade(e.target.value);
             retire.reset();
             merge.reset();
+            add.reset();
           }}
         >
-          {GRADES.map((g) => (
+          {shown.map((g) => (
             <option key={g} value={g}>
               {g}
             </option>
@@ -83,6 +96,7 @@ function Grades() {
           disabled={retire.isPending}
           onClick={() => {
             merge.reset();
+            add.reset();
             submit(grade);
           }}
         >
@@ -98,9 +112,10 @@ function Grades() {
             setFrom(e.target.value);
             merge.reset();
             retire.reset();
+            add.reset();
           }}
         >
-          {GRADES.map((g) => (
+          {shown.map((g) => (
             <option key={g} value={g}>
               {g}
             </option>
@@ -115,9 +130,10 @@ function Grades() {
             setInto(e.target.value);
             merge.reset();
             retire.reset();
+            add.reset();
           }}
         >
-          {GRADES.map((g) => (
+          {shown.map((g) => (
             <option key={g} value={g}>
               {g}
             </option>
@@ -129,6 +145,7 @@ function Grades() {
           disabled={merge.isPending}
           onClick={() => {
             retire.reset();
+            add.reset();
             submitMerge({ from, into });
           }}
         >
@@ -137,6 +154,31 @@ function Grades() {
         <span data-testid="grade-merged">
           {merge.isSuccess ? `${merge.data.from} into ${merge.data.into}: ${merge.data.merged} moved` : ''}
         </span>
+      </p>
+      <p>
+        <input
+          data-testid="grade-add-code"
+          aria-label="Grade to add"
+          value={code}
+          onChange={(e) => {
+            setCode(e.target.value);
+            add.reset();
+            retire.reset();
+            merge.reset();
+          }}
+        />{' '}
+        <button
+          type="button"
+          data-testid="grade-add"
+          disabled={add.isPending}
+          onClick={() => {
+            retire.reset();
+            merge.reset();
+            submitAdd(code);
+          }}
+        >
+          Add grade
+        </button>
       </p>
       {failed && (
         <p data-testid="grade-error" role="alert">

@@ -4,7 +4,8 @@ import { HttpError, putJson } from '../../api/http';
 import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
 import { sheetKey } from '../sheet/sheet';
-import { GRADES, type Person, personActionKey, useLatestPersonAction } from './people';
+import { type Person, personActionKey, useLatestPersonAction } from './people';
+import { useGradeCodes } from '../grades/grades';
 
 function InlineGradeHead() {
   return <th>Regrade</th>;
@@ -17,6 +18,7 @@ function InlineGradeHead() {
 function PersonInlineGrade({ person }: { person: Person }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
+  const grades = useGradeCodes(sheet);
   // null follows the grade the row shows until another is chosen
   const [chosen, setChosen] = useState<string | null>(null);
   const grade = chosen ?? person.grade;
@@ -54,7 +56,7 @@ function PersonInlineGrade({ person }: { person: Person }) {
           setChosen(e.target.value);
         }}
       >
-        {GRADES.map((g) => (
+        {grades.map((g) => (
           <option key={g} value={g}>
             {g}
           </option>

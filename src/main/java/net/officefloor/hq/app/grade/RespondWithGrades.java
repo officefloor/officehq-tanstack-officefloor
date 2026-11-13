@@ -13,6 +13,6 @@ public class RespondWithGrades {
             ObjectResponse<List<GradeResponse>> response) {
         LocalDate on = History.date(asOf);
         List<String> retired = on == null ? store.retired(sheetId.trim()) : store.retiredAsOf(sheetId.trim(), on);
-        response.send(GradeStore.GRADES.stream().map(g -> new GradeResponse(g, retired.contains(g))).toList());
+        response.send(store.grades(sheetId.trim()).stream().map(g -> new GradeResponse(g, retired.contains(g))).toList());
     }
 }

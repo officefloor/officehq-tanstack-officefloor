@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 /** Refuses a grade merge by anyone but a steward, of a grade the sheet does not have, or of a grade into itself. */
 public class ValidateGradeMerge {
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody GradeMergeRequest request,
-            Out<GradeMergeInput> body, RoleStore roles) throws InvalidSheetException {
+            Out<GradeMergeInput> body, RoleStore roles, GradeStore grades) throws InvalidSheetException {
         String sheet = sheetId.trim();
         String user = request == null || request.user() == null ? "" : request.user().trim();
         roles.refuseChange(sheet, user);
@@ -19,9 +19,8 @@ public class ValidateGradeMerge {
         }
         String from = request.from() == null ? "" : request.from().trim();
         String into = request.into() == null ? "" : request.into().trim();
-        if (!GradeStore.GRADES.contains(from) || !GradeStore.GRADES.contains(into)) {
-            throw new InvalidSheetException("The grade must be A, B or C");
-        }
+        grades.refuseUnknown(sheet, from);
+        grades.refuseUnknown(sheet, into);
         if (from.equals(into)) {
             throw new InvalidSheetException("A grade cannot be merged into itself");
         }

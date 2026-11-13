@@ -8,19 +8,46 @@ import net.officefloor.hq.app.sheet.InvalidSheetException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-/** The grades retired per sheet. A retired grade cannot be chosen — for a new person, in an edit, a bulk
+/** The grades per sheet — A, B and C, then those added in the order added — and those retired. A retired grade cannot be chosen — for a new person, in an edit, a bulk
  *  grade or an import — while the people already on it keep it: an edit leaving a person's grade as the one in
  *  force on the sheet's today, with no from-date, is not a choice of it (see {@link #refuseChoice}). */
 @Repository
 public class GradeStore {
 
-    /** The grades a sheet has. */
+    /** The grades every sheet has. */
     public static final List<String> GRADES = List.of("A", "B", "C");
+
+    /** A grade's code: one to three capital letters. */
+    public static final java.util.regex.Pattern CODE = java.util.regex.Pattern.compile("[A-Z]{1,3}");
 
     private final JdbcTemplate jdbc;
 
     public GradeStore(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
+    }
+
+    /** The sheet's grades: A, B and C, then those added in the order added. Not kept by version: a grade added
+     *  is one of the sheet's grades on every date, so the screen read as of a date lists it too. */
+    public List<String> grades(String sheetId) {
+        List<String> all = new java.util.ArrayList<>(GRADES);
+        all.addAll(jdbc.queryForList("SELECT grade FROM grade_added WHERE sheet_id = ? ORDER BY id", String.class,
+                sheetId));
+        return all;
+    }
+
+    public boolean has(String sheetId, String grade) {
+        return grade != null && grades(sheetId).contains(grade);
+    }
+
+    /** Refuses a grade the sheet does not have. */
+    public void refuseUnknown(String sheetId, String grade) throws InvalidSheetException {
+        if (!has(sheetId, grade)) {
+            throw new InvalidSheetException("The grade must be one of " + String.join(", ", grades(sheetId)));
+        }
+    }
+
+    public void add(String sheetId, String grade) {
+        jdbc.update("INSERT INTO grade_added (sheet_id, grade) VALUES (?, ?)", sheetId, grade);
     }
 
     /** The sheet's retired grades. */

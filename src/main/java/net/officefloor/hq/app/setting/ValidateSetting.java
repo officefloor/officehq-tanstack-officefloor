@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.role.Role;
+import net.officefloor.hq.app.grade.GradeStore;
 import net.officefloor.hq.app.role.RoleStore;
 import net.officefloor.hq.app.sheet.InvalidSheetException;
 import net.officefloor.hq.app.sheet.SheetStore;
@@ -23,7 +24,7 @@ public class ValidateSetting {
     private static final Pattern SCORE = Pattern.compile("-?\\d{1,7}");
 
     public void validate(@PathVariable("sheetId") String sheetId, @RequestBody SettingRequest request, Out<SettingInput> body, RoleStore roles,
-            SettingStore settings, SheetStore sheets) throws InvalidSheetException {
+            SettingStore settings, SheetStore sheets, GradeStore grades) throws InvalidSheetException {
         roles.refuseChange(sheetId.trim(), request == null ? null : request.user());
         String key = request == null || request.key() == null ? "" : request.key().trim();
         boolean floor = SettingStore.FLOOR.equals(key);
@@ -87,8 +88,8 @@ public class ValidateSetting {
         }
         if (SettingStore.DEFAULT_GRADE.equals(key)) {
             String value = request.value() == null ? "" : request.value().trim();
-            if (!value.isEmpty() && !SettingStore.GRADES.contains(value)) {
-                throw new InvalidSheetException("The default grade must be A, B or C, or blank");
+            if (!value.isEmpty() && !grades.has(sheetId.trim(), value)) {
+                throw new InvalidSheetException("The default grade must be one of the sheet's grades, or blank");
             }
             body.set(new SettingInput(key, value.isEmpty() ? null : value, null, request.user()));
             return;

@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { asOfKey, asOfPath, sheetKey } from '../sheet/sheet';
 import { useAsOf } from '../../session/session';
+import { GRADES } from '../people/people';
 
 /** A grade on the sheet and whether it is retired. A retired grade cannot be chosen for a new person or in
  *  an edit; the people already on it keep it. */
@@ -20,4 +21,11 @@ export function useGrades(sheet: string) {
     queryFn: () => getJson<Grade[]>(asOfPath(`/api/sheets/${encodeURIComponent(sheet)}/grades`, asOf)),
     enabled: sheet !== '',
   });
+}
+
+/** The codes of the sheet's grades, in the order the server lists them (A, B, C, then those added); A, B and C
+ *  until they are read. Every grade select and per-grade figure lists these. */
+export function useGradeCodes(sheet: string): string[] {
+  const grades = useGrades(sheet);
+  return grades.data?.map((g) => g.grade) ?? [...GRADES];
 }

@@ -7,7 +7,7 @@ import java.util.Map;
 import java.util.NavigableMap;
 import java.util.TreeMap;
 
-/** A person on a sheet. {@code grades} are their grades (each one of A, B or C) by the date each applies
+/** A person on a sheet. {@code grades} are their grades (each one of one of the sheet's grades) by the date each applies
  *  from, the first from {@link #START} (the beginning of time); {@code version} moves on with each stored edit;
  *  {@code retiredFrom} is the date they are retired from (null while not retired); {@code pastRetirements}
  *  the retirements they were unretired from, oldest first; {@code holds} their holds,

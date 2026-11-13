@@ -4,10 +4,10 @@ import { HttpError, postJson } from '../../api/http';
 import { useSubmitOnce } from '../../query/useSubmitOnce';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet, useCurrentUser } from '../../session/session';
-import { GRADES } from '../people/people';
 import { useSheetToday } from '../sheet/sheet';
 import { NA, type Rate, rateOf, ratesKey, useRates } from './rates';
 import { useFigure } from '../locale/locale';
+import { useGradeCodes } from '../grades/grades';
 
 // The rate in force for each grade on the sheet's today (its parent sheets' when it has none), every own rate with the dates it applies from and
 // through, and the form that sets one (a blank from-date applies from the beginning of time, a blank
@@ -16,6 +16,7 @@ function Rates() {
   const fig = useFigure();
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
+  const grades = useGradeCodes(sheet);
   const rates = useRates(sheet);
   const today = useSheetToday(sheet);
   const [grade, setGrade] = useState<string>('A');
@@ -47,7 +48,7 @@ function Rates() {
           </tr>
         </thead>
         <tbody>
-          {GRADES.map((g) => (
+          {grades.map((g) => (
             <tr key={g}>
               <td>{g}</td>
               <td data-testid={`rate-current-${g}`}>{fig(rateOf(rates.data, g, today) ?? NA)}</td>
@@ -92,7 +93,7 @@ function Rates() {
             save.reset();
           }}
         >
-          {GRADES.map((g) => (
+          {grades.map((g) => (
             <option key={g} value={g}>
               {g}
             </option>

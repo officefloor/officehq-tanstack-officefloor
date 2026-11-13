@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { HomeMain } from '../../slots/defs/homeMain';
 import { useCurrentSheet } from '../../session/session';
-import { GRADES, usePeople } from '../people/people';
+import { usePeople } from '../people/people';
 import { useSheetToday } from '../sheet/sheet';
 import { useClaims } from '../claims/claims';
 import { floorOf, useSettings } from '../settings/settings';
 import { lateOf } from '../overdue/overdue';
 import { ratePreview, useRates } from './rates';
 import { useFigure } from '../locale/locale';
+import { useGradeCodes } from '../grades/grades';
 
 /** 0.00 or more, with up to two decimals — as a rate is set. */
 const PCT = /^\d+(\.\d{1,2})?$/;
@@ -18,6 +19,7 @@ const PCT = /^\d+(\.\d{1,2})?$/;
 function RatePreview() {
   const fig = useFigure();
   const [sheet] = useCurrentSheet();
+  const grades = useGradeCodes(sheet);
   const people = usePeople(sheet);
   const claims = useClaims(sheet);
   const rates = useRates(sheet);
@@ -64,7 +66,7 @@ function RatePreview() {
             setResult(null);
           }}
         >
-          {GRADES.map((g) => (
+          {grades.map((g) => (
             <option key={g} value={g}>
               {g}
             </option>

@@ -40,6 +40,7 @@ public class ValidateImport {
         Set<String> names = new HashSet<>();
         Set<Long> updated = new HashSet<>();
         Set<String> contacts = new HashSet<>();
+        List<String> sheetGrades = grades.grades(sheet);
         String defaultGrade = settings.defaultGrade(sheet);
         if (grades.isRetired(sheet, defaultGrade)) {
             defaultGrade = "A";
@@ -56,7 +57,8 @@ public class ValidateImport {
             try {
                 PersonRequest person = PersonRules.check(new PersonRequest(fields[0],
                         fields[1].trim().isEmpty() ? defaultGrade : fields[1].trim(), null,
-                        request.user(), null, fields.length > 2 ? fields[2] : "", fields.length > 3 ? fields[3] : "", null, null));
+                        request.user(), null, fields.length > 2 ? fields[2] : "", fields.length > 3 ? fields[3] : "", null, null),
+                        sheetGrades);
                 Person existing = store.findByName(sheet, person.name());
                 grades.refuseChoice(sheet, person.grade(), existing, null, sheets.today(sheet));
                 if (existing == null) {
