@@ -7,7 +7,7 @@ import type { Claim } from './claims';
 import { claimsKey } from './claims';
 import { useOneAtATime } from '../../query/useOneAtATime';
 
-type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void';
+type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle';
 
 const ACTIONS: Array<{ action: Action; label: string }> = [
   { action: 'open', label: 'Open' },
@@ -15,18 +15,21 @@ const ACTIONS: Array<{ action: Action; label: string }> = [
   { action: 'approve', label: 'Approve' },
   { action: 'reject', label: 'Reject' },
   { action: 'void', label: 'Void' },
+  { action: 'resettle', label: 'Re-settle' },
 ];
 
 const REFUSED: Partial<Record<Action, string>> = {
   settle: ' (the user who opened it cannot settle it)',
   approve: ' (only a steward approves a pending claim, and not the user who opened it)',
   reject: ' (only a steward rejects a pending claim, and a reason is required)',
+  resettle: ' (only a steward re-settles a settled claim)',
 };
 
 // A claim's status and the buttons that change it. Every button is shown; the server refuses a
 // change the status does not allow, and the refusal shows as the claim's error. A clerk's settle
 // above the clerk limit makes the claim PENDING; a reject sends the reason typed beside it. A steward
-// moves a DRAFT, OPEN or PENDING claim to the person chosen beside the Move button.
+// moves a DRAFT, OPEN or PENDING claim to the person chosen beside the Move button. A steward
+// re-settles a SETTLED claim, freezing it again at today's figure.
 export function ClaimStatus({ claim }: { claim: Claim }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();

@@ -2,7 +2,8 @@ package net.officefloor.hq.app.claim;
 
 /**
  * A change of a claim's status: the status it may start from, the status it ends in, and its audit event. PEND is
- * never asked for by name: it is what a clerk's settle becomes when the due is above the clerk limit.
+ * never asked for by name: it is what a clerk's settle becomes when the due is above the clerk limit. RESETTLE
+ * freezes a SETTLED claim again at today's figure.
  */
 public enum ClaimAction {
     OPEN("open", ClaimStatus.OPEN, "CLAIM_OPENED", ClaimStatus.DRAFT),
@@ -10,7 +11,8 @@ public enum ClaimAction {
     PEND(null, ClaimStatus.PENDING, "CLAIM_PENDING", ClaimStatus.OPEN),
     APPROVE("approve", ClaimStatus.SETTLED, "CLAIM_APPROVED", ClaimStatus.PENDING),
     REJECT("reject", ClaimStatus.OPEN, "CLAIM_REJECTED", ClaimStatus.PENDING),
-    VOID("void", ClaimStatus.VOID, "CLAIM_VOIDED", ClaimStatus.DRAFT, ClaimStatus.OPEN, ClaimStatus.PENDING);
+    VOID("void", ClaimStatus.VOID, "CLAIM_VOIDED", ClaimStatus.DRAFT, ClaimStatus.OPEN, ClaimStatus.PENDING),
+    RESETTLE("resettle", ClaimStatus.SETTLED, "CLAIM_RESETTLED", ClaimStatus.SETTLED);
 
     private final String path;
     private final ClaimStatus to;
@@ -51,7 +53,7 @@ public enum ClaimAction {
         return event;
     }
 
-    /** Whether the action fixes the claim's due: settling, or approving a pending settle. */
+    /** Whether the action fixes the claim's due: settling, approving a pending settle, or re-settling. */
     public boolean settles() {
         return to == ClaimStatus.SETTLED;
     }

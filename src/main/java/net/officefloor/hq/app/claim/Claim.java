@@ -26,6 +26,12 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
                 statedDue, corrects, dueBy);
     }
 
+    /** The same claim as an open claim bound by no statement: live, with no fixed due. */
+    public Claim asOpenUnbound() {
+        return new Claim(id, sheetId, personId, amount, date, note, ClaimStatus.OPEN, number, null, openedBy, false,
+                null, corrects, dueBy);
+    }
+
     /** Whether the claim is a correction: a negative amount naming the settled claim it corrects. */
     public boolean correction() {
         return corrects != null;

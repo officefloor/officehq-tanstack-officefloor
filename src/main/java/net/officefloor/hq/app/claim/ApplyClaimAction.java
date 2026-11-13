@@ -25,12 +25,14 @@ import org.springframework.web.bind.annotation.RequestParam;
  * figure it stays live. A clerk settling a claim whose due is above the sheet's clerk limit (a due of n/a is within any
  * limit) makes it PENDING instead, live and unfixed. Only a steward approves a PENDING claim (fixing its due at its live
  * figure, plus any late charge, at that moment) — not the user who opened it — or rejects it, with a reason, back to OPEN.
+ * Only a steward re-settles a SETTLED claim, fixing its due again at the figure it would have today as an open claim
+ * bound by no statement (today's rates, grades, floor and late charge); its previous due is kept for the audit.
  */
 public class ApplyClaimAction {
     public void apply(@PathVariable("action") String action, @RequestParam("user") String user, @Val Claim claim,
             @Val ClaimActionRequest request, SheetRepository sheets,
             PersonRepository people, RateRepository rates, SettingRepository settings, PeriodRepository periods,
-            ClaimRepository claims, Out<ClaimAction> applied, Out<ClaimNumber> number, Out<Claim> updated) throws InvalidClaimException {
+            ClaimRepository claims, Out<ClaimAction> applied, Out<ClaimNumber> number, Out<PreviousDue> previous, Out<Claim> updated) throws InvalidClaimException {
         ClaimAction found = ClaimAction.of(action);
         if (found == null) {
             throw new InvalidClaimException("No such claim action: " + action);
@@ -48,10 +50,13 @@ public class ApplyClaimAction {
                 && settings.find(claim.sheetId()).roleOf(user) != Role.STEWARD) {
             throw new InvalidClaimException("Only a steward can " + action + " a pending claim.");
         }
+        if (found == ClaimAction.RESETTLE && settings.find(claim.sheetId()).roleOf(user) != Role.STEWARD) {
+            throw new InvalidClaimException("Only a steward can re-settle a settled claim.");
+        }
         if (found == ClaimAction.REJECT && request.reason().isEmpty()) {
             throw new InvalidClaimException("A reason is required to reject a claim.");
         }
-        BigDecimal due = found.settles() ? settledDue(claim, sheets, people, rates, settings, claims) : claim.due();
+        BigDecimal due = found.settles() ? settledDue(found == ClaimAction.RESETTLE ? claim.asOpenUnbound() : claim, sheets, people, rates, settings, claims) : claim.due();
         if (found == ClaimAction.SETTLE && !settings.find(claim.sheetId()).maySettle(user, due)) {
             found = ClaimAction.PEND;
             due = null;
@@ -61,6 +66,7 @@ public class ApplyClaimAction {
             default -> claim.number();
         };
         applied.set(found);
+        previous.set(new PreviousDue(claim.due()));
         number.set(new ClaimNumber(next));
         updated.set(claim.withStatus(found.to(), next, due, found == ClaimAction.OPEN ? user : claim.openedBy()));
     }
