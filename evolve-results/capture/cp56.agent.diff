@@ -1,0 +1,180 @@
+diff --git a/src/main/frontend/features/overdue/dueBy.ts b/src/main/frontend/features/overdue/dueBy.ts
+index 08b696ef8..60ed840b1 100644
+--- a/src/main/frontend/features/overdue/dueBy.ts
++++ b/src/main/frontend/features/overdue/dueBy.ts
+@@ -12,3 +12,8 @@ export function latePeriods(claim: Claim, today: string): number {
+   const days = (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${claim.dueBy}T00:00:00Z`)) / 86_400_000;
+   return Math.floor(Math.round(days) / 30);
+ }
++
++/** The date the claim's nth (1, 2, ...) full 30-day overdue period ends: its due-by plus 30 × n days (yyyy-MM-dd). */
++export function lateBoundary(claim: Claim, period: number): string {
++  return new Date(Date.parse(`${claim.dueBy}T00:00:00Z`) + period * 30 * 86_400_000).toISOString().slice(0, 10);
++}
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index eae104a57..4d42dc529 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+ import { bound, counts } from '../claims/claims';
+ import type { Claim } from '../claims/claims';
+-import { latePeriods } from '../overdue/dueBy';
++import { lateBoundary, latePeriods } from '../overdue/dueBy';
+ import { gradeOn } from '../people/people';
+ import type { GradeFrom, Hold } from '../people/people';
+ import { sheetKey, useCurrentSheet } from '../session/session';
+@@ -103,13 +103,19 @@ function claimFigure(claim: Claim, rates: Rate[], grades: GradeFrom[], rules: Du
+ }
+ 
+ /**
+- * The late charge on a figure: the late percent in force on the claim's date of it for every full 30 days the claim is overdue,
+- * rounded like the claim's due; 0.00 when it is not overdue, and always for a correction.
++ * The late charge on a figure: for every full 30 days the claim is overdue, the late percent in force on that boundary date
++ * (its due-by plus 30, 60, 90 ... days) of it, rounded like the claim's due, the charges added up (a boundary at 0.00 adds
++ * nothing); 0.00 when it is not overdue, and always for a correction.
+  */
+ export function lateCharge(claim: Claim, figure: string, rules: DueRules): string {
+   if (claim.corrects !== null) return '0.00';
+   const periods = latePeriods(claim, rules.today);
+-  return percentOf(hundredths(figure), hundredths(rules.latePctOn(claim.date)) * periods, roundingFor(claim, rules));
++  const charges: string[] = [];
++  for (let period = 1; period <= periods; period++) {
++    const pct = hundredths(rules.latePctOn(lateBoundary(claim, period)));
++    if (pct !== 0) charges.push(percentOf(hundredths(figure), pct, roundingFor(claim, rules)));
++  }
++  return total(charges);
+ }
+ 
+ /**
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimDueNow.java b/src/main/java/net/officefloor/hq/app/claim/ClaimDueNow.java
+index 0184e0aed..d8016a89c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimDueNow.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimDueNow.java
+@@ -13,7 +13,7 @@ import net.officefloor.hq.app.sheet.SheetRepository;
+ /**
+  * A claim's due as the screen shows it at this moment (null: n/a): its fixed due, else its figure at its person's
+  * grade's rate in force on its date, raised to the sheet's floor in force on its date and rounded by its policy date — or the figure a
+- * statement bound it to — plus the late charge (at the late percent in force on its date) it has on the sheet's today, if overdue.
++ * statement bound it to — plus the late charge (at the late percent in force on each 30-day boundary) it has on the sheet's today, if overdue.
+  */
+ public final class ClaimDueNow {
+ 
+@@ -27,7 +27,7 @@ public final class ClaimDueNow {
+                 : Rate.inForce(rates.findAll(claim.sheetId()), person.gradeOn(claim.date()), claim.date());
+         LocalDate today = sheets.today(claim.sheetId());
+         DatedSettings dated = settings.dated(claim.sheetId());
+-        return claim.due(rate, dated.floorOn(claim.date()), dated.lateCharge(claim.date(), today),
++        return claim.due(rate, dated.floorOn(claim.date()), dated.lateCharge(today),
+                 settings.rounding(claim.sheetId(), today, claims.findForPerson(claim.sheetId(), claim.personId())));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/LateCharge.java b/src/main/java/net/officefloor/hq/app/claim/LateCharge.java
+index dd560d748..d73962809 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/LateCharge.java
++++ b/src/main/java/net/officefloor/hq/app/claim/LateCharge.java
+@@ -4,24 +4,33 @@ import java.math.BigDecimal;
+ import java.math.RoundingMode;
+ import java.time.LocalDate;
+ import java.time.temporal.ChronoUnit;
++import java.util.function.Function;
+ 
+ /**
+- * What an overdue claim is charged: the late percent in force on its date of its figure for every full 30 days it is overdue
+- * (its due-by, fixed when it was created, before the sheet's today), rounded like the claim's due. Never bound by a statement:
+- * it follows the sheet's today until the claim is settled. A correction, and a deferred claim, is never charged.
++ * What an overdue claim is charged: for every full 30 days it is overdue (its due-by, fixed when it was created, before
++ * the sheet's today), the late percent in force on that boundary date (the due-by plus 30, 60, 90 ... days) of its figure,
++ * rounded like the claim's due, the charges added up; a boundary whose percent is 0.00 adds nothing. Never bound by a
++ * statement: it follows the sheet's today until the claim is settled. A correction, and a deferred claim, is never charged.
+  */
+-public record LateCharge(BigDecimal pct, LocalDate today) {
++public record LateCharge(Function<LocalDate, BigDecimal> pctOn, LocalDate today) {
+ 
+     /** The days in each period an overdue claim is charged for. */
+     public static final int PERIOD_DAYS = 30;
+ 
+     /** The charge on the claim's figure (null: n/a, charged nothing); zero unless the claim is overdue. */
+     public BigDecimal on(Claim claim, BigDecimal figure, RoundingMode mode) {
++        BigDecimal charge = BigDecimal.ZERO.setScale(2);
+         if (figure == null || !claim.status().open() || claim.deferred(today) || claim.correction()) {
+-            return BigDecimal.ZERO.setScale(2);
++            return charge;
+         }
+         long late = ChronoUnit.DAYS.between(claim.dueBy(), today);
+         long periods = late > 0 ? late / PERIOD_DAYS : 0;
+-        return Claim.due(figure, pct.multiply(BigDecimal.valueOf(periods)), mode);
++        for (long period = 1; period <= periods; period++) {
++            BigDecimal pct = pctOn.apply(claim.dueBy().plusDays(period * PERIOD_DAYS));
++            if (pct.signum() != 0) {
++                charge = charge.add(Claim.due(figure, pct, mode));
++            }
++        }
++        return charge;
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java b/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java
+index d463e40ab..bcf4d0e6d 100644
+--- a/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodCloser.java
+@@ -67,7 +67,7 @@ public class PeriodCloser {
+                 continue;
+             }
+             BigDecimal figure = claim.due(Rate.inForce(sheetRates, person.gradeOn(claim.date()), claim.date()),
+-                    dated.floorOn(claim.date()), dated.lateCharge(claim.date(), today), rounding);
++                    dated.floorOn(claim.date()), dated.lateCharge(today), rounding);
+             if (figure != null) {
+                 total = total.add(figure);
+                 perPerson.merge(person.id(), figure, BigDecimal::add);
+diff --git a/src/main/java/net/officefloor/hq/app/rollup/RollupService.java b/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
+index d94be0b29..9f6de8e4b 100644
+--- a/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
++++ b/src/main/java/net/officefloor/hq/app/rollup/RollupService.java
+@@ -21,7 +21,7 @@ import org.springframework.stereotype.Service;
+ /**
+  * Works out a sheet's figures as the screen shows them: a person's claimed is their counting claims' amounts
+  * added up; their due-total those claims' dues (live figures raised to the floor in force on each claim's date and rounded by its policy date, plus
+- * any late charge, at the late percent in force on its date, on the overdue ones) added up, at most the cap in force on the sheet's today; n/a when their grade on the sheet's today has no
++ * any late charge, at the late percent in force on each 30-day boundary, on the overdue ones) added up, at most the cap in force on the sheet's today; n/a when their grade on the sheet's today has no
+  * rate there and no counting claim has a figure (kept, or at the rate for the grade in force on its date). Their overdue-total
+  * is the dues of their overdue counting claims added up (skipping n/a, not capped). The sheet's totals add these up, skipping n/a.
+  */
+@@ -69,7 +69,7 @@ public class RollupService {
+                 claimed = claimed.add(claim.amount());
+                 kept |= claim.keepsFigure();
+                 BigDecimal figure = claim.due(Rate.inForce(sheetRates, person.gradeOn(claim.date()), claim.date()),
+-                        dated.floorOn(claim.date()), dated.lateCharge(claim.date(), today), rounding);
++                        dated.floorOn(claim.date()), dated.lateCharge(today), rounding);
+                 if (figure != null) {
+                     kept = true;
+                     due = due.add(figure);
+diff --git a/src/main/java/net/officefloor/hq/app/setting/DatedSettings.java b/src/main/java/net/officefloor/hq/app/setting/DatedSettings.java
+index 639d30458..229794d75 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/DatedSettings.java
++++ b/src/main/java/net/officefloor/hq/app/setting/DatedSettings.java
+@@ -64,9 +64,9 @@ public record DatedSettings(Map<String, NavigableMap<LocalDate, String>> values)
+         return value == null ? SettingRepository.DEFAULT_LATE_PCT : new BigDecimal(value).setScale(2);
+     }
+ 
+-    /** What an overdue claim of the date is charged on the given today: the late percent in force on its date. */
+-    public LateCharge lateCharge(LocalDate claimDate, LocalDate today) {
+-        return new LateCharge(latePctOn(claimDate), today);
++    /** What an overdue claim is charged on the given today: the late percent in force on each 30-day boundary. */
++    public LateCharge lateCharge(LocalDate today) {
++        return new LateCharge(this::latePctOn, today);
+     }
+ 
+     /** The sheet's terms in days in force on the date. */
+diff --git a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+index 4e58299ae..8160f664c 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+@@ -47,7 +47,7 @@ public class TakeStatement {
+             counted++;
+             kept |= fixed || figure != null;
+             if (figure != null) {
+-                total = total.add(figure).add(dated.lateCharge(claim.date(), today).on(claim, figure, rounding.modeFor(claim)));
++                total = total.add(figure).add(dated.lateCharge(today).on(claim, figure, rounding.modeFor(claim)));
+             }
+         }
+         String dueTotal = Rate.inForce(sheetRates, person.grade(), today) == null && !kept ? "n/a"
