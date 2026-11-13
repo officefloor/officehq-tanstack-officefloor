@@ -1,0 +1,195 @@
+diff --git a/src/main/frontend/features/claims/ClaimStatus.tsx b/src/main/frontend/features/claims/ClaimStatus.tsx
+index 04fba729f..86406db00 100644
+--- a/src/main/frontend/features/claims/ClaimStatus.tsx
++++ b/src/main/frontend/features/claims/ClaimStatus.tsx
+@@ -7,7 +7,7 @@ import type { Claim } from './claims';
+ import { claimsKey } from './claims';
+ import { useOneAtATime } from '../../query/useOneAtATime';
+ 
+-type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void';
++type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle';
+ 
+ const ACTIONS: Array<{ action: Action; label: string }> = [
+   { action: 'open', label: 'Open' },
+@@ -15,18 +15,21 @@ const ACTIONS: Array<{ action: Action; label: string }> = [
+   { action: 'approve', label: 'Approve' },
+   { action: 'reject', label: 'Reject' },
+   { action: 'void', label: 'Void' },
++  { action: 'resettle', label: 'Re-settle' },
+ ];
+ 
+ const REFUSED: Partial<Record<Action, string>> = {
+   settle: ' (the user who opened it cannot settle it)',
+   approve: ' (only a steward approves a pending claim, and not the user who opened it)',
+   reject: ' (only a steward rejects a pending claim, and a reason is required)',
++  resettle: ' (only a steward re-settles a settled claim)',
+ };
+ 
+ // A claim's status and the buttons that change it. Every button is shown; the server refuses a
+ // change the status does not allow, and the refusal shows as the claim's error. A clerk's settle
+ // above the clerk limit makes the claim PENDING; a reject sends the reason typed beside it. A steward
+-// moves a DRAFT, OPEN or PENDING claim to the person chosen beside the Move button.
++// moves a DRAFT, OPEN or PENDING claim to the person chosen beside the Move button. A steward
++// re-settles a SETTLED claim, freezing it again at today's figure.
+ export function ClaimStatus({ claim }: { claim: Claim }) {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java
+index e4a0f2d3e..a50e61360 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java
+@@ -25,12 +25,14 @@ import org.springframework.web.bind.annotation.RequestParam;
+  * figure it stays live. A clerk settling a claim whose due is above the sheet's clerk limit (a due of n/a is within any
+  * limit) makes it PENDING instead, live and unfixed. Only a steward approves a PENDING claim (fixing its due at its live
+  * figure, plus any late charge, at that moment) — not the user who opened it — or rejects it, with a reason, back to OPEN.
++ * Only a steward re-settles a SETTLED claim, fixing its due again at the figure it would have today as an open claim
++ * bound by no statement (today's rates, grades, floor and late charge); its previous due is kept for the audit.
+  */
+ public class ApplyClaimAction {
+     public void apply(@PathVariable("action") String action, @RequestParam("user") String user, @Val Claim claim,
+             @Val ClaimActionRequest request, SheetRepository sheets,
+             PersonRepository people, RateRepository rates, SettingRepository settings, PeriodRepository periods,
+-            ClaimRepository claims, Out<ClaimAction> applied, Out<ClaimNumber> number, Out<Claim> updated) throws InvalidClaimException {
++            ClaimRepository claims, Out<ClaimAction> applied, Out<ClaimNumber> number, Out<PreviousDue> previous, Out<Claim> updated) throws InvalidClaimException {
+         ClaimAction found = ClaimAction.of(action);
+         if (found == null) {
+             throw new InvalidClaimException("No such claim action: " + action);
+@@ -48,10 +50,13 @@ public class ApplyClaimAction {
+                 && settings.find(claim.sheetId()).roleOf(user) != Role.STEWARD) {
+             throw new InvalidClaimException("Only a steward can " + action + " a pending claim.");
+         }
++        if (found == ClaimAction.RESETTLE && settings.find(claim.sheetId()).roleOf(user) != Role.STEWARD) {
++            throw new InvalidClaimException("Only a steward can re-settle a settled claim.");
++        }
+         if (found == ClaimAction.REJECT && request.reason().isEmpty()) {
+             throw new InvalidClaimException("A reason is required to reject a claim.");
+         }
+-        BigDecimal due = found.settles() ? settledDue(claim, sheets, people, rates, settings, claims) : claim.due();
++        BigDecimal due = found.settles() ? settledDue(found == ClaimAction.RESETTLE ? claim.asOpenUnbound() : claim, sheets, people, rates, settings, claims) : claim.due();
+         if (found == ClaimAction.SETTLE && !settings.find(claim.sheetId()).maySettle(user, due)) {
+             found = ClaimAction.PEND;
+             due = null;
+@@ -61,6 +66,7 @@ public class ApplyClaimAction {
+             default -> claim.number();
+         };
+         applied.set(found);
++        previous.set(new PreviousDue(claim.due()));
+         number.set(new ClaimNumber(next));
+         updated.set(claim.withStatus(found.to(), next, due, found == ClaimAction.OPEN ? user : claim.openedBy()));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimAction.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimAction.java
+index e3727b2ef..bfe3cb944 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AuditClaimAction.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimAction.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.math.BigDecimal;
+ import net.officefloor.hq.app.Audit;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
+@@ -8,19 +9,25 @@ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /**
+  * Records the claim's status change, with its person's name; runs only once the change has been allowed.
+- * Settling and approving also record the due fixed (n/a when the grade had no rate); rejecting records its reason.
++ * Settling and approving also record the due fixed (n/a when the grade had no rate); rejecting records its reason;
++ * re-settling records the previous due and the new one.
+  */
+ public class AuditClaimAction {
+     public void audit(@Val ClaimAction action, @Val ClaimNumber number, @Val Claim claim, @Val ClaimActionRequest request,
++            @Val PreviousDue previous,
+             PersonRepository people,
+             @RequestParam("user") String user, Audit audit) {
+         Person person = people.find(claim.sheetId(), claim.personId());
+         audit.record(action.event() + " sheet=" + claim.sheetId() + " by=" + user + " person="
+                 + (person == null ? "" : person.name()) + " amount=" + claim.amount().setScale(2).toPlainString()
+                 + " date=" + claim.date() + Claim.auditNumber(number.value())
+-                + (action.settles()
+-                        ? " due=" + (claim.due() == null ? "n/a" : claim.due().setScale(2).toPlainString())
+-                        : "")
++                + (action == ClaimAction.RESETTLE
++                        ? " old=" + figure(previous.value()) + " new=" + figure(claim.due())
++                        : action.settles() ? " due=" + figure(claim.due()) : "")
+                 + (action == ClaimAction.REJECT ? " reason=" + request.reason() : ""));
+     }
++
++    private static String figure(BigDecimal due) {
++        return due == null ? "n/a" : due.setScale(2).toPlainString();
++    }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index 8331c741d..9c3309cb6 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -26,6 +26,12 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
+                 statedDue, corrects, dueBy);
+     }
+ 
++    /** The same claim as an open claim bound by no statement: live, with no fixed due. */
++    public Claim asOpenUnbound() {
++        return new Claim(id, sheetId, personId, amount, date, note, ClaimStatus.OPEN, number, null, openedBy, false,
++                null, corrects, dueBy);
++    }
++
+     /** Whether the claim is a correction: a negative amount naming the settled claim it corrects. */
+     public boolean correction() {
+         return corrects != null;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimAction.java b/src/main/java/net/officefloor/hq/app/claim/ClaimAction.java
+index 750683405..55ca18bbe 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimAction.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimAction.java
+@@ -2,7 +2,8 @@ package net.officefloor.hq.app.claim;
+ 
+ /**
+  * A change of a claim's status: the status it may start from, the status it ends in, and its audit event. PEND is
+- * never asked for by name: it is what a clerk's settle becomes when the due is above the clerk limit.
++ * never asked for by name: it is what a clerk's settle becomes when the due is above the clerk limit. RESETTLE
++ * freezes a SETTLED claim again at today's figure.
+  */
+ public enum ClaimAction {
+     OPEN("open", ClaimStatus.OPEN, "CLAIM_OPENED", ClaimStatus.DRAFT),
+@@ -10,7 +11,8 @@ public enum ClaimAction {
+     PEND(null, ClaimStatus.PENDING, "CLAIM_PENDING", ClaimStatus.OPEN),
+     APPROVE("approve", ClaimStatus.SETTLED, "CLAIM_APPROVED", ClaimStatus.PENDING),
+     REJECT("reject", ClaimStatus.OPEN, "CLAIM_REJECTED", ClaimStatus.PENDING),
+-    VOID("void", ClaimStatus.VOID, "CLAIM_VOIDED", ClaimStatus.DRAFT, ClaimStatus.OPEN, ClaimStatus.PENDING);
++    VOID("void", ClaimStatus.VOID, "CLAIM_VOIDED", ClaimStatus.DRAFT, ClaimStatus.OPEN, ClaimStatus.PENDING),
++    RESETTLE("resettle", ClaimStatus.SETTLED, "CLAIM_RESETTLED", ClaimStatus.SETTLED);
+ 
+     private final String path;
+     private final ClaimStatus to;
+@@ -51,7 +53,7 @@ public enum ClaimAction {
+         return event;
+     }
+ 
+-    /** Whether the action fixes the claim's due: settling, or approving a pending settle. */
++    /** Whether the action fixes the claim's due: settling, approving a pending settle, or re-settling. */
+     public boolean settles() {
+         return to == ClaimStatus.SETTLED;
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/PreviousDue.java b/src/main/java/net/officefloor/hq/app/claim/PreviousDue.java
+new file mode 100644
+index 000000000..96fad8cb6
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/PreviousDue.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.claim;
++
++import java.math.BigDecimal;
++
++/** The due a claim had fixed before a status change (null: none, or n/a). */
++public record PreviousDue(BigDecimal value) {
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
+index 682dea33e..8eaa0b639 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
+@@ -4,6 +4,7 @@
+ # A claim dated inside a closed period is refused (400).
+ # A clerk settling a claim whose due is above the sheet's clerk limit makes it PENDING; a steward settles anything.
+ # Only a steward approves or rejects; the user who opened the claim cannot approve it.
++# Only a steward re-settles (resettle: SETTLED -> SETTLED), freezing the claim again at today's figure as an open, unbound claim.
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaimActionRequest
+   govern: [ transaction ]
