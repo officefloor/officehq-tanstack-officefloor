@@ -1,0 +1,65 @@
+diff --git a/src/main/java/net/officefloor/hq/app/period/SoftCloseRollover.java b/src/main/java/net/officefloor/hq/app/period/SoftCloseRollover.java
+new file mode 100644
+index 000000000..3a6e2ce3b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/SoftCloseRollover.java
+@@ -0,0 +1,34 @@
++package net.officefloor.hq.app.period;
++
++import java.time.LocalDate;
++import java.util.Comparator;
++import java.util.List;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.pool.PoolCuts;
++import net.officefloor.hq.app.rollup.RollupService;
++import net.officefloor.hq.app.sheet.InvalidSheetException;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Soft-closes every period of the old fiscal year that is still open (neither closed nor soft-closed), in
++ *  start-date order, each as a soft close would, recording PERIOD_SOFT_CLOSED sheet=<id> by=<user> period=<name>
++ *  total=<0.00> for each. Runs after the ROLLOVER record. */
++public class SoftCloseRollover {
++    public void softClose(@PathVariable("sheetId") String sheetId, @Val RolloverInput rollover, PeriodStore store,
++            RollupService rollups, PoolCuts cuts, Audit audit) throws InvalidSheetException {
++        String sheet = sheetId.trim();
++        List<String> names = rollover.periods().stream()
++                .sorted(Comparator.comparing((PeriodResponse p) -> LocalDate.parse(p.from()))
++                        .thenComparing(PeriodResponse::name))
++                .map(PeriodResponse::name).toList();
++        for (String name : names) {
++            PeriodResponse period = store.find(sheet, name);
++            if (period == null || period.closed() || period.soft()) {
++                continue;
++            }
++            PeriodResponse closed = PeriodClosing.fixSoft(sheet, period, store, rollups, cuts);
++            audit.record("PERIOD_SOFT_CLOSED sheet=" + sheet + " by=" + rollover.user() + " period=" + closed.name()
++                    + " total=" + closed.total());
++        }
++    }
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/rollover.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/rollover.POST.yml
+index a3b8ccec9..702d8d395 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/rollover.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/rollover.POST.yml
+@@ -2,7 +2,8 @@
+ # of a year (YYYY) with periods on the sheet; otherwise refused (400) and nothing is stored. Generates the next
+ # fiscal year's twelve months exactly as periods/generate-fy does, then adds each person's open figure at the end
+ # of the old year's last period to their opening balance for the new year's first period (OPENING_SET each) and
+-# records ROLLOVER. Answers {generated}.
++# records ROLLOVER; then soft-closes each still-open period of the old year in start-date order
++# (PERIOD_SOFT_CLOSED each). Answers {generated}.
+ validate:
+   class: net.officefloor.hq.app.period.ValidateRollover
+   govern: [ transaction ]
+@@ -14,6 +15,10 @@ generate:
+ carry:
+   class: net.officefloor.hq.app.period.CarryRollover
+   govern: [ transaction ]
++  next: soft-close
++soft-close:
++  class: net.officefloor.hq.app.period.SoftCloseRollover
++  govern: [ transaction ]
+   next: respond
+ respond:
+   class: net.officefloor.hq.app.period.RespondWithGenerated
