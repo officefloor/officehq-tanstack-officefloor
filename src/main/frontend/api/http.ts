@@ -7,7 +7,21 @@ export class HttpError extends Error {
   }
 }
 
+/**
+ * The date this screen shows the sheet as of (yyyy-MM-dd), or '' when it shows the sheet now. It is
+ * the `asof` search param (features/session/AsOf), read here so every read of the sheet carries it
+ * and every change is refused while it is set.
+ */
+export function currentAsOf(): string {
+  const raw = new URLSearchParams(window.location.search).get('asof') ?? '';
+  return raw.replace(/^"(.*)"$/, '$1');
+}
+
 async function send<T>(path: string, init?: RequestInit): Promise<T> {
+  // A screen showing the sheet as of a date changes nothing; loading a sheet is not a change.
+  if (init?.method && init.method !== 'GET' && path !== '/api/sheets' && currentAsOf()) {
+    throw new HttpError(`${init.method} ${path} refused: the sheet is shown as of ${currentAsOf()}`, 400);
+  }
   const res = await fetch(path, init);
   if (!res.ok) {
     throw new HttpError(`${init?.method ?? 'GET'} ${path} -> ${res.status}`, res.status);
@@ -16,6 +30,10 @@ async function send<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export function getJson<T>(path: string): Promise<T> {
+  const asOf = currentAsOf();
+  if (asOf && path.startsWith('/api/sheets/')) {
+    return send<T>(`${path}${path.includes('?') ? '&' : '?'}asOf=${encodeURIComponent(asOf)}`);
+  }
   return send<T>(path);
 }
 

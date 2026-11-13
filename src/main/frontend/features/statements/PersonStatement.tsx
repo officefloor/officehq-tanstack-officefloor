@@ -29,13 +29,14 @@ export function PersonStatement({ person }: { person: Person }) {
         { asof: date },
       ),
     onSuccess: async () => {
-      setAsof('');
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
         queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
       ]);
     },
     onError: () => setError('The statement could not be taken.'),
+    // The date was for this statement only: the next one is taken now unless a date is typed again.
+    onSettled: () => setAsof(''),
   });
 
   const cancel = useMutation({

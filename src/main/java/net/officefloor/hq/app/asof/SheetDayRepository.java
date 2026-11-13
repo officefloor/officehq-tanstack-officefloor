@@ -27,9 +27,11 @@ public class SheetDayRepository {
     private final ClaimRepository claims;
     private final RateRepository rates;
     private final SettingRepository settings;
+    private final AsOfSchemas schemas;
 
     public SheetDayRepository(JdbcTemplate jdbc, PersonRepository people, ClaimRepository claims, RateRepository rates,
-            SettingRepository settings) {
+            SettingRepository settings, AsOfSchemas schemas) {
+        this.schemas = schemas;
         this.jdbc = jdbc;
         this.people = people;
         this.claims = claims;
@@ -41,8 +43,25 @@ public class SheetDayRepository {
     public void record(String sheetId, LocalDate from, LocalDate to) {
         SheetState now = new SheetState(people.findAll(sheetId), claims.findAll(sheetId), rates.findAll(sheetId),
                 settings.dated(sheetId).history(), settings.policyDate(sheetId));
-        jdbc.update("INSERT INTO sheet_day (sheet_id, from_today, to_today, state) VALUES (?, ?, ?, ?)", sheetId,
-                Date.valueOf(from), Date.valueOf(to), JSON.writeValueAsString(now));
+        jdbc.update("INSERT INTO sheet_day (sheet_id, from_today, to_today, state, snapshot) VALUES (?, ?, ?, ?, ?)",
+                sheetId, Date.valueOf(from), Date.valueOf(to), JSON.writeValueAsString(now), schemas.snapshot(sheetId));
+    }
+
+    /**
+     * The schema ({@link AsOfSchemas}) holding the sheet as it stood at the end of the date: a snapshot, the sheet as
+     * it stands now, or an empty sheet before it was first loaded.
+     */
+    public String schemaAsOf(String sheetId, LocalDate date) {
+        schemas.ensureShared();
+        Long kept = keptAsOf(sheetId, date);
+        if (kept == null) {
+            return AsOfSchemas.LIVE;
+        }
+        if (kept < 0) {
+            return AsOfSchemas.EMPTY;
+        }
+        String snapshot = jdbc.queryForObject("SELECT snapshot FROM sheet_day WHERE id = ?", String.class, kept);
+        return snapshot == null ? AsOfSchemas.LIVE : snapshot;
     }
 
     /**
@@ -50,6 +69,19 @@ public class SheetDayRepository {
      * past the date since it was last on or before it). Before the sheet was first loaded nothing was on it.
      */
     public SheetState asOf(String sheetId, LocalDate date) {
+        Long kept = keptAsOf(sheetId, date);
+        if (kept == null) {
+            return null;
+        }
+        if (kept < 0) {
+            return SheetState.EMPTY;
+        }
+        String state = jdbc.queryForObject("SELECT state FROM sheet_day WHERE id = ?", String.class, kept);
+        return JSON.readValue(state, SheetState.class);
+    }
+
+    /** The sheet_day kept as the sheet stood at the end of the date; null: as it stands now; -1: empty. */
+    private Long keptAsOf(String sheetId, LocalDate date) {
         List<LocalDate> started = jdbc.query("SELECT started FROM sheet WHERE id = ?",
                 (rs, n) -> rs.getObject("started", LocalDate.class), sheetId);
         boolean empty = !started.isEmpty() && started.get(0) != null && started.get(0).isAfter(date);
@@ -67,9 +99,8 @@ public class SheetDayRepository {
             }
         }
         if (kept != null) {
-            String state = jdbc.queryForObject("SELECT state FROM sheet_day WHERE id = ?", String.class, kept);
-            return JSON.readValue(state, SheetState.class);
+            return kept;
         }
-        return empty ? SheetState.EMPTY : null;
+        return empty ? -1L : null;
     }
 }
