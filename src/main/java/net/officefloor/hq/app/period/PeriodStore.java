@@ -148,6 +148,34 @@ public class PeriodStore {
                 sheetId, name, personId, total, carried.getOrDefault(personId, BigDecimal.ZERO.setScale(2))));
     }
 
+    /** Moves the person's figures fixed in every closed or soft-closed period (due-total and carried figure) and
+     *  their opening balances to the other person, added to the other's own; a merge leaves the period figures whole. */
+    public void mergePerson(String sheetId, long personId, long intoId) {
+        jdbc.query("SELECT period_name, total, carried FROM period_person_total WHERE sheet_id = ? AND person_id = ?",
+                rs -> {
+                    String name = rs.getString("period_name");
+                    BigDecimal total = rs.getBigDecimal("total");
+                    BigDecimal carried = rs.getBigDecimal("carried");
+                    if (jdbc.update("UPDATE period_person_total SET total = total + ?, carried = carried + ? "
+                            + "WHERE sheet_id = ? AND period_name = ? AND person_id = ?", total, carried, sheetId, name, intoId) == 0) {
+                        jdbc.update("INSERT INTO period_person_total (sheet_id, period_name, person_id, total, carried) "
+                                + "VALUES (?, ?, ?, ?, ?)", sheetId, name, intoId, total, carried);
+                    }
+                }, sheetId, personId);
+        jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", sheetId, personId);
+        jdbc.query("SELECT period_name, amount FROM period_person_opening WHERE sheet_id = ? AND person_id = ?",
+                rs -> {
+                    String name = rs.getString("period_name");
+                    BigDecimal amount = rs.getBigDecimal("amount");
+                    if (jdbc.update("UPDATE period_person_opening SET amount = amount + ? "
+                            + "WHERE sheet_id = ? AND period_name = ? AND person_id = ?", amount, sheetId, name, intoId) == 0) {
+                        jdbc.update("INSERT INTO period_person_opening (sheet_id, period_name, person_id, amount) "
+                                + "VALUES (?, ?, ?, ?)", sheetId, name, intoId, amount);
+                    }
+                }, sheetId, personId);
+        jdbc.update("DELETE FROM period_person_opening WHERE sheet_id = ? AND person_id = ?", sheetId, personId);
+    }
+
     /** Drops each person's due-total fixed in the period (as a soft close fixed them, before they are fixed afresh). */
     public void dropPersonTotals(String sheetId, String name) {
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND period_name = ?", sheetId, name);

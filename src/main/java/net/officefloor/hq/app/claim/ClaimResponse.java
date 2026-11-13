@@ -82,10 +82,13 @@ public record ClaimResponse(long id, long personId, String amount, String date, 
                 statedNa, corrects, roundsBy, dueBy, log, deferred, deferredUntil, proofs, splitFrom, lateEntry, remindedOn, ref, tags, voidReason, comments, batch, lines, added, reviewOn, waived, proofKinds, held, shares, reviewUser, pendingOn);
     }
 
-    /** The same claim, deferred when OPEN, or VOID (a voided claim still shows its deferral, though it counts
+    /** The same claim, deferred when OPEN, PENDING or SETTLED and not bound by a statement (see
+     *  {@link Claim#isDeferredOn}), or VOID (a voided claim still shows its deferral, though it counts
      *  nowhere), and deferred until a date after the sheet's {@code today}. */
     public ClaimResponse on(LocalDate today) {
-        boolean now = (ClaimStatus.OPEN.name().equals(status) || ClaimStatus.VOID.name().equals(status))
+        boolean bound = stated && (statedDue != null || statedNa);
+        boolean now = ((!bound && (ClaimStatus.OPEN.name().equals(status) || ClaimStatus.PENDING.name().equals(status)
+                        || ClaimStatus.SETTLED.name().equals(status))) || ClaimStatus.VOID.name().equals(status))
                 && deferredUntil != null && today != null
                 && today.toString().compareTo(deferredUntil) < 0;
         return new ClaimResponse(id, personId, amount, date, note, status, number, due, openedBy, stated, statedDue,

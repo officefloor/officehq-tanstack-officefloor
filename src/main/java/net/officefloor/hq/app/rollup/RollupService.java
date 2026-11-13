@@ -294,19 +294,17 @@ public class RollupService {
     }
 
     /** Only OPEN, PENDING and SETTLED claims count, and an OPEN or PENDING claim of a person whose retirement
-     *  date the sheet's today has reached does not, unless a statement bound it; nor does an OPEN claim deferred
-     *  on the sheet's today. A hold (the claim's or its person's) does not take it out: holds only touch cuts. */
+     *  date the sheet's today has reached does not, unless a statement bound it; nor does a claim deferred
+     *  on the sheet's today (see {@link Claim#isDeferredOn}: a bound claim is not, until its binding ends). A hold (the claim's or its person's) does not take it out: holds only touch cuts. */
     public static boolean counts(Claim claim, Person person, LocalDate today) {
-        return claim.getStatus() == ClaimStatus.SETTLED
-                || (claim.getStatus().isOpen() && !claim.isDeferredOn(today)
-                        && (claim.isStated() || !person.retiredOn(today)));
+        return !claim.isDeferredOn(today) && (claim.getStatus() == ClaimStatus.SETTLED
+                || (claim.getStatus().isOpen() && (claim.isStated() || !person.retiredOn(today))));
     }
 
     /** Whether the claim counts toward claimed: as {@link #counts}. */
     public static boolean countsClaimed(Claim claim, Person person, LocalDate today) {
-        return claim.getStatus() == ClaimStatus.SETTLED
-                || (claim.getStatus().isOpen() && !claim.isDeferredOn(today)
-                        && (claim.isStated() || !person.retiredOn(today)));
+        return !claim.isDeferredOn(today) && (claim.getStatus() == ClaimStatus.SETTLED
+                || (claim.getStatus().isOpen() && (claim.isStated() || !person.retiredOn(today))));
     }
 
     /** Whether the claim counts by {@code status}, the status it had at a period's end (null when it
@@ -314,10 +312,10 @@ public class RollupService {
      *  deferred on the sheet's today does not, nor one open then and still open now of a person retired on
      *  the sheet's today, unless a statement bound it. */
     static boolean countsAt(Claim claim, ClaimStatus status, Person person, LocalDate today) {
-        return status == ClaimStatus.SETTLED
-                || (status != null && status.isOpen() && !claim.isDeferredOn(today)
+        return !claim.isDeferredOn(today) && (status == ClaimStatus.SETTLED
+                || (status != null && status.isOpen()
                         && (claim.isStated() || !claim.getStatus().isOpen()
-                                || !person.retiredOn(today)));
+                                || !person.retiredOn(today))));
     }
 
     /** A person's score: their settled-total leaving out corrections (0 while their due-total is n/a) divided by

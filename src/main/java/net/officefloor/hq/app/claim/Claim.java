@@ -98,10 +98,13 @@ public class Claim {
     public boolean isCorrection() { return amount.signum() < 0; }
     /** The date the claim was last deferred until; null when it was never deferred. */
     public LocalDate getDeferredUntil() { return deferredUntil; }
-    /** Whether the claim is deferred on {@code today}: OPEN and deferred until a date after it. Until
-     *  then it counts in no total, is not overdue, cannot be settled and is left unbound by a statement. */
+    /** Whether the claim is deferred on {@code today}: OPEN (or PENDING, or SETTLED while bound), deferred until
+     *  a date after it, and not bound by a statement. Until then it counts in no total, is not overdue, cannot be
+     *  settled and is left unbound by a statement. A claim a statement has bound stays counted, and can be settled,
+     *  while bound: its deferral takes effect only once the binding ends. */
     public boolean isDeferredOn(LocalDate today) {
-        return status == ClaimStatus.OPEN && deferredUntil != null && today != null && today.isBefore(deferredUntil);
+        return (status.isOpen() || status == ClaimStatus.SETTLED) && !isBound()
+                && deferredUntil != null && today != null && today.isBefore(deferredUntil);
     }
     /** How many proofs the claim has; a claim due above the sheet's proof threshold on its date cannot be
      *  settled or approved while it has none (see {@link CheckProofs}). */
