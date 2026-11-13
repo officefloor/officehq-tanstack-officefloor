@@ -38,7 +38,8 @@ import { useAsOf } from '../../session/session';
  *  blank grade give a new person, null when blank (then A); it is not dated. `gradeClerkLimit` is each grade's clerk limit
  *  in force on the sheet's today, by grade, null when it has none (then the sheet's). `scoreMid` and `scoreHigh` are the
  *  whole-number scores at or above which a person's band is MID and HIGH, null when blank (no band while either is);
- *  they are not dated. */
+ *  they are not dated. `scoreLog` is on while moving the sheet's today records each person's score in the audit
+ *  file, null when blank; it is not dated. */
 export type Settings = { clerkLimit: string | null; floor: string; terms: string; latePct: string; policyDate: string | null;
   periodNumberingFrom: string | null; gradeTerms: Record<string, string>; cap: string | null; proofThreshold: string | null;
   floorFrom: Dated[]; latePctFrom: Dated[]; perms: Record<string, string | null>;
@@ -47,7 +48,8 @@ export type Settings = { clerkLimit: string | null; floor: string; terms: string
   gradeProofThreshold: Record<string, string | null>; pot: string | null; parent: string | null; fiscalStartMonth: string;
   alertThreshold: string | null; rounding: string | null; roundingFrom: Dated[]; reviewThreshold: string | null;
   escalateAfter: string | null; reviewSla: string | null; proofKinds: string | null; defaultGrade: string | null;
-  gradeClerkLimit: Record<string, string | null>; scoreMid: string | null; scoreHigh: string | null };
+  gradeClerkLimit: Record<string, string | null>; scoreMid: string | null; scoreHigh: string | null;
+  scoreLog: string | null };
 
 /** A setting's value recorded from a date (yyyy-MM-dd); a null value is blank. */
 export type Dated = { from: string; value: string | null };

@@ -46,7 +46,8 @@ import java.util.Map;
  *  {@code gradeClerkLimit} is each grade's clerk limit in force on the sheet's today, by grade, null when it has none
  *  (a claim's clerk limit is its person's grade's on the sheet's today when one is set, else the sheet's).
  *  {@code scoreMid} and {@code scoreHigh} are the whole-number scores at or above which a person's band is MID and
- *  HIGH, null when blank (no band while either is; not dated). */
+ *  HIGH, null when blank (no band while either is; not dated).
+ *  {@code scoreLog} is on while moving the sheet's today records each person's score, null when blank (not dated). */
 public record SettingsResponse(String clerkLimit, String floor, String terms, String latePct, String policyDate,
         String periodNumberingFrom, Map<String, String> gradeTerms, String cap, String proofThreshold, List<Dated> floorFrom,
         List<Dated> latePctFrom, Map<String, String> perms, String graceDays,
@@ -55,7 +56,7 @@ public record SettingsResponse(String clerkLimit, String floor, String terms, St
         String pot, String parent, String fiscalStartMonth, String alertThreshold, String rounding,
         List<Dated> roundingFrom, String reviewThreshold, String escalateAfter, String reviewSla,
         String proofKinds, String defaultGrade, Map<String, String> gradeClerkLimit,
-        String scoreMid, String scoreHigh) {
+        String scoreMid, String scoreHigh, String scoreLog) {
 
     /** A value recorded from a date (yyyy-MM-dd). */
     public record Dated(String from, String value) {

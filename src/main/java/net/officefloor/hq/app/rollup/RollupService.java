@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.rollup;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -70,6 +71,8 @@ public class RollupService {
             BigDecimal claimed = BigDecimal.ZERO.setScale(2);
             BigDecimal due = BigDecimal.ZERO.setScale(2);
             BigDecimal overdue = BigDecimal.ZERO.setScale(2);
+            BigDecimal settled = BigDecimal.ZERO.setScale(2);
+            int overdueCount = 0;
             boolean fixed = false;
             for (Claim claim : all) {
                 if (claim.getPersonId() != person.getId()
@@ -85,10 +88,16 @@ public class RollupService {
                     continue;
                 }
                 BigDecimal figure = lateness.due(claim, rates.forClaim(claim).find(sheetId, person.gradeOn(claim.getDate()), claim.getDate()));
+                if (lateness.overdue(claim)) {
+                    overdueCount++;
+                }
                 if (figure != null) {
                     due = due.add(figure);
                     if (lateness.overdue(claim)) {
                         overdue = overdue.add(figure);
+                    }
+                    if (claim.getStatus() == ClaimStatus.SETTLED) {
+                        settled = settled.add(figure);
                     }
                 }
                 // A figure at a grade other than the one in force today, or at a rate that ended before
@@ -105,7 +114,7 @@ public class RollupService {
                 dues.add(due);
             }
             figures.put(person.getId(), new Rollup.Figures(person.getName(), shown(claimed), na ? NA : shown(due),
-                    shown(overdue)));
+                    shown(overdue), score(na ? BigDecimal.ZERO : settled, overdueCount)));
         }
         return new Rollup(figures, shown(claimedTotal), shown(trimmed(dues)), shown(trimmed(overdues)));
     }
@@ -267,6 +276,13 @@ public class RollupService {
                 || (status != null && status.isOpen() && !claim.isDeferredOn(today)
                         && (claim.isStated() || !claim.getStatus().isOpen()
                                 || !person.retiredOn(today)));
+    }
+
+    /** A person's score: their settled-total (0 while their due-total is n/a) divided by 100, less 5 for every
+     *  overdue claim of theirs that counts, rounded half to even to a whole number. */
+    private static String score(BigDecimal settled, int overdueCount) {
+        return settled.movePointLeft(2).subtract(BigDecimal.valueOf(5L * overdueCount))
+                .setScale(0, RoundingMode.HALF_EVEN).toPlainString();
     }
 
     private static String shown(BigDecimal value) {

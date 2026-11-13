@@ -231,6 +231,10 @@ public class SettingStore {
      *  (a whole number, not dated). */
     public static final String SCORE_HIGH = "score-high";
 
+    /** Whether moving the sheet's today records each person's score on the day being left: on, or blank for off
+     *  (not dated). */
+    public static final String SCORE_LOG = "score-log";
+
     /** The key of a grade's grace days: grace-A, grace-B or grace-C (dated; blank for none). */
     public static final String GRACE_PREFIX = "grace-";
 
@@ -306,7 +310,7 @@ public class SettingStore {
     public static boolean isDated(String key) {
         return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key) && !GRACE_DAYS.equals(key) && !ESCALATE_AFTER.equals(key) && !REVIEW_SLA.equals(key)
                 && !ENTRY_DATE.equals(key) && !POT.equals(key) && !ALERT_THRESHOLD.equals(key) && !PARENT.equals(key) && !FISCAL_START_MONTH.equals(key)
-                && !DEFAULT_GRADE.equals(key) && !SCORE_MID.equals(key) && !SCORE_HIGH.equals(key)
+                && !DEFAULT_GRADE.equals(key) && !SCORE_MID.equals(key) && !SCORE_HIGH.equals(key) && !SCORE_LOG.equals(key)
                 && !PROOF_KINDS.equals(key) && !key.startsWith(PERM_PREFIX);
     }
 

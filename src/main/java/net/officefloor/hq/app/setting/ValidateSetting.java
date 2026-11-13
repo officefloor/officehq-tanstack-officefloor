@@ -65,6 +65,14 @@ public class ValidateSetting {
                     request.user()));
             return;
         }
+        if (SettingStore.SCORE_LOG.equals(key)) {
+            String value = request.value() == null ? "" : request.value().trim().toLowerCase();
+            if (!value.isEmpty() && !"on".equals(value)) {
+                throw new InvalidSheetException("The score log must be on, or blank");
+            }
+            body.set(new SettingInput(key, value.isEmpty() ? null : value, null, request.user()));
+            return;
+        }
         if (SettingStore.FISCAL_START_MONTH.equals(key)) {
             String value = request.value() == null ? "" : request.value().trim();
             int month = value.matches("\\d{1,2}") ? Integer.parseInt(value) : 0;
