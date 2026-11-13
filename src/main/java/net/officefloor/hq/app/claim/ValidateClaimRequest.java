@@ -46,6 +46,7 @@ public class ValidateClaimRequest {
             throw new InvalidClaimException("Only a correction (a negative amount) corrects a claim.");
         }
         String ref = request.ref() == null ? "" : request.ref().strip();
-        input.set(new ClaimInput(value, parsed, note, number, ref.isEmpty() ? null : ref));
+        String tags = Claim.tags(request.tags());
+        input.set(new ClaimInput(value, parsed, note, number, ref.isEmpty() ? null : ref, tags));
     }
 }

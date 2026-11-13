@@ -186,6 +186,37 @@ public class ClaimRepository {
         return refs;
     }
 
+    /** Store the claim's tags (stored form; null: none), adding each to the sheet's tag list. */
+    public void saveTags(Claim claim, String tags) {
+        jdbc.update("UPDATE claim SET tags = ? WHERE id = ? AND sheet_id = ?", tags, claim.id(), claim.sheetId());
+        if (tags != null) {
+            for (String tag : tags.split(",")) {
+                jdbc.update("MERGE INTO claim_tag (sheet_id, tag) KEY (sheet_id, tag) VALUES (?, ?)", claim.sheetId(), tag);
+            }
+        }
+    }
+
+    /** The claim's tags (stored form), or null. */
+    public String tags(String sheetId, long id) {
+        List<String> found = jdbc.queryForList("SELECT tags FROM claim WHERE sheet_id = ? AND id = ?", String.class,
+                sheetId, id);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** The tags (stored form) of each of the sheet's claims that has any, by claim id. */
+    public Map<Long, String> tagsAll(String sheetId) {
+        Map<Long, String> tags = new HashMap<>();
+        jdbc.query("SELECT id, tags FROM claim WHERE sheet_id = ? AND tags IS NOT NULL", (ResultSet rs) -> {
+            tags.put(rs.getLong("id"), rs.getString("tags"));
+        }, sheetId);
+        return tags;
+    }
+
+    /** Every tag ever given to a claim on the sheet, sorted. */
+    public List<String> usedTags(String sheetId) {
+        return jdbc.queryForList("SELECT tag FROM claim_tag WHERE sheet_id = ? ORDER BY tag", String.class, sheetId);
+    }
+
     private static Claim map(ResultSet rs, int n) throws SQLException {
         return new Claim(rs.getLong("id"), rs.getString("sheet_id"), rs.getLong("person_id"),
                 rs.getBigDecimal("amount").setScale(2), rs.getDate("claim_date").toLocalDate(), rs.getString("note"),

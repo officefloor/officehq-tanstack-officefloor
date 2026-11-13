@@ -11,6 +11,6 @@ public class AuditClaimAdded {
             Audit audit) {
         audit.record("CLAIM_ADDED sheet=" + claim.sheetId() + " by=" + user + " person=" + person.name()
                 + " amount=" + claim.amount().setScale(2).toPlainString() + " date=" + claim.date()
-                + Claim.auditRef(input.ref()));
+                + Claim.auditRef(input.ref()) + Claim.auditTags(input.tags()));
     }
 }

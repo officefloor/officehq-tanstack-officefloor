@@ -11,8 +11,9 @@ import { useOneAtATime } from '../../query/useOneAtATime';
 import { setClaimError, useClaimError } from './claimError';
 import { contains, usePeriods } from '../periods/periods';
 import { useSettings } from '../settings/settings';
+import { tagsKey } from '../tags/tags';
 
-const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '', ref: '' };
+const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '', ref: '', tags: '' };
 
 // A person's claims, newest first, and the form that adds one — or, while a claim's editor is
 // open, saves that claim's changes. Opening an editor (the edit button) locks the claim for every
@@ -57,7 +58,7 @@ export function PersonClaims({ person }: { person: Person }) {
 
   const fill = (c: Claim) => {
     setEditing(c.id);
-    setForm({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects ?? '', ref: c.ref ?? '' });
+    setForm({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects ?? '', ref: c.ref ?? '', tags: c.tags.join(', ') });
     setError('');
   };
 
@@ -74,7 +75,10 @@ export function PersonClaims({ person }: { person: Person }) {
       setEditing(undefined);
       setForm(EMPTY);
       setError('');
-      await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: tagsKey(sheet) }),
+      ]);
     },
     onError: () => setError('That claim could not be saved.'),
   });
@@ -196,6 +200,12 @@ export function PersonClaims({ person }: { person: Person }) {
           value={form.ref}
           onChange={(e) => change({ ref: e.target.value })}
         />
+        <input
+          data-testid="claim-form-tags"
+          placeholder="Tags, comma separated"
+          value={form.tags}
+          onChange={(e) => change({ tags: e.target.value })}
+        />
         <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
           {editing === undefined ? 'Add claim' : 'Save claim'}
         </button>
@@ -224,6 +234,7 @@ function ClaimInlineAmount({ claim, refusal }: { claim: Claim; refusal: string }
         note: claim.note,
         corrects: claim.corrects ?? '',
         ref: claim.ref ?? '',
+        tags: claim.tags.join(','),
       }),
     onSuccess: async () => {
       setAmount('');

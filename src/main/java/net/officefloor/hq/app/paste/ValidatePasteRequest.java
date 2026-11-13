@@ -54,7 +54,7 @@ public class ValidatePasteRequest {
             if (ref.length() > 120) {
                 throw new InvalidClaimException("Line " + number + ": a field is too long.");
             }
-            ClaimRequest claim = new ClaimRequest(fields[1], fields.length > 2 ? fields[2] : "", note, "", ref);
+            ClaimRequest claim = new ClaimRequest(fields[1], fields.length > 2 ? fields[2] : "", note, "", ref, "");
             ClaimInput[] input = new ClaimInput[1];
             try {
                 new ValidateClaimRequest().validate(claim, value -> input[0] = value);

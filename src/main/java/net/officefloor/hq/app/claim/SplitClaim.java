@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RequestParam;
  * than 0.00 and less than the claim's, and to a role the sheet's permission matrix does not allow to open a claim.
  * The claim keeps the rest of its amount and loses any figure a statement bound it to. The new claim is OPEN, with
  * the split amount, the same date and note, the number opening gives it now, opened by the user, its due-by fixed now
- * (as a new claim's: the terms-th business day after its date, see {@link NewDueBy}), and the original's number as split-from;
+ * (as a new claim's: the terms-th business day after its date, see {@link NewDueBy}), and the original's number as split-from, and the original's tags;
  * it is numbered within the period containing its own due-by, and is a late entry when the original is.
  * The new claim is published as the claim, for the steps that follow.
  */
@@ -51,6 +51,7 @@ public class SplitClaim {
                 ClaimStatus.OPEN, null, null, user, false, null, null, dueBy, null, 0, claim.number());
         String number = ApplyClaimAction.nextNumber(made, sheets, settings, periods);
         Claim saved = claims.save(made.withStatus(ClaimStatus.OPEN, number, null, user));
+        claims.saveTags(saved, claims.tags(claim.sheetId(), claim.id()));
         if (claims.lateEntry(claim.sheetId(), claim.id())) {
             claims.markLateEntry(saved);
         }

@@ -3,6 +3,9 @@ package net.officefloor.hq.app.claim;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.util.Arrays;
+import java.util.Locale;
+import java.util.stream.Collectors;
 
 /**
  * A claim a person has on a sheet. {@code id} is null until the claim is first saved; {@code number}
@@ -177,6 +180,24 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
     /** The audit field for a claim's external reference, " ref=<reference>", or "" when it has none. */
     public static String auditRef(String ref) {
         return ref == null ? "" : " ref=" + ref;
+    }
+
+    /**
+     * Tags as typed (comma separated) in their stored form: each trimmed and lower-cased, blanks and repeats dropped,
+     * sorted and comma separated; null when there are none.
+     */
+    public static String tags(String typed) {
+        if (typed == null) {
+            return null;
+        }
+        String tags = Arrays.stream(typed.split(",")).map((t) -> t.strip().toLowerCase(Locale.ROOT))
+                .filter((t) -> !t.isEmpty()).distinct().sorted().collect(Collectors.joining(","));
+        return tags.isEmpty() ? null : tags;
+    }
+
+    /** The audit field for a claim's tags, " tags=<a,b>", or "" when it has none. */
+    public static String auditTags(String tags) {
+        return tags == null ? "" : " tags=" + tags;
     }
 
     /** The audit field for the claim's number, " number=<n>", or "" when it has none. */
