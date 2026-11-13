@@ -20,12 +20,13 @@ public class AuditRollup {
             Rollup.Figures figures = entry.getValue();
             if (!figures.sameAs(was.people().get(entry.getKey()))) {
                 audit.record("ROLLUP" + prefix + " person=" + figures.name() + " claimed=" + figures.claimed()
-                        + " due-total=" + figures.dueTotal());
+                        + " due-total=" + figures.dueTotal() + " overdue-total=" + figures.overdueTotal());
             }
         }
-        if (!now.claimedTotal().equals(was.claimedTotal()) || !now.dueTotal().equals(was.dueTotal())) {
+        if (!now.claimedTotal().equals(was.claimedTotal()) || !now.dueTotal().equals(was.dueTotal())
+                || !now.overdueTotal().equals(was.overdueTotal())) {
             audit.record("TOTALS" + prefix + " claimed-total=" + now.claimedTotal() + " due-total="
-                    + now.dueTotal());
+                    + now.dueTotal() + " overdue-total=" + now.overdueTotal());
         }
     }
 }

@@ -41,6 +41,11 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
         return status == ClaimStatus.SETTLED || (status.open() && !held);
     }
 
+    /** Whether the claim is overdue on the given today: OPEN (or PENDING) with its due-by before that day. */
+    public boolean overdue(LocalDate today) {
+        return status.open() && dueBy != null && today != null && dueBy.isBefore(today);
+    }
+
     /** Whether a statement binds the claim now: it was stated and is not PENDING. */
     public boolean bound() {
         return stated && status != ClaimStatus.PENDING;

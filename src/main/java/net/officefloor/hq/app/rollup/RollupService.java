@@ -22,7 +22,8 @@ import org.springframework.stereotype.Service;
  * Works out a sheet's figures as the screen shows them: a person's claimed is their counting claims' amounts
  * added up; their due-total those claims' dues (live figures raised to the sheet's floor and rounded by its policy date, plus
  * any late charge on the overdue ones) added up, at most the sheet's cap; n/a when their grade on the sheet's today has no
- * rate there and no counting claim has a figure (kept, or at the rate for the grade in force on its date). The sheet's totals add these up, skipping n/a.
+ * rate there and no counting claim has a figure (kept, or at the rate for the grade in force on its date). Their overdue-total
+ * is the dues of their overdue counting claims added up (skipping n/a, not capped). The sheet's totals add these up, skipping n/a.
  */
 @Service
 public class RollupService {
@@ -56,9 +57,11 @@ public class RollupService {
         Map<Long, Rollup.Figures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
         BigDecimal dueTotal = BigDecimal.ZERO.setScale(2);
+        BigDecimal overdueTotal = BigDecimal.ZERO.setScale(2);
         for (Person person : people.findAll(sheetId)) {
             BigDecimal claimed = BigDecimal.ZERO.setScale(2);
             BigDecimal due = BigDecimal.ZERO.setScale(2);
+            BigDecimal overdue = BigDecimal.ZERO.setScale(2);
             boolean kept = false;
             for (Claim claim : sheetClaims) {
                 if (claim.personId() != person.id() || !person.counts(claim)) {
@@ -70,6 +73,9 @@ public class RollupService {
                 if (figure != null) {
                     kept = true;
                     due = due.add(figure);
+                    if (claim.overdue(today)) {
+                        overdue = overdue.add(figure);
+                    }
                 }
             }
             boolean na = Rate.inForce(sheetRates, person.grade(), today) == null && !kept;
@@ -78,9 +84,10 @@ public class RollupService {
             if (!na) {
                 dueTotal = dueTotal.add(due);
             }
-            figures.put(person.id(), new Rollup.Figures(person.name(), show(claimed), na ? NA : show(due)));
+            overdueTotal = overdueTotal.add(overdue);
+            figures.put(person.id(), new Rollup.Figures(person.name(), show(claimed), na ? NA : show(due), show(overdue)));
         }
-        return new Rollup(figures, show(claimedTotal), show(dueTotal));
+        return new Rollup(figures, show(claimedTotal), show(dueTotal), show(overdueTotal));
     }
 
     private static String show(BigDecimal value) {
