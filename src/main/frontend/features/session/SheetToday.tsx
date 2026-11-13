@@ -9,6 +9,7 @@ import { useOneAtATime } from '../../query/useOneAtATime';
 
 // The sheet's own "today": shown, and changed by typing a date and saving. A blank date resets it
 // to the real date. A steward can archive the sheet here: an archived sheet refuses every change.
+// A steward can also clone the sheet to another id never used: the id cloned to shows once done.
 export function SheetToday() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -16,6 +17,8 @@ export function SheetToday() {
   const info = useSheetInfo();
   const [date, setDate] = useState('');
   const [error, setError] = useState('');
+  const [cloneTo, setCloneTo] = useState('');
+  const [clonedTo, setClonedTo] = useState('');
   const queryClient = useQueryClient();
   const once = useOneAtATime();
 
@@ -35,6 +38,13 @@ export function SheetToday() {
       postJson<SheetInfo>(`/api/sheets/${encodeURIComponent(sheet)}/archive?user=${encodeURIComponent(user)}`, {}),
     onSuccess: (saved) => queryClient.setQueryData(sheetInfoKey(saved.id), saved),
     onError: () => setError('The sheet could not be archived.'),
+  });
+
+  const cloneSheet = useMutation({
+    mutationFn: (to: string) =>
+      postJson<{ to: string }>(`/api/sheets/${encodeURIComponent(sheet)}/clone?user=${encodeURIComponent(user)}`, { to }),
+    onSuccess: (cloned) => setClonedTo(cloned.to),
+    onError: () => setError('The sheet could not be cloned there.'),
   });
 
   if (!user || !sheet) return null;
@@ -84,6 +94,30 @@ export function SheetToday() {
       >
         Archive sheet
       </button>
+      <input
+        data-testid="sheet-clone-to"
+        placeholder="clone to sheet id"
+        value={cloneTo}
+        onChange={(e) => {
+          setCloneTo(e.target.value);
+          setError('');
+        }}
+      />
+      <button
+        type="button"
+        data-testid="sheet-clone"
+        disabled={cloneSheet.isPending}
+        onClick={() => {
+          setError('');
+          setClonedTo('');
+          once(() => cloneSheet.mutateAsync(cloneTo.trim()));
+        }}
+      >
+        Clone sheet
+      </button>
+      <span>
+        {' '}Cloned to: <strong data-testid="sheet-cloned-to">{clonedTo}</strong>{' '}
+      </span>
       {error && <span data-testid="sheet-error">{error}</span>}
     </form>
   );
