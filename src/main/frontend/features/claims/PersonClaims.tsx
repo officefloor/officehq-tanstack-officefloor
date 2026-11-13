@@ -8,7 +8,7 @@ import type { Person } from '../people/people';
 import { SIGNED_AMOUNT, claimsKey, useClaims } from './claims';
 import type { Claim, ClaimInput } from './claims';
 import { useOneAtATime } from '../../query/useOneAtATime';
-import { setClaimError } from './claimError';
+import { setClaimError, useClaimError } from './claimError';
 import { contains, usePeriods } from '../periods/periods';
 import { useSettings } from '../settings/settings';
 
@@ -160,7 +160,8 @@ export function PersonClaims({ person }: { person: Person }) {
               <button type="button" data-testid="claim-edit" onClick={() => edit(c)}>
                 Edit
               </button>
-            )}
+            )}{' '}
+            <ClaimInlineAmount claim={c} refusal={refusal(c)} />
           </li>
         ))}
       </ul>
@@ -195,5 +196,66 @@ export function PersonClaims({ person }: { person: Person }) {
         {error && <span data-testid="claim-form-error">{error}</span>}
       </form>
     </td>
+  );
+}
+
+// A claim's amount changed in its row: the entry and save button beside the edit button. The save is
+// the editor's save with only the amount changed, so it follows the claim form's rules (and writes
+// CLAIM_EDITED); a refusal shows as the claim's error, at once when the screen can see it.
+function ClaimInlineAmount({ claim, refusal }: { claim: Claim; refusal: string }) {
+  const [user] = useCurrentUser();
+  const [sheet] = useCurrentSheet();
+  const [, setError] = useClaimError(claim.id);
+  const [amount, setAmount] = useState('');
+  const queryClient = useQueryClient();
+  const once = useOneAtATime();
+
+  const save = useMutation({
+    mutationFn: (value: string) =>
+      putJson<Claim>(`/api/sheets/${encodeURIComponent(sheet)}/claims/${claim.id}?user=${encodeURIComponent(user)}`, {
+        amount: value,
+        date: claim.date,
+        note: claim.note,
+        corrects: claim.corrects ?? '',
+      }),
+    onSuccess: async () => {
+      setAmount('');
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+    },
+    onError: () => setError('That claim could not be saved.'),
+  });
+
+  return (
+    <>
+      <input
+        data-testid="claim-inline-amount"
+        placeholder="Amount"
+        value={amount}
+        onChange={(e) => {
+          setAmount(e.target.value);
+          setError('');
+        }}
+      />
+      <button
+        type="button"
+        data-testid="claim-inline-save"
+        disabled={save.isPending}
+        onClick={() => {
+          setError('');
+          if (refusal) {
+            setError(refusal);
+            return;
+          }
+          const value = amount.trim();
+          if (!SIGNED_AMOUNT.test(value)) {
+            setError('Type an amount with at most two decimals.');
+            return;
+          }
+          once(() => save.mutateAsync(value));
+        }}
+      >
+        Save amount
+      </button>
+    </>
   );
 }
