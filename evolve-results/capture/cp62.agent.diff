@@ -1,0 +1,626 @@
+diff --git a/src/main/frontend/features/session/SheetToday.tsx b/src/main/frontend/features/session/SheetToday.tsx
+index 81b0bbbe2..bb22d8663 100644
+--- a/src/main/frontend/features/session/SheetToday.tsx
++++ b/src/main/frontend/features/session/SheetToday.tsx
+@@ -1,18 +1,19 @@
+ import { useState } from 'react';
+ import type { FormEvent } from 'react';
+ import { useMutation, useQueryClient } from '@tanstack/react-query';
+-import { putJson } from '../../api/http';
++import { postJson, putJson } from '../../api/http';
+ import { sheetInfoKey, sheetKey, useCurrentSheet, useCurrentUser } from './session';
+ import type { SheetInfo } from './session';
+-import { useSheetToday } from './sheetToday';
++import { useSheetInfo, useSheetToday } from './sheetToday';
+ import { useOneAtATime } from '../../query/useOneAtATime';
+ 
+ // The sheet's own "today": shown, and changed by typing a date and saving. A blank date resets it
+-// to the real date.
++// to the real date. A steward can archive the sheet here: an archived sheet refuses every change.
+ export function SheetToday() {
+   const [user] = useCurrentUser();
+   const [sheet] = useCurrentSheet();
+   const today = useSheetToday();
++  const info = useSheetInfo();
+   const [date, setDate] = useState('');
+   const [error, setError] = useState('');
+   const queryClient = useQueryClient();
+@@ -29,6 +30,13 @@ export function SheetToday() {
+     onError: () => setError('That date could not be set as today.'),
+   });
+ 
++  const archive = useMutation({
++    mutationFn: () =>
++      postJson<SheetInfo>(`/api/sheets/${encodeURIComponent(sheet)}/archive?user=${encodeURIComponent(user)}`, {}),
++    onSuccess: (saved) => queryClient.setQueryData(sheetInfoKey(saved.id), saved),
++    onError: () => setError('The sheet could not be archived.'),
++  });
++
+   if (!user || !sheet) return null;
+ 
+   const submit = (e: FormEvent) => {
+@@ -59,6 +67,20 @@ export function SheetToday() {
+       <button type="submit" data-testid="sheet-today-save" disabled={save.isPending}>
+         Set today
+       </button>
++      <span>
++        {' '}Archived: <strong data-testid="sheet-archived">{info.data ? (info.data.archived ? 'yes' : 'no') : ''}</strong>{' '}
++      </span>
++      <button
++        type="button"
++        data-testid="sheet-archive"
++        disabled={archive.isPending}
++        onClick={() => {
++          setError('');
++          once(() => archive.mutateAsync());
++        }}
++      >
++        Archive sheet
++      </button>
+       {error && <span data-testid="sheet-error">{error}</span>}
+     </form>
+   );
+diff --git a/src/main/frontend/features/session/session.ts b/src/main/frontend/features/session/session.ts
+index de6bab4a1..8f040492a 100644
+--- a/src/main/frontend/features/session/session.ts
++++ b/src/main/frontend/features/session/session.ts
+@@ -8,8 +8,8 @@ export const useCurrentSheet = () => useSearchParam('sheet', asString);
+ /** The query key under which everything kept per sheet lives; re-loading a sheet invalidates it. */
+ export const sheetKey = (sheet: string) => ['sheet', sheet] as const;
+ 
+-/** A sheet as the store holds it: its id and its own "today" (yyyy-MM-dd). */
+-export type SheetInfo = { id: string; today: string };
++/** A sheet as the store holds it: its id, its own "today" (yyyy-MM-dd) and whether it is archived. */
++export type SheetInfo = { id: string; today: string; archived: boolean };
+ 
+ /** The query key for the sheet itself; under sheetKey, so re-loading the sheet re-reads it. */
+ export const sheetInfoKey = (sheet: string) => [...sheetKey(sheet), 'info'] as const;
+diff --git a/src/main/frontend/features/session/sheetToday.ts b/src/main/frontend/features/session/sheetToday.ts
+index 57eb94f7d..e176c29fe 100644
+--- a/src/main/frontend/features/session/sheetToday.ts
++++ b/src/main/frontend/features/session/sheetToday.ts
+@@ -8,11 +8,15 @@ import type { SheetInfo } from './session';
+  * every default date on screen uses this — never `new Date()`.
+  */
+ export function useSheetToday(): string {
++  return useSheetInfo().data?.today ?? '';
++}
++
++/** The active sheet as the store holds it (its id, today and whether it is archived). */
++export function useSheetInfo() {
+   const [sheet] = useCurrentSheet();
+-  const info = useQuery({
++  return useQuery({
+     queryKey: sheetInfoKey(sheet),
+     queryFn: () => getJson<SheetInfo>(`/api/sheets/${encodeURIComponent(sheet)}`),
+     enabled: !!sheet,
+   });
+-  return info.data?.today ?? '';
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/ApplySheetArchived.java b/src/main/java/net/officefloor/hq/app/sheet/ApplySheetArchived.java
+new file mode 100644
+index 000000000..8bb401aef
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/ApplySheetArchived.java
+@@ -0,0 +1,18 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.hq.app.setting.Role;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Archives the sheet; only a steward (given or delegated) may. */
++public class ApplySheetArchived {
++    public void apply(@Val Sheet sheet, @RequestParam("user") String user, SettingRepository settings,
++            Out<Sheet> updated) throws SheetArchivedException {
++        if (settings.find(sheet.id()).roleOf(user) != Role.STEWARD) {
++            throw new SheetArchivedException("Only a steward can archive the sheet.");
++        }
++        updated.set(new Sheet(sheet.id(), sheet.today(), true));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/ApplySheetToday.java b/src/main/java/net/officefloor/hq/app/sheet/ApplySheetToday.java
+index afbc726c6..2fa7fa58a 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/ApplySheetToday.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/ApplySheetToday.java
+@@ -6,6 +6,6 @@ import net.officefloor.plugin.variable.Val;
+ 
+ public class ApplySheetToday {
+     public void apply(@Val LocalDate today, @Val Sheet sheet, Out<Sheet> updated) {
+-        updated.set(new Sheet(sheet.id(), today));
++        updated.set(new Sheet(sheet.id(), today, sheet.archived()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/AuditSheetArchived.java b/src/main/java/net/officefloor/hq/app/sheet/AuditSheetArchived.java
+new file mode 100644
+index 000000000..80fb88c6c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/AuditSheetArchived.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Records the sheet just archived. */
++public class AuditSheetArchived {
++    public void audit(@Val Sheet sheet, @RequestParam("user") String user, Audit audit) {
++        audit.record("SHEET_ARCHIVED sheet=" + sheet.id() + " by=" + user);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/CheckNotArchived.java b/src/main/java/net/officefloor/hq/app/sheet/CheckNotArchived.java
+new file mode 100644
+index 000000000..0fc3a6707
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/CheckNotArchived.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.sheet;
++
++import org.springframework.web.bind.annotation.PathVariable;
++
++/** Refuses (400) any change to an archived sheet: it runs first, so a refused change writes nothing. */
++public class CheckNotArchived {
++    public void check(@PathVariable("sheetId") String sheetId, SheetRepository sheets) throws SheetArchivedException {
++        if (sheets.isArchived(sheetId)) {
++            throw new SheetArchivedException("An archived sheet cannot be changed.");
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/HandleSheetArchived.java b/src/main/java/net/officefloor/hq/app/sheet/HandleSheetArchived.java
+new file mode 100644
+index 000000000..308bfa871
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/HandleSheetArchived.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleSheetArchived {
++    public void handle(@Parameter SheetArchivedException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.BAD_REQUEST));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/Sheet.java b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+index 8cf28129f..4930e4580 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/Sheet.java
+@@ -5,6 +5,7 @@ import java.time.LocalDate;
+ /**
+  * A sheet: the unit everything else in the app is kept under. {@code today} is the sheet's own
+  * date — every date-dependent decision and every default date uses it, never the real clock.
++ * An {@code archived} sheet stays visible but refuses every change.
+  */
+-public record Sheet(String id, LocalDate today) {
++public record Sheet(String id, LocalDate today, boolean archived) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetArchivedException.java b/src/main/java/net/officefloor/hq/app/sheet/SheetArchivedException.java
+new file mode 100644
+index 000000000..1450cce73
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetArchivedException.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.sheet;
++
++/** A change asked for on an archived sheet, which can no longer be changed. */
++public class SheetArchivedException extends Exception {
++    public SheetArchivedException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+index ef3fd1dc1..a5ebeeae4 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetRepository.java
+@@ -25,8 +25,9 @@ public class SheetRepository {
+ 
+     /** The sheet with this id, or null when it was never loaded. */
+     public Sheet find(String id) {
+-        List<Sheet> found = jdbc.query("SELECT id, today FROM sheet WHERE id = ?",
+-                (rs, n) -> new Sheet(rs.getString("id"), rs.getDate("today").toLocalDate()), id);
++        List<Sheet> found = jdbc.query("SELECT id, today, archived FROM sheet WHERE id = ?",
++                (rs, n) -> new Sheet(rs.getString("id"), rs.getDate("today").toLocalDate(), rs.getBoolean("archived")),
++                id);
+         return found.isEmpty() ? null : found.get(0);
+     }
+ 
+@@ -71,7 +72,14 @@ public class SheetRepository {
+         }
+     }
+ 
++    /** Whether the sheet is archived: every change to an archived sheet is refused. */
++    public boolean isArchived(String id) {
++        Sheet sheet = find(id);
++        return sheet != null && sheet.archived();
++    }
++
+     public void save(Sheet sheet) {
+-        jdbc.update("UPDATE sheet SET today = ? WHERE id = ?", Date.valueOf(sheet.today()), sheet.id());
++        jdbc.update("UPDATE sheet SET today = ?, archived = ? WHERE id = ?", Date.valueOf(sheet.today()),
++                sheet.archived(), sheet.id());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java b/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java
+index d4c2365e9..55435df4f 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java
+@@ -1,8 +1,8 @@
+ package net.officefloor.hq.app.sheet;
+ 
+-public record SheetResponse(String id, String today) {
++public record SheetResponse(String id, String today, boolean archived) {
+ 
+     public static SheetResponse from(Sheet sheet) {
+-        return new SheetResponse(sheet.id(), sheet.today().toString());
++        return new SheetResponse(sheet.id(), sheet.today().toString(), sheet.archived());
+     }
+ }
+diff --git a/src/main/resources/db/migration/V42__sheet_archived.sql b/src/main/resources/db/migration/V42__sheet_archived.sql
+new file mode 100644
+index 000000000..78e10ad7a
+--- /dev/null
++++ b/src/main/resources/db/migration/V42__sheet_archived.sql
+@@ -0,0 +1,2 @@
++-- A steward can archive a sheet: it stays visible but every change to it is refused.
++ALTER TABLE sheet ADD COLUMN archived BOOLEAN DEFAULT FALSE NOT NULL;
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.sheet.SheetArchivedException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.sheet.SheetArchivedException.yml
+new file mode 100644
+index 000000000..0dab9f283
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.sheet.SheetArchivedException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.sheet.HandleSheetArchived
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/archive.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/archive.POST.yml
+new file mode 100644
+index 000000000..0e86dbec9
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/archive.POST.yml
+@@ -0,0 +1,23 @@
++# Archive the sheet (SHEET_ARCHIVED): only a steward may, and only once; afterwards every change to it is refused (400).
++archived:
++  class: net.officefloor.hq.app.sheet.CheckNotArchived
++  next: load
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ transaction ]
++  next: apply
++apply:
++  class: net.officefloor.hq.app.sheet.ApplySheetArchived
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.sheet.SaveSheet
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.sheet.AuditSheetArchived
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.sheet.RespondWithSheet
++  govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+index 758590861..1bb69093b 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+@@ -3,6 +3,9 @@
+ # A claim dated (before or after the edit) inside a closed period is refused (400).
+ # A claim edited to a date after its person's retirement date is refused (400).
+ # A correction is refused (400) on the same terms as an add.
++archived:
++  class: net.officefloor.hq.app.sheet.CheckNotArchived
++  next: viewer
+ viewer:
+   class: net.officefloor.hq.app.setting.CheckNotViewer
+   next: validate
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/deferral.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/deferral.PUT.yml
+index 43b0691ae..8ef5721eb 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/deferral.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/deferral.PUT.yml
+@@ -2,6 +2,9 @@
+ # not OPEN, a date not after today, or a claim dated inside a closed period is refused (400) and writes nothing.
+ # Until the sheet's today reaches the date the claim counts in no total, is not overdue, cannot be settled and is
+ # left unbound by a statement; from that day on it is an OPEN claim like any other.
++archived:
++  class: net.officefloor.hq.app.sheet.CheckNotArchived
++  next: viewer
+ viewer:
+   class: net.officefloor.hq.app.setting.CheckNotViewer
+   next: validate
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person.PUT.yml
+index a253bdc17..0f19d7297 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person.PUT.yml
+@@ -3,6 +3,9 @@
+ # claim's date is refused (400) and writes nothing. A claim dated inside a closed period is refused (400).
+ # The claim keeps its number and date, loses any figure a statement bound it to (live again), and is listed as its
+ # new person's newest claim.
++archived:
++  class: net.officefloor.hq.app.sheet.CheckNotArchived
++  next: viewer
+ viewer:
+   class: net.officefloor.hq.app.setting.CheckNotViewer
+   next: validate
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/proofs.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/proofs.POST.yml
+index 22714f29d..1c5118c54 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/proofs.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/proofs.POST.yml
+@@ -1,5 +1,8 @@
+ # Raise a claim's proofs count by one. A SETTLED or VOID claim, or a claim dated inside a closed period, is refused
+ # (400) and writes nothing.
++archived:
++  class: net.officefloor.hq.app.sheet.CheckNotArchived
++  next: viewer
+ viewer:
+   class: net.officefloor.hq.app.setting.CheckNotViewer
+   next: load
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/split.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/split.POST.yml
+index f187fa56c..58641792f 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/split.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/split.POST.yml
+@@ -3,6 +3,9 @@
+ # user, its due-by fixed now and the original's number as split-from, is listed as its person's newest claim.
+ # A PENDING, deferred, SETTLED (or any not OPEN) claim, one dated inside a closed period, an amount not more than 0.00
+ # and less than the claim's, or a role not allowed to open a claim, is refused (400) and writes nothing.
++archived:
++  class: net.officefloor.hq.app.sheet.CheckNotArchived
++  next: viewer
+ viewer:
+   class: net.officefloor.hq.app.setting.CheckNotViewer
+   next: validate
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
+index e5ae5272b..57cbcd421 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
+@@ -6,6 +6,9 @@
+ # Only a steward approves or rejects; the user who opened the claim cannot approve it.
+ # Only a steward re-settles (resettle: SETTLED -> SETTLED), freezing the claim again at today's figure as an open, unbound claim.
+ # A claim that ends SETTLED (settled, approved or re-settled) notifies each user watching its person.
++archived:
++  class: net.officefloor.hq.app.sheet.CheckNotArchived
++  next: viewer
+ viewer:
+   class: net.officefloor.hq.app.setting.CheckNotViewer
+   next: validate
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/delegations.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/delegations.POST.yml
+index 2a97d9a98..620591e9e 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/delegations.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/delegations.POST.yml
+@@ -1,5 +1,8 @@
+ # Delegate the steward role to a user name from a from-date to a to-date (blank: the sheet's today), both inclusive;
+ # anyone but a steward, a blank name or a to-date before the from-date is refused (400).
++archived:
++  class: net.officefloor.hq.app.sheet.CheckNotArchived
++  next: viewer
+ viewer:
+   class: net.officefloor.hq.app.setting.CheckNotViewer
+   next: load
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/generate-periods.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/generate-periods.POST.yml
+index 4e684b514..a5e34d1dc 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/generate-periods.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/generate-periods.POST.yml
+@@ -2,6 +2,9 @@
+ # sheet's today), each from the month's first to its last day, named yyyy-mm. A month whose name is already a period
+ # on the sheet, or whose days overlap one, is left out and the others are still made, each audited as PERIOD_ADDED.
+ # A bad date or a to-date before the from-date is refused (400). Answers how many were made.
++archived:
++  class: net.officefloor.hq.app.sheet.CheckNotArchived
++  next: viewer
+ viewer:
+   class: net.officefloor.hq.app.setting.CheckNotViewer
+   next: load
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste-claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste-claims.POST.yml
+index 16be05145..280065dc6 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste-claims.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste-claims.POST.yml
+@@ -2,6 +2,9 @@
+ # today; the note may be absent), in order, for the person on the sheet with that name (ignoring case). Every line
+ # is checked first with the claim form's rules (and its name must be on the sheet); any line refused refuses the
+ # whole paste (400) and nothing is added. Answers how many claims were added.
++archived:
++  class: net.officefloor.hq.app.sheet.CheckNotArchived
++  next: viewer
+ viewer:
+   class: net.officefloor.hq.app.setting.CheckNotViewer
+   next: validate
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+index 773407ad2..8d1ce21b6 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+@@ -1,4 +1,7 @@
+ # Add a person to the sheet; a blank name or a grade other than A, B, C is refused (400), as is a name already in use on the sheet (ignoring case).
++archived:
++  class: net.officefloor.hq.app.sheet.CheckNotArchived
++  next: viewer
+ viewer:
+   class: net.officefloor.hq.app.setting.CheckNotViewer
+   next: validate
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+index 158f67366..57c6f66b7 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+@@ -1,5 +1,8 @@
+ # Edit a person's name and grade; refused (400) on the same terms as an add.
+ # Refused (409) when the editor loaded a version of the person someone else has saved over since.
++archived:
++  class: net.officefloor.hq.app.sheet.CheckNotArchived
++  next: viewer
+ viewer:
+   class: net.officefloor.hq.app.setting.CheckNotViewer
+   next: validate
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+index 6c0de21b3..9744f9e98 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+@@ -1,6 +1,9 @@
+ # Add a claim to a person; an amount that is missing, negative or has more than two decimals, or a bad date, is refused (400). A blank date is the sheet's today.
+ # A claim dated inside a closed period, or after its person's retirement date, is refused (400).
+ # A negative amount (a correction) is refused (400) unless it names, by number, a SETTLED claim of the same person.
++archived:
++  class: net.officefloor.hq.app.sheet.CheckNotArchived
++  next: viewer
+ viewer:
+   class: net.officefloor.hq.app.setting.CheckNotViewer
+   next: validate
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.POST.yml
+index 141cde11d..4a47cf321 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.POST.yml
+@@ -1,6 +1,9 @@
+ # Add a hold to a person, from a date (blank: the sheet's today) to an optional to-date; a bad date or a to-date
+ # before the from-date is refused (400), a person not on the sheet (404). Only their open claims dated within a hold,
+ # and not bound by a statement, are left out of the live totals.
++archived:
++  class: net.officefloor.hq.app.sheet.CheckNotArchived
++  next: viewer
+ viewer:
+   class: net.officefloor.hq.app.setting.CheckNotViewer
+   next: validate
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml
+index d39c717a5..b548bdbb9 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml
+@@ -1,5 +1,8 @@
+ # Name another person on the sheet as one of the person's patrons. The person themselves, someone not on the
+ # sheet, or someone already their patron is refused (400); a person not on the sheet (404).
++archived:
++  class: net.officefloor.hq.app.sheet.CheckNotArchived
++  next: viewer
+ viewer:
+   class: net.officefloor.hq.app.setting.CheckNotViewer
+   next: validate
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml
+index 6e6d532b3..67a46f17c 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml
+@@ -1,5 +1,8 @@
+ # Retire a person from a date (blank: the sheet's today); a bad date is refused (400), a person not on the
+ # sheet (404). Their claims keep counting in every total; a claim dated after the date is refused from now on.
++archived:
++  class: net.officefloor.hq.app.sheet.CheckNotArchived
++  next: viewer
+ viewer:
+   class: net.officefloor.hq.app.setting.CheckNotViewer
+   next: validate
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml
+index 37f7064f1..6e46e4269 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml
+@@ -1,5 +1,8 @@
+ # Take a person's statement: record their due-total now and bind each of their counting claims to the
+ # figure it has now (unbinding the rest); a person not on the sheet is refused (404).
++archived:
++  class: net.officefloor.hq.app.sheet.CheckNotArchived
++  next: viewer
+ viewer:
+   class: net.officefloor.hq.app.setting.CheckNotViewer
+   next: load
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.POST.yml
+index 198b7aeef..bb35034f3 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.POST.yml
+@@ -1,4 +1,7 @@
+ # Add a period; a missing name, a bad date, a to-date before the from-date, a name already in use on the sheet, or dates overlapping another period, is refused (400).
++archived:
++  class: net.officefloor.hq.app.sheet.CheckNotArchived
++  next: viewer
+ viewer:
+   class: net.officefloor.hq.app.setting.CheckNotViewer
+   next: validate
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/close.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/close.POST.yml
+index 574f3dc3d..86c434a4a 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/close.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/close.POST.yml
+@@ -1,4 +1,7 @@
+ # Close a period, fixing its due-total as it stands now; an unknown or already closed period, or a user whose role the permission matrix does not allow closing, is refused (400).
++archived:
++  class: net.officefloor.hq.app.sheet.CheckNotArchived
++  next: viewer
+ viewer:
+   class: net.officefloor.hq.app.setting.CheckNotViewer
+   next: load
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/reopen.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/reopen.POST.yml
+index 8c1ac44c7..8badb2775 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/reopen.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/reopen.POST.yml
+@@ -1,5 +1,8 @@
+ # Reopen a closed period, by a steward only, so its due-total is live again; an unknown or open period, or a user
+ # who is not a steward, is refused (400).
++archived:
++  class: net.officefloor.hq.app.sheet.CheckNotArchived
++  next: viewer
+ viewer:
+   class: net.officefloor.hq.app.setting.CheckNotViewer
+   next: load
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-claims.POST.yml
+index 9ee27691b..b3ec34f57 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-claims.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-claims.POST.yml
+@@ -2,6 +2,9 @@
+ # typed name (ignoring case), adding them first with grade A when they are not on the sheet. Refused (400) on
+ # the person and claim forms' terms, all checked before anything is written, so a refusal adds no person.
+ # A person retired from before the sheet's today is refused (400).
++archived:
++  class: net.officefloor.hq.app.sheet.CheckNotArchived
++  next: viewer
+ viewer:
+   class: net.officefloor.hq.app.setting.CheckNotViewer
+   next: validate
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.PUT.yml
+index 808d8aed4..6921e327d 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.PUT.yml
+@@ -1,4 +1,7 @@
+ # Set a grade's rate from a from-date (blank: from the start) through an optional to-date (blank: no end), replacing any it had for that from-date; a bad from- or to-date, a to-date before the from-date, a bad grade, or a percent that is missing, negative or has more than two decimals, is refused (400).
++archived:
++  class: net.officefloor.hq.app.sheet.CheckNotArchived
++  next: viewer
+ viewer:
+   class: net.officefloor.hq.app.setting.CheckNotViewer
+   next: validate
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.PUT.yml
+index 6465aad2b..071ae879b 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.PUT.yml
+@@ -1,4 +1,7 @@
+ # Give a user name a role on the sheet (clerk, steward or viewer), replacing any it had; a blank name or another role is refused (400).
++archived:
++  class: net.officefloor.hq.app.sheet.CheckNotArchived
++  next: viewer
+ viewer:
+   class: net.officefloor.hq.app.setting.CheckNotViewer
+   next: validate
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml
+index 294cae481..bac3cc341 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml
+@@ -1,6 +1,9 @@
+ # Set the sheet's clerk limit (blank: no limit), its floor (blank: 1.00) and its terms in days (blank: 14) and each grade's own terms in days (blank: none, the sheet's terms) and its late percent (blank: 0.00) and its policy date (blank: the sheet's today) and its period numbering from date (blank: off) and its cap (blank: none) and its proof threshold (blank: none) and its permission matrix (by action, the roles allowed it, comma separated; blank: the standing rule) and its grace days (blank: off), each only when the request carries it;
+ # a value that is negative or has more than two decimals (terms: not whole days) is refused (400). A floor, late percent, policy date or cap moves the dues (terms do not: a claim's due-by is fixed when it is created), so the
+ # figures it moved are recorded after it.
++archived:
++  class: net.officefloor.hq.app.sheet.CheckNotArchived
++  next: viewer
+ viewer:
+   class: net.officefloor.hq.app.setting.CheckNotViewer
+   next: validate
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+index ac7581139..6490ca05e 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+@@ -1,5 +1,8 @@
+ # Change the sheet's today; a blank date resets it to the real date. Once it is set, every open period whose to-date
+ # plus the sheet's grace days (blank: off) is before the new today is closed, in order of their to-dates, as a close by hand would.
++archived:
++  class: net.officefloor.hq.app.sheet.CheckNotArchived
++  next: viewer
+ viewer:
+   class: net.officefloor.hq.app.setting.CheckNotViewer
+   next: validate
