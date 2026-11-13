@@ -6,6 +6,7 @@ import { usePeople } from '../people/people';
 import type { Claim } from './claims';
 import { AMOUNT, claimsKey } from './claims';
 import { useOneAtATime } from '../../query/useOneAtATime';
+import { useClaimError } from './claimError';
 
 type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle';
 
@@ -39,7 +40,7 @@ const REFUSED: Partial<Record<Action, string>> = {
 export function ClaimStatus({ claim }: { claim: Claim }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
-  const [error, setError] = useState('');
+  const [error, setError] = useClaimError(claim.id);
   const [reason, setReason] = useState('');
   const [moveTo, setMoveTo] = useState('');
   const [deferTo, setDeferTo] = useState('');

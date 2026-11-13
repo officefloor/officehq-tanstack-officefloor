@@ -4,7 +4,9 @@ import net.officefloor.plugin.variable.Val;
 import net.officefloor.web.ObjectResponse;
 
 public class RespondWithClaim {
-    public void respond(@Val Claim claim, ClaimLogRepository logs, ObjectResponse<ClaimResponse> response) {
-        response.send(ClaimResponse.from(claim, logs.find(claim.sheetId(), claim.id())));
+    public void respond(@Val Claim claim, ClaimLogRepository logs, ClaimLockRepository locks,
+            ObjectResponse<ClaimResponse> response) {
+        response.send(ClaimResponse.from(claim, logs.find(claim.sheetId(), claim.id()),
+                locks.lockedBy(claim.sheetId(), claim.id())));
     }
 }
