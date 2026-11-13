@@ -1,0 +1,549 @@
+diff --git a/src/main/frontend/api/http.ts b/src/main/frontend/api/http.ts
+index c7eeccaef..fc21be0a8 100644
+--- a/src/main/frontend/api/http.ts
++++ b/src/main/frontend/api/http.ts
+@@ -7,7 +7,21 @@ export class HttpError extends Error {
+   }
+ }
+ 
++/**
++ * The date this screen shows the sheet as of (yyyy-MM-dd), or '' when it shows the sheet now. It is
++ * the `asof` search param (features/session/AsOf), read here so every read of the sheet carries it
++ * and every change is refused while it is set.
++ */
++export function currentAsOf(): string {
++  const raw = new URLSearchParams(window.location.search).get('asof') ?? '';
++  return raw.replace(/^"(.*)"$/, '$1');
++}
++
+ async function send<T>(path: string, init?: RequestInit): Promise<T> {
++  // A screen showing the sheet as of a date changes nothing; loading a sheet is not a change.
++  if (init?.method && init.method !== 'GET' && path !== '/api/sheets' && currentAsOf()) {
++    throw new HttpError(`${init.method} ${path} refused: the sheet is shown as of ${currentAsOf()}`, 400);
++  }
+   const res = await fetch(path, init);
+   if (!res.ok) {
+     throw new HttpError(`${init?.method ?? 'GET'} ${path} -> ${res.status}`, res.status);
+@@ -16,6 +30,10 @@ async function send<T>(path: string, init?: RequestInit): Promise<T> {
+ }
+ 
+ export function getJson<T>(path: string): Promise<T> {
++  const asOf = currentAsOf();
++  if (asOf && path.startsWith('/api/sheets/')) {
++    return send<T>(`${path}${path.includes('?') ? '&' : '?'}asOf=${encodeURIComponent(asOf)}`);
++  }
+   return send<T>(path);
+ }
+ 
+diff --git a/src/main/frontend/features/session/AsOf.tsx b/src/main/frontend/features/session/AsOf.tsx
+new file mode 100644
+index 000000000..dc2e75fb3
+--- /dev/null
++++ b/src/main/frontend/features/session/AsOf.tsx
+@@ -0,0 +1,78 @@
++import { useState } from 'react';
++import type { FormEvent } from 'react';
++import { useQueryClient } from '@tanstack/react-query';
++import { useNavigate } from '@tanstack/react-router';
++import { asString, useSearchParam } from '../../url/useSearchParam';
++import { sheetKey, useCurrentSheet, useCurrentUser } from './session';
++
++// The date this screen shows the sheet as of: every figure, flag, list and line as it stood at the
++// end of that date, with the date standing in for the sheet's today. It belongs to this screen only
++// (the `asof` search param); while it is set every change is refused (api/http).
++export function AsOf() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const [asOf] = useSearchParam('asof', asString);
++  const [date, setDate] = useState('');
++  const [error, setError] = useState('');
++  const navigate = useNavigate();
++  const queryClient = useQueryClient();
++
++  if (!user || !sheet) return null;
++
++  const show = async (value: string) => {
++    await navigate({
++      to: '.',
++      search: (prev: Record<string, unknown>) => {
++        const next = { ...prev };
++        if (value) next.asof = value;
++        else delete next.asof;
++        return next;
++      },
++      replace: true,
++    });
++    // Everything kept per sheet is re-read as of the new date.
++    await queryClient.invalidateQueries({ queryKey: sheetKey(sheet) });
++  };
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    const trimmed = date.trim();
++    setError('');
++    if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed) || Number.isNaN(Date.parse(trimmed))) {
++      setError('Type a date as yyyy-mm-dd.');
++      return;
++    }
++    void show(trimmed);
++  };
++
++  return (
++    <form onSubmit={submit}>
++      <span>
++        As of: <strong data-testid="sheet-asof">{asOf}</strong>{' '}
++      </span>
++      <input
++        data-testid="asof-date"
++        placeholder="yyyy-mm-dd"
++        value={date}
++        onChange={(e) => {
++          setDate(e.target.value);
++          setError('');
++        }}
++      />
++      <button type="submit" data-testid="asof-set">
++        Set as of
++      </button>
++      <button
++        type="button"
++        data-testid="asof-clear"
++        onClick={() => {
++          setError('');
++          void show('');
++        }}
++      >
++        Clear as of
++      </button>
++      {error && <span data-testid="asof-error">{error}</span>}
++    </form>
++  );
++}
+diff --git a/src/main/frontend/features/session/header.slot.tsx b/src/main/frontend/features/session/header.slot.tsx
+index 18bb697e0..d88e43fca 100644
+--- a/src/main/frontend/features/session/header.slot.tsx
++++ b/src/main/frontend/features/session/header.slot.tsx
+@@ -1,4 +1,5 @@
+ import { AppHeader } from '../../slots/defs/appHeader';
++import { AsOf } from './AsOf';
+ import { SheetPicker } from './SheetPicker';
+ import { SheetToday } from './SheetToday';
+ import { SignIn } from './SignIn';
+@@ -7,4 +8,5 @@ export const contributions = [
+   AppHeader.fill({ order: 0, Component: SignIn }),
+   AppHeader.fill({ order: 10, Component: SheetPicker }),
+   AppHeader.fill({ order: 20, Component: SheetToday }),
++  AppHeader.fill({ order: 25, Component: AsOf }),
+ ];
+diff --git a/src/main/frontend/features/statements/PersonStatement.tsx b/src/main/frontend/features/statements/PersonStatement.tsx
+index 5060d46a1..42c81b754 100644
+--- a/src/main/frontend/features/statements/PersonStatement.tsx
++++ b/src/main/frontend/features/statements/PersonStatement.tsx
+@@ -29,13 +29,14 @@ export function PersonStatement({ person }: { person: Person }) {
+         { asof: date },
+       ),
+     onSuccess: async () => {
+-      setAsof('');
+       await Promise.all([
+         queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+         queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+       ]);
+     },
+     onError: () => setError('The statement could not be taken.'),
++    // The date was for this statement only: the next one is taken now unless a date is typed again.
++    onSettled: () => setAsof(''),
+   });
+ 
+   const cancel = useMutation({
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfConnections.java b/src/main/java/net/officefloor/hq/app/asof/AsOfConnections.java
+new file mode 100644
+index 000000000..45ed41aeb
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfConnections.java
+@@ -0,0 +1,50 @@
++package net.officefloor.hq.app.asof;
++
++import java.sql.Connection;
++import java.sql.SQLException;
++import java.sql.Statement;
++import javax.sql.DataSource;
++import org.springframework.beans.factory.config.BeanPostProcessor;
++import org.springframework.jdbc.datasource.DelegatingDataSource;
++import org.springframework.stereotype.Component;
++
++/**
++ * Every connection is handed out reading the store as it stands now, or, for a request reading the sheet as of a date
++ * ({@link AsOfView}), reading that date's schema with the date as the sheet's today. Set on every hand-out, so a
++ * pooled connection never passes one request's view on to the next.
++ */
++@Component
++public class AsOfConnections implements BeanPostProcessor {
++
++    @Override
++    public Object postProcessAfterInitialization(Object bean, String beanName) {
++        if (bean instanceof DataSource dataSource && !(bean instanceof DelegatingDataSource)) {
++            return new DelegatingDataSource(dataSource) {
++                @Override
++                public Connection getConnection() throws SQLException {
++                    return viewed(super.getConnection());
++                }
++
++                @Override
++                public Connection getConnection(String username, String password) throws SQLException {
++                    return viewed(super.getConnection(username, password));
++                }
++            };
++        }
++        return bean;
++    }
++
++    private static Connection viewed(Connection connection) throws SQLException {
++        AsOfView view = AsOfView.current();
++        try (Statement s = connection.createStatement()) {
++            if (view == null) {
++                s.execute("SET SCHEMA PUBLIC");
++                s.execute("SET @asof = NULL");
++            } else {
++                s.execute("SET SCHEMA " + view.schema());
++                s.execute("SET @asof = DATE '" + view.date() + "'");
++            }
++        }
++        return connection;
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfFilter.java b/src/main/java/net/officefloor/hq/app/asof/AsOfFilter.java
+new file mode 100644
+index 000000000..1a7a300e7
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfFilter.java
+@@ -0,0 +1,65 @@
++package net.officefloor.hq.app.asof;
++
++import jakarta.servlet.FilterChain;
++import jakarta.servlet.ServletException;
++import jakarta.servlet.http.HttpServletRequest;
++import jakarta.servlet.http.HttpServletResponse;
++import java.io.IOException;
++import java.net.URLDecoder;
++import java.nio.charset.StandardCharsets;
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
++import java.util.regex.Matcher;
++import java.util.regex.Pattern;
++import org.springframework.core.Ordered;
++import org.springframework.core.annotation.Order;
++import org.springframework.http.HttpStatus;
++import org.springframework.stereotype.Component;
++import org.springframework.web.filter.OncePerRequestFilter;
++
++/**
++ * A read of a sheet ({@code GET /api/sheets/<id>...}) with {@code ?asOf=<yyyy-MM-dd>} reads the whole sheet as it
++ * stood at the end of the last day on or before that date ({@link SheetDayRepository#schemaAsOf}), with the date
++ * standing in for the sheet's today: every endpoint reads it unchanged, as every connection the request takes is
++ * pointed at that sheet. Only reads are viewed so; a change is never made as of a date.
++ */
++@Component
++@Order(Ordered.HIGHEST_PRECEDENCE)
++public class AsOfFilter extends OncePerRequestFilter {
++
++    private static final Pattern SHEET_READ = Pattern.compile("^/api/sheets/([^/]+)(/.*)?$");
++
++    private final SheetDayRepository days;
++
++    public AsOfFilter(SheetDayRepository days) {
++        this.days = days;
++    }
++
++    @Override
++    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
++            throws ServletException, IOException {
++        String asOf = request.getParameter("asOf");
++        Matcher read = SHEET_READ.matcher(request.getRequestURI());
++        if (!"GET".equals(request.getMethod()) || asOf == null || asOf.isBlank() || !read.matches()) {
++            AsOfView.set(null);
++            chain.doFilter(request, response);
++            return;
++        }
++        LocalDate date;
++        try {
++            date = LocalDate.parse(asOf.trim());
++        } catch (DateTimeParseException e) {
++            response.sendError(HttpStatus.BAD_REQUEST.value(), "Not a date: " + asOf);
++            return;
++        }
++        String sheetId = URLDecoder.decode(read.group(1), StandardCharsets.UTF_8);
++        AsOfView.set(null);
++        String schema = days.schemaAsOf(sheetId, date);
++        AsOfView.set(new AsOfView(schema, date));
++        try {
++            chain.doFilter(request, response);
++        } finally {
++            AsOfView.set(null);
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfSchemas.java b/src/main/java/net/officefloor/hq/app/asof/AsOfSchemas.java
+new file mode 100644
+index 000000000..0116539a4
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfSchemas.java
+@@ -0,0 +1,141 @@
++package net.officefloor.hq.app.asof;
++
++import java.sql.Connection;
++import java.sql.PreparedStatement;
++import java.sql.ResultSet;
++import java.sql.SQLException;
++import java.sql.Statement;
++import java.util.ArrayList;
++import java.util.List;
++import java.util.UUID;
++import javax.sql.DataSource;
++import org.springframework.stereotype.Component;
++
++/**
++ * The schemas a sheet is read from as of a date. Each holds every table the app keeps (under its own name, so every
++ * repository reads it unchanged once a request's connection is switched to it), with {@code sheet} a view whose today
++ * is the session's {@code @asof} date:
++ * <ul>
++ * <li>a snapshot: a copy of the sheet's rows as they stood at a moment;</li>
++ * <li>{@link #LIVE}: the sheet as it stands now;</li>
++ * <li>{@link #EMPTY}: nothing on the sheet yet (every setting at its default).</li>
++ * </ul>
++ * Schemas are made on connections of their own (H2 commits DDL), never on a request's transaction.
++ */
++@Component
++public class AsOfSchemas {
++
++    public static final String LIVE = "ASOF_LIVE";
++    public static final String EMPTY = "ASOF_EMPTY";
++
++    private static final String SHEET = "SHEET";
++    private static final List<String> NOT_COPIED = List.of("SHEET_DAY", "flyway_schema_history");
++
++    private final DataSource dataSource;
++    private boolean shared;
++
++    public AsOfSchemas(DataSource dataSource) {
++        this.dataSource = dataSource;
++    }
++
++    /** Copy every row kept for the sheet, as committed now, into a new schema; its name. */
++    public String snapshot(String sheetId) {
++        String schema = "ASOF_" + UUID.randomUUID().toString().replace("-", "").toUpperCase();
++        String id = "'" + sheetId.replace("'", "''") + "'";
++        try (Connection c = dataSource.getConnection(); Statement s = c.createStatement()) {
++            c.setAutoCommit(true);
++            s.execute("CREATE SCHEMA " + schema);
++            for (String table : tables(c)) {
++                s.execute("CREATE TABLE " + schema + "." + q(table) + " AS SELECT * FROM PUBLIC." + q(table)
++                        + " WHERE SHEET_ID = " + id);
++            }
++            s.execute("CREATE TABLE " + schema + ".SHEET_DATA AS SELECT * FROM PUBLIC.SHEET WHERE ID = " + id);
++            s.execute("CREATE VIEW " + schema + ".SHEET AS SELECT " + sheetColumns(c, false) + " FROM " + schema
++                    + ".SHEET_DATA s");
++        } catch (SQLException e) {
++            throw new IllegalStateException("Could not keep sheet " + sheetId + " as it stands", e);
++        }
++        return schema;
++    }
++
++    /** Make the live and empty schemas, once. */
++    public synchronized void ensureShared() {
++        if (shared) {
++            return;
++        }
++        try (Connection c = dataSource.getConnection(); Statement s = c.createStatement()) {
++            c.setAutoCommit(true);
++            s.execute("DROP SCHEMA IF EXISTS " + LIVE + " CASCADE");
++            s.execute("DROP SCHEMA IF EXISTS " + EMPTY + " CASCADE");
++            s.execute("CREATE SCHEMA " + LIVE);
++            s.execute("CREATE SCHEMA " + EMPTY);
++            for (String table : tables(c)) {
++                s.execute("CREATE VIEW " + LIVE + "." + q(table) + " AS SELECT * FROM PUBLIC." + q(table));
++                s.execute("CREATE TABLE " + EMPTY + "." + q(table) + " AS SELECT * FROM PUBLIC." + q(table)
++                        + " WITH NO DATA");
++            }
++            s.execute("CREATE VIEW " + LIVE + ".SHEET AS SELECT " + sheetColumns(c, false) + " FROM PUBLIC.SHEET s");
++            s.execute("CREATE VIEW " + EMPTY + ".SHEET AS SELECT " + sheetColumns(c, true) + " FROM PUBLIC.SHEET s");
++        } catch (SQLException e) {
++            throw new IllegalStateException("Could not make the as-of schemas", e);
++        }
++        shared = true;
++    }
++
++    /** Every table kept per sheet (each has a SHEET_ID column), other than the sheet itself. */
++    private static List<String> tables(Connection c) throws SQLException {
++        List<String> tables = new ArrayList<>();
++        try (PreparedStatement p = c.prepareStatement("SELECT t.TABLE_NAME FROM INFORMATION_SCHEMA.TABLES t"
++                + " WHERE t.TABLE_SCHEMA = 'PUBLIC' AND t.TABLE_TYPE = 'BASE TABLE' AND EXISTS (SELECT 1 FROM"
++                + " INFORMATION_SCHEMA.COLUMNS c WHERE c.TABLE_SCHEMA = 'PUBLIC' AND c.TABLE_NAME = t.TABLE_NAME"
++                + " AND c.COLUMN_NAME = 'SHEET_ID') ORDER BY t.TABLE_NAME"); ResultSet rs = p.executeQuery()) {
++            while (rs.next()) {
++                String table = rs.getString(1);
++                if (!NOT_COPIED.contains(table) && !SHEET.equals(table)) {
++                    tables.add(table);
++                }
++            }
++        }
++        return tables;
++    }
++
++    /**
++     * The sheet's columns, read from {@code s}, with its today the session's {@code @asof} date; {@code defaults}
++     * puts every other column but its id at its default, as on a sheet nothing was done to yet.
++     */
++    private static String sheetColumns(Connection c, boolean defaults) throws SQLException {
++        List<String> columns = new ArrayList<>();
++        try (PreparedStatement p = c.prepareStatement("SELECT COLUMN_NAME, COLUMN_DEFAULT, DATA_TYPE,"
++                + " NUMERIC_PRECISION, NUMERIC_SCALE, CHARACTER_MAXIMUM_LENGTH FROM INFORMATION_SCHEMA.COLUMNS"
++                + " WHERE TABLE_SCHEMA = 'PUBLIC' AND TABLE_NAME = 'SHEET' ORDER BY ORDINAL_POSITION");
++                ResultSet rs = p.executeQuery()) {
++            while (rs.next()) {
++                String name = rs.getString("COLUMN_NAME");
++                String column = q(name);
++                if ("TODAY".equals(name)) {
++                    columns.add("COALESCE(CAST(@asof AS DATE), s.TODAY) AS TODAY");
++                } else if (!defaults || "ID".equals(name) || "STARTED".equals(name)) {
++                    columns.add("s." + column);
++                } else {
++                    String value = rs.getString("COLUMN_DEFAULT");
++                    columns.add("CAST(" + (value == null ? "NULL" : value) + " AS " + type(rs) + ") AS " + column);
++                }
++            }
++        }
++        return String.join(", ", columns);
++    }
++
++    private static String type(ResultSet rs) throws SQLException {
++        String type = rs.getString("DATA_TYPE");
++        return switch (type) {
++            case "NUMERIC", "DECIMAL" -> type + "(" + rs.getInt("NUMERIC_PRECISION") + ", " + rs.getInt("NUMERIC_SCALE")
++                    + ")";
++            case "CHARACTER VARYING" -> "VARCHAR(" + rs.getLong("CHARACTER_MAXIMUM_LENGTH") + ")";
++            default -> type;
++        };
++    }
++
++    private static String q(String name) {
++        return "\"" + name + "\"";
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/asof/AsOfView.java b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+new file mode 100644
+index 000000000..bfbd6d2da
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/asof/AsOfView.java
+@@ -0,0 +1,26 @@
++package net.officefloor.hq.app.asof;
++
++import java.time.LocalDate;
++
++/**
++ * The sheet as a request reads it as of a date: the schema ({@link AsOfSchemas}) holding it as it stood at the end of
++ * that date, and the date, which stands in for the sheet's today. Held for the request's thread by {@link AsOfFilter}
++ * and applied to every connection it takes by {@link AsOfConnections}.
++ */
++public record AsOfView(String schema, LocalDate date) {
++
++    private static final ThreadLocal<AsOfView> CURRENT = new ThreadLocal<>();
++
++    /** The view the current request reads, or null: the store as it stands now. */
++    public static AsOfView current() {
++        return CURRENT.get();
++    }
++
++    static void set(AsOfView view) {
++        if (view == null) {
++            CURRENT.remove();
++        } else {
++            CURRENT.set(view);
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/asof/SheetDayRepository.java b/src/main/java/net/officefloor/hq/app/asof/SheetDayRepository.java
+index 0450845c8..447890f42 100644
+--- a/src/main/java/net/officefloor/hq/app/asof/SheetDayRepository.java
++++ b/src/main/java/net/officefloor/hq/app/asof/SheetDayRepository.java
+@@ -27,9 +27,11 @@ public class SheetDayRepository {
+     private final ClaimRepository claims;
+     private final RateRepository rates;
+     private final SettingRepository settings;
++    private final AsOfSchemas schemas;
+ 
+     public SheetDayRepository(JdbcTemplate jdbc, PersonRepository people, ClaimRepository claims, RateRepository rates,
+-            SettingRepository settings) {
++            SettingRepository settings, AsOfSchemas schemas) {
++        this.schemas = schemas;
+         this.jdbc = jdbc;
+         this.people = people;
+         this.claims = claims;
+@@ -41,8 +43,25 @@ public class SheetDayRepository {
+     public void record(String sheetId, LocalDate from, LocalDate to) {
+         SheetState now = new SheetState(people.findAll(sheetId), claims.findAll(sheetId), rates.findAll(sheetId),
+                 settings.dated(sheetId).history(), settings.policyDate(sheetId));
+-        jdbc.update("INSERT INTO sheet_day (sheet_id, from_today, to_today, state) VALUES (?, ?, ?, ?)", sheetId,
+-                Date.valueOf(from), Date.valueOf(to), JSON.writeValueAsString(now));
++        jdbc.update("INSERT INTO sheet_day (sheet_id, from_today, to_today, state, snapshot) VALUES (?, ?, ?, ?, ?)",
++                sheetId, Date.valueOf(from), Date.valueOf(to), JSON.writeValueAsString(now), schemas.snapshot(sheetId));
++    }
++
++    /**
++     * The schema ({@link AsOfSchemas}) holding the sheet as it stood at the end of the date: a snapshot, the sheet as
++     * it stands now, or an empty sheet before it was first loaded.
++     */
++    public String schemaAsOf(String sheetId, LocalDate date) {
++        schemas.ensureShared();
++        Long kept = keptAsOf(sheetId, date);
++        if (kept == null) {
++            return AsOfSchemas.LIVE;
++        }
++        if (kept < 0) {
++            return AsOfSchemas.EMPTY;
++        }
++        String snapshot = jdbc.queryForObject("SELECT snapshot FROM sheet_day WHERE id = ?", String.class, kept);
++        return snapshot == null ? AsOfSchemas.LIVE : snapshot;
+     }
+ 
+     /**
+@@ -50,6 +69,19 @@ public class SheetDayRepository {
+      * past the date since it was last on or before it). Before the sheet was first loaded nothing was on it.
+      */
+     public SheetState asOf(String sheetId, LocalDate date) {
++        Long kept = keptAsOf(sheetId, date);
++        if (kept == null) {
++            return null;
++        }
++        if (kept < 0) {
++            return SheetState.EMPTY;
++        }
++        String state = jdbc.queryForObject("SELECT state FROM sheet_day WHERE id = ?", String.class, kept);
++        return JSON.readValue(state, SheetState.class);
++    }
++
++    /** The sheet_day kept as the sheet stood at the end of the date; null: as it stands now; -1: empty. */
++    private Long keptAsOf(String sheetId, LocalDate date) {
+         List<LocalDate> started = jdbc.query("SELECT started FROM sheet WHERE id = ?",
+                 (rs, n) -> rs.getObject("started", LocalDate.class), sheetId);
+         boolean empty = !started.isEmpty() && started.get(0) != null && started.get(0).isAfter(date);
+@@ -67,9 +99,8 @@ public class SheetDayRepository {
+             }
+         }
+         if (kept != null) {
+-            String state = jdbc.queryForObject("SELECT state FROM sheet_day WHERE id = ?", String.class, kept);
+-            return JSON.readValue(state, SheetState.class);
++            return kept;
+         }
+-        return empty ? SheetState.EMPTY : null;
++        return empty ? -1L : null;
+     }
+ }
+diff --git a/src/main/resources/db/migration/V48__sheet_day_snapshot.sql b/src/main/resources/db/migration/V48__sheet_day_snapshot.sql
+new file mode 100644
+index 000000000..97d18cd0f
+--- /dev/null
++++ b/src/main/resources/db/migration/V48__sheet_day_snapshot.sql
+@@ -0,0 +1,3 @@
++-- The schema holding a copy of every row kept for the sheet as it stood when its today moved on (see AsOfSchemas), so
++-- the whole screen can be read as of an earlier date.
++ALTER TABLE sheet_day ADD COLUMN snapshot VARCHAR(64);
