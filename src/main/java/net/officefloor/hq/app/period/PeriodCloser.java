@@ -67,7 +67,7 @@ public class PeriodCloser {
                 continue;
             }
             BigDecimal figure = claim.due(Rate.inForce(sheetRates, person.gradeOn(claim.date()), claim.date()),
-                    dated.floorOn(claim.date()), dated.lateCharge(claim.date(), today), rounding);
+                    dated.floorOn(claim.date()), dated.lateCharge(today), rounding);
             if (figure != null) {
                 total = total.add(figure);
                 perPerson.merge(person.id(), figure, BigDecimal::add);

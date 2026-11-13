@@ -64,9 +64,9 @@ public record DatedSettings(Map<String, NavigableMap<LocalDate, String>> values)
         return value == null ? SettingRepository.DEFAULT_LATE_PCT : new BigDecimal(value).setScale(2);
     }
 
-    /** What an overdue claim of the date is charged on the given today: the late percent in force on its date. */
-    public LateCharge lateCharge(LocalDate claimDate, LocalDate today) {
-        return new LateCharge(latePctOn(claimDate), today);
+    /** What an overdue claim is charged on the given today: the late percent in force on each 30-day boundary. */
+    public LateCharge lateCharge(LocalDate today) {
+        return new LateCharge(this::latePctOn, today);
     }
 
     /** The sheet's terms in days in force on the date. */

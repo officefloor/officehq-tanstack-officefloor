@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { bound, counts } from '../claims/claims';
 import type { Claim } from '../claims/claims';
-import { latePeriods } from '../overdue/dueBy';
+import { lateBoundary, latePeriods } from '../overdue/dueBy';
 import { gradeOn } from '../people/people';
 import type { GradeFrom, Hold } from '../people/people';
 import { sheetKey, useCurrentSheet } from '../session/session';
@@ -103,13 +103,19 @@ function claimFigure(claim: Claim, rates: Rate[], grades: GradeFrom[], rules: Du
 }
 
 /**
- * The late charge on a figure: the late percent in force on the claim's date of it for every full 30 days the claim is overdue,
- * rounded like the claim's due; 0.00 when it is not overdue, and always for a correction.
+ * The late charge on a figure: for every full 30 days the claim is overdue, the late percent in force on that boundary date
+ * (its due-by plus 30, 60, 90 ... days) of it, rounded like the claim's due, the charges added up (a boundary at 0.00 adds
+ * nothing); 0.00 when it is not overdue, and always for a correction.
  */
 export function lateCharge(claim: Claim, figure: string, rules: DueRules): string {
   if (claim.corrects !== null) return '0.00';
   const periods = latePeriods(claim, rules.today);
-  return percentOf(hundredths(figure), hundredths(rules.latePctOn(claim.date)) * periods, roundingFor(claim, rules));
+  const charges: string[] = [];
+  for (let period = 1; period <= periods; period++) {
+    const pct = hundredths(rules.latePctOn(lateBoundary(claim, period)));
+    if (pct !== 0) charges.push(percentOf(hundredths(figure), pct, roundingFor(claim, rules)));
+  }
+  return total(charges);
 }
 
 /**

@@ -12,3 +12,8 @@ export function latePeriods(claim: Claim, today: string): number {
   const days = (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${claim.dueBy}T00:00:00Z`)) / 86_400_000;
   return Math.floor(Math.round(days) / 30);
 }
+
+/** The date the claim's nth (1, 2, ...) full 30-day overdue period ends: its due-by plus 30 × n days (yyyy-MM-dd). */
+export function lateBoundary(claim: Claim, period: number): string {
+  return new Date(Date.parse(`${claim.dueBy}T00:00:00Z`) + period * 30 * 86_400_000).toISOString().slice(0, 10);
+}

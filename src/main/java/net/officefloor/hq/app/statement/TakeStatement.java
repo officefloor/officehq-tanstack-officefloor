@@ -47,7 +47,7 @@ public class TakeStatement {
             counted++;
             kept |= fixed || figure != null;
             if (figure != null) {
-                total = total.add(figure).add(dated.lateCharge(claim.date(), today).on(claim, figure, rounding.modeFor(claim)));
+                total = total.add(figure).add(dated.lateCharge(today).on(claim, figure, rounding.modeFor(claim)));
             }
         }
         String dueTotal = Rate.inForce(sheetRates, person.grade(), today) == null && !kept ? "n/a"
