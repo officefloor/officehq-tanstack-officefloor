@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { asOfKey, asOfPath, sheetKey } from '../sheet/sheet';
 import { useAsOf } from '../../session/session';
+import { dueTotal } from '../rates/rates';
 
 /** A member of a pool: a person on the sheet, or another pool (`memberPoolId` set, `personId` null), and its share
  *  percent (two decimals). `retired` once a retirement date is set for them, whatever the date: their share still
@@ -32,6 +33,10 @@ export type Pool = { id: number; name: string; members: PoolMember[]; totalShare
 
 /** Under the sheet's key, so loading the sheet again re-reads its pools. */
 export const poolsKey = (sheet: string) => [...sheetKey(sheet), 'pools'] as const;
+
+/** A person's cut total: their cuts across every pool they are a member of, a pool showing no cut adding nothing. */
+export const cutTotal = (pools: Pool[], personId: number) =>
+  dueTotal(pools.flatMap((p) => p.members.filter((m) => m.personId === personId && m.cut !== null).map((m) => m.cut as string)));
 
 export function usePools(sheet: string) {
   const [asOf] = useAsOf();

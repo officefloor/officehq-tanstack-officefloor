@@ -9,7 +9,7 @@ import { useSheetToday } from '../sheet/sheet';
 import { lateOf, reviewLate } from '../overdue/overdue';
 import { useVoidReasons } from '../voidreasons/voidreasons';
 import { useFigure } from '../locale/locale';
-import { useShared } from '../rates/due.slot';
+import { useCapOf, useShared } from '../rates/due.slot';
 
 // The sheet at a glance, worked out from the same figures the lists show: per grade, the people on it
 // today (retired people excluded), their due-totals added up (skipping n/a) and how many of them are
@@ -29,11 +29,12 @@ function Summary() {
   const late = lateOf(settings, today, people.data);
   const voidReasons = useVoidReasons(sheet).data ?? [];
   const shared = useShared(sheet);
+  const capOf = useCapOf(sheet);
 
   const active = (people.data ?? []).filter((p) => !p.retired);
   const onGrade = (grade: string) => active.filter((p) => gradeOn(p.grades, today) === grade);
   const dueOf = (p: (typeof active)[number]) =>
-    personDue(live((claims.data ?? []).filter((c) => c.personId === p.id), [p]), rates.data, p.grades, today, floor, late, settings?.cap, shared(p));
+    personDue(live((claims.data ?? []).filter((c) => c.personId === p.id), [p]), rates.data, p.grades, today, floor, late, capOf(p), shared(p));
 
   const periodTotal = (p: NonNullable<typeof periods.data>[number]) =>
     periodDue(p, claims.data, people.data, rates.data, floor, late);

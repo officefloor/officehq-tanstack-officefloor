@@ -6,7 +6,7 @@ import { personDue, useRates } from '../rates/rates';
 import { floorOf, useSettings } from '../settings/settings';
 import { useSheetToday } from '../sheet/sheet';
 import { gradeOn, usePeople } from './people';
-import { useShared } from '../rates/due.slot';
+import { useCapOf, useShared } from '../rates/due.slot';
 
 /** A CSV value: wrapped in double quotes, inner quotes doubled, when it holds a comma, quote or line break. */
 const cell = (v: string) => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
@@ -23,6 +23,7 @@ function ExportPeople() {
   const settingsQuery = useSettings(sheet);
   const settings = settingsQuery.data;
   const shared = useShared(sheet);
+  const capOf = useCapOf(sheet);
 
   if (!user || !sheet) return null;
 
@@ -33,7 +34,7 @@ function ExportPeople() {
     const late = lateOf(settings, today, people.data);
     const lines = [['name', 'grade', 'retired-from', 'due-total']];
     for (const p of people.data ?? []) {
-      const due = personDue(live((claims.data ?? []).filter((c) => c.personId === p.id), [p]), rates.data, p.grades, today, floorOf(settings), late, settings?.cap, shared(p));
+      const due = personDue(live((claims.data ?? []).filter((c) => c.personId === p.id), [p]), rates.data, p.grades, today, floorOf(settings), late, capOf(p), shared(p));
       lines.push([p.name, gradeOn(p.grades, today), p.retiredFrom ?? '', due]);
     }
     const csv = lines.map((l) => l.map(cell).join(',') + '\n').join('');

@@ -3,13 +3,10 @@ import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns
 import { useCurrentSheet } from '../../session/session';
 import { type Person, usePeople } from '../people/people';
 import { dueTotal } from '../rates/rates';
-import { type Pool, usePools } from './pools';
+import { cutTotal, usePools } from './pools';
 import { useFigure } from '../locale/locale';
 
-// A person's cut total (their cuts across every pool they are a member of, a pool showing no cut adding
-// nothing) and the sheet's cut total (everyone's added up).
-const cutTotal = (pools: Pool[], personId: number) =>
-  dueTotal(pools.flatMap((p) => p.members.filter((m) => m.personId === personId && m.cut !== null).map((m) => m.cut as string)));
+// A person's cut total (see `cutTotal`) and the sheet's cut total (everyone's added up).
 
 function CutHead() {
   return <th>Cut total</th>;

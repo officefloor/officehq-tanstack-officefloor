@@ -215,8 +215,16 @@ export function claimDue(
   return charge === undefined ? floored : format(hundredths(floored) + hundredths(charge));
 }
 
+/** The cap a person's due-total is held to: the sheet's cap less their cut total, not below 0.00 (null or
+ *  undefined for no cap). */
+export function capLess(cap: string | null | undefined, cut: string): string | null | undefined {
+  if (cap == null) return cap;
+  const less = hundredths(cap) - hundredths(cut);
+  return format(less < 0n ? 0n : less);
+}
+
 /** A person's due-total: the sum of the figures of their claims that count, moved by the claims shared with or by
- *  them (see `Shared`), at most the sheet's cap
+ *  them (see `Shared`), at most `cap`, the cap they are held to (see `capLess`)
  *  (two decimals; null or undefined for none). n/a when their grade
  *  in force on the sheet's today has no rate then, unless a claim that counts keeps a fixed (settled or
  *  stated) figure, or a figure at another grade (the one in force on its date), or at a rate that ended before today;
@@ -235,7 +243,7 @@ export function personDue(
   return total === NA || cap == null || hundredths(total) <= hundredths(cap) ? total : format(hundredths(cap));
 }
 
-/** A person's excess: how far the sum of their figures is above the sheet's cap; 0.00 when it is not, or
+/** A person's excess: how far the sum of their figures is above `cap`, the cap they are held to (see `capLess`); 0.00 when it is not, or
  *  there is no cap, or their due-total is n/a. */
 export function personExcess(
   claims: Claim[],

@@ -6,12 +6,13 @@ import { useSheetToday } from '../sheet/sheet';
 import { live, useClaims } from '../claims/claims';
 import { floorOf, useSettings } from '../settings/settings';
 import { lateOf } from '../overdue/overdue';
-import { type Shared, personDue, personExcess, sharedParts, trimmedTotal, useRates } from './rates';
+import { type Shared, capLess, personDue, personExcess, sharedParts, trimmedTotal, useRates } from './rates';
+import { cutTotal, usePools } from '../pools/pools';
 import { useFigure } from '../locale/locale';
 import { useColumnShown } from '../columns/columns';
 
-// A person's due-total (the sum of their counting claims' rounded figures, at most the sheet's cap), their
-// excess over the cap, and the sheet's due-total (everyone's, skipping n/a, trimmed).
+// A person's due-total (the sum of their counting claims' rounded figures, at most the sheet's cap less their cut
+// total), their excess over that, and the sheet's due-total (everyone's, skipping n/a, trimmed).
 function DueHead() {
   if (!useColumnShown()('due-total')) return null;
   return <th>Due total</th>;
@@ -27,9 +28,10 @@ function PersonDue({ person }: { person: Person }) {
   const settings = useSettings(sheet).data;
   const floor = floorOf(settings);
   const shared = useShared()(person);
+  const cap = useCapOf()(person);
   const mine = live((claims.data ?? []).filter((c) => c.personId === person.id), [person]);
   if (!shown('due-total')) return null;
-  return <td data-testid="person-due-total">{fig(personDue(mine, rates.data, person.grades, today, floor, lateOf(settings, today, [person]), settings?.cap, shared))}</td>;
+  return <td data-testid="person-due-total">{fig(personDue(mine, rates.data, person.grades, today, floor, lateOf(settings, today, [person]), cap, shared))}</td>;
 }
 
 function ExcessHead() {
@@ -46,11 +48,12 @@ function PersonExcess({ person }: { person: Person }) {
   const today = useSheetToday(sheet);
   const settings = useSettings(sheet).data;
   const shared = useShared()(person);
+  const cap = useCapOf()(person);
   const mine = live((claims.data ?? []).filter((c) => c.personId === person.id), [person]);
   if (!shown('excess')) return null;
   return (
     <td data-testid="person-excess">
-      {fig(personExcess(mine, rates.data, person.grades, today, floorOf(settings), lateOf(settings, today, [person]), settings?.cap, shared))}
+      {fig(personExcess(mine, rates.data, person.grades, today, floorOf(settings), lateOf(settings, today, [person]), cap, shared))}
     </td>
   );
 }
@@ -74,8 +77,19 @@ export function usePersonDue(of?: string): (person: Person) => string {
   const settings = useSettings(sheet).data;
   const floor = floorOf(settings);
   const shared = useShared(sheet);
+  const capOf = useCapOf(sheet);
   return (p: Person) =>
-    personDue(live((claims.data ?? []).filter((c) => c.personId === p.id), [p]), rates.data, p.grades, today, floor, lateOf(settings, today, [p]), settings?.cap, shared(p));
+    personDue(live((claims.data ?? []).filter((c) => c.personId === p.id), [p]), rates.data, p.grades, today, floor, lateOf(settings, today, [p]), capOf(p), shared(p));
+}
+
+/** The cap each person's due-total on the sheet (the current sheet's unless another is named) is held to: the
+ *  sheet's cap less their cut total (see `capLess`). */
+export function useCapOf(of?: string): (person: Person) => string | null | undefined {
+  const [current] = useCurrentSheet();
+  const sheet = of ?? current;
+  const cap = useSettings(sheet).data?.cap;
+  const pools = usePools(sheet).data ?? [];
+  return (p: Person) => capLess(cap, cutTotal(pools, p.id));
 }
 
 /** What claims shared with or by each person on the sheet (the current sheet's unless another is named) move in

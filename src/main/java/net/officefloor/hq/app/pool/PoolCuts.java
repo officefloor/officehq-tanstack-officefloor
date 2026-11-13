@@ -2,7 +2,9 @@ package net.officefloor.hq.app.pool;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import net.officefloor.hq.app.crew.CrewStore;
 import net.officefloor.hq.app.person.PersonStore;
@@ -52,6 +54,23 @@ public class PoolCuts {
                         cs == null ? null : cs.get(i));
             }
         }
+    }
+
+    /** Each person's cut total as the cuts stand now (the sheet's today as today), by person id: their cuts across
+     *  every pool they are a member of, a pool showing no cut adding nothing; a person in none is left out. */
+    public Map<Long, BigDecimal> totals(String sheet) {
+        RespondWithPools.Cuts now = RespondWithPools.cuts(sheet, null, sheets.today(sheet), store, settings, people,
+                crews);
+        Map<Long, BigDecimal> totals = new HashMap<>();
+        now.members().forEach((poolId, ms) -> {
+            List<BigDecimal> cs = now.cuts().get(poolId);
+            for (int i = 0; cs != null && i < ms.size(); i++) {
+                if (ms.get(i).personId() != null && cs.get(i) != null) {
+                    totals.merge(ms.get(i).personId(), cs.get(i), BigDecimal::add);
+                }
+            }
+        });
+        return totals;
     }
 
     /** Drops the cuts fixed in the period (it is live again). */

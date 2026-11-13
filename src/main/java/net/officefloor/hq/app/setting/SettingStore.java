@@ -445,6 +445,15 @@ public class SettingStore {
         return cap != null && dueTotal.compareTo(cap) > 0 ? cap.setScale(2) : dueTotal;
     }
 
+    /** The cap a person's due-total is held to: the cap less their cut total, not below 0.00 (none when null). */
+    public static BigDecimal capLess(BigDecimal cap, BigDecimal cutTotal) {
+        if (cap == null || cutTotal == null) {
+            return cap;
+        }
+        BigDecimal less = cap.subtract(cutTotal);
+        return less.signum() < 0 ? BigDecimal.ZERO.setScale(2) : less.setScale(2);
+    }
+
     /** The days after its date a claim is due by, in force on the date: the terms recorded then, else 14. */
     public int terms(String sheetId, LocalDate date) {
         String value = findOn(sheetId, TERMS, date);

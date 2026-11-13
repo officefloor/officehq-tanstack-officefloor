@@ -18,6 +18,7 @@ import net.officefloor.hq.app.claim.Rounding;
 import net.officefloor.hq.app.claim.Shares;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonStore;
+import net.officefloor.hq.app.pool.PoolCuts;
 import net.officefloor.hq.app.rate.RateStore;
 import net.officefloor.hq.app.setting.SettingStore;
 import net.officefloor.hq.app.sheet.SheetStore;
@@ -30,7 +31,7 @@ import org.springframework.stereotype.Service;
  * list order (by their positions), then TOTALS sheet=<id> by=<user> claimed-total=<0.00> due-total=<0.00>
  * overdue-total=<0.00> when any of the sheet's totals changed; the sheet's due-total and overdue-total leave out
  * the single highest and the single lowest person's figure when three or more people have one (n/a is no figure). A person's overdue-total is the due (late charge
- * included, skipping n/a) of their counting claims that are OPEN or PENDING with a due-by (plus any grace days of their grade, see {@link Lateness}) before today. A person's due-total is at most the sheet's cap; a shared claim's
+ * included, skipping n/a) of their counting claims that are OPEN or PENDING with a due-by (plus any grace days of their grade, see {@link Lateness}) before today. A person's due-total is at most the sheet's cap less their cut total (see {@link PoolCuts#totals}), not below 0.00; a shared claim's
  * holders' parts (see {@link Shares}) count in their due-total and settled figures, not in its person's. A change that moves no figure records nothing here.
  * After those lines, while the sheet's alert threshold is set, ALERT sheet=<id> by=<user> name=<name> due-total=<0.00>
  * for each person whose due-total the change took from at or below it (or no due-total) to above it, in list order.
@@ -47,9 +48,11 @@ public class RollupService {
     private final SettingStore settings;
     private final Audit audit;
     private final ClaimLogStore log;
+    private final PoolCuts cuts;
 
     public RollupService(PersonStore people, ClaimStore claims, RateStore rates, SheetStore sheets, SettingStore settings,
-            Audit audit, ClaimLogStore log) {
+            Audit audit, ClaimLogStore log, PoolCuts cuts) {
+        this.cuts = cuts;
         this.people = people;
         this.log = log;
         this.claims = claims;
@@ -64,6 +67,7 @@ public class RollupService {
         LocalDate today = sheets.today(sheetId);
         List<Claim> all = claims.list(sheetId);
         BigDecimal cap = settings.cap(sheetId);
+        Map<Long, BigDecimal> cutTotals = cap == null ? Map.of() : cuts.totals(sheetId);
         Lateness lateness = lateness(sheetId, today, all);
         Map<Long, Rollup.Figures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
@@ -147,7 +151,7 @@ public class RollupService {
             boolean na = rates.find(sheetId, person.gradeOn(today), today) == null && !fixed;
             claimedTotal = claimedTotal.add(claimed);
             overdues.add(overdue);
-            due = SettingStore.capped(due, cap);
+            due = SettingStore.capped(due, SettingStore.capLess(cap, cutTotals.get(person.getId())));
             if (!na) {
                 dues.add(due);
             }
