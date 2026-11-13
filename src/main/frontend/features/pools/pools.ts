@@ -34,3 +34,14 @@ export function usePools() {
     enabled: !!sheet,
   });
 }
+
+/** Two-decimal cuts added up, skipping blank ones; added in cents so it is exact. */
+export function cutTotal(cuts: string[]): string {
+  const cents = cuts.filter((c) => c !== '').reduce((sum, c) => sum + Math.round(Number(c) * 100), 0);
+  return (cents / 100).toFixed(2);
+}
+
+/** A person's cuts across every pool they are a member of (a pool showing no cut adds nothing). */
+export function personCuts(pools: Pool[], personId: number): string[] {
+  return pools.flatMap((p) => p.members.filter((m) => m.personId === personId).map((m) => m.cut));
+}
