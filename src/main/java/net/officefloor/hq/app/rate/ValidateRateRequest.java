@@ -36,6 +36,18 @@ public class ValidateRateRequest {
                 throw new InvalidRateException("The from-date must be yyyy-mm-dd.");
             }
         }
-        body.set(new RateRequest(grade, new BigDecimal(rate).setScale(2).toPlainString(), from.isEmpty() ? null : from));
+        String to = request.to() == null ? "" : request.to().trim();
+        if (!to.isEmpty()) {
+            try {
+                to = LocalDate.parse(to).toString();
+            } catch (DateTimeParseException e) {
+                throw new InvalidRateException("The to-date must be yyyy-mm-dd.");
+            }
+            if (!from.isEmpty() && to.compareTo(from) < 0) {
+                throw new InvalidRateException("The to-date must not be before the from-date.");
+            }
+        }
+        body.set(new RateRequest(grade, new BigDecimal(rate).setScale(2).toPlainString(), from.isEmpty() ? null : from,
+                to.isEmpty() ? null : to));
     }
 }

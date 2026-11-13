@@ -10,12 +10,13 @@ import type { DueRules } from '../settings/settings';
 
 /**
  * A grade's rate as the store holds it: a percent with two decimals, in force from its from-date
- * (yyyy-MM-dd; null: from the beginning of time) until the grade's next rate takes over.
+ * (yyyy-MM-dd; null: from the beginning of time) until the grade's next rate takes over, or through its
+ * to-date (null: no end), whichever comes first.
  */
-export type Rate = { grade: string; rate: string; from: string | null };
+export type Rate = { grade: string; rate: string; from: string | null; to: string | null };
 
-/** The fields the rate form submits; a blank from-date is from the beginning of time. */
-export type RateInput = { grade: string; rate: string; from: string };
+/** The fields the rate form submits; a blank from-date is from the beginning of time, a blank to-date no end. */
+export type RateInput = { grade: string; rate: string; from: string; to: string };
 
 /** What a due shows when its grade has no rate. */
 export const NA = 'n/a';
@@ -38,7 +39,8 @@ export function useRates() {
 
 /**
  * The grade's rate (two decimals) in force on the date: the one with the latest from-date on or
- * before it, a rate with no from-date applying from the start; undefined when none applies.
+ * before it, a rate with no from-date applying from the start; undefined when none applies, or when that
+ * one's to-date is before the date.
  */
 export function rateFor(rates: Rate[], grade: string | undefined, date: string): string | undefined {
   let found: Rate | undefined;
@@ -46,6 +48,7 @@ export function rateFor(rates: Rate[], grade: string | undefined, date: string):
     if (r.grade !== grade || (r.from !== null && r.from > date)) continue;
     if (!found || (found.from ?? '') < (r.from ?? '')) found = r;
   }
+  if (found?.to != null && found.to < date) return undefined;
   return found?.rate;
 }
 

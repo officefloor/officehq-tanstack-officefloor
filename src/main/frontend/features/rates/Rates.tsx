@@ -9,13 +9,13 @@ import { NA, PERCENT, rateFor, ratesKey, useRates } from './rates';
 import type { Rate, RateInput } from './rates';
 import { useOneAtATime } from '../../query/useOneAtATime';
 
-const EMPTY: RateInput = { grade: 'A', rate: '', from: '' };
+const EMPTY: RateInput = { grade: 'A', rate: '', from: '', to: '' };
 
 /** yyyy-MM-dd. */
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 // Each grade's rate in force on the sheet's today (n/a when none is), every rate the sheet has with
-// its from-date, and the form that sets one.
+// its from- and to-date, and the form that sets one.
 export function Rates() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -30,7 +30,7 @@ export function Rates() {
     mutationFn: (input: RateInput) =>
       putJson<Rate>(`/api/sheets/${encodeURIComponent(sheet)}/rates?user=${encodeURIComponent(user)}`, input),
     onSuccess: async () => {
-      setForm((f) => ({ ...f, rate: '', from: '' }));
+      setForm((f) => ({ ...f, rate: '', from: '', to: '' }));
       setError('');
       await queryClient.invalidateQueries({ queryKey: ratesKey(sheet) });
     },
@@ -51,7 +51,16 @@ export function Rates() {
       setError('Type a from-date as yyyy-mm-dd, or leave it blank for from the start.');
       return;
     }
-    once(() => save.mutateAsync({ grade: form.grade, rate: form.rate.trim(), from }));
+    const to = form.to.trim();
+    if (to !== '' && !DATE.test(to)) {
+      setError('Type a to-date as yyyy-mm-dd, or leave it blank for no end.');
+      return;
+    }
+    if (from !== '' && to !== '' && to < from) {
+      setError('The to-date must not be before the from-date.');
+      return;
+    }
+    once(() => save.mutateAsync({ grade: form.grade, rate: form.rate.trim(), from, to }));
   };
 
   const change = (patch: Partial<RateInput>) => {
@@ -82,6 +91,7 @@ export function Rates() {
           <tr>
             <th>Grade</th>
             <th>From</th>
+            <th>To</th>
             <th>Rate %</th>
           </tr>
         </thead>
@@ -90,6 +100,7 @@ export function Rates() {
             <tr key={`${r.grade}-${r.from ?? 'start'}`} data-testid={`rate-row-${r.grade}-${r.from ?? 'start'}`}>
               <td>{r.grade}</td>
               <td data-testid="rate-from">{r.from ?? 'start'}</td>
+              <td data-testid="rate-to">{r.to ?? ''}</td>
               <td data-testid="rate-pct">{r.rate}</td>
             </tr>
           ))}
@@ -114,6 +125,12 @@ export function Rates() {
           placeholder="From yyyy-mm-dd (blank: from the start)"
           value={form.from}
           onChange={(e) => change({ from: e.target.value })}
+        />
+        <input
+          data-testid="rate-form-to"
+          placeholder="To yyyy-mm-dd (blank: no end)"
+          value={form.to}
+          onChange={(e) => change({ to: e.target.value })}
         />
         <button type="submit" data-testid="rate-form-submit" disabled={save.isPending}>
           Set rate

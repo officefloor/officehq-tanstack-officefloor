@@ -9,6 +9,7 @@ import net.officefloor.plugin.variable.Val;
 public class BuildRate {
     public void build(@Val RateRequest request, @Val Sheet sheet, Out<Rate> rate) {
         rate.set(new Rate(sheet.id(), request.grade(), new BigDecimal(request.rate()),
-                request.from() == null ? null : LocalDate.parse(request.from())));
+                request.from() == null ? null : LocalDate.parse(request.from()),
+                request.to() == null ? null : LocalDate.parse(request.to())));
     }
 }
