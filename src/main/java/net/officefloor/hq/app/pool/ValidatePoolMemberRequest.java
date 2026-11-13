@@ -2,6 +2,8 @@ package net.officefloor.hq.app.pool;
 
 import jakarta.validation.Valid;
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.regex.Pattern;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
@@ -15,7 +17,8 @@ import org.springframework.web.bind.annotation.RequestBody;
  * Refuses (400) a member for a pool not on the sheet, a person not on the sheet or already in the pool, a pool not on
  * the sheet, already a member of a pool, the pool itself or one containing it through any chain, or one that would make
  * a chain of pools more than three deep, or a share that is not a number with at most two decimals, more than 0.00 and
- * at most 100.00.
+ * at most 100.00, or dates that are not yyyy-mm-dd or a to-date before the from-date (both optional: no start / no
+ * end).
  */
 public class ValidatePoolMemberRequest {
 
@@ -56,8 +59,28 @@ public class ValidatePoolMemberRequest {
         if (share.signum() <= 0 || share.compareTo(HUNDRED) > 0) {
             throw new InvalidPoolException("A share is more than 0.00 and at most 100.00.");
         }
-        added.set(new NewPoolMember(pool, member != null ? new PoolMember(null, member.poolId(), member.name(), share, false)
-                : new PoolMember(person.id(), null, person.name(), share, person.retiredFrom() != null)));
+        LocalDate from = date(request.from());
+        LocalDate to = date(request.to());
+        if (from != null && to != null && to.isBefore(from)) {
+            throw new InvalidPoolException("A membership's to-date is not before its from-date.");
+        }
+        added.set(new NewPoolMember(pool, member != null
+                ? new PoolMember(null, member.poolId(), member.name(), share, false, false, from, to, false)
+                : new PoolMember(person.id(), null, person.name(), share, person.retiredFrom() != null, false, from, to,
+                        false)));
+    }
+
+    /** A membership date, yyyy-mm-dd; null when blank. */
+    private static LocalDate date(String value) throws InvalidPoolException {
+        String text = value == null ? "" : value.trim();
+        if (text.isEmpty()) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(text);
+        } catch (DateTimeParseException e) {
+            throw new InvalidPoolException("A membership's dates must be yyyy-mm-dd.");
+        }
     }
 
     /** The pool {@code memberId} as a member of {@code pool} (share unset), refused when it may not be one. */

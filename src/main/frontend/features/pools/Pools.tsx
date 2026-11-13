@@ -9,6 +9,7 @@ import type { Pool } from './pools';
 import { useOneAtATime } from '../../query/useOneAtATime';
 
 const SHARE = /^\d{1,3}(\.\d{1,2})?$/;
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 // The sheet's pools and the form that adds one; a blank name, or one already a pool's, is refused.
 export function Pools() {
@@ -75,12 +76,13 @@ export function Pools() {
   );
 }
 
-const EMPTY = { member: '', share: '' };
+const EMPTY = { member: '', share: '', from: '', to: '' };
 
 // A pool's row: its members with their shares and cuts of the pot (blank: an unbalanced pool, or no pot), its total share and whether it is balanced, and the form that adds a
 // member — a person, or another pool chosen as pool:<name>; a person already in the pool, a pool already a member of
 // one, one that would contain itself or make a chain of pools more than three deep, or a share not more than 0.00 and
-// at most 100.00 (two decimals), is refused.
+// at most 100.00 (two decimals), or a to-date before the from-date (both optional, yyyy-mm-dd), is refused. A member
+// whose dates leave out the sheet's today is not in the total share and has no cut.
 function PoolRow({ pool, pools }: { pool: Pool; pools: Pool[] }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -91,7 +93,7 @@ function PoolRow({ pool, pools }: { pool: Pool; pools: Pool[] }) {
   const once = useOneAtATime();
 
   const add = useMutation({
-    mutationFn: (input: { personId?: number; poolId?: number; share: string }) =>
+    mutationFn: (input: { personId?: number; poolId?: number; share: string; from: string | null; to: string | null }) =>
       postJson<Pool[]>(
         `/api/sheets/${encodeURIComponent(sheet)}/pools/${pool.id}/members?user=${encodeURIComponent(user)}`,
         input,
@@ -130,7 +132,18 @@ function PoolRow({ pool, pools }: { pool: Pool; pools: Pool[] }) {
       setError('Type a share more than 0.00 and at most 100.00, with at most two decimals.');
       return;
     }
-    once(() => add.mutateAsync(kind === 'pool' ? { poolId: id, share } : { personId: id, share }));
+    const from = form.from.trim();
+    const to = form.to.trim();
+    if ((from && !DATE.test(from)) || (to && !DATE.test(to))) {
+      setError('Type the dates as yyyy-mm-dd.');
+      return;
+    }
+    if (from && to && to < from) {
+      setError('The to-date is before the from-date.');
+      return;
+    }
+    const dates = { from: from || null, to: to || null };
+    once(() => add.mutateAsync(kind === 'pool' ? { poolId: id, share, ...dates } : { personId: id, share, ...dates }));
   };
 
   const change = (patch: Partial<typeof EMPTY>) => {
@@ -149,7 +162,8 @@ function PoolRow({ pool, pools }: { pool: Pool; pools: Pool[] }) {
             data-testid={`pool-member-${pool.name}-${m.poolId !== null ? `pool-${m.name}` : m.personId}`}
           >
             <span data-testid="pool-member-name">{m.name}</span> <span data-testid="pool-share">{m.share}</span>
-            {m.retired && ' (retired)'} cut <span data-testid="pool-cut">{m.cut}</span>
+            {m.retired && ' (retired)'}
+            {(m.from || m.to) && ` (${m.from ?? 'start'} to ${m.to ?? 'no end'})`} cut <span data-testid="pool-cut">{m.cut}</span>
           </li>
         ))}
       </ul>
@@ -168,6 +182,8 @@ function PoolRow({ pool, pools }: { pool: Pool; pools: Pool[] }) {
           ))}
         </select>
         <input data-testid="pool-member-share" placeholder="Share %" value={form.share} onChange={(e) => change({ share: e.target.value })} />
+        <input data-testid="pool-member-from" placeholder="From yyyy-mm-dd (blank: no start)" value={form.from} onChange={(e) => change({ from: e.target.value })} />
+        <input data-testid="pool-member-to" placeholder="To yyyy-mm-dd (blank: no end)" value={form.to} onChange={(e) => change({ to: e.target.value })} />
         <button type="submit" data-testid="pool-member-add" disabled={add.isPending}>
           Add member
         </button>

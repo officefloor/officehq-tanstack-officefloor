@@ -9,6 +9,8 @@ public class AuditPoolMemberAdded {
     public void audit(@Val NewPoolMember added, @RequestParam("user") String user, Audit audit) {
         audit.record("POOL_MEMBER_ADDED sheet=" + added.pool().sheetId() + " by=" + user + " pool="
                 + added.pool().name() + " name=" + added.member().name() + " share="
-                + added.member().share().toPlainString());
+                + added.member().share().toPlainString()
+                + (added.member().from() == null ? "" : " from=" + added.member().from())
+                + (added.member().to() == null ? "" : " to=" + added.member().to()));
     }
 }
