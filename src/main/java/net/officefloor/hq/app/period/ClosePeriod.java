@@ -1,6 +1,7 @@
 package net.officefloor.hq.app.period;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -8,6 +9,7 @@ import java.util.stream.Collectors;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.claim.LateCharge;
+import net.officefloor.hq.app.claim.Rounding;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.Rate;
@@ -31,14 +33,17 @@ public class ClosePeriod {
                 .collect(Collectors.toMap(Person::id, Function.identity()));
         List<Rate> sheetRates = rates.findAll(period.sheetId());
         BigDecimal floor = settings.floor(period.sheetId());
-        LateCharge late = settings.lateCharge(period.sheetId(), sheets.today(period.sheetId()));
+        LocalDate today = sheets.today(period.sheetId());
+        LateCharge late = settings.lateCharge(period.sheetId(), today);
+        List<Claim> sheetClaims = claims.findAll(period.sheetId());
+        Rounding rounding = settings.rounding(period.sheetId(), today, sheetClaims);
         BigDecimal total = BigDecimal.ZERO.setScale(2);
-        for (Claim claim : claims.findAll(period.sheetId())) {
+        for (Claim claim : sheetClaims) {
             Person person = byId.get(claim.personId());
             if (person == null || !person.counts(claim) || !period.contains(claim.date())) {
                 continue;
             }
-            BigDecimal figure = claim.due(Rate.inForce(sheetRates, person.gradeOn(claim.date()), claim.date()), floor, late);
+            BigDecimal figure = claim.due(Rate.inForce(sheetRates, person.gradeOn(claim.date()), claim.date()), floor, late, rounding);
             if (figure != null) {
                 total = total.add(figure);
             }

@@ -1,7 +1,9 @@
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { sheetKey, useCurrentSheet } from '../session/session';
 import { useSheetToday } from '../session/sheetToday';
+import { useClaims } from '../claims/claims';
 
 /** A role given to a user name: clerk or steward. A name with none given is a clerk. */
 export type UserRole = { user: string; role: string };
@@ -10,10 +12,11 @@ export type UserRole = { user: string; role: string };
  * The sheet's settings as the store holds them: the clerk limit (two decimals; null: no limit), above
  * which a clerk cannot settle a claim, the floor (two decimals), below which no live due goes, the terms
  * (whole days) a claim is due by after its date, the late percent (two decimals) an overdue claim
- * gains of its figure every full 30 days, and the roles
+ * gains of its figure every full 30 days, the rounding policy date (yyyy-MM-dd; '': blank, the
+ * sheet's today), and the roles
  * given to user names.
  */
-export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; roles: UserRole[] };
+export type Settings = { clerkLimit: string | null; floor: string; terms: number; latePct: string; policyDate: string; roles: UserRole[] };
 
 /** The floor a sheet starts with: a claim's live due is at least it. */
 export const DEFAULT_FLOOR = '1.00';
@@ -59,17 +62,38 @@ export function useTerms(): number {
   return useSettings().data?.terms ?? DEFAULT_TERMS;
 }
 
-/** What a claim's due is worked out from: the sheet's floor, terms, late percent and today. */
-export type DueRules = { floor: string; terms: number; latePct: string; today: string };
+/** A date as the settings form takes it: yyyy-MM-dd. */
+export const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * What a claim's due is worked out from: the sheet's floor, terms, late percent and today, its policy
+ * date in force (blank: today) and the dates of its claims by number (a correction rounds by the date
+ * of the claim it corrects).
+ */
+export type DueRules = {
+  floor: string;
+  terms: number;
+  latePct: string;
+  today: string;
+  policyDate: string;
+  claimDates: Map<number, string>;
+};
 
 /** The sheet's rules for working out a claim's due. */
 export function useDueRules(): DueRules {
   const settings = useSettings().data;
   const today = useSheetToday();
+  const claims = useClaims().data;
+  const claimDates = useMemo(
+    () => new Map((claims ?? []).filter((c) => c.number !== null).map((c) => [c.number!, c.date])),
+    [claims],
+  );
   return {
     floor: settings?.floor ?? DEFAULT_FLOOR,
     terms: settings?.terms ?? DEFAULT_TERMS,
     latePct: settings?.latePct ?? DEFAULT_LATE_PCT,
     today,
+    policyDate: settings?.policyDate || today,
+    claimDates,
   };
 }

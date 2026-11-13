@@ -2,8 +2,11 @@ package net.officefloor.hq.app.setting;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.sql.Date;
 import java.util.List;
+import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.LateCharge;
+import net.officefloor.hq.app.claim.Rounding;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -33,7 +36,7 @@ public class SettingRepository {
                 + " ORDER BY user_name", (rs, n) -> new UserRole(rs.getString("sheet_id"), rs.getString("user_name"),
                         Role.valueOf(rs.getString("role"))), sheetId);
         BigDecimal clerkLimit = limit.isEmpty() || limit.get(0) == null ? null : limit.get(0).setScale(2);
-        return new Settings(sheetId, clerkLimit, floor(sheetId), terms(sheetId), latePct(sheetId), roles);
+        return new Settings(sheetId, clerkLimit, floor(sheetId), terms(sheetId), latePct(sheetId), policyDate(sheetId), roles);
     }
 
     /** The sheet's floor: a claim's live due is at least it (1.00 for a sheet not yet stored). */
@@ -59,6 +62,24 @@ public class SettingRepository {
     /** What the sheet charges an overdue claim on the given today: its terms and its late percent. */
     public LateCharge lateCharge(String sheetId, LocalDate today) {
         return new LateCharge(terms(sheetId), latePct(sheetId), today);
+    }
+
+    /** The sheet's rounding policy date as set (null: blank, the sheet's today). */
+    public LocalDate policyDate(String sheetId) {
+        List<Date> date = jdbc.query("SELECT policy_date FROM sheet WHERE id = ?",
+                (rs, n) -> rs.getDate("policy_date"), sheetId);
+        return date.isEmpty() || date.get(0) == null ? null : date.get(0).toLocalDate();
+    }
+
+    /** How the sheet rounds the given claims' live figures on the given today: by its policy date (blank: today). */
+    public Rounding rounding(String sheetId, LocalDate today, List<Claim> claims) {
+        LocalDate policyDate = policyDate(sheetId);
+        return Rounding.of(policyDate == null ? today : policyDate, claims);
+    }
+
+    /** Set the sheet's rounding policy date (null: blank, the sheet's today). */
+    public void savePolicyDate(String sheetId, LocalDate policyDate) {
+        jdbc.update("UPDATE sheet SET policy_date = ? WHERE id = ?", policyDate == null ? null : Date.valueOf(policyDate), sheetId);
     }
 
     /** Set the sheet's late percent. */

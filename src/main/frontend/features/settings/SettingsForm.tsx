@@ -3,18 +3,18 @@ import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { putJson } from '../../api/http';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
-import { AMOUNT, DAYS, DEFAULT_FLOOR, DEFAULT_LATE_PCT, DEFAULT_TERMS, PERCENT, settingsKey, useSettings } from './settings';
+import { AMOUNT, DATE, DAYS, DEFAULT_FLOOR, DEFAULT_LATE_PCT, DEFAULT_TERMS, PERCENT, settingsKey, useSettings } from './settings';
 import type { Settings } from './settings';
 import { useOneAtATime } from '../../query/useOneAtATime';
 
 /** The settings the form sends: only those whose field was touched since the last save. */
-type SettingsInput = { clerkLimit?: string; floor?: string; terms?: string; latePct?: string };
+type SettingsInput = { clerkLimit?: string; floor?: string; terms?: string; latePct?: string; policyDate?: string };
 
-type Touched = { clerkLimit: boolean; floor: boolean; terms: boolean; latePct: boolean };
+type Touched = { clerkLimit: boolean; floor: boolean; terms: boolean; latePct: boolean; policyDate: boolean };
 
-const UNTOUCHED: Touched = { clerkLimit: false, floor: false, terms: false, latePct: false };
+const UNTOUCHED: Touched = { clerkLimit: false, floor: false, terms: false, latePct: false, policyDate: false };
 
-// The sheet's clerk limit (blank: no limit), floor, terms and late percent in force, and the form that sets them. Saving sends
+// The sheet's clerk limit (blank: no limit), floor, terms, late percent and policy date (blank: today) in force, and the form that sets them. Saving sends
 // only the fields touched since the last save, so a blank field left alone changes nothing.
 export function SettingsForm() {
   const [user] = useCurrentUser();
@@ -24,6 +24,7 @@ export function SettingsForm() {
   const [floor, setFloor] = useState('');
   const [terms, setTerms] = useState('');
   const [latePct, setLatePct] = useState('');
+  const [policyDate, setPolicyDate] = useState('');
   const [touched, setTouched] = useState<Touched>(UNTOUCHED);
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
@@ -37,6 +38,7 @@ export function SettingsForm() {
       setFloor('');
       setTerms('');
       setLatePct('');
+      setPolicyDate('');
       setTouched(UNTOUCHED);
       setError('');
       queryClient.setQueryData(settingsKey(sheet), saved);
@@ -83,11 +85,20 @@ export function SettingsForm() {
       }
       input.latePct = value;
     }
+    if (touched.policyDate) {
+      const value = policyDate.trim();
+      if (value !== '' && !DATE.test(value)) {
+        setError("Type a policy date as yyyy-MM-dd, or leave it blank for the sheet's today.");
+        return;
+      }
+      input.policyDate = value;
+    }
     if (
       input.clerkLimit === undefined &&
       input.floor === undefined &&
       input.terms === undefined &&
-      input.latePct === undefined
+      input.latePct === undefined &&
+      input.policyDate === undefined
     )
       return;
     once(() => save.mutateAsync(input));
@@ -106,6 +117,9 @@ export function SettingsForm() {
       </p>
       <p>
         Late percent: <span data-testid="setting-late-pct-current">{settings?.latePct ?? ''}</span>
+      </p>
+      <p>
+        Policy date: <span data-testid="setting-policy-date-current">{settings?.policyDate ?? ''}</span>
       </p>
       <form onSubmit={submit} data-testid="settings-form">
         <input
@@ -149,6 +163,17 @@ export function SettingsForm() {
           onChange={(e) => {
             setLatePct(e.target.value);
             setTouched((t) => ({ ...t, latePct: true }));
+            setError('');
+          }}
+        />
+        <input
+          data-testid="setting-policy-date"
+          placeholder="Rounding policy date, yyyy-MM-dd (blank: the sheet's today)"
+          value={policyDate}
+          onFocus={() => setTouched((t) => ({ ...t, policyDate: true }))}
+          onChange={(e) => {
+            setPolicyDate(e.target.value);
+            setTouched((t) => ({ ...t, policyDate: true }));
             setError('');
           }}
         />

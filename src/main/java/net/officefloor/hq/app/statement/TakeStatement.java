@@ -6,6 +6,7 @@ import java.util.List;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.claim.LateCharge;
+import net.officefloor.hq.app.claim.Rounding;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.Rate;
@@ -32,18 +33,20 @@ public class TakeStatement {
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         boolean kept = false;
         int counted = 0;
-        for (Claim claim : claims.findForPerson(person.sheetId(), person.id())) {
+        List<Claim> personClaims = claims.findForPerson(person.sheetId(), person.id());
+        Rounding rounding = settings.rounding(person.sheetId(), today, personClaims);
+        for (Claim claim : personClaims) {
             if (!person.counts(claim)) {
                 claims.bindStatement(claim, false, null);
                 continue;
             }
             boolean fixed = claim.due() != null || (claim.stated() && claim.statedDue() != null);
-            BigDecimal figure = claim.figure(Rate.inForce(sheetRates, person.gradeOn(claim.date()), claim.date()), floor);
+            BigDecimal figure = claim.figure(Rate.inForce(sheetRates, person.gradeOn(claim.date()), claim.date()), floor, rounding);
             claims.bindStatement(claim, true, figure);
             counted++;
             kept |= fixed || figure != null;
             if (figure != null) {
-                total = total.add(figure).add(late.on(claim, figure));
+                total = total.add(figure).add(late.on(claim, figure, rounding.modeFor(claim)));
             }
         }
         String dueTotal = Rate.inForce(sheetRates, person.grade(), today) == null && !kept ? "n/a"

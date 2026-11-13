@@ -8,6 +8,7 @@ import java.util.Map;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.claim.LateCharge;
+import net.officefloor.hq.app.claim.Rounding;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.Rate;
@@ -18,7 +19,7 @@ import org.springframework.stereotype.Service;
 
 /**
  * Works out a sheet's figures as the screen shows them: a person's claimed is their counting claims' amounts
- * added up; their due-total those claims' dues (live figures raised to the sheet's floor, plus
+ * added up; their due-total those claims' dues (live figures raised to the sheet's floor and rounded by its policy date, plus
  * any late charge on the overdue ones) added up, n/a when their grade on the sheet's today has no
  * rate there and no counting claim has a figure (kept, or at the rate for the grade in force on its date). The sheet's totals add these up, skipping n/a.
  */
@@ -49,6 +50,7 @@ public class RollupService {
         BigDecimal floor = settings.floor(sheetId);
         LateCharge late = settings.lateCharge(sheetId, today);
         List<Claim> sheetClaims = claims.findAll(sheetId);
+        Rounding rounding = settings.rounding(sheetId, today, sheetClaims);
         Map<Long, Rollup.Figures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
         BigDecimal dueTotal = BigDecimal.ZERO.setScale(2);
@@ -62,7 +64,7 @@ public class RollupService {
                 }
                 claimed = claimed.add(claim.amount());
                 kept |= claim.due() != null || (claim.stated() && claim.statedDue() != null);
-                BigDecimal figure = claim.due(Rate.inForce(sheetRates, person.gradeOn(claim.date()), claim.date()), floor, late);
+                BigDecimal figure = claim.due(Rate.inForce(sheetRates, person.gradeOn(claim.date()), claim.date()), floor, late, rounding);
                 if (figure != null) {
                     kept = true;
                     due = due.add(figure);

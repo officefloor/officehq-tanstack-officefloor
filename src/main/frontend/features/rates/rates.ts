@@ -52,21 +52,33 @@ export function rateFor(rates: Rate[], grade: string | undefined, date: string):
 /** A two-decimal value as whole hundredths, exactly. */
 const hundredths = (value: string) => Math.round(Number(value) * 100);
 
+/** How a half is rounded: half up (away from zero) or half to even. */
+export type Rounding = 'half-up' | 'half-even';
+
 /**
- * An amount times a percent rate, divided by 100, rounded half to even to two decimals; n/a with no
- * rate. Worked in whole hundredths so it is exact: cents × basis points / 10000.
+ * How a claim's live figures round: half up when it is dated before the sheet's policy date, half to
+ * even on or after it. A correction rounds by the date of the claim it corrects, not its own.
  */
-export function due(amount: string, rate: string | undefined): string {
-  if (rate === undefined) return NA;
-  return percentOf(hundredths(amount), hundredths(rate));
+export function roundingFor(claim: Claim, rules: DueRules): Rounding {
+  const date = claim.corrects !== null ? (rules.claimDates.get(claim.corrects) ?? claim.date) : claim.date;
+  return date < rules.policyDate ? 'half-up' : 'half-even';
 }
 
-/** Cents times basis points / 10000, rounded half to even to two decimals. */
-function percentOf(amountCents: number, basisPoints: number): string {
+/**
+ * An amount times a percent rate, divided by 100, rounded to two decimals (half to even unless told
+ * otherwise); n/a with no rate. Worked in whole hundredths so it is exact: cents × basis points / 10000.
+ */
+export function due(amount: string, rate: string | undefined, rounding: Rounding = 'half-even'): string {
+  if (rate === undefined) return NA;
+  return percentOf(hundredths(amount), hundredths(rate), rounding);
+}
+
+/** Cents times basis points / 10000, rounded to two decimals as told. */
+function percentOf(amountCents: number, basisPoints: number, rounding: Rounding): string {
   const product = amountCents * basisPoints;
   const whole = Math.floor(Math.abs(product) / 10000);
   const rest = Math.abs(product) - whole * 10000;
-  const up = rest > 5000 || (rest === 5000 && whole % 2 === 1);
+  const up = rest > 5000 || (rest === 5000 && (rounding === 'half-up' || whole % 2 === 1));
   const cents = Math.sign(product) * (whole + (up ? 1 : 0));
   return (cents / 100).toFixed(2);
 }
@@ -78,22 +90,23 @@ export function floored(value: string, floor: string): string {
 
 /**
  * A claim's figure: the figure its statement bound it to, else its amount at the rate in force on its
- * date for the person's grade in force on that date, at least the sheet's floor — a correction has no floor.
+ * date for the person's grade in force on that date, rounded by the policy date, at least the sheet's floor —
+ * a correction has no floor.
  */
-function claimFigure(claim: Claim, rates: Rate[], grades: GradeFrom[], floor: string): string {
+function claimFigure(claim: Claim, rates: Rate[], grades: GradeFrom[], rules: DueRules): string {
   if (claim.stated) return claim.statedDue ?? NA;
-  const live = due(claim.amount, rateFor(rates, gradeOn(grades, claim.date), claim.date));
-  return claim.corrects !== null ? live : floored(live, floor);
+  const live = due(claim.amount, rateFor(rates, gradeOn(grades, claim.date), claim.date), roundingFor(claim, rules));
+  return claim.corrects !== null ? live : floored(live, rules.floor);
 }
 
 /**
  * The late charge on a figure: the late percent of it for every full 30 days the claim is overdue,
- * rounded like a due; 0.00 when it is not overdue, and always for a correction.
+ * rounded like the claim's due; 0.00 when it is not overdue, and always for a correction.
  */
 export function lateCharge(claim: Claim, figure: string, rules: DueRules): string {
   if (claim.corrects !== null) return '0.00';
   const periods = latePeriods(claim, rules.terms, rules.today);
-  return percentOf(hundredths(figure), hundredths(rules.latePct) * periods);
+  return percentOf(hundredths(figure), hundredths(rules.latePct) * periods, roundingFor(claim, rules));
 }
 
 /**
@@ -103,7 +116,7 @@ export function lateCharge(claim: Claim, figure: string, rules: DueRules): strin
  */
 export function claimDue(claim: Claim, rates: Rate[], grades: GradeFrom[], rules: DueRules): string {
   if (claim.due !== null) return claim.due;
-  const figure = claimFigure(claim, rates, grades, rules.floor);
+  const figure = claimFigure(claim, rates, grades, rules);
   return figure === NA ? NA : total([figure, lateCharge(claim, figure, rules)]);
 }
 

@@ -2,6 +2,8 @@ package net.officefloor.hq.app.setting;
 
 import jakarta.validation.Valid;
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.regex.Pattern;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -18,12 +20,13 @@ public class ValidateSettingsRequest {
     private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
 
     public void validate(@RequestBody @Valid SettingsRequest request, Out<ClerkLimit> limit, Out<Floor> floor,
-            Out<Terms> terms, Out<LatePct> latePct)
+            Out<Terms> terms, Out<LatePct> latePct, Out<PolicyDate> policyDate)
             throws InvalidSettingException {
         limit.set(clerkLimit(request.clerkLimit()));
         floor.set(floor(request.floor()));
         terms.set(terms(request.terms()));
         latePct.set(latePct(request.latePct()));
+        policyDate.set(policyDate(request.policyDate()));
     }
 
     private static ClerkLimit clerkLimit(String requested) throws InvalidSettingException {
@@ -66,6 +69,21 @@ public class ValidateSettingsRequest {
             throw new InvalidSettingException("The late percent must be 0.00 or more, with at most two decimals, or blank.");
         }
         return new LatePct(new BigDecimal(value).setScale(2));
+    }
+
+    private static PolicyDate policyDate(String requested) throws InvalidSettingException {
+        if (requested == null) {
+            return new PolicyDate(false, null);
+        }
+        String value = requested.trim();
+        if (value.isEmpty()) {
+            return new PolicyDate(true, null);
+        }
+        try {
+            return new PolicyDate(true, LocalDate.parse(value));
+        } catch (DateTimeParseException e) {
+            throw new InvalidSettingException("The policy date must be a date (yyyy-MM-dd), or blank.");
+        }
     }
 
     private static Floor floor(String requested) throws InvalidSettingException {
