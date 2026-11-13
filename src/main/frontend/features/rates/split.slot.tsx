@@ -20,7 +20,7 @@ function SplitHead() {
   );
 }
 
-function useSplit() {
+export function useSplit() {
   const [sheet] = useCurrentSheet();
   const claims = useClaims(sheet);
   const rates = useRates(sheet);
