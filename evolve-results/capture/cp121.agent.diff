@@ -1,0 +1,253 @@
+diff --git a/src/main/frontend/features/audit/AuditViewer.tsx b/src/main/frontend/features/audit/AuditViewer.tsx
+index a88acf846..fda534f01 100644
+--- a/src/main/frontend/features/audit/AuditViewer.tsx
++++ b/src/main/frontend/features/audit/AuditViewer.tsx
+@@ -5,7 +5,8 @@ import { getJson } from '../../api/http';
+ import { useCurrentSheet, useCurrentUser } from '../session/session';
+ 
+ // The audit viewer: the sheet's audit lines as the file holds them, newest first. A name in the filter
+-// keeps only the lines about that person (name= or person=, case and surrounding spaces ignored).
++// keeps only the lines about that person (name= or person=, case and surrounding spaces ignored), followed, for a
++// person transferred here, by the lines about them from the sheet they came from (newest first).
+ // Read on each press of the show button; the old lines are gone while it reads.
+ export function AuditViewer() {
+   const [user] = useCurrentUser();
+diff --git a/src/main/frontend/features/people/people.ts b/src/main/frontend/features/people/people.ts
+index c18c9dec5..0ab860c34 100644
+--- a/src/main/frontend/features/people/people.ts
++++ b/src/main/frontend/features/people/people.ts
+@@ -42,6 +42,7 @@ export const liveHolds = (p: { holds: Hold[]; retiredFrom: string | null }, toda
+  * statement, count in no live total. `terms` is the person's own terms in days, null when they have none;
+  * `contact` their contact (trimmed, lower-cased), null when they have none. `clashing` is whether another sheet of
+  * the sheet's tree (its ancestors and descendants) uses their name or any of their aliases as a name or alias.
++ * `origin` is the sheet they were transferred from, null when they were not transferred here.
+  */
+ export type Person = {
+   id: number;
+@@ -59,6 +60,7 @@ export type Person = {
+   terms: number | null;
+   contact: string | null;
+   clashing: boolean;
++  origin: string | null;
+ };
+ 
+ /**
+diff --git a/src/main/frontend/features/transfer/transfer.slot.tsx b/src/main/frontend/features/transfer/transfer.slot.tsx
+index c846d7065..db9eb396e 100644
+--- a/src/main/frontend/features/transfer/transfer.slot.tsx
++++ b/src/main/frontend/features/transfer/transfer.slot.tsx
+@@ -1,7 +1,15 @@
+ import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
++import type { Person } from '../people/people';
+ import { PersonTransfer } from './PersonTransfer';
+ 
++// The sheet a transferred person came from (blank for anyone not transferred here).
++function PersonOrigin({ person }: { person: Person }) {
++  return <td data-testid="person-origin">{person.origin ?? ''}</td>;
++}
++
+ export const contributions = [
++  PersonColumnHeads.fill({ order: 18.55, Component: () => <th>From</th> }),
++  PersonColumns.fill({ order: 18.55, Component: PersonOrigin }),
+   PersonColumnHeads.fill({ order: 18.6, Component: () => <th>Transfer</th> }),
+   PersonColumns.fill({ order: 18.6, Component: PersonTransfer }),
+ ];
+diff --git a/src/main/java/net/officefloor/hq/app/audit/RespondWithAuditLines.java b/src/main/java/net/officefloor/hq/app/audit/RespondWithAuditLines.java
+index 6c0cf646a..bdd37cd93 100644
+--- a/src/main/java/net/officefloor/hq/app/audit/RespondWithAuditLines.java
++++ b/src/main/java/net/officefloor/hq/app/audit/RespondWithAuditLines.java
+@@ -1,16 +1,36 @@
+ package net.officefloor.hq.app.audit;
+ 
++import java.util.ArrayList;
+ import java.util.List;
++import java.util.Locale;
+ import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.sheet.Sheet;
+ import net.officefloor.plugin.variable.Val;
+ import net.officefloor.web.ObjectResponse;
+ import org.springframework.web.bind.annotation.RequestParam;
+ 
+-/** The sheet's audit lines as the file holds them, newest first; only those about the named person when a name is given. */
++/**
++ * The sheet's audit lines as the file holds them, newest first; only those about the named person when a name is
++ * given. When that name is a person transferred here, the lines about them from the sheet they came from follow,
++ * newest first, as that sheet's lines are held.
++ */
+ public class RespondWithAuditLines {
+     public void respond(@Val Sheet sheet, @RequestParam(value = "name", required = false) String name, Audit audit,
+-            ObjectResponse<List<String>> response) {
+-        response.send(audit.lines(sheet.id(), name));
++            PersonRepository people, ObjectResponse<List<String>> response) {
++        List<String> lines = new ArrayList<>(audit.lines(sheet.id(), name));
++        String wanted = name == null ? "" : name.strip();
++        if (!wanted.isEmpty()) {
++            Person person = people.findByName(sheet.id(), wanted);
++            if (person != null && person.name().strip().toLowerCase(Locale.ROOT)
++                    .equals(wanted.toLowerCase(Locale.ROOT))) {
++                String origin = people.origin(sheet.id(), person.id());
++                if (origin != null) {
++                    lines.addAll(audit.lines(origin, wanted));
++                }
++            }
++        }
++        response.send(lines);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 4ce55469e..bb807088f 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -265,6 +265,23 @@ public class PersonRepository {
+         return to + 1;
+     }
+ 
++    /** The sheet the person was transferred from, or null when they were not transferred here. */
++    public String origin(String sheetId, long personId) {
++        List<String> found = jdbc.queryForList("SELECT origin FROM person WHERE sheet_id = ? AND id = ?", String.class,
++                sheetId, personId);
++        return found.isEmpty() ? null : found.get(0);
++    }
++
++    /** The sheet each transferred person on the sheet came from, by person id (those not transferred left out). */
++    public Map<Long, String> origins(String sheetId) {
++        Map<Long, String> found = new HashMap<>();
++        jdbc.query("SELECT id, origin FROM person WHERE sheet_id = ? AND origin IS NOT NULL",
++                (rs) -> {
++                    found.put(rs.getLong("id"), rs.getString("origin"));
++                }, sheetId);
++        return found;
++    }
++
+     /** The person's aliases, in the order they were added. */
+     public List<String> aliases(String sheetId, long personId) {
+         return jdbc.queryForList("SELECT alias FROM person_alias WHERE sheet_id = ? AND person_id = ? ORDER BY id",
+@@ -279,6 +296,7 @@ public class PersonRepository {
+     public long transfer(Person person, String to) {
+         Map<String, Object> changed = new HashMap<>();
+         changed.put("sheet_id", to);
++        changed.put("origin", person.sheetId());
+         changed.put("statement_count", 0);
+         changed.put("stated_total", null);
+         changed.put("statement_date", null);
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+index fb2c4677d..fda930a58 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonResponse.java
+@@ -8,12 +8,13 @@ import java.util.List;
+  * each hold, oldest first. {@code grade} is the grade in force on the sheet's today; {@code grades} every grade
+  * recorded, each from its from-date. {@code terms} are the person's own terms in days, null when they have none;
+  * {@code contact} their contact, null when they have none. {@code clashing} is whether another sheet of the sheet's
+- * tree uses their name or any of their aliases as a name or alias.
++ * tree uses their name or any of their aliases as a name or alias. {@code origin} is the sheet they were transferred
++ * from, null when they were not transferred here.
+  */
+ public record PersonResponse(long id, String name, String grade, int version, int statementCount, String statedTotal,
+         String statementDate, boolean retired, String retiredFrom, boolean held,
+         List<Grade> grades, List<HoldDates> holds, Integer terms, String contact,
+-        boolean clashing) {
++        boolean clashing, String origin) {
+ 
+ 
+     /** A grade recorded for the person, from its from-date (yyyy-mm-dd; null: from the beginning of time). */
+@@ -24,7 +25,7 @@ public record PersonResponse(long id, String name, String grade, int version, in
+     public record HoldDates(String from, String to) {
+     }
+ 
+-    public static PersonResponse from(Person person, boolean clashing) {
++    public static PersonResponse from(Person person, boolean clashing, String origin) {
+         return new PersonResponse(person.id(), person.name(), person.grade(), person.version(), person.statementCount(),
+                 person.statedTotal(), person.statementDate() == null ? null : person.statementDate().toString(),
+                 person.retired(), person.retiredFrom() == null ? null : person.retiredFrom().toString(),
+@@ -32,6 +33,6 @@ public record PersonResponse(long id, String name, String grade, int version, in
+                         .map((g) -> new Grade(g.grade(), g.from() == null ? null : g.from().toString())).toList(),
+                 person.holds().stream().map((h) -> new HoldDates(h.from() == null ? null : h.from().toString(),
+                         h.to() == null ? null : h.to().toString())).toList(), person.terms(),
+-                person.contact(), clashing);
++                person.contact(), clashing, origin);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithMerge.java b/src/main/java/net/officefloor/hq/app/person/RespondWithMerge.java
+index 5ff507004..ced810543 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RespondWithMerge.java
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithMerge.java
+@@ -8,6 +8,7 @@ public class RespondWithMerge {
+     public void respond(@Val Merge merge, PersonRepository people, NameTree tree,
+             ObjectResponse<PersonResponse> response) {
+         Person into = people.find(merge.into().sheetId(), merge.into().id());
+-        response.send(PersonResponse.from(into, tree.clashing(into, people.aliases(into.sheetId(), into.id()))));
++        response.send(PersonResponse.from(into, tree.clashing(into, people.aliases(into.sheetId(), into.id())),
++                people.origin(into.sheetId(), into.id())));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+index 33bd696f7..37d7ca9a5 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithPeople.java
+@@ -12,7 +12,7 @@ import net.officefloor.web.ObjectResponse;
+ 
+ public class RespondWithPeople {
+     public void respond(@Val Sheet sheet, @Val List<Person> people, AliasRepository aliases, NameTree tree,
+-            ObjectResponse<List<PersonResponse>> response) {
++            PersonRepository repository, ObjectResponse<List<PersonResponse>> response) {
+         Set<String> taken = tree.taken(sheet.id());
+         Map<Long, List<String>> byPerson = new HashMap<>();
+         if (!taken.isEmpty()) {
+@@ -20,7 +20,9 @@ public class RespondWithPeople {
+                 byPerson.computeIfAbsent(a.personId(), (k) -> new java.util.ArrayList<>()).add(a.alias());
+             }
+         }
++        Map<Long, String> origins = repository.origins(sheet.id());
+         response.send(people.stream().map((p) -> PersonResponse.from(p,
+-                NameTree.clashing(taken, p.name(), byPerson.getOrDefault(p.id(), List.of())))).toList());
++                NameTree.clashing(taken, p.name(), byPerson.getOrDefault(p.id(), List.of())), origins.get(p.id())))
++                .toList());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithPerson.java b/src/main/java/net/officefloor/hq/app/person/RespondWithPerson.java
+index 5d58f70cf..210265f44 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RespondWithPerson.java
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithPerson.java
+@@ -6,6 +6,7 @@ import net.officefloor.web.ObjectResponse;
+ public class RespondWithPerson {
+     public void respond(@Val Person person, PersonRepository people, NameTree tree,
+             ObjectResponse<PersonResponse> response) {
+-        response.send(PersonResponse.from(person, tree.clashing(person, people.aliases(person.sheetId(), person.id()))));
++        response.send(PersonResponse.from(person, tree.clashing(person, people.aliases(person.sheetId(), person.id())),
++                people.origin(person.sheetId(), person.id())));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/RespondWithTransfer.java b/src/main/java/net/officefloor/hq/app/person/RespondWithTransfer.java
+index 512396bab..5eaccc253 100644
+--- a/src/main/java/net/officefloor/hq/app/person/RespondWithTransfer.java
++++ b/src/main/java/net/officefloor/hq/app/person/RespondWithTransfer.java
+@@ -8,6 +8,7 @@ public class RespondWithTransfer {
+     public void respond(@Val Transferred transferred, PersonRepository people, NameTree tree,
+             ObjectResponse<PersonResponse> response) {
+         Person person = transferred.person();
+-        response.send(PersonResponse.from(person, tree.clashing(person, people.aliases(person.sheetId(), person.id()))));
++        response.send(PersonResponse.from(person, tree.clashing(person, people.aliases(person.sheetId(), person.id())),
++                people.origin(person.sheetId(), person.id())));
+     }
+ }
+diff --git a/src/main/resources/db/migration/V69__person_origin.sql b/src/main/resources/db/migration/V69__person_origin.sql
+new file mode 100644
+index 000000000..7b341ec7b
+--- /dev/null
++++ b/src/main/resources/db/migration/V69__person_origin.sql
+@@ -0,0 +1,2 @@
++-- The sheet a person was transferred from, set as they arrive; null: they were not transferred here.
++ALTER TABLE person ADD COLUMN origin VARCHAR(200);
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/audit.GET.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/audit.GET.yml
+index 4c75f4c13..ee72f70ef 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/audit.GET.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/audit.GET.yml
+@@ -1,4 +1,5 @@
+-# The sheet's audit lines, newest first; ?name= keeps only the lines about that person (name= or person=).
++# The sheet's audit lines, newest first; ?name= keeps only the lines about that person (name= or person=), followed,
++# for a person transferred here, by the lines about them from the sheet they came from (newest first).
+ load:
+   class: net.officefloor.hq.app.sheet.LoadSheet
+   govern: [ readonly-transaction ]
