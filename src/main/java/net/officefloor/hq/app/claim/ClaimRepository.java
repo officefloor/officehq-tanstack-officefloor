@@ -142,6 +142,12 @@ public class ClaimRepository {
                 Date.valueOf(claim.deferredUntil()), claim.id(), claim.sheetId());
     }
 
+    /** Store the claim's {@code number}. */
+    public void renumber(Claim claim) {
+        jdbc.update("UPDATE claim SET claim_number = ? WHERE id = ? AND sheet_id = ?",
+                claim.number(), claim.id(), claim.sheetId());
+    }
+
     /** Store the claim's {@code date} and {@code number}. */
     public void redate(Claim claim) {
         jdbc.update("UPDATE claim SET claim_date = ?, claim_number = ? WHERE id = ? AND sheet_id = ?",
