@@ -38,20 +38,26 @@ public class PersonRepository {
         return found.isEmpty() ? null : found.get(0);
     }
 
-    /** The person on this sheet with this name, ignoring case, or null. */
+    /** The person on this sheet with this name or alias, ignoring case, or null. */
     public Person findByName(String sheetId, String name) {
         List<Person> found = withGrades(sheetId, jdbc.query(
-                "SELECT " + COLUMNS + " WHERE p.sheet_id = ? AND p.name_key = LOWER(?)",
-                PersonRepository::map, sheetId, name));
+                "SELECT " + COLUMNS + " WHERE p.sheet_id = ? AND (p.name_key = LOWER(?) OR EXISTS (SELECT 1 FROM"
+                        + " person_alias a WHERE a.sheet_id = p.sheet_id AND a.person_id = p.id AND a.alias_key = LOWER(?)))",
+                PersonRepository::map, sheetId, name, name));
         return found.isEmpty() ? null : found.get(0);
     }
 
-    /** Whether a person other than {@code exceptId} on the sheet has this name, ignoring case. */
+    /**
+     * Whether a person other than {@code exceptId} on the sheet has this name, or anyone on the sheet (themselves
+     * included) has it as an alias, ignoring case.
+     */
     public boolean nameTaken(String sheetId, String name, Long exceptId) {
         Integer n = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM person WHERE sheet_id = ? AND name_key = LOWER(?) AND (? IS NULL OR id <> ?)",
                 Integer.class, sheetId, name, exceptId, exceptId);
-        return n != null && n > 0;
+        Integer a = jdbc.queryForObject("SELECT COUNT(*) FROM person_alias WHERE sheet_id = ? AND alias_key = LOWER(?)",
+                Integer.class, sheetId, name);
+        return (n != null && n > 0) || (a != null && a > 0);
     }
 
     /** Whether a person other than {@code exceptId} on the sheet has this contact. */

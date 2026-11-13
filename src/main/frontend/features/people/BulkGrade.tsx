@@ -10,7 +10,7 @@ import { useSelectedPeople } from './selection';
 
 // Gives every ticked person a grade from a date (blank: the sheet's today), one after another in list
 // order. Each goes through the person's own edit, exactly as the person form saves it (keeping their
-// name and terms, from the version listed), so it is audited and rolled up the same way. One the server
+// name, terms and contact, from the version listed), so it is audited and rolled up the same way. One the server
 // refuses is left as it is and shows the refusal on its row; the count is of those changed.
 export function BulkGrade() {
   const [user] = useCurrentUser();
@@ -37,7 +37,8 @@ export function BulkGrade() {
         try {
           await putJson<Person>(
             `/api/sheets/${encodeURIComponent(sheet)}/people/${p.id}?user=${encodeURIComponent(user)}`,
-            { name: p.name, grade, gradeFrom: from, terms: p.terms == null ? '' : String(p.terms), version: p.version },
+            { name: p.name, grade, gradeFrom: from, terms: p.terms == null ? '' : String(p.terms),
+              contact: p.contact ?? '', version: p.version },
           );
           changed++;
         } catch {
