@@ -1,0 +1,91 @@
+diff --git a/src/main/frontend/features/aging/PersonAged.tsx b/src/main/frontend/features/aging/PersonAged.tsx
+new file mode 100644
+index 000000000..acbdacf46
+--- /dev/null
++++ b/src/main/frontend/features/aging/PersonAged.tsx
+@@ -0,0 +1,24 @@
++import { useClaims } from '../claims/claims';
++import { liveHolds } from '../people/people';
++import type { Person } from '../people/people';
++import { useRates } from '../rates/rates';
++import { useDueRules } from '../settings/settings';
++import { personAged } from './aging';
++import type { AgeBucket } from './aging';
++
++function usePersonAged(person: Person) {
++  const rates = useRates().data ?? [];
++  const rules = useDueRules();
++  const claims = (useClaims().data ?? []).filter((c) => c.personId === person.id);
++  return personAged(claims, rates, person.grades, liveHolds(person, rules.today), rules);
++}
++
++// The dues of a person's open counting claims aged 0 to 30, 31 to 60, or 61 or more days on the sheet's today.
++const bucketCell = (bucket: AgeBucket) =>
++  function PersonAgedCell({ person }: { person: Person }) {
++    return <td data-testid={`person-aged-${bucket}`}>{usePersonAged(person)[bucket]}</td>;
++  };
++
++export const PersonAged0to30 = bucketCell('0-30');
++export const PersonAged31to60 = bucketCell('31-60');
++export const PersonAged61 = bucketCell('61');
+diff --git a/src/main/frontend/features/aging/aging.slot.tsx b/src/main/frontend/features/aging/aging.slot.tsx
+new file mode 100644
+index 000000000..35b4cc6a3
+--- /dev/null
++++ b/src/main/frontend/features/aging/aging.slot.tsx
+@@ -0,0 +1,11 @@
++import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
++import { PersonAged0to30, PersonAged31to60, PersonAged61 } from './PersonAged';
++
++export const contributions = [
++  PersonColumnHeads.fill({ order: 17.1, Component: () => <th>0–30 days</th> }),
++  PersonColumns.fill({ order: 17.1, Component: PersonAged0to30 }),
++  PersonColumnHeads.fill({ order: 17.2, Component: () => <th>31–60 days</th> }),
++  PersonColumns.fill({ order: 17.2, Component: PersonAged31to60 }),
++  PersonColumnHeads.fill({ order: 17.3, Component: () => <th>61+ days</th> }),
++  PersonColumns.fill({ order: 17.3, Component: PersonAged61 }),
++];
+diff --git a/src/main/frontend/features/aging/aging.ts b/src/main/frontend/features/aging/aging.ts
+new file mode 100644
+index 000000000..d61a1b21b
+--- /dev/null
++++ b/src/main/frontend/features/aging/aging.ts
+@@ -0,0 +1,38 @@
++import { counts, isOpen } from '../claims/claims';
++import type { Claim } from '../claims/claims';
++import { claimDue, total } from '../rates/rates';
++import type { Rate } from '../rates/rates';
++import type { GradeFrom, Hold } from '../people/people';
++import type { DueRules } from '../settings/settings';
++
++/** The age buckets a claim falls in by its days on the sheet's today: 0 to 30, 31 to 60, 61 or more. */
++export type AgeBucket = '0-30' | '31-60' | '61';
++
++/** A claim's age on the sheet's today, in days from its date; a claim dated after today is 0. */
++export function claimAge(claim: Claim, today: string): number {
++  if (today === '' || claim.date >= today) return 0;
++  return Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${claim.date}T00:00:00Z`)) / 86_400_000);
++}
++
++/** The bucket a claim's age falls in. */
++export function ageBucket(claim: Claim, today: string): AgeBucket {
++  const age = claimAge(claim, today);
++  return age <= 30 ? '0-30' : age <= 60 ? '31-60' : '61';
++}
++
++/**
++ * A person's OPEN and PENDING claims that count, their dues (late charges included) added up per age
++ * bucket (skipping n/a; 0.00 with none).
++ */
++export function personAged(
++  claims: Claim[],
++  rates: Rate[],
++  grades: GradeFrom[],
++  holds: Hold[],
++  rules: DueRules,
++): Record<AgeBucket, string> {
++  const live = claims.filter((c) => isOpen(c) && counts(c, holds, rules.today));
++  const sum = (bucket: AgeBucket) =>
++    total(live.filter((c) => ageBucket(c, rules.today) === bucket).map((c) => claimDue(c, rates, grades, rules)));
++  return { '0-30': sum('0-30'), '31-60': sum('31-60'), '61': sum('61') };
++}
