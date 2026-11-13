@@ -1,0 +1,62 @@
+diff --git a/src/main/frontend/features/counters/HeaderCounters.tsx b/src/main/frontend/features/counters/HeaderCounters.tsx
+index 7ff577f25..cb238d585 100644
+--- a/src/main/frontend/features/counters/HeaderCounters.tsx
++++ b/src/main/frontend/features/counters/HeaderCounters.tsx
+@@ -1,3 +1,5 @@
++import { useAliases } from '../aliases/aliases';
++import type { Alias } from '../aliases/aliases';
+ import { useClaims } from '../claims/claims';
+ import type { Claim } from '../claims/claims';
+ import { personOverdue } from '../overdue/overdue';
+@@ -7,6 +9,7 @@ import { personDue, trimmedTotal, useRates } from '../rates/rates';
+ import type { Rate } from '../rates/rates';
+ import { useDueRules } from '../settings/settings';
+ import type { DueRules } from '../settings/settings';
++import { useCurrentUser } from '../session/session';
+ 
+ /** The statuses counted, as in the summary; one no claim reaches yet still shows, as 0. */
+ const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
+@@ -19,14 +22,33 @@ export function sheetTotals(people: Person[], claims: Claim[], rates: Rate[], ru
+   return { due: trimmedTotal(dues), overdue: trimmedTotal(overdue) };
+ }
+ 
++/** A name as names are compared: trimmed, ignoring case. */
++const nameKey = (name: string) => name.trim().toLowerCase();
++
++/** The person on the sheet with the user's name, by name or alias, if any. */
++export function personNamed(people: Person[], aliases: Alias[], user: string): Person | undefined {
++  const key = nameKey(user);
++  if (!key) return undefined;
++  return (
++    people.find((p) => nameKey(p.name) === key) ??
++    people.find((p) => aliases.some((a) => a.personId === p.id && nameKey(a.alias) === key))
++  );
++}
++
+ // The sheet's counters, always in the header: everyone on it (retired people included), its claims per
+-// status, and its due-total and overdue-total — each worked out exactly as the figure it repeats.
++// status, its due-total and overdue-total, and the signed-in user's own (blank when no one on it has their name) — each worked out exactly as the figure it repeats.
+ export function HeaderCounters() {
+   const people = usePeople().data ?? [];
+   const claims = useClaims().data ?? [];
+   const rates = useRates().data ?? [];
+   const rules = useDueRules();
++  const aliases = useAliases().data ?? [];
++  const [user] = useCurrentUser();
+ 
++  const me = personNamed(people, aliases, user ?? '');
++  const mine = me ? claims.filter((c) => c.personId === me.id) : [];
++  const myDue = me ? personDue(mine, rates, me.grades, liveHolds(me, rules.today), rules) : '';
++  const myOverdue = me ? personOverdue(mine, rates, me.grades, liveHolds(me, rules.today), rules).total : '';
+   const totals = sheetTotals(people, claims, rates, rules);
+   return (
+     <p data-testid="header-counters">
+@@ -39,6 +61,8 @@ export function HeaderCounters() {
+       ))}
+       {' · '}Due: <strong data-testid="header-due-total">{totals.due}</strong>
+       {' · '}Overdue: <strong data-testid="header-overdue-total">{totals.overdue}</strong>
++      {' · '}Mine: <strong data-testid="my-due-total">{myDue}</strong>
++      {' / '}<strong data-testid="my-overdue-total">{myOverdue}</strong>
+     </p>
+   );
+ }
