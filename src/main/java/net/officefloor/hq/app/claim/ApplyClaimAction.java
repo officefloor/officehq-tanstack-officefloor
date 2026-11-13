@@ -21,8 +21,8 @@ import org.springframework.web.bind.annotation.RequestParam;
  * number within the period containing its date (P1-1, P1-2, ...), or within the claims in no period (X-1, ...).
  * Opening, settling and voiding are refused (400) to a role the sheet's permission matrix does not allow them.
  * Opening records the user who opened it; that user cannot settle it (four eyes). A deferred claim cannot be settled.
- * Settling fixes the claim's due at its person's grade's rate in force on the claim's date, raised to the sheet's floor and rounded by its policy date — or, when a statement
- * bound the claim, at the figure it was bound to — plus the late charge it has then, if overdue, frozen in; with no
+ * Settling fixes the claim's due at the greater of the sheet's floor in force on its date and its figure — at its person's grade's rate in force on the claim's date,
+ * rounded by its policy date, or, when a statement bound the claim, the figure it was bound to — plus the late charge it has then, if overdue, frozen in; with no
  * figure it stays live. A clerk settling a claim whose due is above the sheet's clerk limit (a due of n/a is within any
  * limit) makes it PENDING instead, live and unfixed. A claim with no proofs whose due is above the sheet's proof threshold in
  * force on its date is refused settling or approving — before the clerk limit is considered, so it never goes PENDING. Only a steward approves a PENDING claim (fixing its due at its live

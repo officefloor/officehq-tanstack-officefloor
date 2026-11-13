@@ -86,20 +86,18 @@ function percentOf(amountCents: number, basisPoints: number, rounding: Rounding)
   return (cents / 100).toFixed(2);
 }
 
-/** A live due raised to the floor (both two decimals); n/a stays n/a. */
+/** A due raised to the floor (both two decimals); n/a stays n/a. */
 export function floored(value: string, floor: string): string {
   return value !== NA && hundredths(value) < hundredths(floor) ? Number(floor).toFixed(2) : value;
 }
 
 /**
  * A claim's figure: the figure its statement bound it to (not while PENDING), else its amount at the rate in force on its
- * date for the person's grade in force on that date, rounded by the policy date, at least the floor in force on its date —
- * a correction has no floor.
+ * date for the person's grade in force on that date, rounded by the policy date — no floor.
  */
 function claimFigure(claim: Claim, rates: Rate[], grades: GradeFrom[], rules: DueRules): string {
   if (bound(claim)) return claim.statedDue ?? NA;
-  const live = due(claim.amount, rateFor(rates, gradeOn(grades, claim.date), claim.date), roundingFor(claim, rules));
-  return claim.corrects !== null ? live : floored(live, rules.floorOn(claim.date));
+  return due(claim.amount, rateFor(rates, gradeOn(grades, claim.date), claim.date), roundingFor(claim, rules));
 }
 
 /**
@@ -119,14 +117,15 @@ export function lateCharge(claim: Claim, figure: string, rules: DueRules): strin
 }
 
 /**
- * A claim's due: the one fixed when it was settled (any late charge frozen in), else its figure plus
- * the late charge on it while it is overdue. The charge is never bound by a statement: it follows the
- * sheet's today.
+ * A claim's due: the one fixed when it was settled (any late charge and floor frozen in), else the greater of the
+ * floor in force on its date and its figure plus the late charge on it while it is overdue — a correction has no
+ * floor and no charge. Neither the charge nor the floor is bound by a statement: they follow the sheet's today.
  */
 export function claimDue(claim: Claim, rates: Rate[], grades: GradeFrom[], rules: DueRules): string {
   if (claim.due !== null) return claim.due;
   const figure = claimFigure(claim, rates, grades, rules);
-  return figure === NA ? NA : total([figure, lateCharge(claim, figure, rules)]);
+  if (figure === NA || claim.corrects !== null) return figure;
+  return floored(total([figure, lateCharge(claim, figure, rules)]), rules.floorOn(claim.date));
 }
 
 /** Whether a claim keeps a figure whatever the rates: fixed when settled, or bound by a statement. */

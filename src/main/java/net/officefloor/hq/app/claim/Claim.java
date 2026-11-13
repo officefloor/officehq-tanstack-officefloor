@@ -125,27 +125,30 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
 
     /**
      * The claim's figure (null: n/a): the due fixed when it was settled, else the figure its statement bound
-     * it to (not while PENDING), else its amount at the given live rate (null: none), at least the sheet's floor — a correction has
-     * no floor. Its live figure rounds by the sheet's policy date.
+     * it to (not while PENDING), else its amount at the given live rate (null: none) — no floor. Its live figure
+     * rounds by the sheet's policy date.
      */
-    public BigDecimal figure(BigDecimal liveRate, BigDecimal floor, Rounding rounding) {
+    public BigDecimal figure(BigDecimal liveRate, Rounding rounding) {
         if (due != null) {
             return due;
         }
         if (bound()) {
             return statedDue;
         }
-        RoundingMode mode = rounding.modeFor(this);
-        return correction() ? due(amount, liveRate, mode) : due(amount, liveRate, floor, mode);
+        return due(amount, liveRate, rounding.modeFor(this));
     }
 
     /**
-     * The claim's due (null: n/a): its {@link #figure figure}, plus the late charge on it while it is overdue. A
-     * settled claim's fixed due already has the charge frozen in.
+     * The claim's due (null: n/a): the due fixed when it was settled, else the greater of the floor in force on its
+     * date and its {@link #figure figure} plus the late charge on that figure while it is overdue. A settled claim's
+     * fixed due already has the charge and floor frozen in; a correction has no floor and no charge.
      */
     public BigDecimal due(BigDecimal liveRate, BigDecimal floor, LateCharge late, Rounding rounding) {
-        BigDecimal figure = figure(liveRate, floor, rounding);
-        return due != null || figure == null ? figure : figure.add(late.on(this, figure, rounding.modeFor(this)));
+        BigDecimal figure = figure(liveRate, rounding);
+        if (due != null || figure == null || correction()) {
+            return figure;
+        }
+        return atLeast(figure.add(late.on(this, figure, rounding.modeFor(this))), floor);
     }
 
     /** An amount times a percent rate, divided by 100, rounded by the mode to two decimals; null with no rate. */
@@ -153,10 +156,9 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
         return rate == null ? null : amount.multiply(rate).movePointLeft(2).setScale(2, mode);
     }
 
-    /** A live due: {@link #due(BigDecimal, BigDecimal, RoundingMode)}, raised to the floor; null with no rate. */
-    public static BigDecimal due(BigDecimal amount, BigDecimal rate, BigDecimal floor, RoundingMode mode) {
-        BigDecimal due = due(amount, rate, mode);
-        return due == null || due.compareTo(floor) >= 0 ? due : floor.setScale(2);
+    /** The value raised to the floor (null: no floor). */
+    static BigDecimal atLeast(BigDecimal value, BigDecimal floor) {
+        return floor == null || value.compareTo(floor) >= 0 ? value : floor.setScale(2);
     }
 
     /** The audit field for the claim's number, " number=<n>", or "" when it has none. */

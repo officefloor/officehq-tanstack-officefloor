@@ -19,9 +19,9 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * Takes the person's statement: records their due-total now, binds each of their claims that counts to the
- * figure it has now (a live one raised to the floor in force on its date), and unbinds (live again) each that does not. The due-total is their counting claims'
- * dues added up, at most the cap in force on the sheet's today (each figure plus any late charge on it — the charge is never bound, it keeps following the
- * sheet's today); n/a when their grade on the sheet's today has no rate there and no counting claim has a figure (kept, or at the
+ * figure it has now (a live one at its rate alone, not raised to the floor), and unbinds (live again) each that does not. The due-total is their counting claims'
+ * dues added up, at most the cap in force on the sheet's today (each the greater of the floor in force on its date and its figure plus any late charge on
+ * it — the charge and floor are never bound, they keep following the sheet's today and settings); n/a when their grade on the sheet's today has no rate there and no counting claim has a figure (kept, or at the
  * rate for the grade in force on its date).
  */
 public class TakeStatement {
@@ -41,13 +41,13 @@ public class TakeStatement {
                 continue;
             }
             boolean fixed = claim.keepsFigure();
-            BigDecimal figure = claim.figure(Rate.inForce(sheetRates, person.gradeOn(claim.date()), claim.date()),
-                    dated.floorOn(claim.date()), rounding);
+            BigDecimal rate = Rate.inForce(sheetRates, person.gradeOn(claim.date()), claim.date());
+            BigDecimal figure = claim.figure(rate, rounding);
             claims.bindStatement(claim, true, figure);
             counted++;
             kept |= fixed || figure != null;
             if (figure != null) {
-                total = total.add(figure).add(dated.lateCharge(today).on(claim, figure, rounding.modeFor(claim)));
+                total = total.add(claim.due(rate, dated.floorOn(claim.date()), dated.lateCharge(today), rounding));
             }
         }
         String dueTotal = Rate.inForce(sheetRates, person.grade(), today) == null && !kept ? "n/a"
