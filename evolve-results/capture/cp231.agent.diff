@@ -1,0 +1,154 @@
+diff --git a/src/main/frontend/features/periods/export.slot.tsx b/src/main/frontend/features/periods/export.slot.tsx
+new file mode 100644
+index 000000000..4a6d3c1a1
+--- /dev/null
++++ b/src/main/frontend/features/periods/export.slot.tsx
+@@ -0,0 +1,73 @@
++import { HomeMain } from '../../slots/defs/homeMain';
++import { useCurrentSheet, useCurrentUser } from '../../session/session';
++import { useSheetToday } from '../sheet/sheet';
++import { useClaims } from '../claims/claims';
++import { usePeople } from '../people/people';
++import { useRates } from '../rates/rates';
++import { floorOf, useSettings } from '../settings/settings';
++import { lateOf } from '../overdue/overdue';
++import { personPeriodCarried, personPeriodDue, usePeriods } from './periods';
++import { useFigure } from '../locale/locale';
++import { openingOf, useOpenings } from '../openings/openings';
++
++/** A CSV value: wrapped in double quotes, inner quotes doubled, when it holds a comma, quote or line break. */
++const cell = (v: string) => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
++
++// Downloads the period figures as CSV: person, period, due-total figure and carried figure as the person's
++// row shows them, one line per person and period, people in list order and periods in the order added.
++function ExportPeriods() {
++  const fig = useFigure();
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const periods = usePeriods(sheet);
++  const people = usePeople(sheet);
++  const claims = useClaims(sheet);
++  const rates = useRates(sheet);
++  const openings = useOpenings(sheet);
++  const today = useSheetToday(sheet);
++  const settingsQuery = useSettings(sheet);
++  const settings = settingsQuery.data;
++
++  if (!user || !sheet) return null;
++
++  // The figures are read as the rows show them: wait until every one is loaded.
++  const ready = !!periods.data && !!people.data && !!claims.data && !!rates.data && !!openings.data
++    && !!settingsQuery.data && today !== undefined;
++
++  const download = () => {
++    const floor = floorOf(settings);
++    const added = [...(periods.data ?? [])].sort((a, b) => a.added - b.added);
++    const lines = [['person', 'period', 'figure', 'carried']];
++    for (const person of people.data ?? []) {
++      const late = lateOf(settings, today, [person]);
++      for (const p of added) {
++        lines.push([
++          person.name,
++          p.name,
++          fig(personPeriodDue(p, person, claims.data, rates.data, floor, late)),
++          fig(personPeriodCarried(p, periods.data, person, claims.data, rates.data, floor, late,
++            openingOf(openings.data, p.name, person.id))),
++        ]);
++      }
++    }
++    const csv = lines.map((l) => l.map(cell).join(',') + '\n').join('');
++    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
++    const a = document.createElement('a');
++    a.href = url;
++    a.download = `periods-${sheet}.csv`;
++    document.body.appendChild(a);
++    a.click();
++    a.remove();
++    setTimeout(() => URL.revokeObjectURL(url), 1000);
++  };
++
++  return (
++    <p>
++      <button type="button" data-testid="export-periods" disabled={!ready} onClick={download}>
++        Export period figures (CSV)
++      </button>
++    </p>
++  );
++}
++
++export const contribution = HomeMain.fill({ order: 45.5, Component: ExportPeriods });
+diff --git a/src/main/frontend/features/periods/periods.ts b/src/main/frontend/features/periods/periods.ts
+index afc9fbb8d..6f5e282c0 100644
+--- a/src/main/frontend/features/periods/periods.ts
++++ b/src/main/frontend/features/periods/periods.ts
+@@ -11,7 +11,8 @@ import { type Floor, type Late, type Rate, claimDue, dueTotal } from '../rates/r
+  *  due-total fixed on closing, by person id (empty while open), and whether it is soft-closed: not closed,
+  *  but with those figures fixed as when it was soft-closed, and the most OPEN or PENDING claims a person may
+  *  have in it (null for no cap), and each person's carried figure fixed with their due-total, by person id
+- *  (empty while open), and whether a steward has locked it (a locked period cannot be reopened). No two periods on a sheet overlap. */
++ *  (empty while open), and whether a steward has locked it (a locked period cannot be reopened), and its place in the order
++ *  the periods were added (higher is later). No two periods on a sheet overlap. */
+ export type Period = {
+   name: string;
+   from: string;
+@@ -23,6 +24,7 @@ export type Period = {
+   cap: number | null;
+   carried: Record<string, string>;
+   locked: boolean;
++  added: number;
+ };
+ 
+ /** Whether the period's figures are fixed: it is closed or soft-closed. */
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java b/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java
+index d7c04bfed..c82a1a11b 100644
+--- a/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodResponse.java
+@@ -11,9 +11,10 @@ import java.util.Map;
+  *  whether it is soft-closed: not closed, but with its figures fixed (total and people) as when it was soft-closed,
+  *  and the most OPEN or PENDING claims a person may have in it (null for no cap), and each person's carried figure
+  *  fixed with their due-total, by person id (empty while open; a person missing shows 0.00), and whether a steward
+- *  has locked it (a locked period cannot be reopened). */
++ *  has locked it (a locked period cannot be reopened), and its place in the order the periods were added (0 where
++ *  not read from the store). */
+ public record PeriodResponse(String name, String from, String to, boolean closed, String total,
+-        Map<Long, String> people, boolean soft, Integer cap, Map<Long, String> carried, boolean locked) {
++        Map<Long, String> people, boolean soft, Integer cap, Map<Long, String> carried, boolean locked, long added) {
+     public static PeriodResponse of(String name, LocalDate from, LocalDate to, Integer cap) {
+         return of(name, from, to, false, null, Map.of(), false, cap, Map.of());
+     }
+@@ -27,7 +28,12 @@ public record PeriodResponse(String name, String from, String to, boolean closed
+             Map<Long, BigDecimal> people, boolean soft, Integer cap, Map<Long, BigDecimal> carried, boolean locked) {
+         return new PeriodResponse(name, from.toString(), to.toString(), closed,
+                 total == null ? null : total.setScale(2).toPlainString(), shown(people), soft, cap, shown(carried),
+-                locked);
++                locked, 0);
++    }
++
++    /** This period with its place in the order the periods were added. */
++    public PeriodResponse withAdded(long added) {
++        return new PeriodResponse(name, from, to, closed, total, people, soft, cap, carried, locked, added);
+     }
+ 
+     private static Map<Long, String> shown(Map<Long, BigDecimal> figures) {
+diff --git a/src/main/java/net/officefloor/hq/app/period/PeriodStore.java b/src/main/java/net/officefloor/hq/app/period/PeriodStore.java
+index 9d50e9d92..3c0413479 100644
+--- a/src/main/java/net/officefloor/hq/app/period/PeriodStore.java
++++ b/src/main/java/net/officefloor/hq/app/period/PeriodStore.java
+@@ -21,7 +21,7 @@ public class PeriodStore {
+                     : Map.of(),
+             rs.getBoolean("soft"), cap(rs),
+             rs.getBoolean("closed") || rs.getBoolean("soft") ? personCarried(rs.getString("sheet_id"), rs.getString("name"),
+-                    "period_person_total") : Map.of(), rs.getBoolean("locked"));
++                    "period_person_total") : Map.of(), rs.getBoolean("locked")).withAdded(rs.getLong("id"));
+ 
+     private final JdbcTemplate jdbc;
+ 
+@@ -48,7 +48,7 @@ public class PeriodStore {
+                         rs.getBoolean("soft"), cap(rs),
+                         rs.getBoolean("closed") || rs.getBoolean("soft")
+                                 ? personCarried(rs.getString("sheet_id"), rs.getString("name"), totals)
+-                                : Map.of(), rs.getBoolean("locked")),
++                                : Map.of(), rs.getBoolean("locked")).withAdded(rs.getLong("id")),
+                 sheetId);
+     }
+ 
