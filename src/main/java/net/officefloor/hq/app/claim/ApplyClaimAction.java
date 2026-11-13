@@ -2,6 +2,7 @@ package net.officefloor.hq.app.claim;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import net.officefloor.hq.app.period.Period;
 import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.PersonRepository;
@@ -9,6 +10,7 @@ import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.setting.Role;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
+import net.officefloor.hq.app.voidreason.VoidReasonRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -32,6 +34,8 @@ import org.springframework.web.bind.annotation.RequestParam;
  * bound by no statement (today's rates, grades, floor and late charge); its previous due is kept for the audit.
  * Only a steward voids a SETTLED claim, and only while the sheet's today is within 7 days of its settlement (the
  * status log's latest SETTLED date); it keeps its number and its frozen due, which leaves every total.
+ * While the sheet's void reasons list is not empty, a void is refused (400) without a reason chosen from it; a reason
+ * not on the list is always refused.
  */
 public class ApplyClaimAction {
 
@@ -41,7 +45,7 @@ public class ApplyClaimAction {
     public void apply(@PathVariable("action") String action, @RequestParam("user") String user, @Val Claim claim,
             @Val ClaimActionRequest request, SheetRepository sheets,
             PersonRepository people, RateRepository rates, SettingRepository settings, PeriodRepository periods,
-            ClaimRepository claims, ClaimLogRepository logs, Out<ClaimAction> applied, Out<ClaimNumber> number, Out<PreviousDue> previous, Out<Claim> updated) throws InvalidClaimException {
+            VoidReasonRepository voidReasons, ClaimRepository claims, ClaimLogRepository logs, Out<ClaimAction> applied, Out<ClaimNumber> number, Out<PreviousDue> previous, Out<Claim> updated) throws InvalidClaimException {
         ClaimAction found = ClaimAction.of(action);
         if (found == null) {
             throw new InvalidClaimException("No such claim action: " + action);
@@ -79,6 +83,12 @@ public class ApplyClaimAction {
             if (settledOn == null || sheets.today(claim.sheetId()).isAfter(settledOn.plusDays(VOID_SETTLED_DAYS))) {
                 throw new InvalidClaimException("A settled claim can be voided only within " + VOID_SETTLED_DAYS
                         + " days of its settlement.");
+            }
+        }
+        if (found == ClaimAction.VOID) {
+            List<String> reasons = voidReasons.findAll(claim.sheetId());
+            if (request.reason().isEmpty() ? !reasons.isEmpty() : !reasons.contains(request.reason())) {
+                throw new InvalidClaimException("A void needs a reason chosen from the sheet's void reasons.");
             }
         }
         if (found == ClaimAction.REJECT && request.reason().isEmpty()) {

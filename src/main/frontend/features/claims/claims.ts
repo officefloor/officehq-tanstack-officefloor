@@ -41,7 +41,8 @@ export const bound = (c: Claim) => c.stated && c.status !== 'PENDING';
  * lateEntry is whether it was added while the period containing its due-by was soft-closed;
  * reminded (yyyy-MM-dd) is the last day a reminder was written for it, null when it never was;
  * ref is its external reference (unique on the sheet, ignoring case), null when it has none;
- * tags are its tags (lower-cased, no repeats), sorted; empty when it has none.
+ * tags are its tags (lower-cased, no repeats), sorted; empty when it has none;
+ * voidReason is the reason from the sheet's void reasons it was voided with, null when none.
  */
 export type Claim = {
   id: number;
@@ -66,6 +67,7 @@ export type Claim = {
   reminded: string | null;
   ref: string | null;
   tags: string[];
+  voidReason: string | null;
 };
 
 /** A line of a claim's status log: the status, the user, the sheet's today (yyyy-MM-dd) and the due then (two decimals, or n/a). */

@@ -186,6 +186,29 @@ public class ClaimRepository {
         return refs;
     }
 
+    /** Store the reason the claim was voided with (null: none). */
+    public void saveVoidReason(Claim claim, String reason) {
+        jdbc.update("UPDATE claim SET void_reason = ? WHERE id = ? AND sheet_id = ?", reason, claim.id(),
+                claim.sheetId());
+    }
+
+    /** The reason the claim was voided with, or null. */
+    public String voidReason(String sheetId, long id) {
+        List<String> found = jdbc.queryForList("SELECT void_reason FROM claim WHERE sheet_id = ? AND id = ?",
+                String.class, sheetId, id);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** The reason each of the sheet's claims voided with one was voided with, by claim id. */
+    public Map<Long, String> voidReasons(String sheetId) {
+        Map<Long, String> reasons = new HashMap<>();
+        jdbc.query("SELECT id, void_reason FROM claim WHERE sheet_id = ? AND void_reason IS NOT NULL",
+                (ResultSet rs) -> {
+                    reasons.put(rs.getLong("id"), rs.getString("void_reason"));
+                }, sheetId);
+        return reasons;
+    }
+
     /** Store the claim's tags (stored form; null: none), adding each to the sheet's tag list. */
     public void saveTags(Claim claim, String tags) {
         jdbc.update("UPDATE claim SET tags = ? WHERE id = ? AND sheet_id = ?", tags, claim.id(), claim.sheetId());

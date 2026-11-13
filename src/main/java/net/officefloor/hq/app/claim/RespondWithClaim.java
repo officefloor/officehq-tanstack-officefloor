@@ -11,6 +11,7 @@ public class RespondWithClaim {
                 repository.lateEntry(claim.sheetId(), claim.id()),
                 repository.reminded(claim.sheetId(), claim.id()),
                 repository.ref(claim.sheetId(), claim.id()),
-                repository.tags(claim.sheetId(), claim.id())));
+                repository.tags(claim.sheetId(), claim.id()),
+                repository.voidReason(claim.sheetId(), claim.id())));
     }
 }

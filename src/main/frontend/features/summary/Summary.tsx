@@ -5,13 +5,14 @@ import { periodDue, usePeriods } from '../periods/periods';
 import { personDue, total, useRates } from '../rates/rates';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { useDueRules } from '../settings/settings';
+import { useVoidReasons } from '../voidreasons/voidReasons';
 
 /** The statuses the summary counts claims by; one no claim reaches yet still shows, as 0. */
 const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
 
 // The sheet at a glance, worked out from the same figures the list shows. Per grade: the people on it
 // today (retired people left out), their due-totals added up (skipping n/a) and how many of them are active. Per period: its
-// due-total. Per status: how many claims have it.
+// due-total. Per status: how many claims have it. Per void reason on the list: how many VOID claims were voided with it.
 export function Summary() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -20,6 +21,7 @@ export function Summary() {
   const periods = usePeriods().data ?? [];
   const rates = useRates().data ?? [];
   const rules = useDueRules();
+  const voidReasons = useVoidReasons().data ?? [];
 
   if (!user || !sheet) return null;
 
@@ -82,6 +84,24 @@ export function Summary() {
             <tr key={s}>
               <td>{s}</td>
               <td data-testid={`summary-status-${s}-count`}>{claims.filter((c) => c.status === s).length}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <table>
+        <thead>
+          <tr>
+            <th>Void reason</th>
+            <th>Claims</th>
+          </tr>
+        </thead>
+        <tbody>
+          {voidReasons.map((r) => (
+            <tr key={r}>
+              <td>{r}</td>
+              <td data-testid={`summary-void-${r}-count`}>
+                {claims.filter((c) => c.status === 'VOID' && c.voidReason === r).length}
+              </td>
             </tr>
           ))}
         </tbody>

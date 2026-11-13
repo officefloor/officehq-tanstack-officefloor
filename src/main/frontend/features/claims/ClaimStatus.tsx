@@ -7,6 +7,7 @@ import type { Claim } from './claims';
 import { AMOUNT, claimsKey } from './claims';
 import { useOneAtATime } from '../../query/useOneAtATime';
 import { useClaimError } from './claimError';
+import { useVoidReasons } from '../voidreasons/voidReasons';
 
 type Action = 'open' | 'settle' | 'approve' | 'reject' | 'void' | 'resettle';
 
@@ -22,7 +23,7 @@ const ACTIONS: Array<{ action: Action; label: string }> = [
 const REFUSED: Partial<Record<Action, string>> = {
   open: ' (your role may not be allowed to open a claim)',
   settle: ' (the user who opened it cannot settle it, one whose due is above the proof threshold needs a proof, and your role may not be allowed to settle)',
-  void: ' (your role may not be allowed to void a claim; only a steward voids a settled claim, within 7 days of its settlement)',
+  void: ' (your role may not be allowed to void a claim; only a steward voids a settled claim, within 7 days of its settlement; while the sheet has void reasons, choose one)',
   approve: ' (only a steward approves a pending claim, and not the user who opened it; one whose due is above the proof threshold needs a proof)',
   reject: ' (only a steward rejects a pending claim, and a reason is required)',
   resettle: ' (only a steward re-settles a settled claim)',
@@ -36,12 +37,15 @@ const REFUSED: Partial<Record<Action, string>> = {
 // date typed beside the Defer button. The Add proof button raises the claim's proofs count by one (not on a
 // SETTLED or VOID claim, nor one due by a date in a closed period). The Split button splits the amount typed beside it off an
 // OPEN claim into a new OPEN claim of the same person (more than 0.00 and less than the claim's amount). A steward
-// re-dates an OPEN or PENDING claim to the date typed beside the Re-date button.
+// re-dates an OPEN or PENDING claim to the date typed beside the Re-date button. While the sheet has void reasons, a void
+// sends the reason chosen beside it (none chosen: the server refuses it).
 export function ClaimStatus({ claim }: { claim: Claim }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const [error, setError] = useClaimError(claim.id);
   const [reason, setReason] = useState('');
+  const [voidReason, setVoidReason] = useState('');
+  const voidReasons = useVoidReasons().data ?? [];
   const [moveTo, setMoveTo] = useState('');
   const [deferTo, setDeferTo] = useState('');
   const [splitAmount, setSplitAmount] = useState('');
@@ -54,10 +58,11 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
     mutationFn: (action: Action) =>
       postJson<Claim>(
         `/api/sheets/${encodeURIComponent(sheet)}/claims/${claim.id}/${action}?user=${encodeURIComponent(user)}`,
-        action === 'reject' ? { reason } : {},
+        action === 'reject' ? { reason } : action === 'void' ? { reason: voidReason } : {},
       ),
     onSuccess: async (_c, action) => {
       if (action === 'reject') setReason('');
+      if (action === 'void') setVoidReason('');
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
     },
     onError: (_e, action) => setError(`This ${claim.status} claim cannot be changed by ${action}${REFUSED[action] ?? ''}.`),
@@ -156,6 +161,24 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
           setError('');
         }}
       />
+      {voidReasons.length > 0 && (
+        <select
+          data-testid="claim-void-reason"
+          aria-label="Void reason"
+          value={voidReason}
+          onChange={(e) => {
+            setVoidReason(e.target.value);
+            setError('');
+          }}
+        >
+          <option value="">void reason…</option>
+          {voidReasons.map((r) => (
+            <option key={r} value={r}>
+              {r}
+            </option>
+          ))}
+        </select>
+      )}
       <select
         data-testid="claim-reassign-to"
         aria-label="Move to"

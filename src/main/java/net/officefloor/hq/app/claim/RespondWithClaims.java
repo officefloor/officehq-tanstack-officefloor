@@ -17,9 +17,10 @@ public class RespondWithClaims {
         Map<Long, LocalDate> reminded = repository.remindedAll(sheet.id());
         Map<Long, String> refs = repository.refs(sheet.id());
         Map<Long, String> tags = repository.tagsAll(sheet.id());
+        Map<Long, String> voidReasons = repository.voidReasons(sheet.id());
         response.send(claims.stream()
                 .map((c) -> ClaimResponse.from(c, log.getOrDefault(c.id(), List.of()), locked.get(c.id()),
                         late.contains(c.id()), reminded.get(c.id()), refs.get(c.id()),
-                        tags.get(c.id()))).toList());
+                        tags.get(c.id()), voidReasons.get(c.id()))).toList());
     }
 }
