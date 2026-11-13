@@ -186,6 +186,53 @@ public class PersonRepository {
         return find(person.sheetId(), person.id());
     }
 
+    /**
+     * Merge the person ({@code from}, their claims already moved) into the other: their name and then their aliases,
+     * in the order added, become the other's newest aliases; their patrons are added to the other's (not the other,
+     * no repeats); anyone naming them as patron names the other instead (not themselves, no repeats); their pool
+     * memberships move to the other (shares added where the other is already a member). Their statements, grades,
+     * holds, watchers and contact are dropped with them.
+     */
+    public void merge(Person from, Person into) {
+        String sheetId = from.sheetId();
+        long gone = from.id();
+        long kept = into.id();
+        List<String> aliases = jdbc.queryForList(
+                "SELECT alias FROM person_alias WHERE sheet_id = ? AND person_id = ? ORDER BY id", String.class,
+                sheetId, gone);
+        jdbc.update("DELETE FROM person_alias WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+        List<String> added = new ArrayList<>();
+        added.add(from.name());
+        added.addAll(aliases);
+        for (String alias : added) {
+            jdbc.update("INSERT INTO person_alias (sheet_id, person_id, alias) VALUES (?, ?, ?)", sheetId, kept, alias);
+        }
+
+        jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id) SELECT sheet_id, ?, patron_id"
+                + " FROM person_patron p WHERE sheet_id = ? AND person_id = ? AND patron_id <> ? AND NOT EXISTS"
+                + " (SELECT 1 FROM person_patron q WHERE q.person_id = ? AND q.patron_id = p.patron_id)",
+                kept, sheetId, gone, kept, kept);
+        jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id) SELECT sheet_id, person_id, ?"
+                + " FROM person_patron p WHERE sheet_id = ? AND patron_id = ? AND person_id <> ? AND NOT EXISTS"
+                + " (SELECT 1 FROM person_patron q WHERE q.person_id = p.person_id AND q.patron_id = ?)",
+                kept, sheetId, gone, kept, kept);
+        jdbc.update("DELETE FROM person_patron WHERE sheet_id = ? AND (person_id = ? OR patron_id = ?)", sheetId, gone,
+                gone);
+
+        jdbc.update("UPDATE pool_member k SET share = share + (SELECT g.share FROM pool_member g WHERE"
+                + " g.pool_id = k.pool_id AND g.person_id = ?) WHERE k.person_id = ? AND EXISTS (SELECT 1 FROM"
+                + " pool_member g WHERE g.pool_id = k.pool_id AND g.person_id = ?)", gone, kept, gone);
+        jdbc.update("DELETE FROM pool_member g WHERE g.person_id = ? AND EXISTS (SELECT 1 FROM pool_member k"
+                + " WHERE k.pool_id = g.pool_id AND k.person_id = ?)", gone, kept);
+        jdbc.update("UPDATE pool_member SET person_id = ? WHERE person_id = ?", kept, gone);
+
+        jdbc.update("DELETE FROM person_statement WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+        jdbc.update("DELETE FROM person_grade WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+        jdbc.update("DELETE FROM person_hold WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+        jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+        jdbc.update("DELETE FROM person WHERE sheet_id = ? AND id = ?", sheetId, gone);
+    }
+
     private static Person map(ResultSet rs, int n) throws SQLException {
         return new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"),
                 rs.getInt("version"), rs.getInt("statement_count"), rs.getString("stated_total"),
