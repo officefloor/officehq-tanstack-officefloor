@@ -21,7 +21,8 @@ export const bound = (c: Claim) => c.stated && c.status !== 'PENDING';
  * opened it, null while a draft; stated is whether its person's last statement bound it to a figure,
  * statedDue that figure (two decimals; null: n/a) — it then shows and totals that, not its live figure;
  * corrects is, for a correction (a negative amount), the number of the settled claim it corrects, null otherwise;
- * dueBy (yyyy-MM-dd) is fixed when it was created: its date plus the terms of its person's grade in force on it.
+ * dueBy (yyyy-MM-dd) is fixed when it was created: its date plus the terms of its person's grade in force on it;
+ * log is its status log, oldest first: each status it has had, the user who gave it, the sheet's today then and its due then.
  */
 export type Claim = {
   id: number;
@@ -37,7 +38,11 @@ export type Claim = {
   statedDue: string | null;
   corrects: string | null;
   dueBy: string;
+  log: ClaimLogLine[];
 };
+
+/** A line of a claim's status log: the status, the user, the sheet's today (yyyy-MM-dd) and the due then (two decimals, or n/a). */
+export type ClaimLogLine = { status: ClaimStatus; by: string; date: string; due: string };
 
 /**
  * Whether a claim counts toward claimed, due-total and every live total: only OPEN, PENDING and SETTLED do,

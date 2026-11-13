@@ -4,9 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import net.officefloor.hq.app.period.Period;
 import net.officefloor.hq.app.period.PeriodRepository;
-import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
-import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.setting.Role;
 import net.officefloor.hq.app.setting.SettingRepository;
@@ -82,11 +80,6 @@ public class ApplyClaimAction {
 
     private static BigDecimal settledDue(Claim claim, SheetRepository sheets, PersonRepository people,
             RateRepository rates, SettingRepository settings, ClaimRepository claims) {
-        Person person = people.find(claim.sheetId(), claim.personId());
-        BigDecimal rate = person == null ? null
-                : Rate.inForce(rates.findAll(claim.sheetId()), person.gradeOn(claim.date()), claim.date());
-        LocalDate today = sheets.today(claim.sheetId());
-        return claim.due(rate, settings.floor(claim.sheetId()), settings.lateCharge(claim.sheetId(), today),
-                settings.rounding(claim.sheetId(), today, claims.findForPerson(claim.sheetId(), claim.personId())));
+        return ClaimDueNow.of(claim, sheets, people, rates, settings, claims);
     }
 }
