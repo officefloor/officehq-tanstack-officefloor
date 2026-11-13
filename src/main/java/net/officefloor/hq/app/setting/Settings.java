@@ -13,12 +13,13 @@ import java.util.Map;
  * today), its period numbering from date (null: off; on or after it, an opened claim is numbered within its period)
  * its cap (null: none; a person's due-total is at most it), its proof threshold (null: none; a claim whose due is above
  * the one in force on its date is settled or approved only once it has a proof) the roles given to user names (any other name is a clerk) and its
- * permission matrix (the roles allowed each of open, settle, void, reassign, close and reopen).
+ * permission matrix (the roles allowed each of open, settle, void, reassign, close and reopen) and its grace days (null: off;
+ * when its today is changed, an open period whose to-date plus them is before the new today is closed).
  * The clerk limit, floor, terms, grade terms, late percent, cap and proof threshold are those in force on the sheet's today; {@code dated}
  * holds every value recorded for them, by from-date.
  */
 public record Settings(String sheetId, BigDecimal clerkLimit, BigDecimal floor, int terms, Map<String, Integer> gradeTerms, BigDecimal latePct,
-        LocalDate policyDate, LocalDate periodNumberingFrom, BigDecimal cap, BigDecimal proofThreshold, List<UserRole> roles, DatedSettings dated, Permissions permissions) {
+        LocalDate policyDate, LocalDate periodNumberingFrom, BigDecimal cap, BigDecimal proofThreshold, List<UserRole> roles, DatedSettings dated, Permissions permissions, Integer graceDays) {
 
     /** The role of the user name: the one given to it, else clerk. */
     public Role roleOf(String user) {

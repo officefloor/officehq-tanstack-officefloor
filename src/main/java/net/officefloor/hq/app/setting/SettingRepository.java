@@ -41,7 +41,7 @@ public class SettingRepository {
         DatedSettings dated = dated(sheetId);
         return new Settings(sheetId, dated.clerkLimitOn(today), dated.floorOn(today), dated.termsOn(today),
                 dated.gradeTermsOn(today), dated.latePctOn(today), policyDate(sheetId), periodNumberingFrom(sheetId),
-                dated.capOn(today), dated.proofThresholdOn(today), roles, dated, permissions(sheetId));
+                dated.capOn(today), dated.proofThresholdOn(today), roles, dated, permissions(sheetId), graceDays(sheetId));
     }
 
     /** The sheet's dated settings: every value recorded, by key and from-date. */
@@ -91,6 +91,18 @@ public class SettingRepository {
     /** Set the sheet's period numbering from date (null: blank, off). */
     public void savePeriodNumberingFrom(String sheetId, LocalDate from) {
         jdbc.update("UPDATE sheet SET period_numbering_from = ? WHERE id = ?", from == null ? null : Date.valueOf(from), sheetId);
+    }
+
+    /** The sheet's grace days (null: blank, off). */
+    public Integer graceDays(String sheetId) {
+        List<Integer> days = jdbc.query("SELECT grace_days FROM sheet WHERE id = ?",
+                (rs, n) -> (Integer) rs.getObject("grace_days", Integer.class), sheetId);
+        return days.isEmpty() ? null : days.get(0);
+    }
+
+    /** Set the sheet's grace days (null: blank, off). */
+    public void saveGraceDays(String sheetId, Integer days) {
+        jdbc.update("UPDATE sheet SET grace_days = ? WHERE id = ?", days, sheetId);
     }
 
     /** The sheet's permission matrix: the roles set for each action, as shown (an action with none keeps the standing rule). */

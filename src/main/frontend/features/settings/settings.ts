@@ -21,8 +21,10 @@ export type UserRole = { user: string; role: string };
  * today; `history` holds every value recorded for them, by key (floor, late-pct, terms, terms-<grade>, clerk-limit,
  * cap, proof-threshold), oldest from-date first (value '': blank). `permissions` is the permission matrix: by action, the
  * roles allowed it, comma separated ('': blank, the standing rule); it is not dated.
+ * `graceDays` is the grace days (whole days; '': off — when the sheet's today is changed, an open period whose
+ * to-date plus them is before the new today is closed); it is not dated.
  */
-export type Settings = { clerkLimit: string | null; floor: string; terms: number; gradeTerms: Record<string, number>; latePct: string; policyDate: string; periodNumberingFrom: string; cap: string; proofThreshold: string; roles: UserRole[]; history: Record<string, FromValue[]>; permissions: Record<string, string> };
+export type Settings = { clerkLimit: string | null; floor: string; terms: number; gradeTerms: Record<string, number>; latePct: string; policyDate: string; periodNumberingFrom: string; cap: string; proofThreshold: string; roles: UserRole[]; history: Record<string, FromValue[]>; permissions: Record<string, string>; graceDays: string };
 
 /** A dated setting's value recorded from a date (yyyy-MM-dd); '': blank. */
 export type FromValue = { from: string; value: string };

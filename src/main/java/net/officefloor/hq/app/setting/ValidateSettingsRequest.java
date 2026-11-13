@@ -28,7 +28,7 @@ public class ValidateSettingsRequest {
     public void validate(@RequestBody @Valid SettingsRequest request, Out<ClerkLimit> limit, Out<Floor> floor,
             Out<Terms> terms, Out<LatePct> latePct, Out<PolicyDate> policyDate,
             Out<PeriodNumberingFrom> periodNumberingFrom, Out<GradeTerms> gradeTerms, Out<Cap> cap,
-            Out<ProofThreshold> proofThreshold, Out<PermissionChanges> permissions)
+            Out<ProofThreshold> proofThreshold, Out<PermissionChanges> permissions, Out<GraceDays> graceDays)
             throws InvalidSettingException {
         limit.set(clerkLimit(request.clerkLimit(), from(request.clerkLimitFrom(), "clerk limit")));
         floor.set(floor(request.floor(), from(request.floorFrom(), "floor")));
@@ -40,6 +40,7 @@ public class ValidateSettingsRequest {
         cap.set(cap(request.cap(), from(request.capFrom(), "cap")));
         proofThreshold.set(proofThreshold(request.proofThreshold(), from(request.proofThresholdFrom(), "proof threshold")));
         permissions.set(permissions(request.permissions()));
+        graceDays.set(graceDays(request.graceDays()));
     }
 
     /** A from-date typed with a setting (null: left out or blank, the sheet's today). */
@@ -79,6 +80,20 @@ public class ValidateSettingsRequest {
             }
         }
         return new PermissionChanges(entries);
+    }
+
+    private static GraceDays graceDays(String requested) throws InvalidSettingException {
+        if (requested == null) {
+            return new GraceDays(false, null);
+        }
+        String value = requested.trim();
+        if (value.isEmpty()) {
+            return new GraceDays(true, null);
+        }
+        if (!DAYS.matcher(value).matches()) {
+            throw new InvalidSettingException("The grace days must be a whole number of days, 0 or more, or blank.");
+        }
+        return new GraceDays(true, Integer.parseInt(value));
     }
 
     private static Cap cap(String requested, LocalDate from) throws InvalidSettingException {
