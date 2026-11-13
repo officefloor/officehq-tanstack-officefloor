@@ -1,3 +1,4 @@
+import { isActive } from '../active/active';
 import { useClaims } from '../claims/claims';
 import { GRADES, usePeople } from '../people/people';
 import { periodDue, usePeriods } from '../periods/periods';
@@ -9,7 +10,7 @@ import { useDueRules } from '../settings/settings';
 const STATUSES = ['DRAFT', 'OPEN', 'PENDING', 'SETTLED', 'VOID'] as const;
 
 // The sheet at a glance, worked out from the same figures the list shows. Per grade: the people on it
-// today (retired people left out) and their due-totals added up (skipping n/a). Per period: its
+// today (retired people left out), their due-totals added up (skipping n/a) and how many of them are active. Per period: its
 // due-total. Per status: how many claims have it.
 export function Summary() {
   const [user] = useCurrentUser();
@@ -22,7 +23,7 @@ export function Summary() {
 
   if (!user || !sheet) return null;
 
-  const active = people.filter((p) => !p.retired);
+  const current = people.filter((p) => !p.retired);
   return (
     <section data-testid="summary">
       <table>
@@ -31,11 +32,12 @@ export function Summary() {
             <th>Grade</th>
             <th>People</th>
             <th>Due total</th>
+            <th>Active</th>
           </tr>
         </thead>
         <tbody>
           {GRADES.map((g) => {
-            const on = active.filter((p) => p.grade === g);
+            const on = current.filter((p) => p.grade === g);
             const dues = on.map((p) =>
               personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, p.holds, rules),
             );
@@ -44,6 +46,9 @@ export function Summary() {
                 <td>{g}</td>
                 <td data-testid={`summary-grade-${g}-count`}>{on.length}</td>
                 <td data-testid={`summary-grade-${g}-due-total`}>{total(dues)}</td>
+                <td data-testid={`summary-grade-${g}-active`}>
+                  {on.filter((p) => isActive(claims.filter((c) => c.personId === p.id), p.holds, rules.today)).length}
+                </td>
               </tr>
             );
           })}
