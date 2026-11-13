@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { postJson, putJson } from '../../api/http';
+import { HttpError, postJson, putJson } from '../../api/http';
+import { useOneAtATime } from '../../query/useOneAtATime';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { GRADES, peopleKey, useEditingPerson, usePeople } from './people';
 import type { Person, PersonInput } from './people';
@@ -9,7 +10,8 @@ import type { Person, PersonInput } from './people';
 const EMPTY: PersonInput = { name: '', grade: 'A' };
 
 // Adds a person, or — while a person's editor is open — saves that person's changes. Opening an
-// editor fills the form with the person's values.
+// editor fills the form with the person's values and remembers the version it loaded: a save over
+// someone else's later save is refused, and the form then shows the current values to save again.
 export function PersonForm() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -18,6 +20,8 @@ export function PersonForm() {
   const [form, setForm] = useState<PersonInput>(EMPTY);
   const [error, setError] = useState('');
   const filledFor = useRef<number | undefined>(undefined);
+  const version = useRef<number | undefined>(undefined);
+  const once = useOneAtATime();
   const queryClient = useQueryClient();
 
   // Fill the form once per opened editor; close an editor whose person is not on this sheet.
@@ -33,6 +37,7 @@ export function PersonForm() {
       return;
     }
     filledFor.current = editing;
+    version.current = person.version;
     setForm({ name: person.name, grade: person.grade });
     setError('');
   }, [editing, people.data, setEditing]);
@@ -47,12 +52,26 @@ export function PersonForm() {
     mutationFn: (input: PersonInput) =>
       editing === undefined
         ? postJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people?user=${encodeURIComponent(user)}`, input)
-        : putJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${editing}?user=${encodeURIComponent(user)}`, input),
+        : putJson<Person>(`/api/sheets/${encodeURIComponent(sheet)}/people/${editing}?user=${encodeURIComponent(user)}`, {
+            ...input,
+            version: version.current,
+          }),
     onSuccess: async () => {
       close();
       await queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
     },
-    onError: (_e, input) => {
+    onError: async (e, input) => {
+      if (e instanceof HttpError && e.status === 409) {
+        // Someone else saved this person since the editor loaded it: show what is stored now.
+        await queryClient.invalidateQueries({ queryKey: peopleKey(sheet) });
+        const current = queryClient.getQueryData<Person[]>(peopleKey(sheet))?.find((p) => p.id === editing);
+        if (current) {
+          version.current = current.version;
+          setForm({ name: current.name, grade: current.grade });
+        }
+        setError('Someone else saved this person meanwhile; the form now shows their values.');
+        return;
+      }
       const key = input.name.trim().toLowerCase();
       const taken = people.data?.some((p) => p.id !== editing && p.name.trim().toLowerCase() === key);
       setError(taken ? 'That name is already in use.' : 'That person could not be saved.');
@@ -68,7 +87,7 @@ export function PersonForm() {
       setError('Type a name.');
       return;
     }
-    save.mutate(form);
+    once(() => save.mutateAsync(form));
   };
 
   const change = (patch: Partial<PersonInput>) => {

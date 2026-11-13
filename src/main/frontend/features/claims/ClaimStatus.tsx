@@ -4,6 +4,7 @@ import { postJson } from '../../api/http';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import type { Claim } from './claims';
 import { claimsKey } from './claims';
+import { useOneAtATime } from '../../query/useOneAtATime';
 
 type Action = 'open' | 'settle' | 'void';
 
@@ -20,6 +21,7 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
   const [sheet] = useCurrentSheet();
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
+  const once = useOneAtATime();
 
   const change = useMutation({
     mutationFn: (action: Action) =>
@@ -44,7 +46,7 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
           disabled={change.isPending}
           onClick={() => {
             setError('');
-            change.mutate(action);
+            once(() => change.mutateAsync(action));
           }}
         >
           {label}

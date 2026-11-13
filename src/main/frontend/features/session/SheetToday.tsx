@@ -5,6 +5,7 @@ import { putJson } from '../../api/http';
 import { sheetInfoKey, sheetKey, useCurrentSheet, useCurrentUser } from './session';
 import type { SheetInfo } from './session';
 import { useSheetToday } from './sheetToday';
+import { useOneAtATime } from '../../query/useOneAtATime';
 
 // The sheet's own "today": shown, and changed by typing a date and saving. A blank date resets it
 // to the real date.
@@ -15,6 +16,7 @@ export function SheetToday() {
   const [date, setDate] = useState('');
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
+  const once = useOneAtATime();
 
   const save = useMutation({
     mutationFn: (value: string) =>
@@ -37,7 +39,7 @@ export function SheetToday() {
       setError('Type a date as yyyy-mm-dd.');
       return;
     }
-    save.mutate(trimmed);
+    once(() => save.mutateAsync(trimmed));
   };
 
   return (

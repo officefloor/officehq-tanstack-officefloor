@@ -19,13 +19,13 @@ public class PersonRepository {
 
     /** The sheet's people, in the order they were added. */
     public List<Person> findAll(String sheetId) {
-        return jdbc.query("SELECT id, sheet_id, name, grade FROM person WHERE sheet_id = ? ORDER BY id",
+        return jdbc.query("SELECT id, sheet_id, name, grade, version FROM person WHERE sheet_id = ? ORDER BY id",
                 PersonRepository::map, sheetId);
     }
 
     /** The person with this id on this sheet, or null. */
     public Person find(String sheetId, long id) {
-        List<Person> found = jdbc.query("SELECT id, sheet_id, name, grade FROM person WHERE sheet_id = ? AND id = ?",
+        List<Person> found = jdbc.query("SELECT id, sheet_id, name, grade, version FROM person WHERE sheet_id = ? AND id = ?",
                 PersonRepository::map, sheetId, id);
         return found.isEmpty() ? null : found.get(0);
     }
@@ -38,12 +38,17 @@ public class PersonRepository {
         return n != null && n > 0;
     }
 
-    /** Insert a new person (null id) or update an existing one; the person as stored. */
+    /**
+     * Insert a new person (null id) or update an existing one, bumping its version; the person as
+     * stored, or null when the stored version is no longer the one the person was loaded at.
+     */
     public Person save(Person person) {
         if (person.id() != null) {
-            jdbc.update("UPDATE person SET name = ?, grade = ? WHERE id = ? AND sheet_id = ?",
-                    person.name(), person.grade(), person.id(), person.sheetId());
-            return person;
+            int n = jdbc.update(
+                    "UPDATE person SET name = ?, grade = ?, version = version + 1 WHERE id = ? AND sheet_id = ? AND version = ?",
+                    person.name(), person.grade(), person.id(), person.sheetId(), person.version());
+            return n == 0 ? null
+                    : new Person(person.id(), person.sheetId(), person.name(), person.grade(), person.version() + 1);
         }
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
@@ -54,10 +59,11 @@ public class PersonRepository {
             ps.setString(3, person.grade());
             return ps;
         }, keys);
-        return new Person(keys.getKey().longValue(), person.sheetId(), person.name(), person.grade());
+        return new Person(keys.getKey().longValue(), person.sheetId(), person.name(), person.grade(), 0);
     }
 
     private static Person map(ResultSet rs, int n) throws SQLException {
-        return new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"));
+        return new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"), rs.getString("grade"),
+                rs.getInt("version"));
     }
 }

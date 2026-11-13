@@ -7,6 +7,7 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { useSheetToday } from '../session/sheetToday';
 import { NA, PERCENT, rateFor, ratesKey, useRates } from './rates';
 import type { Rate, RateInput } from './rates';
+import { useOneAtATime } from '../../query/useOneAtATime';
 
 const EMPTY: RateInput = { grade: 'A', rate: '', from: '' };
 
@@ -23,6 +24,7 @@ export function Rates() {
   const [form, setForm] = useState<RateInput>(EMPTY);
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
+  const once = useOneAtATime();
 
   const save = useMutation({
     mutationFn: (input: RateInput) =>
@@ -49,7 +51,7 @@ export function Rates() {
       setError('Type a from-date as yyyy-mm-dd, or leave it blank for from the start.');
       return;
     }
-    save.mutate({ grade: form.grade, rate: form.rate.trim(), from });
+    once(() => save.mutateAsync({ grade: form.grade, rate: form.rate.trim(), from }));
   };
 
   const change = (patch: Partial<RateInput>) => {

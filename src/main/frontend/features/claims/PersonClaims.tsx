@@ -7,6 +7,7 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
 import type { Person } from '../people/people';
 import { AMOUNT, claimsKey, useClaims } from './claims';
 import type { Claim, ClaimInput } from './claims';
+import { useOneAtATime } from '../../query/useOneAtATime';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '' };
 
@@ -20,6 +21,7 @@ export function PersonClaims({ person }: { person: Person }) {
   const [editing, setEditing] = useState<number | undefined>(undefined);
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
+  const once = useOneAtATime();
 
   const close = () => {
     setEditing(undefined);
@@ -51,7 +53,7 @@ export function PersonClaims({ person }: { person: Person }) {
       setError('Type a date as yyyy-mm-dd.');
       return;
     }
-    save.mutate(form);
+    once(() => save.mutateAsync(form));
   };
 
   const change = (patch: Partial<ClaimInput>) => {

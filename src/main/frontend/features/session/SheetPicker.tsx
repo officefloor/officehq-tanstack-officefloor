@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 import { useIsFetching, useMutation, useQueryClient } from '@tanstack/react-query';
 import { postJson } from '../../api/http';
 import { sheetKey, useCurrentSheet, useCurrentUser } from './session';
+import { useOneAtATime } from '../../query/useOneAtATime';
 
 // Choose a sheet by typing its id and loading it. Loading an id never used before starts an empty
 // sheet; loading one again re-reads what the store holds for it now.
@@ -12,6 +13,7 @@ export function SheetPicker() {
   const [id, setId] = useState('');
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
+  const once = useOneAtATime();
   // The current id shows once everything kept for the sheet has been read, so what is on screen
   // under it is what the store holds for that sheet. Checked after the screen's queries have
   // mounted and started, so a query not yet begun does not count as read.
@@ -46,7 +48,7 @@ export function SheetPicker() {
       setError('Type a sheet id to load.');
       return;
     }
-    load.mutate(trimmed);
+    once(() => load.mutateAsync(trimmed));
   };
 
   return (

@@ -6,6 +6,6 @@ import net.officefloor.plugin.variable.Val;
 
 public class BuildPerson {
     public void build(@Val PersonRequest request, @Val Sheet sheet, Out<Person> person) {
-        person.set(new Person(null, sheet.id(), request.name(), request.grade()));
+        person.set(new Person(null, sheet.id(), request.name(), request.grade(), 0));
     }
 }

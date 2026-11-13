@@ -5,8 +5,8 @@ import { sheetKey, useCurrentSheet } from '../session/session';
 
 export const GRADES = ['A', 'B', 'C'] as const;
 
-/** A person on the sheet as the store holds them. */
-export type Person = { id: number; name: string; grade: string };
+/** A person on the sheet as the store holds them; `version` counts their saves. */
+export type Person = { id: number; name: string; grade: string; version: number };
 
 /** The fields the person form submits. */
 export type PersonInput = { name: string; grade: string };
