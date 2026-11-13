@@ -1,0 +1,127 @@
+diff --git a/src/main/frontend/features/claims/ClaimNumber.tsx b/src/main/frontend/features/claims/ClaimNumber.tsx
+index 60155417c..12158c16a 100644
+--- a/src/main/frontend/features/claims/ClaimNumber.tsx
++++ b/src/main/frontend/features/claims/ClaimNumber.tsx
+@@ -1,6 +1,6 @@
+ import type { Claim } from './claims';
+ 
+-// A claim's number on the sheet; empty while it is a draft and once it is voided.
++// A claim's number on the sheet; empty while it is a draft; a voided claim keeps it.
+ export function ClaimNumber({ claim }: { claim: Claim }) {
+   return <span data-testid="claim-number">{claim.number ?? ''}</span>;
+ }
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 890c031f5..c8d60805b 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -7,7 +7,7 @@ export type ClaimStatus = 'DRAFT' | 'OPEN' | 'SETTLED' | 'VOID';
+ 
+ /**
+  * A claim as the store holds it: the amount with two decimals, the date as yyyy-MM-dd; its number
+- * is the sheet's next one when it was opened, null while a draft and once voided; its due is the
++ * is the sheet's next one when it was opened, null while a draft (a voided claim keeps it); its due is the
+  * one fixed when it was settled (two decimals), null while it is live; openedBy is the user who
+  * opened it, null while a draft; stated is whether its person's last statement bound it to a figure,
+  * statedDue that figure (two decimals; null: n/a) — it then shows and totals that, not its live figure.
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java
+index 4ee1f34a9..64181a67c 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java
+@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /**
+  * Moves the claim to the action's status; refused (400) when the claim's status does not allow it.
+- * Opening gives the claim the sheet's next number; voiding clears it (the number is not reused).
++ * Opening gives the claim the sheet's next number; a voided claim keeps its number (it is never reused).
+  * Opening records the user who opened it; that user cannot settle it (four eyes).
+  * Settling fixes the claim's due at its person's grade's rate in force on the claim's date — or, when a statement
+  * bound the claim, at the figure it was bound to; with no figure it stays live.
+@@ -34,11 +34,10 @@ public class ApplyClaimAction {
+         }
+         Integer next = switch (found) {
+             case OPEN -> sheets.nextClaimNumber(claim.sheetId());
+-            case VOID -> null;
+             default -> claim.number();
+         };
+         applied.set(found);
+-        number.set(new ClaimNumber(found == ClaimAction.VOID ? claim.number() : next));
++        number.set(new ClaimNumber(next));
+         BigDecimal due = found == ClaimAction.SETTLE ? settledDue(claim, people, rates) : claim.due();
+         updated.set(claim.withStatus(found.to(), next, due, found == ClaimAction.OPEN ? user : claim.openedBy()));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/CheckClaimDraft.java b/src/main/java/net/officefloor/hq/app/claim/CheckClaimDraft.java
+new file mode 100644
+index 000000000..d6e5db716
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/CheckClaimDraft.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.plugin.variable.Val;
++
++/** Refuses (400) an edit of any claim that is not a DRAFT: an open claim is changed by voiding it and adding another. */
++public class CheckClaimDraft {
++    public void check(@Val Claim claim) throws InvalidClaimException {
++        if (claim.status() != ClaimStatus.DRAFT) {
++            throw new InvalidClaimException("A " + claim.status() + " claim cannot be edited; only a DRAFT can.");
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index c808462a3..e0026b028 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -6,7 +6,7 @@ import java.time.LocalDate;
+ 
+ /**
+  * A claim a person has on a sheet. {@code id} is null until the claim is first saved; {@code number}
+- * is null unless the claim has been opened (a draft has none, and voiding clears it). {@code due} is the
++ * is null unless the claim has been opened (a draft has none; a voided claim keeps it). {@code due} is the
+  * due fixed when the claim was settled, or null while it is live (not settled, or settled with no rate).
+  * {@code openedBy} is the user who opened the claim, or null while it is a draft. {@code stated} is whether
+  * its person's last statement bound it to a figure, {@code statedDue} (null: n/a) — it then shows and totals
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimNumber.java b/src/main/java/net/officefloor/hq/app/claim/ClaimNumber.java
+index 812980370..61e34e28f 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimNumber.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimNumber.java
+@@ -1,5 +1,5 @@
+ package net.officefloor.hq.app.claim;
+ 
+-/** The number a status change concerns: the one just given (open), the one the claim had (void), or null. */
++/** The number a status change concerns: the one just given (open), the one the claim has (void, settle), or null. */
+ public record ClaimNumber(Integer value) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
+index f6748fee2..a8ea559d3 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatus.java
+@@ -2,7 +2,7 @@ package net.officefloor.hq.app.claim;
+ 
+ /**
+  * Where a claim is in its life: it starts DRAFT, is opened and then settled; a DRAFT or OPEN claim
+- * can be voided. SETTLED and VOID are final. Only OPEN and SETTLED claims count toward the totals.
++ * can be voided. Only a DRAFT can be edited. SETTLED and VOID are final. Only OPEN and SETTLED claims count toward the totals.
+  */
+ public enum ClaimStatus {
+     DRAFT, OPEN, SETTLED, VOID
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+index 33365de48..3d6c82199 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+@@ -1,4 +1,5 @@
+ # Edit a claim's amount, date and note; refused (400) on the same terms as an add.
++# Only a DRAFT claim can be edited; any other is refused (400).
+ # A claim dated (before or after the edit) inside a closed period is refused (400).
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaimRequest
+@@ -6,6 +7,10 @@ validate:
+ load:
+   class: net.officefloor.hq.app.claim.LoadClaim
+   govern: [ transaction ]
++  next: checkDraft
++checkDraft:
++  class: net.officefloor.hq.app.claim.CheckClaimDraft
++  govern: [ transaction ]
+   next: checkPeriod
+ checkPeriod:
+   class: net.officefloor.hq.app.claim.CheckClaimPeriodOpen
