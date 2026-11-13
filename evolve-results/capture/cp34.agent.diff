@@ -1,0 +1,164 @@
+diff --git a/src/main/frontend/features/claims/BulkOpen.tsx b/src/main/frontend/features/claims/BulkOpen.tsx
+new file mode 100644
+index 000000000..1381b17e6
+--- /dev/null
++++ b/src/main/frontend/features/claims/BulkOpen.tsx
+@@ -0,0 +1,69 @@
++import { useState } from 'react';
++import { useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { usePeople } from '../people/people';
++import { useCurrentSheet, useCurrentUser } from '../session/session';
++import { claimsKey, useClaims } from './claims';
++import type { Claim } from './claims';
++import { useSelectedClaims } from './selection';
++import { useOneAtATime } from '../../query/useOneAtATime';
++
++// Opens every ticked claim, one after another in list order (people in their order, each one's
++// claims newest first), so they are numbered in that order. Each goes through the claim's own open
++// action: one the server refuses is left as it is and counted as refused.
++export function BulkOpen() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const people = usePeople().data ?? [];
++  const claims = useClaims().data ?? [];
++  const [selected, , clear] = useSelectedClaims();
++  const [result, setResult] = useState<{ opened: number; refused: number } | undefined>(undefined);
++  const [busy, setBusy] = useState(false);
++  const queryClient = useQueryClient();
++  const once = useOneAtATime();
++
++  if (!user || !sheet) return null;
++
++  const run = async () => {
++    setResult(undefined);
++    setBusy(true);
++    const ordered = people.flatMap((p) => claims.filter((c) => c.personId === p.id && selected.has(c.id)));
++    let opened = 0;
++    let refused = 0;
++    try {
++      for (const c of ordered) {
++        try {
++          await postJson<Claim>(
++            `/api/sheets/${encodeURIComponent(sheet)}/claims/${c.id}/open?user=${encodeURIComponent(user)}`,
++            {},
++          );
++          opened++;
++        } catch {
++          refused++;
++        }
++      }
++      // A ticked claim no longer listed (gone from the sheet) cannot be opened.
++      refused += selected.size - ordered.length;
++      clear();
++      await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
++    } finally {
++      setBusy(false);
++      setResult({ opened, refused });
++    }
++  };
++
++  return (
++    <p>
++      <button type="button" data-testid="bulk-open" disabled={busy} onClick={() => once(run)}>
++        Open selected claims
++      </button>
++      {result && (
++        <>
++          {' '}
++          Opened <span data-testid="bulk-opened">{result.opened}</span>, refused{' '}
++          <span data-testid="bulk-refused">{result.refused}</span>
++        </>
++      )}
++    </p>
++  );
++}
+diff --git a/src/main/frontend/features/claims/ClaimSelect.tsx b/src/main/frontend/features/claims/ClaimSelect.tsx
+new file mode 100644
+index 000000000..f1ab9277e
+--- /dev/null
++++ b/src/main/frontend/features/claims/ClaimSelect.tsx
+@@ -0,0 +1,15 @@
++import type { Claim } from './claims';
++import { useSelectedClaims } from './selection';
++
++// The checkbox that ticks a claim for a bulk action (BulkOpen).
++export function ClaimSelect({ claim }: { claim: Claim }) {
++  const [selected, set] = useSelectedClaims();
++  return (
++    <input
++      type="checkbox"
++      data-testid="claim-select"
++      checked={selected.has(claim.id)}
++      onChange={(e) => set(claim.id, e.target.checked)}
++    />
++  );
++}
+diff --git a/src/main/frontend/features/claims/home.slot.tsx b/src/main/frontend/features/claims/home.slot.tsx
+index e918c7505..a3f6615f2 100644
+--- a/src/main/frontend/features/claims/home.slot.tsx
++++ b/src/main/frontend/features/claims/home.slot.tsx
+@@ -1,4 +1,8 @@
+ import { HomeMain } from '../../slots/defs/homeMain';
++import { BulkOpen } from './BulkOpen';
+ import { ClaimedTotal } from './ClaimedTotal';
+ 
+-export const contribution = HomeMain.fill({ order: 30, Component: ClaimedTotal });
++export const contributions = [
++  HomeMain.fill({ order: 25, Component: BulkOpen }),
++  HomeMain.fill({ order: 30, Component: ClaimedTotal }),
++];
+diff --git a/src/main/frontend/features/claims/select.slot.tsx b/src/main/frontend/features/claims/select.slot.tsx
+new file mode 100644
+index 000000000..14c2b315d
+--- /dev/null
++++ b/src/main/frontend/features/claims/select.slot.tsx
+@@ -0,0 +1,4 @@
++import { ClaimRowValues } from '../../slots/defs/claimRow';
++import { ClaimSelect } from './ClaimSelect';
++
++export const contribution = ClaimRowValues.fill({ order: -10, Component: ClaimSelect });
+diff --git a/src/main/frontend/features/claims/selection.ts b/src/main/frontend/features/claims/selection.ts
+new file mode 100644
+index 000000000..e0c43c41b
+--- /dev/null
++++ b/src/main/frontend/features/claims/selection.ts
+@@ -0,0 +1,38 @@
++import { useNavigate, useSearch } from '@tanstack/react-router';
++
++/** The ids of the claims ticked for a bulk action, kept in the URL as a comma list under `claims`. */
++export function useSelectedClaims(): [Set<number>, (id: number, on: boolean) => void, () => void] {
++  const search = useSearch({ strict: false }) as Record<string, unknown>;
++  const navigate = useNavigate();
++  const selected = parse(search.claims);
++
++  // Each change is applied to the URL as it is then, so ticks in quick succession never clobber each other.
++  const update = (change: (ids: Set<number>) => void) => {
++    void navigate({
++      to: '.',
++      search: (prev: Record<string, unknown>) => {
++        const ids = parse(prev.claims);
++        change(ids);
++        const next = { ...prev };
++        if (ids.size === 0) delete next.claims;
++        else next.claims = [...ids].join(',');
++        return next;
++      },
++      replace: true,
++    });
++  };
++
++  const set = (id: number, on: boolean) => update((ids) => (on ? ids.add(id) : ids.delete(id)));
++  const clear = () => update((ids) => ids.clear());
++  return [selected, set, clear];
++}
++
++function parse(raw: unknown): Set<number> {
++  return new Set(
++    String(raw ?? '')
++      .split(',')
++      .filter((s) => s !== '')
++      .map(Number)
++      .filter((n) => !Number.isNaN(n)),
++  );
++}
