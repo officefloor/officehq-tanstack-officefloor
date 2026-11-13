@@ -14,6 +14,7 @@ type PasteResult = { added: number };
 // The paste box: lines of name,amount,date,note (the note may hold commas, a blank date is the sheet's entry date,
 // else its today, the note may be left off), each a DRAFT claim for the named person on the sheet. The server
 // checks every line with the claim form's rules first, so one refused line adds nothing.
+// A note ending " #<reference>" gives the claim that external reference instead.
 export function PasteClaims() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();

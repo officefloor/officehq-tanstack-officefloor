@@ -39,7 +39,8 @@ export const bound = (c: Claim) => c.stated && c.status !== 'PENDING';
  * splitFrom is the number of the claim it was split off, null when it was not split off one;
  * lockedBy is the user whose open editor locks it for every other user, null when it is not locked;
  * lateEntry is whether it was added while the period containing its due-by was soft-closed;
- * reminded (yyyy-MM-dd) is the last day a reminder was written for it, null when it never was.
+ * reminded (yyyy-MM-dd) is the last day a reminder was written for it, null when it never was;
+ * ref is its external reference (unique on the sheet, ignoring case), null when it has none.
  */
 export type Claim = {
   id: number;
@@ -62,6 +63,7 @@ export type Claim = {
   lockedBy: string | null;
   lateEntry: boolean;
   reminded: string | null;
+  ref: string | null;
 };
 
 /** A line of a claim's status log: the status, the user, the sheet's today (yyyy-MM-dd) and the due then (two decimals, or n/a). */
@@ -80,8 +82,8 @@ export const counts = (c: Claim, holds: Hold[], today: string) =>
 export const holdsById = (people: { id: number; holds: Hold[]; retiredFrom: string | null }[], today: string) =>
   new Map(people.map((p) => [p.id, liveHolds(p, today)]));
 
-/** The fields the claim form submits; a blank date is the sheet's entry date, else its today; corrects names, by number, the claim a correction corrects. */
-export type ClaimInput = { amount: string; date: string; note: string; corrects: string };
+/** The fields the claim form submits; a blank date is the sheet's entry date, else its today; corrects names, by number, the claim a correction corrects; ref is its external reference (blank: none). */
+export type ClaimInput = { amount: string; date: string; note: string; corrects: string; ref: string };
 
 /** 0.00 or more, with at most two decimals. */
 export const AMOUNT = /^(\d+(\.\d{1,2})?|\.\d{1,2})$/;

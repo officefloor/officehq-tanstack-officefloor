@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * Adds a DRAFT claim per pasted line, in order, each as the claim form's add does: due-by fixed from its date and
- * its person's grade's terms, its DRAFT status logged, and recorded as CLAIM_ADDED (and LATE_ENTRY when its period is soft-closed).
+ * its person's grade's terms, its DRAFT status logged, and recorded as CLAIM_ADDED (with its reference, if any) (and LATE_ENTRY when its period is soft-closed).
  */
 public class SavePastedClaims {
     public void save(@Val PastedLines pasted, @RequestParam("user") String user, SheetRepository sheets,
@@ -40,8 +40,10 @@ public class SavePastedClaims {
             BigDecimal due = ClaimDueNow.of(claim, sheets, people, rates, settings, claims);
             logs.append(claim.sheetId(), new ClaimLogLine(claim.id(), claim.status(), user,
                     sheets.today(claim.sheetId()), due == null ? "n/a" : due.setScale(2).toPlainString()));
+            claims.saveRef(claim, line.input().ref());
             audit.record("CLAIM_ADDED sheet=" + claim.sheetId() + " by=" + user + " person=" + person.name()
-                    + " amount=" + claim.amount().setScale(2).toPlainString() + " date=" + claim.date());
+                    + " amount=" + claim.amount().setScale(2).toPlainString() + " date=" + claim.date()
+                    + Claim.auditRef(line.input().ref()));
             lateEntries.mark(claim, person, user);
             added++;
         }

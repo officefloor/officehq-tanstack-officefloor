@@ -12,7 +12,7 @@ import { setClaimError, useClaimError } from './claimError';
 import { contains, usePeriods } from '../periods/periods';
 import { useSettings } from '../settings/settings';
 
-const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '' };
+const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '', ref: '' };
 
 // A person's claims, newest first, and the form that adds one — or, while a claim's editor is
 // open, saves that claim's changes. Opening an editor (the edit button) locks the claim for every
@@ -57,7 +57,7 @@ export function PersonClaims({ person }: { person: Person }) {
 
   const fill = (c: Claim) => {
     setEditing(c.id);
-    setForm({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects ?? '' });
+    setForm({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects ?? '', ref: c.ref ?? '' });
     setError('');
   };
 
@@ -190,6 +190,12 @@ export function PersonClaims({ person }: { person: Person }) {
           value={form.corrects}
           onChange={(e) => change({ corrects: e.target.value })}
         />
+        <input
+          data-testid="claim-form-ref"
+          placeholder="Reference"
+          value={form.ref}
+          onChange={(e) => change({ ref: e.target.value })}
+        />
         <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
           {editing === undefined ? 'Add claim' : 'Save claim'}
         </button>
@@ -217,6 +223,7 @@ function ClaimInlineAmount({ claim, refusal }: { claim: Claim; refusal: string }
         date: claim.date,
         note: claim.note,
         corrects: claim.corrects ?? '',
+        ref: claim.ref ?? '',
       }),
     onSuccess: async () => {
       setAmount('');

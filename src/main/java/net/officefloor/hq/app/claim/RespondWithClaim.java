@@ -9,6 +9,7 @@ public class RespondWithClaim {
         response.send(ClaimResponse.from(claim, logs.find(claim.sheetId(), claim.id()),
                 locks.lockedBy(claim.sheetId(), claim.id()),
                 repository.lateEntry(claim.sheetId(), claim.id()),
-                repository.reminded(claim.sheetId(), claim.id())));
+                repository.reminded(claim.sheetId(), claim.id()),
+                repository.ref(claim.sheetId(), claim.id())));
     }
 }

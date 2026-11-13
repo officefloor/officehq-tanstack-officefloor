@@ -9,6 +9,7 @@ import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -154,6 +155,35 @@ public class ClaimRepository {
                     reminded.put(rs.getLong("id"), rs.getDate("reminded_on").toLocalDate());
                 }, sheetId);
         return reminded;
+    }
+
+    /** Store the claim's external reference (null: none). */
+    public void saveRef(Claim claim, String ref) {
+        jdbc.update("UPDATE claim SET external_ref = ?, external_ref_key = ? WHERE id = ? AND sheet_id = ?", ref,
+                ref == null ? null : ref.toLowerCase(Locale.ROOT), claim.id(), claim.sheetId());
+    }
+
+    /** Whether a claim on the sheet other than the one with id {@code except} (null: none) has the reference, ignoring case. */
+    public boolean refUsed(String sheetId, String ref, Long except) {
+        return !jdbc.queryForList("SELECT id FROM claim WHERE sheet_id = ? AND external_ref_key = ? AND id <> ?",
+                Long.class, sheetId, ref.toLowerCase(Locale.ROOT), except == null ? -1L : except).isEmpty();
+    }
+
+    /** The claim's external reference, or null. */
+    public String ref(String sheetId, long id) {
+        List<String> found = jdbc.queryForList("SELECT external_ref FROM claim WHERE sheet_id = ? AND id = ?",
+                String.class, sheetId, id);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** The external reference of each of the sheet's claims that has one, by claim id. */
+    public Map<Long, String> refs(String sheetId) {
+        Map<Long, String> refs = new HashMap<>();
+        jdbc.query("SELECT id, external_ref FROM claim WHERE sheet_id = ? AND external_ref IS NOT NULL",
+                (ResultSet rs) -> {
+                    refs.put(rs.getLong("id"), rs.getString("external_ref"));
+                }, sheetId);
+        return refs;
     }
 
     private static Claim map(ResultSet rs, int n) throws SQLException {

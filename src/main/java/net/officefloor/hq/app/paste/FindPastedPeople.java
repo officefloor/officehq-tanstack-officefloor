@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import net.officefloor.hq.app.claim.CheckClaimInputNotRetired;
 import net.officefloor.hq.app.claim.CheckClaimInputPeriodOpen;
+import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.claim.InvalidClaimException;
 import net.officefloor.hq.app.holiday.HolidayRepository;
 import net.officefloor.hq.app.period.PeriodRepository;
@@ -16,12 +17,12 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * Finds each line's person by name (as names are compared: ignoring case) and checks its claim against them with the
- * claim form's rules: no claim after the person's retirement date, none due by (its date plus the terms it would get) inside a closed period. Any line refused
+ * claim form's rules: no claim after the person's retirement date, none due by (its date plus the terms it would get) inside a closed period, no external reference another claim on the sheet has. Any line refused
  * refuses the whole paste, before anything is written.
  */
 public class FindPastedPeople {
     public void find(@Val PastedLines pasted, @Val Sheet sheet, PersonRepository people, SheetRepository sheets,
-            PeriodRepository periods, SettingRepository settings, HolidayRepository holidays) throws InvalidClaimException {
+            PeriodRepository periods, SettingRepository settings, HolidayRepository holidays, ClaimRepository claims) throws InvalidClaimException {
         List<PastedLine> found = new ArrayList<>();
         int number = 0;
         for (PastedLine line : pasted.lines()) {
@@ -34,6 +35,9 @@ public class FindPastedPeople {
                 new CheckClaimInputNotRetired().check(line.input(), person, sheet.id(), sheets);
                 new CheckClaimInputPeriodOpen().check(line.input(), person, sheet.id(), sheets, settings, holidays,
                         periods);
+                if (line.input().ref() != null && claims.refUsed(sheet.id(), line.input().ref(), null)) {
+                    throw new InvalidClaimException("The reference " + line.input().ref() + " is already used on the sheet.");
+                }
             } catch (InvalidClaimException e) {
                 throw new InvalidClaimException("Line " + number + ": " + e.getMessage());
             }

@@ -174,6 +174,11 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
         return floor == null || value.compareTo(floor) >= 0 ? value : floor.setScale(2);
     }
 
+    /** The audit field for a claim's external reference, " ref=<reference>", or "" when it has none. */
+    public static String auditRef(String ref) {
+        return ref == null ? "" : " ref=" + ref;
+    }
+
     /** The audit field for the claim's number, " number=<n>", or "" when it has none. */
     public static String auditNumber(String number) {
         return number == null ? "" : " number=" + number;

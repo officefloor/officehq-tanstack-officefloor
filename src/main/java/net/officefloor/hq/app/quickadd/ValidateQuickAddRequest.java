@@ -20,7 +20,7 @@ public class ValidateQuickAddRequest {
         if (name.isBlank()) {
             throw new InvalidPersonException("A name is required.");
         }
-        new ValidateClaimRequest().validate(new ClaimRequest(request.amount(), "", "", ""), input);
+        new ValidateClaimRequest().validate(new ClaimRequest(request.amount(), "", "", "", ""), input);
         body.set(new QuickAddRequest(name, request.amount()));
     }
 }
