@@ -34,6 +34,13 @@ public class PersonRepository {
         return found.isEmpty() ? null : found.get(0);
     }
 
+    /** The person on this sheet with this name, ignoring case, or null. */
+    public Person findByName(String sheetId, String name) {
+        List<Person> found = jdbc.query("SELECT " + COLUMNS + " FROM person WHERE sheet_id = ? AND name_key = LOWER(?)",
+                PersonRepository::map, sheetId, name);
+        return found.isEmpty() ? null : found.get(0);
+    }
+
     /** Whether a person other than {@code exceptId} on the sheet has this name, ignoring case. */
     public boolean nameTaken(String sheetId, String name, Long exceptId) {
         Integer n = jdbc.queryForObject(
