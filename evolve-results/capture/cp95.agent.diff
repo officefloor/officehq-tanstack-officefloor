@@ -1,0 +1,132 @@
+diff --git a/src/main/frontend/features/rates/RatePreview.tsx b/src/main/frontend/features/rates/RatePreview.tsx
+new file mode 100644
+index 000000000..392af7fe9
+--- /dev/null
++++ b/src/main/frontend/features/rates/RatePreview.tsx
+@@ -0,0 +1,68 @@
++import { useState } from 'react';
++import type { FormEvent } from 'react';
++import { useClaims } from '../claims/claims';
++import { GRADES, usePeople } from '../people/people';
++import { useDueRules } from '../settings/settings';
++import { PERCENT, ratePreview, useRates } from './rates';
++
++// A grade and a candidate rate, previewed: how many OPEN and PENDING claims on that grade would show a different
++// due were that the grade's rate on every date, and by how much in all. Nothing is saved.
++export function RatePreview() {
++  const rates = useRates().data ?? [];
++  const people = usePeople().data ?? [];
++  const claims = useClaims().data ?? [];
++  const rules = useDueRules();
++  const [grade, setGrade] = useState<string>('A');
++  const [pct, setPct] = useState('');
++  const [result, setResult] = useState<{ count: number; diff: string } | null>(null);
++  const [error, setError] = useState('');
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    setResult(null);
++    setError('');
++    if (!PERCENT.test(pct.trim())) {
++      setError('Type a percent of 0.00 or more, with at most two decimals.');
++      return;
++    }
++    const gradesOf = new Map(people.map((p) => [p.id, p.grades]));
++    const rate = Number(pct.trim()).toFixed(2);
++    // Shown on the next tick, so two presses with the same result are told apart.
++    setTimeout(() => setResult(ratePreview(claims, (id) => gradesOf.get(id) ?? [], rates, grade, rate, rules)), 0);
++  };
++
++  const change = (apply: () => void) => {
++    apply();
++    setResult(null);
++    setError('');
++  };
++
++  return (
++    <form onSubmit={submit} data-testid="rate-preview-form">
++      <select data-testid="rate-preview-grade" value={grade} onChange={(e) => change(() => setGrade(e.target.value))}>
++        {GRADES.map((g) => (
++          <option key={g} value={g}>
++            {g}
++          </option>
++        ))}
++      </select>
++      <input
++        data-testid="rate-preview-pct"
++        placeholder="Candidate rate %"
++        value={pct}
++        onChange={(e) => change(() => setPct(e.target.value))}
++      />
++      <button type="submit" data-testid="rate-preview">
++        Preview
++      </button>
++      {result && (
++        <span>
++          {' '}
++          Claims changed: <strong data-testid="rate-preview-count">{result.count}</strong>, difference:{' '}
++          <strong data-testid="rate-preview-diff">{result.diff}</strong>
++        </span>
++      )}
++      {error && <span data-testid="rate-preview-error">{error}</span>}
++    </form>
++  );
++}
+diff --git a/src/main/frontend/features/rates/Rates.tsx b/src/main/frontend/features/rates/Rates.tsx
+index b2c35250f..7d37d543c 100644
+--- a/src/main/frontend/features/rates/Rates.tsx
++++ b/src/main/frontend/features/rates/Rates.tsx
+@@ -8,6 +8,7 @@ import { useSheetToday } from '../session/sheetToday';
+ import { NA, PERCENT, rateFor, ratesKey, useRates } from './rates';
+ import type { Rate, RateInput } from './rates';
+ import { useOneAtATime } from '../../query/useOneAtATime';
++import { RatePreview } from './RatePreview';
+ 
+ const EMPTY: RateInput = { grade: 'A', rate: '', from: '', to: '' };
+ 
+@@ -137,6 +138,7 @@ export function Rates() {
+         </button>
+         {error && <span data-testid="rate-form-error">{error}</span>}
+       </form>
++      <RatePreview />
+     </section>
+   );
+ }
+diff --git a/src/main/frontend/features/rates/rates.ts b/src/main/frontend/features/rates/rates.ts
+index a599a7d5a..3f912b387 100644
+--- a/src/main/frontend/features/rates/rates.ts
++++ b/src/main/frontend/features/rates/rates.ts
+@@ -216,3 +216,33 @@ export function personSplit(
+     total(counted.filter(keep).map((c) => claimDue(c, rates, grades, rules)));
+   return { settled: dues((c) => c.status === 'SETTLED'), open: dues((c) => c.status !== 'SETTLED') };
+ }
++
++/**
++ * What a candidate rate for a grade would do: of the OPEN and PENDING claims whose person is on that grade on the
++ * claim's date, how many would show a different due were that the grade's only rate on every date, and the
++ * differences (new due minus current due, n/a as 0.00) added up. A claim bound by a statement keeps its figure.
++ */
++export function ratePreview(
++  claims: Claim[],
++  gradesOf: (personId: number) => GradeFrom[],
++  rates: Rate[],
++  grade: string,
++  rate: string,
++  rules: DueRules,
++): { count: number; diff: string } {
++  const candidate: Rate[] = [...rates.filter((r) => r.grade !== grade), { grade, rate, from: null, to: null }];
++  const cents = (d: string) => (d === NA ? 0 : hundredths(d));
++  let count = 0;
++  let diff = 0;
++  for (const c of claims) {
++    if (c.status !== 'OPEN' && c.status !== 'PENDING') continue;
++    const grades = gradesOf(c.personId);
++    if (gradeOn(grades, c.date) !== grade) continue;
++    const now = claimDue(c, rates, grades, rules);
++    const then = claimDue(c, candidate, grades, rules);
++    if (now === then) continue;
++    count++;
++    diff += cents(then) - cents(now);
++  }
++  return { count, diff: (diff / 100).toFixed(2) };
++}
