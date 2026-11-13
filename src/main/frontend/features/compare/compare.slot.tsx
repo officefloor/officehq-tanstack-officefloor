@@ -34,7 +34,7 @@ function CompareLines({ other }: { other: string }) {
     <ul>
       {grades.map((g) => (
         <li key={g} data-testid="compare-line">
-          {g} {fig(mine[g])} {fig(theirs[g])}
+          {g} {fig(mine[g] ?? dueTotal([]))} {fig(theirs[g] ?? dueTotal([]))}
         </li>
       ))}
     </ul>

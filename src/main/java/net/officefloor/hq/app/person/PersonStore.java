@@ -319,6 +319,14 @@ public class PersonStore {
         return n == 1;
     }
 
+    /** Makes every grade record of the person on {@code from} one of {@code into}, whatever its from-date (in the
+     *  person too), keeping its from-date. */
+    public void regrade(Person person, String from, String into) {
+        jdbc.update("UPDATE person_grade SET grade = ? WHERE sheet_id = ? AND person_id = ? AND grade = ?", into,
+                person.getSheetId(), person.getId(), from);
+        person.getGrades().replaceAll((date, grade) -> grade.equals(from) ? into : grade);
+    }
+
     /** Stores the person's dated terms from the date, replacing any from the same date. */
     public void recordTerms(Person person, LocalDate from) {
         jdbc.update("MERGE INTO person_terms (sheet_id, person_id, from_date, terms) KEY (person_id, from_date)"

@@ -17,7 +17,9 @@ import org.springframework.web.bind.annotation.PathVariable;
 
 /** Records GRADE_MERGED, then gives every person on the merged grade (in force on the sheet's today) the other
  *  grade from the sheet's today, in list order, exactly as the person form's edit would, each recorded as
- *  PERSON_EDITED and then how it moved the sheet's figures; then how the merge as a whole moved them. */
+ *  PERSON_EDITED and then how it moved the sheet's figures. The merge is retroactive: every grade record of each
+ *  person moved that is on the merged grade then becomes the other, whatever its date. Then how the merge as a
+ *  whole moved the figures. */
 public class MergeGrade {
     public void merge(@PathVariable("sheetId") String sheetId, @Val GradeMergeInput input, PersonStore store,
             SheetStore sheets, RollupService rollups, Audit audit, GradeStore grades, Out<GradeMergeResult> result)
@@ -40,6 +42,9 @@ public class MergeGrade {
             audit.record("PERSON_EDITED sheet=" + sheet + " by=" + input.user() + " name=" + person.getName()
                     + " grade=" + person.gradeOn(today));
             rollups.record(sheet, input.user(), before);
+        }
+        for (Person person : moved) {
+            store.regrade(person, input.from(), input.into());
         }
         rollups.record(sheet, input.user(), merging);
         result.set(new GradeMergeResult(input.from(), input.into(), moved.size()));
