@@ -188,7 +188,7 @@ public class PersonRepository {
 
     /**
      * Merge the person ({@code from}, their claims already moved) into the other: their name and then their aliases,
-     * in the order added, become the other's newest aliases; their patrons are added to the other's (not the other,
+     * in the order added, become the other's newest aliases; their patrons are added after the other's, in the order named (not the other,
      * no repeats); anyone naming them as patron names the other instead (not themselves, no repeats); their pool
      * memberships move to the other (shares added where the other is already a member). Their statements, grades,
      * holds, watchers and contact are dropped with them.
@@ -210,11 +210,11 @@ public class PersonRepository {
 
         jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id) SELECT sheet_id, ?, patron_id"
                 + " FROM person_patron p WHERE sheet_id = ? AND person_id = ? AND patron_id <> ? AND NOT EXISTS"
-                + " (SELECT 1 FROM person_patron q WHERE q.person_id = ? AND q.patron_id = p.patron_id)",
+                + " (SELECT 1 FROM person_patron q WHERE q.person_id = ? AND q.patron_id = p.patron_id) ORDER BY seq",
                 kept, sheetId, gone, kept, kept);
         jdbc.update("INSERT INTO person_patron (sheet_id, person_id, patron_id) SELECT sheet_id, person_id, ?"
                 + " FROM person_patron p WHERE sheet_id = ? AND patron_id = ? AND person_id <> ? AND NOT EXISTS"
-                + " (SELECT 1 FROM person_patron q WHERE q.person_id = p.person_id AND q.patron_id = ?)",
+                + " (SELECT 1 FROM person_patron q WHERE q.person_id = p.person_id AND q.patron_id = ?) ORDER BY seq",
                 kept, sheetId, gone, kept, kept);
         jdbc.update("DELETE FROM person_patron WHERE sheet_id = ? AND (person_id = ? OR patron_id = ?)", sheetId, gone,
                 gone);
