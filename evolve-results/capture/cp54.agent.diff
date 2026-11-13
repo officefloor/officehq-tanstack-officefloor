@@ -1,0 +1,422 @@
+diff --git a/src/main/frontend/features/settings/settings.ts b/src/main/frontend/features/settings/settings.ts
+index b2495cc68..31ae903e0 100644
+--- a/src/main/frontend/features/settings/settings.ts
++++ b/src/main/frontend/features/settings/settings.ts
+@@ -5,7 +5,7 @@ import { sheetKey, useCurrentSheet } from '../session/session';
+ import { useSheetToday } from '../session/sheetToday';
+ import { useClaims } from '../claims/claims';
+ 
+-/** A role given to a user name: clerk or steward. A name with none given is a clerk. */
++/** A role given to a user name: clerk, steward or viewer (sees everything, changes nothing). A name with none given is a clerk. */
+ export type UserRole = { user: string; role: string };
+ 
+ /**
+@@ -46,7 +46,7 @@ export const DEFAULT_TERMS = 14;
+ export const DEFAULT_LATE_PCT = '0.00';
+ 
+ /** The roles a user name can be given. */
+-export const ROLES = ['clerk', 'steward'];
++export const ROLES = ['clerk', 'steward', 'viewer'];
+ 
+ /** The actions the permission matrix covers. */
+ export const PERMISSION_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'];
+diff --git a/src/main/java/net/officefloor/hq/app/setting/CheckNotViewer.java b/src/main/java/net/officefloor/hq/app/setting/CheckNotViewer.java
+new file mode 100644
+index 000000000..fafadac4d
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/setting/CheckNotViewer.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app.setting;
++
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Refuses (400) any change by a viewer on the sheet: it runs first, so a refused change writes nothing. */
++public class CheckNotViewer {
++    public void check(@PathVariable("sheetId") String sheetId, @RequestParam("user") String user,
++            SettingRepository settings) throws ViewerRefusedException {
++        if (settings.find(sheetId).roleOf(user) == Role.VIEWER) {
++            throw new ViewerRefusedException("A viewer cannot change the sheet.");
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/setting/HandleViewerRefused.java b/src/main/java/net/officefloor/hq/app/setting/HandleViewerRefused.java
+new file mode 100644
+index 000000000..f95cf6fd7
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/setting/HandleViewerRefused.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.setting;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleViewerRefused {
++    public void handle(@Parameter ViewerRefusedException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.BAD_REQUEST));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Permissions.java b/src/main/java/net/officefloor/hq/app/setting/Permissions.java
+index 0e56fd023..aa0568fb9 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Permissions.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Permissions.java
+@@ -38,12 +38,13 @@ public record Permissions(Map<String, String> set) {
+         };
+     }
+ 
+-    /** The roles in a comma separated list as typed (each case and outer spaces ignored), or null when one is not a role. */
++    /** The roles in a comma separated list as typed (each case and outer spaces ignored), or null when one is not a role a
++     * permission can name (clerk or steward). */
+     public static Set<Role> parse(String roles) {
+         Set<Role> parsed = EnumSet.noneOf(Role.class);
+         for (String label : roles.split(",", -1)) {
+             Role role = Role.of(label);
+-            if (role == null) {
++            if (role == null || role == Role.VIEWER) {
+                 return null;
+             }
+             parsed.add(role);
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Role.java b/src/main/java/net/officefloor/hq/app/setting/Role.java
+index ec6c98492..8b736b171 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Role.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Role.java
+@@ -1,8 +1,11 @@
+ package net.officefloor.hq.app.setting;
+ 
+-/** A user's role on a sheet: a clerk (any name not given another role) settles only within the clerk limit; a steward settles anything. */
++/**
++ * A user's role on a sheet: a clerk (any name not given another role) settles only within the clerk limit; a steward
++ * settles anything; a viewer sees everything and changes nothing.
++ */
+ public enum Role {
+-    CLERK, STEWARD;
++    CLERK, STEWARD, VIEWER;
+ 
+     /** The role as it is typed and shown: lower case. */
+     public String label() {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/RoleRequest.java b/src/main/java/net/officefloor/hq/app/setting/RoleRequest.java
+index 79204cd9e..c7aa72094 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/RoleRequest.java
++++ b/src/main/java/net/officefloor/hq/app/setting/RoleRequest.java
+@@ -2,6 +2,6 @@ package net.officefloor.hq.app.setting;
+ 
+ import jakarta.validation.constraints.Size;
+ 
+-/** A role as the form submits it: the user name and the role (clerk or steward). */
++/** A role as the form submits it: the user name and the role (clerk, steward or viewer). */
+ public record RoleRequest(@Size(max = 100) String user, @Size(max = 30) String role) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateRoleRequest.java b/src/main/java/net/officefloor/hq/app/setting/ValidateRoleRequest.java
+index fa75be7c2..7389fb9b2 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateRoleRequest.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateRoleRequest.java
+@@ -14,7 +14,7 @@ public class ValidateRoleRequest {
+         }
+         Role found = Role.of(request.role());
+         if (found == null) {
+-            throw new InvalidSettingException("The role must be clerk or steward.");
++            throw new InvalidSettingException("The role must be clerk, steward or viewer.");
+         }
+         role.set(new UserRole(sheetId, user, found));
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ViewerRefusedException.java b/src/main/java/net/officefloor/hq/app/setting/ViewerRefusedException.java
+new file mode 100644
+index 000000000..eeea45696
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/setting/ViewerRefusedException.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.setting;
++
++/** A change asked for by a viewer, who can change nothing. */
++public class ViewerRefusedException extends Exception {
++    public ViewerRefusedException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.setting.ViewerRefusedException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.setting.ViewerRefusedException.yml
+new file mode 100644
+index 000000000..daf8760b6
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.setting.ViewerRefusedException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.setting.HandleViewerRefused
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+index c729739f2..758590861 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}.PUT.yml
+@@ -3,6 +3,9 @@
+ # A claim dated (before or after the edit) inside a closed period is refused (400).
+ # A claim edited to a date after its person's retirement date is refused (400).
+ # A correction is refused (400) on the same terms as an add.
++viewer:
++  class: net.officefloor.hq.app.setting.CheckNotViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaimRequest
+   next: load
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/deferral.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/deferral.PUT.yml
+index 5932780e4..43b0691ae 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/deferral.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/deferral.PUT.yml
+@@ -2,6 +2,9 @@
+ # not OPEN, a date not after today, or a claim dated inside a closed period is refused (400) and writes nothing.
+ # Until the sheet's today reaches the date the claim counts in no total, is not overdue, cannot be settled and is
+ # left unbound by a statement; from that day on it is an OPEN claim like any other.
++viewer:
++  class: net.officefloor.hq.app.setting.CheckNotViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateDeferRequest
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person.PUT.yml
+index 4dc50c327..a253bdc17 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person.PUT.yml
+@@ -3,6 +3,9 @@
+ # claim's date is refused (400) and writes nothing. A claim dated inside a closed period is refused (400).
+ # The claim keeps its number and date, loses any figure a statement bound it to (live again), and is listed as its
+ # new person's newest claim.
++viewer:
++  class: net.officefloor.hq.app.setting.CheckNotViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateReassignRequest
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/proofs.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/proofs.POST.yml
+index 53d7848ab..22714f29d 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/proofs.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/proofs.POST.yml
+@@ -1,5 +1,8 @@
+ # Raise a claim's proofs count by one. A SETTLED or VOID claim, or a claim dated inside a closed period, is refused
+ # (400) and writes nothing.
++viewer:
++  class: net.officefloor.hq.app.setting.CheckNotViewer
++  next: load
+ load:
+   class: net.officefloor.hq.app.claim.LoadClaim
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
+index 8eaa0b639..73a139116 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/{action}.POST.yml
+@@ -5,6 +5,9 @@
+ # A clerk settling a claim whose due is above the sheet's clerk limit makes it PENDING; a steward settles anything.
+ # Only a steward approves or rejects; the user who opened the claim cannot approve it.
+ # Only a steward re-settles (resettle: SETTLED -> SETTLED), freezing the claim again at today's figure as an open, unbound claim.
++viewer:
++  class: net.officefloor.hq.app.setting.CheckNotViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaimActionRequest
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste-claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste-claims.POST.yml
+index 481ddfe49..16be05145 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste-claims.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/paste-claims.POST.yml
+@@ -2,6 +2,9 @@
+ # today; the note may be absent), in order, for the person on the sheet with that name (ignoring case). Every line
+ # is checked first with the claim form's rules (and its name must be on the sheet); any line refused refuses the
+ # whole paste (400) and nothing is added. Answers how many claims were added.
++viewer:
++  class: net.officefloor.hq.app.setting.CheckNotViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.paste.ValidatePasteRequest
+   next: load
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+index 8c73ba5de..773407ad2 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people.POST.yml
+@@ -1,4 +1,7 @@
+ # Add a person to the sheet; a blank name or a grade other than A, B, C is refused (400), as is a name already in use on the sheet (ignoring case).
++viewer:
++  class: net.officefloor.hq.app.setting.CheckNotViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePersonRequest
+   next: load
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+index fb720d079..158f67366 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}.PUT.yml
+@@ -1,5 +1,8 @@
+ # Edit a person's name and grade; refused (400) on the same terms as an add.
+ # Refused (409) when the editor loaded a version of the person someone else has saved over since.
++viewer:
++  class: net.officefloor.hq.app.setting.CheckNotViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.person.ValidatePersonRequest
+   next: load
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+index 103fe9486..6c0de21b3 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/claims.POST.yml
+@@ -1,6 +1,9 @@
+ # Add a claim to a person; an amount that is missing, negative or has more than two decimals, or a bad date, is refused (400). A blank date is the sheet's today.
+ # A claim dated inside a closed period, or after its person's retirement date, is refused (400).
+ # A negative amount (a correction) is refused (400) unless it names, by number, a SETTLED claim of the same person.
++viewer:
++  class: net.officefloor.hq.app.setting.CheckNotViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.claim.ValidateClaimRequest
+   next: load
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.POST.yml
+index f028d7342..141cde11d 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/hold.POST.yml
+@@ -1,6 +1,9 @@
+ # Add a hold to a person, from a date (blank: the sheet's today) to an optional to-date; a bad date or a to-date
+ # before the from-date is refused (400), a person not on the sheet (404). Only their open claims dated within a hold,
+ # and not bound by a statement, are left out of the live totals.
++viewer:
++  class: net.officefloor.hq.app.setting.CheckNotViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.person.ValidateHoldRequest
+   next: load
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml
+index afa685c46..d39c717a5 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/patrons.POST.yml
+@@ -1,5 +1,8 @@
+ # Name another person on the sheet as one of the person's patrons. The person themselves, someone not on the
+ # sheet, or someone already their patron is refused (400); a person not on the sheet (404).
++viewer:
++  class: net.officefloor.hq.app.setting.CheckNotViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.patron.ValidatePatronRequest
+   next: load
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml
+index 9a76c6aa2..6e6d532b3 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/retire.POST.yml
+@@ -1,5 +1,8 @@
+ # Retire a person from a date (blank: the sheet's today); a bad date is refused (400), a person not on the
+ # sheet (404). Their claims keep counting in every total; a claim dated after the date is refused from now on.
++viewer:
++  class: net.officefloor.hq.app.setting.CheckNotViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.person.ValidateRetireRequest
+   next: load
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml
+index a6aabc4bc..37f7064f1 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/people/{personId}/statement.POST.yml
+@@ -1,5 +1,8 @@
+ # Take a person's statement: record their due-total now and bind each of their counting claims to the
+ # figure it has now (unbinding the rest); a person not on the sheet is refused (404).
++viewer:
++  class: net.officefloor.hq.app.setting.CheckNotViewer
++  next: load
+ load:
+   class: net.officefloor.hq.app.person.LoadPerson
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.POST.yml
+index 7198d7bf9..198b7aeef 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods.POST.yml
+@@ -1,4 +1,7 @@
+ # Add a period; a missing name, a bad date, a to-date before the from-date, a name already in use on the sheet, or dates overlapping another period, is refused (400).
++viewer:
++  class: net.officefloor.hq.app.setting.CheckNotViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.period.ValidatePeriodRequest
+   next: load
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/close.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/close.POST.yml
+index d363c88e6..574f3dc3d 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/close.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/close.POST.yml
+@@ -1,4 +1,7 @@
+ # Close a period, fixing its due-total as it stands now; an unknown or already closed period, or a user whose role the permission matrix does not allow closing, is refused (400).
++viewer:
++  class: net.officefloor.hq.app.setting.CheckNotViewer
++  next: load
+ load:
+   class: net.officefloor.hq.app.period.LoadPeriod
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/reopen.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/reopen.POST.yml
+index b7261a567..8c1ac44c7 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/reopen.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/periods/{name}/reopen.POST.yml
+@@ -1,5 +1,8 @@
+ # Reopen a closed period, by a steward only, so its due-total is live again; an unknown or open period, or a user
+ # who is not a steward, is refused (400).
++viewer:
++  class: net.officefloor.hq.app.setting.CheckNotViewer
++  next: load
+ load:
+   class: net.officefloor.hq.app.period.LoadPeriod
+   govern: [ transaction ]
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-claims.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-claims.POST.yml
+index 63413c002..9ee27691b 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-claims.POST.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/quick-claims.POST.yml
+@@ -2,6 +2,9 @@
+ # typed name (ignoring case), adding them first with grade A when they are not on the sheet. Refused (400) on
+ # the person and claim forms' terms, all checked before anything is written, so a refusal adds no person.
+ # A person retired from before the sheet's today is refused (400).
++viewer:
++  class: net.officefloor.hq.app.setting.CheckNotViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.quickadd.ValidateQuickAddRequest
+   next: load
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.PUT.yml
+index ce2424714..808d8aed4 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rates.PUT.yml
+@@ -1,4 +1,7 @@
+ # Set a grade's rate from a from-date (blank: from the start) through an optional to-date (blank: no end), replacing any it had for that from-date; a bad from- or to-date, a to-date before the from-date, a bad grade, or a percent that is missing, negative or has more than two decimals, is refused (400).
++viewer:
++  class: net.officefloor.hq.app.setting.CheckNotViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.rate.ValidateRateRequest
+   next: load
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.PUT.yml
+index 20b4cb944..6465aad2b 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/roles.PUT.yml
+@@ -1,4 +1,7 @@
+-# Give a user name a role on the sheet (clerk or steward), replacing any it had; a blank name or another role is refused (400).
++# Give a user name a role on the sheet (clerk, steward or viewer), replacing any it had; a blank name or another role is refused (400).
++viewer:
++  class: net.officefloor.hq.app.setting.CheckNotViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.setting.ValidateRoleRequest
+   next: load
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml
+index de8fda9fc..d50b0ad44 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/settings.PUT.yml
+@@ -1,6 +1,9 @@
+ # Set the sheet's clerk limit (blank: no limit), its floor (blank: 1.00) and its terms in days (blank: 14) and each grade's own terms in days (blank: none, the sheet's terms) and its late percent (blank: 0.00) and its policy date (blank: the sheet's today) and its period numbering from date (blank: off) and its cap (blank: none) and its proof threshold (blank: none) and its permission matrix (by action, the roles allowed it, comma separated; blank: the standing rule), each only when the request carries it;
+ # a value that is negative or has more than two decimals (terms: not whole days) is refused (400). A floor, late percent, policy date or cap moves the dues (terms do not: a claim's due-by is fixed when it is created), so the
+ # figures it moved are recorded after it.
++viewer:
++  class: net.officefloor.hq.app.setting.CheckNotViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.setting.ValidateSettingsRequest
+   next: load
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+index 8c56eca00..cc69a7fe2 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+@@ -1,4 +1,7 @@
+ # Change the sheet's today; a blank date resets it to the real date.
++viewer:
++  class: net.officefloor.hq.app.setting.CheckNotViewer
++  next: validate
+ validate:
+   class: net.officefloor.hq.app.sheet.ValidateTodayRequest
+   next: load
