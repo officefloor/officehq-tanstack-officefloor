@@ -11,10 +11,10 @@ import java.util.Map;
  * other grade uses the sheet's terms), its late percent (an overdue claim gains it of its figure
  * every full 30 days), its rounding policy date (null: blank, the sheet's
  * today), its period numbering from date (null: off; on or after it, an opened claim is numbered within its period)
- * and the roles given to user names (any other name is a clerk).
+ * its cap (null: none; a person's due-total is at most it) and the roles given to user names (any other name is a clerk).
  */
 public record Settings(String sheetId, BigDecimal clerkLimit, BigDecimal floor, int terms, Map<String, Integer> gradeTerms, BigDecimal latePct,
-        LocalDate policyDate, LocalDate periodNumberingFrom, List<UserRole> roles) {
+        LocalDate policyDate, LocalDate periodNumberingFrom, BigDecimal cap, List<UserRole> roles) {
 
     /** The role of the user name: the one given to it, else clerk. */
     public Role roleOf(String user) {

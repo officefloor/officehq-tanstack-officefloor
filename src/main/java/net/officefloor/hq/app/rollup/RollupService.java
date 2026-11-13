@@ -13,6 +13,7 @@ import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.setting.Cap;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import org.springframework.stereotype.Service;
@@ -20,7 +21,7 @@ import org.springframework.stereotype.Service;
 /**
  * Works out a sheet's figures as the screen shows them: a person's claimed is their counting claims' amounts
  * added up; their due-total those claims' dues (live figures raised to the sheet's floor and rounded by its policy date, plus
- * any late charge on the overdue ones) added up, n/a when their grade on the sheet's today has no
+ * any late charge on the overdue ones) added up, at most the sheet's cap; n/a when their grade on the sheet's today has no
  * rate there and no counting claim has a figure (kept, or at the rate for the grade in force on its date). The sheet's totals add these up, skipping n/a.
  */
 @Service
@@ -48,6 +49,7 @@ public class RollupService {
         LocalDate today = sheets.today(sheetId);
         List<Rate> sheetRates = rates.findAll(sheetId);
         BigDecimal floor = settings.floor(sheetId);
+        BigDecimal cap = settings.cap(sheetId);
         LateCharge late = settings.lateCharge(sheetId, today);
         List<Claim> sheetClaims = claims.findAll(sheetId);
         Rounding rounding = settings.rounding(sheetId, today, sheetClaims);
@@ -71,6 +73,7 @@ public class RollupService {
                 }
             }
             boolean na = Rate.inForce(sheetRates, person.grade(), today) == null && !kept;
+            due = Cap.apply(cap, due);
             claimedTotal = claimedTotal.add(claimed);
             if (!na) {
                 dueTotal = dueTotal.add(due);

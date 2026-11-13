@@ -11,6 +11,7 @@ import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.setting.Cap;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
@@ -19,7 +20,7 @@ import net.officefloor.plugin.variable.Val;
 /**
  * Takes the person's statement: records their due-total now, binds each of their claims that counts to the
  * figure it has now (a live one raised to the sheet's floor), and unbinds (live again) each that does not. The due-total is their counting claims'
- * dues added up (each figure plus any late charge on it — the charge is never bound, it keeps following the
+ * dues added up, at most the sheet's cap (each figure plus any late charge on it — the charge is never bound, it keeps following the
  * sheet's today); n/a when their grade on the sheet's today has no rate there and no counting claim has a figure (kept, or at the
  * rate for the grade in force on its date).
  */
@@ -50,7 +51,7 @@ public class TakeStatement {
             }
         }
         String dueTotal = Rate.inForce(sheetRates, person.grade(), today) == null && !kept ? "n/a"
-                : total.setScale(2).toPlainString();
+                : Cap.apply(settings.cap(person.sheetId()), total).setScale(2).toPlainString();
         statement.set(new Statement(person.name(), dueTotal, counted));
         updated.set(people.recordStatement(person, dueTotal, today));
     }

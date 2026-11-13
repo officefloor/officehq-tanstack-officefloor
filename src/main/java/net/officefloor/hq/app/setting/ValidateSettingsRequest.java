@@ -27,7 +27,7 @@ public class ValidateSettingsRequest {
 
     public void validate(@RequestBody @Valid SettingsRequest request, Out<ClerkLimit> limit, Out<Floor> floor,
             Out<Terms> terms, Out<LatePct> latePct, Out<PolicyDate> policyDate,
-            Out<PeriodNumberingFrom> periodNumberingFrom, Out<GradeTerms> gradeTerms)
+            Out<PeriodNumberingFrom> periodNumberingFrom, Out<GradeTerms> gradeTerms, Out<Cap> cap)
             throws InvalidSettingException {
         limit.set(clerkLimit(request.clerkLimit()));
         floor.set(floor(request.floor()));
@@ -36,6 +36,21 @@ public class ValidateSettingsRequest {
         policyDate.set(policyDate(request.policyDate()));
         periodNumberingFrom.set(periodNumberingFrom(request.periodNumberingFrom()));
         gradeTerms.set(gradeTerms(request.gradeTerms()));
+        cap.set(cap(request.cap()));
+    }
+
+    private static Cap cap(String requested) throws InvalidSettingException {
+        if (requested == null) {
+            return new Cap(false, null);
+        }
+        String value = requested.trim();
+        if (value.isEmpty()) {
+            return new Cap(true, null);
+        }
+        if (!AMOUNT.matcher(value).matches()) {
+            throw new InvalidSettingException("The cap must be 0.00 or more, with at most two decimals, or blank.");
+        }
+        return new Cap(true, new BigDecimal(value).setScale(2));
     }
 
     private static ClerkLimit clerkLimit(String requested) throws InvalidSettingException {

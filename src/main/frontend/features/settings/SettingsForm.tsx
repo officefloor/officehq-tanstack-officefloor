@@ -17,6 +17,7 @@ type SettingsInput = {
   latePct?: string;
   policyDate?: string;
   periodNumberingFrom?: string;
+  cap?: string;
 };
 
 type Touched = {
@@ -26,6 +27,7 @@ type Touched = {
   latePct: boolean;
   policyDate: boolean;
   periodNumberingFrom: boolean;
+  cap: boolean;
 };
 
 const UNTOUCHED: Touched = {
@@ -35,9 +37,10 @@ const UNTOUCHED: Touched = {
   latePct: false,
   policyDate: false,
   periodNumberingFrom: false,
+  cap: false,
 };
 
-// The sheet's clerk limit (blank: no limit), floor, terms, each grade's terms (blank: the sheet's), late percent and policy date (blank: today) and period numbering from date (blank: off) in force, and the form that sets them. Saving sends
+// The sheet's clerk limit (blank: no limit), floor, terms, each grade's terms (blank: the sheet's), late percent and policy date (blank: today) and period numbering from date (blank: off) and cap (blank: none) in force, and the form that sets them. Saving sends
 // only the fields touched since the last save, so a blank field left alone changes nothing.
 export function SettingsForm() {
   const [user] = useCurrentUser();
@@ -51,6 +54,7 @@ export function SettingsForm() {
   const [latePct, setLatePct] = useState('');
   const [policyDate, setPolicyDate] = useState('');
   const [periodNumberingFrom, setPeriodNumberingFrom] = useState('');
+  const [cap, setCap] = useState('');
   const [touched, setTouched] = useState<Touched>(UNTOUCHED);
   const [error, setError] = useState('');
   const queryClient = useQueryClient();
@@ -68,6 +72,7 @@ export function SettingsForm() {
       setLatePct('');
       setPolicyDate('');
       setPeriodNumberingFrom('');
+      setCap('');
       setTouched(UNTOUCHED);
       setError('');
       queryClient.setQueryData(settingsKey(sheet), saved);
@@ -139,6 +144,14 @@ export function SettingsForm() {
       }
       input.periodNumberingFrom = value;
     }
+    if (touched.cap) {
+      const value = cap.trim();
+      if (value !== '' && !AMOUNT.test(value)) {
+        setError('Type a cap of 0.00 or more, with at most two decimals, or leave it blank for none.');
+        return;
+      }
+      input.cap = value;
+    }
     if (
       input.clerkLimit === undefined &&
       input.floor === undefined &&
@@ -146,7 +159,8 @@ export function SettingsForm() {
       input.gradeTerms === undefined &&
       input.latePct === undefined &&
       input.policyDate === undefined &&
-      input.periodNumberingFrom === undefined
+      input.periodNumberingFrom === undefined &&
+      input.cap === undefined
     )
       return;
     once(() => save.mutateAsync(input));
@@ -180,6 +194,9 @@ export function SettingsForm() {
       <p>
         Period numbering from:{' '}
         <span data-testid="setting-period-numbering-from-current">{settings?.periodNumberingFrom ?? ''}</span>
+      </p>
+      <p>
+        Cap: <span data-testid="setting-cap-current">{settings?.cap ?? ''}</span>
       </p>
       <form onSubmit={submit} data-testid="settings-form">
         <input
@@ -259,6 +276,17 @@ export function SettingsForm() {
           onChange={(e) => {
             setPeriodNumberingFrom(e.target.value);
             setTouched((t) => ({ ...t, periodNumberingFrom: true }));
+            setError('');
+          }}
+        />
+        <input
+          data-testid="setting-cap"
+          placeholder="Cap on a person's due-total (blank: none)"
+          value={cap}
+          onFocus={() => setTouched((t) => ({ ...t, cap: true }))}
+          onChange={(e) => {
+            setCap(e.target.value);
+            setTouched((t) => ({ ...t, cap: true }));
             setError('');
           }}
         />

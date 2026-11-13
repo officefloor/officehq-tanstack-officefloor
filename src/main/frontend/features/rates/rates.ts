@@ -130,9 +130,36 @@ const keepsFigure = (c: Claim) => c.due !== null || (bound(c) && c.statedDue !==
  * A person's due-total: the figures of their claims that count, added up (0.00 with none). With no
  * rate in force on the sheet's today for their grade on that day it is n/a, unless a claim has a figure (kept
  * when settled or stated, or at the rate for the grade in force on its date): then it is the figures there are,
- * added up. Their open claims a hold covers (not bound by a statement) do not count.
+ * added up. Their open claims a hold covers (not bound by a statement) do not count. It is at most the
+ * sheet's cap (n/a is not capped).
  */
 export function personDue(
+  claims: Claim[],
+  rates: Rate[],
+  grades: GradeFrom[],
+  holds: Hold[],
+  rules: DueRules,
+): string {
+  const sum = personSum(claims, rates, grades, holds, rules);
+  if (sum === NA || rules.cap === '' || hundredths(sum) <= hundredths(rules.cap)) return sum;
+  return rules.cap;
+}
+
+/** A person's excess: by how much their due-total is above the sheet's cap; 0.00 when it is not (or is n/a). */
+export function personExcess(
+  claims: Claim[],
+  rates: Rate[],
+  grades: GradeFrom[],
+  holds: Hold[],
+  rules: DueRules,
+): string {
+  const sum = personSum(claims, rates, grades, holds, rules);
+  if (sum === NA || rules.cap === '') return '0.00';
+  return (Math.max(0, hundredths(sum) - hundredths(rules.cap)) / 100).toFixed(2);
+}
+
+/** A person's due-total before the cap: their counting claims' figures added up, or n/a. */
+function personSum(
   claims: Claim[],
   rates: Rate[],
   grades: GradeFrom[],

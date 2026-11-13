@@ -15,10 +15,10 @@ export type UserRole = { user: string; role: string };
  * for each grade that has its own (by grade; any other grade uses the sheet's terms), the late percent (two decimals) an overdue claim
  * gains of its figure every full 30 days, the rounding policy date (yyyy-MM-dd; '': blank, the
  * sheet's today), the period numbering from date (yyyy-MM-dd; '': off — on or after it, an opened claim is
- * numbered within its period), and the roles
+ * numbered within its period), the cap (two decimals; '': none — a person's due-total is at most it), and the roles
  * given to user names.
  */
-export type Settings = { clerkLimit: string | null; floor: string; terms: number; gradeTerms: Record<string, number>; latePct: string; policyDate: string; periodNumberingFrom: string; roles: UserRole[] };
+export type Settings = { clerkLimit: string | null; floor: string; terms: number; gradeTerms: Record<string, number>; latePct: string; policyDate: string; periodNumberingFrom: string; cap: string; roles: UserRole[] };
 
 /** The floor a sheet starts with: a claim's live due is at least it. */
 export const DEFAULT_FLOOR = '1.00';
@@ -65,7 +65,7 @@ export const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * What a claim's due is worked out from: the sheet's floor, late percent and today, its policy
- * date in force (blank: today) and the dates of its claims by number (a correction rounds by the date
+ * date in force (blank: today), its cap ('': none) and the dates of its claims by number (a correction rounds by the date
  * of the claim it corrects).
  */
 export type DueRules = {
@@ -73,6 +73,7 @@ export type DueRules = {
   latePct: string;
   today: string;
   policyDate: string;
+  cap: string;
   claimDates: Map<string, string>;
 };
 
@@ -90,6 +91,7 @@ export function useDueRules(): DueRules {
     latePct: settings?.latePct ?? DEFAULT_LATE_PCT,
     today,
     policyDate: settings?.policyDate || today,
+    cap: settings?.cap ?? '',
     claimDates,
   };
 }

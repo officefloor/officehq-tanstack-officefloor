@@ -3,8 +3,8 @@ package net.officefloor.hq.app.setting;
 import java.util.List;
 import java.util.Map;
 
-/** The settings as the screen reads them: the clerk limit (null: no limit), the floor, the terms in days, the terms set for each grade that has its own (by grade), the late percent, the policy date ("": blank, the sheet's today), the period numbering from date ("": off) and each role given, by user name. */
-public record SettingsResponse(String clerkLimit, String floor, int terms, Map<String, Integer> gradeTerms, String latePct, String policyDate, String periodNumberingFrom, List<RoleResponse> roles) {
+/** The settings as the screen reads them: the clerk limit (null: no limit), the floor, the terms in days, the terms set for each grade that has its own (by grade), the late percent, the policy date ("": blank, the sheet's today), the period numbering from date ("": off), the cap ("": none) and each role given, by user name. */
+public record SettingsResponse(String clerkLimit, String floor, int terms, Map<String, Integer> gradeTerms, String latePct, String policyDate, String periodNumberingFrom, String cap, List<RoleResponse> roles) {
 
     public record RoleResponse(String user, String role) {
     }
@@ -18,6 +18,7 @@ public record SettingsResponse(String clerkLimit, String floor, int terms, Map<S
                 settings.latePct().toPlainString(),
                 settings.policyDate() == null ? "" : settings.policyDate().toString(),
                 settings.periodNumberingFrom() == null ? "" : settings.periodNumberingFrom().toString(),
+                settings.cap() == null ? "" : settings.cap().toPlainString(),
                 settings.roles().stream().map((r) -> new RoleResponse(r.user(), r.role().label())).toList());
     }
 }

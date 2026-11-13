@@ -38,7 +38,7 @@ public class SettingRepository {
                 + " ORDER BY user_name", (rs, n) -> new UserRole(rs.getString("sheet_id"), rs.getString("user_name"),
                         Role.valueOf(rs.getString("role"))), sheetId);
         BigDecimal clerkLimit = limit.isEmpty() || limit.get(0) == null ? null : limit.get(0).setScale(2);
-        return new Settings(sheetId, clerkLimit, floor(sheetId), terms(sheetId), gradeTerms(sheetId), latePct(sheetId), policyDate(sheetId), periodNumberingFrom(sheetId), roles);
+        return new Settings(sheetId, clerkLimit, floor(sheetId), terms(sheetId), gradeTerms(sheetId), latePct(sheetId), policyDate(sheetId), periodNumberingFrom(sheetId), cap(sheetId), roles);
     }
 
     /** The sheet's floor: a claim's live due is at least it (1.00 for a sheet not yet stored). */
@@ -132,6 +132,18 @@ public class SettingRepository {
     /** Set the sheet's floor. */
     public void saveFloor(String sheetId, BigDecimal floor) {
         jdbc.update("UPDATE sheet SET due_floor = ? WHERE id = ?", floor, sheetId);
+    }
+
+    /** The sheet's cap: a person's due-total is at most it (null: no cap). */
+    public BigDecimal cap(String sheetId) {
+        List<BigDecimal> cap = jdbc.query("SELECT due_cap FROM sheet WHERE id = ?",
+                (rs, n) -> rs.getBigDecimal("due_cap"), sheetId);
+        return cap.isEmpty() || cap.get(0) == null ? null : cap.get(0).setScale(2);
+    }
+
+    /** Set the sheet's cap (null: no cap). */
+    public void saveCap(String sheetId, BigDecimal cap) {
+        jdbc.update("UPDATE sheet SET due_cap = ? WHERE id = ?", cap, sheetId);
     }
 
     /** Set the sheet's clerk limit (null: no limit). */
