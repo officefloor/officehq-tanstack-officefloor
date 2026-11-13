@@ -41,18 +41,25 @@ export function Periods() {
     onError: () => setError('That period could not be added: its name must be new and its dates must not overlap another period.'),
   });
 
-  // The period whose close was refused, and why; cleared by the next action on a period.
+  // The period whose close or reopen was refused, and why; cleared by the next action on a period.
   const [rowError, setRowError] = useState<{ name: string; message: string } | null>(null);
-  const close = useMutation({
-    mutationFn: (name: string) =>
+  const act = useMutation({
+    mutationFn: ({ name, action }: { name: string; action: 'close' | 'reopen' }) =>
       postJson<Period>(
-        `/api/sheets/${encodeURIComponent(sheet)}/periods/${encodeURIComponent(name)}/close?user=${encodeURIComponent(user)}`,
+        `/api/sheets/${encodeURIComponent(sheet)}/periods/${encodeURIComponent(name)}/${action}?user=${encodeURIComponent(user)}`,
         {},
       ),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: periodsKey(sheet) });
     },
-    onError: (_e, name) => setRowError({ name, message: 'That period could not be closed.' }),
+    onError: (_e, { name, action }) =>
+      setRowError({
+        name,
+        message:
+          action === 'close'
+            ? 'That period could not be closed.'
+            : 'That period could not be reopened: only a steward can reopen a closed period.',
+      }),
   });
 
   if (!user || !sheet) return null;
@@ -106,13 +113,24 @@ export function Periods() {
                 <button
                   type="button"
                   data-testid="period-close"
-                  disabled={close.isPending}
+                  disabled={act.isPending}
                   onClick={() => {
                     setRowError(null);
-                    once(() => close.mutateAsync(p.name));
+                    once(() => act.mutateAsync({ name: p.name, action: 'close' }));
                   }}
                 >
                   Close
+                </button>
+                <button
+                  type="button"
+                  data-testid="period-reopen"
+                  disabled={act.isPending}
+                  onClick={() => {
+                    setRowError(null);
+                    once(() => act.mutateAsync({ name: p.name, action: 'reopen' }));
+                  }}
+                >
+                  Reopen
                 </button>
                 {rowError?.name === p.name && <span data-testid="period-error">{rowError.message}</span>}
               </td>

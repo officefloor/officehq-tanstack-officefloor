@@ -41,7 +41,7 @@ public class PeriodRepository {
                 period.sheetId(), period.name(), period.from(), period.to());
     }
 
-    /** Store the period's closed flag and fixed due-total. */
+    /** Store the period's closed flag and fixed due-total (null when reopened). */
     public void saveClosed(Period period) {
         jdbc.update("UPDATE period SET closed = ?, closed_total = ? WHERE sheet_id = ? AND name = ?",
                 period.closed(), period.closedTotal(), period.sheetId(), period.name());
