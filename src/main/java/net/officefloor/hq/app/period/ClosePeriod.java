@@ -2,6 +2,7 @@ package net.officefloor.hq.app.period;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -21,7 +22,7 @@ import net.officefloor.plugin.variable.Val;
 
 /**
  * Closes the period, fixing its due-total as it stands now: the dues (figures plus any late charge) of the counting
- * claims dated in it, added up (n/a skipped). Refused (400) when it is already closed.
+ * claims dated in it, added up (n/a skipped), and each person's share of it (0.00 for a person with none). Refused (400) when it is already closed.
  */
 public class ClosePeriod {
     public void close(@Val Period period, ClaimRepository claims, PersonRepository people, RateRepository rates,
@@ -38,6 +39,10 @@ public class ClosePeriod {
         List<Claim> sheetClaims = claims.findAll(period.sheetId());
         Rounding rounding = settings.rounding(period.sheetId(), today, sheetClaims);
         BigDecimal total = BigDecimal.ZERO.setScale(2);
+        Map<Long, BigDecimal> perPerson = new HashMap<>();
+        for (Long id : byId.keySet()) {
+            perPerson.put(id, BigDecimal.ZERO.setScale(2));
+        }
         for (Claim claim : sheetClaims) {
             Person person = byId.get(claim.personId());
             if (person == null || !person.counts(claim) || !period.contains(claim.date())) {
@@ -46,8 +51,9 @@ public class ClosePeriod {
             BigDecimal figure = claim.due(Rate.inForce(sheetRates, person.gradeOn(claim.date()), claim.date()), floor, late, rounding);
             if (figure != null) {
                 total = total.add(figure);
+                perPerson.merge(person.id(), figure, BigDecimal::add);
             }
         }
-        closed.set(period.close(total));
+        closed.set(period.close(total, perPerson));
     }
 }
