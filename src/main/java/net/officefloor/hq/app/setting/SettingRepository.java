@@ -123,6 +123,21 @@ public class SettingRepository {
         return parent.isEmpty() ? null : parent.get(0);
     }
 
+    /** The ids of the sheet's descendants (children, their children, ...), by id; none when it has none. */
+    public List<String> descendants(String sheetId) {
+        java.util.Set<String> found = new java.util.TreeSet<>();
+        java.util.Deque<String> todo = new java.util.ArrayDeque<>(List.of(sheetId));
+        while (!todo.isEmpty()) {
+            for (String child : jdbc.query("SELECT id FROM sheet WHERE parent_id = ?", (rs, n) -> rs.getString("id"),
+                    todo.pop())) {
+                if (!child.equals(sheetId) && found.add(child)) {
+                    todo.push(child);
+                }
+            }
+        }
+        return List.copyOf(found);
+    }
+
     /** Set the sheet's parent sheet id (null: none). */
     public void saveParent(String sheetId, String parent) {
         jdbc.update("UPDATE sheet SET parent_id = ? WHERE id = ?", parent, sheetId);
