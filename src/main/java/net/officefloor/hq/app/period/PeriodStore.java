@@ -21,7 +21,7 @@ public class PeriodStore {
                     : Map.of(),
             rs.getBoolean("soft"), cap(rs),
             rs.getBoolean("closed") || rs.getBoolean("soft") ? personCarried(rs.getString("sheet_id"), rs.getString("name"),
-                    "period_person_total") : Map.of(), rs.getBoolean("locked"));
+                    "period_person_total") : Map.of(), rs.getBoolean("locked")).withAdded(rs.getLong("id"));
 
     private final JdbcTemplate jdbc;
 
@@ -48,7 +48,7 @@ public class PeriodStore {
                         rs.getBoolean("soft"), cap(rs),
                         rs.getBoolean("closed") || rs.getBoolean("soft")
                                 ? personCarried(rs.getString("sheet_id"), rs.getString("name"), totals)
-                                : Map.of(), rs.getBoolean("locked")),
+                                : Map.of(), rs.getBoolean("locked")).withAdded(rs.getLong("id")),
                 sheetId);
     }
 
