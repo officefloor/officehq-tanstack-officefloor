@@ -1,0 +1,131 @@
+diff --git a/src/main/frontend/features/claims/PersonClaims.tsx b/src/main/frontend/features/claims/PersonClaims.tsx
+index 180991e00..5194dc924 100644
+--- a/src/main/frontend/features/claims/PersonClaims.tsx
++++ b/src/main/frontend/features/claims/PersonClaims.tsx
+@@ -8,7 +8,7 @@ import type { Person } from '../people/people';
+ import { SIGNED_AMOUNT, claimsKey, useClaims } from './claims';
+ import type { Claim, ClaimInput } from './claims';
+ import { useOneAtATime } from '../../query/useOneAtATime';
+-import { setClaimError } from './claimError';
++import { setClaimError, useClaimError } from './claimError';
+ import { contains, usePeriods } from '../periods/periods';
+ import { useSettings } from '../settings/settings';
+ 
+@@ -160,7 +160,8 @@ export function PersonClaims({ person }: { person: Person }) {
+               <button type="button" data-testid="claim-edit" onClick={() => edit(c)}>
+                 Edit
+               </button>
+-            )}
++            )}{' '}
++            <ClaimInlineAmount claim={c} refusal={refusal(c)} />
+           </li>
+         ))}
+       </ul>
+@@ -197,3 +198,64 @@ export function PersonClaims({ person }: { person: Person }) {
+     </td>
+   );
+ }
++
++// A claim's amount changed in its row: the entry and save button beside the edit button. The save is
++// the editor's save with only the amount changed, so it follows the claim form's rules (and writes
++// CLAIM_EDITED); a refusal shows as the claim's error, at once when the screen can see it.
++function ClaimInlineAmount({ claim, refusal }: { claim: Claim; refusal: string }) {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const [, setError] = useClaimError(claim.id);
++  const [amount, setAmount] = useState('');
++  const queryClient = useQueryClient();
++  const once = useOneAtATime();
++
++  const save = useMutation({
++    mutationFn: (value: string) =>
++      putJson<Claim>(`/api/sheets/${encodeURIComponent(sheet)}/claims/${claim.id}?user=${encodeURIComponent(user)}`, {
++        amount: value,
++        date: claim.date,
++        note: claim.note,
++        corrects: claim.corrects ?? '',
++      }),
++    onSuccess: async () => {
++      setAmount('');
++      await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
++    },
++    onError: () => setError('That claim could not be saved.'),
++  });
++
++  return (
++    <>
++      <input
++        data-testid="claim-inline-amount"
++        placeholder="Amount"
++        value={amount}
++        onChange={(e) => {
++          setAmount(e.target.value);
++          setError('');
++        }}
++      />
++      <button
++        type="button"
++        data-testid="claim-inline-save"
++        disabled={save.isPending}
++        onClick={() => {
++          setError('');
++          if (refusal) {
++            setError(refusal);
++            return;
++          }
++          const value = amount.trim();
++          if (!SIGNED_AMOUNT.test(value)) {
++            setError('Type an amount with at most two decimals.');
++            return;
++          }
++          once(() => save.mutateAsync(value));
++        }}
++      >
++        Save amount
++      </button>
++    </>
++  );
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java b/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java
+index 5fa26513a..b0748ed3d 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java
+@@ -2,6 +2,7 @@ package net.officefloor.hq.app.claim;
+ 
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
++import net.officefloor.hq.app.holiday.HolidayRepository;
+ import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
+@@ -16,14 +17,14 @@ import org.springframework.web.bind.annotation.RequestParam;
+  * than 0.00 and less than the claim's, and to a role the sheet's permission matrix does not allow to open a claim.
+  * The claim keeps the rest of its amount and loses any figure a statement bound it to. The new claim is OPEN, with
+  * the split amount, the same date and note, the number opening gives it now, opened by the user, its due-by fixed now
+- * (its date plus the terms of its person's grade in force on that date), and the original's number as split-from;
++ * (as a new claim's: the terms-th business day after its date, see {@link NewDueBy}), and the original's number as split-from;
+  * it is numbered within the period containing its own due-by, and is a late entry when the original is.
+  * The new claim is published as the claim, for the steps that follow.
+  */
+ public class SplitClaim {
+     public void split(@RequestParam("user") String user, @Val Claim claim, @Val SplitAmount amount,
+             SheetRepository sheets, PersonRepository people, SettingRepository settings, PeriodRepository periods,
+-            ClaimRepository claims, Out<ClaimSplit> split, Out<Claim> created) throws InvalidClaimException {
++            HolidayRepository holidays, ClaimRepository claims, Out<ClaimSplit> split, Out<Claim> created) throws InvalidClaimException {
+         if (claim.status() != ClaimStatus.OPEN) {
+             throw new InvalidClaimException("A " + claim.status() + " claim cannot be split: only an OPEN one.");
+         }
+@@ -42,9 +43,10 @@ public class SplitClaim {
+         claims.save(original);
+         claims.bindStatement(original, false, null);
+         Person person = people.find(claim.sheetId(), claim.personId());
+-        LocalDate dueBy = claim.date().plusDays(person == null
+-                ? settings.dated(claim.sheetId()).termsFor(null, claim.date())
+-                : person.termsOn(settings.dated(claim.sheetId()), claim.date()));
++        LocalDate dueBy = person == null
++                ? holidays.businessDaysAfter(claim.sheetId(), claim.date(),
++                        settings.dated(claim.sheetId()).termsFor(null, claim.date()))
++                : NewDueBy.of(claim.date(), person, settings, holidays);
+         Claim made = new Claim(null, claim.sheetId(), claim.personId(), off, claim.date(), claim.note(),
+                 ClaimStatus.OPEN, null, null, user, false, null, null, dueBy, null, 0, claim.number());
+         String number = ApplyClaimAction.nextNumber(made, sheets, settings, periods);
