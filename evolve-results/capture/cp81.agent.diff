@@ -1,0 +1,311 @@
+diff --git a/src/main/frontend/features/claims/ClaimRemind.tsx b/src/main/frontend/features/claims/ClaimRemind.tsx
+new file mode 100644
+index 000000000..b4b612338
+--- /dev/null
++++ b/src/main/frontend/features/claims/ClaimRemind.tsx
+@@ -0,0 +1,44 @@
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { useCurrentSheet, useCurrentUser } from '../session/session';
++import type { Claim } from './claims';
++import { claimsKey } from './claims';
++import { useOneAtATime } from '../../query/useOneAtATime';
++import { useClaimError } from './claimError';
++
++// The last day a claim was reminded (blank when never) and the Remind button: an OPEN or PENDING claim is reminded
++// once per sheet-today; the server refuses any other, and the refusal shows as the claim's error.
++export function ClaimRemind({ claim }: { claim: Claim }) {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const [, setError] = useClaimError(claim.id);
++  const queryClient = useQueryClient();
++  const once = useOneAtATime();
++
++  const remind = useMutation({
++    mutationFn: () =>
++      postJson<Claim>(`/api/sheets/${encodeURIComponent(sheet)}/claims/${claim.id}/reminder?user=${encodeURIComponent(user)}`, {}),
++    onSuccess: async () => {
++      await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
++    },
++    onError: () =>
++      setError(`This ${claim.status} claim cannot be reminded (only an OPEN or PENDING claim, once per day, by a role allowed to change the sheet).`),
++  });
++
++  return (
++    <>
++      Reminded: <span data-testid="claim-reminded">{claim.reminded ?? ''}</span>{' '}
++      <button
++        type="button"
++        data-testid="claim-remind"
++        disabled={remind.isPending}
++        onClick={() => {
++          setError('');
++          once(() => remind.mutateAsync());
++        }}
++      >
++        Remind
++      </button>
++    </>
++  );
++}
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 66ca5880c..c4c2c3bef 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -37,7 +37,8 @@ export const bound = (c: Claim) => c.stated && c.status !== 'PENDING';
+  * settled or approved only once it has one);
+  * splitFrom is the number of the claim it was split off, null when it was not split off one;
+  * lockedBy is the user whose open editor locks it for every other user, null when it is not locked;
+- * lateEntry is whether it was added while the period containing its due-by was soft-closed.
++ * lateEntry is whether it was added while the period containing its due-by was soft-closed;
++ * reminded (yyyy-MM-dd) is the last day a reminder was written for it, null when it never was.
+  */
+ export type Claim = {
+   id: number;
+@@ -59,6 +60,7 @@ export type Claim = {
+   splitFrom: string | null;
+   lockedBy: string | null;
+   lateEntry: boolean;
++  reminded: string | null;
+ };
+ 
+ /** A line of a claim's status log: the status, the user, the sheet's today (yyyy-MM-dd) and the due then (two decimals, or n/a). */
+diff --git a/src/main/frontend/features/claims/remind.slot.tsx b/src/main/frontend/features/claims/remind.slot.tsx
+new file mode 100644
+index 000000000..5213137a0
+--- /dev/null
++++ b/src/main/frontend/features/claims/remind.slot.tsx
+@@ -0,0 +1,4 @@
++import { ClaimRowValues } from '../../slots/defs/claimRow';
++import { ClaimRemind } from './ClaimRemind';
++
++export const contribution = ClaimRowValues.fill({ order: 21, Component: ClaimRemind });
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimReminded.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimReminded.java
+new file mode 100644
+index 000000000..591ade8c9
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimReminded.java
+@@ -0,0 +1,17 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Records the claim just reminded, with its person's name. */
++public class AuditClaimReminded {
++    public void audit(@Val Claim claim, PersonRepository people, @RequestParam("user") String user, Audit audit) {
++        Person person = people.find(claim.sheetId(), claim.personId());
++        audit.record("REMIND sheet=" + claim.sheetId() + " by=" + user + " person="
++                + (person == null ? "" : person.name()) + " amount=" + claim.amount().setScale(2).toPlainString()
++                + " date=" + claim.date() + Claim.auditNumber(claim.number()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/CheckClaimRemind.java b/src/main/java/net/officefloor/hq/app/claim/CheckClaimRemind.java
+new file mode 100644
+index 000000000..89f03320e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/CheckClaimRemind.java
+@@ -0,0 +1,17 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Val;
++
++/** Refuses (400) a reminder unless the claim is OPEN or PENDING and was not already reminded on the sheet's today. */
++public class CheckClaimRemind {
++    public void check(@Val Claim claim, ClaimRepository repository, SheetRepository sheets)
++            throws InvalidClaimException {
++        if (!claim.status().open()) {
++            throw new InvalidClaimException("A " + claim.status() + " claim cannot be reminded.");
++        }
++        if (sheets.today(claim.sheetId()).equals(repository.reminded(claim.sheetId(), claim.id()))) {
++            throw new InvalidClaimException("The claim was already reminded today.");
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 964ea67d0..b35d5bedf 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -5,8 +5,11 @@ import java.sql.Date;
+ import java.sql.PreparedStatement;
+ import java.sql.ResultSet;
+ import java.sql.SQLException;
++import java.time.LocalDate;
++import java.util.HashMap;
+ import java.util.HashSet;
+ import java.util.List;
++import java.util.Map;
+ import java.util.Set;
+ import org.springframework.jdbc.core.JdbcTemplate;
+ import org.springframework.jdbc.support.GeneratedKeyHolder;
+@@ -131,6 +134,28 @@ public class ClaimRepository {
+                 sheetId));
+     }
+ 
++    /** Store the day the claim was last reminded. */
++    public void remind(String sheetId, long id, LocalDate day) {
++        jdbc.update("UPDATE claim SET reminded_on = ? WHERE id = ? AND sheet_id = ?", Date.valueOf(day), id, sheetId);
++    }
++
++    /** The day the claim was last reminded, or null. */
++    public LocalDate reminded(String sheetId, long id) {
++        List<Date> found = jdbc.queryForList("SELECT reminded_on FROM claim WHERE sheet_id = ? AND id = ?", Date.class,
++                sheetId, id);
++        return found.isEmpty() || found.get(0) == null ? null : found.get(0).toLocalDate();
++    }
++
++    /** The day each of the sheet's reminded claims was last reminded, by claim id. */
++    public Map<Long, LocalDate> remindedAll(String sheetId) {
++        Map<Long, LocalDate> reminded = new HashMap<>();
++        jdbc.query("SELECT id, reminded_on FROM claim WHERE sheet_id = ? AND reminded_on IS NOT NULL",
++                (ResultSet rs) -> {
++                    reminded.put(rs.getLong("id"), rs.getDate("reminded_on").toLocalDate());
++                }, sheetId);
++        return reminded;
++    }
++
+     private static Claim map(ResultSet rs, int n) throws SQLException {
+         return new Claim(rs.getLong("id"), rs.getString("sheet_id"), rs.getLong("person_id"),
+                 rs.getBigDecimal("amount").setScale(2), rs.getDate("claim_date").toLocalDate(), rs.getString("note"),
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+index 56ca6558c..883aec234 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimResponse.java
+@@ -1,25 +1,27 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.time.LocalDate;
+ import java.util.List;
+ 
+ /** A claim as the screen shows it: the amount with two decimals, the date as yyyy-MM-dd, the status by name,
+  * the number null unless it has one, the due fixed at settling (two decimals) or null while it is live,
+  * the user who opened it or null while it is a draft, whether a statement bound it and the figure it bound
+- * it to (two decimals; null: n/a), and the number of the claim a correction corrects (null: not a correction), and its due-by fixed when it was created (yyyy-MM-dd), and its status log, oldest first, and the date it is deferred until (yyyy-MM-dd; null: never deferred), and how many proofs it has been given, and the number of the claim it was split off (null: none), and the user whose open editor locks it (null: not locked), and whether it is a late entry (added while its period was soft-closed). */
++ * it to (two decimals; null: n/a), and the number of the claim a correction corrects (null: not a correction), and its due-by fixed when it was created (yyyy-MM-dd), and its status log, oldest first, and the date it is deferred until (yyyy-MM-dd; null: never deferred), and how many proofs it has been given, and the number of the claim it was split off (null: none), and the user whose open editor locks it (null: not locked), and whether it is a late entry (added while its period was soft-closed), and the last day it was reminded (yyyy-MM-dd; null: never). */
+ public record ClaimResponse(long id, long personId, String amount, String date, String note, String status, String number,
+         String due, String openedBy, boolean stated, String statedDue, String corrects, String dueBy,
+         List<LogLine> log, String deferredUntil, int proofs, String splitFrom, String lockedBy,
+-        boolean lateEntry) {
++        boolean lateEntry, String reminded) {
+ 
+     /** A line of the status log: the status, the user who gave it, the sheet's today then and the due then. */
+     public record LogLine(String status, String by, String date, String due) {
+     }
+ 
+     public static ClaimResponse from(Claim claim, List<ClaimLogLine> log) {
+-        return from(claim, log, null, false);
++        return from(claim, log, null, false, null);
+     }
+ 
+-    public static ClaimResponse from(Claim claim, List<ClaimLogLine> log, String lockedBy, boolean lateEntry) {
++    public static ClaimResponse from(Claim claim, List<ClaimLogLine> log, String lockedBy, boolean lateEntry,
++            LocalDate reminded) {
+         return new ClaimResponse(claim.id(), claim.personId(), claim.amount().toPlainString(),
+                 claim.date().toString(), claim.note(), claim.status().name(), claim.number(),
+                 claim.due() == null ? null : claim.due().setScale(2).toPlainString(), claim.openedBy(),
+@@ -27,6 +29,7 @@ public record ClaimResponse(long id, long personId, String amount, String date,
+                 claim.corrects(), claim.dueBy().toString(),
+                 log.stream().map((l) -> new LogLine(l.status().name(), l.by(), l.date().toString(), l.due())).toList(),
+                 claim.deferredUntil() == null ? null : claim.deferredUntil().toString(),
+-                claim.proofs(), claim.splitFrom(), lockedBy, lateEntry);
++                claim.proofs(), claim.splitFrom(), lockedBy, lateEntry,
++                reminded == null ? null : reminded.toString());
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RemindClaim.java b/src/main/java/net/officefloor/hq/app/claim/RemindClaim.java
+new file mode 100644
+index 000000000..63107d088
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/claim/RemindClaim.java
+@@ -0,0 +1,11 @@
++package net.officefloor.hq.app.claim;
++
++import net.officefloor.hq.app.sheet.SheetRepository;
++import net.officefloor.plugin.variable.Val;
++
++/** Stores the sheet's today as the day the claim was last reminded. */
++public class RemindClaim {
++    public void remind(@Val Claim claim, ClaimRepository repository, SheetRepository sheets) {
++        repository.remind(claim.sheetId(), claim.id(), sheets.today(claim.sheetId()));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RespondWithClaim.java b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaim.java
+index 8c328b022..cc7daa558 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RespondWithClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaim.java
+@@ -8,6 +8,7 @@ public class RespondWithClaim {
+             ClaimRepository repository, ObjectResponse<ClaimResponse> response) {
+         response.send(ClaimResponse.from(claim, logs.find(claim.sheetId(), claim.id()),
+                 locks.lockedBy(claim.sheetId(), claim.id()),
+-                repository.lateEntry(claim.sheetId(), claim.id())));
++                repository.lateEntry(claim.sheetId(), claim.id()),
++                repository.reminded(claim.sheetId(), claim.id())));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java
+index eeab12012..fb74cd513 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java
++++ b/src/main/java/net/officefloor/hq/app/claim/RespondWithClaims.java
+@@ -1,5 +1,6 @@
+ package net.officefloor.hq.app.claim;
+ 
++import java.time.LocalDate;
+ import java.util.List;
+ import java.util.Map;
+ import java.util.Set;
+@@ -13,8 +14,9 @@ public class RespondWithClaims {
+         Map<Long, List<ClaimLogLine>> log = logs.findAll(sheet.id());
+         Map<Long, String> locked = locks.findAll(sheet.id());
+         Set<Long> late = repository.lateEntries(sheet.id());
++        Map<Long, LocalDate> reminded = repository.remindedAll(sheet.id());
+         response.send(claims.stream()
+                 .map((c) -> ClaimResponse.from(c, log.getOrDefault(c.id(), List.of()), locked.get(c.id()),
+-                        late.contains(c.id()))).toList());
++                        late.contains(c.id()), reminded.get(c.id()))).toList());
+     }
+ }
+diff --git a/src/main/resources/db/migration/V50__claim_reminded.sql b/src/main/resources/db/migration/V50__claim_reminded.sql
+new file mode 100644
+index 000000000..0bb701e08
+--- /dev/null
++++ b/src/main/resources/db/migration/V50__claim_reminded.sql
+@@ -0,0 +1,2 @@
++-- The last sheet-today a reminder was written for the claim (null: never reminded).
++ALTER TABLE claim ADD COLUMN reminded_on DATE;
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reminder.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reminder.POST.yml
+new file mode 100644
+index 000000000..a649dc545
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/reminder.POST.yml
+@@ -0,0 +1,27 @@
++# Remind an OPEN or PENDING claim: records the sheet's today as the day it was last reminded and writes REMIND.
++# A claim in any other status, or one already reminded on the sheet's today, is refused (400) and writes nothing.
++archived:
++  class: net.officefloor.hq.app.sheet.CheckNotArchived
++  next: viewer
++viewer:
++  class: net.officefloor.hq.app.setting.CheckNotViewer
++  next: load
++load:
++  class: net.officefloor.hq.app.claim.LoadClaim
++  govern: [ transaction ]
++  next: check
++check:
++  class: net.officefloor.hq.app.claim.CheckClaimRemind
++  govern: [ transaction ]
++  next: remind
++remind:
++  class: net.officefloor.hq.app.claim.RemindClaim
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.claim.AuditClaimReminded
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.claim.RespondWithClaim
++  govern: [ transaction ]
