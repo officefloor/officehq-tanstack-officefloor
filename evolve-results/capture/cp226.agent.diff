@@ -1,0 +1,372 @@
+diff --git a/src/main/frontend/api/http.ts b/src/main/frontend/api/http.ts
+index c75a82690..ad220425b 100644
+--- a/src/main/frontend/api/http.ts
++++ b/src/main/frontend/api/http.ts
+@@ -1,4 +1,4 @@
+-import { currentAsOf } from '../session/session';
++import { currentAsOf, currentPreview } from '../session/session';
+ 
+ // The app's fetch surface. A non-2xx REJECTS, so useQuery/useMutation surface the failure instead
+ // of a silent `if (res.ok)` that leaves the UI showing stale data.
+@@ -16,8 +16,16 @@ function withAsOf(init?: RequestInit): RequestInit | undefined {
+   return { ...init, headers: { ...(init.headers as Record<string, string>), 'X-As-Of': asOf } };
+ }
+ 
++/** A read sent from a screen with a preview date set carries it, so the server works every figure out as
++ *  if the sheet's today were that date. A change never carries it: it uses the sheet's real today. */
++function withPreview(init?: RequestInit): RequestInit | undefined {
++  const preview = currentPreview();
++  if (init?.method !== undefined || preview === '') return init;
++  return { ...init, headers: { ...(init?.headers as Record<string, string> | undefined), 'X-Preview': preview } };
++}
++
+ async function send<T>(path: string, init?: RequestInit): Promise<T> {
+-  const res = await fetch(path, withAsOf(init));
++  const res = await fetch(path, withPreview(withAsOf(init)));
+   if (!res.ok) {
+     const reason = await res.text().catch(() => '');
+     throw new HttpError(`${init?.method ?? 'GET'} ${path} -> ${res.status}`, reason, res.status);
+diff --git a/src/main/frontend/features/sheet/preview.slot.tsx b/src/main/frontend/features/sheet/preview.slot.tsx
+new file mode 100644
+index 000000000..67e73d4de
+--- /dev/null
++++ b/src/main/frontend/features/sheet/preview.slot.tsx
+@@ -0,0 +1,46 @@
++import { useEffect, useRef, useState } from 'react';
++import { useQueryClient } from '@tanstack/react-query';
++import { AppHeader } from '../../slots/defs/appHeader';
++import { useCurrentSheet, useCurrentUser, usePreview } from '../../session/session';
++import { useSheet } from './sheet';
++
++// The screen's preview date: while one is set, every figure shows the sheet's current records as if its today
++// were that date. Changes still go through, on the sheet's real today. Only this screen's.
++function SheetPreview() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const [preview, setPreview] = usePreview();
++  const loaded = useSheet(sheet);
++  const [input, setInput] = useState('');
++  const queryClient = useQueryClient();
++  // A read not keyed by the preview date (plans, openings) is re-read when it is set or cleared.
++  const was = useRef(preview);
++  useEffect(() => {
++    if (was.current === preview) return;
++    was.current = preview;
++    void queryClient.invalidateQueries({ queryKey: ['sheet'] });
++  }, [preview, queryClient]);
++
++  if (!user || sheet === '') return null;
++  return (
++    <form
++      data-testid="preview-form"
++      onSubmit={(e) => {
++        e.preventDefault();
++        const date = input.trim();
++        if (/^\d{4}-\d{2}-\d{2}$/.test(date)) setPreview(date);
++      }}
++    >
++      Preview <strong data-testid="sheet-preview">{loaded.data?.preview ?? ''}</strong>{' '}
++      <input data-testid="preview-date" type="date" value={input} onChange={(e) => setInput(e.target.value)} />
++      <button type="submit" data-testid="preview-set">
++        Preview date
++      </button>
++      <button type="button" data-testid="preview-clear" onClick={() => setPreview(undefined)}>
++        Clear preview
++      </button>
++    </form>
++  );
++}
++
++export const contribution = AppHeader.fill({ order: 26, Component: SheetPreview });
+diff --git a/src/main/frontend/features/sheet/sheet.ts b/src/main/frontend/features/sheet/sheet.ts
+index f34930c70..64aa27588 100644
+--- a/src/main/frontend/features/sheet/sheet.ts
++++ b/src/main/frontend/features/sheet/sheet.ts
+@@ -1,20 +1,25 @@
+ import { useQuery } from '@tanstack/react-query';
+ import { getJson } from '../../api/http';
+-import { useAsOf } from '../../session/session';
++import { currentPreview, useAsOf } from '../../session/session';
+ 
+ /** `today` (yyyy-MM-dd) is the sheet's own date: every date decision and default uses it, never the clock.
+  *  An `archived` sheet stays visible but the server refuses every change to it. `asOf` (yyyy-MM-dd) is the
+  *  date this screen shows the sheet as of, null when it shows it as it is now; `archived` is then as it
+- *  stood at the end of that date. */
+-export type Sheet = { id: string; today: string; archived: boolean; asOf: string | null };
++ *  stood at the end of that date. `preview` (yyyy-MM-dd) is this screen's preview date, null when none is set:
++ *  every figure is then read as if it were the sheet's today. */
++export type Sheet = { id: string; today: string; archived: boolean; asOf: string | null; preview: string | null };
+ 
+ /** Every per-sheet query key starts with ['sheet', id], so loading a sheet re-reads all of it. */
+ export const sheetKey = (id: string) => ['sheet', id] as const;
+ 
+-/** A per-sheet query key as read for the screen's as-of date: the key itself when there is none, so a
+- *  change made (never while one is set) updates the very queries it read. */
+-export const asOfKey = <K extends readonly unknown[]>(key: K, asOf: string) =>
+-  (asOf === '' ? key : [...key, { asOf }]) as unknown as K;
++/** A per-sheet query key as read for the screen's as-of date and preview date: the key itself when there is
++ *  neither, so a change made (never while an as-of date is set) updates the very queries it read. While a preview
++ *  date is set every change re-reads the sheet instead (query/queryClient). */
++export const asOfKey = <K extends readonly unknown[]>(key: K, asOf: string) => {
++  const preview = currentPreview();
++  if (asOf === '' && preview === '') return key;
++  return [...key, preview === '' ? { asOf } : { asOf, preview }] as unknown as K;
++};
+ 
+ /** A read path with the screen's as-of date added (as `asOf`), so the server answers as it stood then. */
+ export const asOfPath = (path: string, asOf: string) =>
+@@ -30,10 +35,10 @@ export function useSheet(id: string) {
+ }
+ 
+ /** The sheet's today (yyyy-MM-dd), or undefined while the sheet loads. Use it for every default date.
+- *  While the screen shows the sheet as of a date, that date stands in for it in every figure. */
++ *  While the screen shows the sheet as of a date, or previews a date, that date stands in for it in every figure. */
+ export function useSheetToday(id: string): string | undefined {
+   const data = useSheet(id).data;
+-  return data?.asOf ?? data?.today;
++  return data?.asOf ?? data?.preview ?? data?.today;
+ }
+ 
+ /** Under the sheet's key, so loading the sheet again re-reads its descendants. */
+diff --git a/src/main/frontend/query/queryClient.ts b/src/main/frontend/query/queryClient.ts
+index d8c10235c..d25e005a8 100644
+--- a/src/main/frontend/query/queryClient.ts
++++ b/src/main/frontend/query/queryClient.ts
+@@ -1,10 +1,18 @@
+-import { QueryClient } from '@tanstack/react-query';
++import { MutationCache, QueryClient } from '@tanstack/react-query';
++import { currentPreview } from '../session/session';
+ 
+ // Server data is NEVER copied into component state. A feature reads it with useQuery under its own
+ // key (e.g. ['clients'] / ['project', id, 'notes']) and changes it with useMutation +
+ // invalidateQueries. Two features share data by sharing a KEY, never by a parent holding it.
+ // retry:false + no focus refetching keep the e2e runs deterministic.
+-export const queryClient = new QueryClient({
++// A change answers with figures as of the sheet's real today; while the screen previews a date, it re-reads
++// the sheet instead, so every figure stays as of the preview date.
++export const queryClient: QueryClient = new QueryClient({
++  mutationCache: new MutationCache({
++    onSuccess: () => {
++      if (currentPreview() !== '') void queryClient.invalidateQueries({ queryKey: ['sheet'] });
++    },
++  }),
+   defaultOptions: {
+     queries: { retry: false, refetchOnWindowFocus: false },
+     mutations: { retry: false },
+diff --git a/src/main/frontend/session/session.ts b/src/main/frontend/session/session.ts
+index de494e54d..27f8de021 100644
+--- a/src/main/frontend/session/session.ts
++++ b/src/main/frontend/session/session.ts
+@@ -18,3 +18,11 @@ export const LiveView = createContext(false);
+ 
+ /** The screen's as-of date read outside React (by the fetch surface), '' when none is set. */
+ export const currentAsOf = (): string => new URLSearchParams(window.location.search).get('asOf') ?? '';
++
++// The screen's preview date (`preview`, yyyy-MM-dd; '' for none). Like the as-of date it belongs to the
++// screen: while it is set every figure is read as if the sheet's today were that date, over the sheet's
++// current records, and every change still uses the sheet's real today.
++export const usePreview = () => useSearchParam('preview', asString);
++
++/** The screen's preview date read outside React (by the fetch surface and query keys), '' when none is set. */
++export const currentPreview = (): string => new URLSearchParams(window.location.search).get('preview') ?? '';
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/PreviewFilter.java b/src/main/java/net/officefloor/hq/app/sheet/PreviewFilter.java
+new file mode 100644
+index 000000000..9d9e76886
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/PreviewFilter.java
+@@ -0,0 +1,63 @@
++package net.officefloor.hq.app.sheet;
++
++import jakarta.servlet.FilterChain;
++import jakarta.servlet.ServletException;
++import jakarta.servlet.http.HttpServletRequest;
++import jakarta.servlet.http.HttpServletResponse;
++import java.io.IOException;
++import java.time.LocalDate;
++import java.time.format.DateTimeParseException;
++import org.springframework.stereotype.Component;
++import org.springframework.web.filter.OncePerRequestFilter;
++
++/**
++ * Applies the preview date a screen sends with each read ({@value #HEADER}, yyyy-MM-dd): while the read is
++ * answered, {@link SheetStore#today(String)} gives that date in place of the sheet's today, so every figure is
++ * worked out as if the sheet's today were that date, over the sheet's current records. The preview belongs to
++ * the screen; only a read takes it, so every change still uses the sheet's real today.
++ */
++@Component
++public class PreviewFilter extends OncePerRequestFilter {
++
++    /** The header a screen with a preview date set sends with each read. */
++    public static final String HEADER = "X-Preview";
++
++    private static final ThreadLocal<LocalDate> PREVIEW = new ThreadLocal<>();
++
++    /** The preview date of the read being answered, null when none. */
++    static LocalDate current() {
++        return PREVIEW.get();
++    }
++
++    @Override
++    protected boolean shouldNotFilter(HttpServletRequest request) {
++        return !request.getRequestURI().startsWith("/api/") || !"GET".equals(request.getMethod());
++    }
++
++    @Override
++    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
++            throws ServletException, IOException {
++        LocalDate date = parse(request.getHeader(HEADER));
++        if (date == null) {
++            chain.doFilter(request, response);
++            return;
++        }
++        PREVIEW.set(date);
++        try {
++            chain.doFilter(request, response);
++        } finally {
++            PREVIEW.remove();
++        }
++    }
++
++    private static LocalDate parse(String text) {
++        if (text == null || text.isBlank()) {
++            return null;
++        }
++        try {
++            return LocalDate.parse(text.trim());
++        } catch (DateTimeParseException e) {
++            return null;
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+index 5b5caf431..400a3cb26 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/RespondWithSheet.java
+@@ -12,8 +12,10 @@ public class RespondWithSheet {
+             ObjectResponse<SheetResponse> response) {
+         String id = sheetId.trim();
+         LocalDate on = History.date(asOf);
++        LocalDate preview = PreviewFilter.current();
+         store.markLoaded(id);
+-        response.send(new SheetResponse(id, store.today(id).toString(),
+-                on == null ? store.archived(id) : store.archivedBy(id, on), on == null ? null : on.toString()));
++        response.send(new SheetResponse(id, store.realToday(id).toString(),
++                on == null ? store.archived(id) : store.archivedBy(id, on), on == null ? null : on.toString(),
++                preview == null ? null : preview.toString()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java b/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java
+index d6826298d..62e9de1de 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetResponse.java
+@@ -2,6 +2,7 @@ package net.officefloor.hq.app.sheet;
+ 
+ /** A sheet as the front end reads it. {@code today} is ISO yyyy-MM-dd; an archived sheet
+  *  refuses every change. {@code asOf} (yyyy-MM-dd) is the date the screen shows the sheet as of, null when
+- *  it shows it as it is now; {@code archived} is then whether it was archived by the end of that date. */
+-public record SheetResponse(String id, String today, boolean archived, String asOf) {
++ *  it shows it as it is now; {@code archived} is then whether it was archived by the end of that date. {@code preview}
++ *  (yyyy-MM-dd) is the screen's preview date, null when none is set: every figure is read as if it were the today. */
++public record SheetResponse(String id, String today, boolean archived, String asOf, String preview) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/SheetStore.java b/src/main/java/net/officefloor/hq/app/sheet/SheetStore.java
+index a04f6f36d..c119060cb 100644
+--- a/src/main/java/net/officefloor/hq/app/sheet/SheetStore.java
++++ b/src/main/java/net/officefloor/hq/app/sheet/SheetStore.java
+@@ -18,8 +18,15 @@ public class SheetStore {
+         this.jdbc = jdbc;
+     }
+ 
+-    /** The sheet's today: as set on the sheet, else the real date. */
++    /** The sheet's today: as set on the sheet, else the real date. While a read is answered for a screen
++     *  with a preview date set (see {@link PreviewFilter}), that date stands in for it. */
+     public LocalDate today(String sheetId) {
++        LocalDate preview = PreviewFilter.current();
++        return preview != null ? preview : realToday(sheetId);
++    }
++
++    /** The sheet's own today, whatever the screen's preview date. */
++    public LocalDate realToday(String sheetId) {
+         List<LocalDate> found = jdbc.query("SELECT today FROM sheet WHERE id = ?",
+                 (rs, i) -> rs.getObject(1, LocalDate.class), sheetId);
+         return found.isEmpty() ? LocalDate.now() : found.get(0);
+diff --git a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+index 8bb9968ca..682366f7d 100644
+--- a/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
++++ b/src/main/java/net/officefloor/hq/app/statement/TakeStatement.java
+@@ -10,6 +10,7 @@ import net.officefloor.hq.app.claim.ClaimFigure;
+ import net.officefloor.hq.app.claim.ClaimStore;
+ import net.officefloor.hq.app.claim.Lateness;
+ import net.officefloor.hq.app.claim.Rounding;
++import net.officefloor.hq.app.claim.Shares;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonStore;
+ import net.officefloor.hq.app.rate.RateStore;
+@@ -24,7 +25,9 @@ import net.officefloor.plugin.variable.Val;
+  *  their claims that count; n/a when their grade in force today has no rate today and no counting claim
+  *  keeps a fixed figure or a figure at another grade, the one in force on its date), binding each counting claim to its due as shown now, late charge and floor included (a claim already bound
+  *  keeps the due it was bound to) and unbinding the rest. A settled claim keeps its fixed figure. The due-total is
+- *  at most the sheet's cap.
++ *  at most the sheet's cap. As in the sheet's figures (see {@link RollupService}), the parts of their counting claims
++ *  shared with other people are left out of it, and their parts of other people's counting claims shared with them are
++ *  added to it (those claims are not theirs to bind, nor counted among their claims).
+  *  <p>
+  *  Taken as of a date (on or before the sheet's today), everything is as it stood at the end of that date
+  *  (see {@link net.officefloor.hq.app.history.History}): their claims that counted then are bound to their
+@@ -67,8 +70,37 @@ public class TakeStatement {
+         Person whose = then;
+         Lateness lateness = new Lateness(settings.latePcts(sheetId), settings.floors(sheetId), on, rounding,
+                 Lateness.graced(settings.graces(sheetId), id -> id == whose.getId() ? whose : null));
++        // The parts of the shared claims that count: each claim's parts added up, and theirs of others' claims.
++        Map<Long, BigDecimal> shared = new HashMap<>();
++        BigDecimal held = BigDecimal.ZERO.setScale(2);
++        boolean holds = false;
++        for (Claim claim : all) {
++            List<Shares.Share> holders = Shares.list(claim.getShares());
++            if (holders.isEmpty()) {
++                continue;
++            }
++            Person owner = claim.getPersonId() == then.getId() ? then
++                    : asOf == null ? people.find(sheetId, claim.getPersonId()) : people.findAsOf(sheetId, claim.getPersonId(), asOf);
++            if (owner == null || !RollupService.countsClaimed(claim, owner, on) || !RollupService.counts(claim, owner, on)) {
++                continue;
++            }
++            Lateness owners = new Lateness(settings.latePcts(sheetId), settings.floors(sheetId), on, rounding,
++                    Lateness.graced(settings.graces(sheetId), id -> id == owner.getId() ? owner : null));
++            BigDecimal figure = owners.due(claim, rates.forClaim(claim).find(sheetId, owner.gradeOn(claim.getDate()), claim.getDate()));
++            if (figure == null) {
++                continue;
++            }
++            for (Shares.Share holder : holders) {
++                BigDecimal part = Shares.part(figure, holder.share());
++                shared.merge(claim.getId(), part, BigDecimal::add);
++                if (holder.personId() == then.getId()) {
++                    held = held.add(part);
++                    holds = true;
++                }
++            }
++        }
+         BigDecimal total = BigDecimal.ZERO.setScale(2);
+-        boolean fixed = false;
++        boolean fixed = holds;
+         int counted = 0;
+         for (Claim live : bound) {
+             // The claim as it stood then (itself when taken now); null when it was not theirs then.
+@@ -85,7 +117,8 @@ public class TakeStatement {
+                 if (figure != null) {
+                     // Bound as shown: its charge and floor stop following the sheet's today.
+                     figure = lateness.dueOf(claim, figure);
+-                    total = total.add(figure);
++                    // The holders' parts of a shared claim are theirs, not its person's.
++                    total = total.add(figure.subtract(shared.getOrDefault(claim.getId(), BigDecimal.ZERO)));
+                 }
+                 // A figure at a grade other than the one in force today, or at a rate that ended before
+                 // today, does not hang on today's grade's rate.
+@@ -101,6 +134,7 @@ public class TakeStatement {
+             live.setStatedNa(na);
+             claims.bind(live);
+         }
++        total = total.add(held);
+         boolean na = rates.find(sheetId, then.gradeOn(on), on) == null && !fixed;
+         Statement statement = new Statement(person.getId(), on,
+                 na ? null : SettingStore.capped(total, settings.cap(sheetId)), counted);
