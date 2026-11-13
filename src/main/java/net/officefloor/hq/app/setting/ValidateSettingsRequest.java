@@ -4,6 +4,9 @@ import jakarta.validation.Valid;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -16,12 +19,15 @@ public class ValidateSettingsRequest {
     /** A percent: 0.00 or more, with at most two decimals. */
     private static final Pattern PERCENT = Pattern.compile("\\d{1,5}(\\.\\d{1,2})?|\\.\\d{1,2}");
 
+    /** The grades terms can be set for. */
+    private static final Set<String> GRADES = Set.of("A", "B", "C");
+
     /** 0 or more whole days. */
     private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
 
     public void validate(@RequestBody @Valid SettingsRequest request, Out<ClerkLimit> limit, Out<Floor> floor,
             Out<Terms> terms, Out<LatePct> latePct, Out<PolicyDate> policyDate,
-            Out<PeriodNumberingFrom> periodNumberingFrom)
+            Out<PeriodNumberingFrom> periodNumberingFrom, Out<GradeTerms> gradeTerms)
             throws InvalidSettingException {
         limit.set(clerkLimit(request.clerkLimit()));
         floor.set(floor(request.floor()));
@@ -29,6 +35,7 @@ public class ValidateSettingsRequest {
         latePct.set(latePct(request.latePct()));
         policyDate.set(policyDate(request.policyDate()));
         periodNumberingFrom.set(periodNumberingFrom(request.periodNumberingFrom()));
+        gradeTerms.set(gradeTerms(request.gradeTerms()));
     }
 
     private static ClerkLimit clerkLimit(String requested) throws InvalidSettingException {
@@ -57,6 +64,27 @@ public class ValidateSettingsRequest {
             throw new InvalidSettingException("The terms must be a whole number of days, 0 or more, or blank.");
         }
         return new Terms(Integer.parseInt(value));
+    }
+
+    private static GradeTerms gradeTerms(Map<String, String> requested) throws InvalidSettingException {
+        Map<String, Integer> terms = new LinkedHashMap<>();
+        if (requested == null) {
+            return new GradeTerms(terms);
+        }
+        for (String grade : requested.keySet().stream().sorted().toList()) {
+            if (!GRADES.contains(grade)) {
+                throw new InvalidSettingException("Terms can only be set for grade A, B or C.");
+            }
+            String value = requested.get(grade) == null ? "" : requested.get(grade).trim();
+            if (value.isEmpty()) {
+                terms.put(grade, null);
+            } else if (!DAYS.matcher(value).matches()) {
+                throw new InvalidSettingException("The terms for a grade must be a whole number of days, 0 or more, or blank.");
+            } else {
+                terms.put(grade, Integer.parseInt(value));
+            }
+        }
+        return new GradeTerms(terms);
     }
 
     private static LatePct latePct(String requested) throws InvalidSettingException {

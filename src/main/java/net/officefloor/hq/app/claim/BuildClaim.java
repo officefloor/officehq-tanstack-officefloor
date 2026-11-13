@@ -1,14 +1,19 @@
 package net.officefloor.hq.app.claim;
 
+import java.time.LocalDate;
 import net.officefloor.hq.app.person.Person;
+import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
 
+/** A new DRAFT claim; its due-by is fixed now: its date plus the terms of its person's grade in force on that date. */
 public class BuildClaim {
-    public void build(@Val ClaimInput input, @Val Person person, SheetRepository sheets, Out<Claim> claim) {
-        claim.set(new Claim(null, person.sheetId(), person.id(), input.amount(),
-                input.date() != null ? input.date() : sheets.today(person.sheetId()), input.note(), ClaimStatus.DRAFT, null, null, null, false, null,
-                input.corrects()));
+    public void build(@Val ClaimInput input, @Val Person person, SheetRepository sheets, SettingRepository settings,
+            Out<Claim> claim) {
+        LocalDate date = input.date() != null ? input.date() : sheets.today(person.sheetId());
+        LocalDate dueBy = date.plusDays(settings.termsFor(person.sheetId(), person.gradeOn(date)));
+        claim.set(new Claim(null, person.sheetId(), person.id(), input.amount(), date, input.note(), ClaimStatus.DRAFT,
+                null, null, null, false, null, input.corrects(), dueBy));
     }
 }

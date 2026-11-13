@@ -12,17 +12,18 @@ import java.time.LocalDate;
  * its person's last statement bound it to a figure, {@code statedDue} (null: n/a) — it then shows and totals
  * that figure, not its live one. {@code number} is sheet-wide (1, 2, ...) or, under period numbering,
  * within its period (P1-1, X-1). {@code corrects} is, for a correction, the number of the claim it corrects (null:
- * not a correction). While PENDING the claim is not bound: it shows and totals its live figure, and is bound again
+ * not a correction). {@code dueBy} is fixed when the claim is created: its date plus the terms of its person's
+ * grade in force on that date; it does not change when the terms or its date change later. While PENDING the claim is not bound: it shows and totals its live figure, and is bound again
  * once rejected (back to OPEN) when the statement included it.
  */
 public record Claim(Long id, String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
         ClaimStatus status, String number, BigDecimal due, String openedBy, boolean stated, BigDecimal statedDue,
-        String corrects) {
+        String corrects, LocalDate dueBy) {
 
     /** The same claim with another status, number, fixed due and opener. */
     public Claim withStatus(ClaimStatus next, String nextNumber, BigDecimal nextDue, String nextOpenedBy) {
         return new Claim(id, sheetId, personId, amount, date, note, next, nextNumber, nextDue, nextOpenedBy, stated,
-                statedDue, corrects);
+                statedDue, corrects, dueBy);
     }
 
     /** Whether the claim is a correction: a negative amount naming the settled claim it corrects. */

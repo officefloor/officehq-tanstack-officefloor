@@ -13,7 +13,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, due, opened_by, stated, stated_due, corrects";
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, due, opened_by, stated, stated_due, corrects, due_by";
 
     private final JdbcTemplate jdbc;
 
@@ -45,7 +45,7 @@ public class ClaimRepository {
         GeneratedKeyHolder keys = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, corrects) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, status, corrects, due_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, claim.sheetId());
             ps.setLong(2, claim.personId());
@@ -54,11 +54,12 @@ public class ClaimRepository {
             ps.setString(5, claim.note());
             ps.setString(6, claim.status().name());
             ps.setString(7, claim.corrects());
+            ps.setDate(8, Date.valueOf(claim.dueBy()));
             return ps;
         }, keys);
         return new Claim(keys.getKey().longValue(), claim.sheetId(), claim.personId(), claim.amount(), claim.date(),
                 claim.note(), claim.status(), claim.number(), claim.due(), claim.openedBy(), false, null,
-                claim.corrects());
+                claim.corrects(), claim.dueBy());
     }
 
     /** The person's claims, newest first. */
@@ -89,6 +90,6 @@ public class ClaimRepository {
                 rs.getBigDecimal("amount").setScale(2), rs.getDate("claim_date").toLocalDate(), rs.getString("note"),
                 ClaimStatus.valueOf(rs.getString("status")), rs.getString("claim_number"),
                 rs.getBigDecimal("due"), rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
-                rs.getString("corrects"));
+                rs.getString("corrects"), rs.getDate("due_by").toLocalDate());
     }
 }

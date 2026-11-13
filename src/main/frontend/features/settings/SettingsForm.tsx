@@ -6,12 +6,14 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { AMOUNT, DATE, DAYS, DEFAULT_FLOOR, DEFAULT_LATE_PCT, DEFAULT_TERMS, PERCENT, settingsKey, useSettings } from './settings';
 import type { Settings } from './settings';
 import { useOneAtATime } from '../../query/useOneAtATime';
+import { GRADES } from '../people/people';
 
 /** The settings the form sends: only those whose field was touched since the last save. */
 type SettingsInput = {
   clerkLimit?: string;
   floor?: string;
   terms?: string;
+  gradeTerms?: Record<string, string>;
   latePct?: string;
   policyDate?: string;
   periodNumberingFrom?: string;
@@ -35,7 +37,7 @@ const UNTOUCHED: Touched = {
   periodNumberingFrom: false,
 };
 
-// The sheet's clerk limit (blank: no limit), floor, terms, late percent and policy date (blank: today) and period numbering from date (blank: off) in force, and the form that sets them. Saving sends
+// The sheet's clerk limit (blank: no limit), floor, terms, each grade's terms (blank: the sheet's), late percent and policy date (blank: today) and period numbering from date (blank: off) in force, and the form that sets them. Saving sends
 // only the fields touched since the last save, so a blank field left alone changes nothing.
 export function SettingsForm() {
   const [user] = useCurrentUser();
@@ -44,6 +46,8 @@ export function SettingsForm() {
   const [clerkLimit, setClerkLimit] = useState('');
   const [floor, setFloor] = useState('');
   const [terms, setTerms] = useState('');
+  const [gradeTerms, setGradeTerms] = useState<Record<string, string>>({});
+  const [touchedGrades, setTouchedGrades] = useState<Record<string, boolean>>({});
   const [latePct, setLatePct] = useState('');
   const [policyDate, setPolicyDate] = useState('');
   const [periodNumberingFrom, setPeriodNumberingFrom] = useState('');
@@ -59,6 +63,8 @@ export function SettingsForm() {
       setClerkLimit('');
       setFloor('');
       setTerms('');
+      setGradeTerms({});
+      setTouchedGrades({});
       setLatePct('');
       setPolicyDate('');
       setPeriodNumberingFrom('');
@@ -100,6 +106,15 @@ export function SettingsForm() {
       }
       input.terms = value;
     }
+    for (const g of GRADES) {
+      if (!touchedGrades[g]) continue;
+      const value = (gradeTerms[g] ?? '').trim();
+      if (value !== '' && !DAYS.test(value)) {
+        setError(`Type terms for grade ${g} of 0 or more whole days, or leave them blank for the sheet's terms.`);
+        return;
+      }
+      input.gradeTerms = { ...input.gradeTerms, [g]: value };
+    }
     if (touched.latePct) {
       const value = latePct.trim();
       if (value !== '' && !PERCENT.test(value)) {
@@ -128,6 +143,7 @@ export function SettingsForm() {
       input.clerkLimit === undefined &&
       input.floor === undefined &&
       input.terms === undefined &&
+      input.gradeTerms === undefined &&
       input.latePct === undefined &&
       input.policyDate === undefined &&
       input.periodNumberingFrom === undefined
@@ -147,6 +163,14 @@ export function SettingsForm() {
       <p>
         Terms (days): <span data-testid="setting-terms-current">{settings?.terms ?? ''}</span>
       </p>
+      {GRADES.map((g) => (
+        <p key={g}>
+          Terms for grade {g} (days):{' '}
+          <span data-testid={`setting-terms-${g}-current`}>
+            {settings ? (settings.gradeTerms[g] ?? settings.terms) : ''}
+          </span>
+        </p>
+      ))}
       <p>
         Late percent: <span data-testid="setting-late-pct-current">{settings?.latePct ?? ''}</span>
       </p>
@@ -191,6 +215,20 @@ export function SettingsForm() {
             setError('');
           }}
         />
+        {GRADES.map((g) => (
+          <input
+            key={g}
+            data-testid={`setting-terms-${g}`}
+            placeholder={`Terms for grade ${g} in days (blank: the sheet's)`}
+            value={gradeTerms[g] ?? ''}
+            onFocus={() => setTouchedGrades((t) => ({ ...t, [g]: true }))}
+            onChange={(e) => {
+              setGradeTerms((v) => ({ ...v, [g]: e.target.value }));
+              setTouchedGrades((t) => ({ ...t, [g]: true }));
+              setError('');
+            }}
+          />
+        ))}
         <input
           data-testid="setting-late-pct"
           placeholder={`Late percent every 30 days overdue (blank: ${DEFAULT_LATE_PCT})`}

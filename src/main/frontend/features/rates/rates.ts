@@ -105,7 +105,7 @@ function claimFigure(claim: Claim, rates: Rate[], grades: GradeFrom[], rules: Du
  */
 export function lateCharge(claim: Claim, figure: string, rules: DueRules): string {
   if (claim.corrects !== null) return '0.00';
-  const periods = latePeriods(claim, rules.terms, rules.today);
+  const periods = latePeriods(claim, rules.today);
   return percentOf(hundredths(figure), hundredths(rules.latePct) * periods, roundingFor(claim, rules));
 }
 

@@ -6,7 +6,7 @@ import type { GradeFrom } from '../people/people';
 import type { DueRules } from '../settings/settings';
 import { overdue } from './dueBy';
 
-export { dueBy, overdue } from './dueBy';
+export { overdue } from './dueBy';
 
 /**
  * A person's overdue claims that count (none of their open ones while they are held): how many, and
@@ -19,6 +19,6 @@ export function personOverdue(
   held: boolean,
   rules: DueRules,
 ): { count: number; total: string } {
-  const late = claims.filter((c) => counts(c, held) && overdue(c, rules.terms, rules.today));
+  const late = claims.filter((c) => counts(c, held) && overdue(c, rules.today));
   return { count: late.length, total: total(late.map((c) => claimDue(c, rates, grades, rules))) };
 }

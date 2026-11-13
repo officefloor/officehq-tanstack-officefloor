@@ -1,9 +1,6 @@
 import type { Claim } from '../claims/claims';
-import { useTerms } from '../settings/settings';
-import { dueBy } from './overdue';
 
-// A claim's due-by: its date plus the sheet's terms.
+// A claim's due-by: fixed when it was created, from the terms of its person's grade in force on its date.
 export function ClaimDueBy({ claim }: { claim: Claim }) {
-  const terms = useTerms();
-  return <span data-testid="claim-due-by">{dueBy(claim.date, terms)}</span>;
+  return <span data-testid="claim-due-by">{claim.dueBy}</span>;
 }

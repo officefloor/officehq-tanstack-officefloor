@@ -7,10 +7,10 @@ import java.time.temporal.ChronoUnit;
 
 /**
  * What an overdue claim is charged: the sheet's late percent of its figure for every full 30 days it is overdue
- * (its due-by, its date plus the terms, before the sheet's today), rounded like the claim's due. Never bound by a statement:
+ * (its due-by, fixed when it was created, before the sheet's today), rounded like the claim's due. Never bound by a statement:
  * it follows the sheet's today until the claim is settled. A correction is never charged.
  */
-public record LateCharge(int terms, BigDecimal pct, LocalDate today) {
+public record LateCharge(BigDecimal pct, LocalDate today) {
 
     /** The days in each period an overdue claim is charged for. */
     public static final int PERIOD_DAYS = 30;
@@ -20,7 +20,7 @@ public record LateCharge(int terms, BigDecimal pct, LocalDate today) {
         if (figure == null || !claim.status().open() || claim.correction()) {
             return BigDecimal.ZERO.setScale(2);
         }
-        long late = ChronoUnit.DAYS.between(claim.date().plusDays(terms), today);
+        long late = ChronoUnit.DAYS.between(claim.dueBy(), today);
         long periods = late > 0 ? late / PERIOD_DAYS : 0;
         return Claim.due(figure, pct.multiply(BigDecimal.valueOf(periods)), mode);
     }
