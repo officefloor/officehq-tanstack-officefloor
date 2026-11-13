@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { postJson } from '../../api/http';
+import { postJson, putJson } from '../../api/http';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
+import { usePeople } from '../people/people';
 import type { Claim } from './claims';
 import { claimsKey } from './claims';
 import { useOneAtATime } from '../../query/useOneAtATime';
@@ -24,12 +25,15 @@ const REFUSED: Partial<Record<Action, string>> = {
 
 // A claim's status and the buttons that change it. Every button is shown; the server refuses a
 // change the status does not allow, and the refusal shows as the claim's error. A clerk's settle
-// above the clerk limit makes the claim PENDING; a reject sends the reason typed beside it.
+// above the clerk limit makes the claim PENDING; a reject sends the reason typed beside it. A steward
+// moves a DRAFT, OPEN or PENDING claim to the person chosen beside the Move button.
 export function ClaimStatus({ claim }: { claim: Claim }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
   const [error, setError] = useState('');
   const [reason, setReason] = useState('');
+  const [moveTo, setMoveTo] = useState('');
+  const others = (usePeople().data ?? []).filter((p) => p.id !== claim.personId);
   const queryClient = useQueryClient();
   const once = useOneAtATime();
 
@@ -44,6 +48,19 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
       await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
     },
     onError: (_e, action) => setError(`This ${claim.status} claim cannot be changed by ${action}${REFUSED[action] ?? ''}.`),
+  });
+
+  const reassign = useMutation({
+    mutationFn: (personId: number) =>
+      putJson<Claim>(`/api/sheets/${encodeURIComponent(sheet)}/claims/${claim.id}/person?user=${encodeURIComponent(user)}`, {
+        personId,
+      }),
+    onSuccess: async () => {
+      setMoveTo('');
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+    },
+    onError: () =>
+      setError(`This ${claim.status} claim cannot be moved (only a steward moves a DRAFT, OPEN or PENDING claim).`),
   });
 
   return (
@@ -73,6 +90,37 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
           setError('');
         }}
       />
+      <select
+        data-testid="claim-reassign-to"
+        aria-label="Move to"
+        value={moveTo}
+        onChange={(e) => {
+          setMoveTo(e.target.value);
+          setError('');
+        }}
+      >
+        <option value="">move to…</option>
+        {others.map((p) => (
+          <option key={p.id} value={String(p.id)}>
+            {p.name}
+          </option>
+        ))}
+      </select>
+      <button
+        type="button"
+        data-testid="claim-reassign"
+        disabled={reassign.isPending}
+        onClick={() => {
+          setError('');
+          if (!moveTo) {
+            setError('Choose the person to move the claim to.');
+            return;
+          }
+          once(() => reassign.mutateAsync(Number(moveTo)));
+        }}
+      >
+        Move
+      </button>
       {error && <span data-testid="claim-error">{error}</span>}
     </>
   );

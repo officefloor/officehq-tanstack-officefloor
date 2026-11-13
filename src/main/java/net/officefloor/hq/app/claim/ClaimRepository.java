@@ -23,7 +23,7 @@ public class ClaimRepository {
 
     /** The sheet's claims, newest first. */
     public List<Claim> findAll(String sheetId) {
-        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? ORDER BY id DESC",
+        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? ORDER BY listed DESC, id DESC",
                 ClaimRepository::map, sheetId);
     }
 
@@ -63,8 +63,19 @@ public class ClaimRepository {
 
     /** The person's claims, newest first. */
     public List<Claim> findForPerson(String sheetId, long personId) {
-        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY id DESC",
+        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY listed DESC, id DESC",
                 ClaimRepository::map, sheetId, personId);
+    }
+
+    /**
+     * Move the claim to another person: it loses any figure a statement bound it to (live again) and is listed as
+     * their newest claim; the claim as stored.
+     */
+    public Claim reassign(Claim claim, long personId) {
+        jdbc.update("UPDATE claim SET person_id = ?, stated = FALSE, stated_due = NULL,"
+                + " listed = NEXT VALUE FOR claim_listed_seq WHERE id = ? AND sheet_id = ?",
+                personId, claim.id(), claim.sheetId());
+        return find(claim.sheetId(), claim.id());
     }
 
     /** Bind the claim to a statement's figure (null: n/a), or unbind it (live again) when not stated. */
