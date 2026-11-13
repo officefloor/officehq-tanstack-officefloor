@@ -86,6 +86,7 @@ function PersonClaims({ person }: { person: Person }) {
   const [targets, setTargets] = useState<Record<number, string>>({});
   const [deferDates, setDeferDates] = useState<Record<number, string>>({});
   const [redates, setRedates] = useState<Record<number, string>>({});
+  const [dueBys, setDueBys] = useState<Record<number, string>>({});
   const [splitAmounts, setSplitAmounts] = useState<Record<number, string>>({});
   const [partAmounts, setPartAmounts] = useState<Record<number, string>>({});
   const [inlineAmounts, setInlineAmounts] = useState<Record<number, string>>({});
@@ -171,6 +172,7 @@ function PersonClaims({ person }: { person: Person }) {
     split.reset();
     partSettle.reset();
     redate.reset();
+    setDue.reset();
     inline.reset();
     move.mutate({ id, status, review: review !== undefined, reason: review?.reason ?? voidReason, on });
   };
@@ -204,6 +206,7 @@ function PersonClaims({ person }: { person: Person }) {
     split.reset();
     partSettle.reset();
     redate.reset();
+    setDue.reset();
     inline.reset();
     reassign.mutate({ id, to: targets[id] ?? '' });
   };
@@ -235,6 +238,7 @@ function PersonClaims({ person }: { person: Person }) {
     split.reset();
     partSettle.reset();
     redate.reset();
+    setDue.reset();
     inline.reset();
     resettle.mutate(id);
   };
@@ -267,6 +271,7 @@ function PersonClaims({ person }: { person: Person }) {
     split.reset();
     partSettle.reset();
     redate.reset();
+    setDue.reset();
     inline.reset();
     defer.mutate({ id, until: (deferDates[id] ?? '').trim() });
   };
@@ -295,6 +300,7 @@ function PersonClaims({ person }: { person: Person }) {
     split.reset();
     partSettle.reset();
     redate.reset();
+    setDue.reset();
     inline.reset();
     remind.mutate(id);
   };
@@ -326,6 +332,7 @@ function PersonClaims({ person }: { person: Person }) {
     split.reset();
     partSettle.reset();
     redate.reset();
+    setDue.reset();
     inline.reset();
     waive.mutate(id);
   };
@@ -357,6 +364,7 @@ function PersonClaims({ person }: { person: Person }) {
     split.reset();
     partSettle.reset();
     redate.reset();
+    setDue.reset();
     inline.reset();
     hold.mutate(id);
   };
@@ -391,6 +399,7 @@ function PersonClaims({ person }: { person: Person }) {
     split.reset();
     partSettle.reset();
     redate.reset();
+    setDue.reset();
     inline.reset();
     share.reset();
     assign.reset();
@@ -422,6 +431,7 @@ function PersonClaims({ person }: { person: Person }) {
     split.reset();
     partSettle.reset();
     redate.reset();
+    setDue.reset();
     inline.reset();
     assign.reset();
     assign.mutate({ id, assignee: (assignees[id] ?? '').trim() });
@@ -453,6 +463,7 @@ function PersonClaims({ person }: { person: Person }) {
     split.reset();
     partSettle.reset();
     redate.reset();
+    setDue.reset();
     inline.reset();
     comment.mutate({ id, text: commentTexts[id] ?? '' });
   };
@@ -486,6 +497,7 @@ function PersonClaims({ person }: { person: Person }) {
     split.reset();
     partSettle.reset();
     redate.reset();
+    setDue.reset();
     inline.reset();
     const f = lineFields[id] ?? { label: '', qty: '', unit: '' };
     line.mutate({ id, label: f.label.trim(), qty: f.qty.trim(), unit: f.unit.trim() });
@@ -522,6 +534,7 @@ function PersonClaims({ person }: { person: Person }) {
     split.reset();
     partSettle.reset();
     redate.reset();
+    setDue.reset();
     inline.reset();
     proof.mutate(id);
   };
@@ -555,6 +568,7 @@ function PersonClaims({ person }: { person: Person }) {
     split.reset();
     partSettle.reset();
     redate.reset();
+    setDue.reset();
     inline.reset();
     split.mutate({ id, amount: (splitAmounts[id] ?? '').trim() });
   };
@@ -588,6 +602,7 @@ function PersonClaims({ person }: { person: Person }) {
     split.reset();
     partSettle.reset();
     redate.reset();
+    setDue.reset();
     inline.reset();
     partSettle.mutate({ id, amount: (partAmounts[id] ?? '').trim() });
   };
@@ -620,7 +635,42 @@ function PersonClaims({ person }: { person: Person }) {
     proof.reset();
     split.reset();
     partSettle.reset();
+    setDue.reset();
     redate.mutate({ id, date: (redates[id] ?? '').trim() });
+  };
+  // A steward sets a DRAFT, OPEN or PENDING claim's due-by directly; it stays as set (a holiday added later leaves
+  // it), and its overdue, late charge, grace and period follow it.
+  const setDue = useMutation({
+    mutationFn: (d: { id: number; date: string }) =>
+      postJson<Claim>(`${base}/claims/${d.id}/due-by`, { date: d.date, user }),
+    onSuccess: async (_, d) => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: claimsKey(sheet) }),
+        queryClient.invalidateQueries({ queryKey: peopleKey(sheet) }),
+      ]);
+      setDueBys((a) => ({ ...a, [d.id]: '' }));
+    },
+  });
+  const setDueByClaim = (id: number) => {
+    move.reset();
+    lock.reset();
+    setUneditable(undefined);
+    reassign.reset();
+    resettle.reset();
+    defer.reset();
+    remind.reset();
+    waive.reset();
+    hold.reset();
+    share.reset();
+    assign.reset();
+    comment.reset();
+    line.reset();
+    proof.reset();
+    split.reset();
+    partSettle.reset();
+    redate.reset();
+    inline.reset();
+    setDue.mutate({ id, date: (dueBys[id] ?? '').trim() });
   };
   // A draft's amount changed in its row: an edit as the claim form makes it, keeping the claim's date, note,
   // the claim it corrects, its reference and its tags, so the server applies the form's rules and records CLAIM_EDITED.
@@ -661,10 +711,11 @@ function PersonClaims({ person }: { person: Person }) {
     split.reset();
     partSettle.reset();
     redate.reset();
+    setDue.reset();
     inline.reset();
     inline.mutate({ claim: c, amount: (inlineAmounts[c.id] ?? '').trim() });
   };
-  // The refusal of the last status change, move, re-settle, deferral, reminder, waiver, hold, comment, proof, split or re-dating of the claim, as the server gave it; null when none.
+  // The refusal of the last status change, move, re-settle, deferral, reminder, waiver, hold, comment, proof, split, re-dating or due-by setting of the claim, as the server gave it; null when none.
   const refusal = (id: number) => {
     const error =
       move.isError && move.variables?.id === id
@@ -697,6 +748,8 @@ function PersonClaims({ person }: { person: Person }) {
                     ? partSettle.error
                     : redate.isError && redate.variables?.id === id
                       ? redate.error
+                    : setDue.isError && setDue.variables?.id === id
+                      ? setDue.error
                       : inline.isError && inline.variables?.claim.id === id
                         ? inline.error
                         : lock.isError && lock.variables?.id === id
@@ -733,6 +786,7 @@ function PersonClaims({ person }: { person: Person }) {
     split.reset();
     partSettle.reset();
     redate.reset();
+    setDue.reset();
     inline.reset();
     // Only a DRAFT can be edited: any other claim is refused at once, as the server would refuse it.
     if (c.status !== 'DRAFT') {
@@ -1004,6 +1058,19 @@ function PersonClaims({ person }: { person: Person }) {
               />{' '}
               <button type="button" data-testid="claim-redate" disabled={redate.isPending} onClick={() => redateClaim(c.id)}>
                 Re-date
+              </button>{' '}
+              <input
+                data-testid="claim-due-by-new"
+                type="date"
+                aria-label="New due-by"
+                value={dueBys[c.id] ?? ''}
+                onChange={(e) => {
+                  setDueBys({ ...dueBys, [c.id]: e.target.value });
+                  if (setDue.variables?.id === c.id) setDue.reset();
+                }}
+              />{' '}
+              <button type="button" data-testid="claim-set-due-by" disabled={setDue.isPending} onClick={() => setDueByClaim(c.id)}>
+                Set due-by
               </button>{' '}
               <span data-testid="claim-proofs">{c.proofs ?? 0}</span>{' '}
               {PROOF_KINDS.map((k) => (

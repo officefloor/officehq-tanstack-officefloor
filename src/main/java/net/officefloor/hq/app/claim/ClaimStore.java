@@ -308,6 +308,20 @@ public class ClaimStore {
         return redated;
     }
 
+    /** Sets the stored DRAFT, OPEN or PENDING claim's due-by directly, no longer fixed for terms, so a holiday
+     *  added later leaves it as set (see {@link #refixDueBy}); false when it is no longer one of those at the
+     *  due-by it had (another user changed it first). */
+    public boolean setDueBy(Claim claim, LocalDate dueBy) {
+        boolean set = jdbc.update("UPDATE claim SET due_by = ?, due_terms = NULL "
+                + "WHERE sheet_id = ? AND id = ? AND status IN (?, ?, ?) AND due_by = ?",
+                Date.valueOf(dueBy), claim.getSheetId(), claim.getId(), ClaimStatus.DRAFT.name(),
+                ClaimStatus.OPEN.name(), ClaimStatus.PENDING.name(), Date.valueOf(claim.getDueBy())) == 1;
+        if (set) {
+            claim.setDueBy(dueBy);
+        }
+        return set;
+    }
+
     /** Leaves the stored OPEN claim with {@code rest} of its amount, unbound from any statement figure; false
      *  when it is no longer OPEN at the amount it had (another user changed it first). */
     public boolean shrink(Claim claim, BigDecimal rest) {

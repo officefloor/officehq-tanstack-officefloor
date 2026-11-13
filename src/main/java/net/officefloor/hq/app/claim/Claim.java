@@ -21,7 +21,7 @@ public class Claim {
     private BigDecimal statedDue;
     private boolean statedNa;
     private String corrects;
-    private final LocalDate dueBy;
+    private LocalDate dueBy;
     private LocalDate deferredUntil;
     private int proofs;
     private int proofPhotos;
@@ -91,9 +91,10 @@ public class Claim {
     /** The number of the claim this correction corrects; null when it is not a correction. */
     public String getCorrects() { return corrects; }
     /** Whether the claim is a correction: a negative amount, with no floor and no late charge. */
-    /** The date the claim is due by, fixed when it was added; later changes to the terms or its date
-     *  leave it as it is. */
+    /** The date the claim is due by, fixed when it was added or set directly by a steward; later changes to
+     *  the terms or its date leave it as it is. */
     public LocalDate getDueBy() { return dueBy; }
+    public void setDueBy(LocalDate dueBy) { this.dueBy = dueBy; }
     public boolean isCorrection() { return amount.signum() < 0; }
     /** The date the claim was last deferred until; null when it was never deferred. */
     public LocalDate getDeferredUntil() { return deferredUntil; }
