@@ -1,0 +1,156 @@
+diff --git a/src/main/frontend/features/claims/BulkReassign.tsx b/src/main/frontend/features/claims/BulkReassign.tsx
+new file mode 100644
+index 000000000..8baf2a1b0
+--- /dev/null
++++ b/src/main/frontend/features/claims/BulkReassign.tsx
+@@ -0,0 +1,85 @@
++import { useState } from 'react';
++import { useQueryClient } from '@tanstack/react-query';
++import { putJson } from '../../api/http';
++import { usePeople } from '../people/people';
++import { useCurrentSheet, useCurrentUser } from '../session/session';
++import { claimsKey, useClaims } from './claims';
++import type { Claim } from './claims';
++import { useSelectedClaims } from './selection';
++import { useOneAtATime } from '../../query/useOneAtATime';
++
++// Moves every ticked claim to the person chosen beside the button, one after another in list order
++// (people in their order, each one's claims newest first), as the signed-in user. Each goes through
++// the claim's own move, so it is moved by exactly its rules (role, status, closed period, retirement)
++// and audited the same; one the server refuses is left as it is and counted as refused.
++export function BulkReassign() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const people = usePeople().data ?? [];
++  const claims = useClaims().data ?? [];
++  const [selected, , clear] = useSelectedClaims();
++  const [moveTo, setMoveTo] = useState('');
++  const [result, setResult] = useState<{ reassigned: number; refused: number } | undefined>(undefined);
++  const [busy, setBusy] = useState(false);
++  const queryClient = useQueryClient();
++  const once = useOneAtATime();
++
++  if (!user || !sheet) return null;
++
++  const run = async () => {
++    setResult(undefined);
++    setBusy(true);
++    const ordered = people.flatMap((p) => claims.filter((c) => c.personId === p.id && selected.has(c.id)));
++    let reassigned = 0;
++    let refused = 0;
++    try {
++      for (const c of ordered) {
++        try {
++          if (!moveTo) throw new Error('Choose the person to move the claims to.');
++          await putJson<Claim>(
++            `/api/sheets/${encodeURIComponent(sheet)}/claims/${c.id}/person?user=${encodeURIComponent(user)}`,
++            { personId: Number(moveTo), bulk: true },
++          );
++          reassigned++;
++        } catch {
++          refused++;
++        }
++      }
++      // A ticked claim no longer listed (gone from the sheet) cannot be moved.
++      refused += selected.size - ordered.length;
++      clear();
++      await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
++    } finally {
++      setBusy(false);
++      setResult({ reassigned, refused });
++    }
++  };
++
++  return (
++    <p>
++      <select
++        data-testid="bulk-reassign-to"
++        aria-label="Move selected claims to"
++        value={moveTo}
++        onChange={(e) => setMoveTo(e.target.value)}
++      >
++        <option value="">move to…</option>
++        {people.map((p) => (
++          <option key={p.id} value={String(p.id)}>
++            {p.name}
++          </option>
++        ))}
++      </select>{' '}
++      <button type="button" data-testid="bulk-reassign" disabled={busy} onClick={() => once(run)}>
++        Move selected claims
++      </button>
++      {result && (
++        <>
++          {' '}
++          Moved <span data-testid="bulk-reassigned">{result.reassigned}</span>, refused{' '}
++          <span data-testid="bulk-reassign-refused">{result.refused}</span>
++        </>
++      )}
++    </p>
++  );
++}
+diff --git a/src/main/frontend/features/claims/home.slot.tsx b/src/main/frontend/features/claims/home.slot.tsx
+index ad89f4d0f..92185d213 100644
+--- a/src/main/frontend/features/claims/home.slot.tsx
++++ b/src/main/frontend/features/claims/home.slot.tsx
+@@ -1,10 +1,12 @@
+ import { HomeMain } from '../../slots/defs/homeMain';
+ import { BulkOpen } from './BulkOpen';
++import { BulkReassign } from './BulkReassign';
+ import { BulkSettle } from './BulkSettle';
+ import { ClaimedTotal } from './ClaimedTotal';
+ 
+ export const contributions = [
+   HomeMain.fill({ order: 25, Component: BulkOpen }),
+   HomeMain.fill({ order: 26, Component: BulkSettle }),
++  HomeMain.fill({ order: 27, Component: BulkReassign }),
+   HomeMain.fill({ order: 30, Component: ClaimedTotal }),
+ ];
+diff --git a/src/main/java/net/officefloor/hq/app/claim/CheckClaimReassign.java b/src/main/java/net/officefloor/hq/app/claim/CheckClaimReassign.java
+index 4e1839d73..ace8f4ee4 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/CheckClaimReassign.java
++++ b/src/main/java/net/officefloor/hq/app/claim/CheckClaimReassign.java
+@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RequestParam;
+ /**
+  * Refuses (400) a reassign unless a user whose role the permission matrix allows reassigning (standing rule: a steward) moves a DRAFT, OPEN or PENDING claim to another person on the sheet who
+  * is not retired before the claim's date; publishes the move.
++ * A bulk move takes a claim already that person's as moved (to the same person) instead of refusing it.
+  */
+ public class CheckClaimReassign {
+     public void check(@RequestParam("user") String user, @Val Claim claim, @Val ReassignRequest request,
+@@ -26,7 +27,7 @@ public class CheckClaimReassign {
+         if (to == null) {
+             throw new InvalidClaimException("No such person to move the claim to.");
+         }
+-        if (to.id() == claim.personId()) {
++        if (to.id() == claim.personId() && !Boolean.TRUE.equals(request.bulk())) {
+             throw new InvalidClaimException("The claim is already " + to.name() + "'s.");
+         }
+         if (to.retiredBefore(claim.date())) {
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ReassignRequest.java b/src/main/java/net/officefloor/hq/app/claim/ReassignRequest.java
+index ab34b97bb..c66841b79 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ReassignRequest.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ReassignRequest.java
+@@ -1,5 +1,8 @@
+ package net.officefloor.hq.app.claim;
+ 
+-/** What a reassign submits: the id of the person the claim moves to (null: none chosen). */
+-public record ReassignRequest(Long personId) {
++/**
++ * What a reassign submits: the id of the person the claim moves to (null: none chosen), and whether it is one of a
++ * bulk move (a bulk move counts a claim already that person's as moved, rather than refusing it).
++ */
++public record ReassignRequest(Long personId, Boolean bulk) {
+ }
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person.PUT.yml
+index 0f19d7297..9eff3c1b4 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/claims/{claimId}/person.PUT.yml
+@@ -3,6 +3,7 @@
+ # claim's date is refused (400) and writes nothing. A claim dated inside a closed period is refused (400).
+ # The claim keeps its number and date, loses any figure a statement bound it to (live again), and is listed as its
+ # new person's newest claim.
++# A bulk move (body bulk=true) takes a claim already that person's as moved instead of refusing it.
+ archived:
+   class: net.officefloor.hq.app.sheet.CheckNotArchived
+   next: viewer
