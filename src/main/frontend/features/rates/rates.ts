@@ -195,3 +195,21 @@ export function trimmedTotal(dues: string[]): string {
   const kept = cents.length >= 3 ? cents.slice(1, -1) : cents;
   return (kept.reduce((sum, c) => sum + c, 0) / 100).toFixed(2);
 }
+
+/**
+ * A person's settled-total and open-total: the dues of their SETTLED claims that count (at their frozen figures,
+ * corrections included), and of their OPEN and PENDING ones that count, each added up (skipping n/a, not capped) —
+ * together their due-total before the cap.
+ */
+export function personSplit(
+  claims: Claim[],
+  rates: Rate[],
+  grades: GradeFrom[],
+  holds: Hold[],
+  rules: DueRules,
+): { settled: string; open: string } {
+  const counted = claims.filter((c) => counts(c, holds, rules.today));
+  const dues = (keep: (c: Claim) => boolean) =>
+    total(counted.filter(keep).map((c) => claimDue(c, rates, grades, rules)));
+  return { settled: dues((c) => c.status === 'SETTLED'), open: dues((c) => c.status !== 'SETTLED') };
+}
