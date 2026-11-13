@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 /**
  * Moves the claim to the action's status; refused (400) when the claim's status does not allow it.
- * Opening gives the claim the sheet's next number; voiding clears it (the number is not reused).
+ * Opening gives the claim the sheet's next number; a voided claim keeps its number (it is never reused).
  * Opening records the user who opened it; that user cannot settle it (four eyes).
  * Settling fixes the claim's due at its person's grade's rate in force on the claim's date — or, when a statement
  * bound the claim, at the figure it was bound to; with no figure it stays live.
@@ -34,11 +34,10 @@ public class ApplyClaimAction {
         }
         Integer next = switch (found) {
             case OPEN -> sheets.nextClaimNumber(claim.sheetId());
-            case VOID -> null;
             default -> claim.number();
         };
         applied.set(found);
-        number.set(new ClaimNumber(found == ClaimAction.VOID ? claim.number() : next));
+        number.set(new ClaimNumber(next));
         BigDecimal due = found == ClaimAction.SETTLE ? settledDue(claim, people, rates) : claim.due();
         updated.set(claim.withStatus(found.to(), next, due, found == ClaimAction.OPEN ? user : claim.openedBy()));
     }

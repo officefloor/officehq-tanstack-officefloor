@@ -6,7 +6,7 @@ import java.time.LocalDate;
 
 /**
  * A claim a person has on a sheet. {@code id} is null until the claim is first saved; {@code number}
- * is null unless the claim has been opened (a draft has none, and voiding clears it). {@code due} is the
+ * is null unless the claim has been opened (a draft has none; a voided claim keeps it). {@code due} is the
  * due fixed when the claim was settled, or null while it is live (not settled, or settled with no rate).
  * {@code openedBy} is the user who opened the claim, or null while it is a draft. {@code stated} is whether
  * its person's last statement bound it to a figure, {@code statedDue} (null: n/a) — it then shows and totals
