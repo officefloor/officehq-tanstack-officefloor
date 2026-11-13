@@ -258,10 +258,11 @@ public class SettingStore {
     public static final Map<String, List<Role>> STANDING_PERMS = Map.of(
             "open", List.of(Role.CLERK, Role.STEWARD), "settle", List.of(Role.CLERK, Role.STEWARD),
             "void", List.of(Role.CLERK, Role.STEWARD), "close", List.of(Role.CLERK, Role.STEWARD),
-            "reassign", List.of(Role.STEWARD), "reopen", List.of(Role.STEWARD));
+            "reassign", List.of(Role.STEWARD), "reopen", List.of(Role.STEWARD),
+            "today", List.of(Role.CLERK, Role.STEWARD));
 
     /** The actions of the permission matrix, in the order the screen shows them. */
-    public static final List<String> PERM_ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen");
+    public static final List<String> PERM_ACTIONS = List.of("open", "settle", "void", "reassign", "close", "reopen", "today");
 
     /** The late percent a sheet has until one is set. */
     public static final BigDecimal DEFAULT_LATE_PCT = new BigDecimal("0.00");

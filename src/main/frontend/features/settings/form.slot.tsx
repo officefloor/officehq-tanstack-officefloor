@@ -9,11 +9,11 @@ import { ratesKey } from '../rates/rates';
 import { type Settings, settingsKey, useSettings } from './settings';
 import { useFigure } from '../locale/locale';
 
-const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'] as const;
+const PERM_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen', 'today'] as const;
 
 /** The standing rule each action keeps while its permission is blank. */
 const STANDING_PERMS: Record<(typeof PERM_ACTIONS)[number], string> = {
-  open: 'clerk,steward', settle: 'clerk,steward', void: 'clerk,steward', reassign: 'steward', close: 'clerk,steward', reopen: 'steward',
+  open: 'clerk,steward', settle: 'clerk,steward', void: 'clerk,steward', reassign: 'steward', close: 'clerk,steward', reopen: 'steward', today: 'clerk,steward',
 };
 
 type PermKey = `perm-${(typeof PERM_ACTIONS)[number]}`;
@@ -70,7 +70,7 @@ function SheetSettings() {
   const [sheet] = useCurrentSheet();
   const settings = useSettings(sheet);
   const [values, setValues] = useState<Record<Key, string>>({ 'clerk-limit': '', 'clerk-limit-A': '', 'clerk-limit-B': '', 'clerk-limit-C': '', floor: '', terms: '', 'terms-A': '', 'terms-B': '', 'terms-C': '', 'grace-A': '', 'grace-B': '', 'grace-C': '', 'late-pct': '', 'policy-date': '', 'period-numbering-from': '', cap: '', 'proof-threshold': '', 'proof-threshold-A': '', 'proof-threshold-B': '', 'proof-threshold-C': '', 'note-threshold': '', 'review-threshold': '', 'grace-days': '', 'escalate-after': '', 'review-sla': '', 'pending-sla': '', 'entry-date': '', pot: '', 'alert-threshold': '', parent: '', 'fiscal-start-month': '', rounding: '', 'proof-kinds': '', 'default-grade': '', 'score-mid': '', 'score-high': '', 'score-log': '', 'max-open': '',
-    'perm-open': '', 'perm-settle': '', 'perm-void': '', 'perm-reassign': '', 'perm-close': '', 'perm-reopen': '' });
+    'perm-open': '', 'perm-settle': '', 'perm-void': '', 'perm-reassign': '', 'perm-close': '', 'perm-reopen': '', 'perm-today': '' });
   const [froms, setFroms] = useState<Record<DatedKey, string>>(NO_FROM);
   const [key, setKey] = useState<Key>('clerk-limit');
   const queryClient = useQueryClient();
