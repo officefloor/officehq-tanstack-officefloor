@@ -23,7 +23,7 @@ export type UserRole = { user: string; role: string };
  * claim whose due is above the one in force on its date is opened only with a note), and the roles
  * given to user names. The clerk limit, floor, terms, grade terms, late percent, cap, proof threshold and note threshold are those in force on the sheet's
  * today; `history` holds every value recorded for them, by key (floor, late-pct, terms, terms-<grade>, grace-<grade>, clerk-limit,
- * cap, proof-threshold, note-threshold), oldest from-date first (value '': blank). `permissions` is the permission matrix: by action, the
+ * cap, proof-threshold, proof-threshold-<grade>, note-threshold), oldest from-date first (value '': blank). `permissions` is the permission matrix: by action, the
  * roles allowed it, comma separated ('': blank, the standing rule); it is not dated.
  * `graceDays` is the grace days (whole days; '': off — when the sheet's today is changed, an open period whose
  * to-date plus them is before the new today is closed); it is not dated.

@@ -29,7 +29,7 @@ public class ValidateSettingsRequest {
             Out<Terms> terms, Out<LatePct> latePct, Out<PolicyDate> policyDate,
             Out<PeriodNumberingFrom> periodNumberingFrom, Out<EntryDate> entryDate, Out<GradeTerms> gradeTerms, Out<Cap> cap,
             Out<ProofThreshold> proofThreshold, Out<NoteThreshold> noteThreshold, Out<PermissionChanges> permissions, Out<GraceDays> graceDays,
-            Out<GradeGrace> gradeGrace)
+            Out<GradeGrace> gradeGrace, Out<GradeProofThreshold> gradeProofThreshold)
             throws InvalidSettingException {
         limit.set(clerkLimit(request.clerkLimit(), from(request.clerkLimitFrom(), "clerk limit")));
         floor.set(floor(request.floor(), from(request.floorFrom(), "floor")));
@@ -45,6 +45,7 @@ public class ValidateSettingsRequest {
         permissions.set(permissions(request.permissions()));
         graceDays.set(graceDays(request.graceDays()));
         gradeGrace.set(gradeGrace(request.gradeGrace(), request.gradeGraceFrom()));
+        gradeProofThreshold.set(gradeProofThreshold(request.gradeProofThreshold(), request.gradeProofThresholdFrom()));
     }
 
     /** A from-date typed with a setting (null: left out or blank, the sheet's today). */
@@ -125,6 +126,33 @@ public class ValidateSettingsRequest {
             }
         }
         return new GradeGrace(grace, from);
+    }
+
+    private static GradeProofThreshold gradeProofThreshold(Map<String, String> requested, Map<String, String> requestedFrom)
+            throws InvalidSettingException {
+        Map<String, BigDecimal> thresholds = new LinkedHashMap<>();
+        Map<String, LocalDate> from = new LinkedHashMap<>();
+        if (requested == null) {
+            return new GradeProofThreshold(thresholds, from);
+        }
+        for (String grade : requested.keySet().stream().sorted().toList()) {
+            if (!GRADES.contains(grade)) {
+                throw new InvalidSettingException("A proof threshold can only be set for grade A, B or C.");
+            }
+            String value = requested.get(grade) == null ? "" : requested.get(grade).trim();
+            if (value.isEmpty()) {
+                thresholds.put(grade, null);
+            } else if (!AMOUNT.matcher(value).matches()) {
+                throw new InvalidSettingException("The proof threshold for a grade must be 0.00 or more, with at most two decimals, or blank.");
+            } else {
+                thresholds.put(grade, new BigDecimal(value).setScale(2));
+            }
+            LocalDate gradeFrom = from(requestedFrom == null ? null : requestedFrom.get(grade), "grade " + grade + " proof threshold");
+            if (gradeFrom != null) {
+                from.put(grade, gradeFrom);
+            }
+        }
+        return new GradeProofThreshold(thresholds, from);
     }
 
     private static Cap cap(String requested, LocalDate from) throws InvalidSettingException {

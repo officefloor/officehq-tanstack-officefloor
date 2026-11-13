@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.util.List;
 import net.officefloor.hq.app.period.Period;
 import net.officefloor.hq.app.period.PeriodRepository;
+import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
 import net.officefloor.hq.app.setting.Role;
@@ -27,8 +28,8 @@ import org.springframework.web.bind.annotation.RequestParam;
  * Settling fixes the claim's due at the greater of the sheet's floor in force on its date and its figure — at its person's grade's rate in force on the claim's date,
  * rounded by its policy date, or, when a statement bound the claim, the figure it was bound to — plus the late charge it has then, if overdue, frozen in; with no
  * figure it stays live. A clerk settling a claim whose due is above the sheet's clerk limit (a due of n/a is within any
- * limit) makes it PENDING instead, live and unfixed. A claim with no proofs whose due is above the sheet's proof threshold in
- * force on its date is refused settling or approving — before the clerk limit is considered, so it never goes PENDING.
+ * limit) makes it PENDING instead, live and unfixed. A claim with no proofs whose due is above the proof threshold in force on its date —
+ * its person's grade's own, when that grade has one then, else the sheet's — is refused settling or approving — before the clerk limit is considered, so it never goes PENDING.
  * A claim with an empty note whose due (as shown now) is above the sheet's note threshold in force on its date is refused opening. Only a steward approves a PENDING claim (fixing its due at its live
  * figure, plus any late charge, at that moment) — not the user who opened it — or rejects it, with a reason, back to OPEN.
  * Only a steward re-settles a SETTLED claim, fixing its due again at the figure it would have today as an open claim
@@ -106,7 +107,7 @@ public class ApplyClaimAction {
             throw new InvalidClaimException("The claim's due is above the note threshold: it needs a note to be opened.");
         }
         if ((found == ClaimAction.SETTLE || found == ClaimAction.APPROVE) && claim.proofs() == 0
-                && settings.dated(claim.sheetId()).needsProof(claim.date(), due)) {
+                && settings.dated(claim.sheetId()).needsProof(proofGrade(claim, people), claim.date(), due)) {
             throw new InvalidClaimException("The claim's due is above the proof threshold: it needs a proof to be "
                     + (found == ClaimAction.SETTLE ? "settled" : "approved") + ".");
         }
@@ -122,6 +123,12 @@ public class ApplyClaimAction {
         previous.set(new PreviousDue(claim.due(), claim.status() == ClaimStatus.SETTLED));
         number.set(new ClaimNumber(next));
         updated.set(claim.withStatus(found.to(), next, due, found == ClaimAction.OPEN ? user : claim.openedBy()));
+    }
+
+    /** The grade whose proof threshold the claim falls under: its person's grade in force on its date (null: no person). */
+    static String proofGrade(Claim claim, PersonRepository people) {
+        Person person = people.find(claim.sheetId(), claim.personId());
+        return person == null ? null : person.gradeOn(claim.date());
     }
 
     /** The number opening the claim gives it now: the sheet's next, or the next within its period under period numbering. */

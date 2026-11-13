@@ -46,6 +46,8 @@ type SettingsInput = {
   gradeTermsFrom?: Record<string, string>;
   gradeGrace?: Record<string, string>;
   gradeGraceFrom?: Record<string, string>;
+  gradeProofThreshold?: Record<string, string>;
+  gradeProofThresholdFrom?: Record<string, string>;
   permissions?: Record<string, string>;
   graceDays?: string;
 };
@@ -81,10 +83,10 @@ const UNTOUCHED: Touched = {
   graceDays: false,
 };
 
-// The sheet's clerk limit (blank: no limit), floor, terms, each grade's terms (blank: the sheet's), late percent and policy date (blank: today) and period numbering from date (blank: off) and entry date (blank: off) and cap (blank: none) and proof threshold (blank: none) and note threshold (blank: none) in force, and the
+// The sheet's clerk limit (blank: no limit), floor, terms, each grade's terms (blank: the sheet's), late percent and policy date (blank: today) and period numbering from date (blank: off) and entry date (blank: off) and cap (blank: none) and proof threshold (blank: none) and each grade's proof threshold (blank: the sheet's) and note threshold (blank: none) in force, and the
 // permission matrix (by action, the roles allowed it; blank: the standing rule; not dated), and the grace days (blank: off; not dated), and the form that sets them. Saving sends
 // only the fields touched since the last save, so a blank field left alone changes nothing. A dated setting (the clerk
-// limit, floor, terms, each grade's terms, late percent, cap, proof threshold and note threshold) is recorded from the date typed beside it (blank: the
+// limit, floor, terms, each grade's terms, late percent, cap, proof threshold, each grade's proof threshold and note threshold) is recorded from the date typed beside it (blank: the
 // sheet's today); the value shown is the one in force on the sheet's today.
 export function SettingsForm() {
   const [user] = useCurrentUser();
@@ -93,6 +95,8 @@ export function SettingsForm() {
   const today = useSheetToday();
   const [gradeGrace, setGradeGrace] = useState<Record<string, string>>({});
   const [touchedGrace, setTouchedGrace] = useState<Record<string, boolean>>({});
+  const [gradeProof, setGradeProof] = useState<Record<string, string>>({});
+  const [touchedProof, setTouchedProof] = useState<Record<string, boolean>>({});
   const [clerkLimit, setClerkLimit] = useState('');
   const [floor, setFloor] = useState('');
   const [terms, setTerms] = useState('');
@@ -125,6 +129,8 @@ export function SettingsForm() {
       setTouchedGrades({});
       setGradeGrace({});
       setTouchedGrace({});
+      setGradeProof({});
+      setTouchedProof({});
       setLatePct('');
       setPolicyDate('');
       setPeriodNumberingFrom('');
@@ -179,6 +185,7 @@ export function SettingsForm() {
       ['late-pct', 'late percent'],
       ['cap', 'cap'],
       ['proof-threshold', 'proof threshold'],
+      ...GRADES.map((g) => [`proof-threshold-${g}`, `proof threshold for grade ${g}`]),
       ['note-threshold', 'note threshold'],
     ]) {
       if (fromOf(key) === null) {
@@ -289,6 +296,19 @@ export function SettingsForm() {
       input.proofThreshold = value;
       input.proofThresholdFrom = datedFrom('proof-threshold');
     }
+    for (const g of GRADES) {
+      if (!touchedProof[g]) continue;
+      const value = (gradeProof[g] ?? '').trim();
+      if (value !== '' && !AMOUNT.test(value)) {
+        setError(
+          `Type a proof threshold for grade ${g} of 0.00 or more, with at most two decimals, or leave it blank for the sheet's.`,
+        );
+        return;
+      }
+      input.gradeProofThreshold = { ...input.gradeProofThreshold, [g]: value };
+      const from = datedFrom(`proof-threshold-${g}`);
+      if (from) input.gradeProofThresholdFrom = { ...input.gradeProofThresholdFrom, [g]: from };
+    }
     if (touched.noteThreshold) {
       const value = noteThreshold.trim();
       if (value !== '' && !AMOUNT.test(value)) {
@@ -327,6 +347,7 @@ export function SettingsForm() {
       input.entryDate === undefined &&
       input.cap === undefined &&
       input.proofThreshold === undefined &&
+      input.gradeProofThreshold === undefined &&
       input.noteThreshold === undefined &&
       input.permissions === undefined &&
       input.graceDays === undefined
@@ -381,6 +402,14 @@ export function SettingsForm() {
       <p>
         Proof threshold: <span data-testid="setting-proof-threshold-current">{settings?.proofThreshold ?? ''}</span>
       </p>
+      {GRADES.map((g) => (
+        <p key={g}>
+          Proof threshold for grade {g}:{' '}
+          <span data-testid={`setting-proof-threshold-${g}-current`}>
+            {settings ? valueOn(settings.history[`proof-threshold-${g}`], today, '') : ''}
+          </span>
+        </p>
+      ))}
       <p>
         Note threshold: <span data-testid="setting-note-threshold-current">{settings?.noteThreshold ?? ''}</span>
       </p>
@@ -530,6 +559,22 @@ export function SettingsForm() {
           }}
         />
         {fromField('proof-threshold', 'Proof threshold')}
+        {GRADES.map((g) => (
+          <span key={g}>
+            <input
+              data-testid={`setting-proof-threshold-${g}`}
+              placeholder={`Proof threshold for grade ${g} (blank: the sheet's)`}
+              value={gradeProof[g] ?? ''}
+              onFocus={() => setTouchedProof((t) => ({ ...t, [g]: true }))}
+              onChange={(e) => {
+                setGradeProof((v) => ({ ...v, [g]: e.target.value }));
+                setTouchedProof((t) => ({ ...t, [g]: true }));
+                setError('');
+              }}
+            />
+            {fromField(`proof-threshold-${g}`, `Proof threshold for grade ${g}`)}
+          </span>
+        ))}
         <input
           data-testid="setting-note-threshold"
           placeholder="Note threshold on a claim's due to open it (blank: none)"

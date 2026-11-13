@@ -11,10 +11,10 @@ import net.officefloor.hq.app.claim.LateCharge;
 import net.officefloor.hq.app.person.Person;
 
 /**
- * A sheet's dated settings: for each key (floor, late-pct, terms, terms-&lt;grade&gt;, grace-&lt;grade&gt;, clerk-limit, cap, proof-threshold, note-threshold) the values
+ * A sheet's dated settings: for each key (floor, late-pct, terms, terms-&lt;grade&gt;, grace-&lt;grade&gt;, clerk-limit, cap, proof-threshold, proof-threshold-&lt;grade&gt;, note-threshold) the values
  * recorded, by from-date (a value null: blank). The value in force on a date is the one with the latest from-date on or
  * before it; before every from-date it is the sheet's starting value (floor 1.00, late percent 0.00, terms 14; none
- * for the clerk limit, the cap, the proof threshold, the note threshold, a grade's own terms and a grade's grace days).
+ * for the clerk limit, the cap, the proof threshold, the note threshold, a grade's own terms, a grade's grace days and a grade's proof threshold).
  */
 public record DatedSettings(Map<String, NavigableMap<LocalDate, String>> values) {
 
@@ -147,12 +147,29 @@ public record DatedSettings(Map<String, NavigableMap<LocalDate, String>> values)
         return value == null ? null : new BigDecimal(value).setScale(2);
     }
 
+    /** The key of a grade's own proof threshold. */
+    public static String gradeProofThreshold(String grade) {
+        return PROOF_THRESHOLD + "-" + grade;
+    }
+
+    /** The grade's own proof threshold in force on the date (null: none, the sheet's). */
+    public BigDecimal gradeProofThresholdOn(String grade, LocalDate date) {
+        String value = grade == null ? null : on(gradeProofThreshold(grade), date);
+        return value == null ? null : new BigDecimal(value).setScale(2);
+    }
+
+    /** The proof threshold for a claim of the grade dated on the date: the grade's own in force then, else the sheet's (null: none). */
+    public BigDecimal proofThresholdFor(String grade, LocalDate date) {
+        BigDecimal own = gradeProofThresholdOn(grade, date);
+        return own != null ? own : proofThresholdOn(date);
+    }
+
     /**
-     * Whether a claim of the date with this due (null: n/a) needs a proof to be settled or approved: its due is above
-     * the proof threshold in force on its date.
+     * Whether a claim of the date, of a person of the grade (null: none), with this due (null: n/a) needs a proof to be
+     * settled or approved: its due is above the proof threshold for its grade in force on its date.
      */
-    public boolean needsProof(LocalDate date, BigDecimal due) {
-        BigDecimal threshold = proofThresholdOn(date);
+    public boolean needsProof(String grade, LocalDate date, BigDecimal due) {
+        BigDecimal threshold = proofThresholdFor(grade, date);
         return threshold != null && due != null && due.compareTo(threshold) > 0;
     }
 

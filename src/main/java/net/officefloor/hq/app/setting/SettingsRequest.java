@@ -13,7 +13,9 @@ import java.util.Map;
  * (left out or blank: the sheet's today). The permissions are, by action (open, settle, void, reassign, close, reopen),
  * the roles allowed it, comma separated (blank: the standing rule); they are not dated. The grace days are whole days,
  * 0 or more (blank: off); they are not dated. The grade grace days are whole days, 0 or more, by grade, each only for a
- * grade it carries (blank: none), recorded from their from-date by grade (left out or blank: the sheet's today).
+ * grade it carries (blank: none), recorded from their from-date by grade (left out or blank: the sheet's today). The grade
+ * proof thresholds have two decimals at most, by grade, each only for a grade it carries (blank: none, the sheet's), recorded
+ * from their from-date by grade (left out or blank: the sheet's today).
  */
 public record SettingsRequest(@Size(max = 30) String clerkLimit, @Size(max = 30) String floor, @Size(max = 30) String terms,
         @Size(max = 30) String latePct, @Size(max = 30) String policyDate, @Size(max = 30) String periodNumberingFrom, @Size(max = 30) String entryDate, @Size(max = 30) String cap,
@@ -25,5 +27,7 @@ public record SettingsRequest(@Size(max = 30) String clerkLimit, @Size(max = 30)
         @Size(max = 10) Map<String, @Size(max = 30) String> gradeTermsFrom,
         @Size(max = 10) Map<String, @Size(max = 100) String> permissions, @Size(max = 30) String graceDays,
         @Size(max = 10) Map<String, @Size(max = 30) String> gradeGrace,
-        @Size(max = 10) Map<String, @Size(max = 30) String> gradeGraceFrom) {
+        @Size(max = 10) Map<String, @Size(max = 30) String> gradeGraceFrom,
+        @Size(max = 10) Map<String, @Size(max = 30) String> gradeProofThreshold,
+        @Size(max = 10) Map<String, @Size(max = 30) String> gradeProofThresholdFrom) {
 }

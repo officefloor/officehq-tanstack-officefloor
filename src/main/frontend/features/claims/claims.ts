@@ -34,7 +34,8 @@ export const bound = (c: Claim) => c.stated && c.status !== 'PENDING';
  * (else their grade's, else the sheet's) in force on it, skipping Saturdays, Sundays and the sheet's holidays then on the list;
  * log is its status log, oldest first: each status it has had, the user who gave it, the sheet's today then and its due then;
  * deferredUntil (yyyy-MM-dd) is the date it was deferred until, null when it never was;
- * proofs is how many proofs it has been given (a claim whose due is above the proof threshold in force on its date is
+ * proofs is how many proofs it has been given (a claim whose due is above the proof threshold in force on its date — its
+ * person's grade's own, else the sheet's — is
  * settled or approved only once it has one);
  * splitFrom is the number of the claim it was split off, null when it was not split off one;
  * lockedBy is the user whose open editor locks it for every other user, null when it is not locked;
