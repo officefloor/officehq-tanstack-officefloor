@@ -2,7 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import { getJson } from '../../api/http';
 import { counts } from '../claims/claims';
 import type { Claim } from '../claims/claims';
+import { latePeriods } from '../overdue/dueBy';
 import { sheetKey, useCurrentSheet } from '../session/session';
+import type { DueRules } from '../settings/settings';
 
 /**
  * A grade's rate as the store holds it: a percent with two decimals, in force from its from-date
@@ -54,7 +56,12 @@ const hundredths = (value: string) => Math.round(Number(value) * 100);
  */
 export function due(amount: string, rate: string | undefined): string {
   if (rate === undefined) return NA;
-  const product = hundredths(amount) * hundredths(rate);
+  return percentOf(hundredths(amount), hundredths(rate));
+}
+
+/** Cents times basis points / 10000, rounded half to even to two decimals. */
+function percentOf(amountCents: number, basisPoints: number): string {
+  const product = amountCents * basisPoints;
   const whole = Math.floor(Math.abs(product) / 10000);
   const rest = Math.abs(product) - whole * 10000;
   const up = rest > 5000 || (rest === 5000 && whole % 2 === 1);
@@ -68,13 +75,32 @@ export function floored(value: string, floor: string): string {
 }
 
 /**
- * A claim's figure: the due fixed when it was settled, else the figure its statement bound it to,
- * else its amount at the rate in force on its date for the grade, at least the sheet's floor.
+ * A claim's figure: the figure its statement bound it to, else its amount at the rate in force on its
+ * date for the grade, at least the sheet's floor.
  */
-export function claimDue(claim: Claim, rates: Rate[], grade: string, floor: string): string {
-  if (claim.due !== null) return claim.due;
+function claimFigure(claim: Claim, rates: Rate[], grade: string, floor: string): string {
   if (claim.stated) return claim.statedDue ?? NA;
   return floored(due(claim.amount, rateFor(rates, grade, claim.date)), floor);
+}
+
+/**
+ * The late charge on a figure: the late percent of it for every full 30 days the claim is overdue,
+ * rounded like a due; 0.00 when it is not overdue.
+ */
+export function lateCharge(claim: Claim, figure: string, rules: DueRules): string {
+  const periods = latePeriods(claim, rules.terms, rules.today);
+  return percentOf(hundredths(figure), hundredths(rules.latePct) * periods);
+}
+
+/**
+ * A claim's due: the one fixed when it was settled (any late charge frozen in), else its figure plus
+ * the late charge on it while it is overdue. The charge is never bound by a statement: it follows the
+ * sheet's today.
+ */
+export function claimDue(claim: Claim, rates: Rate[], grade: string, rules: DueRules): string {
+  if (claim.due !== null) return claim.due;
+  const figure = claimFigure(claim, rates, grade, rules.floor);
+  return figure === NA ? NA : total([figure, lateCharge(claim, figure, rules)]);
 }
 
 /** Whether a claim keeps a figure whatever the rates: fixed when settled, or bound by a statement. */
@@ -89,13 +115,12 @@ export function personDue(
   claims: Claim[],
   rates: Rate[],
   grade: string,
-  today: string,
   held: boolean,
-  floor: string,
+  rules: DueRules,
 ): string {
   const counted = claims.filter((c) => counts(c, held));
-  const figures = counted.map((c) => claimDue(c, rates, grade, floor));
-  if (rateFor(rates, grade, today) === undefined && !counted.some(keepsFigure)) {
+  const figures = counted.map((c) => claimDue(c, rates, grade, rules));
+  if (rateFor(rates, grade, rules.today) === undefined && !counted.some(keepsFigure)) {
     return NA;
   }
   return total(figures);

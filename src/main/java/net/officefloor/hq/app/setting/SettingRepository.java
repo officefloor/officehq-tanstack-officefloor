@@ -1,7 +1,9 @@
 package net.officefloor.hq.app.setting;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
+import net.officefloor.hq.app.claim.LateCharge;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -13,6 +15,9 @@ public class SettingRepository {
 
     /** The terms a sheet starts with, in days. */
     public static final int DEFAULT_TERMS = 14;
+
+    /** The late percent a sheet starts with. */
+    public static final BigDecimal DEFAULT_LATE_PCT = new BigDecimal("0.00");
 
     private final JdbcTemplate jdbc;
 
@@ -28,7 +33,7 @@ public class SettingRepository {
                 + " ORDER BY user_name", (rs, n) -> new UserRole(rs.getString("sheet_id"), rs.getString("user_name"),
                         Role.valueOf(rs.getString("role"))), sheetId);
         BigDecimal clerkLimit = limit.isEmpty() || limit.get(0) == null ? null : limit.get(0).setScale(2);
-        return new Settings(sheetId, clerkLimit, floor(sheetId), terms(sheetId), roles);
+        return new Settings(sheetId, clerkLimit, floor(sheetId), terms(sheetId), latePct(sheetId), roles);
     }
 
     /** The sheet's floor: a claim's live due is at least it (1.00 for a sheet not yet stored). */
@@ -42,6 +47,23 @@ public class SettingRepository {
     public int terms(String sheetId) {
         List<Integer> terms = jdbc.query("SELECT terms FROM sheet WHERE id = ?", (rs, n) -> rs.getInt("terms"), sheetId);
         return terms.isEmpty() ? DEFAULT_TERMS : terms.get(0);
+    }
+
+    /** The sheet's late percent: an overdue claim gains it of its figure every full 30 days (0.00 for a sheet not yet stored). */
+    public BigDecimal latePct(String sheetId) {
+        List<BigDecimal> pct = jdbc.query("SELECT late_pct FROM sheet WHERE id = ?",
+                (rs, n) -> rs.getBigDecimal("late_pct"), sheetId);
+        return pct.isEmpty() || pct.get(0) == null ? DEFAULT_LATE_PCT : pct.get(0).setScale(2);
+    }
+
+    /** What the sheet charges an overdue claim on the given today: its terms and its late percent. */
+    public LateCharge lateCharge(String sheetId, LocalDate today) {
+        return new LateCharge(terms(sheetId), latePct(sheetId), today);
+    }
+
+    /** Set the sheet's late percent. */
+    public void saveLatePct(String sheetId, BigDecimal latePct) {
+        jdbc.update("UPDATE sheet SET late_pct = ? WHERE id = ?", latePct, sheetId);
     }
 
     /** Set the sheet's terms. */

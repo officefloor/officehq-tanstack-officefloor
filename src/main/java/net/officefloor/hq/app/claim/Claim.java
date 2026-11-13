@@ -42,6 +42,15 @@ public record Claim(Long id, String sheetId, long personId, BigDecimal amount, L
         return stated ? statedDue : due(amount, liveRate, floor);
     }
 
+    /**
+     * The claim's due (null: n/a): its {@link #figure figure}, plus the late charge on it while it is overdue. A
+     * settled claim's fixed due already has the charge frozen in.
+     */
+    public BigDecimal due(BigDecimal liveRate, BigDecimal floor, LateCharge late) {
+        BigDecimal figure = figure(liveRate, floor);
+        return due != null || figure == null ? figure : figure.add(late.on(this, figure));
+    }
+
     /** An amount times a percent rate, divided by 100, rounded half to even to two decimals; null with no rate. */
     public static BigDecimal due(BigDecimal amount, BigDecimal rate) {
         return rate == null ? null : amount.multiply(rate).movePointLeft(2).setScale(2, RoundingMode.HALF_EVEN);

@@ -11,15 +11,19 @@ public class ValidateSettingsRequest {
     /** 0.00 or more, with at most two decimals. */
     private static final Pattern AMOUNT = Pattern.compile("\\d{1,13}(\\.\\d{1,2})?|\\.\\d{1,2}");
 
+    /** A percent: 0.00 or more, with at most two decimals. */
+    private static final Pattern PERCENT = Pattern.compile("\\d{1,5}(\\.\\d{1,2})?|\\.\\d{1,2}");
+
     /** 0 or more whole days. */
     private static final Pattern DAYS = Pattern.compile("\\d{1,5}");
 
     public void validate(@RequestBody @Valid SettingsRequest request, Out<ClerkLimit> limit, Out<Floor> floor,
-            Out<Terms> terms)
+            Out<Terms> terms, Out<LatePct> latePct)
             throws InvalidSettingException {
         limit.set(clerkLimit(request.clerkLimit()));
         floor.set(floor(request.floor()));
         terms.set(terms(request.terms()));
+        latePct.set(latePct(request.latePct()));
     }
 
     private static ClerkLimit clerkLimit(String requested) throws InvalidSettingException {
@@ -48,6 +52,20 @@ public class ValidateSettingsRequest {
             throw new InvalidSettingException("The terms must be a whole number of days, 0 or more, or blank.");
         }
         return new Terms(Integer.parseInt(value));
+    }
+
+    private static LatePct latePct(String requested) throws InvalidSettingException {
+        if (requested == null) {
+            return new LatePct(null);
+        }
+        String value = requested.trim();
+        if (value.isEmpty()) {
+            return new LatePct(SettingRepository.DEFAULT_LATE_PCT);
+        }
+        if (!PERCENT.matcher(value).matches()) {
+            throw new InvalidSettingException("The late percent must be 0.00 or more, with at most two decimals, or blank.");
+        }
+        return new LatePct(new BigDecimal(value).setScale(2));
     }
 
     private static Floor floor(String requested) throws InvalidSettingException {

@@ -6,6 +6,7 @@ import type { Person } from '../people/people';
 import { claimDue, total } from '../rates/rates';
 import type { Rate } from '../rates/rates';
 import { sheetKey, useCurrentSheet } from '../session/session';
+import type { DueRules } from '../settings/settings';
 
 /**
  * A period as the store holds it: its name (unique on the sheet), its from and to dates (yyyy-MM-dd),
@@ -36,16 +37,16 @@ export const contains = (p: Period, date: string) => p.from <= date && date <= p
 export const periodOf = (periods: Period[], date: string) => periods.find((p) => contains(p, date));
 
 /**
- * A period's due-total: the figures of the claims that count whose date falls in it (a held person's
+ * A period's due-total: the dues (late charges included) of the claims that count whose date falls in it (a held person's
  * open ones left out), added up; a
  * closed period keeps the total fixed when it was closed, whatever the rates do later.
  */
-export function periodDue(period: Period, claims: Claim[], people: Person[], rates: Rate[], floor: string): string {
+export function periodDue(period: Period, claims: Claim[], people: Person[], rates: Rate[], rules: DueRules): string {
   if (period.closed && period.closedTotal !== null) return period.closedTotal;
   const grades = new Map(people.map((p) => [p.id, p.grade]));
   const held = heldIds(people);
   const figures = claims
     .filter((c) => counts(c, held.has(c.personId)) && contains(period, c.date) && grades.has(c.personId))
-    .map((c) => claimDue(c, rates, grades.get(c.personId)!, floor));
+    .map((c) => claimDue(c, rates, grades.get(c.personId)!, rules));
   return total(figures);
 }

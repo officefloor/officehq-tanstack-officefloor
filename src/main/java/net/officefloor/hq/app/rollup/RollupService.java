@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import net.officefloor.hq.app.claim.Claim;
 import net.officefloor.hq.app.claim.ClaimRepository;
+import net.officefloor.hq.app.claim.LateCharge;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.Rate;
@@ -17,7 +18,8 @@ import org.springframework.stereotype.Service;
 
 /**
  * Works out a sheet's figures as the screen shows them: a person's claimed is their counting claims' amounts
- * added up; their due-total those claims' figures (live ones raised to the sheet's floor) added up, n/a when their grade has no rate on the sheet's
+ * added up; their due-total those claims' dues (live figures raised to the sheet's floor, plus
+ * any late charge on the overdue ones) added up, n/a when their grade has no rate on the sheet's
  * today and no counting claim keeps a figure. The sheet's totals add these up, skipping n/a.
  */
 @Service
@@ -45,6 +47,7 @@ public class RollupService {
         LocalDate today = sheets.today(sheetId);
         List<Rate> sheetRates = rates.findAll(sheetId);
         BigDecimal floor = settings.floor(sheetId);
+        LateCharge late = settings.lateCharge(sheetId, today);
         List<Claim> sheetClaims = claims.findAll(sheetId);
         Map<Long, Rollup.Figures> figures = new LinkedHashMap<>();
         BigDecimal claimedTotal = BigDecimal.ZERO.setScale(2);
@@ -59,7 +62,7 @@ public class RollupService {
                 }
                 claimed = claimed.add(claim.amount());
                 kept |= claim.due() != null || (claim.stated() && claim.statedDue() != null);
-                BigDecimal figure = claim.figure(Rate.inForce(sheetRates, person.grade(), claim.date()), floor);
+                BigDecimal figure = claim.due(Rate.inForce(sheetRates, person.grade(), claim.date()), floor, late);
                 if (figure != null) {
                     due = due.add(figure);
                 }
