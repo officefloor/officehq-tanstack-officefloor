@@ -21,7 +21,7 @@ import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.stereotype.Repository;
 
 /**
- * Copies a sheet to a sheet never used: its today, settings, roles, rates, holidays, void reasons, templates,
+ * Copies a sheet to a sheet never used: its today, settings, roles, rates, holidays, retired grades, void reasons, templates,
  * people (grades, terms, contacts, aliases, holds, retirements, patrons), pools, periods (all open) and claims
  * (status, frozen figures, dates, notes, tags, references, logs and comments). Each claim that had a number takes
  * the clone's next by its own numbering, in the order the claims were opened (by the sheet's today when each was
@@ -70,6 +70,8 @@ public class SheetCloneStore {
                 + "SELECT ?, grade, from_date, version, pct, to_date, forward_seq FROM rate_version WHERE sheet_id = ?", to, from);
         jdbc.update("INSERT INTO holiday (sheet_id, holiday_date) "
                 + "SELECT ?, holiday_date FROM holiday WHERE sheet_id = ? ORDER BY id", to, from);
+        jdbc.update("INSERT INTO grade_retired (sheet_id, grade) "
+                + "SELECT ?, grade FROM grade_retired WHERE sheet_id = ? ORDER BY id", to, from);
         jdbc.update("INSERT INTO void_reason (sheet_id, reason) "
                 + "SELECT ?, reason FROM void_reason WHERE sheet_id = ? ORDER BY id", to, from);
         jdbc.update("INSERT INTO claim_template (sheet_id, name, amount, note) "

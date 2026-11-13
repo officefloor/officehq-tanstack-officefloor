@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import net.officefloor.hq.app.Audit;
+import net.officefloor.hq.app.grade.GradeStore;
 import net.officefloor.hq.app.role.Role;
 import net.officefloor.hq.app.role.RoleStore;
 import net.officefloor.hq.app.rollup.Rollup;
@@ -20,7 +21,8 @@ import org.springframework.web.bind.annotation.PathVariable;
  *  and then how it moved the sheet's figures. A selected person not on the sheet refuses the whole change; a viewer grades no one (0, nothing stored). */
 public class GradePeople {
     public void grade(@PathVariable("sheetId") String sheetId, @Val BulkGradeInput input, PersonStore store,
-            SheetStore sheets, RoleStore roles, RollupService rollups, Audit audit, Out<BulkGradeResult> result)
+            SheetStore sheets, RoleStore roles, RollupService rollups, Audit audit, GradeStore grades,
+            Out<BulkGradeResult> result)
             throws InvalidSheetException, StalePersonException {
         String sheet = sheetId.trim();
         List<Person> selected = new ArrayList<>();
@@ -38,6 +40,9 @@ public class GradePeople {
         List<Long> order = store.list(sheet).stream().map(Person::getId).toList();
         selected.sort(Comparator.comparingInt(p -> order.indexOf(p.getId())));
         LocalDate today = sheets.today(sheet);
+        for (Person person : selected) {
+            grades.refuseChoice(sheet, input.grade(), person, input.gradeFrom(), today);
+        }
         for (Person person : selected) {
             Rollup before = rollups.snapshot(sheet);
             PersonRules.applyGrade(person, input.grade(), input.gradeFrom(), today);
