@@ -9,10 +9,10 @@ import java.util.NavigableMap;
 import net.officefloor.hq.app.claim.LateCharge;
 
 /**
- * A sheet's dated settings: for each key (floor, late-pct, terms, terms-&lt;grade&gt;, clerk-limit, cap, proof-threshold) the values
+ * A sheet's dated settings: for each key (floor, late-pct, terms, terms-&lt;grade&gt;, clerk-limit, cap, proof-threshold, note-threshold) the values
  * recorded, by from-date (a value null: blank). The value in force on a date is the one with the latest from-date on or
  * before it; before every from-date it is the sheet's starting value (floor 1.00, late percent 0.00, terms 14; none
- * for the clerk limit, the cap, the proof threshold and a grade's own terms).
+ * for the clerk limit, the cap, the proof threshold, the note threshold and a grade's own terms).
  */
 public record DatedSettings(Map<String, NavigableMap<LocalDate, String>> values) {
 
@@ -22,6 +22,7 @@ public record DatedSettings(Map<String, NavigableMap<LocalDate, String>> values)
     public static final String CLERK_LIMIT = "clerk-limit";
     public static final String CAP = "cap";
     public static final String PROOF_THRESHOLD = "proof-threshold";
+    public static final String NOTE_THRESHOLD = "note-threshold";
 
     /** The key of a grade's own terms. */
     public static String gradeTerms(String grade) {
@@ -124,6 +125,21 @@ public record DatedSettings(Map<String, NavigableMap<LocalDate, String>> values)
      */
     public boolean needsProof(LocalDate date, BigDecimal due) {
         BigDecimal threshold = proofThresholdOn(date);
+        return threshold != null && due != null && due.compareTo(threshold) > 0;
+    }
+
+    /** The note threshold in force on the date (null: none). */
+    public BigDecimal noteThresholdOn(LocalDate date) {
+        String value = on(NOTE_THRESHOLD, date);
+        return value == null ? null : new BigDecimal(value).setScale(2);
+    }
+
+    /**
+     * Whether a claim of the date with this due (null: n/a) needs a note to be opened: its due is above the note
+     * threshold in force on its date.
+     */
+    public boolean needsNote(LocalDate date, BigDecimal due) {
+        BigDecimal threshold = noteThresholdOn(date);
         return threshold != null && due != null && due.compareTo(threshold) > 0;
     }
 

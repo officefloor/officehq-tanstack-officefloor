@@ -28,7 +28,7 @@ public class ValidateSettingsRequest {
     public void validate(@RequestBody @Valid SettingsRequest request, Out<ClerkLimit> limit, Out<Floor> floor,
             Out<Terms> terms, Out<LatePct> latePct, Out<PolicyDate> policyDate,
             Out<PeriodNumberingFrom> periodNumberingFrom, Out<GradeTerms> gradeTerms, Out<Cap> cap,
-            Out<ProofThreshold> proofThreshold, Out<PermissionChanges> permissions, Out<GraceDays> graceDays)
+            Out<ProofThreshold> proofThreshold, Out<NoteThreshold> noteThreshold, Out<PermissionChanges> permissions, Out<GraceDays> graceDays)
             throws InvalidSettingException {
         limit.set(clerkLimit(request.clerkLimit(), from(request.clerkLimitFrom(), "clerk limit")));
         floor.set(floor(request.floor(), from(request.floorFrom(), "floor")));
@@ -39,6 +39,7 @@ public class ValidateSettingsRequest {
         gradeTerms.set(gradeTerms(request.gradeTerms(), request.gradeTermsFrom()));
         cap.set(cap(request.cap(), from(request.capFrom(), "cap")));
         proofThreshold.set(proofThreshold(request.proofThreshold(), from(request.proofThresholdFrom(), "proof threshold")));
+        noteThreshold.set(noteThreshold(request.noteThreshold(), from(request.noteThresholdFrom(), "note threshold")));
         permissions.set(permissions(request.permissions()));
         graceDays.set(graceDays(request.graceDays()));
     }
@@ -122,6 +123,20 @@ public class ValidateSettingsRequest {
             throw new InvalidSettingException("The proof threshold must be 0.00 or more, with at most two decimals, or blank.");
         }
         return new ProofThreshold(true, new BigDecimal(value).setScale(2), from);
+    }
+
+    private static NoteThreshold noteThreshold(String requested, LocalDate from) throws InvalidSettingException {
+        if (requested == null) {
+            return new NoteThreshold(false, null, null);
+        }
+        String value = requested.trim();
+        if (value.isEmpty()) {
+            return new NoteThreshold(true, null, from);
+        }
+        if (!AMOUNT.matcher(value).matches()) {
+            throw new InvalidSettingException("The note threshold must be 0.00 or more, with at most two decimals, or blank.");
+        }
+        return new NoteThreshold(true, new BigDecimal(value).setScale(2), from);
     }
 
     private static ClerkLimit clerkLimit(String requested, LocalDate from) throws InvalidSettingException {

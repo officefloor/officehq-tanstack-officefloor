@@ -16,16 +16,17 @@ export type UserRole = { user: string; role: string };
  * gains of its figure every full 30 days, the rounding policy date (yyyy-MM-dd; '': blank, the
  * sheet's today), the period numbering from date (yyyy-MM-dd; '': off — on or after it, an opened claim is
  * numbered within its period), the cap (two decimals; '': none — a person's due-total is at most it), the proof threshold (two decimals; '': none — a
- * claim whose due is above the one in force on its date is settled or approved only once it has a proof), and the roles
- * given to user names. The clerk limit, floor, terms, grade terms, late percent, cap and proof threshold are those in force on the sheet's
+ * claim whose due is above the one in force on its date is settled or approved only once it has a proof), the note threshold (two decimals; '': none — a
+ * claim whose due is above the one in force on its date is opened only with a note), and the roles
+ * given to user names. The clerk limit, floor, terms, grade terms, late percent, cap, proof threshold and note threshold are those in force on the sheet's
  * today; `history` holds every value recorded for them, by key (floor, late-pct, terms, terms-<grade>, clerk-limit,
- * cap, proof-threshold), oldest from-date first (value '': blank). `permissions` is the permission matrix: by action, the
+ * cap, proof-threshold, note-threshold), oldest from-date first (value '': blank). `permissions` is the permission matrix: by action, the
  * roles allowed it, comma separated ('': blank, the standing rule); it is not dated.
  * `graceDays` is the grace days (whole days; '': off — when the sheet's today is changed, an open period whose
  * to-date plus them is before the new today is closed); it is not dated.
  * `delegations` is the steward role delegated to user names, in the order made.
  */
-export type Settings = { clerkLimit: string | null; floor: string; terms: number; gradeTerms: Record<string, number>; latePct: string; policyDate: string; periodNumberingFrom: string; cap: string; proofThreshold: string; roles: UserRole[]; history: Record<string, FromValue[]>; permissions: Record<string, string>; graceDays: string; delegations: Delegation[] };
+export type Settings = { clerkLimit: string | null; floor: string; terms: number; gradeTerms: Record<string, number>; latePct: string; policyDate: string; periodNumberingFrom: string; cap: string; proofThreshold: string; noteThreshold: string; roles: UserRole[]; history: Record<string, FromValue[]>; permissions: Record<string, string>; graceDays: string; delegations: Delegation[] };
 
 /**
  * The steward role delegated by a steward (`by`) to a user name, from a from-date to a to-date (yyyy-MM-dd), both

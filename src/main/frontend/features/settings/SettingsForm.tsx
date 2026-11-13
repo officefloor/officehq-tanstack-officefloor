@@ -32,12 +32,14 @@ type SettingsInput = {
   periodNumberingFrom?: string;
   cap?: string;
   proofThreshold?: string;
+  noteThreshold?: string;
   clerkLimitFrom?: string;
   floorFrom?: string;
   termsFrom?: string;
   latePctFrom?: string;
   capFrom?: string;
   proofThresholdFrom?: string;
+  noteThresholdFrom?: string;
   gradeTermsFrom?: Record<string, string>;
   permissions?: Record<string, string>;
   graceDays?: string;
@@ -55,6 +57,7 @@ type Touched = {
   periodNumberingFrom: boolean;
   cap: boolean;
   proofThreshold: boolean;
+  noteThreshold: boolean;
   graceDays: boolean;
 };
 
@@ -67,13 +70,14 @@ const UNTOUCHED: Touched = {
   periodNumberingFrom: false,
   cap: false,
   proofThreshold: false,
+  noteThreshold: false,
   graceDays: false,
 };
 
-// The sheet's clerk limit (blank: no limit), floor, terms, each grade's terms (blank: the sheet's), late percent and policy date (blank: today) and period numbering from date (blank: off) and cap (blank: none) and proof threshold (blank: none) in force, and the
+// The sheet's clerk limit (blank: no limit), floor, terms, each grade's terms (blank: the sheet's), late percent and policy date (blank: today) and period numbering from date (blank: off) and cap (blank: none) and proof threshold (blank: none) and note threshold (blank: none) in force, and the
 // permission matrix (by action, the roles allowed it; blank: the standing rule; not dated), and the grace days (blank: off; not dated), and the form that sets them. Saving sends
 // only the fields touched since the last save, so a blank field left alone changes nothing. A dated setting (the clerk
-// limit, floor, terms, each grade's terms, late percent, cap and proof threshold) is recorded from the date typed beside it (blank: the
+// limit, floor, terms, each grade's terms, late percent, cap, proof threshold and note threshold) is recorded from the date typed beside it (blank: the
 // sheet's today); the value shown is the one in force on the sheet's today.
 export function SettingsForm() {
   const [user] = useCurrentUser();
@@ -89,6 +93,7 @@ export function SettingsForm() {
   const [periodNumberingFrom, setPeriodNumberingFrom] = useState('');
   const [cap, setCap] = useState('');
   const [proofThreshold, setProofThreshold] = useState('');
+  const [noteThreshold, setNoteThreshold] = useState('');
   const [graceDays, setGraceDays] = useState('');
   const [perms, setPerms] = useState<Record<string, string>>({});
   const [touchedPerms, setTouchedPerms] = useState<Record<string, boolean>>({});
@@ -112,6 +117,7 @@ export function SettingsForm() {
       setPeriodNumberingFrom('');
       setCap('');
       setProofThreshold('');
+      setNoteThreshold('');
       setGraceDays('');
       setPerms({});
       setTouchedPerms({});
@@ -158,6 +164,7 @@ export function SettingsForm() {
       ['late-pct', 'late percent'],
       ['cap', 'cap'],
       ['proof-threshold', 'proof threshold'],
+      ['note-threshold', 'note threshold'],
     ]) {
       if (fromOf(key) === null) {
         setError(`Type the ${label} from-date as yyyy-MM-dd, or leave it blank for the sheet's today.`);
@@ -248,6 +255,15 @@ export function SettingsForm() {
       input.proofThreshold = value;
       input.proofThresholdFrom = datedFrom('proof-threshold');
     }
+    if (touched.noteThreshold) {
+      const value = noteThreshold.trim();
+      if (value !== '' && !AMOUNT.test(value)) {
+        setError('Type a note threshold of 0.00 or more, with at most two decimals, or leave it blank for none.');
+        return;
+      }
+      input.noteThreshold = value;
+      input.noteThresholdFrom = datedFrom('note-threshold');
+    }
     if (touched.graceDays) {
       const value = graceDays.trim();
       if (value !== '' && !DAYS.test(value)) {
@@ -275,6 +291,7 @@ export function SettingsForm() {
       input.periodNumberingFrom === undefined &&
       input.cap === undefined &&
       input.proofThreshold === undefined &&
+      input.noteThreshold === undefined &&
       input.permissions === undefined &&
       input.graceDays === undefined
     )
@@ -316,6 +333,9 @@ export function SettingsForm() {
       </p>
       <p>
         Proof threshold: <span data-testid="setting-proof-threshold-current">{settings?.proofThreshold ?? ''}</span>
+      </p>
+      <p>
+        Note threshold: <span data-testid="setting-note-threshold-current">{settings?.noteThreshold ?? ''}</span>
       </p>
       <p>
         Grace days: <span data-testid="setting-grace-days-current">{settings?.graceDays ?? ''}</span>
@@ -436,6 +456,18 @@ export function SettingsForm() {
           }}
         />
         {fromField('proof-threshold', 'Proof threshold')}
+        <input
+          data-testid="setting-note-threshold"
+          placeholder="Note threshold on a claim's due to open it (blank: none)"
+          value={noteThreshold}
+          onFocus={() => setTouched((t) => ({ ...t, noteThreshold: true }))}
+          onChange={(e) => {
+            setNoteThreshold(e.target.value);
+            setTouched((t) => ({ ...t, noteThreshold: true }));
+            setError('');
+          }}
+        />
+        {fromField('note-threshold', 'Note threshold')}
         <input
           data-testid="setting-grace-days"
           placeholder="Grace days after a period's end before it closes itself (blank: off)"
