@@ -1,0 +1,140 @@
+diff --git a/src/main/frontend/features/header/consolidated.slot.tsx b/src/main/frontend/features/header/consolidated.slot.tsx
+index 6471dbd87..b9fe7cdc9 100644
+--- a/src/main/frontend/features/header/consolidated.slot.tsx
++++ b/src/main/frontend/features/header/consolidated.slot.tsx
+@@ -8,11 +8,16 @@ import { usePersonDue } from '../rates/due.slot';
+ import { useOverdue } from '../overdue/overdue.slot';
+ import { useFigure } from '../locale/locale';
+ import { useGradeCodes } from '../grades/grades';
++import { useSplit } from '../rates/split.slot';
++import { cutTotal, usePools } from '../pools/pools';
+ 
+ type Figures = {
+   people: string[][];
+   due: string[];
+   overdue: string[];
++  settled: string[];
++  open: string[];
++  cut: string[];
+   gradeDue: Record<string, string[]>;
+   statuses: Record<string, number>;
+ };
+@@ -21,6 +26,9 @@ const noFigures = (): Figures => ({
+   people: [],
+   due: [],
+   overdue: [],
++  settled: [],
++  open: [],
++  cut: [],
+   gradeDue: Object.fromEntries(GRADES.map((g) => [g, [] as string[]])),
+   statuses: Object.fromEntries(STATUSES.map((s) => [s, 0])),
+ });
+@@ -55,11 +63,17 @@ function Consolidate({ sheets, sofar }: { sheets: string[]; sofar: Figures }) {
+   const today = useSheetToday(first);
+   const personDue = usePersonDue(first);
+   const grades = useGradeCodes(first);
++  const split = useSplit(first);
++  const pools = usePools(first);
++  const splits = (people.data ?? []).map(split);
+   const active = (people.data ?? []).filter((p) => !p.retired);
+   const figures: Figures = {
+     people: [...sofar.people, ...(people.data ?? []).map((p) => [p.name, ...p.aliases].map(nameKey))],
+     due: [...sofar.due, ...(people.data ?? []).map(personDue)],
+     overdue: [...sofar.overdue, ...(people.data ?? []).map((p) => overdueOf(p).total)],
++    settled: [...sofar.settled, ...splits.map((f) => f.settled)],
++    open: [...sofar.open, ...splits.map((f) => f.open)],
++    cut: [...sofar.cut, ...(people.data ?? []).map((p) => cutTotal(pools.data ?? [], p.id))],
+     gradeDue: Object.fromEntries(
+       // Every grade of the sheets so far and of this one: a grade a sheet lacks has no one on it there.
+       [...new Set([...Object.keys(sofar.gradeDue), ...grades])].map((g) => [g, [...(sofar.gradeDue[g] ?? []), ...active.filter((p) => gradeOn(p.grades, today) === g).map(personDue)]]),
+@@ -71,7 +85,10 @@ function Consolidate({ sheets, sofar }: { sheets: string[]; sofar: Figures }) {
+     <>
+       People <strong data-testid="consolidated-people-count">{distinctPeople(figures.people)}</strong>{' '}
+       Due total <strong data-testid="consolidated-due-total">{fig(trimmedTotal(figures.due))}</strong>{' '}
+-      Overdue total <strong data-testid="consolidated-overdue-total">{fig(trimmedTotal(figures.overdue))}</strong>
++      Overdue total <strong data-testid="consolidated-overdue-total">{fig(trimmedTotal(figures.overdue))}</strong>{' '}
++      Settled total <strong data-testid="consolidated-settled-total">{fig(trimmedTotal(figures.settled))}</strong>{' '}
++      Open total <strong data-testid="consolidated-open-total">{fig(trimmedTotal(figures.open))}</strong>{' '}
++      Cut total <strong data-testid="consolidated-cut-total">{fig(trimmedTotal(figures.cut))}</strong>
+       {Object.keys(figures.gradeDue).map((g) => (
+         <span key={g}>
+           {' '}Grade {g} due total{' '}
+@@ -89,7 +106,7 @@ function Consolidate({ sheets, sofar }: { sheets: string[]; sofar: Figures }) {
+ 
+ // The consolidated figures over the sheet and all its descendants: their people, each counted once across the
+ // tree (people whose names or aliases match are one person); the due- and overdue-totals of every person of
+-// the tree added up, skipping n/a, trimmed once of the single highest and lowest when three or more have one; per grade, the due-totals of the people on it on their sheet's today
++// the tree, and their settled-, open- and cut totals, added up, skipping n/a, trimmed once of the single highest and lowest when three or more have one; per grade, the due-totals of the people on it on their sheet's today
+ // (retired people left out) added up; and per status, how many claims have it. While the screen has an as-of date, every sheet of the tree is read
+ // as it stood at the end of that day, with that date as its today. A sheet with no children shows its own.
+ function ConsolidatedFigures() {
+diff --git a/src/main/frontend/features/pools/cuts.slot.tsx b/src/main/frontend/features/pools/cuts.slot.tsx
+index 5bee63f12..b2013fd39 100644
+--- a/src/main/frontend/features/pools/cuts.slot.tsx
++++ b/src/main/frontend/features/pools/cuts.slot.tsx
+@@ -2,11 +2,12 @@ import { HomeMain } from '../../slots/defs/homeMain';
+ import { PersonColumnHeads, PersonColumns } from '../../slots/defs/personColumns';
+ import { useCurrentSheet } from '../../session/session';
+ import { type Person, usePeople } from '../people/people';
+-import { dueTotal } from '../rates/rates';
++import { trimmedTotal } from '../rates/rates';
+ import { cutTotal, usePools } from './pools';
+ import { useFigure } from '../locale/locale';
+ 
+-// A person's cut total (see `cutTotal`) and the sheet's cut total (everyone's added up).
++// A person's cut total (see `cutTotal`) and the sheet's cut total (everyone's added up, trimmed of the single
++// highest and lowest when three or more people have one).
+ 
+ function CutHead() {
+   return <th>Cut total</th>;
+@@ -27,7 +28,7 @@ function CutTotal() {
+   return (
+     <p>
+       Cut total{' '}
+-      <strong data-testid="rollup-cut-total">{fig(dueTotal((people.data ?? []).map((p) => cutTotal(pools.data ?? [], p.id))))}</strong>
++      <strong data-testid="rollup-cut-total">{fig(trimmedTotal((people.data ?? []).map((p) => cutTotal(pools.data ?? [], p.id))))}</strong>
+     </p>
+   );
+ }
+diff --git a/src/main/frontend/features/rates/split.slot.tsx b/src/main/frontend/features/rates/split.slot.tsx
+index 4152da3c7..c262c16f8 100644
+--- a/src/main/frontend/features/rates/split.slot.tsx
++++ b/src/main/frontend/features/rates/split.slot.tsx
+@@ -6,12 +6,12 @@ import { useSheetToday } from '../sheet/sheet';
+ import { live, useClaims } from '../claims/claims';
+ import { floorOf, useSettings } from '../settings/settings';
+ import { lateOf } from '../overdue/overdue';
+-import { dueTotal, personSplit, useRates } from './rates';
++import { personSplit, trimmedTotal, useRates } from './rates';
+ import { useFigure } from '../locale/locale';
+ import { useShared } from './due.slot';
+ 
+ // A person's settled-total and open-total (their due-total before the cap, split by status), and the
+-// sheet's: everyone's added up, not trimmed.
++// sheet's: everyone's added up, trimmed of the single highest and lowest when three or more people have one.
+ function SplitHead() {
+   return (
+     <>
+@@ -21,8 +21,9 @@ function SplitHead() {
+   );
+ }
+ 
+-export function useSplit() {
+-  const [sheet] = useCurrentSheet();
++export function useSplit(of?: string) {
++  const [current] = useCurrentSheet();
++  const sheet = of ?? current;
+   const claims = useClaims(sheet);
+   const rates = useRates(sheet);
+   const today = useSheetToday(sheet);
+@@ -58,8 +59,8 @@ function SplitTotal() {
+   const figures = (people.data ?? []).map(useSplit());
+   return (
+     <p>
+-      Settled total <strong data-testid="rollup-settled-total">{fig(dueTotal(figures.map((f) => f.settled)))}</strong>{' '}
+-      Open total <strong data-testid="rollup-open-total">{fig(dueTotal(figures.map((f) => f.open)))}</strong>
++      Settled total <strong data-testid="rollup-settled-total">{fig(trimmedTotal(figures.map((f) => f.settled)))}</strong>{' '}
++      Open total <strong data-testid="rollup-open-total">{fig(trimmedTotal(figures.map((f) => f.open)))}</strong>
+     </p>
+   );
+ }
