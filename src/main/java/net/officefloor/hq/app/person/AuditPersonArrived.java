@@ -6,12 +6,18 @@ import net.officefloor.hq.app.rollup.RollupService;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestParam;
 
-/** Records, on the other sheet, the person just transferred there and the sheet they came from, then its rollup. */
+/**
+ * Records, on the other sheet, the person just transferred there and the sheet they came from, then the merge they
+ * arrived into (if any), then its rollup.
+ */
 public class AuditPersonArrived {
-    public void audit(@Val Transfer transfer, @Val TransferTargetBefore before, @RequestParam("user") String user,
-            RollupService rollups, Audit audit) {
+    public void audit(@Val Transfer transfer, @Val TransferTargetBefore before, @Val Transferred transferred,
+            @RequestParam("user") String user, RollupService rollups, Audit audit) {
         audit.record("PERSON_TRANSFERRED sheet=" + transfer.to() + " by=" + user + " name="
                 + transfer.person().name() + " from=" + transfer.person().sheetId());
+        if (transferred.merge() != null) {
+            new AuditPersonMerged().audit(transferred.merge(), user, audit);
+        }
         RollupLines.record(before.rollup(), rollups.compute(transfer.to()), transfer.to(), user, audit);
     }
 }

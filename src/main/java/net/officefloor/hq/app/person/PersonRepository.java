@@ -313,8 +313,17 @@ public class PersonRepository {
      * until {@link #dropTransferred}.
      */
     public long transfer(Person person, String to) {
+        return transfer(person, to, person.name());
+    }
+
+    /**
+     * As {@link #transfer(Person, String)}, the new person taking the name given: one no one on the other sheet has,
+     * for a person merged on arrival into someone sharing their name.
+     */
+    public long transfer(Person person, String to, String name) {
         Map<String, Object> changed = new HashMap<>();
         changed.put("sheet_id", to);
+        changed.put("name", name);
         changed.put("origin", person.sheetId());
         changed.put("statement_count", 0);
         changed.put("stated_total", null);

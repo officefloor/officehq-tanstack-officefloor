@@ -19,13 +19,16 @@ import net.officefloor.plugin.variable.Val;
  * order they were added, keeping status, dates, notes, frozen figures, tags and logs, losing any figure a statement
  * bound and their references. Each claim that had a number takes the other sheet's next one, in the order the claims
  * were opened; a correction or split that named one of them by number names its new number. They leave this sheet.
+ * When they are merged on arrival, they are then merged into that person exactly as {@link MergePerson} does.
  */
 public class TransferPerson {
     public void transfer(@Val Transfer transfer, PersonRepository people, ClaimRepository claims,
             SheetRepository sheets, SettingRepository settings, PeriodRepository periods, Out<Transferred> arrived) {
         Person person = transfer.person();
         String to = transfer.to();
-        long personId = people.transfer(person, to);
+        // a person merged on arrival first arrives under a name no one there has, as theirs may be taken
+        long personId = transfer.into() == null ? people.transfer(person, to)
+                : people.transfer(person, to, "\u0000transfer " + person.sheetId() + " " + person.id());
         List<ClaimRepository.Moved> moved = claims.transfer(person.sheetId(), person.id(), to, personId);
         Map<String, String> numbers = new HashMap<>();
         for (ClaimRepository.Moved m : moved.stream().filter((m) -> m.number() != null)
@@ -37,6 +40,12 @@ public class TransferPerson {
         }
         claims.renumberTransferred(to, moved, numbers);
         people.dropTransferred(person);
-        arrived.set(new Transferred(people.find(to, personId)));
+        if (transfer.into() == null) {
+            arrived.set(new Transferred(people.find(to, personId), null));
+            return;
+        }
+        Merge merge = new Merge(people.find(to, personId).withName(person.name()), transfer.into());
+        new MergePerson().merge(merge, claims, people);
+        arrived.set(new Transferred(people.find(to, transfer.into().id()), merge));
     }
 }
