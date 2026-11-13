@@ -12,8 +12,10 @@ public class RespondWithSheet {
             ObjectResponse<SheetResponse> response) {
         String id = sheetId.trim();
         LocalDate on = History.date(asOf);
+        LocalDate preview = PreviewFilter.current();
         store.markLoaded(id);
-        response.send(new SheetResponse(id, store.today(id).toString(),
-                on == null ? store.archived(id) : store.archivedBy(id, on), on == null ? null : on.toString()));
+        response.send(new SheetResponse(id, store.realToday(id).toString(),
+                on == null ? store.archived(id) : store.archivedBy(id, on), on == null ? null : on.toString(),
+                preview == null ? null : preview.toString()));
     }
 }

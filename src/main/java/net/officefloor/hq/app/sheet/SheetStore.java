@@ -18,8 +18,15 @@ public class SheetStore {
         this.jdbc = jdbc;
     }
 
-    /** The sheet's today: as set on the sheet, else the real date. */
+    /** The sheet's today: as set on the sheet, else the real date. While a read is answered for a screen
+     *  with a preview date set (see {@link PreviewFilter}), that date stands in for it. */
     public LocalDate today(String sheetId) {
+        LocalDate preview = PreviewFilter.current();
+        return preview != null ? preview : realToday(sheetId);
+    }
+
+    /** The sheet's own today, whatever the screen's preview date. */
+    public LocalDate realToday(String sheetId) {
         List<LocalDate> found = jdbc.query("SELECT today FROM sheet WHERE id = ?",
                 (rs, i) -> rs.getObject(1, LocalDate.class), sheetId);
         return found.isEmpty() ? LocalDate.now() : found.get(0);

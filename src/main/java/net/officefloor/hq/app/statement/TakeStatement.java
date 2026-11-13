@@ -10,6 +10,7 @@ import net.officefloor.hq.app.claim.ClaimFigure;
 import net.officefloor.hq.app.claim.ClaimStore;
 import net.officefloor.hq.app.claim.Lateness;
 import net.officefloor.hq.app.claim.Rounding;
+import net.officefloor.hq.app.claim.Shares;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonStore;
 import net.officefloor.hq.app.rate.RateStore;
@@ -24,7 +25,9 @@ import net.officefloor.plugin.variable.Val;
  *  their claims that count; n/a when their grade in force today has no rate today and no counting claim
  *  keeps a fixed figure or a figure at another grade, the one in force on its date), binding each counting claim to its due as shown now, late charge and floor included (a claim already bound
  *  keeps the due it was bound to) and unbinding the rest. A settled claim keeps its fixed figure. The due-total is
- *  at most the sheet's cap.
+ *  at most the sheet's cap. As in the sheet's figures (see {@link RollupService}), the parts of their counting claims
+ *  shared with other people are left out of it, and their parts of other people's counting claims shared with them are
+ *  added to it (those claims are not theirs to bind, nor counted among their claims).
  *  <p>
  *  Taken as of a date (on or before the sheet's today), everything is as it stood at the end of that date
  *  (see {@link net.officefloor.hq.app.history.History}): their claims that counted then are bound to their
@@ -67,8 +70,37 @@ public class TakeStatement {
         Person whose = then;
         Lateness lateness = new Lateness(settings.latePcts(sheetId), settings.floors(sheetId), on, rounding,
                 Lateness.graced(settings.graces(sheetId), id -> id == whose.getId() ? whose : null));
+        // The parts of the shared claims that count: each claim's parts added up, and theirs of others' claims.
+        Map<Long, BigDecimal> shared = new HashMap<>();
+        BigDecimal held = BigDecimal.ZERO.setScale(2);
+        boolean holds = false;
+        for (Claim claim : all) {
+            List<Shares.Share> holders = Shares.list(claim.getShares());
+            if (holders.isEmpty()) {
+                continue;
+            }
+            Person owner = claim.getPersonId() == then.getId() ? then
+                    : asOf == null ? people.find(sheetId, claim.getPersonId()) : people.findAsOf(sheetId, claim.getPersonId(), asOf);
+            if (owner == null || !RollupService.countsClaimed(claim, owner, on) || !RollupService.counts(claim, owner, on)) {
+                continue;
+            }
+            Lateness owners = new Lateness(settings.latePcts(sheetId), settings.floors(sheetId), on, rounding,
+                    Lateness.graced(settings.graces(sheetId), id -> id == owner.getId() ? owner : null));
+            BigDecimal figure = owners.due(claim, rates.forClaim(claim).find(sheetId, owner.gradeOn(claim.getDate()), claim.getDate()));
+            if (figure == null) {
+                continue;
+            }
+            for (Shares.Share holder : holders) {
+                BigDecimal part = Shares.part(figure, holder.share());
+                shared.merge(claim.getId(), part, BigDecimal::add);
+                if (holder.personId() == then.getId()) {
+                    held = held.add(part);
+                    holds = true;
+                }
+            }
+        }
         BigDecimal total = BigDecimal.ZERO.setScale(2);
-        boolean fixed = false;
+        boolean fixed = holds;
         int counted = 0;
         for (Claim live : bound) {
             // The claim as it stood then (itself when taken now); null when it was not theirs then.
@@ -85,7 +117,8 @@ public class TakeStatement {
                 if (figure != null) {
                     // Bound as shown: its charge and floor stop following the sheet's today.
                     figure = lateness.dueOf(claim, figure);
-                    total = total.add(figure);
+                    // The holders' parts of a shared claim are theirs, not its person's.
+                    total = total.add(figure.subtract(shared.getOrDefault(claim.getId(), BigDecimal.ZERO)));
                 }
                 // A figure at a grade other than the one in force today, or at a rate that ended before
                 // today, does not hang on today's grade's rate.
@@ -101,6 +134,7 @@ public class TakeStatement {
             live.setStatedNa(na);
             claims.bind(live);
         }
+        total = total.add(held);
         boolean na = rates.find(sheetId, then.gradeOn(on), on) == null && !fixed;
         Statement statement = new Statement(person.getId(), on,
                 na ? null : SettingStore.capped(total, settings.cap(sheetId)), counted);

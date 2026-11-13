@@ -1,4 +1,4 @@
-import { currentAsOf } from '../session/session';
+import { currentAsOf, currentPreview } from '../session/session';
 
 // The app's fetch surface. A non-2xx REJECTS, so useQuery/useMutation surface the failure instead
 // of a silent `if (res.ok)` that leaves the UI showing stale data.
@@ -16,8 +16,16 @@ function withAsOf(init?: RequestInit): RequestInit | undefined {
   return { ...init, headers: { ...(init.headers as Record<string, string>), 'X-As-Of': asOf } };
 }
 
+/** A read sent from a screen with a preview date set carries it, so the server works every figure out as
+ *  if the sheet's today were that date. A change never carries it: it uses the sheet's real today. */
+function withPreview(init?: RequestInit): RequestInit | undefined {
+  const preview = currentPreview();
+  if (init?.method !== undefined || preview === '') return init;
+  return { ...init, headers: { ...(init?.headers as Record<string, string> | undefined), 'X-Preview': preview } };
+}
+
 async function send<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, withAsOf(init));
+  const res = await fetch(path, withPreview(withAsOf(init)));
   if (!res.ok) {
     const reason = await res.text().catch(() => '');
     throw new HttpError(`${init?.method ?? 'GET'} ${path} -> ${res.status}`, reason, res.status);

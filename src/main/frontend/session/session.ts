@@ -18,3 +18,11 @@ export const LiveView = createContext(false);
 
 /** The screen's as-of date read outside React (by the fetch surface), '' when none is set. */
 export const currentAsOf = (): string => new URLSearchParams(window.location.search).get('asOf') ?? '';
+
+// The screen's preview date (`preview`, yyyy-MM-dd; '' for none). Like the as-of date it belongs to the
+// screen: while it is set every figure is read as if the sheet's today were that date, over the sheet's
+// current records, and every change still uses the sheet's real today.
+export const usePreview = () => useSearchParam('preview', asString);
+
+/** The screen's preview date read outside React (by the fetch surface and query keys), '' when none is set. */
+export const currentPreview = (): string => new URLSearchParams(window.location.search).get('preview') ?? '';
