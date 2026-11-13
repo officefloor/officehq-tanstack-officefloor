@@ -5,7 +5,7 @@ import { sheetKey, useCurrentSheet } from '../session/session';
 import { useSheetToday } from '../session/sheetToday';
 import { useClaims } from '../claims/claims';
 
-/** A role given to a user name: clerk or steward. A name with none given is a clerk. */
+/** A role given to a user name: clerk, steward or viewer (sees everything, changes nothing). A name with none given is a clerk. */
 export type UserRole = { user: string; role: string };
 
 /**
@@ -46,7 +46,7 @@ export const DEFAULT_TERMS = 14;
 export const DEFAULT_LATE_PCT = '0.00';
 
 /** The roles a user name can be given. */
-export const ROLES = ['clerk', 'steward'];
+export const ROLES = ['clerk', 'steward', 'viewer'];
 
 /** The actions the permission matrix covers. */
 export const PERMISSION_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'];

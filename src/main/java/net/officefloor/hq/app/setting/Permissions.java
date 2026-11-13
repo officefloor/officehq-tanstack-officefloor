@@ -38,12 +38,13 @@ public record Permissions(Map<String, String> set) {
         };
     }
 
-    /** The roles in a comma separated list as typed (each case and outer spaces ignored), or null when one is not a role. */
+    /** The roles in a comma separated list as typed (each case and outer spaces ignored), or null when one is not a role a
+     * permission can name (clerk or steward). */
     public static Set<Role> parse(String roles) {
         Set<Role> parsed = EnumSet.noneOf(Role.class);
         for (String label : roles.split(",", -1)) {
             Role role = Role.of(label);
-            if (role == null) {
+            if (role == null || role == Role.VIEWER) {
                 return null;
             }
             parsed.add(role);

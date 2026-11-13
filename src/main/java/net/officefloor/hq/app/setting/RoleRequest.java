@@ -2,6 +2,6 @@ package net.officefloor.hq.app.setting;
 
 import jakarta.validation.constraints.Size;
 
-/** A role as the form submits it: the user name and the role (clerk or steward). */
+/** A role as the form submits it: the user name and the role (clerk, steward or viewer). */
 public record RoleRequest(@Size(max = 100) String user, @Size(max = 30) String role) {
 }
