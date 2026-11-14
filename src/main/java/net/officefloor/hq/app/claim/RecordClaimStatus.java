@@ -15,6 +15,8 @@ public class RecordClaimStatus {
                 + " by=" + (by == null ? "" : by)
                 + " person=" + (person == null ? "" : person.getName())
                 + " amount=" + claim.getAmount() + " date=" + claim.getDate()
-                + claim.getAuditNumber());
+                + claim.getAuditNumber()
+                + (ClaimStatus.SETTLED.name().equals(claim.getStatus())
+                        ? " due=" + (claim.getSettledDue() == null ? "n/a" : claim.getSettledDue()) : ""));
     }
 }

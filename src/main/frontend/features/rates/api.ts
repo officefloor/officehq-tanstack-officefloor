@@ -1,4 +1,5 @@
 import { getJson, postJson } from '../../api/http';
+import type { Claim } from '../claims/api';
 import { sheetKey } from '../sheet/api';
 
 /** A grade's rate on the sheet: a percent as two-decimal text. A grade with no rate is not listed. */
@@ -40,6 +41,9 @@ export function dueOf(amount: string, pct: string | undefined): string | null {
   const cents = (product + 5_000n) / 10_000n;
   return formatCents(cents);
 }
+
+/** A claim's due: the one fixed when it was settled, else live at the rate (`pct`). */
+export const claimDue = (c: Claim, pct: string | undefined) => c.settledDue ?? dueOf(c.amount, pct);
 
 /** Add up two-decimal dues, skipping n/a. */
 export function sumDues(dues: Array<string | null>): string {

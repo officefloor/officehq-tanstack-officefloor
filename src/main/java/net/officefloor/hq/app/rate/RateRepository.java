@@ -24,6 +24,12 @@ public class RateRepository {
                 ROW, sheetId);
     }
 
+    /** The grade's rate on the sheet; null when it has none. */
+    public Rate find(String sheetId, String grade) {
+        return jdbc.query("SELECT sheet_id, grade, pct FROM rate WHERE sheet_id = ? AND grade = ?",
+                ROW, sheetId, grade).stream().findFirst().orElse(null);
+    }
+
     /** Set (or replace) the grade's rate on the sheet. */
     public Rate set(String sheetId, String grade, BigDecimal pct, String user) {
         jdbc.update("MERGE INTO rate (sheet_id, grade, pct, set_by, set_at) KEY (sheet_id, grade) "

@@ -4,7 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 
 /** A claim of a person: an amount (two decimals, as text), a date (yyyy-MM-dd), a note and a status
  *  (a {@link ClaimStatus} name), and its number on the sheet (given when opened; none while a draft or
- *  once voided). */
+ *  once voided), and its settled due (fixed when settled; none otherwise, or when there was no rate). */
 public class Claim {
     private final long id;
     private final String sheetId;
@@ -14,11 +14,12 @@ public class Claim {
     private String note;
     private String status;
     private Long number;
+    private String settledDue;
     /** The number a claim had before this request cleared it (a void), for its audit line. */
     private Long numberHad;
 
     public Claim(long id, String sheetId, long personId, String amount, String date, String note,
-            String status, Long number) {
+            String status, Long number, String settledDue) {
         this.id = id;
         this.sheetId = sheetId;
         this.personId = personId;
@@ -27,6 +28,7 @@ public class Claim {
         this.note = note;
         this.status = status;
         this.number = number;
+        this.settledDue = settledDue;
     }
 
     public long getId() { return id; }
@@ -42,6 +44,8 @@ public class Claim {
     public void setStatus(String status) { this.status = status; }
     public Long getNumber() { return number; }
     public void setNumber(Long number) { this.number = number; }
+    public String getSettledDue() { return settledDue; }
+    public void setSettledDue(String settledDue) { this.settledDue = settledDue; }
 
     /** Clear the number, keeping the one it had for the audit line. */
     public void clearNumber() {

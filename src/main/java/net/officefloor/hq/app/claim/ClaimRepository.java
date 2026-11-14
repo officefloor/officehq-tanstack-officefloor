@@ -12,13 +12,15 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number";
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due";
 
     private static final RowMapper<Claim> ROW = (rs, n) -> new Claim(rs.getLong("id"),
             rs.getString("sheet_id"), rs.getLong("person_id"),
             rs.getBigDecimal("amount").setScale(2).toPlainString(),
             rs.getObject("claim_date", LocalDate.class).toString(), rs.getString("note"),
-            rs.getString("status"), rs.getObject("number", Long.class));
+            rs.getString("status"), rs.getObject("number", Long.class),
+            rs.getBigDecimal("settled_due") == null ? null
+                    : rs.getBigDecimal("settled_due").setScale(2).toPlainString());
 
     private final JdbcTemplate jdbc;
 
@@ -54,13 +56,14 @@ public class ClaimRepository {
             return ps;
         }, key);
         return new Claim(key.getKey().longValue(), sheetId, personId, amount.toPlainString(),
-                date.toString(), note, ClaimStatus.DRAFT.name(), null);
+                date.toString(), note, ClaimStatus.DRAFT.name(), null, null);
     }
 
     public void update(Claim claim) {
-        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, number = ? WHERE sheet_id = ? AND id = ?",
+        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, number = ?, settled_due = ? WHERE sheet_id = ? AND id = ?",
                 new BigDecimal(claim.getAmount()), LocalDate.parse(claim.getDate()), claim.getNote(),
                 claim.getStatus(), claim.getNumber(),
+                claim.getSettledDue() == null ? null : new BigDecimal(claim.getSettledDue()),
                 claim.getSheetId(), claim.getId());
     }
 
