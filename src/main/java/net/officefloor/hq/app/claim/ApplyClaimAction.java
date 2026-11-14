@@ -27,7 +27,7 @@ import org.springframework.web.bind.annotation.RequestParam;
  * it (through its editor or its row's amount entry) settle or approve it. A deferred claim cannot be settled.
  * Settling fixes the claim's due at the greater of the sheet's floor in force on its date and its figure — at its person's grade's rate in force on the claim's date,
  * rounded by its policy date, or, when a statement bound the claim, the figure it was bound to — plus the late charge it has then, if overdue, frozen in; with no
- * figure it stays live. A clerk settling a claim whose due is above the sheet's clerk limit (a due of n/a is within any
+ * figure it stays live. A clerk settling a claim whose due is above the clerk limit in force (its person's grade's own on the sheet's today, when it has one, else the sheet's) (a due of n/a is within any
  * limit) makes it PENDING instead, live and unfixed. A claim with no proofs (while the sheet has proof kinds: without a proof of each) whose due is above the proof threshold in force on its date —
  * its person's grade's own, when that grade has one then, else the sheet's — is refused settling or approving — before the clerk limit is considered, so it never goes PENDING.
  * A claim with an empty note whose due (as shown now) is above the sheet's note threshold in force on its date is refused opening.
@@ -140,7 +140,7 @@ public class ApplyClaimAction {
                 ClaimDueNow.of(claim, sheets, people, rates, settings, claims))) {
             found = ClaimAction.SEND_TO_REVIEW;
         }
-        if (found == ClaimAction.SETTLE && !settings.find(claim.sheetId()).maySettle(user, due)) {
+        if (found == ClaimAction.SETTLE && !settings.find(claim.sheetId()).maySettle(user, limitGrade(claim, people), due)) {
             found = ClaimAction.PEND;
             due = null;
         }
@@ -184,6 +184,12 @@ public class ApplyClaimAction {
             }
         }
         return true;
+    }
+
+    /** The grade whose clerk limit the claim falls under: its person's grade (null: no person). */
+    static String limitGrade(Claim claim, PersonRepository people) {
+        Person person = people.find(claim.sheetId(), claim.personId());
+        return person == null ? null : person.grade();
     }
 
     /** The grade whose proof threshold the claim falls under: its person's grade in force on its date (null: no person). */

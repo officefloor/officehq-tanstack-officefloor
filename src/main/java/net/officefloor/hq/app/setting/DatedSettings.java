@@ -12,7 +12,7 @@ import net.officefloor.hq.app.claim.LateCharge;
 import net.officefloor.hq.app.person.Person;
 
 /**
- * A sheet's dated settings: for each key (floor, late-pct, terms, terms-&lt;grade&gt;, grace-&lt;grade&gt;, clerk-limit, cap, proof-threshold, proof-threshold-&lt;grade&gt;, note-threshold, review-threshold, rounding) the values
+ * A sheet's dated settings: for each key (floor, late-pct, terms, terms-&lt;grade&gt;, grace-&lt;grade&gt;, clerk-limit, clerk-limit-&lt;grade&gt;, cap, proof-threshold, proof-threshold-&lt;grade&gt;, note-threshold, review-threshold, rounding) the values
  * recorded, by from-date (a value null: blank). The value in force on a date is the one with the latest from-date on or
  * before it; before every from-date it is the sheet's starting value (floor 1.00, late percent 0.00, terms 14; none
  * for the clerk limit, the cap, the proof threshold, the note threshold, the review threshold, a grade's own terms, a grade's grace days, a grade's proof threshold and the rounding mode).
@@ -140,6 +140,23 @@ public record DatedSettings(Map<String, NavigableMap<LocalDate, String>> values)
     public BigDecimal clerkLimitOn(LocalDate date) {
         String value = on(CLERK_LIMIT, date);
         return value == null ? null : new BigDecimal(value).setScale(2);
+    }
+
+    /** The key of a grade's own clerk limit. */
+    public static String gradeClerkLimit(String grade) {
+        return CLERK_LIMIT + "-" + grade;
+    }
+
+    /** The grade's own clerk limit in force on the date (null: none, the sheet's). */
+    public BigDecimal gradeClerkLimitOn(String grade, LocalDate date) {
+        String value = grade == null ? null : on(gradeClerkLimit(grade), date);
+        return value == null ? null : new BigDecimal(value).setScale(2);
+    }
+
+    /** The clerk limit for a person of the grade on the date: the grade's own in force then, else the sheet's (null: no limit). */
+    public BigDecimal clerkLimitFor(String grade, LocalDate date) {
+        BigDecimal own = gradeClerkLimitOn(grade, date);
+        return own != null ? own : clerkLimitOn(date);
     }
 
     /** The cap in force on the date (null: no cap). */

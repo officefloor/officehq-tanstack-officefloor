@@ -21,7 +21,7 @@ public class SettleSplitClaim {
             Out<ClaimActionRequest> request, Out<Claim> updated) {
         ClaimAction action = ClaimAction.SETTLE;
         BigDecimal due = ClaimDueNow.of(claim, sheets, people, rates, settings, claims);
-        if (!settings.find(claim.sheetId()).maySettle(user, due)) {
+        if (!settings.find(claim.sheetId()).maySettle(user, ApplyClaimAction.limitGrade(claim, people), due)) {
             action = ClaimAction.PEND;
             due = null;
         }

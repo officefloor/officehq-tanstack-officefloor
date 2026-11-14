@@ -35,7 +35,7 @@ public class ValidateSettingsRequest {
             Out<GradeGrace> gradeGrace, Out<GradeProofThreshold> gradeProofThreshold, Out<Pot> pot, Out<Parent> parent,
             Out<FiscalStartMonth> fiscalStartMonth, Out<AlertThreshold> alertThreshold, Out<RoundingSetting> rounding,
             Out<EscalateAfter> escalateAfter, Out<ReviewSla> reviewSla, Out<ProofKinds> proofKinds,
-            Out<DefaultGrade> defaultGrade)
+            Out<DefaultGrade> defaultGrade, Out<GradeClerkLimit> gradeClerkLimit)
             throws InvalidSettingException {
         limit.set(clerkLimit(request.clerkLimit(), from(request.clerkLimitFrom(), "clerk limit")));
         floor.set(floor(request.floor(), from(request.floorFrom(), "floor")));
@@ -62,6 +62,7 @@ public class ValidateSettingsRequest {
         reviewSla.set(reviewSla(request.reviewSla()));
         proofKinds.set(proofKinds(request.proofKinds()));
         defaultGrade.set(defaultGrade(request.defaultGrade()));
+        gradeClerkLimit.set(gradeClerkLimit(request.gradeClerkLimit(), request.gradeClerkLimitFrom()));
     }
 
     private static RoundingSetting rounding(String requested, LocalDate from) throws InvalidSettingException {
@@ -269,6 +270,33 @@ public class ValidateSettingsRequest {
             }
         }
         return new GradeGrace(grace, from);
+    }
+
+    private static GradeClerkLimit gradeClerkLimit(Map<String, String> requested, Map<String, String> requestedFrom)
+            throws InvalidSettingException {
+        Map<String, BigDecimal> limits = new LinkedHashMap<>();
+        Map<String, LocalDate> from = new LinkedHashMap<>();
+        if (requested == null) {
+            return new GradeClerkLimit(limits, from);
+        }
+        for (String grade : requested.keySet().stream().sorted().toList()) {
+            if (!GRADES.contains(grade)) {
+                throw new InvalidSettingException("A clerk limit can only be set for grade A, B or C.");
+            }
+            String value = requested.get(grade) == null ? "" : requested.get(grade).trim();
+            if (value.isEmpty()) {
+                limits.put(grade, null);
+            } else if (!AMOUNT.matcher(value).matches()) {
+                throw new InvalidSettingException("The clerk limit for a grade must be 0.00 or more, with at most two decimals, or blank.");
+            } else {
+                limits.put(grade, new BigDecimal(value).setScale(2));
+            }
+            LocalDate gradeFrom = from(requestedFrom == null ? null : requestedFrom.get(grade), "grade " + grade + " clerk limit");
+            if (gradeFrom != null) {
+                from.put(grade, gradeFrom);
+            }
+        }
+        return new GradeClerkLimit(limits, from);
     }
 
     private static GradeProofThreshold gradeProofThreshold(Map<String, String> requested, Map<String, String> requestedFrom)

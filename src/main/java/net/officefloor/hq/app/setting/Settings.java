@@ -63,8 +63,12 @@ public record Settings(String sheetId, BigDecimal clerkLimit, BigDecimal floor, 
         return permissions.allows(action, roleOf(user));
     }
 
-    /** Whether the user may settle a claim with this due (null: n/a, within any limit). */
-    public boolean maySettle(String user, BigDecimal due) {
-        return roleOf(user) == Role.STEWARD || clerkLimit == null || due == null || due.compareTo(clerkLimit) <= 0;
+    /**
+     * Whether the user may settle a claim of a person of the grade (null: none) with this due (null: n/a, within any
+     * limit): the limit is the grade's own clerk limit in force on today, when it has one, else the sheet's.
+     */
+    public boolean maySettle(String user, String grade, BigDecimal due) {
+        BigDecimal limit = dated.clerkLimitFor(grade, today);
+        return roleOf(user) == Role.STEWARD || limit == null || due == null || due.compareTo(limit) <= 0;
     }
 }

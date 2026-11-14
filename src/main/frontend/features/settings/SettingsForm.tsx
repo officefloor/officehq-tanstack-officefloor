@@ -54,6 +54,8 @@ type SettingsInput = {
   gradeGraceFrom?: Record<string, string>;
   gradeProofThreshold?: Record<string, string>;
   gradeProofThresholdFrom?: Record<string, string>;
+  gradeClerkLimit?: Record<string, string>;
+  gradeClerkLimitFrom?: Record<string, string>;
   permissions?: Record<string, string>;
   graceDays?: string;
   escalateAfter?: string;
@@ -119,10 +121,10 @@ const UNTOUCHED: Touched = {
   rounding: false,
 };
 
-// The sheet's clerk limit (blank: no limit), floor, terms, each grade's terms (blank: the sheet's), late percent and policy date (blank: today) and period numbering from date (blank: off) and entry date (blank: off) and cap (blank: none) and proof threshold (blank: none) and each grade's proof threshold (blank: the sheet's) and note threshold (blank: none) and review threshold (blank: none) and rounding mode (half-up or half-even; blank: none, the policy date decides) in force, and the
+// The sheet's clerk limit (blank: no limit), each grade's clerk limit (blank: the sheet's), floor, terms, each grade's terms (blank: the sheet's), late percent and policy date (blank: today) and period numbering from date (blank: off) and entry date (blank: off) and cap (blank: none) and proof threshold (blank: none) and each grade's proof threshold (blank: the sheet's) and note threshold (blank: none) and review threshold (blank: none) and rounding mode (half-up or half-even; blank: none, the policy date decides) in force, and the
 // permission matrix (by action, the roles allowed it; blank: the standing rule; not dated), and the grace days (blank: off; not dated), and the escalation gap (blank: off; not dated), and the review SLA (blank: none; not dated), and the proof kinds (receipt or photo, comma separated; blank: none; not dated), and the default grade (blank: A; not dated), and the pot (blank: none; not dated), and the parent sheet (blank: none; not dated), and the fiscal year start month (1 to 12; blank: 1; not dated), and the alert threshold (blank: off; not dated), and the form that sets them. Saving sends
 // only the fields touched since the last save, so a blank field left alone changes nothing. A dated setting (the clerk
-// limit, floor, terms, each grade's terms, late percent, cap, proof threshold, each grade's proof threshold, note threshold, review threshold and rounding mode) is recorded from the date typed beside it (blank: the
+// limit, each grade's clerk limit, floor, terms, each grade's terms, late percent, cap, proof threshold, each grade's proof threshold, note threshold, review threshold and rounding mode) is recorded from the date typed beside it (blank: the
 // sheet's today); the value shown is the one in force on the sheet's today.
 export function SettingsForm() {
   const [user] = useCurrentUser();
@@ -133,6 +135,8 @@ export function SettingsForm() {
   const [touchedGrace, setTouchedGrace] = useState<Record<string, boolean>>({});
   const [gradeProof, setGradeProof] = useState<Record<string, string>>({});
   const [touchedProof, setTouchedProof] = useState<Record<string, boolean>>({});
+  const [gradeLimit, setGradeLimit] = useState<Record<string, string>>({});
+  const [touchedLimit, setTouchedLimit] = useState<Record<string, boolean>>({});
   const [clerkLimit, setClerkLimit] = useState('');
   const [floor, setFloor] = useState('');
   const [terms, setTerms] = useState('');
@@ -177,6 +181,8 @@ export function SettingsForm() {
       setTouchedGrace({});
       setGradeProof({});
       setTouchedProof({});
+      setGradeLimit({});
+      setTouchedLimit({});
       setLatePct('');
       setPolicyDate('');
       setPeriodNumberingFrom('');
@@ -237,6 +243,7 @@ export function SettingsForm() {
     const input: SettingsInput = {};
     for (const [key, label] of [
       ['clerk-limit', 'clerk limit'],
+      ...GRADES.map((g) => [`clerk-limit-${g}`, `clerk limit for grade ${g}`]),
       ['floor', 'floor'],
       ['terms', 'terms'],
       ...GRADES.map((g) => [`terms-${g}`, `terms for grade ${g}`]),
@@ -263,6 +270,19 @@ export function SettingsForm() {
       }
       input.clerkLimit = value;
       input.clerkLimitFrom = datedFrom('clerk-limit');
+    }
+    for (const g of GRADES) {
+      if (!touchedLimit[g]) continue;
+      const value = (gradeLimit[g] ?? '').trim();
+      if (value !== '' && !AMOUNT.test(value)) {
+        setError(
+          `Type a clerk limit for grade ${g} of 0.00 or more, with at most two decimals, or leave it blank for the sheet's.`,
+        );
+        return;
+      }
+      input.gradeClerkLimit = { ...input.gradeClerkLimit, [g]: value };
+      const from = datedFrom(`clerk-limit-${g}`);
+      if (from) input.gradeClerkLimitFrom = { ...input.gradeClerkLimitFrom, [g]: from };
     }
     if (touched.floor) {
       const value = floor.trim();
@@ -475,6 +495,7 @@ export function SettingsForm() {
     }
     if (
       input.clerkLimit === undefined &&
+      input.gradeClerkLimit === undefined &&
       input.floor === undefined &&
       input.terms === undefined &&
       input.gradeTerms === undefined &&
@@ -509,6 +530,14 @@ export function SettingsForm() {
       <p>
         Clerk limit: <span data-testid="setting-clerk-limit-current">{settings?.clerkLimit ?? ''}</span>
       </p>
+      {GRADES.map((g) => (
+        <p key={g}>
+          Clerk limit for grade {g}:{' '}
+          <span data-testid={`setting-clerk-limit-${g}-current`}>
+            {settings ? valueOn(settings.history[`clerk-limit-${g}`], today, '') : ''}
+          </span>
+        </p>
+      ))}
       <p>
         Floor: <span data-testid="setting-floor-current">{settings?.floor ?? ''}</span>
       </p>
@@ -614,6 +643,22 @@ export function SettingsForm() {
           }}
         />
         {fromField('clerk-limit', 'Clerk limit')}
+        {GRADES.map((g) => (
+          <span key={g}>
+            <input
+              data-testid={`setting-clerk-limit-${g}`}
+              placeholder={`Clerk limit for grade ${g} (blank: the sheet's)`}
+              value={gradeLimit[g] ?? ''}
+              onFocus={() => setTouchedLimit((t) => ({ ...t, [g]: true }))}
+              onChange={(e) => {
+                setGradeLimit((v) => ({ ...v, [g]: e.target.value }));
+                setTouchedLimit((t) => ({ ...t, [g]: true }));
+                setError('');
+              }}
+            />
+            {fromField(`clerk-limit-${g}`, `Clerk limit for grade ${g}`)}
+          </span>
+        ))}
         <input
           data-testid="setting-floor"
           placeholder={`Floor (blank: ${DEFAULT_FLOOR})`}

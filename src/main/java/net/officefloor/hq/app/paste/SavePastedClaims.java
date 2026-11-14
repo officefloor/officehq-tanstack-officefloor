@@ -39,6 +39,8 @@ import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.hq.app.voidreason.VoidReasonRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /**
@@ -48,15 +50,38 @@ import org.springframework.web.bind.annotation.RequestParam;
  * DRAFT status logged, and recorded as CLAIM_ADDED (with its reference, if any) (and LATE_ENTRY when its period is
  * soft-closed). Then the claim is opened by the user: numbered, logged, recorded as CLAIM_OPENED and followed by the
  * rollup lines it moved. Any line the editor or the open button would refuse refuses the whole paste: the transaction
- * is rolled back and no record is written.
+ * is rolled back and no record is written. The repositories write through JDBC, which the {@code transaction}
+ * governance does not cover, so the paste runs in a transaction of its own.
  */
 public class SavePastedClaims {
     public void save(@Val PastedLines pasted, @RequestParam("user") String user, SheetRepository sheets,
             SettingRepository settings, HolidayRepository holidays, PersonRepository people, RateRepository rates,
             PeriodRepository periods, VoidReasonRepository voidReasons, ClaimRepository claims, ClaimLogRepository logs,
             ClaimLockRepository locks, ClaimLineRepository claimLines, RollupService rollups, Audit audit,
-            LateEntries lateEntries, Out<PasteResult> result) throws InvalidClaimException {
+            LateEntries lateEntries, PlatformTransactionManager transactions, Out<PasteResult> result)
+            throws InvalidClaimException {
         int[] done = { 0 };
+        InvalidClaimException[] refused = { null };
+        new TransactionTemplate(transactions).executeWithoutResult((status) -> {
+            try {
+                paste(pasted, user, sheets, settings, holidays, people, rates, periods, voidReasons, claims, logs,
+                        locks, claimLines, rollups, audit, lateEntries, done);
+            } catch (InvalidClaimException e) {
+                refused[0] = e;
+                status.setRollbackOnly();
+            }
+        });
+        if (refused[0] != null) {
+            throw refused[0];
+        }
+        result.set(new PasteResult(done[0]));
+    }
+
+    private static void paste(PastedLines pasted, String user, SheetRepository sheets, SettingRepository settings,
+            HolidayRepository holidays, PersonRepository people, RateRepository rates, PeriodRepository periods,
+            VoidReasonRepository voidReasons, ClaimRepository claims, ClaimLogRepository logs, ClaimLockRepository locks,
+            ClaimLineRepository claimLines, RollupService rollups, Audit audit, LateEntries lateEntries, int[] done)
+            throws InvalidClaimException {
         audit.holding(() -> {
             int number = 0;
             for (PastedLine line : pasted.lines()) {
@@ -76,7 +101,6 @@ public class SavePastedClaims {
                 done[0]++;
             }
         });
-        result.set(new PasteResult(done[0]));
     }
 
     private static Claim add(PastedLine line, Person person, String user, SheetRepository sheets,
