@@ -4,7 +4,8 @@ import { sheetKey, useCurrentSheet } from '../session/session';
 
 /** A person's plan: an amount (two decimals) every `every` days, or monthly on `day` of the month (one of them is set),
  *  from `start` to `end`, how many claims it has made, its next five dates after the sheet's today (comma
- *  separated, leaving out the dates a pause skips) and whether it is paused now. */
+ *  separated, leaving out the dates a pause skips) whether it is paused now, and its
+ *  amount changes, oldest first, each as `<date> amount=<amount>` (`amount` is the current one). */
 export type Plan = {
   id: number;
   personId: number;
@@ -16,6 +17,7 @@ export type Plan = {
   generated: number;
   nextDates: string;
   paused: boolean;
+  changes: string[];
 };
 
 /** The query key for the sheet's plans; under sheetKey, so re-loading the sheet re-reads them. */

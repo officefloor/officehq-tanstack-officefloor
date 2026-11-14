@@ -537,6 +537,10 @@ public class PersonRepository {
         jdbc.update("DELETE FROM person_retirement WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM person_watch WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
         jdbc.update("DELETE FROM period_person_total WHERE sheet_id = ? AND person_id = ?", sheetId, gone);
+        jdbc.update("DELETE FROM person_plan_change WHERE plan_id IN (SELECT id FROM person_plan WHERE sheet_id = ? AND"
+                + " person_id = ?)", sheetId, gone);
+        jdbc.update("DELETE FROM person_plan_pause WHERE plan_id IN (SELECT id FROM person_plan WHERE sheet_id = ? AND"
+                + " person_id = ?)", sheetId, gone);
         jdbc.update("DELETE FROM person_plan_date WHERE plan_id IN (SELECT id FROM person_plan WHERE sheet_id = ? AND"
                 + " person_id = ?)", sheetId, gone);
         jdbc.update("DELETE FROM person_plan WHERE sheet_id = ? AND person_id = ?", sheetId, gone);

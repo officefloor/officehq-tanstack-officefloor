@@ -16,7 +16,7 @@ public class PlanRepository {
     private static final RowMapper<Plan> ROW = (rs, n) -> new Plan(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getDate("start_date").toLocalDate(),
             rs.getObject("every_days", Integer.class), rs.getObject("month_day", Integer.class),
-            rs.getDate("end_date").toLocalDate(), rs.getInt("generated"), List.of());
+            rs.getDate("end_date").toLocalDate(), rs.getInt("generated"), List.of(), List.of());
 
     private final JdbcTemplate jdbc;
 
@@ -50,12 +50,21 @@ public class PlanRepository {
                 Date.valueOf(on), plan.id());
     }
 
+    /** Changes the plan's amount on the day, keeping the change in its history. */
+    public void changeAmount(Plan plan, LocalDate on, java.math.BigDecimal amount) {
+        jdbc.update("UPDATE person_plan SET amount = ? WHERE id = ?", amount, plan.id());
+        jdbc.update("INSERT INTO person_plan_change (sheet_id, plan_id, changed_on, amount) VALUES (?, ?, ?, ?)",
+                plan.sheetId(), plan.id(), Date.valueOf(on), amount);
+    }
+
     private List<Plan> withPauses(List<Plan> plans) {
         return plans.stream().map(p -> new Plan(p.id(), p.sheetId(), p.personId(), p.amount(), p.start(), p.every(),
                 p.day(), p.end(), p.generated(), jdbc.query("SELECT paused_on, resumed_on FROM person_plan_pause"
                         + " WHERE plan_id = ? ORDER BY id", (rs, n) -> new PlanPause(rs.getDate("paused_on").toLocalDate(),
                                 rs.getDate("resumed_on") == null ? null : rs.getDate("resumed_on").toLocalDate()),
-                        p.id()))).toList();
+                        p.id()), jdbc.query("SELECT changed_on, amount FROM person_plan_change WHERE plan_id = ?"
+                                + " ORDER BY id", (rs, n) -> new PlanChange(rs.getDate("changed_on").toLocalDate(),
+                                        rs.getBigDecimal("amount")), p.id()))).toList();
     }
 
     /** Saves a new plan; it with its id. */
@@ -75,7 +84,7 @@ public class PlanRepository {
         }, keys);
         long id = keys.getKey().longValue();
         return new Plan(id, plan.sheetId(), plan.personId(), plan.amount(), plan.start(), plan.every(), plan.day(),
-                plan.end(), 0, List.of());
+                plan.end(), 0, List.of(), List.of());
     }
 
     /** The dates the plan has made a claim for. */

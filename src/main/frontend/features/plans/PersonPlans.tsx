@@ -16,7 +16,7 @@ const EMPTY: PlanFields = { amount: '', start: '', every: '', day: '', end: '' }
 function PlanPause({ person, plan }: { person: Person; plan: Plan }) {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
-  const [error, setError] = usePersonError(person.id, `plan-${plan.id}`);
+  const [, setError] = usePersonError(person.id, `plan-${plan.id}`);
   const queryClient = useQueryClient();
   const once = useOneAtATime();
 
@@ -47,13 +47,73 @@ function PlanPause({ person, plan }: { person: Person; plan: Plan }) {
       <button type="button" data-testid="plan-resume" disabled={toggle.isPending} onClick={press('resume')}>
         Resume
       </button>
-      {error && <span data-testid="plan-error">{error}</span>}
     </>
   );
 }
 
+// A plan's new amount and its save button: the claims it generates from then on are of the new amount, those already
+// generated keep theirs; the plan lists its changes, oldest first. The server refuses a bad amount; the error shows in
+// the plan's row.
+function PlanAmount({ person, plan }: { person: Person; plan: Plan }) {
+  const [user] = useCurrentUser();
+  const [sheet] = useCurrentSheet();
+  const [, setError] = usePersonError(person.id, `plan-${plan.id}`);
+  const [amount, setAmount] = useState('');
+  const queryClient = useQueryClient();
+  const once = useOneAtATime();
+
+  const save = useMutation({
+    mutationFn: (value: string) =>
+      postJson<Plan>(
+        `/api/sheets/${encodeURIComponent(sheet)}/plans/${plan.id}/amount?user=${encodeURIComponent(user)}`,
+        { amount: value },
+      ),
+    onSuccess: async () => {
+      setAmount('');
+      await queryClient.invalidateQueries({ queryKey: plansKey(sheet) });
+    },
+    onError: () => setError('The amount was refused: it must be 0.00 or more, with at most two decimals.'),
+  });
+
+  const submit = () => {
+    setError('');
+    once(() => save.mutateAsync(amount));
+  };
+
+  return (
+    <>
+      {' '}
+      <input
+        data-testid="plan-amount"
+        placeholder="new amount"
+        size={7}
+        value={amount}
+        onChange={(e) => {
+          setAmount(e.target.value);
+          setError('');
+        }}
+      />
+      <button type="button" data-testid="plan-amount-save" disabled={save.isPending} onClick={submit}>
+        Save amount
+      </button>
+      {plan.changes.map((c, i) => (
+        <div key={i} data-testid="plan-change-line">
+          {c}
+        </div>
+      ))}
+    </>
+  );
+}
+
+// The plan row's error, shared by its pause, resume and amount actions.
+function PlanError({ person, plan }: { person: Person; plan: Plan }) {
+  const [error] = usePersonError(person.id, `plan-${plan.id}`);
+  return error ? <span data-testid="plan-error">{error}</span> : null;
+}
+
 // A person's plans (each its amount, start, interval or day of the month, end, how many claims it has made so far and
-// its next five dates after the sheet's today, and whether it is paused, with buttons to pause and resume it) and the form that adds one: an amount, a start (blank: the sheet's today), every N days or a day of the month (1 to
+// its next five dates after the sheet's today, whether it is paused, with buttons to pause and resume it, and an entry to change its amount with the
+// changes so far) and the form that adds one: an amount, a start (blank: the sheet's today), every N days or a day of the month (1 to
 // 31), and an end. The server refuses a bad amount, interval or day, both an interval and a day, or an end before the
 // start.
 export function PersonPlans({ person }: { person: Person }) {
@@ -96,6 +156,8 @@ export function PersonPlans({ person }: { person: Person }) {
           <span data-testid="plan-generated">{p.generated}</span>, next{' '}
           <span data-testid="plan-next-dates">{p.nextDates}</span>
           <PlanPause person={person} plan={p} />
+          <PlanAmount person={person} plan={p} />
+          <PlanError person={person} plan={p} />
         </div>
       ))}
       <input data-testid="plan-form-amount" placeholder="amount" size={7} value={fields.amount} onChange={change('amount')} />

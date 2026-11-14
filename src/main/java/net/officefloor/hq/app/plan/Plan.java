@@ -7,10 +7,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 /** A person's plan: an amount every {@code every} days, or monthly on {@code day} of the month (exactly one of them is
- * set), from {@code start} to {@code end}; {@code generated} is how many claims it has made so far; {@code pauses} its pauses, oldest first. The id is null until
+ * set), from {@code start} to {@code end}; {@code generated} is how many claims it has made so far; {@code pauses} its pauses and {@code changes} its amount changes, oldest first;
+ * {@code amount} is its current amount. The id is null until
  * it is saved. */
 public record Plan(Long id, String sheetId, long personId, BigDecimal amount, LocalDate start, Integer every,
-        Integer day, LocalDate end, int generated, List<PlanPause> pauses) {
+        Integer day, LocalDate end, int generated, List<PlanPause> pauses,
+        List<PlanChange> changes) {
 
     /** Whether the plan is paused now: it has a pause not yet resumed. */
     public boolean paused() {
