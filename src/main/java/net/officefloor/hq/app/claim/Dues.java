@@ -4,15 +4,16 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import net.officefloor.hq.app.setting.DatedSetting;
 
 /** A claim's due figure. */
 public final class Dues {
     private Dues() {
     }
 
-    /** What a late charge goes by: the sheet's late percent and its today (a claim's due-by is its own); and the
+    /** What a late charge goes by: the sheet's late percent by date (a claim goes by the one in force on its date) and its today (a claim's due-by is its own); and the
      *  sheet's policy date (its today when blank), which decides how a claim's live figures round. */
-    public record Late(String pct, LocalDate today, LocalDate policy) {
+    public record Late(DatedSetting pct, LocalDate today, LocalDate policy) {
 
         /** How the live figures of a claim round by its round date ({@link Claim#getRoundDate}):
          *  half up before the policy date, half to even on or after it. */
@@ -22,7 +23,7 @@ public final class Dues {
     }
 
     /** An amount times a percent, divided by 100, rounded ({@code rounding}) to two decimals, and at
-     *  least the sheet's floor (a correction, a negative amount, has no floor). */
+     *  least {@code floor}, the sheet's floor in force on the claim's date (a correction, a negative amount, has no floor). */
     public static String of(String amount, String pct, String floor, RoundingMode rounding) {
         BigDecimal due = new BigDecimal(amount).multiply(new BigDecimal(pct))
                 .divide(BigDecimal.valueOf(100), 2, rounding);
@@ -41,7 +42,7 @@ public final class Dues {
         if (figure == null || isCorrection(claim.getAmount()) || !ClaimStatus.isOpen(claim.getStatus())) return BigDecimal.ZERO.setScale(2);
         LocalDate dueBy = LocalDate.parse(claim.getDueBy());
         long periods = Math.max(0, ChronoUnit.DAYS.between(dueBy, late.today())) / 30;
-        return new BigDecimal(figure).multiply(new BigDecimal(late.pct()))
+        return new BigDecimal(figure).multiply(new BigDecimal(late.pct().on(claim.getDate())))
                 .multiply(BigDecimal.valueOf(periods))
                 .divide(BigDecimal.valueOf(100), 2, late.rounding(claim.getRoundDate()));
     }

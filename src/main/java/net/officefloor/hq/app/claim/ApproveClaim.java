@@ -38,7 +38,7 @@ public class ApproveClaim {
                 LocalDate.parse(claim.getDate()));
         Dues.Late late = settings.late(claim.getSheetId(), sheets.today(claim.getSheetId()));
         String due = Dues.shown(claim, rate == null ? null : Dues.of(claim.getAmount(), rate.pct(),
-                settings.floor(claim.getSheetId()), late.rounding(claim.getRoundDate())), late);
+                settings.floor(claim.getSheetId()).on(claim.getDate()), late.rounding(claim.getRoundDate())), late);
         claim.setStatus(ClaimStatus.PENDING.moveTo(ClaimStatus.SETTLED).name());
         claim.setSettledDue(due);
     }

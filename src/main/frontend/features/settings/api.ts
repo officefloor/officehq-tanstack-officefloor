@@ -3,8 +3,10 @@ import { getJson, postJson } from '../../api/http';
 import { sheetKey } from '../sheet/api';
 import type { Late } from '../rates/api';
 
-/** A sheet setting: its value as text ("" when blank). A setting never set is not listed. */
-export type Setting = { sheetId: string; key: string; value: string };
+/** A value recorded for a sheet setting: its value as text ("" when blank), in force from its
+ *  from-date (yyyy-MM-dd; null: from the beginning of time, and always for an undated key). A key
+ *  may have several, one per from-date; a setting never set is not listed. */
+export type Setting = { sheetId: string; key: string; value: string; from: string | null };
 /** The role a user name has on the sheet; a name not listed is a clerk. */
 export type Role = { sheetId: string; user: string; role: string };
 
@@ -24,6 +26,23 @@ export const SETTING_KEYS = ['clerk-limit', 'cap', 'floor', 'terms', 'terms-A', 
 /** A setting's value until it is first set. */
 export const SETTING_DEFAULTS: Record<string, string> = { floor: '1.00', terms: '14', 'late-pct': '0.00' };
 
+/** The settings that are not dated: every other one is saved from a from-date (blank: the sheet's today). */
+export const UNDATED_KEYS: readonly string[] = ['policy-date', 'period-numbering-from'];
+
+/** A dated setting's value in force on a date (yyyy-MM-dd). */
+export type DatedOn = (date: string) => string;
+
+/** A setting's value in force on a date (yyyy-MM-dd): the one with the latest from-date on or before
+ *  it; else its starting value (SETTING_DEFAULTS), and none (undefined) for a key with none. */
+export function settingOn(settings: Setting[] | undefined, key: string, date: string): string | undefined {
+  let found: Setting | undefined;
+  for (const s of settings ?? []) {
+    if (s.key !== key || (s.from !== null && s.from > date)) continue;
+    if (found === undefined || (found.from ?? '') < (s.from ?? '')) found = s;
+  }
+  return found === undefined ? SETTING_DEFAULTS[key] : found.value;
+}
+
 const base = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}`;
 
 export const settingsKey = (sheetId: string) => [...sheetKey(sheetId), 'settings'] as const;
@@ -34,8 +53,8 @@ export function listSettings(sheetId: string): Promise<Setting[]> {
 }
 
 /** Change a setting; refused (rejects) when the value is not valid for it. */
-export function changeSetting(sheetId: string, by: string, key: string, value: string): Promise<Setting> {
-  return postJson<Setting>(`${base(sheetId)}/settings?by=${encodeURIComponent(by)}`, { key, value });
+export function changeSetting(sheetId: string, by: string, key: string, value: string, from: string): Promise<Setting> {
+  return postJson<Setting>(`${base(sheetId)}/settings?by=${encodeURIComponent(by)}`, { key, value, from });
 }
 
 export function listRoles(sheetId: string): Promise<Role[]> {
@@ -47,23 +66,23 @@ export function setRole(sheetId: string, by: string, user: string, role: string)
   return postJson<Role>(`${base(sheetId)}/roles?by=${encodeURIComponent(by)}`, { user, role });
 }
 
-/** The sheet's floor: the least a claim's live due can be. */
-export function useFloor(sheetId: string): string {
+/** The sheet's floor by date: the least a claim's live due can be, the one in force on its date. */
+export function useFloor(sheetId: string): DatedOn {
   const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
-  return settings.data?.find((s) => s.key === 'floor')?.value || SETTING_DEFAULTS.floor;
+  return (date) => settingOn(settings.data, 'floor', date) || SETTING_DEFAULTS.floor;
 }
 
-/** The sheet's cap: the most a person's due-total can be; null when there is none. */
-export function useCap(sheetId: string): string | null {
+/** The sheet's cap in force on its today: the most a person's due-total can be; null when there is none. */
+export function useCap(sheetId: string, today: string): string | null {
   const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
-  return settings.data?.find((s) => s.key === 'cap')?.value || null;
+  return settingOn(settings.data, 'cap', today) || null;
 }
 
-/** What a claim's late charge and rounding go by: the sheet's late percent, today and policy
- *  date (its today when blank). */
+/** What a claim's late charge and rounding go by: the sheet's late percent by date (a claim goes
+ *  by the one in force on its date), today and policy date (its today when blank). */
 export function useLate(sheetId: string, today: string): Late {
   const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
-  const pct = settings.data?.find((s) => s.key === 'late-pct')?.value || SETTING_DEFAULTS['late-pct'];
-  const policy = settings.data?.find((s) => s.key === 'policy-date')?.value || today;
+  const pct = (date: string) => settingOn(settings.data, 'late-pct', date) || SETTING_DEFAULTS['late-pct'];
+  const policy = settingOn(settings.data, 'policy-date', today) || today;
   return { pct, today, policy };
 }

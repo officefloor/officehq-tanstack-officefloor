@@ -36,7 +36,7 @@ public class ResettleClaim {
                 LocalDate.parse(claim.getDate()));
         Dues.Late late = settings.late(claim.getSheetId(), sheets.today(claim.getSheetId()));
         String live = rate == null ? null : Dues.of(claim.getAmount(), rate.pct(),
-                settings.floor(claim.getSheetId()), late.rounding(claim.getRoundDate()));
+                settings.floor(claim.getSheetId()).on(claim.getDate()), late.rounding(claim.getRoundDate()));
         // Figured as an open claim with no fixed due and no statement binding it.
         String old = claim.getSettledDue();
         boolean stated = claim.isStated();

@@ -22,6 +22,16 @@ public class ValidateSetting {
             throws InvalidSettingException {
         String key = request == null || request.key() == null ? "" : request.key().trim();
         String value = request == null || request.value() == null ? "" : request.value().trim();
+        String from = request == null || request.from() == null || !SettingRepository.isDated(key)
+                ? "" : request.from().trim();
+        if (!from.isEmpty()) {
+            try {
+                from = LocalDate.parse(from).toString();
+            } catch (DateTimeParseException e) {
+                throw new InvalidSettingException("A setting's from-date is blank or a date (yyyy-MM-dd)");
+            }
+        }
+        String given = from.isEmpty() ? null : from;
         if (SettingRepository.CLERK_LIMIT.equals(key)) {
             if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
                 throw new InvalidSettingException("The clerk limit is blank or 0.00 or more with up to two decimals");
@@ -42,14 +52,14 @@ public class ValidateSetting {
             if (!DAYS.matcher(value).matches()) {
                 throw new InvalidSettingException("The terms are a whole number of days, 0 or more");
             }
-            body.set(new SettingRequest(key, String.valueOf(Integer.parseInt(value))));
+            body.set(new SettingRequest(key, String.valueOf(Integer.parseInt(value)), given));
             return;
         } else if (key.startsWith(SettingRepository.TERMS_OF_GRADE)
                 && GRADES.contains(key.substring(SettingRepository.TERMS_OF_GRADE.length()))) {
             if (!value.isEmpty() && !DAYS.matcher(value).matches()) {
                 throw new InvalidSettingException("A grade's terms are blank or a whole number of days, 0 or more");
             }
-            body.set(new SettingRequest(key, value.isEmpty() ? null : String.valueOf(Integer.parseInt(value))));
+            body.set(new SettingRequest(key, value.isEmpty() ? null : String.valueOf(Integer.parseInt(value)), given));
             return;
         } else if (SettingRepository.POLICY_DATE.equals(key)
                 || SettingRepository.PERIOD_NUMBERING_FROM.equals(key)) {
@@ -60,12 +70,12 @@ public class ValidateSetting {
                     throw new InvalidSettingException("The " + key + " setting is blank or a date (yyyy-MM-dd)");
                 }
             }
-            body.set(new SettingRequest(key, value.isEmpty() ? null : value));
+            body.set(new SettingRequest(key, value.isEmpty() ? null : value, null));
             return;
         } else {
             throw new InvalidSettingException("Unknown setting: " + key);
         }
         body.set(new SettingRequest(key,
-                value.isEmpty() ? null : new BigDecimal(value).setScale(2).toPlainString()));
+                value.isEmpty() ? null : new BigDecimal(value).setScale(2).toPlainString(), given));
     }
 }

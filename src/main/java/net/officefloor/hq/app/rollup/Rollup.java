@@ -14,6 +14,7 @@ import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.setting.DatedSetting;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 
@@ -36,7 +37,7 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
     public static Rollup of(String sheetId, PersonRepository people, ClaimRepository claims,
             RateRepository rates, SheetRepository sheets, SettingRepository settings) {
         List<Rate> sheetRates = rates.list(sheetId);
-        String floor = settings.floor(sheetId);
+        DatedSetting floor = settings.floor(sheetId);
         BigDecimal cap = settings.cap(sheetId);
         LocalDate todayDate = sheets.today(sheetId);
         String today = todayDate.toString();
@@ -56,7 +57,7 @@ public record Rollup(Map<Long, Figures> people, String claimedTotal, String dueT
                 claimed = claimed.add(new BigDecimal(c.getAmount()));
                 String grade = p.gradeOn(c.getDate());
                 String pct = rateOn(sheetRates, grade, c.getDate());
-                String d = Dues.shown(c, pct == null ? null : Dues.of(c.getAmount(), pct, floor, late.rounding(c.getRoundDate())), late);
+                String d = Dues.shown(c, pct == null ? null : Dues.of(c.getAmount(), pct, floor.on(c.getDate()), late.rounding(c.getRoundDate())), late);
                 kept |= c.getSettledDue() != null || c.isBound()
                         || (pct != null && (!grade.equals(p.getGrade()) || c.getDate().compareTo(today) <= 0));
                 if (d != null) due = due.add(new BigDecimal(d));

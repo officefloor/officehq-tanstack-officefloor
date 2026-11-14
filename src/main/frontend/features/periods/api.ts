@@ -2,6 +2,7 @@ import { getJson, postJson } from '../../api/http';
 import { counts, liveClaims, type Claim } from '../claims/api';
 import { gradeOn, type Person } from '../people/api';
 import { claimDue, sumDues, type Late, type Rate } from '../rates/api';
+import type { DatedOn } from '../settings/api';
 import { sheetKey } from '../sheet/api';
 
 /** A period on the sheet: a name (unique on the sheet) and its from and to dates (yyyy-MM-dd), both
@@ -49,7 +50,7 @@ export function reopenPeriod(sheetId: string, by: string, name: string): Promise
  *  for a person added later); else the due of their live claims that count whose date falls in it
  *  (n/a ones skipped). */
 export function personPeriodDue(p: Period, person: Person, claims: Claim[], people: Person[] | undefined,
-  rates: Rate[] | undefined, floor: string, late: Late): string {
+  rates: Rate[] | undefined, floor: DatedOn, late: Late): string {
   if (p.closed) return p.personTotals[String(person.id)] ?? '0.00';
   return sumDues(liveClaims(claims.filter((c) => c.personId === person.id), people).filter(counts)
     .filter((c) => p.from <= c.date && c.date <= p.to)
@@ -58,6 +59,6 @@ export function personPeriodDue(p: Period, person: Person, claims: Claim[], peop
 
 /** A period's due-total as its row shows it: the sum of everyone's due-total for it. */
 export function periodDueTotal(p: Period, claims: Claim[], people: Person[] | undefined, rates: Rate[] | undefined,
-  floor: string, late: Late): string {
+  floor: DatedOn, late: Late): string {
   return sumDues((people ?? []).map((q) => personPeriodDue(p, q, claims, people, rates, floor, late)));
 }

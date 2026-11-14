@@ -37,8 +37,8 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
   const periods = useQuery({ queryKey: periodsKey(sheetId), queryFn: () => listPeriods(sheetId) });
   const floor = useFloor(sheetId);
-  const cap = useCap(sheetId);
   const today = useSheetToday(sheetId, user);
+  const cap = useCap(sheetId, today);
   const charges = useLate(sheetId, today);
   const byGrade = rateByGrade(rates.data, today);
   const [form, setForm] = useState<PersonInput>(EMPTY);

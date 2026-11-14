@@ -1,20 +1,23 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
-import { changeSetting, listSettings, settingsKey, SETTING_DEFAULTS, SETTING_KEYS } from './api';
+import { useSheetToday } from '../sheet/api';
+import { changeSetting, listSettings, settingOn, settingsKey, SETTING_KEYS, UNDATED_KEYS } from './api';
 
-/** The sheet's settings: each one's value in force and a form that changes them. A field shows the
- *  value in force until it is edited; saving saves the fields entered (every field when none was). */
+/** The sheet's settings: each one's value in force on the sheet's today and a form that changes them.
+ *  A field shows the value in force until it is edited; saving saves the fields entered (every field
+ *  when none was), a dated one from its from-date (blank: the sheet's today). */
 export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
-  const current = (key: string) =>
-    settings.data?.find((s) => s.key === key)?.value ?? SETTING_DEFAULTS[key] ?? '';
+  const today = useSheetToday(sheetId, user);
+  const current = (key: string) => settingOn(settings.data, key, today) ?? '';
   const [form, setForm] = useState<Record<string, string>>({});
+  const [froms, setFroms] = useState<Record<string, string>>({});
 
   const save = useMutation({
-    mutationFn: async (values: Record<string, string>) => {
-      for (const [key, value] of Object.entries(values)) await changeSetting(sheetId, user, key, value);
+    mutationFn: async ({ values, from }: { values: Record<string, string>; from: Record<string, string> }) => {
+      for (const [key, value] of Object.entries(values)) await changeSetting(sheetId, user, key, value, from[key] ?? '');
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: settingsKey(sheetId) }),
   });
@@ -28,6 +31,13 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
     save.reset();
   };
 
+  // A from-date entered alone saves the value in force from it.
+  const changeFrom = (key: string, from: string) => {
+    enter(key);
+    setFroms((f) => ({ ...f, [key]: from }));
+    save.reset();
+  };
+
   return (
     <section>
       <h3>Settings</h3>
@@ -38,7 +48,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
             : Object.fromEntries(SETTING_KEYS.map((key) => [key, current(key)]));
           submitOnce(() => {
             save.reset();
-            return save.mutateAsync(values).then(() => setForm({}));
+            return save.mutateAsync({ values, from: froms }).then(() => { setForm({}); setFroms({}); });
           });
         }}
       >
@@ -53,6 +63,15 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
                   : key === 'period-numbering-from' ? 'Off (yyyy-MM-dd)' : key.startsWith('terms-') ? "Sheet's terms" : undefined}
                 onFocus={() => enter(key)} onChange={(e) => change(key, e.target.value)} />
             </label>{' '}
+            {!UNDATED_KEYS.includes(key) && (
+              <>
+                <label>
+                  from{' '}
+                  <input type="date" data-testid={`setting-${key}-from`} value={froms[key] ?? ''}
+                    onChange={(e) => changeFrom(key, e.target.value)} />
+                </label>{' '}
+              </>
+            )}
             Now: <span data-testid={`setting-${key}-current`}>{current(key)}</span>
           </div>
         ))}
@@ -62,7 +81,7 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
         {save.isError && (
           <span data-testid="settings-error">
             The clerk limit and the cap must be blank, and the floor given, as 0.00 or more with up to two decimals;
-            the terms a whole number of days, and a grade's terms blank or a whole number of days; the late percent 0.00 or more with up to two decimals; the policy date and period numbering date blank or a date.
+            the terms a whole number of days, and a grade's terms blank or a whole number of days; the late percent 0.00 or more with up to two decimals; the policy date and period numbering date blank or a date; a from-date blank or a date.
           </span>
         )}
       </form>

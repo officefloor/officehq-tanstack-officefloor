@@ -1,6 +1,7 @@
 import { getJson, postJson } from '../../api/http';
 import { counts, dueBy, isBound, isCorrection, isOverdue, type Claim } from '../claims/api';
 import { sheetKey } from '../sheet/api';
+import type { DatedOn } from '../settings/api';
 
 /** A grade's rate on the sheet: a percent as two-decimal text, in force from its from-date
  *  (yyyy-MM-dd; null applies from the beginning of time) through its to-date (null: no end). A grade
@@ -67,9 +68,9 @@ export function dueOf(amount: string, pct: string | undefined, floor: string, ha
   return formatCents(cents < least && hundredths(amount) >= 0n ? least : cents);
 }
 
-/** What a claim's late charge goes by: the sheet's late percent and its today (a claim's due-by is its own);
+/** What a claim's late charge goes by: the sheet's late percent by date (a claim goes by the one in force on its date) and its today (a claim's due-by is its own);
  *  and the sheet's policy date (its today when blank), which decides how a claim's live figures round. */
-export type Late = { pct: string; today: string; policy: string };
+export type Late = { pct: DatedOn; today: string; policy: string };
 
 /** Whether a claim's live figures round half up: its round date (its own, or for a correction the
  *  date of the claim it corrects) is before the policy date; else they round half to even. */
@@ -81,7 +82,7 @@ export const roundsHalfUp = (c: Claim, late: Late) => (c.roundDate ?? c.date) < 
 export function lateCharge(c: Claim, figure: string, late: Late): bigint {
   if (isCorrection(c) || !isOverdue(c, late.today)) return 0n;
   const days = (Date.parse(`${late.today}T00:00:00Z`) - Date.parse(`${dueBy(c)}T00:00:00Z`)) / 86_400_000;
-  return roundPct(hundredths(figure) * hundredths(late.pct) * BigInt(Math.floor(days / 30)), roundsHalfUp(c, late));
+  return roundPct(hundredths(figure) * hundredths(late.pct(c.date)) * BigInt(Math.floor(days / 30)), roundsHalfUp(c, late));
 }
 
 /** A person's grade in force on a date (yyyy-MM-dd). */
@@ -89,11 +90,11 @@ export type GradeOn = (date: string) => string;
 
 /** A claim's due: the one fixed when it was settled (its late charge then frozen in), else its
  *  figure — the one bound by its person's last statement (not while PENDING; n/a when it bound none), else live at the rate in force on the
- *  claim's date of the grade in force then (`gradeOn`), at least the `floor` — with its late charge
+ *  claim's date of the grade in force then (`gradeOn`), at least the `floor` in force then — with its late charge
  *  on the sheet's today on top. */
-export function claimDue(c: Claim, rates: Rate[] | undefined, gradeOn: GradeOn, floor: string, late: Late): string | null {
+export function claimDue(c: Claim, rates: Rate[] | undefined, gradeOn: GradeOn, floor: DatedOn, late: Late): string | null {
   if (c.settledDue !== null) return c.settledDue;
-  const figure = c.stated && c.status !== 'PENDING' ? c.statedDue : dueOf(c.amount, rateOn(rates, gradeOn(c.date), c.date), floor, roundsHalfUp(c, late));
+  const figure = c.stated && c.status !== 'PENDING' ? c.statedDue : dueOf(c.amount, rateOn(rates, gradeOn(c.date), c.date), floor(c.date), roundsHalfUp(c, late));
   return figure === null ? null : formatCents(hundredths(figure) + lateCharge(c, figure, late));
 }
 
@@ -112,7 +113,7 @@ function roundPct(product: bigint, halfUp: boolean): bigint {
  *  figure, or a live one at a grade no longer in force on the sheet's today or dated on or before it
  *  (its rate since ended). */
 export function personDue(claims: Claim[], rates: Rate[] | undefined, gradeOn: GradeOn, pct: string | undefined,
-  floor: string, late: Late, cap: string | null) {
+  floor: DatedOn, late: Late, cap: string | null) {
   const own = claims.filter(counts);
   const now = gradeOn(late.today);
   const kept = (c: Claim) => c.settledDue !== null || isBound(c)
@@ -125,7 +126,7 @@ export function personDue(claims: Claim[], rates: Rate[] | undefined, gradeOn: G
 /** What a person's due figures add up to above the sheet's `cap` (null: no cap); 0.00 when they do
  *  not exceed it, or their due-total is n/a. */
 export function excessOf(claims: Claim[], rates: Rate[] | undefined, gradeOn: GradeOn, pct: string | undefined,
-  floor: string, late: Late, cap: string | null): string {
+  floor: DatedOn, late: Late, cap: string | null): string {
   const full = personDue(claims, rates, gradeOn, pct, floor, late, null);
   return full === null || cap === null || hundredths(full) <= hundredths(cap) ? '0.00'
     : formatCents(hundredths(full) - hundredths(cap));

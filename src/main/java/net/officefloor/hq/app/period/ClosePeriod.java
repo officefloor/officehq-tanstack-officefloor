@@ -11,6 +11,7 @@ import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.setting.DatedSetting;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
@@ -34,7 +35,7 @@ public class ClosePeriod {
         if (found.closed()) {
             throw new PeriodClosedException("The period is already closed");
         }
-        String floor = settings.floor(id);
+        DatedSetting floor = settings.floor(id);
         Dues.Late late = settings.late(id, sheets.today(id));
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         Map<Long, BigDecimal> personTotals = new LinkedHashMap<>();
@@ -45,7 +46,7 @@ public class ClosePeriod {
             if (person != null && !person.countsLive(c)) continue;
             Rate rate = person == null ? null
                     : rates.find(id, person.gradeOn(c.getDate()), LocalDate.parse(c.getDate()));
-            String due = Dues.shown(c, rate == null ? null : Dues.of(c.getAmount(), rate.pct(), floor, late.rounding(c.getRoundDate())), late);
+            String due = Dues.shown(c, rate == null ? null : Dues.of(c.getAmount(), rate.pct(), floor.on(c.getDate()), late.rounding(c.getRoundDate())), late);
             if (due != null) {
                 total = total.add(new BigDecimal(due));
                 if (person != null) personTotals.merge(person.getId(), new BigDecimal(due), BigDecimal::add);

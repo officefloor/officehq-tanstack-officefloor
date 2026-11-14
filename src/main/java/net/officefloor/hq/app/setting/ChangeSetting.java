@@ -1,5 +1,6 @@
 package net.officefloor.hq.app.setting;
 
+import java.time.LocalDate;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
 import net.officefloor.plugin.variable.Val;
@@ -14,6 +15,9 @@ public class ChangeSetting {
         String id = sheetId.trim();
         String user = by == null ? "" : by;
         sheets.open(id, user);
-        setting.set(settings.set(id, request.key(), request.value(), user));
+        // A dated key's value applies from its from-date, by default the sheet's today.
+        LocalDate from = !SettingRepository.isDated(request.key()) ? null
+                : request.from() != null ? LocalDate.parse(request.from()) : sheets.today(id);
+        setting.set(settings.set(id, request.key(), request.value(), from, user));
     }
 }

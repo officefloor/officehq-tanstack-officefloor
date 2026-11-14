@@ -4,6 +4,7 @@ import { HttpError } from '../../api/http';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { listPeriods, periodOf, periodsKey } from '../periods/api';
 import { claimDue, showDue, type GradeOn, type Late, type Rate } from '../rates/api';
+import type { DatedOn } from '../settings/api';
 import { addClaim, claimsKey, dueBy, isOverdue, moveClaim, reassignClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '' };
@@ -27,7 +28,7 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
  *  re-settle a SETTLED one (anyone else, any other status or a claim in a closed period refused likewise). */
 export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, floor, today, charges, selected, onSelect, people }: {
   sheetId: string; user: string; personId: number; claims: Claim[]; gradeOn: GradeOn; rates: Rate[] | undefined;
-  floor: string; today: string; charges: Late;
+  floor: DatedOn; today: string; charges: Late;
   /** The claims selected for a bulk action, and how one is selected or unselected. */
   selected: ReadonlySet<number>; onSelect: (id: number, on: boolean) => void;
   /** Everyone on the sheet, the people a claim can be moved to (all but `personId`). */

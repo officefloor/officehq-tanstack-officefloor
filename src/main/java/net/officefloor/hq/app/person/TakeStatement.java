@@ -8,6 +8,7 @@ import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.claim.Dues;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.setting.DatedSetting;
 import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Val;
@@ -22,7 +23,7 @@ public class TakeStatement {
             SheetRepository sheets, SettingRepository settings) {
         String sheetId = person.getSheetId();
         LocalDate today = sheets.today(sheetId);
-        String floor = settings.floor(sheetId);
+        DatedSetting floor = settings.floor(sheetId);
         Dues.Late late = settings.late(sheetId, today);
         List<Claim> own = claims.listOf(sheetId, person.getId());
         BigDecimal total = BigDecimal.ZERO.setScale(2);
@@ -34,7 +35,7 @@ public class TakeStatement {
             } else {
                 String grade = person.gradeOn(c.getDate());
                 Rate rate = rates.find(sheetId, grade, LocalDate.parse(c.getDate()));
-                String live = rate == null ? null : Dues.of(c.getAmount(), rate.pct(), floor, late.rounding(c.getRoundDate()));
+                String live = rate == null ? null : Dues.of(c.getAmount(), rate.pct(), floor.on(c.getDate()), late.rounding(c.getRoundDate()));
                 String shown = Dues.shown(c, live, late);
                 kept |= c.getSettledDue() != null || c.isBound()
                         || (rate != null && (!grade.equals(person.getGrade())

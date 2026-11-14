@@ -1,9 +1,12 @@
 package net.officefloor.hq.app.setting;
 
 import java.math.BigDecimal;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.LocalDate;
 import java.util.List;
 import net.officefloor.hq.app.claim.Dues;
+import net.officefloor.hq.app.sheet.SheetRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -46,61 +49,70 @@ public class SettingRepository {
     /** The floor until it is first set. */
     public static final String DEFAULT_FLOOR = "1.00";
 
+    /** Whether a key is dated: every key that carries a figure (the policy date and the period
+     *  numbering date are not). */
+    public static boolean isDated(String key) {
+        return !POLICY_DATE.equals(key) && !PERIOD_NUMBERING_FROM.equals(key);
+    }
+
     private final JdbcTemplate jdbc;
+    private final SheetRepository sheets;
 
-    public SettingRepository(JdbcTemplate jdbc) {
+    public SettingRepository(JdbcTemplate jdbc, SheetRepository sheets) {
         this.jdbc = jdbc;
+        this.sheets = sheets;
     }
 
-    /** The sheet's settings that have been set, by key. */
+    /** Every value recorded for the sheet's settings, by key, then by from-date (none first). */
     public List<Setting> list(String sheetId) {
-        return jdbc.query("SELECT sheet_id, setting, val FROM sheet_setting WHERE sheet_id = ? ORDER BY setting",
-                (rs, n) -> new Setting(rs.getString("sheet_id"), rs.getString("setting"),
-                        rs.getString("val") == null ? "" : rs.getString("val")), sheetId);
+        return jdbc.query("SELECT sheet_id, setting, val, from_date FROM sheet_setting WHERE sheet_id = ? "
+                + "ORDER BY setting, from_key", (rs, n) -> row(rs), sheetId);
     }
 
-    /** The setting's value; null when blank or never set. */
+    private static Setting row(ResultSet rs) throws SQLException {
+        LocalDate from = rs.getObject("from_date", LocalDate.class);
+        return new Setting(rs.getString("sheet_id"), rs.getString("setting"),
+                rs.getString("val") == null ? "" : rs.getString("val"), from == null ? null : from.toString());
+    }
+
+    /** The values recorded for a key, with its value before every from-date ({@code start}). */
+    public DatedSetting dated(String sheetId, String key, String start) {
+        return new DatedSetting(jdbc.query("SELECT sheet_id, setting, val, from_date FROM sheet_setting "
+                + "WHERE sheet_id = ? AND setting = ?", (rs, n) -> row(rs), sheetId, key), start);
+    }
+
+    /** An undated setting's value; null when blank or never set. */
     public String find(String sheetId, String key) {
-        // A blank value is a null row value, which a stream's findFirst cannot carry.
-        List<String> values = jdbc.query("SELECT val FROM sheet_setting WHERE sheet_id = ? AND setting = ?",
-                (rs, n) -> rs.getString("val"), sheetId, key);
-        return values.isEmpty() ? null : values.get(0);
+        return dated(sheetId, key, null).on("9999-12-31");
     }
 
-    /** The sheet's clerk limit; null when there is none. */
+    /** The sheet's clerk limit in force on its today; null when there is none. */
     public BigDecimal clerkLimit(String sheetId) {
-        String value = find(sheetId, CLERK_LIMIT);
+        String value = dated(sheetId, CLERK_LIMIT, null).on(sheets.today(sheetId).toString());
         return value == null ? null : new BigDecimal(value);
     }
 
-    /** The sheet's cap; null when there is none. */
+    /** The sheet's cap in force on its today; null when there is none. */
     public BigDecimal cap(String sheetId) {
-        String value = find(sheetId, CAP);
+        String value = dated(sheetId, CAP, null).on(sheets.today(sheetId).toString());
         return value == null ? null : new BigDecimal(value);
     }
 
-    /** The sheet's floor (two decimals). */
-    public String floor(String sheetId) {
-        String value = find(sheetId, FLOOR);
-        return value == null ? DEFAULT_FLOOR : value;
+    /** The sheet's floor (two decimals) by date: a claim goes by the one in force on its date. */
+    public DatedSetting floor(String sheetId) {
+        return dated(sheetId, FLOOR, DEFAULT_FLOOR);
     }
 
-    /** The sheet's terms (whole days). */
-    public int terms(String sheetId) {
-        String value = find(sheetId, TERMS);
-        return Integer.parseInt(value == null ? DEFAULT_TERMS : value);
+    /** The terms (whole days) of a grade in force on a date: its own, else the sheet's (a null
+     *  grade: the sheet's). */
+    public int terms(String sheetId, String grade, String date) {
+        String value = grade == null ? null : dated(sheetId, TERMS_OF_GRADE + grade, null).on(date);
+        return Integer.parseInt(value != null ? value : dated(sheetId, TERMS, DEFAULT_TERMS).on(date));
     }
 
-    /** The terms (whole days) of a grade: its own, else the sheet's (a null grade: the sheet's). */
-    public int terms(String sheetId, String grade) {
-        String value = grade == null ? null : find(sheetId, TERMS_OF_GRADE + grade);
-        return value == null ? terms(sheetId) : Integer.parseInt(value);
-    }
-
-    /** The sheet's late percent (two decimals). */
-    public String latePct(String sheetId) {
-        String value = find(sheetId, LATE_PCT);
-        return value == null ? DEFAULT_LATE_PCT : value;
+    /** The sheet's late percent (two decimals) by date: a claim goes by the one in force on its date. */
+    public DatedSetting latePct(String sheetId) {
+        return dated(sheetId, LATE_PCT, DEFAULT_LATE_PCT);
     }
 
     /** The sheet's policy date: the one set, else its {@code today}. */
@@ -120,11 +132,13 @@ public class SettingRepository {
         return new Dues.Late(latePct(sheetId), today, policyDate(sheetId, today));
     }
 
-    /** Set (or replace) the setting's value (null: blank). */
-    public Setting set(String sheetId, String key, String value, String user) {
-        jdbc.update("DELETE FROM sheet_setting WHERE sheet_id = ? AND setting = ?", sheetId, key);
-        jdbc.update("INSERT INTO sheet_setting (sheet_id, setting, val, set_by, set_at) "
-                + "VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)", sheetId, key, value, user);
-        return new Setting(sheetId, key, value == null ? "" : value);
+    /** Record the setting's value (null: blank) from the from-date (null: from the beginning of time,
+     *  for an undated key), replacing the one recorded from the same from-date. */
+    public Setting set(String sheetId, String key, String value, LocalDate from, String user) {
+        jdbc.update("DELETE FROM sheet_setting WHERE sheet_id = ? AND setting = ? AND from_key = ?",
+                sheetId, key, from == null ? LocalDate.of(1, 1, 1) : from);
+        jdbc.update("INSERT INTO sheet_setting (sheet_id, setting, val, from_date, set_by, set_at) "
+                + "VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)", sheetId, key, value, from, user);
+        return new Setting(sheetId, key, value == null ? "" : value, from == null ? null : from.toString());
     }
 }

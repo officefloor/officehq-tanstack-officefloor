@@ -11,8 +11,8 @@ export function useDueTotal(sheetId: string, user: string): string {
   const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
   const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
   const floor = useFloor(sheetId);
-  const cap = useCap(sheetId);
   const today = useSheetToday(sheetId, user);
+  const cap = useCap(sheetId, today);
   const charges = useLate(sheetId, today);
   const byGrade = rateByGrade(rates.data, today);
   const live = liveClaims(claims.data ?? [], people.data);
