@@ -45,7 +45,9 @@ const REFUSED: Partial<Record<Action, string>> = {
 // Move button. A steward re-settles a SETTLED claim, freezing it again at today's figure. An OPEN claim is deferred to the
 // date typed beside the Defer button. The Add proof button raises the claim's proofs count by one, of the kind chosen
 // beside it (none chosen: a receipt; not on a SETTLED or VOID claim, nor one due by a date in a closed period). The Split button splits the amount typed beside it off an
-// OPEN claim into a new OPEN claim of the same person (more than 0.00 and less than the claim's amount). A steward
+// OPEN claim into a new OPEN claim of the same person (more than 0.00 and less than the claim's amount); Part-settle splits its
+// amount off the same way and settles the new claim at once (PENDING above the clerk limit), refused whole when either
+// would be (the settle judged on the original claim). A steward
 // re-dates an OPEN or PENDING claim to the date typed beside the Re-date button. While the sheet has void reasons, a void
 // sends the reason chosen beside it (none chosen: the server refuses it). Delete sets a DRAFT claim aside as DELETED;
 // Restore makes it a DRAFT again, only on the sheet's today it was deleted. An open whose due is above the review threshold
@@ -61,6 +63,7 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
   const [deferTo, setDeferTo] = useState('');
   const [proofKind, setProofKind] = useState('');
   const [splitAmount, setSplitAmount] = useState('');
+  const [settlePartAmount, setSettlePartAmount] = useState('');
   const [redateTo, setRedateTo] = useState('');
   const others = (usePeople().data ?? []).filter((p) => p.id !== claim.personId);
   const queryClient = useQueryClient();
@@ -118,6 +121,22 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
     onError: () =>
       setError(
         `This ${claim.status} claim cannot be split by that amount (only an OPEN claim, not deferred nor in a closed period, by more than 0.00 and less than its amount, by a role allowed to open a claim).`,
+      ),
+  });
+
+  const settlePart = useMutation({
+    mutationFn: (amount: string) =>
+      postJson<Claim>(
+        `/api/sheets/${encodeURIComponent(sheet)}/claims/${claim.id}/settle/part?user=${encodeURIComponent(user)}`,
+        { amount },
+      ),
+    onSuccess: async () => {
+      setSettlePartAmount('');
+      await queryClient.invalidateQueries({ queryKey: claimsKey(sheet) });
+    },
+    onError: () =>
+      setError(
+        `This ${claim.status} claim cannot be part-settled by that amount (it must be split as Split does and settled as Settle does: not by the user who opened or last edited it, and one whose due is above the proof threshold needs a proof).`,
       ),
   });
 
@@ -276,6 +295,32 @@ export function ClaimStatus({ claim }: { claim: Claim }) {
         }}
       >
         Split
+      </button>
+      <input
+        data-testid="claim-settle-part-amount"
+        aria-label="Part-settle amount"
+        placeholder="settle part 0.00"
+        value={settlePartAmount}
+        onChange={(e) => {
+          setSettlePartAmount(e.target.value);
+          setError('');
+        }}
+      />
+      <button
+        type="button"
+        data-testid="claim-settle-part"
+        disabled={settlePart.isPending}
+        onClick={() => {
+          setError('');
+          const amount = settlePartAmount.trim();
+          if (!AMOUNT.test(amount)) {
+            setError('Type the amount to settle as 0.00.');
+            return;
+          }
+          once(() => settlePart.mutateAsync(amount));
+        }}
+      >
+        Part-settle
       </button>
       <input
         data-testid="claim-date-new"
