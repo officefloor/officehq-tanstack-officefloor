@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
+import { listPeriods, periodOf, periodsKey } from '../periods/api';
 import { claimDue, showDue, type Rate } from '../rates/api';
 import { addClaim, claimsKey, moveClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
 
@@ -10,11 +11,13 @@ const EMPTY: ClaimInput = { amount: '', date: '', note: '' };
  *  with its status, its due (fixed when settled, else at the person's `grade`'s rate in force on the
  *  claim's date, or bound by the person's last statement; none when there is no such rate), whether
  *  it is stated,
- *  who opened it, and buttons that change its status (the user who opened a claim cannot settle it). */
+ *  the period its date falls in (none when no period contains it), who opened it, and buttons that
+ *  change its status (the user who opened a claim cannot settle it). */
 export function PersonClaims({ sheetId, user, personId, claims, grade, rates }: {
   sheetId: string; user: string; personId: number; claims: Claim[]; grade: string; rates: Rate[] | undefined;
 }) {
   const queryClient = useQueryClient();
+  const periods = useQuery({ queryKey: periodsKey(sheetId), queryFn: () => listPeriods(sheetId) });
   const [form, setForm] = useState<ClaimInput>(EMPTY);
   const [editing, setEditing] = useState<number | null>(null);
 
@@ -101,6 +104,7 @@ export function PersonClaims({ sheetId, user, personId, claims, grade, rates }: 
               <td>
                 Stated <span data-testid="claim-stated">{c.stated ? 'yes' : 'no'}</span>
               </td>
+              <td data-testid="claim-period">{periodOf(periods.data, c.date)?.name ?? ''}</td>
               <td>
                 {(['open', 'settle', 'void'] as const).map((a) => (
                   <button key={a} type="button" data-testid={`claim-${a}`} disabled={move.isPending}
