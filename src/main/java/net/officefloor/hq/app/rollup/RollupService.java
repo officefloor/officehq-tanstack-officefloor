@@ -21,7 +21,7 @@ import org.springframework.stereotype.Service;
 
 /**
  * Works out a sheet's figures as the screen shows them: a person's claimed is their counting claims' amounts
- * added up, leaving out corrections; their due-total those claims' dues (live figures rounded by its policy date, plus
+ * added up (a held claim's too: a hold leaves out only the due figures), leaving out corrections; their due-total those claims' dues (live figures rounded by its policy date, plus
  * any late charge, at the late percent in force on each 30-day boundary, on the overdue ones, then raised to the floor in force on each claim's date) added up, at most the cap in force on the sheet's today; n/a when their grade on the sheet's today has no
  * rate there and no counting claim has a figure (kept, or at the rate for the grade in force on its date). Their overdue-total
  * is the dues of their overdue counting claims added up (skipping n/a, not capped). The sheet's totals add these up, skipping n/a;
@@ -65,11 +65,14 @@ public class RollupService {
             BigDecimal overdue = BigDecimal.ZERO.setScale(2);
             boolean kept = false;
             for (Claim claim : sheetClaims) {
-                if (claim.personId() != person.id() || !person.counts(claim, today)) {
+                if (claim.personId() != person.id()) {
                     continue;
                 }
-                if (!claim.correction()) {
+                if (!claim.correction() && person.countsClaimed(claim, today)) {
                     claimed = claimed.add(claim.amount());
+                }
+                if (!person.counts(claim, today)) {
+                    continue;
                 }
                 kept |= claim.keepsFigure();
                 BigDecimal figure = claim.due(Rate.inForce(sheetRates, person.gradeOn(claim.date()), claim),

@@ -100,13 +100,17 @@ export type ClaimComment = { by: string; date: string; text: string };
 export type ClaimLogLine = { status: ClaimStatus; by: string; date: string; due: string };
 
 /**
- * Whether a claim counts toward claimed, due-total and every live total: only OPEN, PENDING and SETTLED do,
+ * Whether a claim counts toward due-total and every live total but claimed (see countsClaimed): only OPEN, PENDING and SETTLED do,
  * and an open (or pending) one not when it is held or one of its person's `holds` covers its date and no statement binds it,
  * nor while it is deferred on the sheet's `today`.
  */
 export const counts = (c: Claim, holds: Hold[], today: string) =>
   c.status === 'SETTLED' ||
   (isOpen(c) && !deferred(c, today) && (bound(c) || !(c.held || holds.some((h) => covers(h, c.date)))));
+
+/** Whether a claim counts toward claimed: as {@link counts}, but a hold (the person's or the claim's) does not take it out. */
+export const countsClaimed = (c: Claim, today: string) =>
+  c.status === 'SETTLED' || (isOpen(c) && !deferred(c, today));
 
 /** Each person's live holds on the sheet's `today`, by id: their open claims dated within one count in no live total. */
 export const holdsById = (people: { id: number; holds: Hold[]; retiredFrom: string | null }[], today: string) =>
@@ -147,8 +151,8 @@ export function useLastBatch() {
   });
 }
 
-/** The sum of the counted claims' amounts, leaving out corrections, with two decimals; added in cents so it is exact. `holds` holds each person's holds. */
-export function claimed(claims: Claim[], holds: Map<number, Hold[]>, today: string): string {
-  const cents = claims.filter((c) => !c.corrects && counts(c, holds.get(c.personId) ?? [], today)).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
+/** The sum of the counted claims' amounts (held ones too), leaving out corrections, with two decimals; added in cents so it is exact. */
+export function claimed(claims: Claim[], today: string): string {
+  const cents = claims.filter((c) => !c.corrects && countsClaimed(c, today)).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
   return (cents / 100).toFixed(2);
 }
