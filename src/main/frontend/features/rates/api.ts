@@ -1,5 +1,5 @@
 import { getJson, postJson } from '../../api/http';
-import { counts, dueBy, isOverdue, type Claim } from '../claims/api';
+import { counts, dueBy, isCorrection, isOverdue, type Claim } from '../claims/api';
 import { sheetKey } from '../sheet/api';
 
 /** A grade's rate on the sheet: a percent as two-decimal text, in force from its from-date
@@ -45,29 +45,34 @@ export function rateByGrade(rates: Rate[] | undefined, date: string): Map<string
   return byGrade;
 }
 
-/** Two-decimal text as a whole number of hundredths. */
+/** Two-decimal text (may be negative) as a whole number of hundredths. */
 function hundredths(text: string): bigint {
-  const [whole, frac = ''] = text.trim().split('.');
-  return BigInt(whole || '0') * 100n + BigInt((frac + '00').slice(0, 2));
+  const t = text.trim();
+  const negative = t.startsWith('-');
+  const [whole, frac = ''] = (negative ? t.slice(1) : t).split('.');
+  const value = BigInt(whole || '0') * 100n + BigInt((frac + '00').slice(0, 2));
+  return negative ? -value : value;
 }
 
 /** An amount times a percent, divided by 100, rounded half to even to two decimals, and at least
- *  the sheet's `floor`; null (n/a) when there is no rate. Exact: worked in whole hundredths. */
+ *  the sheet's `floor` (a correction, a negative amount, has no floor); null (n/a) when there is no
+ *  rate. Exact: worked in whole hundredths. */
 export function dueOf(amount: string, pct: string | undefined, floor: string): string | null {
   if (pct === undefined) return null;
   // amount (1/100) x pct (1/100) / 100 is in 1/1_000_000; to cents is / 10_000, half to even.
   const cents = roundPct(hundredths(amount) * hundredths(pct));
   const least = hundredths(floor);
-  return formatCents(cents < least ? least : cents);
+  return formatCents(cents < least && hundredths(amount) >= 0n ? least : cents);
 }
 
 /** What a claim's late charge goes by: the sheet's late percent, its terms (days) and its today. */
 export type Late = { pct: string; terms: number; today: string };
 
 /** The late charge on an OPEN claim's `figure`: the late percent of it for every full 30 days it is
- *  past its due-by on the sheet's today, rounded half to even to two decimals (0 when not overdue). */
+ *  past its due-by on the sheet's today, rounded half to even to two decimals (0 when not overdue, and
+ *  on a correction). */
 export function lateCharge(c: Claim, figure: string, late: Late): bigint {
-  if (!isOverdue(c, late.terms, late.today)) return 0n;
+  if (isCorrection(c) || !isOverdue(c, late.terms, late.today)) return 0n;
   const days = (Date.parse(`${late.today}T00:00:00Z`) - Date.parse(`${dueBy(c, late.terms)}T00:00:00Z`)) / 86_400_000;
   return roundPct(hundredths(figure) * hundredths(late.pct) * BigInt(Math.floor(days / 30)));
 }
@@ -85,8 +90,10 @@ export function claimDue(c: Claim, rates: Rate[] | undefined, gradeOn: GradeOn, 
   return figure === null ? null : formatCents(hundredths(figure) + lateCharge(c, figure, late));
 }
 
-/** A product of hundredths and a percent's hundredths (in 1/1_000_000) to cents, half to even. */
+/** A product of hundredths and a percent's hundredths (in 1/1_000_000) to cents, half to even
+ *  (symmetric about zero). */
 function roundPct(product: bigint): bigint {
+  if (product < 0n) return -roundPct(-product);
   const whole = product / 10_000n;
   const rest = product % 10_000n;
   return rest > 5_000n || (rest === 5_000n && whole % 2n === 1n) ? whole + 1n : whole;
@@ -118,8 +125,9 @@ export function sumDues(dues: Array<string | null>): string {
 }
 
 function formatCents(cents: bigint): string {
-  const frac = (cents % 100n).toString().padStart(2, '0');
-  return `${cents / 100n}.${frac}`;
+  const abs = cents < 0n ? -cents : cents;
+  const frac = (abs % 100n).toString().padStart(2, '0');
+  return `${cents < 0n ? '-' : ''}${abs / 100n}.${frac}`;
 }
 
 /** A due as shown: n/a when there is none. */

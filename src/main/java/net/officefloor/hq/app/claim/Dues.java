@@ -15,18 +15,23 @@ public final class Dues {
     }
 
     /** An amount times a percent, divided by 100, rounded half to even to two decimals, and at least
-     *  the sheet's floor. */
+     *  the sheet's floor (a correction, a negative amount, has no floor). */
     public static String of(String amount, String pct, String floor) {
-        return new BigDecimal(amount).multiply(new BigDecimal(pct))
-                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_EVEN)
-                .max(new BigDecimal(floor).setScale(2)).toPlainString();
+        BigDecimal due = new BigDecimal(amount).multiply(new BigDecimal(pct))
+                .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_EVEN);
+        return (isCorrection(amount) ? due : due.max(new BigDecimal(floor).setScale(2))).toPlainString();
+    }
+
+    /** Whether a claim's amount makes it a correction: it is negative. */
+    public static boolean isCorrection(String amount) {
+        return new BigDecimal(amount).signum() < 0;
     }
 
     /** The late charge on a claim's figure: the late percent of it for every full 30 days its OPEN
      *  claim is past its due-by (its date plus the terms) on the sheet's today, rounded half to even
-     *  to two decimals; none (0.00) when it is not overdue. */
+     *  to two decimals; none (0.00) when it is not overdue, or on a correction. */
     public static BigDecimal charge(Claim claim, String figure, Late late) {
-        if (figure == null || !ClaimStatus.OPEN.name().equals(claim.getStatus())) return BigDecimal.ZERO.setScale(2);
+        if (figure == null || isCorrection(claim.getAmount()) || !ClaimStatus.OPEN.name().equals(claim.getStatus())) return BigDecimal.ZERO.setScale(2);
         LocalDate dueBy = LocalDate.parse(claim.getDate()).plusDays(late.terms());
         long periods = Math.max(0, ChronoUnit.DAYS.between(dueBy, late.today())) / 30;
         return new BigDecimal(figure).multiply(new BigDecimal(late.pct()))

@@ -10,13 +10,18 @@ export type ClaimAction = 'open' | 'settle' | 'void';
  *  number on the sheet (given when opened; null while a draft or once voided), and its settled due
  *  (fixed when settled; null otherwise, or when there was no rate then — its due stays live), and who
  *  opened it (null while a draft; that user cannot settle it), and whether its person's last statement
- *  bound it, with the figure it bound (null when it had none): a bound claim shows and totals that. */
+ *  bound it, with the figure it bound (null when it had none): a bound claim shows and totals that.
+ *  A correction (a negative amount) has the number of the SETTLED claim it corrects (null otherwise). */
 export type Claim = {
   id: number; sheetId: string; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
   number: number | null; settledDue: string | null; openedBy: string | null;
-  stated: boolean; statedDue: string | null;
+  stated: boolean; statedDue: string | null; corrects: number | null;
 };
-export type ClaimInput = { amount: string; date: string; note: string };
+/** `corrects`: the number of the SETTLED claim of the same person a correction (a negative amount) corrects. */
+export type ClaimInput = { amount: string; date: string; note: string; corrects: string };
+
+/** Whether a claim is a correction: its amount is negative. */
+export const isCorrection = (c: Pick<Claim, 'amount'>) => c.amount.trim().startsWith('-') && Number(c.amount) !== 0;
 
 const sheetBase = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}`;
 
@@ -27,8 +32,9 @@ export function listClaims(sheetId: string): Promise<Claim[]> {
   return getJson<Claim[]>(`${sheetBase(sheetId)}/claims`);
 }
 
-/** Add a claim to a person; refused (rejects) when the amount is missing, negative or has more
- *  than two decimals, or the date is not a date. A blank date takes the sheet's today. */
+/** Add a claim to a person; refused (rejects) when the amount is missing or has more than two
+ *  decimals, the date is not a date, or it is a correction (negative) that does not name by number a
+ *  SETTLED claim of the person. A blank date takes the sheet's today. */
 export function addClaim(sheetId: string, by: string, personId: number, input: ClaimInput): Promise<Claim> {
   return postJson<Claim>(`${sheetBase(sheetId)}/people/${personId}/claims?by=${encodeURIComponent(by)}`, input);
 }

@@ -12,9 +12,9 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due";
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by, stated, stated_due, corrects";
 
-    private static final RowMapper<Claim> ROW = (rs, n) -> new Claim(rs.getLong("id"),
+    private static final RowMapper<Claim> ROW = (rs, n) -> withCorrects(new Claim(rs.getLong("id"),
             rs.getString("sheet_id"), rs.getLong("person_id"),
             rs.getBigDecimal("amount").setScale(2).toPlainString(),
             rs.getObject("claim_date", LocalDate.class).toString(), rs.getString("note"),
@@ -23,7 +23,12 @@ public class ClaimRepository {
                     : rs.getBigDecimal("settled_due").setScale(2).toPlainString(),
             rs.getString("opened_by"), rs.getBoolean("stated"),
             rs.getBigDecimal("stated_due") == null ? null
-                    : rs.getBigDecimal("stated_due").setScale(2).toPlainString());
+                    : rs.getBigDecimal("stated_due").setScale(2).toPlainString()), rs.getObject("corrects", Long.class));
+
+    private static Claim withCorrects(Claim claim, Long corrects) {
+        claim.setCorrects(corrects);
+        return claim;
+    }
 
     private final JdbcTemplate jdbc;
 
@@ -42,13 +47,19 @@ public class ClaimRepository {
                 ROW, sheetId, id).stream().findFirst().orElse(null);
     }
 
+    /** The claim on the sheet with that number; null when none has it. */
+    public Claim findByNumber(String sheetId, long number) {
+        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND number = ?",
+                ROW, sheetId, number).stream().findFirst().orElse(null);
+    }
+
     public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
-            String user) {
+            Long corrects, String user) {
         GeneratedKeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
-                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, created_by) "
-                            + "VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO claim (sheet_id, person_id, amount, claim_date, note, created_by, corrects) "
+                            + "VALUES (?, ?, ?, ?, ?, ?, ?)",
                     new String[] { "id" });
             ps.setString(1, sheetId);
             ps.setLong(2, personId);
@@ -56,18 +67,19 @@ public class ClaimRepository {
             ps.setObject(4, date);
             ps.setString(5, note);
             ps.setString(6, user);
+            ps.setObject(7, corrects);
             return ps;
         }, key);
-        return new Claim(key.getKey().longValue(), sheetId, personId, amount.toPlainString(),
-                date.toString(), note, ClaimStatus.DRAFT.name(), null, null, null);
+        return withCorrects(new Claim(key.getKey().longValue(), sheetId, personId, amount.toPlainString(),
+                date.toString(), note, ClaimStatus.DRAFT.name(), null, null, null), corrects);
     }
 
     public void update(Claim claim) {
-        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, number = ?, settled_due = ?, opened_by = ? WHERE sheet_id = ? AND id = ?",
+        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, number = ?, settled_due = ?, opened_by = ?, corrects = ? WHERE sheet_id = ? AND id = ?",
                 new BigDecimal(claim.getAmount()), LocalDate.parse(claim.getDate()), claim.getNote(),
                 claim.getStatus(), claim.getNumber(),
                 claim.getSettledDue() == null ? null : new BigDecimal(claim.getSettledDue()),
-                claim.getOpenedBy(),
+                claim.getOpenedBy(), claim.getCorrects(),
                 claim.getSheetId(), claim.getId());
     }
 

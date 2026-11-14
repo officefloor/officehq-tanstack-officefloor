@@ -9,10 +9,10 @@ import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.plugin.variable.Val;
 
 /** Edits a claim: only a DRAFT can be edited (to change an open claim, void it and add a new one),
- *  and not to a date after its person's retirement date. */
+ *  and not to a date after its person's retirement date; a correction as when added. */
 public class ApplyClaim {
     public void apply(@Val ValidClaim request, @Val Claim claim, SheetRepository sheets,
-            PeriodRepository periods, PersonRepository people)
+            PeriodRepository periods, PersonRepository people, ClaimRepository claims)
             throws ClaimStatusException, PeriodClosedException, InvalidClaimException {
         if (!ClaimStatus.DRAFT.name().equals(claim.getStatus())) {
             throw new ClaimStatusException("A " + claim.getStatus() + " claim cannot be edited");
@@ -23,7 +23,9 @@ public class ApplyClaim {
         if (person != null && person.retiredBefore(date)) {
             throw new InvalidClaimException("The person is retired from " + person.getRetiredFrom());
         }
+        Long corrects = Corrections.check(request, claim.getSheetId(), claim.getPersonId(), claims);
         claim.setAmount(request.amount().toPlainString());
+        claim.setCorrects(corrects);
         claim.setDate(date.toString());
         claim.setNote(request.note());
         periods.requireOpen(claim.getSheetId(), claim.getDate());

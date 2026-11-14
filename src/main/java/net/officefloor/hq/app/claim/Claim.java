@@ -6,7 +6,8 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
  *  (a {@link ClaimStatus} name), and its number on the sheet (given when opened and kept when voided;
  *  none while a draft), its settled due (fixed when settled; none otherwise, or when there was no rate), and
  *  who opened it (none while a draft), and whether its person's last statement bound it, with the
- *  figure it bound (none when it had none): a bound claim shows and totals that figure. */
+ *  figure it bound (none when it had none): a bound claim shows and totals that figure. A correction (a
+ *  negative amount) keeps the number of the SETTLED claim of its person it corrects (none otherwise). */
 public class Claim {
     private final long id;
     private final String sheetId;
@@ -20,6 +21,7 @@ public class Claim {
     private String openedBy;
     private boolean stated;
     private String statedDue;
+    private Long corrects;
 
     public Claim(long id, String sheetId, long personId, String amount, String date, String note,
             String status, Long number, String settledDue, String openedBy) {
@@ -61,6 +63,9 @@ public class Claim {
 
     public String getOpenedBy() { return openedBy; }
     public void setOpenedBy(String openedBy) { this.openedBy = openedBy; }
+
+    public Long getCorrects() { return corrects; }
+    public void setCorrects(Long corrects) { this.corrects = corrects; }
 
     public boolean isStated() { return stated; }
     public String getStatedDue() { return statedDue; }

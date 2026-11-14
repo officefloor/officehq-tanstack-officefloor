@@ -6,7 +6,7 @@ import { listPeriods, periodOf, periodsKey } from '../periods/api';
 import { claimDue, showDue, type GradeOn, type Late, type Rate } from '../rates/api';
 import { addClaim, claimsKey, dueBy, isOverdue, moveClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
 
-const EMPTY: ClaimInput = { amount: '', date: '', note: '' };
+const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '' };
 
 /** A person's claims: a form that adds a claim or edits one, and the claims newest first, each
  *  with its status, its due (fixed when settled, else at the rate in force on the claim's date of the
@@ -16,7 +16,8 @@ const EMPTY: ClaimInput = { amount: '', date: '', note: '' };
  *  it is stated,
  *  the period its date falls in (none when no period contains it), who opened it, and buttons that
  *  change its status (the user who opened a claim cannot settle it, nor a clerk one whose due is
- *  above the sheet's clerk limit). Only a DRAFT can be edited:
+ *  above the sheet's clerk limit), and for a correction (a negative amount, no floor and no late
+ *  charge) the number of the SETTLED claim it corrects. Only a DRAFT can be edited:
  *  editing any other claim is refused with an error on the claim. */
 export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, floor, terms, today, charges }: {
   sheetId: string; user: string; personId: number; claims: Claim[]; gradeOn: GradeOn; rates: Rate[] | undefined;
@@ -68,7 +69,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       return;
     }
     setEditRefused(null);
-    setForm({ amount: c.amount, date: c.date, note: c.note });
+    setForm({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects === null ? '' : String(c.corrects) });
     setEditing(c.id);
     save.reset();
   };
@@ -97,6 +98,8 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
           onChange={(e) => change({ date: e.target.value })} />{' '}
         <input data-testid="claim-form-note" placeholder="Note" value={form.note}
           onChange={(e) => change({ note: e.target.value })} />{' '}
+        <input data-testid="claim-form-corrects" placeholder="Corrects no." value={form.corrects}
+          onChange={(e) => change({ corrects: e.target.value })} />{' '}
         <button type="submit" data-testid="claim-form-submit" disabled={save.isPending}>
           {editing === null ? 'Add claim' : 'Save claim'}
         </button>
@@ -105,7 +108,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
             ? 'A claim dated inside a closed period cannot be added or edited.'
             : save.error instanceof HttpError && save.error.status === 409
             ? 'Only a DRAFT claim can be edited.'
-            : 'A claim needs an amount of 0.00 or more with up to two decimals.'}</span>
+            : 'A claim needs an amount with up to two decimals; a negative one (a correction) must name, by number, a SETTLED claim of this person.'}</span>
         )}
       </form>
       <table>
@@ -116,6 +119,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
               <td data-testid="claim-amount">{Number(c.amount).toFixed(2)}</td>
               <td data-testid="claim-date">{c.date}</td>
               <td data-testid="claim-note">{c.note}</td>
+              <td data-testid="claim-corrects">{c.corrects ?? ''}</td>
               <td data-testid="claim-due">{showDue(claimDue(c, rates, gradeOn, floor, charges))}</td>
               <td>
                 Due by <span data-testid="claim-due-by">{dueBy(c, terms)}</span>{' '}

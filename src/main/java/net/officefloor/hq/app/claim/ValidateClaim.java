@@ -8,16 +8,26 @@ import net.officefloor.plugin.variable.Out;
 import org.springframework.web.bind.annotation.RequestBody;
 
 public class ValidateClaim {
-    /** 0 or more, with up to two decimals. */
-    private static final Pattern AMOUNT = Pattern.compile("(\\d+(\\.\\d{0,2})?|\\.\\d{1,2})");
+    /** An amount (negative for a correction), with up to two decimals. */
+    private static final Pattern AMOUNT = Pattern.compile("-?(\\d+(\\.\\d{0,2})?|\\.\\d{1,2})");
+    private static final Pattern NUMBER = Pattern.compile("\\d{1,18}");
 
     public void validate(@RequestBody ClaimRequest request, Out<ValidClaim> body)
             throws InvalidClaimException {
         String amount = request == null || request.amount() == null ? "" : request.amount().trim();
         String date = request == null || request.date() == null ? "" : request.date().trim();
         String note = request == null || request.note() == null ? "" : request.note().trim();
+        String corrects = request == null || request.corrects() == null ? "" : request.corrects().trim();
         if (!AMOUNT.matcher(amount).matches()) {
-            throw new InvalidClaimException("An amount of 0.00 or more with up to two decimals is required");
+            throw new InvalidClaimException("An amount with up to two decimals is required");
+        }
+        BigDecimal value = new BigDecimal(amount).setScale(2);
+        Long corrected = null;
+        if (value.signum() < 0) {
+            if (!NUMBER.matcher(corrects).matches()) {
+                throw new InvalidClaimException("A negative amount must name the claim it corrects");
+            }
+            corrected = Long.valueOf(corrects);
         }
         LocalDate day = null;
         if (!date.isEmpty()) {
@@ -27,6 +37,6 @@ public class ValidateClaim {
                 throw new InvalidClaimException("Not a date: " + date);
             }
         }
-        body.set(new ValidClaim(new BigDecimal(amount).setScale(2), day, note));
+        body.set(new ValidClaim(value, day, note, corrected));
     }
 }
