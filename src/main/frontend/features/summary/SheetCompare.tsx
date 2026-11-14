@@ -3,7 +3,8 @@ import { getLiveJson, HttpError } from '../../api/http';
 import type { Claim } from '../claims/claims';
 import { useClaims } from '../claims/claims';
 import type { Person } from '../people/people';
-import { GRADES, usePeople } from '../people/people';
+import { useGradeCodes } from '../grades/grades';
+import { usePeople } from '../people/people';
 import type { Rate } from '../rates/rates';
 import { useRates } from '../rates/rates';
 import type { SheetInfo } from '../session/session';
@@ -12,9 +13,9 @@ import type { Settings } from '../settings/settings';
 import { dueRules, useDueRules } from '../settings/settings';
 import { gradeDueTotal } from './Summary';
 
-// Compare this sheet with another by id: one line per grade, `<grade> <this sheet's summary due-total> <the other's>`,
-// the other's worked out as its own summary shows it (0.00 for a grade it has no one on). A sheet that does not exist
-// gives no lines; the other sheet is only read, never created.
+// Compare this sheet with another by id: one line per grade of this sheet (A to C then those added on it),
+// `<grade> <this sheet's summary due-total> <the other's>`, the other's worked out as its own summary shows it (0.00
+// for a grade it has no one on). A sheet that does not exist gives no lines; the other sheet is only read, never created.
 export function SheetCompare() {
   const [user] = useCurrentUser();
   const [sheet] = useCurrentSheet();
@@ -22,6 +23,7 @@ export function SheetCompare() {
   const claims = useClaims().data ?? [];
   const rates = useRates().data ?? [];
   const rules = useDueRules();
+  const grades = useGradeCodes();
   const [other, setOther] = useState('');
   const [lines, setLines] = useState<string[] | null>(null);
   const [error, setError] = useState('');
@@ -51,7 +53,7 @@ export function SheetCompare() {
       ]);
       const otherRules = dueRules(settings, info.today, otherClaims);
       setLines(
-        GRADES.map(
+        grades.map(
           (g) =>
             `${g} ${gradeDueTotal(g, people, claims, rates, rules)} ${gradeDueTotal(g, otherPeople, otherClaims, otherRates, otherRules)}`,
         ),

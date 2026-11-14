@@ -1,6 +1,8 @@
 package net.officefloor.hq.app.grade;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.person.CheckPersonNameUnique;
 import net.officefloor.hq.app.person.InvalidPersonException;
@@ -18,14 +20,15 @@ import org.springframework.web.bind.annotation.RequestParam;
 /**
  * Gives every person whose grade in force on the sheet's today is the merged grade the other one from that today, one
  * after another in list order, each exactly as the person form saves a grade change: PERSON_EDITED, then the rollup
- * lines it moved. One the person form would refuse (a name in use across the tree) is left as it is.
+ * lines it moved. One the person form would refuse (a name in use across the tree) is left as it is. Publishes
+ * the people it moved, for the merge to make retroactive.
  */
 public class MergeGrade {
     public void merge(@Val GradeMerge merge, @RequestParam("user") String user, SheetRepository sheets,
-            PersonRepository people, RollupService rollups, NameTree tree, Audit audit, Out<GradeMerged> merged) {
+            PersonRepository people, RollupService rollups, NameTree tree, Audit audit, Out<GradeMerged> merged, Out<GradeMergeMoved> moved) {
         String sheetId = merge.sheetId();
         LocalDate today = sheets.today(sheetId);
-        int count = 0;
+        List<Long> ids = new ArrayList<>();
         for (Person person : people.findAll(sheetId)) {
             if (!merge.from().equals(person.gradeOn(today))) {
                 continue;
@@ -44,8 +47,9 @@ public class MergeGrade {
             audit.record("PERSON_EDITED sheet=" + sheetId + " by=" + user + " name=" + saved.name() + " grade="
                     + saved.grade());
             RollupLines.record(before, rollups.compute(sheetId), sheetId, user, audit);
-            count++;
+            ids.add(saved.id());
         }
-        merged.set(new GradeMerged(count));
+        merged.set(new GradeMerged(ids.size()));
+        moved.set(new GradeMergeMoved(List.copyOf(ids)));
     }
 }

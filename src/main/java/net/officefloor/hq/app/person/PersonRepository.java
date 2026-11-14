@@ -126,6 +126,14 @@ public class PersonRepository {
         }
     }
 
+    /** Give the person, from the beginning of time, the other grade wherever a grade of theirs is the merged one. */
+    public void regrade(String sheetId, long personId, String from, String into) {
+        jdbc.update("UPDATE person_grade SET grade = ? WHERE sheet_id = ? AND person_id = ? AND grade = ?", into,
+                sheetId, personId, from);
+        jdbc.update("UPDATE person SET grade = ? WHERE sheet_id = ? AND id = ? AND grade = ?", into, sheetId, personId,
+                from);
+    }
+
     private void insertGrade(String sheetId, long personId, GradeFrom grade) {
         jdbc.update("INSERT INTO person_grade (sheet_id, person_id, grade, from_date) VALUES (?, ?, ?, ?)", sheetId,
                 personId, grade.grade(), grade.from() == null ? null : Date.valueOf(grade.from()));
