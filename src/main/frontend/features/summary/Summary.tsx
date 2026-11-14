@@ -1,10 +1,14 @@
 import { isActive } from '../active/active';
 import { useClaims } from '../claims/claims';
+import type { Claim } from '../claims/claims';
 import { GRADES, liveHolds, usePeople } from '../people/people';
+import type { Person } from '../people/people';
 import { periodDue, usePeriods } from '../periods/periods';
 import { personDue, total, useRates } from '../rates/rates';
+import type { Rate } from '../rates/rates';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { useDueRules, useSettings } from '../settings/settings';
+import type { DueRules } from '../settings/settings';
 import { reviewLate } from '../reviewlate/reviewLate';
 import { useVoidReasons } from '../voidreasons/voidReasons';
 
@@ -50,14 +54,11 @@ export function Summary() {
         <tbody>
           {GRADES.map((g) => {
             const on = current.filter((p) => p.grade === g);
-            const dues = on.map((p) =>
-              personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, liveHolds(p, rules.today), rules),
-            );
             return (
               <tr key={g}>
                 <td>{g}</td>
                 <td data-testid={`summary-grade-${g}-count`}>{on.length}</td>
-                <td data-testid={`summary-grade-${g}-due-total`}>{total(dues)}</td>
+                <td data-testid={`summary-grade-${g}-due-total`}>{gradeDueTotal(g, people, claims, rates, rules)}</td>
                 <td data-testid={`summary-grade-${g}-active`}>
                   {on.filter((p) => isActive(claims.filter((c) => c.personId === p.id), liveHolds(p, rules.today), rules.today)).length}
                 </td>
@@ -126,6 +127,14 @@ export function Summary() {
       </table>
     </section>
   );
+}
+
+/** The due-total of a grade: the due-totals of the people on it today (retired people left out) added up, skipping n/a. */
+export function gradeDueTotal(grade: string, people: Person[], claims: Claim[], rates: Rate[], rules: DueRules): string {
+  const dues = people
+    .filter((p) => !p.retired && p.grade === grade)
+    .map((p) => personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, liveHolds(p, rules.today), rules));
+  return total(dues);
 }
 
 /** A two-decimal value as whole hundredths, exactly. */
