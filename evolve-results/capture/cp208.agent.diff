@@ -1,0 +1,195 @@
+diff --git a/src/main/frontend/features/claims/PersonClaimed.tsx b/src/main/frontend/features/claims/PersonClaimed.tsx
+index 04345ac19..6f9069b7f 100644
+--- a/src/main/frontend/features/claims/PersonClaimed.tsx
++++ b/src/main/frontend/features/claims/PersonClaimed.tsx
+@@ -4,7 +4,7 @@ import { claimed, useClaims } from './claims';
+ import { useColumnShown } from '../columns/columns';
+ 
+ // What a person has claimed: the sum of their counting claims' amounts (not corrections; held ones count, a retired
+-// person's none once their retirement date is reached).
++// person's none once their retirement date is reached, but those a statement binds).
+ export function PersonClaimed({ person }: { person: Person }) {
+   const claims = (useClaims().data ?? []).filter((c) => c.personId === person.id);
+   const today = useSheetToday();
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 1b80bb92e..a98b06a22 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -154,10 +154,10 @@ export function useLastBatch() {
+ 
+ /**
+  * The sum of the counted claims' amounts (held ones too), leaving out corrections and the claims of people whose retirement
+- * date has been reached on `today`, with two decimals; added in cents so it is exact.
++ * date has been reached on `today` (unless a statement binds them), with two decimals; added in cents so it is exact.
+  */
+ export function claimed(claims: Claim[], today: string, people: { id: number; retiredFrom: string | null }[]): string {
+   const retired = new Set(people.filter((p) => retiredOn(p, today)).map((p) => p.id));
+-  const cents = claims.filter((c) => !c.corrects && !retired.has(c.personId) && countsClaimed(c, today)).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
++  const cents = claims.filter((c) => !c.corrects && (!retired.has(c.personId) || bound(c)) && countsClaimed(c, today)).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
+   return (cents / 100).toFixed(2);
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java
+index 70a5cc690..a7434321b 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ApplyClaimAction.java
+@@ -21,8 +21,9 @@ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /**
+  * Moves the claim to the action's status; refused (400) when the claim's status does not allow it.
+- * Opening gives the claim the sheet's next number; a voided claim keeps its number (it is never reused). While the
+- * sheet's period numbering from date is set and its today is on or after it, opening instead gives the claim the next
++ * Settling or approving gives an unnumbered claim the sheet's next number (an OPEN, PENDING or REVIEW claim has none;
++ * one numbered before keeps its number); a voided claim keeps its number (it is never reused). While the
++ * sheet's period numbering from date is set and its today is on or after it, settling instead gives the claim the next
+  * number within the period containing its due-by (P1-1, P1-2, ...), or within the claims in no period (X-1, ...).
+  * Opening, settling and voiding are refused (400) to a role the sheet's permission matrix does not allow them.
+  * Opening records the user who opened it; that user cannot settle it (four eyes). Nor can the user who last edited
+@@ -45,7 +46,7 @@ import org.springframework.web.bind.annotation.RequestParam;
+  * While the sheet's void reasons list is not empty, a void is refused (400) without a reason chosen from it; a reason
+  * not on the list is always refused.
+  * Opening a claim whose due (as shown now) is above the sheet's review threshold in force on its date sends it to REVIEW
+- * instead, with no number yet, recording who opened it; only a steward reviews it, which opens it (giving its number).
++ * instead, recording who opened it; only a steward reviews it, which opens it (still with no number).
+  * While its person is flagged (the sheet's today on or before the flag's until date), only a steward opens a claim.
+  * Deleting sets a DRAFT claim aside as DELETED (counting nowhere); restoring makes it a DRAFT again, only while the
+  * sheet's today is the day it was deleted (the status log's latest DELETED date).
+@@ -151,10 +152,9 @@ public class ApplyClaimAction {
+             found = ClaimAction.PEND;
+             due = null;
+         }
+-        String next = switch (found) {
+-            case OPEN, REVIEW -> ClaimNumbers.next(claim, sheets, settings, periods);
+-            default -> claim.number();
+-        };
++        String next = found.settles() && claim.number() == null
++                ? ClaimNumbers.next(claim, sheets, settings, periods)
++                : claim.number();
+         applied.set(found);
+         previous.set(new PreviousDue(claim.due(), claim.status() == ClaimStatus.SETTLED));
+         number.set(new ClaimNumber(next));
+diff --git a/src/main/java/net/officefloor/hq/app/claim/AuditClaimSplit.java b/src/main/java/net/officefloor/hq/app/claim/AuditClaimSplit.java
+index 5098e3ada..7a45d7cbf 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/AuditClaimSplit.java
++++ b/src/main/java/net/officefloor/hq/app/claim/AuditClaimSplit.java
+@@ -15,7 +15,7 @@ public class AuditClaimSplit {
+         String name = person == null ? "" : person.name();
+         audit.record("CLAIM_SPLIT sheet=" + original.sheetId() + " by=" + user + " person=" + name + " amount="
+                 + original.amount().setScale(2).toPlainString() + " date=" + original.date()
+-                + Claim.auditNumber(original.number()) + " into=" + created.number());
++                + Claim.auditNumber(original.number()) + " into=" + (created.number() == null ? "" : created.number()));
+         audit.record(ClaimAction.OPEN.event() + " sheet=" + created.sheetId() + " by=" + user + " person=" + name
+                 + " amount=" + created.amount().setScale(2).toPlainString() + " date=" + created.date()
+                 + Claim.auditNumber(created.number()));
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimNumber.java b/src/main/java/net/officefloor/hq/app/claim/ClaimNumber.java
+index ebd0f5b62..f8c22103d 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimNumber.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimNumber.java
+@@ -1,5 +1,5 @@
+ package net.officefloor.hq.app.claim;
+ 
+-/** The number a status change concerns: the one just given (open), the one the claim has (void, settle), or null. */
++/** The number a status change concerns: the one just given (settle, approve), the one the claim has (void, re-settle), or null. */
+ public record ClaimNumber(String value) {
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SettleSplitClaim.java b/src/main/java/net/officefloor/hq/app/claim/SettleSplitClaim.java
+index 48c687dfe..8b940cf7b 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SettleSplitClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SettleSplitClaim.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.claim;
+ 
+ import java.math.BigDecimal;
++import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.rate.RateRepository;
+ import net.officefloor.hq.app.setting.SettingRepository;
+@@ -11,12 +12,13 @@ import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /**
+  * Settles the claim just split off, as the settle button does (its checks were made on the original): its due is
+- * fixed at its figure now, or, when the user's role may not settle that due (the clerk limit), it goes PENDING,
++ * fixed at its figure now and it is given its number, or, when the user's role may not settle that due (the clerk limit), it goes PENDING,
+  * live and unfixed. Publishes the change for the settle's save, log and audit steps, taken one at a time (no batch).
+  */
+ public class SettleSplitClaim {
+     public void settle(@RequestParam("user") String user, @Val Claim claim, SheetRepository sheets,
+-            PersonRepository people, RateRepository rates, SettingRepository settings, ClaimRepository claims,
++            PersonRepository people, RateRepository rates, SettingRepository settings, PeriodRepository periods,
++            ClaimRepository claims,
+             Out<ClaimAction> applied, Out<ClaimNumber> number, Out<PreviousDue> previous,
+             Out<ClaimActionRequest> request, Out<Claim> updated) {
+         ClaimAction action = ClaimAction.SETTLE;
+@@ -25,10 +27,13 @@ public class SettleSplitClaim {
+             action = ClaimAction.PEND;
+             due = null;
+         }
++        String next = action.settles() && claim.number() == null
++                ? ClaimNumbers.next(claim, sheets, settings, periods)
++                : claim.number();
+         applied.set(action);
+         previous.set(new PreviousDue(claim.due(), false));
+-        number.set(new ClaimNumber(claim.number()));
++        number.set(new ClaimNumber(next));
+         request.set(new ClaimActionRequest("", ""));
+-        updated.set(claim.withStatus(action.to(), claim.number(), due, claim.openedBy()));
++        updated.set(claim.withStatus(action.to(), next, due, claim.openedBy()));
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java b/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java
+index c94c0ec6c..81b5688f6 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SplitClaim.java
+@@ -3,7 +3,6 @@ package net.officefloor.hq.app.claim;
+ import java.math.BigDecimal;
+ import java.time.LocalDate;
+ import net.officefloor.hq.app.holiday.HolidayRepository;
+-import net.officefloor.hq.app.period.PeriodRepository;
+ import net.officefloor.hq.app.person.Person;
+ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.setting.SettingRepository;
+@@ -16,14 +15,14 @@ import org.springframework.web.bind.annotation.RequestParam;
+  * Splits an amount off an OPEN claim that is not deferred; refused (400) for any other claim, for an amount not more
+  * than 0.00 and less than the claim's, and to a role the sheet's permission matrix does not allow to open a claim.
+  * The claim keeps the rest of its amount and loses any figure a statement bound it to. The new claim is OPEN, with
+- * the split amount, the same date and note, the number opening gives it now, opened by the user, its due-by fixed now
++ * the split amount, the same date and note, no number (it is numbered at settlement), opened by the user, its due-by fixed now
+  * (as a new claim's: the terms-th business day after its date, see {@link NewDueBy}), and the original's number as split-from, and the original's tags;
+- * it is numbered within the period containing its own due-by, and is a late entry when the original is.
++ * it is a late entry when the original is.
+  * The new claim is published as the claim, for the steps that follow.
+  */
+ public class SplitClaim {
+     public void split(@RequestParam("user") String user, @Val Claim claim, @Val SplitAmount amount,
+-            SheetRepository sheets, PersonRepository people, SettingRepository settings, PeriodRepository periods,
++            SheetRepository sheets, PersonRepository people, SettingRepository settings,
+             HolidayRepository holidays, ClaimRepository claims, Out<ClaimSplit> split, Out<Claim> created) throws InvalidClaimException {
+         if (claim.status() != ClaimStatus.OPEN) {
+             throw new InvalidClaimException("A " + claim.status() + " claim cannot be split: only an OPEN one.");
+@@ -49,8 +48,7 @@ public class SplitClaim {
+                 : NewDueBy.of(claim.date(), person, sheets, settings, holidays);
+         Claim made = new Claim(null, claim.sheetId(), claim.personId(), off, claim.date(), claim.note(),
+                 ClaimStatus.OPEN, null, null, user, false, null, null, dueBy, null, 0, claim.number());
+-        String number = ClaimNumbers.next(made, sheets, settings, periods);
+-        Claim saved = claims.save(made.withStatus(ClaimStatus.OPEN, number, null, user));
++        Claim saved = claims.save(made);
+         claims.saveTags(saved, claims.tags(claim.sheetId(), claim.id()));
+         if (claims.lateEntry(claim.sheetId(), claim.id())) {
+             claims.markLateEntry(saved);
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index c16df684e..fe8f3fe7b 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -169,10 +169,11 @@ public record Person(Long id, String sheetId, String name, String grade, int ver
+ 
+     /**
+      * Whether the claim counts toward this person's claimed on the given today: as {@link #counts}, but a hold (theirs
+-     * or the claim's own) does not take it out; once their retirement date is reached, none of theirs does.
++     * or the claim's own) does not take it out; once their retirement date is reached, none of theirs does but those a
++     * statement binds.
+      */
+     public boolean countsClaimed(Claim claim, LocalDate today) {
+-        return !retiredOn(today) && !claim.deferred(today) && claim.counts(false);
++        return (!retiredOn(today) || claim.bound()) && !claim.deferred(today) && claim.counts(false);
+     }
+ 
+     /**
