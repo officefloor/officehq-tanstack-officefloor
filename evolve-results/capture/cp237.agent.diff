@@ -1,0 +1,272 @@
+diff --git a/src/main/frontend/features/settings/SettingsForm.tsx b/src/main/frontend/features/settings/SettingsForm.tsx
+index 4a2a2371f..ab215b101 100644
+--- a/src/main/frontend/features/settings/SettingsForm.tsx
++++ b/src/main/frontend/features/settings/SettingsForm.tsx
+@@ -712,7 +712,7 @@ export function SettingsForm() {
+       </p>
+       {PERMISSION_ACTIONS.map((a) => (
+         <p key={a}>
+-          Roles allowed to {a}: <span data-testid={`setting-perm-${a}-current`}>{settings?.permissions?.[a] ?? ''}</span>
++          Roles allowed to {a === 'today' ? "change today" : a}: <span data-testid={`setting-perm-${a}-current`}>{settings?.permissions?.[a] ?? ''}</span>
+         </p>
+       ))}
+       <form onSubmit={submit} data-testid="settings-form">
+diff --git a/src/main/frontend/features/settings/settings.ts b/src/main/frontend/features/settings/settings.ts
+index 97258aaaf..37c23a795 100644
+--- a/src/main/frontend/features/settings/settings.ts
++++ b/src/main/frontend/features/settings/settings.ts
+@@ -89,7 +89,7 @@ export const DEFAULT_LATE_PCT = '0.00';
+ export const ROLES = ['clerk', 'steward', 'viewer', 'restricted'];
+ 
+ /** The actions the permission matrix covers. */
+-export const PERMISSION_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen'];
++export const PERMISSION_ACTIONS = ['open', 'settle', 'void', 'reassign', 'close', 'reopen', 'today'];
+ 
+ /** The roles allowed an action when its permission entry is blank. */
+ export const STANDING_PERMISSIONS: Record<string, string> = {
+@@ -99,6 +99,7 @@ export const STANDING_PERMISSIONS: Record<string, string> = {
+   reassign: 'steward',
+   close: 'clerk,steward',
+   reopen: 'steward',
++  today: 'anyone but a viewer',
+ };
+ 
+ /** Proof kinds as the sheet's proof kinds take them: receipt or photo, comma separated. */
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 7dfc2587e..aa98bc43a 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -239,10 +239,10 @@ public class PersonRepository {
+         return (date == null ? "" : date.toString()) + " " + (total == null ? "n/a" : total);
+     }
+ 
+-    /** Retire the person from this date; the person as stored. Not an edit, so it leaves the version alone. */
++    /** Retire the person from this date, made on the sheet's today; the person as stored. Not an edit, so it leaves the version alone. */
+     public Person retire(Person person, LocalDate from) {
+-        jdbc.update("UPDATE person SET retired_from = ? WHERE id = ? AND sheet_id = ?", Date.valueOf(from), person.id(),
+-                person.sheetId());
++        jdbc.update("UPDATE person SET retired_from = ?, retired_on = (SELECT s.today FROM sheet s WHERE s.id = ?)"
++                + " WHERE id = ? AND sheet_id = ?", Date.valueOf(from), person.sheetId(), person.id(), person.sheetId());
+         return find(person.sheetId(), person.id());
+     }
+ 
+@@ -253,7 +253,7 @@ public class PersonRepository {
+     public Person unretire(Person person, LocalDate on) {
+         jdbc.update("INSERT INTO person_retirement (sheet_id, person_id, from_date, to_date) VALUES (?, ?, ?, ?)",
+                 person.sheetId(), person.id(), Date.valueOf(person.retiredFrom()), Date.valueOf(on));
+-        jdbc.update("UPDATE person SET retired_from = NULL WHERE id = ? AND sheet_id = ?", person.id(),
++        jdbc.update("UPDATE person SET retired_from = NULL, retired_on = NULL WHERE id = ? AND sheet_id = ?", person.id(),
+                 person.sheetId());
+         return find(person.sheetId(), person.id());
+     }
+diff --git a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+index 4bfada6c9..267b86c48 100644
+--- a/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
++++ b/src/main/java/net/officefloor/hq/app/pool/PoolRepository.java
+@@ -47,7 +47,7 @@ public class PoolRepository {
+             pools.put(id, new Pool(id, sheetId, rs.getString("name"), new ArrayList<>()));
+         }, sheetId, upTo, upTo);
+         jdbc.query("SELECT m.pool_id, m.person_id, m.member_pool_id, m.share, m.from_date, m.to_date, p.name,"
+-                + " p.retired_from, q.name AS pool_name,"
++                + RETIRED + ", q.name AS pool_name,"
+                 + " CASE WHEN EXISTS (SELECT 1 FROM person_hold h WHERE h.person_id = m.person_id AND CAST(? AS DATE) IS NOT NULL"
+                 + " AND (h.from_date IS NULL OR h.from_date <= CAST(? AS DATE))"
+                 + " AND (h.to_date IS NULL OR h.to_date >= CAST(? AS DATE))" + ADDED.formatted("h.") + ") THEN 1 ELSE 0 END AS held"
+@@ -70,7 +70,7 @@ public class PoolRepository {
+                                 rs.getBigDecimal("share"), rs.getDate("retired_from") != null, rs.getInt("held") == 1,
+                                 from, to, out));
+                     }
+-                }, on, on, on, upTo, upTo, sheetId, upTo, upTo, upTo, upTo);
++                }, upTo, upTo, on, on, on, upTo, upTo, sheetId, upTo, upTo, upTo, upTo);
+         return new ArrayList<>(pools.values());
+     }
+ 
+@@ -95,7 +95,7 @@ public class PoolRepository {
+         String held = " CASE WHEN EXISTS (SELECT 1 FROM person_hold h WHERE h.person_id = p.id AND CAST(? AS DATE) IS NOT NULL"
+                 + " AND (h.from_date IS NULL OR h.from_date <= CAST(? AS DATE))"
+                 + " AND (h.to_date IS NULL OR h.to_date >= CAST(? AS DATE))" + ADDED.formatted("h.") + ") THEN 1 ELSE 0 END AS held";
+-        jdbc.query("SELECT c.id, c.name, p.id AS person_id, p.name AS person_name, p.retired_from," + held
++        jdbc.query("SELECT c.id, c.name, p.id AS person_id, p.name AS person_name," + RETIRED + "," + held
+                 + " FROM crew c LEFT JOIN person p ON p.id = c.lead_id WHERE c.sheet_id = ?" + ADDED.formatted("c.")
+                 + " ORDER BY c.id", rs -> {
+                     long id = rs.getLong("id");
+@@ -105,8 +105,8 @@ public class PoolRepository {
+                         pool.members().add(crewMember(rs));
+                     }
+                     pools.put(id, pool);
+-                }, on, on, on, upTo, upTo, sheetId, upTo, upTo);
+-        jdbc.query("SELECT m.crew_id, p.id AS person_id, p.name AS person_name, p.retired_from," + held
++                }, upTo, upTo, on, on, on, upTo, upTo, sheetId, upTo, upTo);
++        jdbc.query("SELECT m.crew_id, p.id AS person_id, p.name AS person_name," + RETIRED + "," + held
+                 + " FROM crew_member m JOIN person p ON p.id = m.person_id WHERE m.sheet_id = ?" + ADDED.formatted("m.")
+                 + " ORDER BY m.id",
+                 rs -> {
+@@ -114,7 +114,7 @@ public class PoolRepository {
+                     if (crew != null) {
+                         crew.members().add(crewMember(rs));
+                     }
+-                }, on, on, on, upTo, upTo, sheetId, upTo, upTo);
++                }, upTo, upTo, on, on, on, upTo, upTo, sheetId, upTo, upTo);
+         List<Pool> list = new ArrayList<>();
+         for (Pool pool : pools.values()) {
+             int n = pool.members().size();
+@@ -141,6 +141,13 @@ public class PoolRepository {
+      */
+     private static final String ADDED = " AND (CAST(? AS DATE) IS NULL OR %1$sadded_on IS NULL OR %1$sadded_on <= CAST(? AS DATE))";
+ 
++    /**
++     * The person's retired_from as a column, kept only when the retirement was made on or before a date: its two
++     * parameters are the date (null: any retirement).
++     */
++    private static final String RETIRED = " CASE WHEN CAST(? AS DATE) IS NULL OR p.retired_on IS NULL"
++            + " OR p.retired_on <= CAST(? AS DATE) THEN p.retired_from END AS retired_from";
++
+     private static final BigDecimal HUNDRED = new BigDecimal("100.00");
+ 
+     /** A crew's lead or member as a pool member, its share unset. */
+diff --git a/src/main/java/net/officefloor/hq/app/setting/Permissions.java b/src/main/java/net/officefloor/hq/app/setting/Permissions.java
+index c5391fa73..2815c6236 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/Permissions.java
++++ b/src/main/java/net/officefloor/hq/app/setting/Permissions.java
+@@ -11,7 +11,8 @@ import java.util.stream.Collectors;
+ /**
+  * A sheet's permission matrix: for each action set, the roles allowed it, as typed and shown (comma separated role
+  * labels). An action not set keeps the standing rule: open, settle, void and close by clerk and steward; reassign and
+- * reopen by steward. Not dated.
++ * reopen by steward; today by anyone but a viewer (a restricted user
++ * counts as a clerk). Not dated.
+  */
+ public record Permissions(Map<String, String> set) {
+ 
+@@ -21,9 +22,10 @@ public record Permissions(Map<String, String> set) {
+     public static final String REASSIGN = "reassign";
+     public static final String CLOSE = "close";
+     public static final String REOPEN = "reopen";
++    public static final String TODAY = "today";
+ 
+     /** The actions the matrix covers, in the order they are shown and recorded. */
+-    public static final List<String> ACTIONS = List.of(OPEN, SETTLE, VOID, REASSIGN, CLOSE, REOPEN);
++    public static final List<String> ACTIONS = List.of(OPEN, SETTLE, VOID, REASSIGN, CLOSE, REOPEN, TODAY);
+ 
+     /** The setting key of an action's entry: perm-&lt;action&gt;. */
+     public static String key(String action) {
+diff --git a/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java b/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
+index 58ac1affe..5c01613dc 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
++++ b/src/main/java/net/officefloor/hq/app/setting/SettingsRequest.java
+@@ -10,7 +10,7 @@ import java.util.Map;
+  * yyyy-MM-dd (blank: the sheet's today); the period numbering from date is yyyy-MM-dd (blank: off); the entry date is yyyy-MM-dd (blank: off); the cap has two decimals at most (blank: no cap); the proof threshold has two decimals at most (blank: none); the note threshold has two decimals at most (blank: none); the review threshold has two decimals at most (blank: none). The grade terms are
+  * whole days, 0 or more, by grade, each only for a grade it carries (blank: none of its own, the sheet's terms).
+  * The clerk limit, floor, terms, late percent, cap, proof threshold, note threshold, review threshold and each grade's terms are recorded from their from-date, yyyy-MM-dd
+- * (left out or blank: the sheet's today). The permissions are, by action (open, settle, void, reassign, close, reopen),
++ * (left out or blank: the sheet's today). The permissions are, by action (open, settle, void, reassign, close, reopen, today),
+  * the roles allowed it, comma separated (blank: the standing rule); they are not dated. The grace days are whole days,
+  * 0 or more (blank: off); they are not dated. The grade grace days are whole days, 0 or more, by grade, each only for a
+  * grade it carries (blank: none), recorded from their from-date by grade (left out or blank: the sheet's today). The pot has two decimals at most (blank: none); it is not dated. The parent is a sheet id (blank: none); it is not dated. The fiscal start month is 1 to 12 (blank: back to 1); it is not dated. The alert threshold has two decimals at most (blank: off); it is not dated. The grade
+diff --git a/src/main/java/net/officefloor/hq/app/setting/ValidateSettingsRequest.java b/src/main/java/net/officefloor/hq/app/setting/ValidateSettingsRequest.java
+index cf608997a..fd915e464 100644
+--- a/src/main/java/net/officefloor/hq/app/setting/ValidateSettingsRequest.java
++++ b/src/main/java/net/officefloor/hq/app/setting/ValidateSettingsRequest.java
+@@ -173,7 +173,7 @@ public class ValidateSettingsRequest {
+         }
+         for (String action : requested.keySet()) {
+             if (!Permissions.ACTIONS.contains(action)) {
+-                throw new InvalidSettingException("Permissions can only be set for open, settle, void, reassign, close or reopen.");
++                throw new InvalidSettingException("Permissions can only be set for open, settle, void, reassign, close, reopen or today.");
+             }
+         }
+         for (String action : Permissions.ACTIONS) {
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/CheckTodayPermission.java b/src/main/java/net/officefloor/hq/app/sheet/CheckTodayPermission.java
+new file mode 100644
+index 000000000..3b30312d2
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/CheckTodayPermission.java
+@@ -0,0 +1,19 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.hq.app.setting.Permissions;
++import net.officefloor.hq.app.setting.SettingRepository;
++import org.springframework.web.bind.annotation.PathVariable;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/**
++ * Refuses (400) a change of the sheet's today when the permission matrix does not allow the user's role it (standing
++ * rule: anyone but a viewer). It runs before anything is written.
++ */
++public class CheckTodayPermission {
++    public void check(@PathVariable("sheetId") String sheetId, @RequestParam("user") String user,
++            SettingRepository settings) throws TodayRefusedException {
++        if (!settings.find(sheetId).may(user, Permissions.TODAY)) {
++            throw new TodayRefusedException("The user's role is not allowed to change the sheet's today.");
++        }
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/HandleTodayRefused.java b/src/main/java/net/officefloor/hq/app/sheet/HandleTodayRefused.java
+new file mode 100644
+index 000000000..77374920a
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/HandleTodayRefused.java
+@@ -0,0 +1,12 @@
++package net.officefloor.hq.app.sheet;
++
++import net.officefloor.plugin.section.clazz.Parameter;
++import net.officefloor.web.ObjectResponse;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++
++public class HandleTodayRefused {
++    public void handle(@Parameter TodayRefusedException ex, ObjectResponse<ResponseEntity<String>> response) {
++        response.send(new ResponseEntity<>(ex.getMessage(), HttpStatus.BAD_REQUEST));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/sheet/TodayRefusedException.java b/src/main/java/net/officefloor/hq/app/sheet/TodayRefusedException.java
+new file mode 100644
+index 000000000..5facf1c4c
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/sheet/TodayRefusedException.java
+@@ -0,0 +1,8 @@
++package net.officefloor.hq.app.sheet;
++
++/** A change of the sheet's today by a role the permission matrix does not allow it. */
++public class TodayRefusedException extends Exception {
++    public TodayRefusedException(String message) {
++        super(message);
++    }
++}
+diff --git a/src/main/resources/db/migration/V119__person_retired_on.sql b/src/main/resources/db/migration/V119__person_retired_on.sql
+new file mode 100644
+index 000000000..0a119d368
+--- /dev/null
++++ b/src/main/resources/db/migration/V119__person_retired_on.sql
+@@ -0,0 +1,3 @@
++-- The sheet's today when the person was retired (null: from the beginning of time), so a pool's cuts taken as they
++-- stood at the end of an earlier period count the person retired only when the retirement was made on or before it.
++ALTER TABLE person ADD COLUMN retired_on DATE;
+diff --git a/src/main/resources/officefloor/escalation/net.officefloor.hq.app.sheet.TodayRefusedException.yml b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.sheet.TodayRefusedException.yml
+new file mode 100644
+index 000000000..6e65a41a3
+--- /dev/null
++++ b/src/main/resources/officefloor/escalation/net.officefloor.hq.app.sheet.TodayRefusedException.yml
+@@ -0,0 +1,2 @@
++handle:
++  class: net.officefloor.hq.app.sheet.HandleTodayRefused
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+index cecc6ea50..9c22bebbb 100644
+--- a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/today.PUT.yml
+@@ -1,4 +1,4 @@
+-# Change the sheet's today; a blank date resets it to the real date. The sheet is kept as it stood at the end of the
++# Change the sheet's today (refused when the permission matrix does not allow the user's role it); a blank date resets it to the real date. The sheet is kept as it stood at the end of the
+ # old today first (a statement can be taken as of it); while the score log is on, each person's score on it is recorded as SCORE,
+ # in list order; and each person's due-total on it is recorded as SNAPSHOT, in list order, and kept as
+ # the person's snapshot line. Once it is set, every open period whose to-date
+@@ -8,6 +8,9 @@ archived:
+   next: viewer
+ viewer:
+   class: net.officefloor.hq.app.setting.CheckNotViewer
++  next: permission
++permission:
++  class: net.officefloor.hq.app.sheet.CheckTodayPermission
+   next: validate
+ validate:
+   class: net.officefloor.hq.app.sheet.ValidateTodayRequest
