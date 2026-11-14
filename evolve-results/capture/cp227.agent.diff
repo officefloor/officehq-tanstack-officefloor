@@ -1,0 +1,45 @@
+diff --git a/src/main/frontend/features/claims/claims.ts b/src/main/frontend/features/claims/claims.ts
+index 6cd314d54..d8868a8fc 100644
+--- a/src/main/frontend/features/claims/claims.ts
++++ b/src/main/frontend/features/claims/claims.ts
+@@ -162,10 +162,10 @@ export function useLastBatch() {
+ 
+ /**
+  * The sum of the counted claims' amounts (held ones too), leaving out corrections and the claims of people whose retirement
+- * date has been reached on `today` (unless a statement binds them), with two decimals; added in cents so it is exact.
++ * date has been reached on `today` (unless settled or a statement binds them), with two decimals; added in cents so it is exact.
+  */
+ export function claimed(claims: Claim[], today: string, people: { id: number; retiredFrom: string | null }[]): string {
+   const retired = new Set(people.filter((p) => retiredOn(p, today)).map((p) => p.id));
+-  const cents = claims.filter((c) => !c.corrects && (!retired.has(c.personId) || bound(c)) && countsClaimed(c, today)).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
++  const cents = claims.filter((c) => !c.corrects && (!retired.has(c.personId) || bound(c) || c.status === 'SETTLED') && countsClaimed(c, today)).reduce((sum, c) => sum + Math.round(Number(c.amount) * 100), 0);
+   return (cents / 100).toFixed(2);
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/person/Person.java b/src/main/java/net/officefloor/hq/app/person/Person.java
+index fe8f3fe7b..a7fa92f59 100644
+--- a/src/main/java/net/officefloor/hq/app/person/Person.java
++++ b/src/main/java/net/officefloor/hq/app/person/Person.java
+@@ -6,6 +6,7 @@ import java.util.Comparator;
+ import java.util.List;
+ import java.util.Objects;
+ import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimStatus;
+ import net.officefloor.hq.app.setting.DatedSettings;
+ 
+ /**
+@@ -169,11 +170,12 @@ public record Person(Long id, String sheetId, String name, String grade, int ver
+ 
+     /**
+      * Whether the claim counts toward this person's claimed on the given today: as {@link #counts}, but a hold (theirs
+-     * or the claim's own) does not take it out; once their retirement date is reached, none of theirs does but those a
+-     * statement binds.
++     * or the claim's own) does not take it out; once their retirement date is reached, none of theirs does but settled
++     * ones and those a statement binds.
+      */
+     public boolean countsClaimed(Claim claim, LocalDate today) {
+-        return (!retiredOn(today) || claim.bound()) && !claim.deferred(today) && claim.counts(false);
++        return (!retiredOn(today) || claim.bound() || claim.status() == ClaimStatus.SETTLED) && !claim.deferred(today)
++                && claim.counts(false);
+     }
+ 
+     /**
