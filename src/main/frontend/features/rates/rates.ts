@@ -206,8 +206,9 @@ export function personDue(
 const personCut = (rules: DueRules, shared?: Shared) => (shared ? hundredths(rules.cutOf(shared.personId)) : 0);
 
 /**
- * A person's excess: by how much their due-total plus their cut total is above the sheet's cap; 0.00 when it is
- * not (or the due-total is n/a).
+ * A person's excess: by how much the figures of their claims that count are above the room the sheet's cap leaves them
+ * (the cap less their cut total, not below 0.00) — what the cap takes off their due-total; 0.00 when they are not
+ * (or the due-total is n/a).
  */
 export function personExcess(
   claims: Claim[],
@@ -219,7 +220,8 @@ export function personExcess(
 ): string {
   const sum = personSum(claims, rates, grades, holds, rules, shared);
   if (sum === NA || rules.cap === '') return '0.00';
-  return (Math.max(0, hundredths(sum) + personCut(rules, shared) - hundredths(rules.cap)) / 100).toFixed(2);
+  const room = Math.max(0, hundredths(rules.cap) - personCut(rules, shared));
+  return (Math.max(0, hundredths(sum) - room) / 100).toFixed(2);
 }
 
 /**
