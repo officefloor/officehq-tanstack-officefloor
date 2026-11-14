@@ -36,6 +36,9 @@ public class ClaimRepository {
         return claim;
     }
 
+    /** The next place in a sheet's list (newest first); takes the sheet id as its parameter. */
+    private static final String NEXT_SEQ = "(SELECT COALESCE(MAX(k.list_seq), 0) + 1 FROM claim k WHERE k.sheet_id = ?)";
+
     private final JdbcTemplate jdbc;
 
     public ClaimRepository(JdbcTemplate jdbc) {
@@ -44,7 +47,7 @@ public class ClaimRepository {
 
     /** The sheet's claims, newest first. */
     public List<Claim> list(String sheetId) {
-        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? ORDER BY id DESC",
+        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? ORDER BY list_seq DESC, id DESC",
                 ROW, sheetId);
     }
 
@@ -76,7 +79,9 @@ public class ClaimRepository {
             ps.setObject(7, corrects);
             return ps;
         }, key);
-        return find(sheetId, key.getKey().longValue());
+        long id = key.getKey().longValue();
+        jdbc.update("UPDATE claim SET list_seq = " + NEXT_SEQ + " WHERE sheet_id = ? AND id = ?", sheetId, sheetId, id);
+        return find(sheetId, id);
     }
 
     public void update(Claim claim) {
@@ -88,9 +93,19 @@ public class ClaimRepository {
                 claim.getSheetId(), claim.getId());
     }
 
+    /** Save a claim moved to another person: its person, its binding (dropped), and its place in the
+     *  list, now the newest. */
+    public void reassign(Claim claim) {
+        jdbc.update("UPDATE claim SET person_id = ?, stated = ?, stated_due = ?, list_seq = " + NEXT_SEQ
+                + " WHERE sheet_id = ? AND id = ?",
+                claim.getPersonId(), claim.isStated(),
+                claim.getStatedDue() == null ? null : new BigDecimal(claim.getStatedDue()),
+                claim.getSheetId(), claim.getSheetId(), claim.getId());
+    }
+
     /** The person's claims, newest first. */
     public List<Claim> listOf(String sheetId, long personId) {
-        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY id DESC",
+        return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND person_id = ? ORDER BY list_seq DESC, id DESC",
                 ROW, sheetId, personId);
     }
 

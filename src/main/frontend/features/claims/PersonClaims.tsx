@@ -4,7 +4,7 @@ import { HttpError } from '../../api/http';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { listPeriods, periodOf, periodsKey } from '../periods/api';
 import { claimDue, showDue, type GradeOn, type Late, type Rate } from '../rates/api';
-import { addClaim, claimsKey, dueBy, isOverdue, moveClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
+import { addClaim, claimsKey, dueBy, isOverdue, moveClaim, reassignClaim, updateClaim, type Claim, type ClaimAction, type ClaimInput } from './api';
 
 const EMPTY: ClaimInput = { amount: '', date: '', note: '', corrects: '' };
 
@@ -22,12 +22,15 @@ const DONE: Record<ClaimAction, string> = { open: 'opened', settle: 'settled', v
  *  above the sheet's clerk limit makes it PENDING, which a steward other than its opener approves,
  *  or any steward rejects with a reason typed beside it), a checkbox that selects it for a bulk action, and for a correction (a negative amount, no floor and no late
  *  charge) the number of the SETTLED claim it corrects. Only a DRAFT can be edited:
- *  editing any other claim is refused with an error on the claim. */
-export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, floor, terms, today, charges, selected, onSelect }: {
+ *  editing any other claim is refused with an error on the claim. A steward can move a DRAFT, OPEN or
+ *  PENDING claim to another person picked beside it (any other refused with an error on the claim). */
+export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, floor, terms, today, charges, selected, onSelect, people }: {
   sheetId: string; user: string; personId: number; claims: Claim[]; gradeOn: GradeOn; rates: Rate[] | undefined;
   floor: string; terms: number; today: string; charges: Late;
   /** The claims selected for a bulk action, and how one is selected or unselected. */
   selected: ReadonlySet<number>; onSelect: (id: number, on: boolean) => void;
+  /** Everyone on the sheet, the people a claim can be moved to (all but `personId`). */
+  people: Array<{ id: number; name: string }>;
 }) {
   const queryClient = useQueryClient();
   const periods = useQuery({ queryKey: periodsKey(sheetId), queryFn: () => listPeriods(sheetId) });
@@ -61,9 +64,29 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
     },
   });
 
+  // The person picked for each claim to move to.
+  const [targets, setTargets] = useState<Record<number, string>>({});
+  const others = people.filter((p) => p.id !== personId);
+
+  const reassign = useMutation({
+    mutationFn: (v: { id: number; to: number }) => reassignClaim(sheetId, user, v.id, v.to),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: claimsKey(sheetId) }),
+  });
+
+  const moveTo = (id: number) => {
+    const to = Number(targets[id] ?? others[0]?.id ?? NaN);
+    actOnce(() => {
+      move.reset();
+      reassign.reset();
+      setEditRefused(null);
+      return reassign.mutateAsync({ id, to });
+    });
+  };
+
   const act = (id: number, action: ClaimAction) => {
     actOnce(() => {
       move.reset();
+      reassign.reset();
       setEditRefused(null);
       return move.mutateAsync({ id, action });
     });
@@ -76,6 +99,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
 
   const open = (c: Claim) => {
     move.reset();
+    reassign.reset();
     if (c.status !== 'DRAFT') {
       setEditRefused(c.id);
       return;
@@ -163,6 +187,17 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                   onClick={() => act(c.id, 'reject')}>
                   {LABELS.reject}
                 </button>{' '}
+                <select data-testid="claim-reassign-to" value={targets[c.id] ?? String(others[0]?.id ?? '')}
+                  onChange={(e) => {
+                    setTargets((t) => ({ ...t, [c.id]: e.target.value }));
+                    if (reassign.variables?.id === c.id) reassign.reset();
+                  }}>
+                  {others.map((p) => <option key={p.id} value={String(p.id)}>{p.name}</option>)}
+                </select>{' '}
+                <button type="button" data-testid="claim-reassign" disabled={reassign.isPending || others.length === 0}
+                  onClick={() => moveTo(c.id)}>
+                  Reassign
+                </button>{' '}
                 <button type="button" data-testid="claim-edit" onClick={() => open(c)}>
                   Edit
                 </button>
@@ -188,6 +223,13 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
                     : c.status === 'PENDING' && move.variables.action === 'reject'
                     ? 'Only a steward can reject a claim.'
                     : `A ${c.status} claim cannot be ${DONE[move.variables.action]}.`}</span>
+                )}
+                {reassign.isError && reassign.variables?.id === c.id && (
+                  <span data-testid="claim-error">{reassign.error instanceof HttpError && reassign.error.status === 423
+                    ? 'A claim dated inside a closed period cannot be reassigned.'
+                    : c.status === 'SETTLED' || c.status === 'VOID'
+                    ? `A ${c.status} claim cannot be reassigned.`
+                    : 'Only a steward can reassign a claim, and only to another person.'}</span>
                 )}
               </td>
             </tr>

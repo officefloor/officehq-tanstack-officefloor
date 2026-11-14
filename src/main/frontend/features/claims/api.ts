@@ -63,6 +63,13 @@ export function moveClaim(sheetId: string, by: string, id: number, action: Claim
   return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/${action}?by=${encodeURIComponent(by)}${extra}`, {});
 }
 
+/** A steward moves a DRAFT, OPEN or PENDING claim to another person (`toPersonId`): it keeps its
+ *  number and date, loses any figure a statement bound it to, and is listed as that person's newest
+ *  claim. Refused (rejects) for anyone else, for a SETTLED or VOID claim, or one dated in a closed period. */
+export function reassignClaim(sheetId: string, by: string, id: number, toPersonId: number): Promise<Claim> {
+  return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/reassign?by=${encodeURIComponent(by)}&to=${toPersonId}`, {});
+}
+
 /** Whether a claim counts toward claimed, due-total and every total: only OPEN, PENDING and SETTLED do. */
 export const counts = (c: Claim) => isOpen(c) || c.status === 'SETTLED';
 

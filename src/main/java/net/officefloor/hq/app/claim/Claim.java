@@ -11,7 +11,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 public class Claim {
     private final long id;
     private final String sheetId;
-    private final long personId;
+    private long personId;
     private String amount;
     private String date;
     private String note;
@@ -49,6 +49,7 @@ public class Claim {
     public long getId() { return id; }
     public String getSheetId() { return sheetId; }
     public long getPersonId() { return personId; }
+    public void setPersonId(long personId) { this.personId = personId; }
     public String getAmount() { return amount; }
     public void setAmount(String amount) { this.amount = amount; }
     public String getDate() { return date; }

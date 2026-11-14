@@ -315,7 +315,8 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                 </td>
                 <td>
                   <PersonClaims sheetId={sheetId} user={user} personId={p.id} claims={own} gradeOn={(d) => gradeOn(p, d)} rates={rates.data} floor={floor}
-                    terms={terms} today={today} charges={charges} selected={selected} onSelect={select} />
+                    terms={terms} today={today} charges={charges} selected={selected} onSelect={select}
+                    people={people.data ?? []} />
                 </td>
               </tr>
             );
