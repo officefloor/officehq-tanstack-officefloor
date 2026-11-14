@@ -18,18 +18,19 @@ import { nameKey, STATUSES } from './HeaderCounters';
 /**
  * One sheet's figures: each person's names (their name and aliases, as names are compared), each person's due-total
  * and overdue-total, per grade the due-totals of the people on it (retired people left out) added up, and per status
- * how many claims have it.
+ * how many claims have it, and how many overdue claims count (as the rollup's overdue count).
  */
-type Figures = {
+export type Figures = {
   names: string[][];
   dues: string[];
   overdues: string[];
   grades: Record<string, string>;
   statuses: Record<string, number>;
+  overdueCount: number;
 };
 
 /** A sheet's figures, worked out from its people, aliases, claims and rates by its rules. */
-function sheetFigures(people: Person[], aliases: Alias[], claims: Claim[], rates: Rate[], rules: DueRules): Figures {
+export function sheetFigures(people: Person[], aliases: Alias[], claims: Claim[], rates: Rate[], rules: DueRules): Figures {
   const mine = (id: number) => claims.filter((c) => c.personId === id);
   const current = people.filter((p) => !p.retired);
   const gradeDue = (g: string) =>
@@ -46,6 +47,7 @@ function sheetFigures(people: Person[], aliases: Alias[], claims: Claim[], rates
     overdues: people.map((p) => personOverdue(mine(p.id), rates, p.grades, liveHolds(p, rules.today), rules).total),
     grades: Object.fromEntries(GRADES.map((g) => [g, gradeDue(g)])),
     statuses: Object.fromEntries(STATUSES.map((s) => [s, claims.filter((c) => c.status === s).length])),
+    overdueCount: people.reduce((n, p) => n + personOverdue(mine(p.id), rates, p.grades, liveHolds(p, rules.today), rules).count, 0),
   };
 }
 
@@ -73,7 +75,7 @@ async function figuresOf(sheet: string): Promise<Figures> {
  * The figures of each of the sheet's descendants (its children, theirs and so on), as they stand now, or as they
  * stood at the end of the date the screen shows.
  */
-function useStoredFigures(asOf: string) {
+export function useStoredFigures(asOf: string) {
   const [sheet] = useCurrentSheet();
   return useQuery({
     queryKey: [...descendantFiguresKey(sheet), asOf],
