@@ -76,13 +76,13 @@ export function statusAt(c: Claim, date: string): ClaimStatus | undefined {
 /**
  * Whether a claim counts toward a period: by the status it had at the end of the period's last day (OPEN, PENDING
  * or SETTLED then), left out as the live rules say while it is deferred, or when it was open then, is open still, one
- * of its person's `holds` covers its date and no statement binds it (a hold leaves out only open claims).
+ * of its person's `holds` covers its date, or it is held, and no statement binds it (a hold leaves out only open claims).
  */
 export const countsInPeriod = (period: Period, c: Claim, holds: Person['holds'], today: string) => {
   const then = statusAt(c, period.to);
   if (then === 'SETTLED') return true;
   if (then !== 'OPEN' && then !== 'PENDING') return false;
-  return !deferred(c, today) && (!isOpen(c) || bound(c) || !holds.some((h) => covers(h, c.date)));
+  return !deferred(c, today) && (!isOpen(c) || bound(c) || !(c.held || holds.some((h) => covers(h, c.date))));
 };
 
 /**

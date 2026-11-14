@@ -52,7 +52,8 @@ export const bound = (c: Claim) => c.stated;
  * batch is the number of the bulk settle batch that settled it (SETTLED or PENDING), null when it was settled one at a time or never;
  * lines are its lines, in the order added: a DRAFT's label, quantity and unit amount; a claim with lines has their
  * quantities times their unit amounts, added up, as its amount;
- * waived is whether a steward waived its late charge: a waived claim bears none, whatever its overdue state.
+ * waived is whether a steward waived its late charge: a waived claim bears none, whatever its overdue state;
+ * held is whether the claim is held: a held open (or pending) claim counts as one a hold of its person covers.
  */
 export type Claim = {
   id: number;
@@ -86,6 +87,7 @@ export type Claim = {
   /** When it was added, on the sequence rates are saved on: a forward-only rate applies only to claims added after it. */
   added: number;
   waived: boolean;
+  held: boolean;
 };
 
 /** A line of a claim: its label, its quantity (a whole number, at least 1) and its unit amount (two decimals). */
@@ -99,12 +101,12 @@ export type ClaimLogLine = { status: ClaimStatus; by: string; date: string; due:
 
 /**
  * Whether a claim counts toward claimed, due-total and every live total: only OPEN, PENDING and SETTLED do,
- * and an open (or pending) one not when one of its person's `holds` covers its date and no statement binds it,
+ * and an open (or pending) one not when it is held or one of its person's `holds` covers its date and no statement binds it,
  * nor while it is deferred on the sheet's `today`.
  */
 export const counts = (c: Claim, holds: Hold[], today: string) =>
   c.status === 'SETTLED' ||
-  (isOpen(c) && !deferred(c, today) && (bound(c) || !holds.some((h) => covers(h, c.date))));
+  (isOpen(c) && !deferred(c, today) && (bound(c) || !(c.held || holds.some((h) => covers(h, c.date)))));
 
 /** Each person's live holds on the sheet's `today`, by id: their open claims dated within one count in no live total. */
 export const holdsById = (people: { id: number; holds: Hold[]; retiredFrom: string | null }[], today: string) =>

@@ -67,7 +67,7 @@ public record Period(String sheetId, String name, LocalDate from, LocalDate to, 
     /**
      * Whether the claim counts toward the period: due by a date in it and OPEN, PENDING or SETTLED at the period's end, left
      * out as the live rules say while it is deferred on today, or when it was open then, is open still, a hold of its
-     * person covers it (or their retirement date is reached) and no statement binds it (a hold leaves out only open
+     * person covers it (or their retirement date is reached, or the claim itself is held) and no statement binds it (a hold leaves out only open
      * claims). A settled claim voided since leaves it.
      */
     public boolean counts(Claim claim, List<ClaimLogLine> log, Person person, LocalDate today) {
@@ -81,7 +81,7 @@ public record Period(String sheetId, String name, LocalDate from, LocalDate to, 
         if (then == null || !then.open() || claim.deferred(today)) {
             return false;
         }
-        return !claim.status().open() || claim.bound() || !person.heldOn(claim.date(), today);
+        return !claim.status().open() || claim.bound() || !(claim.held() || person.heldOn(claim.date(), today));
     }
 
     /**
@@ -97,7 +97,7 @@ public record Period(String sheetId, String name, LocalDate from, LocalDate to, 
         if (then == null || !then.open() || claim.deferred(today)) {
             return false;
         }
-        return !claim.status().open() || claim.bound() || !person.heldOn(claim.date(), today);
+        return !claim.status().open() || claim.bound() || !(claim.held() || person.heldOn(claim.date(), today));
     }
 
     /** The same period, closed with its due-total and each person's due-total and carried figure fixed. */

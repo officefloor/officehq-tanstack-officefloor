@@ -8,12 +8,12 @@ import java.util.Map;
 /** A claim as the screen shows it: the amount with two decimals, the date as yyyy-MM-dd, the status by name,
  * the number null unless it has one, the due fixed at settling (two decimals) or null while it is live,
  * the user who opened it or null while it is a draft, whether a statement bound it and the figure it bound
- * it to (two decimals; null: n/a), and the number of the claim a correction corrects (null: not a correction), and its due-by fixed when it was created (yyyy-MM-dd), and its status log, oldest first, and the date it is deferred until (yyyy-MM-dd; null: never deferred), and how many proofs it has been given, and the number of the claim it was split off (null: none), and the user whose open editor locks it (null: not locked), and whether it is a late entry (added while its period was soft-closed), and the last day it was reminded (yyyy-MM-dd; null: never), and its external reference (null: none), and its tags, sorted (none: empty), and the reason it was voided with (null: none), and its comments, oldest first, and the number of the bulk settle batch that settled it (null: none), and its lines, in the order added, and when it was added (on the sequence rates are saved on: see the rate's saved), and whether its late charge was waived, and how many of its proofs are of each kind (receipt, photo). */
+ * it to (two decimals; null: n/a), and the number of the claim a correction corrects (null: not a correction), and its due-by fixed when it was created (yyyy-MM-dd), and its status log, oldest first, and the date it is deferred until (yyyy-MM-dd; null: never deferred), and how many proofs it has been given, and the number of the claim it was split off (null: none), and the user whose open editor locks it (null: not locked), and whether it is a late entry (added while its period was soft-closed), and the last day it was reminded (yyyy-MM-dd; null: never), and its external reference (null: none), and its tags, sorted (none: empty), and the reason it was voided with (null: none), and its comments, oldest first, and the number of the bulk settle batch that settled it (null: none), and its lines, in the order added, and when it was added (on the sequence rates are saved on: see the rate's saved), and whether its late charge was waived, and how many of its proofs are of each kind (receipt, photo), and whether it is held. */
 public record ClaimResponse(long id, long personId, String amount, String date, String note, String status, String number,
         String due, String openedBy, boolean stated, String statedDue, String corrects, String dueBy,
         List<LogLine> log, String deferredUntil, int proofs, String splitFrom, String lockedBy,
         boolean lateEntry, String reminded, String ref, List<String> tags, String voidReason,
-        List<Comment> comments, Integer batch, List<Line> lines, long added, boolean waived, Map<String, Integer> proofKinds) {
+        List<Comment> comments, Integer batch, List<Line> lines, long added, boolean waived, Map<String, Integer> proofKinds, boolean held) {
 
     /** A line of the status log: the status, the user who gave it, the sheet's today then and the due then. */
     public record LogLine(String status, String by, String date, String due) {
@@ -49,6 +49,6 @@ public record ClaimResponse(long id, long personId, String amount, String date, 
                 tags == null ? List.of() : List.of(tags.split(",")), voidReason,
                 comments.stream().map((c) -> new Comment(c.by(), c.date().toString(), c.text())).toList(), batch,
                 lines.stream().map((l) -> new Line(l.label(), l.qty(), l.unit().setScale(2).toPlainString())).toList(),
-                claim.added(), claim.waived(), proofKinds);
+                claim.added(), claim.waived(), proofKinds, claim.held());
     }
 }
