@@ -1,0 +1,367 @@
+diff --git a/src/main/frontend/features/periods/Rollover.tsx b/src/main/frontend/features/periods/Rollover.tsx
+new file mode 100644
+index 000000000..cc6fb8e6e
+--- /dev/null
++++ b/src/main/frontend/features/periods/Rollover.tsx
+@@ -0,0 +1,70 @@
++import { useState } from 'react';
++import type { FormEvent } from 'react';
++import { useMutation, useQueryClient } from '@tanstack/react-query';
++import { postJson } from '../../api/http';
++import { useOneAtATime } from '../../query/useOneAtATime';
++import { sheetKey, useCurrentSheet, useCurrentUser } from '../session/session';
++
++// The year-end rollover, by a steward: the next fiscal year's periods, made as the fiscal year form makes them, with
++// each person's open figure at the old year's end carried into the new year's first period.
++export function Rollover() {
++  const [user] = useCurrentUser();
++  const [sheet] = useCurrentSheet();
++  const [year, setYear] = useState('');
++  const [error, setError] = useState('');
++  const [made, setMade] = useState<number | undefined>(undefined);
++  const once = useOneAtATime();
++  const queryClient = useQueryClient();
++
++  const rollover = useMutation({
++    mutationFn: (input: { year: string }) =>
++      postJson<{ made: number }>(
++        `/api/sheets/${encodeURIComponent(sheet)}/rollover?user=${encodeURIComponent(user)}`,
++        input,
++      ),
++    onSuccess: async (result) => {
++      await queryClient.invalidateQueries({ queryKey: sheetKey(sheet) });
++      setMade(result.made);
++    },
++    onError: () =>
++      setError('The year was not rolled over: type a fiscal year with periods, as yyyy; only a steward may roll it over.'),
++  });
++
++  if (!user || !sheet) return null;
++
++  const submit = (e: FormEvent) => {
++    e.preventDefault();
++    setError('');
++    setMade(undefined);
++    const typed = year.trim();
++    if (!/^\d{4}$/.test(typed)) {
++      setError('Type the fiscal year as yyyy.');
++      return;
++    }
++    once(() => rollover.mutateAsync({ year: typed }));
++  };
++
++  return (
++    <form onSubmit={submit} data-testid="rollover-form">
++      <input
++        data-testid="rollover-year"
++        placeholder="Fiscal year to roll over, yyyy"
++        value={year}
++        onChange={(e) => {
++          setYear(e.target.value);
++          setError('');
++        }}
++      />
++      <button type="submit" data-testid="rollover" disabled={rollover.isPending}>
++        Roll the year over
++      </button>
++      {made !== undefined && (
++        <>
++          {' '}
++          Made <span data-testid="rollover-made">{made}</span>
++        </>
++      )}
++      {error && <span data-testid="rollover-error">{error}</span>}
++    </form>
++  );
++}
+diff --git a/src/main/frontend/features/periods/home.slot.tsx b/src/main/frontend/features/periods/home.slot.tsx
+index e30b0c31c..a041a9008 100644
+--- a/src/main/frontend/features/periods/home.slot.tsx
++++ b/src/main/frontend/features/periods/home.slot.tsx
+@@ -1,8 +1,10 @@
+ import { HomeMain } from '../../slots/defs/homeMain';
+ import { ImportOpenings } from './ImportOpenings';
+ import { Periods } from './Periods';
++import { Rollover } from './Rollover';
+ 
+ export const contributions = [
+   HomeMain.fill({ order: 7, Component: Periods }),
+   HomeMain.fill({ order: 7.5, Component: ImportOpenings }),
++  HomeMain.fill({ order: 7.6, Component: Rollover }),
+ ];
+diff --git a/src/main/java/net/officefloor/hq/app/period/FiscalYearPeriods.java b/src/main/java/net/officefloor/hq/app/period/FiscalYearPeriods.java
+new file mode 100644
+index 000000000..14c2df41e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/period/FiscalYearPeriods.java
+@@ -0,0 +1,15 @@
++package net.officefloor.hq.app.period;
++
++import java.time.YearMonth;
++import net.officefloor.hq.app.sheet.Sheet;
++
++/** The fiscal year's twelve monthly periods from its first month, made as {@link BuildFiscalYearPeriods} makes them. */
++public final class FiscalYearPeriods {
++
++    private FiscalYearPeriods() {
++    }
++
++    public static GeneratedPeriods of(Sheet sheet, PeriodRepository repository, YearMonth first) {
++        return BuildGeneratedPeriods.months(sheet, repository, first, first.plusMonths(11));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rollover/AuditRollover.java b/src/main/java/net/officefloor/hq/app/rollover/AuditRollover.java
+new file mode 100644
+index 000000000..0c4325e9e
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rollover/AuditRollover.java
+@@ -0,0 +1,16 @@
++package net.officefloor.hq.app.rollover;
++
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.period.GeneratedPeriods;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/** Records the rollover: the old fiscal year and how many periods were made. */
++public class AuditRollover {
++    public void audit(@Val Rollover rollover, @Val GeneratedPeriods generated, @Val Sheet sheet,
++            @RequestParam("user") String user, Audit audit) {
++        audit.record("ROLLOVER sheet=" + sheet.id() + " by=" + user + " fy=" + rollover.fy() + " periods="
++                + generated.periods().size());
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rollover/BuildRollover.java b/src/main/java/net/officefloor/hq/app/rollover/BuildRollover.java
+new file mode 100644
+index 000000000..a0441a643
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rollover/BuildRollover.java
+@@ -0,0 +1,50 @@
++package net.officefloor.hq.app.rollover;
++
++import jakarta.validation.Valid;
++import java.time.LocalDate;
++import java.time.YearMonth;
++import java.util.Comparator;
++import java.util.List;
++import net.officefloor.hq.app.period.FiscalYearPeriods;
++import net.officefloor.hq.app.period.GeneratedPeriods;
++import net.officefloor.hq.app.period.InvalidPeriodException;
++import net.officefloor.hq.app.period.Period;
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.setting.Role;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Out;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestBody;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/**
++ * Checks the rollover and builds the next fiscal year's twelve monthly periods, made as the fiscal year generator
++ * makes them. Refused (400) when the year is not four digits, the user does not act as a steward, or no period on the
++ * sheet starts in the old fiscal year.
++ */
++public class BuildRollover {
++    public void build(@RequestBody @Valid RolloverRequest request, @RequestParam("user") String user, @Val Sheet sheet,
++            PeriodRepository repository, SettingRepository settings, Out<Rollover> rollover,
++            Out<GeneratedPeriods> generated) throws InvalidPeriodException {
++        String year = request.year() == null ? "" : request.year().trim();
++        if (!year.matches("\\d{4}")) {
++            throw new InvalidPeriodException("The fiscal year must be yyyy.");
++        }
++        if (settings.find(sheet.id()).roleOf(user) != Role.STEWARD) {
++            throw new InvalidPeriodException("Only a steward may roll the year over.");
++        }
++        YearMonth oldFirst = YearMonth.of(Integer.parseInt(year), settings.fiscalStartMonth(sheet.id()));
++        YearMonth newFirst = oldFirst.plusYears(1);
++        LocalDate start = oldFirst.atDay(1);
++        LocalDate end = newFirst.atDay(1);
++        List<Period> oldPeriods = repository.findAll(sheet.id()).stream()
++                .filter((p) -> !p.from().isBefore(start) && p.from().isBefore(end))
++                .sorted(Comparator.comparing(Period::to)).toList();
++        if (oldPeriods.isEmpty()) {
++            throw new InvalidPeriodException("The fiscal year FY" + year + " has no periods.");
++        }
++        rollover.set(new Rollover("FY" + year, oldPeriods, newFirst));
++        generated.set(FiscalYearPeriods.of(sheet, repository, newFirst));
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rollover/CarryOpenings.java b/src/main/java/net/officefloor/hq/app/rollover/CarryOpenings.java
+new file mode 100644
+index 000000000..be17784b3
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rollover/CarryOpenings.java
+@@ -0,0 +1,93 @@
++package net.officefloor.hq.app.rollover;
++
++import java.math.BigDecimal;
++import java.time.LocalDate;
++import java.util.Comparator;
++import java.util.LinkedHashMap;
++import java.util.List;
++import java.util.Map;
++import net.officefloor.hq.app.Audit;
++import net.officefloor.hq.app.claim.Claim;
++import net.officefloor.hq.app.claim.ClaimLogLine;
++import net.officefloor.hq.app.claim.ClaimLogRepository;
++import net.officefloor.hq.app.claim.ClaimRepository;
++import net.officefloor.hq.app.claim.ClaimStatus;
++import net.officefloor.hq.app.claim.Rounding;
++import net.officefloor.hq.app.opening.OpeningRepository;
++import net.officefloor.hq.app.period.Period;
++import net.officefloor.hq.app.period.PeriodRepository;
++import net.officefloor.hq.app.person.Person;
++import net.officefloor.hq.app.person.PersonRepository;
++import net.officefloor.hq.app.rate.Rate;
++import net.officefloor.hq.app.rate.RateRepository;
++import net.officefloor.hq.app.setting.DatedSettings;
++import net.officefloor.hq.app.setting.SettingRepository;
++import net.officefloor.hq.app.sheet.Sheet;
++import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
++
++/**
++ * Carries each person's open figure at the end of the old year's last period into the new year's first period: the
++ * dues (as they are now) of their claims belonging to a period of the old year, OPEN or PENDING at the last period's
++ * end and counted as the period figures count them, added up. Each figure above 0.00 is added to the person's carried
++ * figure for the new year's first period, recorded as OPENING_SET, people in the order added.
++ */
++public class CarryOpenings {
++    public void carry(@Val Rollover rollover, @Val Sheet sheet, @RequestParam("user") String user,
++            PersonRepository people, ClaimRepository claims, ClaimLogRepository logs, PeriodRepository periods,
++            RateRepository rates, SettingRepository settings, OpeningRepository openings, Audit audit) {
++        List<Period> sheetPeriods = periods.findAll(sheet.id());
++        LocalDate newStart = rollover.newFirst().atDay(1);
++        LocalDate newEnd = rollover.newFirst().plusYears(1).atDay(1);
++        Period first = sheetPeriods.stream()
++                .filter((p) -> !p.from().isBefore(newStart) && p.from().isBefore(newEnd))
++                .min(Comparator.comparing(Period::from)).orElse(null);
++        if (first == null) {
++            return;
++        }
++        Period last = rollover.last();
++        LocalDate today = sheet.today();
++        List<Rate> sheetRates = rates.findAll(sheet.id());
++        DatedSettings dated = settings.dated(sheet.id());
++        List<Claim> sheetClaims = claims.findAll(sheet.id());
++        Map<Long, List<ClaimLogLine>> sheetLogs = logs.findAll(sheet.id());
++        Rounding rounding = settings.rounding(sheet.id(), today, sheetClaims);
++        Map<Long, Person> byId = new LinkedHashMap<>();
++        Map<Long, BigDecimal> open = new LinkedHashMap<>();
++        people.findAll(sheet.id()).stream().sorted(Comparator.comparing(Person::id)).forEach((person) -> {
++            byId.put(person.id(), person);
++            open.put(person.id(), BigDecimal.ZERO.setScale(2));
++        });
++        for (Claim claim : sheetClaims) {
++            Person person = byId.get(claim.personId());
++            if (person == null) {
++                continue;
++            }
++            Period own = sheetPeriods.stream().filter((p) -> p.contains(claim.dueBy())).findFirst().orElse(null);
++            if (own == null || rollover.oldPeriods().stream().noneMatch((p) -> p.name().equals(own.name()))) {
++                continue;
++            }
++            ClaimStatus then = last.statusAtEnd(claim, sheetLogs.getOrDefault(claim.id(), List.of()));
++            if (then == null || !then.open() || claim.deferred(today)) {
++                continue;
++            }
++            if (claim.status().open() && !claim.bound() && person.heldOn(claim.date(), today)) {
++                continue;
++            }
++            BigDecimal figure = claim.due(Rate.inForce(sheetRates, person.gradeOn(claim.date()), claim),
++                    dated.floorOn(claim.date()), dated.lateCharge(today, person), rounding);
++            if (figure != null) {
++                open.merge(person.id(), figure, BigDecimal::add);
++            }
++        }
++        open.forEach((id, amount) -> {
++            if (amount.signum() <= 0) {
++                return;
++            }
++            Person person = byId.get(id);
++            openings.add(sheet.id(), first.name(), id, amount);
++            audit.record("OPENING_SET sheet=" + sheet.id() + " by=" + user + " name=" + person.name() + " period="
++                    + first.name() + " amount=" + amount.setScale(2).toPlainString());
++        });
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rollover/Rollover.java b/src/main/java/net/officefloor/hq/app/rollover/Rollover.java
+new file mode 100644
+index 000000000..252581b21
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rollover/Rollover.java
+@@ -0,0 +1,14 @@
++package net.officefloor.hq.app.rollover;
++
++import java.time.YearMonth;
++import java.util.List;
++import net.officefloor.hq.app.period.Period;
++
++/** A rollover under way: the old fiscal year's name (FY<yyyy>), its periods, earliest first, and the new year's first month. */
++public record Rollover(String fy, List<Period> oldPeriods, YearMonth newFirst) {
++
++    /** The old year's last period: the one ending latest. */
++    public Period last() {
++        return oldPeriods.get(oldPeriods.size() - 1);
++    }
++}
+diff --git a/src/main/java/net/officefloor/hq/app/rollover/RolloverRequest.java b/src/main/java/net/officefloor/hq/app/rollover/RolloverRequest.java
+new file mode 100644
+index 000000000..c3e05893b
+--- /dev/null
++++ b/src/main/java/net/officefloor/hq/app/rollover/RolloverRequest.java
+@@ -0,0 +1,7 @@
++package net.officefloor.hq.app.rollover;
++
++import jakarta.validation.constraints.Size;
++
++/** A year-end rollover as the form submits it: the old fiscal year (yyyy) to roll over from. */
++public record RolloverRequest(@Size(max = 30) String year) {
++}
+diff --git a/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rollover.POST.yml b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rollover.POST.yml
+new file mode 100644
+index 000000000..c451ce876
+--- /dev/null
++++ b/src/main/resources/officefloor/rest/api/sheets/{sheetId}/rollover.POST.yml
+@@ -0,0 +1,39 @@
++# Year-end rollover, by a steward only: generates the next fiscal year's twelve monthly periods exactly as
++# generate-fiscal-year does (each audited as PERIOD_ADDED), then adds each person's open figure at the end of the old
++# year's last period (the dues of their claims belonging to a period of the old year, OPEN or PENDING at that period's
++# end, counted as the period figures count them) to their carried figure for the new year's first period, each
++# audited as OPENING_SET, then records ROLLOVER fy=<old FY> periods=<made>. A year that is not four digits, a user who
++# is not a steward, or an old year with no periods is refused (400). Answers how many periods were made.
++archived:
++  class: net.officefloor.hq.app.sheet.CheckNotArchived
++  next: viewer
++viewer:
++  class: net.officefloor.hq.app.setting.CheckNotViewer
++  next: load
++load:
++  class: net.officefloor.hq.app.sheet.LoadSheet
++  govern: [ transaction ]
++  next: build
++build:
++  class: net.officefloor.hq.app.rollover.BuildRollover
++  govern: [ transaction ]
++  next: save
++save:
++  class: net.officefloor.hq.app.period.SaveGeneratedPeriods
++  govern: [ transaction ]
++  next: auditPeriods
++auditPeriods:
++  class: net.officefloor.hq.app.period.AuditGeneratedPeriods
++  govern: [ transaction ]
++  next: carry
++carry:
++  class: net.officefloor.hq.app.rollover.CarryOpenings
++  govern: [ transaction ]
++  next: audit
++audit:
++  class: net.officefloor.hq.app.rollover.AuditRollover
++  govern: [ transaction ]
++  next: respond
++respond:
++  class: net.officefloor.hq.app.period.RespondWithGeneratedPeriods
++  govern: [ transaction ]
