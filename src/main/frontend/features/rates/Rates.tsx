@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { putJson } from '../../api/http';
+import { postJson, putJson } from '../../api/http';
 import { useGradeCodes } from '../grades/grades';
-import { useCurrentSheet, useCurrentUser } from '../session/session';
+import { sheetKey, useCurrentSheet, useCurrentUser } from '../session/session';
 import { useSheetToday } from '../session/sheetToday';
 import { NA, PERCENT, rateFor, ratesKey, useRates } from './rates';
 import type { Rate, RateInput } from './rates';
@@ -42,6 +42,20 @@ export function Rates() {
       await queryClient.invalidateQueries({ queryKey: ratesKey(sheet) });
     },
     onError: () => setError('That rate could not be set.'),
+  });
+
+  // A steward withdraws a rate's newest version: the one before it applies again, or with none the rate is gone.
+  const withdraw = useMutation({
+    mutationFn: (r: Rate) =>
+      postJson<unknown>(`/api/sheets/${encodeURIComponent(sheet)}/rates/withdraw?user=${encodeURIComponent(user)}`, {
+        grade: r.grade,
+        from: r.from ?? '',
+      }),
+    onSuccess: async () => {
+      setError('');
+      await queryClient.invalidateQueries({ queryKey: sheetKey(sheet) });
+    },
+    onError: () => setError('That rate could not be withdrawn: only a steward may withdraw a rate.'),
   });
 
   if (!user || !sheet) return null;
@@ -125,6 +139,7 @@ export function Rates() {
             <th>To</th>
             <th>Rate %</th>
             <th>Versions</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -135,6 +150,19 @@ export function Rates() {
               <td data-testid="rate-to">{r.to ?? ''}</td>
               <td data-testid="rate-pct">{r.rate}</td>
               <td data-testid="rate-version">{r.version}</td>
+              <td>
+                <button
+                  type="button"
+                  data-testid="rate-withdraw"
+                  disabled={withdraw.isPending}
+                  onClick={() => {
+                    setError('');
+                    once(() => withdraw.mutateAsync(r));
+                  }}
+                >
+                  Withdraw
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>

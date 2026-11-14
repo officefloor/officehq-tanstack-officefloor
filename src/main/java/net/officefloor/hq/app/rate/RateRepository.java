@@ -117,6 +117,45 @@ public class RateRepository {
         return stored;
     }
 
+    /**
+     * Withdraw the newest version of the sheet's own rate for the grade and from-date: the version before it, when there
+     * is one, is in force again; with none the rate is gone. The version now in force (0: gone); -1 when there was no
+     * such rate.
+     */
+    public int withdraw(String sheetId, String grade, LocalDate from) {
+        String where = from == null ? " WHERE sheet_id = ? AND grade = ? AND from_date IS NULL"
+                : " WHERE sheet_id = ? AND grade = ? AND from_date = ?";
+        Object[] key = from == null ? new Object[] { sheetId, grade } : new Object[] { sheetId, grade, from };
+        List<Integer> current = jdbc.queryForList("SELECT version FROM rate" + where, Integer.class, key);
+        if (current.isEmpty()) {
+            return -1;
+        }
+        jdbc.update("DELETE FROM rate_version" + where + " AND version >= ?", append(key, current.get(0)));
+        List<Rate> before = jdbc.query("SELECT sheet_id, grade, rate, from_date, to_date, version, forward, saved"
+                + " FROM rate_version" + where + " ORDER BY version DESC", RateRepository::map, key);
+        if (before.isEmpty()) {
+            jdbc.update("DELETE FROM rate" + where, key);
+            return 0;
+        }
+        Rate restored = before.get(0);
+        Object[] args = new Object[key.length + 5];
+        args[0] = restored.rate();
+        args[1] = restored.to();
+        args[2] = restored.version();
+        args[3] = restored.forward();
+        args[4] = restored.saved();
+        System.arraycopy(key, 0, args, 5, key.length);
+        jdbc.update("UPDATE rate SET rate = ?, to_date = ?, version = ?, forward = ?, saved = ?" + where, args);
+        return restored.version();
+    }
+
+    private static Object[] append(Object[] values, Object value) {
+        Object[] all = new Object[values.length + 1];
+        System.arraycopy(values, 0, all, 0, values.length);
+        all[values.length] = value;
+        return all;
+    }
+
     private static Rate map(ResultSet rs, int n) throws SQLException {
         return new Rate(rs.getString("sheet_id"), rs.getString("grade"), rs.getBigDecimal("rate").setScale(2),
                 rs.getObject("from_date", LocalDate.class), rs.getObject("to_date", LocalDate.class), rs.getInt("version"),
