@@ -17,7 +17,7 @@ import org.springframework.stereotype.Repository;
 
 /**
  * Clones a sheet to a new id: the clone gets its today, settings, roles, rates (with their versions), holidays, void reasons, templates,
- * people (grades, terms, contacts, aliases, tags, holds, retirements, patrons), pools, periods (all open) and claims
+ * people (grades, terms, contacts, aliases, tags, holds, retirements, patrons), pools, crews, periods (all open) and claims
  * (status, frozen figures, dates, notes, logs). Statements, watches, comments, locks, batches and as-of days are not
  * copied. Claims that had a number take the clone's own numbers afresh, in the order they were opened.
  */
@@ -71,6 +71,7 @@ public class SheetCloner {
 
         Map<Long, Long> people = copyPeople(from, to);
         copyPools(from, to, people);
+        copyCrews(from, to, people);
         copyClaims(from, to, people);
     }
 
@@ -100,6 +101,23 @@ public class SheetCloner {
                     Map.of("sheet_id", to, "person_id", ids.get(person), "patron_id", ids.get(patron)));
         }
         return ids;
+    }
+
+    /** Copy the crews with their leads and members, as they were added. */
+    private void copyCrews(String from, String to, Map<Long, Long> people) {
+        Map<Long, Long> crews = new HashMap<>();
+        for (Map<String, Object> crew : jdbc.queryForList("SELECT id, lead_id FROM crew WHERE sheet_id = ? ORDER BY id",
+                from)) {
+            long old = ((Number) crew.get("id")).longValue();
+            crews.put(old, RowCopy.copy(jdbc, "crew", old,
+                    Map.of("sheet_id", to, "lead_id", people.get(((Number) crew.get("lead_id")).longValue()))));
+        }
+        for (Map<String, Object> member : jdbc.queryForList(
+                "SELECT id, crew_id, person_id FROM crew_member WHERE sheet_id = ? ORDER BY id", from)) {
+            RowCopy.copy(jdbc, "crew_member", ((Number) member.get("id")).longValue(),
+                    Map.of("sheet_id", to, "crew_id", crews.get(((Number) member.get("crew_id")).longValue()),
+                            "person_id", people.get(((Number) member.get("person_id")).longValue())));
+        }
     }
 
     /** Copy the pools and their members (people and pools), as they were added. */
