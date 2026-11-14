@@ -65,6 +65,16 @@ public class PeriodRepository {
         return findAll(sheetId).stream().filter((p) -> p.softClosed() && p.contains(date)).findFirst().orElse(null);
     }
 
+    /** Where each of the sheet's periods stands in the order they were added, by name (higher is later). */
+    public Map<String, Long> addedOrder(String sheetId) {
+        Map<String, Long> order = new HashMap<>();
+        jdbc.query("SELECT name, id FROM period WHERE sheet_id = ?",
+                (rs) -> {
+                    order.put(rs.getString("name"), rs.getLong("id"));
+                }, sheetId);
+        return order;
+    }
+
     public void insert(Period period) {
         jdbc.update("INSERT INTO period (sheet_id, name, from_date, to_date, claim_cap) VALUES (?, ?, ?, ?, ?)",
                 period.sheetId(), period.name(), period.from(), period.to(), period.cap());

@@ -16,7 +16,8 @@ import type { DueRules } from '../settings/settings';
  * (personCarried; empty while open). A soft-closed period (soft; never also closed)
  * keeps its figures fixed the same way, while claims dated in it can still be added and changed. cap is the most OPEN
  * or PENDING claims due by a date in it a person may have when another of theirs is opened (null: none).
- * personOpenings: the opening balances pasted into it, added up by person id.
+ * personOpenings: the opening balances pasted into it, added up by person id. added: where it stands in the order the
+ * periods were added (higher is later).
  */
 export type Period = {
   name: string;
@@ -30,6 +31,7 @@ export type Period = {
   personCarried: Record<string, string>;
   personOpenings: Record<string, string>;
   locked: boolean;
+  added: number | null;
 };
 
 /** The fields the period form submits; cap is a whole number of at least 1, or blank for none. */
