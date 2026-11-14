@@ -15,7 +15,7 @@ import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.RequestParam;
 
 /** Settles a claim, fixing its due: its amount at its person's grade's rate in force on its date, rounded half to even to
- *  two decimals (a claim bound by a statement: the figure it was bound to). With no rate the due is not
+ *  two decimals and at least the sheet's floor (a claim bound by a statement: the figure it was bound to). With no rate the due is not
  *  fixed and stays live. Refused for the user who opened it (four eyes), and for a clerk when the due
  *  is above the sheet's clerk limit (a due that is n/a is within any limit; a steward settles anything). */
 public class SettleClaim {
@@ -33,7 +33,7 @@ public class SettleClaim {
                 LocalDate.parse(claim.getDate()));
         // A claim bound by a statement settles at the figure it was bound to.
         String due = claim.isStated() ? claim.getStatedDue()
-                : rate == null ? null : Dues.of(claim.getAmount(), rate.pct());
+                : rate == null ? null : Dues.of(claim.getAmount(), rate.pct(), settings.floor(claim.getSheetId()));
         if (due != null && Role.CLERK.equals(roles.roleOf(claim.getSheetId(), by == null ? "" : by))) {
             BigDecimal limit = settings.clerkLimit(claim.getSheetId());
             if (limit != null && new BigDecimal(due).compareTo(limit) > 0) {

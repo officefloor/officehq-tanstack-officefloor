@@ -7,6 +7,7 @@ import net.officefloor.hq.app.period.PeriodRepository;
 import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.rollup.Rollup;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Out;
@@ -21,7 +22,8 @@ public class FindOrAddPerson {
     public void find(@PathVariable("sheetId") String sheetId,
             @RequestParam(name = "by", required = false) String by, @Val QuickAddName name,
             @Val Rollup before, SheetRepository sheets, PersonRepository people,
-            ClaimRepository claims, RateRepository rates, PeriodRepository periods, Audit audit,
+            ClaimRepository claims, RateRepository rates, PeriodRepository periods,
+            SettingRepository settings, Audit audit,
             Out<Person> person) throws PeriodClosedException {
         String id = sheetId.trim();
         String user = by == null ? "" : by;
@@ -35,7 +37,7 @@ public class FindOrAddPerson {
         Person added = people.add(id, name.name(), "A", user);
         audit.record("PERSON_ADDED sheet=" + id + " by=" + user + " name=" + added.getName()
                 + " grade=" + added.getGrade());
-        for (String line : Rollup.of(id, people, claims, rates, sheets).changesSince(before, id, user)) {
+        for (String line : Rollup.of(id, people, claims, rates, sheets, settings).changesSince(before, id, user)) {
             audit.record(line);
         }
         person.set(added);

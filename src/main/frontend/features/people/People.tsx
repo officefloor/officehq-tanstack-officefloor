@@ -5,6 +5,7 @@ import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { PersonClaims } from '../claims/PersonClaims';
 import { claimsKey, listClaims, liveClaims, sumAmounts } from '../claims/api';
 import { listRates, personDue, rateByGrade, ratesKey, showDue } from '../rates/api';
+import { useFloor } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
 import { QuickAdd } from './QuickAdd';
 import { ShowRetired, useShowRetired } from './ShowRetired';
@@ -25,6 +26,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
   const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
   const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
+  const floor = useFloor(sheetId);
   const byGrade = rateByGrade(rates.data, useSheetToday(sheetId, user));
   const [form, setForm] = useState<PersonInput>(EMPTY);
   // The person being edited and the version of them the form loaded.
@@ -189,7 +191,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   Claimed <span data-testid="person-claimed">{claimed}</span>
                 </td>
                 <td>
-                  Due <span data-testid="person-due-total">{showDue(personDue(live, rates.data, p.grade, pct))}</span>
+                  Due <span data-testid="person-due-total">{showDue(personDue(live, rates.data, p.grade, pct, floor))}</span>
                 </td>
                 <td>
                   <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => open(p)}>
@@ -235,7 +237,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   </button>
                 </td>
                 <td>
-                  <PersonClaims sheetId={sheetId} user={user} personId={p.id} claims={own} grade={p.grade} rates={rates.data} />
+                  <PersonClaims sheetId={sheetId} user={user} personId={p.id} claims={own} grade={p.grade} rates={rates.data} floor={floor} />
                 </td>
               </tr>
             );

@@ -4,6 +4,7 @@ import net.officefloor.hq.app.Audit;
 import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Val;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -15,9 +16,9 @@ public class RecordRollup {
     public void record(@PathVariable("sheetId") String sheetId,
             @RequestParam(name = "by", required = false) String by, @Val Rollup before,
             PersonRepository people, ClaimRepository claims, RateRepository rates,
-            SheetRepository sheets, Audit audit) {
+            SheetRepository sheets, SettingRepository settings, Audit audit) {
         String id = sheetId.trim();
-        Rollup after = Rollup.of(id, people, claims, rates, sheets);
+        Rollup after = Rollup.of(id, people, claims, rates, sheets, settings);
         for (String line : after.changesSince(before, id, by == null ? "" : by)) {
             audit.record(line);
         }

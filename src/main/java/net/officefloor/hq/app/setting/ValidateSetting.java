@@ -13,11 +13,16 @@ public class ValidateSetting {
             throws InvalidSettingException {
         String key = request == null || request.key() == null ? "" : request.key().trim();
         String value = request == null || request.value() == null ? "" : request.value().trim();
-        if (!SettingRepository.CLERK_LIMIT.equals(key)) {
+        if (SettingRepository.CLERK_LIMIT.equals(key)) {
+            if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
+                throw new InvalidSettingException("The clerk limit is blank or 0.00 or more with up to two decimals");
+            }
+        } else if (SettingRepository.FLOOR.equals(key)) {
+            if (!MONEY.matcher(value).matches()) {
+                throw new InvalidSettingException("The floor is 0.00 or more with up to two decimals");
+            }
+        } else {
             throw new InvalidSettingException("Unknown setting: " + key);
-        }
-        if (!value.isEmpty() && !MONEY.matcher(value).matches()) {
-            throw new InvalidSettingException("The clerk limit is blank or 0.00 or more with up to two decimals");
         }
         body.set(new SettingRequest(key,
                 value.isEmpty() ? null : new BigDecimal(value).setScale(2).toPlainString()));

@@ -8,6 +8,7 @@ import net.officefloor.hq.app.claim.ClaimRepository;
 import net.officefloor.hq.app.claim.Dues;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.setting.SettingRepository;
 import net.officefloor.hq.app.sheet.SheetRepository;
 import net.officefloor.plugin.variable.Val;
 
@@ -17,9 +18,10 @@ import net.officefloor.plugin.variable.Val;
  *  to the figure it shows now; a claim that does not count is unbound. */
 public class TakeStatement {
     public void take(@Val Person person, PersonRepository people, ClaimRepository claims, RateRepository rates,
-            SheetRepository sheets) {
+            SheetRepository sheets, SettingRepository settings) {
         String sheetId = person.getSheetId();
         LocalDate today = sheets.today(sheetId);
+        String floor = settings.floor(sheetId);
         List<Claim> own = claims.listOf(sheetId, person.getId());
         BigDecimal total = BigDecimal.ZERO.setScale(2);
         boolean kept = false;
@@ -29,7 +31,7 @@ public class TakeStatement {
                 c.bind(false, null);
             } else {
                 Rate rate = rates.find(sheetId, person.getGrade(), LocalDate.parse(c.getDate()));
-                String due = c.due(rate == null ? null : Dues.of(c.getAmount(), rate.pct()));
+                String due = c.due(rate == null ? null : Dues.of(c.getAmount(), rate.pct(), floor));
                 kept |= c.getSettledDue() != null || (c.isStated() && c.getStatedDue() != null);
                 if (due != null) total = total.add(new BigDecimal(due));
                 c.bind(true, due);

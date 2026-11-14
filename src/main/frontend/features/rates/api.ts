@@ -51,29 +51,31 @@ function hundredths(text: string): bigint {
   return BigInt(whole || '0') * 100n + BigInt((frac + '00').slice(0, 2));
 }
 
-/** An amount times a percent, divided by 100, rounded half to even to two decimals; null (n/a)
- *  when there is no rate. Exact: worked in whole hundredths. */
-export function dueOf(amount: string, pct: string | undefined): string | null {
+/** An amount times a percent, divided by 100, rounded half to even to two decimals, and at least
+ *  the sheet's `floor`; null (n/a) when there is no rate. Exact: worked in whole hundredths. */
+export function dueOf(amount: string, pct: string | undefined, floor: string): string | null {
   if (pct === undefined) return null;
   // amount (1/100) x pct (1/100) / 100 is in 1/1_000_000; to cents is / 10_000, half to even.
   const product = hundredths(amount) * hundredths(pct);
-  const floor = product / 10_000n;
+  const whole = product / 10_000n;
   const rest = product % 10_000n;
-  const cents = rest > 5_000n || (rest === 5_000n && floor % 2n === 1n) ? floor + 1n : floor;
-  return formatCents(cents);
+  const cents = rest > 5_000n || (rest === 5_000n && whole % 2n === 1n) ? whole + 1n : whole;
+  const least = hundredths(floor);
+  return formatCents(cents < least ? least : cents);
 }
 
 /** A claim's due: the one fixed when it was settled, else the one bound by its person's last
- *  statement, else live at the grade's rate in force on the claim's date. */
-export const claimDue = (c: Claim, rates: Rate[] | undefined, grade: string) =>
-  c.settledDue ?? (c.stated ? c.statedDue : dueOf(c.amount, rateOn(rates, grade, c.date)));
+ *  statement, else live at the grade's rate in force on the claim's date, at least the `floor`. */
+export const claimDue = (c: Claim, rates: Rate[] | undefined, grade: string, floor: string) =>
+  c.settledDue ?? (c.stated ? c.statedDue : dueOf(c.amount, rateOn(rates, grade, c.date), floor));
 
 /** A person's due-total: the sum of their counting claims' due figures (n/a ones skipped); n/a
  *  when their grade has no rate today (`pct`) and none of those claims keeps a settled or bound figure. */
-export function personDue(claims: Claim[], rates: Rate[] | undefined, grade: string, pct: string | undefined) {
+export function personDue(claims: Claim[], rates: Rate[] | undefined, grade: string, pct: string | undefined,
+  floor: string) {
   const own = claims.filter(counts);
   if (pct === undefined && !own.some((c) => c.settledDue !== null || (c.stated && c.statedDue !== null))) return null;
-  return sumDues(own.map((c) => claimDue(c, rates, grade)));
+  return sumDues(own.map((c) => claimDue(c, rates, grade, floor)));
 }
 
 /** Add up two-decimal dues, skipping n/a. */

@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query';
 import { getJson, postJson } from '../../api/http';
 import { sheetKey } from '../sheet/api';
 
@@ -6,8 +7,12 @@ export type Setting = { sheetId: string; key: string; value: string };
 /** The role a user name has on the sheet; a name not listed is a clerk. */
 export type Role = { sheetId: string; user: string; role: string };
 
-/** The settings the screen offers: the clerk limit (two decimals; blank means no limit). */
-export const SETTING_KEYS = ['clerk-limit'] as const;
+/** The settings the screen offers: the clerk limit (two decimals; blank means no limit) and the
+ *  floor (two decimals; the least a claim's live due can be). */
+export const SETTING_KEYS = ['clerk-limit', 'floor'] as const;
+
+/** A setting's value until it is first set. */
+export const SETTING_DEFAULTS: Record<string, string> = { floor: '1.00' };
 
 const base = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}`;
 
@@ -30,4 +35,10 @@ export function listRoles(sheetId: string): Promise<Role[]> {
 /** Assign a user name a role; refused (rejects) when the role is not clerk or steward. */
 export function setRole(sheetId: string, by: string, user: string, role: string): Promise<Role> {
   return postJson<Role>(`${base(sheetId)}/roles?by=${encodeURIComponent(by)}`, { user, role });
+}
+
+/** The sheet's floor: the least a claim's live due can be. */
+export function useFloor(sheetId: string): string {
+  const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
+  return settings.data?.find((s) => s.key === 'floor')?.value || SETTING_DEFAULTS.floor;
 }

@@ -1,14 +1,15 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
-import { changeSetting, listSettings, settingsKey, SETTING_KEYS } from './api';
+import { changeSetting, listSettings, settingsKey, SETTING_DEFAULTS, SETTING_KEYS } from './api';
 
 /** The sheet's settings: each one's value in force and a form that changes them. A field shows the
- *  value in force until it is edited; saving saves every field. */
+ *  value in force until it is edited; saving saves the fields entered (every field when none was). */
 export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
-  const current = (key: string) => settings.data?.find((s) => s.key === key)?.value ?? '';
+  const current = (key: string) =>
+    settings.data?.find((s) => s.key === key)?.value ?? SETTING_DEFAULTS[key] ?? '';
   const [form, setForm] = useState<Record<string, string>>({});
 
   const save = useMutation({
@@ -19,6 +20,8 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
   });
 
   const submitOnce = useSubmitOnce();
+
+  const enter = (key: string) => setForm((f) => (key in f ? f : { ...f, [key]: current(key) }));
 
   const change = (key: string, value: string) => {
     setForm((f) => ({ ...f, [key]: value }));
@@ -31,7 +34,8 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          const values = Object.fromEntries(SETTING_KEYS.map((key) => [key, form[key] ?? current(key)]));
+          const values = Object.keys(form).length > 0 ? form
+            : Object.fromEntries(SETTING_KEYS.map((key) => [key, current(key)]));
           submitOnce(() => {
             save.reset();
             return save.mutateAsync(values).then(() => setForm({}));
@@ -41,9 +45,10 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
         {SETTING_KEYS.map((key) => (
           <div key={key}>
             <label>
-              {key === 'clerk-limit' ? 'Clerk limit' : key}{' '}
-              <input data-testid={`setting-${key}`} value={form[key] ?? current(key)} placeholder="No limit"
-                onChange={(e) => change(key, e.target.value)} />
+              {key === 'clerk-limit' ? 'Clerk limit' : 'Floor'}{' '}
+              <input data-testid={`setting-${key}`} value={form[key] ?? current(key)}
+                placeholder={key === 'clerk-limit' ? 'No limit' : undefined}
+                onFocus={() => enter(key)} onChange={(e) => change(key, e.target.value)} />
             </label>{' '}
             Now: <span data-testid={`setting-${key}-current`}>{current(key)}</span>
           </div>
@@ -52,7 +57,9 @@ export function Settings({ sheetId, user }: { sheetId: string; user: string }) {
           Save settings
         </button>
         {save.isError && (
-          <span data-testid="settings-error">The clerk limit must be blank or 0.00 or more with up to two decimals.</span>
+          <span data-testid="settings-error">
+            The clerk limit must be blank, and the floor given, as 0.00 or more with up to two decimals.
+          </span>
         )}
       </form>
     </section>
