@@ -1,0 +1,85 @@
+diff --git a/src/main/frontend/features/dashboard/StewardDashboard.tsx b/src/main/frontend/features/dashboard/StewardDashboard.tsx
+new file mode 100644
+index 000000000..d483d46cc
+--- /dev/null
++++ b/src/main/frontend/features/dashboard/StewardDashboard.tsx
+@@ -0,0 +1,41 @@
++import { useClaims } from '../claims/claims';
++import { personOverdue } from '../overdue/overdue';
++import { liveHolds, usePeople } from '../people/people';
++import { useRates } from '../rates/rates';
++import { useCurrentUser } from '../session/session';
++import { useDueRules, useSettings } from '../settings/settings';
++import type { Settings } from '../settings/settings';
++
++/** Whether the user acts as a steward on the date: given the role, or by a delegation in force on it. */
++export function actsAsSteward(settings: Settings | undefined, user: string, today: string): boolean {
++  if (!settings || !user) return false;
++  return (
++    settings.roles.some((r) => r.user === user && r.role === 'steward') ||
++    settings.delegations.some((d) => d.user === user && d.from <= today && today <= d.to)
++  );
++}
++
++// A steward's dashboard over the sheet: how many claims are PENDING, how many REVIEW, and how many overdue claims count
++// (as the rollup's overdue count). Blank for a user who does not act as a steward. While the screen shows the sheet as
++// of a date, everything — the role included — is as it stood then.
++export function StewardDashboard() {
++  const [user] = useCurrentUser();
++  const settings = useSettings().data;
++  const people = usePeople().data ?? [];
++  const claims = useClaims().data ?? [];
++  const rates = useRates().data ?? [];
++  const rules = useDueRules();
++
++  const steward = actsAsSteward(settings, user ?? '', rules.today);
++  const overdue = people.reduce(
++    (n, p) => n + personOverdue(claims.filter((c) => c.personId === p.id), rates, p.grades, liveHolds(p, rules.today), rules).count,
++    0,
++  );
++  return (
++    <p data-testid="steward-dashboard">
++      Steward — Pending: <strong data-testid="dash-pending-count">{steward ? claims.filter((c) => c.status === 'PENDING').length : ''}</strong>
++      {' · '}Review: <strong data-testid="dash-review-count">{steward ? claims.filter((c) => c.status === 'REVIEW').length : ''}</strong>
++      {' · '}Overdue: <strong data-testid="dash-overdue-count">{steward ? overdue : ''}</strong>
++    </p>
++  );
++}
+diff --git a/src/main/frontend/features/dashboard/dashboard.slot.tsx b/src/main/frontend/features/dashboard/dashboard.slot.tsx
+new file mode 100644
+index 000000000..c6089da0c
+--- /dev/null
++++ b/src/main/frontend/features/dashboard/dashboard.slot.tsx
+@@ -0,0 +1,4 @@
++import { AppHeader } from '../../slots/defs/appHeader';
++import { StewardDashboard } from './StewardDashboard';
++
++export const contribution = AppHeader.fill({ order: 32, Component: StewardDashboard });
+diff --git a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+index 200827d93..2a1f0f892 100644
+--- a/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
++++ b/src/main/java/net/officefloor/hq/app/person/PersonRepository.java
+@@ -208,12 +208,12 @@ public class PersonRepository {
+ 
+     /**
+      * The statements still standing of each person on the sheet, each as {@code <statement date> <due-total>}, oldest
+-     * first (by date, then in the order taken).
++     * first (in the order taken).
+      */
+     public Map<Long, List<String>> statementLinesAll(String sheetId) {
+         Map<Long, List<String>> found = new HashMap<>();
+         jdbc.query("SELECT person_id, stated_total, statement_date FROM person_statement WHERE sheet_id = ?"
+-                + " ORDER BY statement_date, seq", (rs) -> {
++                + " ORDER BY seq", (rs) -> {
+                     found.computeIfAbsent(rs.getLong("person_id"), (k) -> new ArrayList<>()).add(statementLine(rs));
+                 }, sheetId);
+         return found;
+@@ -222,7 +222,7 @@ public class PersonRepository {
+     /** The person's statements still standing, as {@link #statementLinesAll} gives them. */
+     public List<String> statementLines(String sheetId, long personId) {
+         return jdbc.query("SELECT stated_total, statement_date FROM person_statement WHERE sheet_id = ? AND person_id = ?"
+-                + " ORDER BY statement_date, seq", (rs, n) -> statementLine(rs), sheetId, personId);
++                + " ORDER BY seq", (rs, n) -> statementLine(rs), sheetId, personId);
+     }
+ 
+     private static String statementLine(ResultSet rs) throws SQLException {
