@@ -16,7 +16,7 @@ public class PlanRepository {
     private static final RowMapper<Plan> ROW = (rs, n) -> new Plan(rs.getLong("id"), rs.getString("sheet_id"),
             rs.getLong("person_id"), rs.getBigDecimal("amount"), rs.getDate("start_date").toLocalDate(),
             rs.getObject("every_days", Integer.class), rs.getObject("month_day", Integer.class),
-            rs.getDate("end_date").toLocalDate(), rs.getInt("generated"));
+            rs.getDate("end_date").toLocalDate(), rs.getInt("generated"), List.of());
 
     private final JdbcTemplate jdbc;
 
@@ -26,8 +26,36 @@ public class PlanRepository {
 
     /** The sheet's plans, in the order they were added, each with how many claims it has made. */
     public List<Plan> findAll(String sheetId) {
-        return jdbc.query("SELECT p.*, (SELECT COUNT(*) FROM person_plan_date d WHERE d.plan_id = p.id) AS generated"
-                + " FROM person_plan p WHERE p.sheet_id = ? ORDER BY p.id", ROW, sheetId);
+        return withPauses(jdbc.query("SELECT p.*, (SELECT COUNT(*) FROM person_plan_date d WHERE d.plan_id = p.id) AS generated"
+                + " FROM person_plan p WHERE p.sheet_id = ? ORDER BY p.id", ROW, sheetId));
+    }
+
+    /** The sheet's plan, or null when it has none of that id. */
+    public Plan find(String sheetId, long id) {
+        List<Plan> found = withPauses(jdbc.query("SELECT p.*, (SELECT COUNT(*) FROM person_plan_date d"
+                + " WHERE d.plan_id = p.id) AS generated FROM person_plan p WHERE p.sheet_id = ? AND p.id = ?", ROW,
+                sheetId, id));
+        return found.isEmpty() ? null : found.get(0);
+    }
+
+    /** Pauses the plan from the day. */
+    public void pause(Plan plan, LocalDate on) {
+        jdbc.update("INSERT INTO person_plan_pause (sheet_id, plan_id, paused_on) VALUES (?, ?, ?)", plan.sheetId(),
+                plan.id(), Date.valueOf(on));
+    }
+
+    /** Resumes the plan's open pause on the day. */
+    public void resume(Plan plan, LocalDate on) {
+        jdbc.update("UPDATE person_plan_pause SET resumed_on = ? WHERE plan_id = ? AND resumed_on IS NULL",
+                Date.valueOf(on), plan.id());
+    }
+
+    private List<Plan> withPauses(List<Plan> plans) {
+        return plans.stream().map(p -> new Plan(p.id(), p.sheetId(), p.personId(), p.amount(), p.start(), p.every(),
+                p.day(), p.end(), p.generated(), jdbc.query("SELECT paused_on, resumed_on FROM person_plan_pause"
+                        + " WHERE plan_id = ? ORDER BY id", (rs, n) -> new PlanPause(rs.getDate("paused_on").toLocalDate(),
+                                rs.getDate("resumed_on") == null ? null : rs.getDate("resumed_on").toLocalDate()),
+                        p.id()))).toList();
     }
 
     /** Saves a new plan; it with its id. */
@@ -47,7 +75,7 @@ public class PlanRepository {
         }, keys);
         long id = keys.getKey().longValue();
         return new Plan(id, plan.sheetId(), plan.personId(), plan.amount(), plan.start(), plan.every(), plan.day(),
-                plan.end(), 0);
+                plan.end(), 0, List.of());
     }
 
     /** The dates the plan has made a claim for. */

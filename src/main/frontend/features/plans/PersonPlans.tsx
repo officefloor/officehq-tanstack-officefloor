@@ -11,8 +11,49 @@ import type { Plan } from './plans';
 type PlanFields = { amount: string; start: string; every: string; day: string; end: string };
 const EMPTY: PlanFields = { amount: '', start: '', every: '', day: '', end: '' };
 
+// A plan's paused yes/no and its pause and resume buttons: pausing skips its dates from the sheet's today until it is
+// resumed. The server refuses pausing a paused plan or resuming a running one; the error shows in the plan's row.
+function PlanPause({ person, plan }: { person: Person; plan: Plan }) {
+  const [user] = useCurrentUser();
+  const [sheet] = useCurrentSheet();
+  const [error, setError] = usePersonError(person.id, `plan-${plan.id}`);
+  const queryClient = useQueryClient();
+  const once = useOneAtATime();
+
+  const toggle = useMutation({
+    mutationFn: (action: 'pause' | 'resume') =>
+      postJson<Plan>(
+        `/api/sheets/${encodeURIComponent(sheet)}/plans/${plan.id}/${action}?user=${encodeURIComponent(user)}`,
+        {},
+      ),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: plansKey(sheet) });
+    },
+    onError: (_e, action) =>
+      setError(action === 'pause' ? 'The plan is already paused.' : 'The plan is not paused.'),
+  });
+
+  const press = (action: 'pause' | 'resume') => () => {
+    setError('');
+    once(() => toggle.mutateAsync(action));
+  };
+
+  return (
+    <>
+      , paused <span data-testid="plan-paused">{plan.paused ? 'yes' : 'no'}</span>{' '}
+      <button type="button" data-testid="plan-pause" disabled={toggle.isPending} onClick={press('pause')}>
+        Pause
+      </button>
+      <button type="button" data-testid="plan-resume" disabled={toggle.isPending} onClick={press('resume')}>
+        Resume
+      </button>
+      {error && <span data-testid="plan-error">{error}</span>}
+    </>
+  );
+}
+
 // A person's plans (each its amount, start, interval or day of the month, end, how many claims it has made so far and
-// its next five dates after the sheet's today) and the form that adds one: an amount, a start (blank: the sheet's today), every N days or a day of the month (1 to
+// its next five dates after the sheet's today, and whether it is paused, with buttons to pause and resume it) and the form that adds one: an amount, a start (blank: the sheet's today), every N days or a day of the month (1 to
 // 31), and an end. The server refuses a bad amount, interval or day, both an interval and a day, or an end before the
 // start.
 export function PersonPlans({ person }: { person: Person }) {
@@ -54,6 +95,7 @@ export function PersonPlans({ person }: { person: Person }) {
           {p.amount} from {p.start} {p.day != null ? `monthly on day ${p.day}` : `every ${p.every} days`} to {p.end}, made{' '}
           <span data-testid="plan-generated">{p.generated}</span>, next{' '}
           <span data-testid="plan-next-dates">{p.nextDates}</span>
+          <PlanPause person={person} plan={p} />
         </div>
       ))}
       <input data-testid="plan-form-amount" placeholder="amount" size={7} value={fields.amount} onChange={change('amount')} />

@@ -60,7 +60,7 @@ public class BuildPlan {
             throw new InvalidPlanException("The end cannot be before the start.");
         }
         plan.set(new Plan(null, person.sheetId(), person.id(), amount, start, everyDays, monthDay, end,
-                0));
+                0, java.util.List.of()));
     }
 
     private static LocalDate date(String text, String what) throws InvalidPlanException {
