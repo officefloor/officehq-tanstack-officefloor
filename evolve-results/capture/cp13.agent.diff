@@ -1,0 +1,218 @@
+diff --git a/src/main/frontend/features/claims/PersonClaims.tsx b/src/main/frontend/features/claims/PersonClaims.tsx
+index 05f8a4b9d..6db592096 100644
+--- a/src/main/frontend/features/claims/PersonClaims.tsx
++++ b/src/main/frontend/features/claims/PersonClaims.tsx
+@@ -8,7 +8,7 @@ const EMPTY: ClaimInput = { amount: '', date: '', note: '' };
+ /** A person's claims: a form that adds a claim or edits one, and the claims newest first, each
+  *  with its status, its due (fixed when settled, else at the person's `grade`'s rate in force on the
+  *  claim's date; none when there is no such rate)
+- *  and buttons that change its status. */
++ *  who opened it, and buttons that change its status (the user who opened a claim cannot settle it). */
+ export function PersonClaims({ sheetId, user, personId, claims, grade, rates }: {
+   sheetId: string; user: string; personId: number; claims: Claim[]; grade: string; rates: Rate[] | undefined;
+ }) {
+@@ -87,6 +87,7 @@ export function PersonClaims({ sheetId, user, personId, claims, grade, rates }:
+               <td data-testid="claim-note">{c.note}</td>
+               <td data-testid="claim-due">{showDue(claimDue(c, rates, grade))}</td>
+               <td data-testid="claim-status">{c.status}</td>
++              <td data-testid="claim-opened-by">{c.openedBy ?? ''}</td>
+               <td>
+                 {(['open', 'settle', 'void'] as const).map((a) => (
+                   <button key={a} type="button" data-testid={`claim-${a}`} disabled={move.isPending}
+@@ -103,8 +104,10 @@ export function PersonClaims({ sheetId, user, personId, claims, grade, rates }:
+                   </button>
+                 )}
+                 {move.isError && move.variables?.id === c.id && (
+-                  <span data-testid="claim-error">A {c.status} claim cannot be {move.variables.action === 'open'
+-                    ? 'opened' : move.variables.action === 'settle' ? 'settled' : 'voided'}.</span>
++                  <span data-testid="claim-error">{c.status === 'OPEN' && move.variables.action === 'settle'
++                    ? 'The user who opened a claim cannot settle it.'
++                    : `A ${c.status} claim cannot be ${move.variables.action === 'open'
++                      ? 'opened' : move.variables.action === 'settle' ? 'settled' : 'voided'}.`}</span>
+                 )}
+               </td>
+             </tr>
+diff --git a/src/main/frontend/features/claims/api.ts b/src/main/frontend/features/claims/api.ts
+index dedcb453d..68b0b11a6 100644
+--- a/src/main/frontend/features/claims/api.ts
++++ b/src/main/frontend/features/claims/api.ts
+@@ -8,10 +8,11 @@ export type ClaimAction = 'open' | 'settle' | 'void';
+ 
+ /** A claim: its amount as two-decimal text, its date (yyyy-MM-dd), its note, its status and its
+  *  number on the sheet (given when opened; null while a draft or once voided), and its settled due
+- *  (fixed when settled; null otherwise, or when there was no rate then — its due stays live). */
++ *  (fixed when settled; null otherwise, or when there was no rate then — its due stays live), and who
++ *  opened it (null while a draft; that user cannot settle it). */
+ export type Claim = {
+   id: number; sheetId: string; personId: number; amount: string; date: string; note: string; status: ClaimStatus;
+-  number: number | null; settledDue: string | null;
++  number: number | null; settledDue: string | null; openedBy: string | null;
+ };
+ export type ClaimInput = { amount: string; date: string; note: string };
+ 
+@@ -35,7 +36,8 @@ export function updateClaim(sheetId: string, by: string, id: number, input: Clai
+   return putJson<Claim>(`${sheetBase(sheetId)}/claims/${id}?by=${encodeURIComponent(by)}`, input);
+ }
+ 
+-/** Change a claim's status; refused (rejects) when its status does not allow the change. */
++/** Change a claim's status; refused (rejects) when its status does not allow the change, or when the
++ *  user settling it is the one who opened it. */
+ export function moveClaim(sheetId: string, by: string, id: number, action: ClaimAction): Promise<Claim> {
+   return postJson<Claim>(`${sheetBase(sheetId)}/claims/${id}/${action}?by=${encodeURIComponent(by)}`, {});
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/Claim.java b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+index a7c2d8d4b..c76eb93c2 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/Claim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/Claim.java
+@@ -4,7 +4,8 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
+ 
+ /** A claim of a person: an amount (two decimals, as text), a date (yyyy-MM-dd), a note and a status
+  *  (a {@link ClaimStatus} name), and its number on the sheet (given when opened; none while a draft or
+- *  once voided), and its settled due (fixed when settled; none otherwise, or when there was no rate). */
++ *  once voided), its settled due (fixed when settled; none otherwise, or when there was no rate), and
++ *  who opened it (none while a draft). */
+ public class Claim {
+     private final long id;
+     private final String sheetId;
+@@ -15,11 +16,12 @@ public class Claim {
+     private String status;
+     private Long number;
+     private String settledDue;
++    private String openedBy;
+     /** The number a claim had before this request cleared it (a void), for its audit line. */
+     private Long numberHad;
+ 
+     public Claim(long id, String sheetId, long personId, String amount, String date, String note,
+-            String status, Long number, String settledDue) {
++            String status, Long number, String settledDue, String openedBy) {
+         this.id = id;
+         this.sheetId = sheetId;
+         this.personId = personId;
+@@ -29,6 +31,7 @@ public class Claim {
+         this.status = status;
+         this.number = number;
+         this.settledDue = settledDue;
++        this.openedBy = openedBy;
+     }
+ 
+     public long getId() { return id; }
+@@ -47,6 +50,9 @@ public class Claim {
+     public String getSettledDue() { return settledDue; }
+     public void setSettledDue(String settledDue) { this.settledDue = settledDue; }
+ 
++    public String getOpenedBy() { return openedBy; }
++    public void setOpenedBy(String openedBy) { this.openedBy = openedBy; }
++
+     /** Clear the number, keeping the one it had for the audit line. */
+     public void clearNumber() {
+         this.numberHad = number;
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+index 54964ee6c..249aad321 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimRepository.java
+@@ -12,7 +12,7 @@ import org.springframework.stereotype.Repository;
+ @Repository
+ public class ClaimRepository {
+ 
+-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due";
++    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, number, settled_due, opened_by";
+ 
+     private static final RowMapper<Claim> ROW = (rs, n) -> new Claim(rs.getLong("id"),
+             rs.getString("sheet_id"), rs.getLong("person_id"),
+@@ -20,7 +20,8 @@ public class ClaimRepository {
+             rs.getObject("claim_date", LocalDate.class).toString(), rs.getString("note"),
+             rs.getString("status"), rs.getObject("number", Long.class),
+             rs.getBigDecimal("settled_due") == null ? null
+-                    : rs.getBigDecimal("settled_due").setScale(2).toPlainString());
++                    : rs.getBigDecimal("settled_due").setScale(2).toPlainString(),
++            rs.getString("opened_by"));
+ 
+     private final JdbcTemplate jdbc;
+ 
+@@ -56,14 +57,15 @@ public class ClaimRepository {
+             return ps;
+         }, key);
+         return new Claim(key.getKey().longValue(), sheetId, personId, amount.toPlainString(),
+-                date.toString(), note, ClaimStatus.DRAFT.name(), null, null);
++                date.toString(), note, ClaimStatus.DRAFT.name(), null, null, null);
+     }
+ 
+     public void update(Claim claim) {
+-        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, number = ?, settled_due = ? WHERE sheet_id = ? AND id = ?",
++        jdbc.update("UPDATE claim SET amount = ?, claim_date = ?, note = ?, status = ?, number = ?, settled_due = ?, opened_by = ? WHERE sheet_id = ? AND id = ?",
+                 new BigDecimal(claim.getAmount()), LocalDate.parse(claim.getDate()), claim.getNote(),
+                 claim.getStatus(), claim.getNumber(),
+                 claim.getSettledDue() == null ? null : new BigDecimal(claim.getSettledDue()),
++                claim.getOpenedBy(),
+                 claim.getSheetId(), claim.getId());
+     }
+ 
+diff --git a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusException.java b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusException.java
+index 3a9c7c873..4dbf5d960 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/ClaimStatusException.java
++++ b/src/main/java/net/officefloor/hq/app/claim/ClaimStatusException.java
+@@ -1,6 +1,7 @@
+ package net.officefloor.hq.app.claim;
+ 
+-/** The claim's status does not allow the change (a SETTLED or VOID claim never changes): refused and nothing is written. */
++/** The claim's status does not allow the change (a SETTLED or VOID claim never changes), or the
++ *  user may not make it (the one who opened a claim cannot settle it): refused and nothing is written. */
+ public class ClaimStatusException extends Exception {
+     public ClaimStatusException(String message) {
+         super(message);
+diff --git a/src/main/java/net/officefloor/hq/app/claim/OpenClaim.java b/src/main/java/net/officefloor/hq/app/claim/OpenClaim.java
+index ac5ef9c64..deadca412 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/OpenClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/OpenClaim.java
+@@ -1,10 +1,14 @@
+ package net.officefloor.hq.app.claim;
+ 
+ import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
++/** Opens a claim, giving it the sheet's next number and recording who opened it. */
+ public class OpenClaim {
+-    public void move(@Val Claim claim, ClaimRepository claims) throws ClaimStatusException {
++    public void move(@RequestParam(name = "by", required = false) String by, @Val Claim claim,
++            ClaimRepository claims) throws ClaimStatusException {
+         claim.setStatus(ClaimStatus.valueOf(claim.getStatus()).moveTo(ClaimStatus.OPEN).name());
+         claim.setNumber(claims.nextNumber(claim.getSheetId()));
++        claim.setOpenedBy(by == null ? "" : by);
+     }
+ }
+diff --git a/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java b/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
+index bfac7ca93..3ad951636 100644
+--- a/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
++++ b/src/main/java/net/officefloor/hq/app/claim/SettleClaim.java
+@@ -8,13 +8,18 @@ import net.officefloor.hq.app.person.PersonRepository;
+ import net.officefloor.hq.app.rate.Rate;
+ import net.officefloor.hq.app.rate.RateRepository;
+ import net.officefloor.plugin.variable.Val;
++import org.springframework.web.bind.annotation.RequestParam;
+ 
+ /** Settles a claim, fixing its due: its amount at its person's grade's rate in force on its date, rounded half to even to
+- *  two decimals. With no rate the due is not fixed and stays live. */
++ *  two decimals. With no rate the due is not fixed and stays live. Refused for the user who opened it (four eyes). */
+ public class SettleClaim {
+-    public void move(@Val Claim claim, PersonRepository people, RateRepository rates)
+-            throws ClaimStatusException {
+-        claim.setStatus(ClaimStatus.valueOf(claim.getStatus()).moveTo(ClaimStatus.SETTLED).name());
++    public void move(@RequestParam(name = "by", required = false) String by, @Val Claim claim,
++            PersonRepository people, RateRepository rates) throws ClaimStatusException {
++        ClaimStatus settled = ClaimStatus.valueOf(claim.getStatus()).moveTo(ClaimStatus.SETTLED);
++        if (claim.getOpenedBy() != null && claim.getOpenedBy().equals(by == null ? "" : by)) {
++            throw new ClaimStatusException("The user who opened a claim cannot settle it");
++        }
++        claim.setStatus(settled.name());
+         Person person = people.find(claim.getSheetId(), claim.getPersonId());
+         Rate rate = person == null ? null : rates.find(claim.getSheetId(), person.getGrade(),
+                 LocalDate.parse(claim.getDate()));
+diff --git a/src/main/resources/db/migration/V11__claim_opened_by.sql b/src/main/resources/db/migration/V11__claim_opened_by.sql
+new file mode 100644
+index 000000000..7066ebc2c
+--- /dev/null
++++ b/src/main/resources/db/migration/V11__claim_opened_by.sql
+@@ -0,0 +1,3 @@
++-- Who opened a claim: set when it is opened; none while a draft. The user who opened a claim
++-- cannot settle it (four eyes).
++ALTER TABLE claim ADD COLUMN opened_by VARCHAR(200);
