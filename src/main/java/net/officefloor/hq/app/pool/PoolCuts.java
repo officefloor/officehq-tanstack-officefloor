@@ -35,6 +35,13 @@ public class PoolCuts {
         return new Pools(list, settings.pot(sheetId));
     }
 
+    /** The sheet's pools, then its crews as pools, with its pot, as they stood at the end of {@code on}. */
+    public Pools then(String sheetId, LocalDate on) {
+        List<Pool> list = new ArrayList<>(repository.findAll(sheetId, on, true));
+        list.addAll(repository.crewPools(sheetId, on, true));
+        return new Pools(list, settings.potOn(sheetId, on));
+    }
+
     /** Fix every pool member's cut for the period as it stands now (the cell it shows now). */
     public void fix(String sheetId, String period) {
         Pools pools = live(sheetId, sheets.today(sheetId));

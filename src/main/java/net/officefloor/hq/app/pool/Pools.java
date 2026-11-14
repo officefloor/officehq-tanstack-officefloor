@@ -84,6 +84,21 @@ public record Pools(List<Pool> list, BigDecimal pot) {
         return false;
     }
 
+    /** A person's cut total: their cuts across every pool they are a member of, added up (a pool with no cut adds nothing). */
+    public BigDecimal cutTotalOf(long personId) {
+        BigDecimal total = BigDecimal.ZERO.setScale(2);
+        for (Pool pool : list) {
+            List<BigDecimal> cuts = PoolResponse.cuts(pool, potOf(pool));
+            for (int i = 0; cuts != null && i < pool.members().size(); i++) {
+                Long id = pool.members().get(i).personId();
+                if (id != null && id == personId && cuts.get(i) != null) {
+                    total = total.add(cuts.get(i));
+                }
+            }
+        }
+        return total;
+    }
+
     /** The pool with this id, or null. */
     public Pool find(long poolId) {
         return list.stream().filter(p -> p.id() == poolId).findFirst().orElse(null);

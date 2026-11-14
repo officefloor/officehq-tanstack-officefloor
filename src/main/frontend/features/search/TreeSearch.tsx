@@ -12,6 +12,7 @@ import { useCurrentSheet, useCurrentUser } from '../session/session';
 import type { SheetInfo } from '../session/session';
 import { dueRules, useDueRules } from '../settings/settings';
 import type { DueRules, Settings } from '../settings/settings';
+import type { Pool } from '../pools/pools';
 
 /** What a sheet holds that the search reads: its people (in list order), their aliases and what their due-totals need. */
 type SheetData = { people: Person[]; aliases: Alias[]; claims: Claim[]; rates: Rate[]; rules: DueRules };
@@ -19,15 +20,16 @@ type SheetData = { people: Person[]; aliases: Alias[]; claims: Claim[]; rates: R
 /** A sheet's data as the store holds it now, its due rules by its own today. */
 async function sheetData(sheet: string): Promise<SheetData> {
   const path = `/api/sheets/${encodeURIComponent(sheet)}`;
-  const [info, people, aliases, claims, rates, settings] = await Promise.all([
+  const [info, people, aliases, claims, rates, settings, pools] = await Promise.all([
     getLiveJson<SheetInfo>(path),
     getLiveJson<Person[]>(`${path}/people`),
     getLiveJson<Alias[]>(`${path}/aliases`),
     getLiveJson<Claim[]>(`${path}/claims`),
     getLiveJson<Rate[]>(`${path}/rates`),
     getLiveJson<Settings>(`${path}/settings`),
+    getLiveJson<Pool[]>(`${path}/pools`),
   ]);
-  return { people, aliases, claims, rates, rules: dueRules(settings, info.today, claims) };
+  return { people, aliases, claims, rates, rules: dueRules(settings, info.today, claims, pools) };
 }
 
 /** The lines `<sheet id> <name> (<grade>) <due-total>` for the sheet's people whose name or an alias contains the text, ignoring case. */

@@ -12,7 +12,7 @@ import java.util.Map;
  * every full 30 days), its rounding policy date (null: blank, the sheet's
  * today), its period numbering from date (null: off; on or after it, an opened claim is numbered within its period)
  * its entry date (null: off; a new claim left without a date takes it instead of the sheet's today)
- * its cap (null: none; a person's due-total is at most it), its proof threshold (null: none; a claim whose due is above
+ * its cap (null: none; a person's due-total is at most it less their cut total, not below 0.00), its proof threshold (null: none; a claim whose due is above
  * the one in force on its date is settled or approved only once it has a proof) the roles given to user names (any other name is a clerk) and its
  * permission matrix (the roles allowed each of open, settle, void, reassign, close and reopen) and its grace days (null: off;
  * when its today is changed, an open period whose to-date plus them is before the new today is closed).

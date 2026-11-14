@@ -17,6 +17,8 @@ import net.officefloor.hq.app.person.Person;
 import net.officefloor.hq.app.person.PersonRepository;
 import net.officefloor.hq.app.rate.Rate;
 import net.officefloor.hq.app.rate.RateRepository;
+import net.officefloor.hq.app.pool.PoolCuts;
+import net.officefloor.hq.app.pool.Pools;
 import net.officefloor.hq.app.setting.Cap;
 import net.officefloor.hq.app.setting.DatedSettings;
 import net.officefloor.hq.app.setting.SettingRepository;
@@ -26,7 +28,7 @@ import org.springframework.stereotype.Service;
 /**
  * Works out a sheet's figures as the screen shows them: a person's claimed is their counting claims' amounts
  * added up (a held claim's too, in every figure: a hold only takes away a pool cut; none once their retirement date is reached), leaving out corrections; their due-total those claims' dues (live figures rounded by its policy date, plus
- * any late charge, at the late percent in force on each 30-day boundary, on the overdue ones, then raised to the floor in force on each claim's date) added up, at most the cap in force on the sheet's today; n/a when their grade on the sheet's today has no
+ * any late charge, at the late percent in force on each 30-day boundary, on the overdue ones, then raised to the floor in force on each claim's date) added up, at most the cap in force on the sheet's today less their cut total (their pool cuts added up; not below 0.00); n/a when their grade on the sheet's today has no
  * rate there and no counting claim has a figure (kept, or at the rate for the grade in force on its date). Their overdue-total
  * is the dues of their overdue counting claims added up (skipping n/a, not capped). The sheet's totals add these up, skipping n/a;
  * its due-total and overdue-total leave out the single highest and lowest person's figure when three or more have one.
@@ -44,9 +46,11 @@ public class RollupService {
     private final SheetRepository sheets;
     private final SettingRepository settings;
     private final ClaimShareRepository shares;
+    private final PoolCuts poolCuts;
 
     public RollupService(PersonRepository people, ClaimRepository claims, RateRepository rates,
-            SheetRepository sheets, SettingRepository settings, ClaimShareRepository shares) {
+            SheetRepository sheets, SettingRepository settings, ClaimShareRepository shares, PoolCuts poolCuts) {
+        this.poolCuts = poolCuts;
         this.shares = shares;
         this.people = people;
         this.claims = claims;
@@ -61,6 +65,7 @@ public class RollupService {
         List<Rate> sheetRates = rates.findAll(sheetId);
         DatedSettings dated = settings.dated(sheetId);
         BigDecimal cap = dated.capOn(today);
+        Pools pools = cap == null ? null : poolCuts.live(sheetId, today);
         List<Claim> sheetClaims = claims.findAll(sheetId);
         Rounding rounding = settings.rounding(sheetId, today, sheetClaims);
         Map<Long, Rollup.Figures> figures = new LinkedHashMap<>();
@@ -119,7 +124,7 @@ public class RollupService {
                 }
             }
             boolean na = Rate.inForce(sheetRates, person.grade(), today) == null && !kept;
-            due = Cap.apply(cap, due);
+            due = Cap.apply(cap, pools == null ? BigDecimal.ZERO : pools.cutTotalOf(person.id()), due);
             claimedTotal = claimedTotal.add(claimed);
             if (!na) {
                 dues.add(due);

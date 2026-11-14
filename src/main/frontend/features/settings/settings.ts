@@ -7,6 +7,8 @@ import { useClaims } from '../claims/claims';
 import type { Claim } from '../claims/claims';
 import { gradeOn } from '../people/people';
 import type { GradeFrom } from '../people/people';
+import { cutTotal, personCuts, usePools } from '../pools/pools';
+import type { Pool } from '../pools/pools';
 
 /** A role given to a user name: clerk, steward, viewer (sees everything, changes nothing) or restricted (a clerk who sees on the
  * people list only the people of their crews and themselves). A name with none given is a clerk. */
@@ -20,7 +22,7 @@ export type UserRole = { user: string; role: string };
  * gains of its figure every full 30 days, the rounding policy date (yyyy-MM-dd; '': blank, the
  * sheet's today), the period numbering from date (yyyy-MM-dd; '': off — on or after it, an opened claim is
  * numbered within its period), the entry date (yyyy-MM-dd; '': off — a new claim left without a date takes it instead of the
- * sheet's today), the cap (two decimals; '': none — a person's due-total is at most it), the proof threshold (two decimals; '': none — a
+ * sheet's today), the cap (two decimals; '': none — a person's due-total is at most it less their cut total, not below 0.00), the proof threshold (two decimals; '': none — a
  * claim whose due is above the one in force on its date is settled or approved only once it has a proof), the note threshold (two decimals; '': none — a
  * claim whose due is above the one in force on its date is opened only with a note), the review threshold (two decimals; '': none — a
  * claim whose due is above the one in force on its date goes to REVIEW when opened), and the roles
@@ -151,8 +153,8 @@ export const DATE = /^\d{4}-\d{2}-\d{2}$/;
 /**
  * What a claim's due is worked out from: the floor and late percent in force on a claim's date, the grace days of a grade
  * in force on a date (0: none), the sheet's today, its policy
- * date in force (blank: today), the rounding mode in force on a date ('': none, the policy date decides), its cap in force on today ('': none) and the dates of its claims by number (a correction rounds by the date
- * of the claim it corrects).
+ * date in force (blank: today), the rounding mode in force on a date ('': none, the policy date decides), its cap in force on today ('': none), each person's cut total (their cuts across the pools, added up; the cap
+ * covers it with their due-total) and the dates of its claims by number (a correction rounds by the date of the claim it corrects).
  */
 export type DueRules = {
   floorOn: (date: string) => string;
@@ -162,6 +164,7 @@ export type DueRules = {
   policyDate: string;
   roundingOn: (date: string) => string;
   cap: string;
+  cutOf: (personId: number) => string;
   claimDates: Map<string, string>;
 };
 
@@ -170,11 +173,12 @@ export function useDueRules(): DueRules {
   const settings = useSettings().data;
   const today = useSheetToday();
   const claims = useClaims().data;
-  return useMemo(() => dueRules(settings, today, claims ?? []), [settings, today, claims]);
+  const pools = usePools().data;
+  return useMemo(() => dueRules(settings, today, claims ?? [], pools ?? []), [settings, today, claims, pools]);
 }
 
-/** A sheet's rules for working out a claim's due, from its settings, its today and its claims. */
-export function dueRules(settings: Settings | undefined, today: string, claims: Claim[]): DueRules {
+/** A sheet's rules for working out a claim's due, from its settings, its today, its claims and its pools (none: no cuts). */
+export function dueRules(settings: Settings | undefined, today: string, claims: Claim[], pools: Pool[] = []): DueRules {
   const history = settings?.history;
   return {
     floorOn: (date: string) => valueOn(history?.floor, date, DEFAULT_FLOOR),
@@ -184,6 +188,7 @@ export function dueRules(settings: Settings | undefined, today: string, claims: 
     policyDate: settings?.policyDate || today,
     roundingOn: (date: string) => valueOn(history?.rounding, date, ''),
     cap: settings?.cap ?? '',
+    cutOf: (personId: number) => cutTotal(personCuts(pools, personId)),
     claimDates: new Map(claims.filter((c) => c.number !== null).map((c) => [c.number!, c.date])),
   };
 }

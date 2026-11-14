@@ -3,7 +3,7 @@ import { gradeOn, liveHolds } from '../people/people';
 import { personDue } from '../rates/rates';
 import { useCurrentSheet, useCurrentUser } from '../session/session';
 import { dueRules } from '../settings/settings';
-import { freshClaims, freshPeople, freshRates, freshSettings, freshSheetInfo } from './fresh';
+import { freshClaims, freshPeople, freshPools, freshRates, freshSettings, freshSheetInfo } from './fresh';
 
 /** A CSV field: wrapped in double quotes, with any quote inside doubled, when it holds a comma, a quote or a line break. */
 export function csvField(value: string): string {
@@ -22,15 +22,16 @@ export function ExportPeople() {
   if (!user || !sheet) return null;
 
   const download = async () => {
-    const [info, people, claims, rates, settings] = await Promise.all([
+    const [info, people, claims, rates, settings, pools] = await Promise.all([
       freshSheetInfo(queryClient, sheet),
       freshPeople(queryClient, sheet),
       freshClaims(queryClient, sheet),
       freshRates(queryClient, sheet),
       freshSettings(queryClient, sheet),
+      freshPools(queryClient, sheet),
     ]);
     const today = info.today;
-    const rules = dueRules(settings, today, claims);
+    const rules = dueRules(settings, today, claims, pools);
     const lines = [['name', 'grade', 'retired-from', 'due-total']];
     for (const p of people) {
       const due = personDue(claims.filter((c) => c.personId === p.id), rates, p.grades, liveHolds(p, rules.today), rules, {

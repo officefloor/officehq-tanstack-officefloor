@@ -13,6 +13,7 @@ import { sheetKey, useCurrentSheet } from '../session/session';
 import type { SheetInfo } from '../session/session';
 import { dueRules, useDueRules } from '../settings/settings';
 import type { DueRules, Settings } from '../settings/settings';
+import type { Pool } from '../pools/pools';
 import { nameKey, STATUSES } from './HeaderCounters';
 
 /**
@@ -60,15 +61,16 @@ export const descendantFiguresKey = (sheet: string) => [...sheetKey(sheet), 'des
  */
 async function figuresOf(sheet: string): Promise<Figures> {
   const path = `/api/sheets/${encodeURIComponent(sheet)}`;
-  const [info, people, aliases, claims, rates, settings] = await Promise.all([
+  const [info, people, aliases, claims, rates, settings, pools] = await Promise.all([
     getJson<SheetInfo>(path),
     getJson<Person[]>(`${path}/people`),
     getJson<Alias[]>(`${path}/aliases`),
     getJson<Claim[]>(`${path}/claims`),
     getJson<Rate[]>(`${path}/rates`),
     getJson<Settings>(`${path}/settings`),
+    getJson<Pool[]>(`${path}/pools`),
   ]);
-  return sheetFigures(people, aliases, claims, rates, dueRules(settings, info.today, claims));
+  return sheetFigures(people, aliases, claims, rates, dueRules(settings, info.today, claims, pools));
 }
 
 /**

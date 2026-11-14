@@ -185,7 +185,8 @@ const keepsFigure = (c: Claim) => c.due !== null || (bound(c) && c.statedDue !==
  * rate in force on the sheet's today for their grade on that day it is n/a, unless a claim has a figure (kept
  * when settled or stated, or at the rate for the grade in force on its date): then it is the figures there are,
  * added up. Their open claims a hold covers (not bound by a statement) do not count. With `shared`, shared claims are
- * parted between their own person and their holders. It is at most the sheet's cap (n/a is not capped).
+ * parted between their own person and their holders. The sheet's cap covers it plus their cut total: it is at most
+ * the cap less their cut total, not below 0.00 (n/a is not capped).
  */
 export function personDue(
   claims: Claim[],
@@ -196,11 +197,18 @@ export function personDue(
   shared?: Shared,
 ): string {
   const sum = personSum(claims, rates, grades, holds, rules, shared);
-  if (sum === NA || rules.cap === '' || hundredths(sum) <= hundredths(rules.cap)) return sum;
-  return rules.cap;
+  if (sum === NA || rules.cap === '') return sum;
+  const room = Math.max(0, hundredths(rules.cap) - personCut(rules, shared));
+  return hundredths(sum) <= room ? sum : (room / 100).toFixed(2);
 }
 
-/** A person's excess: by how much their due-total is above the sheet's cap; 0.00 when it is not (or is n/a). */
+/** A person's cut total in whole hundredths (0 when not told who they are). */
+const personCut = (rules: DueRules, shared?: Shared) => (shared ? hundredths(rules.cutOf(shared.personId)) : 0);
+
+/**
+ * A person's excess: by how much their due-total plus their cut total is above the sheet's cap; 0.00 when it is
+ * not (or the due-total is n/a).
+ */
 export function personExcess(
   claims: Claim[],
   rates: Rate[],
@@ -211,7 +219,7 @@ export function personExcess(
 ): string {
   const sum = personSum(claims, rates, grades, holds, rules, shared);
   if (sum === NA || rules.cap === '') return '0.00';
-  return (Math.max(0, hundredths(sum) - hundredths(rules.cap)) / 100).toFixed(2);
+  return (Math.max(0, hundredths(sum) + personCut(rules, shared) - hundredths(rules.cap)) / 100).toFixed(2);
 }
 
 /**
