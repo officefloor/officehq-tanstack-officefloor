@@ -49,7 +49,8 @@ export const bound = (c: Claim) => c.stated;
  * comments are its comments, oldest first: the user who wrote each, the sheet's today then and its text;
  * batch is the number of the bulk settle batch that settled it (SETTLED or PENDING), null when it was settled one at a time or never;
  * lines are its lines, in the order added: a DRAFT's label, quantity and unit amount; a claim with lines has their
- * quantities times their unit amounts, added up, as its amount.
+ * quantities times their unit amounts, added up, as its amount;
+ * waived is whether a steward waived its late charge: a waived claim bears none, whatever its overdue state.
  */
 export type Claim = {
   id: number;
@@ -80,6 +81,7 @@ export type Claim = {
   lines: ClaimLine[];
   /** When it was added, on the sequence rates are saved on: a forward-only rate applies only to claims added after it. */
   added: number;
+  waived: boolean;
 };
 
 /** A line of a claim: its label, its quantity (a whole number, at least 1) and its unit amount (two decimals). */

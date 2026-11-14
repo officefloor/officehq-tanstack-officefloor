@@ -21,7 +21,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ClaimRepository {
 
-    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, added";
+    private static final String COLUMNS = "id, sheet_id, person_id, amount, claim_date, note, status, claim_number, due, opened_by, stated, stated_due, corrects, due_by, deferred_until, proofs, split_from, added, waived";
 
     private final JdbcTemplate jdbc;
 
@@ -152,6 +152,11 @@ public class ClaimRepository {
     public void defer(Claim claim) {
         jdbc.update("UPDATE claim SET deferred_until = ? WHERE id = ? AND sheet_id = ?",
                 Date.valueOf(claim.deferredUntil()), claim.id(), claim.sheetId());
+    }
+
+    /** Waive the claim's late charge. */
+    public void waive(Claim claim) {
+        jdbc.update("UPDATE claim SET waived = TRUE WHERE id = ? AND sheet_id = ?", claim.id(), claim.sheetId());
     }
 
     /** Store the claim's {@code number}. */
@@ -372,6 +377,6 @@ public class ClaimRepository {
                 rs.getBigDecimal("due"), rs.getString("opened_by"), rs.getBoolean("stated"), rs.getBigDecimal("stated_due"),
                 rs.getString("corrects"), rs.getDate("due_by").toLocalDate(),
                 rs.getDate("deferred_until") == null ? null : rs.getDate("deferred_until").toLocalDate(),
-                rs.getInt("proofs"), rs.getString("split_from"), rs.getLong("added"));
+                rs.getInt("proofs"), rs.getString("split_from"), rs.getLong("added"), rs.getBoolean("waived"));
     }
 }

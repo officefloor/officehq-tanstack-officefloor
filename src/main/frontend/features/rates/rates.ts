@@ -148,10 +148,10 @@ function claimFigure(claim: Claim, rates: Rate[], grades: GradeFrom[], rules: Du
  * The late charge on a figure, compounded: for every full 30 days the claim is overdue, the late percent in force on that
  * boundary date (its due-by plus the grace days of its person's grade on its date plus 30, 60, 90 ... days) of the figure
  * plus the charges of the boundaries before it, rounded like the claim's due, the charges added up (a boundary at 0.00
- * adds nothing); 0.00 when it is not overdue, and always for a correction.
+ * adds nothing); 0.00 when it is not overdue, and always for a correction or a claim whose charge was waived.
  */
 export function lateCharge(claim: Claim, figure: string, grades: GradeFrom[], rules: DueRules): string {
-  if (claim.corrects !== null) return '0.00';
+  if (claim.corrects !== null || claim.waived) return '0.00';
   const grace = claimGrace(claim, grades, rules);
   const periods = latePeriods(claim, rules.today, grace);
   const charges: string[] = [];

@@ -11,7 +11,8 @@ import java.util.function.Function;
  * the grace days of its person's grade in force on its date, before the sheet's today), the late percent in force on
  * that boundary date (the due-by plus the grace plus 30, 60, 90 ... days) of its figure plus the charges of the
  * boundaries before it (compounding), rounded like the claim's due, the charges added up; a boundary whose percent is 0.00 adds nothing. Never bound by a
- * statement: it follows the sheet's today until the claim is settled. A correction, and a deferred claim, is never charged.
+ * statement: it follows the sheet's today until the claim is settled. A correction, a deferred claim and a claim whose
+ * charge was waived is never charged.
  */
 public record LateCharge(Function<LocalDate, BigDecimal> pctOn, Function<Claim, Integer> graceOf, LocalDate today) {
 
@@ -26,7 +27,7 @@ public record LateCharge(Function<LocalDate, BigDecimal> pctOn, Function<Claim, 
     /** The charge on the claim's figure (null: n/a, charged nothing); zero unless the claim is overdue. */
     public BigDecimal on(Claim claim, BigDecimal figure, RoundingMode mode) {
         BigDecimal charge = BigDecimal.ZERO.setScale(2);
-        if (figure == null || !claim.status().open() || claim.deferred(today) || claim.correction()) {
+        if (figure == null || !claim.status().open() || claim.deferred(today) || claim.correction() || claim.waived()) {
             return charge;
         }
         LocalDate lateFrom = claim.dueBy().plusDays(graceOf.apply(claim));
