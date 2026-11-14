@@ -11,13 +11,16 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class PersonRepository {
 
-    private static final String COLUMNS = "id, sheet_id, name, grade, version, statement_count, stated_total, statement_date";
+    private static final String COLUMNS = "id, sheet_id, name, grade, version, statement_count, stated_total, statement_date, retired_from";
 
     private static final RowMapper<Person> ROW = (rs, n) -> {
         LocalDate stated = rs.getObject("statement_date", LocalDate.class);
-        return new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
+        LocalDate retired = rs.getObject("retired_from", LocalDate.class);
+        Person person = new Person(rs.getLong("id"), rs.getString("sheet_id"), rs.getString("name"),
                 rs.getString("grade"), rs.getLong("version"), rs.getInt("statement_count"),
                 rs.getString("stated_total"), stated == null ? null : stated.toString());
+        person.setRetiredFrom(retired == null ? null : retired.toString());
+        return person;
     };
 
     private final JdbcTemplate jdbc;
@@ -84,5 +87,11 @@ public class PersonRepository {
         jdbc.update("UPDATE person SET statement_count = ?, stated_total = ?, statement_date = ? WHERE sheet_id = ? AND id = ?",
                 person.getStatementCount(), person.getStatedTotal(), LocalDate.parse(person.getStatementDate()),
                 person.getSheetId(), person.getId());
+    }
+
+    /** Save the person's retirement date (not an edit: the version stays). */
+    public void updateRetired(Person person) {
+        jdbc.update("UPDATE person SET retired_from = ? WHERE sheet_id = ? AND id = ?",
+                LocalDate.parse(person.getRetiredFrom()), person.getSheetId(), person.getId());
     }
 }

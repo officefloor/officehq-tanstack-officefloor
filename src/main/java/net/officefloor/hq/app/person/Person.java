@@ -4,7 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 
 /** A person on a sheet: a name and a grade (A, B or C), the version raised by each saved edit, and
  *  their statements: how many have been taken, and the last one's due-total and date (none until the
- *  first). */
+ *  first), and the date they are retired from (null: not retired; set at all, they count as retired). */
 public class Person {
     private final long id;
     private final String sheetId;
@@ -14,6 +14,7 @@ public class Person {
     private int statementCount;
     private String statedTotal;
     private String statementDate;
+    private String retiredFrom;
     /** How many claims the statement this request took bound, for its audit line. */
     private int statedClaims;
 
@@ -44,6 +45,14 @@ public class Person {
     public int getStatementCount() { return statementCount; }
     public String getStatedTotal() { return statedTotal; }
     public String getStatementDate() { return statementDate; }
+    public String getRetiredFrom() { return retiredFrom; }
+    public void setRetiredFrom(String retiredFrom) { this.retiredFrom = retiredFrom; }
+    public boolean isRetired() { return retiredFrom != null; }
+
+    /** Whether a claim on this date is refused: the person is retired from a date before it. */
+    public boolean retiredBefore(java.time.LocalDate date) {
+        return retiredFrom != null && date.isAfter(java.time.LocalDate.parse(retiredFrom));
+    }
 
     /** Record a statement just taken: its due-total (null: n/a), date and how many claims it bound. */
     public void stated(String total, String date, int claims) {

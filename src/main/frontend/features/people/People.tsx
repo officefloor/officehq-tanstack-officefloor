@@ -7,14 +7,17 @@ import { claimsKey, listClaims, sumAmounts } from '../claims/api';
 import { listRates, personDue, rateByGrade, ratesKey, showDue } from '../rates/api';
 import { useSheetToday } from '../sheet/api';
 import { QuickAdd } from './QuickAdd';
-import { GRADES, addPerson, listPeople, peopleKey, takeStatement, updatePerson, type Person, type PersonInput } from './api';
+import { ShowRetired, useShowRetired } from './ShowRetired';
+import { GRADES, addPerson, listPeople, peopleKey, retirePerson, takeStatement, updatePerson, type Person, type PersonInput } from './api';
 
 const EMPTY: PersonInput = { name: '', grade: 'A' };
 
 /** The people on the sheet: a form that adds a person or edits one, and the list in added order,
  *  each with their claimed total, their due-total (the sum of their claims' due figures; n/a
  *  when their grade has no rate on the sheet's today and no settled or stated claim keeps a figure),
- *  their statements (a button that takes one, the count, the last one's due-total and date) and their claims. */
+ *  their statements (a button that takes one, the count, the last one's due-total and date), whether
+ *  they are retired and from when (with a date and a button that retires them) and their claims.
+ *  Retired people are left out of the list unless "show retired" is on; their claims still count. */
 export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
   const people = useQuery({ queryKey: peopleKey(sheetId), queryFn: () => listPeople(sheetId) });
@@ -24,6 +27,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const [form, setForm] = useState<PersonInput>(EMPTY);
   // The person being edited and the version of them the form loaded.
   const [editing, setEditing] = useState<{ id: number; version: number } | null>(null);
+  const [showRetired] = useShowRetired();
+  // The retirement date typed on each person's row (blank: the sheet's today).
+  const [retireDates, setRetireDates] = useState<Record<number, string>>({});
 
   const save = useMutation({
     mutationFn: async (v: { editing: { id: number; version: number } | null; input: PersonInput }) => {
@@ -60,10 +66,26 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
     ]),
   });
 
+  // The person whose last retirement was refused; cleared by the next action on the row.
+  const retirement = useMutation({
+    mutationFn: (v: { id: number; from: string }) => retirePerson(sheetId, user, v.id, v.from),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: peopleKey(sheetId) }),
+  });
+
   const state = (id: number) => {
     stateOnce(() => {
       statement.reset();
+      retirement.reset();
       return statement.mutateAsync(id);
+    });
+  };
+
+  const retire = (id: number) => {
+    const from = retireDates[id] ?? '';
+    stateOnce(() => {
+      statement.reset();
+      retirement.reset();
+      return retirement.mutateAsync({ id, from });
     });
   };
 
@@ -128,10 +150,11 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
         )}
       </form>
       <QuickAdd sheetId={sheetId} user={user} />
+      <ShowRetired />
       {people.isError && <p data-testid="people-error">The people could not be loaded.</p>}
       <table>
         <tbody>
-          {(people.data ?? []).map((p) => {
+          {(people.data ?? []).filter((p) => showRetired || !p.retired).map((p) => {
             const own = (claims.data ?? []).filter((c) => c.personId === p.id);
             const claimed = sumAmounts(own);
             const pct = byGrade.get(p.grade);
@@ -161,6 +184,22 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   {statement.isError && statement.variables === p.id && (
                     <span data-testid="person-error">The statement could not be taken.</span>
                   )}
+                  {retirement.isError && retirement.variables?.id === p.id && (
+                    <span data-testid="person-error">The person could not be retired: the date must be a date.</span>
+                  )}
+                </td>
+                <td>
+                  Retired <span data-testid="person-retired">{p.retired ? 'yes' : 'no'}</span>{' '}
+                  from <span data-testid="person-retired-from">{p.retiredFrom ?? ''}</span>{' '}
+                  <input type="date" data-testid="person-retire-date" value={retireDates[p.id] ?? ''}
+                    onChange={(e) => {
+                      setRetireDates((d) => ({ ...d, [p.id]: e.target.value }));
+                      retirement.reset();
+                    }} />{' '}
+                  <button type="button" data-testid="person-retire" disabled={retirement.isPending}
+                    onClick={() => retire(p.id)}>
+                    Retire
+                  </button>
                 </td>
                 <td>
                   <PersonClaims sheetId={sheetId} user={user} personId={p.id} claims={own} grade={p.grade} rates={rates.data} />

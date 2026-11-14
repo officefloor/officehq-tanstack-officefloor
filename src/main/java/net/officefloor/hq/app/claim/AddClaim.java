@@ -13,9 +13,12 @@ public class AddClaim {
     public void add(@RequestParam(name = "by", required = false) String by,
             @Val ValidClaim request, @Val Person person, SheetRepository sheets,
             ClaimRepository claims, PeriodRepository periods, Out<Claim> claim)
-            throws PeriodClosedException {
+            throws PeriodClosedException, InvalidClaimException {
         String user = by == null ? "" : by;
         LocalDate date = request.date() != null ? request.date() : sheets.today(person.getSheetId());
+        if (person.retiredBefore(date)) {
+            throw new InvalidClaimException("The person is retired from " + person.getRetiredFrom());
+        }
         periods.requireOpen(person.getSheetId(), date.toString());
         claim.set(claims.add(person.getSheetId(), person.getId(), request.amount(), date,
                 request.note(), user));
