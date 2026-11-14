@@ -23,7 +23,7 @@ public class ApplyClaim {
         if (person != null && person.retiredBefore(date)) {
             throw new InvalidClaimException("The person is retired from " + person.getRetiredFrom());
         }
-        Long corrects = Corrections.check(request, claim.getSheetId(), claim.getPersonId(), claims);
+        String corrects = Corrections.check(request, claim.getSheetId(), claim.getPersonId(), claims);
         claim.setAmount(request.amount().toPlainString());
         claim.setCorrects(corrects);
         claim.setRoundDate(corrects == null ? null : claims.findByNumber(claim.getSheetId(), corrects).getDate());

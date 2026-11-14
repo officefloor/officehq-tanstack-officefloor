@@ -71,7 +71,7 @@ export function PersonClaims({ sheetId, user, personId, claims, gradeOn, rates, 
       return;
     }
     setEditRefused(null);
-    setForm({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects === null ? '' : String(c.corrects) });
+    setForm({ amount: c.amount, date: c.date, note: c.note, corrects: c.corrects ?? '' });
     setEditing(c.id);
     save.reset();
   };

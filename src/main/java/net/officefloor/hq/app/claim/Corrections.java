@@ -8,7 +8,7 @@ public final class Corrections {
 
     /** The number a claim corrects: none for a claim that is not a correction; refused when a
      *  correction names no SETTLED claim of the person. */
-    public static Long check(ValidClaim request, String sheetId, long personId, ClaimRepository claims)
+    public static String check(ValidClaim request, String sheetId, long personId, ClaimRepository claims)
             throws InvalidClaimException {
         if (!request.isCorrection()) return null;
         Claim corrected = claims.findByNumber(sheetId, request.corrects());

@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.sql.PreparedStatement;
 import java.time.LocalDate;
 import java.util.List;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -21,15 +22,15 @@ public class ClaimRepository {
             rs.getString("sheet_id"), rs.getLong("person_id"),
             rs.getBigDecimal("amount").setScale(2).toPlainString(),
             rs.getObject("claim_date", LocalDate.class).toString(), rs.getString("note"),
-            rs.getString("status"), rs.getObject("number", Long.class),
+            rs.getString("status"), rs.getString("number"),
             rs.getBigDecimal("settled_due") == null ? null
                     : rs.getBigDecimal("settled_due").setScale(2).toPlainString(),
             rs.getString("opened_by"), rs.getBoolean("stated"),
             rs.getBigDecimal("stated_due") == null ? null
-                    : rs.getBigDecimal("stated_due").setScale(2).toPlainString()), rs.getObject("corrects", Long.class),
+                    : rs.getBigDecimal("stated_due").setScale(2).toPlainString()), rs.getString("corrects"),
             rs.getObject("round_date", LocalDate.class).toString());
 
-    private static Claim withCorrects(Claim claim, Long corrects, String roundDate) {
+    private static Claim withCorrects(Claim claim, String corrects, String roundDate) {
         claim.setCorrects(corrects);
         claim.setRoundDate(roundDate);
         return claim;
@@ -53,13 +54,13 @@ public class ClaimRepository {
     }
 
     /** The claim on the sheet with that number; null when none has it. */
-    public Claim findByNumber(String sheetId, long number) {
+    public Claim findByNumber(String sheetId, String number) {
         return jdbc.query("SELECT " + COLUMNS + " FROM claim WHERE sheet_id = ? AND number = ?",
                 ROW, sheetId, number).stream().findFirst().orElse(null);
     }
 
     public Claim add(String sheetId, long personId, BigDecimal amount, LocalDate date, String note,
-            Long corrects, String user) {
+            String corrects, String user) {
         GeneratedKeyHolder key = new GeneratedKeyHolder();
         jdbc.update(con -> {
             PreparedStatement ps = con.prepareStatement(
@@ -102,9 +103,27 @@ public class ClaimRepository {
 
     /** The sheet's next claim number, taken in one atomic statement so two claims opened at the same
      *  moment never get the same one; rolled back with the request when it is refused. */
-    public long nextNumber(String sheetId) {
-        return jdbc.queryForObject("SELECT last_claim_number FROM FINAL TABLE ("
+    public String nextNumber(String sheetId) {
+        return String.valueOf(jdbc.queryForObject("SELECT last_claim_number FROM FINAL TABLE ("
                 + "UPDATE sheet SET last_claim_number = last_claim_number + 1 WHERE id = ?)",
-                Long.class, sheetId);
+                Long.class, sheetId));
+    }
+
+    /** The next number in a period's own sequence on the sheet ({@code <period>-<n>}, from 1), or
+     *  for a claim in no period ({@code period} null) in the X sequence ({@code X-<n>}); taken
+     *  atomically as {@link #nextNumber} is. */
+    public String nextPeriodNumber(String sheetId, String period) {
+        String key = period == null ? "" : period;
+        try {
+            jdbc.update("INSERT INTO sheet_period_number (sheet_id, period_key) SELECT ?, ? WHERE NOT EXISTS "
+                    + "(SELECT 1 FROM sheet_period_number WHERE sheet_id = ? AND period_key = ?)",
+                    sheetId, key, sheetId, key);
+        } catch (DuplicateKeyException raced) {
+            // Another request started the sequence at the same moment.
+        }
+        Long n = jdbc.queryForObject("SELECT last_number FROM FINAL TABLE (UPDATE sheet_period_number "
+                + "SET last_number = last_number + 1 WHERE sheet_id = ? AND period_key = ?)",
+                Long.class, sheetId, key);
+        return (period == null ? "X" : period) + "-" + n;
     }
 }

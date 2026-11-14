@@ -20,7 +20,7 @@ public class AddClaim {
             throw new InvalidClaimException("The person is retired from " + person.getRetiredFrom());
         }
         periods.requireOpen(person.getSheetId(), date.toString());
-        Long corrects = Corrections.check(request, person.getSheetId(), person.getId(), claims);
+        String corrects = Corrections.check(request, person.getSheetId(), person.getId(), claims);
         claim.set(claims.add(person.getSheetId(), person.getId(), request.amount(), date,
                 request.note(), corrects, user));
     }

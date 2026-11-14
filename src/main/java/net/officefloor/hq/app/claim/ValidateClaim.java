@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 public class ValidateClaim {
     /** An amount (negative for a correction), with up to two decimals. */
     private static final Pattern AMOUNT = Pattern.compile("-?(\\d+(\\.\\d{0,2})?|\\.\\d{1,2})");
+    /** A sheet-wide number, compared as a whole number (07 is 7). */
     private static final Pattern NUMBER = Pattern.compile("\\d{1,18}");
 
     public void validate(@RequestBody ClaimRequest request, Out<ValidClaim> body)
@@ -22,12 +23,12 @@ public class ValidateClaim {
             throw new InvalidClaimException("An amount with up to two decimals is required");
         }
         BigDecimal value = new BigDecimal(amount).setScale(2);
-        Long corrected = null;
+        String corrected = null;
         if (value.signum() < 0) {
-            if (!NUMBER.matcher(corrects).matches()) {
+            if (corrects.isEmpty()) {
                 throw new InvalidClaimException("A negative amount must name the claim it corrects");
             }
-            corrected = Long.valueOf(corrects);
+            corrected = NUMBER.matcher(corrects).matches() ? String.valueOf(Long.parseLong(corrects)) : corrects;
         }
         LocalDate day = null;
         if (!date.isEmpty()) {

@@ -4,7 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 
 /** A claim of a person: an amount (two decimals, as text), a date (yyyy-MM-dd), a note and a status
  *  (a {@link ClaimStatus} name), and its number on the sheet (given when opened and kept when voided;
- *  none while a draft), its settled due (fixed when settled; none otherwise, or when there was no rate), and
+ *  none while a draft: the sheet-wide number, or {@code <period>-<n>} while period numbering is in force), its settled due (fixed when settled; none otherwise, or when there was no rate), and
  *  who opened it (none while a draft), and whether its person's last statement bound it, with the
  *  figure it bound (none when it had none): a bound claim shows and totals that figure. A correction (a
  *  negative amount) keeps the number of the SETTLED claim of its person it corrects (none otherwise). */
@@ -16,21 +16,21 @@ public class Claim {
     private String date;
     private String note;
     private String status;
-    private Long number;
+    private String number;
     private String settledDue;
     private String openedBy;
     private boolean stated;
     private String statedDue;
-    private Long corrects;
+    private String corrects;
     private String roundDate;
 
     public Claim(long id, String sheetId, long personId, String amount, String date, String note,
-            String status, Long number, String settledDue, String openedBy) {
+            String status, String number, String settledDue, String openedBy) {
         this(id, sheetId, personId, amount, date, note, status, number, settledDue, openedBy, false, null);
     }
 
     public Claim(long id, String sheetId, long personId, String amount, String date, String note,
-            String status, Long number, String settledDue, String openedBy, boolean stated,
+            String status, String number, String settledDue, String openedBy, boolean stated,
             String statedDue) {
         this.id = id;
         this.sheetId = sheetId;
@@ -57,16 +57,16 @@ public class Claim {
     public void setNote(String note) { this.note = note; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
-    public Long getNumber() { return number; }
-    public void setNumber(Long number) { this.number = number; }
+    public String getNumber() { return number; }
+    public void setNumber(String number) { this.number = number; }
     public String getSettledDue() { return settledDue; }
     public void setSettledDue(String settledDue) { this.settledDue = settledDue; }
 
     public String getOpenedBy() { return openedBy; }
     public void setOpenedBy(String openedBy) { this.openedBy = openedBy; }
 
-    public Long getCorrects() { return corrects; }
-    public void setCorrects(Long corrects) { this.corrects = corrects; }
+    public String getCorrects() { return corrects; }
+    public void setCorrects(String corrects) { this.corrects = corrects; }
 
     /** The date its figures round by (see {@link Dues.Late#rounding}): its own date, or for a
      *  correction the date of the claim it corrects. */

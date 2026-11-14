@@ -27,6 +27,10 @@ public class SettingRepository {
      *  up, one on or after it half to even. */
     public static final String POLICY_DATE = "policy-date";
 
+    /** The period numbering date (yyyy-MM-dd; blank: off): once the sheet's today is on or after it,
+     *  a claim opened is numbered within its period. */
+    public static final String PERIOD_NUMBERING_FROM = "period-numbering-from";
+
     /** The late percent until it is first set. */
     public static final String DEFAULT_LATE_PCT = "0.00";
 
@@ -85,6 +89,12 @@ public class SettingRepository {
     public LocalDate policyDate(String sheetId, LocalDate today) {
         String value = find(sheetId, POLICY_DATE);
         return value == null ? today : LocalDate.parse(value);
+    }
+
+    /** The sheet's period numbering date; null when off. */
+    public LocalDate periodNumberingFrom(String sheetId) {
+        String value = find(sheetId, PERIOD_NUMBERING_FROM);
+        return value == null ? null : LocalDate.parse(value);
     }
 
     /** What a claim's late charge and rounding go by on the sheet now. */

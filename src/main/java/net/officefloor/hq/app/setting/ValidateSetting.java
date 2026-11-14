@@ -36,12 +36,13 @@ public class ValidateSetting {
             }
             body.set(new SettingRequest(key, String.valueOf(Integer.parseInt(value))));
             return;
-        } else if (SettingRepository.POLICY_DATE.equals(key)) {
+        } else if (SettingRepository.POLICY_DATE.equals(key)
+                || SettingRepository.PERIOD_NUMBERING_FROM.equals(key)) {
             if (!value.isEmpty()) {
                 try {
                     value = LocalDate.parse(value).toString();
                 } catch (DateTimeParseException e) {
-                    throw new InvalidSettingException("The policy date is blank or a date (yyyy-MM-dd)");
+                    throw new InvalidSettingException("The " + key + " setting is blank or a date (yyyy-MM-dd)");
                 }
             }
             body.set(new SettingRequest(key, value.isEmpty() ? null : value));

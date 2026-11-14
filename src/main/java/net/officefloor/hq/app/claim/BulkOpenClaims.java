@@ -54,7 +54,7 @@ public class BulkOpenClaims {
             } catch (ClaimStatusException | PeriodClosedException refused) {
                 continue;
             }
-            claim.setNumber(claims.nextNumber(id));
+            claim.setNumber(ClaimNumbers.next(claim, claims, periods, settings, sheets));
             claim.setOpenedBy(user);
             claims.update(claim);
             opened++;

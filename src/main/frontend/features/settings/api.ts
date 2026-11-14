@@ -12,8 +12,10 @@ export type Role = { sheetId: string; user: string; role: string };
  *  floor (two decimals; the least a claim's live due can be) and the terms (whole days after its
  *  date by which a claim is due) and the late percent (two decimals; the share of an overdue claim's
  *  figure it gains for every full 30 days it is overdue) and the policy date (yyyy-MM-dd; blank means
- *  the sheet's today: a claim dated before it rounds half up, on or after it half to even). */
-export const SETTING_KEYS = ['clerk-limit', 'floor', 'terms', 'late-pct', 'policy-date'] as const;
+ *  the sheet's today: a claim dated before it rounds half up, on or after it half to even) and the
+ *  period numbering date (yyyy-MM-dd; blank means off: once the sheet's today is on or after it, a
+ *  claim opened is numbered within its period, <period>-<n>, or X-<n> in no period). */
+export const SETTING_KEYS = ['clerk-limit', 'floor', 'terms', 'late-pct', 'policy-date', 'period-numbering-from'] as const;
 
 /** A setting's value until it is first set. */
 export const SETTING_DEFAULTS: Record<string, string> = { floor: '1.00', terms: '14', 'late-pct': '0.00' };
