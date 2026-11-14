@@ -7,12 +7,13 @@ export type Setting = { sheetId: string; key: string; value: string };
 /** The role a user name has on the sheet; a name not listed is a clerk. */
 export type Role = { sheetId: string; user: string; role: string };
 
-/** The settings the screen offers: the clerk limit (two decimals; blank means no limit) and the
- *  floor (two decimals; the least a claim's live due can be). */
-export const SETTING_KEYS = ['clerk-limit', 'floor'] as const;
+/** The settings the screen offers: the clerk limit (two decimals; blank means no limit), the
+ *  floor (two decimals; the least a claim's live due can be) and the terms (whole days after its
+ *  date by which a claim is due). */
+export const SETTING_KEYS = ['clerk-limit', 'floor', 'terms'] as const;
 
 /** A setting's value until it is first set. */
-export const SETTING_DEFAULTS: Record<string, string> = { floor: '1.00' };
+export const SETTING_DEFAULTS: Record<string, string> = { floor: '1.00', terms: '14' };
 
 const base = (sheetId: string) => `/api/sheets/${encodeURIComponent(sheetId)}`;
 
@@ -41,4 +42,10 @@ export function setRole(sheetId: string, by: string, user: string, role: string)
 export function useFloor(sheetId: string): string {
   const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
   return settings.data?.find((s) => s.key === 'floor')?.value || SETTING_DEFAULTS.floor;
+}
+
+/** The sheet's terms: the number of days after its date by which a claim is due. */
+export function useTerms(sheetId: string): number {
+  const settings = useQuery({ queryKey: settingsKey(sheetId), queryFn: () => listSettings(sheetId) });
+  return Number(settings.data?.find((s) => s.key === 'terms')?.value || SETTING_DEFAULTS.terms);
 }

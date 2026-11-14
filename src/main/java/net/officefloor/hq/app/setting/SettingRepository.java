@@ -14,6 +14,12 @@ public class SettingRepository {
     /** The floor: the least a claim's live due can be (two decimals). */
     public static final String FLOOR = "floor";
 
+    /** The terms: the number of days after its date by which a claim is due (a whole number). */
+    public static final String TERMS = "terms";
+
+    /** The terms until they are first set. */
+    public static final String DEFAULT_TERMS = "14";
+
     /** The floor until it is first set. */
     public static final String DEFAULT_FLOOR = "1.00";
 

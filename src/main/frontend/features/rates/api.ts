@@ -1,5 +1,5 @@
 import { getJson, postJson } from '../../api/http';
-import { counts, type Claim } from '../claims/api';
+import { counts, isOverdue, type Claim } from '../claims/api';
 import { sheetKey } from '../sheet/api';
 
 /** A grade's rate on the sheet: a percent as two-decimal text, in force from its from-date
@@ -76,6 +76,13 @@ export function personDue(claims: Claim[], rates: Rate[] | undefined, grade: str
   const own = claims.filter(counts);
   if (pct === undefined && !own.some((c) => c.settledDue !== null || (c.stated && c.statedDue !== null))) return null;
   return sumDues(own.map((c) => claimDue(c, rates, grade, floor)));
+}
+
+/** The overdue claims among those that count (`claims`, the live ones): their count and the sum
+ *  of their due figures (n/a ones skipped). */
+export function overdue(claims: Claim[], terms: number, today: string, dueOfClaim: (c: Claim) => string | null) {
+  const late = claims.filter((c) => isOverdue(c, terms, today));
+  return { count: late.length, total: sumDues(late.map(dueOfClaim)) };
 }
 
 /** Add up two-decimal dues, skipping n/a. */

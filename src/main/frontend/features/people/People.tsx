@@ -4,8 +4,8 @@ import { HttpError } from '../../api/http';
 import { useSubmitOnce } from '../../forms/useSubmitOnce';
 import { PersonClaims } from '../claims/PersonClaims';
 import { claimsKey, listClaims, liveClaims, sumAmounts } from '../claims/api';
-import { listRates, personDue, rateByGrade, ratesKey, showDue } from '../rates/api';
-import { useFloor } from '../settings/api';
+import { claimDue, listRates, overdue, personDue, rateByGrade, ratesKey, showDue } from '../rates/api';
+import { useFloor, useTerms } from '../settings/api';
 import { useSheetToday } from '../sheet/api';
 import { QuickAdd } from './QuickAdd';
 import { ShowRetired, useShowRetired } from './ShowRetired';
@@ -19,7 +19,7 @@ const EMPTY: PersonInput = { name: '', grade: 'A' };
  *  their statements (a button that takes one, the count, the last one's due-total and date), whether
  *  they are retired and from when (with a date and a button that retires them), whether they are on
  *  hold (with a button that holds or releases them; held, their OPEN claims count in no total) and
- *  their claims.
+ *  their overdue claims (OPEN ones past their due-by; the count and their due added up) and their claims.
  *  Retired people are left out of the list unless "show retired" is on; their claims still count. */
 export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const queryClient = useQueryClient();
@@ -27,7 +27,9 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
   const claims = useQuery({ queryKey: claimsKey(sheetId), queryFn: () => listClaims(sheetId) });
   const rates = useQuery({ queryKey: ratesKey(sheetId), queryFn: () => listRates(sheetId) });
   const floor = useFloor(sheetId);
-  const byGrade = rateByGrade(rates.data, useSheetToday(sheetId, user));
+  const terms = useTerms(sheetId);
+  const today = useSheetToday(sheetId, user);
+  const byGrade = rateByGrade(rates.data, today);
   const [form, setForm] = useState<PersonInput>(EMPTY);
   // The person being edited and the version of them the form loaded.
   const [editing, setEditing] = useState<{ id: number; version: number } | null>(null);
@@ -183,6 +185,7 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
             const live = liveClaims(own, [p]);
             const claimed = sumAmounts(live);
             const pct = byGrade.get(p.grade);
+            const late = overdue(live, terms, today, (c) => claimDue(c, rates.data, p.grade, floor));
             return (
               <tr key={p.id} data-testid={`person-row-${p.id}`}>
                 <td data-testid="person-name">{p.name}</td>
@@ -192,6 +195,10 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                 </td>
                 <td>
                   Due <span data-testid="person-due-total">{showDue(personDue(live, rates.data, p.grade, pct, floor))}</span>
+                </td>
+                <td>
+                  Overdue <span data-testid="person-overdue-count">{late.count}</span>{' '}
+                  totalling <span data-testid="person-overdue-total">{late.total}</span>
                 </td>
                 <td>
                   <button type="button" data-testid={`person-edit-${p.id}`} onClick={() => open(p)}>
@@ -237,7 +244,8 @@ export function People({ sheetId, user }: { sheetId: string; user: string }) {
                   </button>
                 </td>
                 <td>
-                  <PersonClaims sheetId={sheetId} user={user} personId={p.id} claims={own} grade={p.grade} rates={rates.data} floor={floor} />
+                  <PersonClaims sheetId={sheetId} user={user} personId={p.id} claims={own} grade={p.grade} rates={rates.data} floor={floor}
+                    terms={terms} today={today} />
                 </td>
               </tr>
             );

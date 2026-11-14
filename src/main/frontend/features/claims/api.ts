@@ -59,3 +59,14 @@ export function sumAmounts(claims: Claim[]): string {
   const cents = claims.filter(counts).reduce((t, c) => t + Math.round(Number(c.amount) * 100), 0);
   return (cents / 100).toFixed(2);
 }
+
+/** A claim's due-by (yyyy-MM-dd): its date plus the sheet's terms in days. */
+export function dueBy(c: Claim, terms: number): string {
+  const d = new Date(`${c.date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + terms);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Whether a claim is overdue: it is OPEN and its due-by is before the sheet's `today`. */
+export const isOverdue = (c: Claim, terms: number, today: string) =>
+  c.status === 'OPEN' && today !== '' && dueBy(c, terms) < today;
