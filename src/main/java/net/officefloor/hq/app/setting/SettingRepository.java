@@ -45,7 +45,7 @@ public class SettingRepository {
         return new Settings(sheetId, dated.clerkLimitOn(today), dated.floorOn(today), dated.termsOn(today),
                 dated.gradeTermsOn(today), dated.latePctOn(today), policyDate(sheetId), periodNumberingFrom(sheetId), entryDate(sheetId),
                 dated.capOn(today), dated.proofThresholdOn(today), roles, dated, permissions(sheetId), graceDays(sheetId),
-                today, delegations(sheetId), pot(sheetId), parent(sheetId), fiscalStartMonth(sheetId));
+                today, delegations(sheetId), pot(sheetId), parent(sheetId), fiscalStartMonth(sheetId), alertThreshold(sheetId));
     }
 
     /** The sheet's dated settings: every value recorded, by key and from-date. */
@@ -113,6 +113,18 @@ public class SettingRepository {
     public BigDecimal pot(String sheetId) {
         List<BigDecimal> pot = jdbc.query("SELECT pot FROM sheet WHERE id = ?", (rs, n) -> rs.getBigDecimal("pot"), sheetId);
         return pot.isEmpty() || pot.get(0) == null ? null : pot.get(0).setScale(2);
+    }
+
+    /** The sheet's alert threshold (null: blank, off). */
+    public BigDecimal alertThreshold(String sheetId) {
+        List<BigDecimal> threshold = jdbc.query("SELECT alert_threshold FROM sheet WHERE id = ?",
+                (rs, n) -> rs.getBigDecimal("alert_threshold"), sheetId);
+        return threshold.isEmpty() || threshold.get(0) == null ? null : threshold.get(0).setScale(2);
+    }
+
+    /** Set the sheet's alert threshold (null: blank, off). */
+    public void saveAlertThreshold(String sheetId, BigDecimal threshold) {
+        jdbc.update("UPDATE sheet SET alert_threshold = ? WHERE id = ?", threshold, sheetId);
     }
 
     /** Set the sheet's pot (null: blank, none). */

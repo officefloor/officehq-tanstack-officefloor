@@ -89,7 +89,8 @@ public class RollupService {
             overdues.add(overdue);
             figures.put(person.id(), new Rollup.Figures(person.name(), show(claimed), na ? NA : show(due), show(overdue)));
         }
-        return new Rollup(figures, show(claimedTotal), show(trimmedTotal(dues)), show(trimmedTotal(overdues)));
+        return new Rollup(figures, show(claimedTotal), show(trimmedTotal(dues)), show(trimmedTotal(overdues)),
+                settings.alertThreshold(sheetId));
     }
 
     /** The figures added up, leaving out the single highest and single lowest when there are three or more. */

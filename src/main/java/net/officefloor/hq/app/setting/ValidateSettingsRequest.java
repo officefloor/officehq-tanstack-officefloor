@@ -30,7 +30,7 @@ public class ValidateSettingsRequest {
             Out<PeriodNumberingFrom> periodNumberingFrom, Out<EntryDate> entryDate, Out<GradeTerms> gradeTerms, Out<Cap> cap,
             Out<ProofThreshold> proofThreshold, Out<NoteThreshold> noteThreshold, Out<PermissionChanges> permissions, Out<GraceDays> graceDays,
             Out<GradeGrace> gradeGrace, Out<GradeProofThreshold> gradeProofThreshold, Out<Pot> pot, Out<Parent> parent,
-            Out<FiscalStartMonth> fiscalStartMonth)
+            Out<FiscalStartMonth> fiscalStartMonth, Out<AlertThreshold> alertThreshold)
             throws InvalidSettingException {
         limit.set(clerkLimit(request.clerkLimit(), from(request.clerkLimitFrom(), "clerk limit")));
         floor.set(floor(request.floor(), from(request.floorFrom(), "floor")));
@@ -50,6 +50,21 @@ public class ValidateSettingsRequest {
         pot.set(pot(request.pot()));
         parent.set(parent(request.parent()));
         fiscalStartMonth.set(fiscalStartMonth(request.fiscalStartMonth()));
+        alertThreshold.set(alertThreshold(request.alertThreshold()));
+    }
+
+    private static AlertThreshold alertThreshold(String requested) throws InvalidSettingException {
+        if (requested == null) {
+            return new AlertThreshold(false, null);
+        }
+        String value = requested.trim();
+        if (value.isEmpty()) {
+            return new AlertThreshold(true, null);
+        }
+        if (!AMOUNT.matcher(value).matches()) {
+            throw new InvalidSettingException("The alert threshold must be 0.00 or more, with at most two decimals, or blank.");
+        }
+        return new AlertThreshold(true, new BigDecimal(value).setScale(2));
     }
 
     private static FiscalStartMonth fiscalStartMonth(String requested) throws InvalidSettingException {

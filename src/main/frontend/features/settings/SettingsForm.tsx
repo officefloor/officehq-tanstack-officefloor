@@ -55,6 +55,7 @@ type SettingsInput = {
   pot?: string;
   parent?: string;
   fiscalStartMonth?: string;
+  alertThreshold?: string;
 };
 
 /** The from-date field of each dated setting, by its key as the screen names it (terms-A for a grade's terms). */
@@ -75,6 +76,7 @@ type Touched = {
   pot: boolean;
   parent: boolean;
   fiscalStartMonth: boolean;
+  alertThreshold: boolean;
 };
 
 const UNTOUCHED: Touched = {
@@ -92,10 +94,11 @@ const UNTOUCHED: Touched = {
   pot: false,
   parent: false,
   fiscalStartMonth: false,
+  alertThreshold: false,
 };
 
 // The sheet's clerk limit (blank: no limit), floor, terms, each grade's terms (blank: the sheet's), late percent and policy date (blank: today) and period numbering from date (blank: off) and entry date (blank: off) and cap (blank: none) and proof threshold (blank: none) and each grade's proof threshold (blank: the sheet's) and note threshold (blank: none) in force, and the
-// permission matrix (by action, the roles allowed it; blank: the standing rule; not dated), and the grace days (blank: off; not dated), and the pot (blank: none; not dated), and the parent sheet (blank: none; not dated), and the fiscal year start month (1 to 12; blank: 1; not dated), and the form that sets them. Saving sends
+// permission matrix (by action, the roles allowed it; blank: the standing rule; not dated), and the grace days (blank: off; not dated), and the pot (blank: none; not dated), and the parent sheet (blank: none; not dated), and the fiscal year start month (1 to 12; blank: 1; not dated), and the alert threshold (blank: off; not dated), and the form that sets them. Saving sends
 // only the fields touched since the last save, so a blank field left alone changes nothing. A dated setting (the clerk
 // limit, floor, terms, each grade's terms, late percent, cap, proof threshold, each grade's proof threshold and note threshold) is recorded from the date typed beside it (blank: the
 // sheet's today); the value shown is the one in force on the sheet's today.
@@ -124,6 +127,7 @@ export function SettingsForm() {
   const [pot, setPot] = useState('');
   const [parent, setParent] = useState('');
   const [fiscalStartMonth, setFiscalStartMonth] = useState('');
+  const [alertThreshold, setAlertThreshold] = useState('');
   const [perms, setPerms] = useState<Record<string, string>>({});
   const [touchedPerms, setTouchedPerms] = useState<Record<string, boolean>>({});
   const [froms, setFroms] = useState<Froms>({});
@@ -156,6 +160,7 @@ export function SettingsForm() {
       setPot('');
       setParent('');
       setFiscalStartMonth('');
+      setAlertThreshold('');
       setPerms({});
       setTouchedPerms({});
       setFroms({});
@@ -365,6 +370,14 @@ export function SettingsForm() {
       }
       input.fiscalStartMonth = value;
     }
+    if (touched.alertThreshold) {
+      const value = alertThreshold.trim();
+      if (value !== '' && !AMOUNT.test(value)) {
+        setError('Type an alert threshold of 0.00 or more, with at most two decimals, or leave it blank for off.');
+        return;
+      }
+      input.alertThreshold = value;
+    }
     for (const a of PERMISSION_ACTIONS) {
       if (!touchedPerms[a]) continue;
       const value = (perms[a] ?? '').trim();
@@ -392,7 +405,8 @@ export function SettingsForm() {
       input.graceDays === undefined &&
       input.pot === undefined &&
       input.parent === undefined &&
-      input.fiscalStartMonth === undefined
+      input.fiscalStartMonth === undefined &&
+      input.alertThreshold === undefined
     )
       return;
     once(() => save.mutateAsync(input));
@@ -467,6 +481,9 @@ export function SettingsForm() {
       <p>
         Fiscal year start month:{' '}
         <span data-testid="setting-fiscal-start-month-current">{settings?.fiscalStartMonth ?? ''}</span>
+      </p>
+      <p>
+        Alert threshold: <span data-testid="setting-alert-threshold-current">{settings?.alertThreshold ?? ''}</span>
       </p>
       {PERMISSION_ACTIONS.map((a) => (
         <p key={a}>
@@ -680,6 +697,17 @@ export function SettingsForm() {
           onChange={(e) => {
             setFiscalStartMonth(e.target.value);
             setTouched((t) => ({ ...t, fiscalStartMonth: true }));
+            setError('');
+          }}
+        />
+        <input
+          data-testid="setting-alert-threshold"
+          placeholder="Alert threshold a person's due-total crossing above is alerted (blank: off)"
+          value={alertThreshold}
+          onFocus={() => setTouched((t) => ({ ...t, alertThreshold: true }))}
+          onChange={(e) => {
+            setAlertThreshold(e.target.value);
+            setTouched((t) => ({ ...t, alertThreshold: true }));
             setError('');
           }}
         />

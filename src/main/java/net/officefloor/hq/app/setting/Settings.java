@@ -22,10 +22,11 @@ import java.util.Map;
  * {@code pot} is the sheet's pot (null: none), the pot of each pool that is a member of no pool, shared out among its members when it is balanced; it is not dated.
  * {@code parent} is the sheet's parent sheet id (null: none), whose rates a grade with none of its own in force takes; it is not dated.
  * {@code fiscalStartMonth} is the month (1 to 12) each of the sheet's fiscal years starts in; it is not dated.
+ * {@code alertThreshold} is the sheet's alert threshold (null: off), above which a person's due-total crossing is alerted in the audit; it is not dated.
  */
 public record Settings(String sheetId, BigDecimal clerkLimit, BigDecimal floor, int terms, Map<String, Integer> gradeTerms, BigDecimal latePct,
         LocalDate policyDate, LocalDate periodNumberingFrom, LocalDate entryDate, BigDecimal cap, BigDecimal proofThreshold, List<UserRole> roles, DatedSettings dated, Permissions permissions, Integer graceDays,
-        LocalDate today, List<Delegation> delegations, BigDecimal pot, String parent, int fiscalStartMonth) {
+        LocalDate today, List<Delegation> delegations, BigDecimal pot, String parent, int fiscalStartMonth, BigDecimal alertThreshold) {
 
     /** The role the user name acts in: steward while a delegation to it is in force on today, else its given role. */
     public Role roleOf(String user) {

@@ -16,6 +16,6 @@ public class AuditSheetCloned {
     public void audit(@Val SheetClone clone, @RequestParam("user") String user, RollupService rollups, Audit audit) {
         audit.record("SHEET_CLONE_MADE sheet=" + clone.from() + " by=" + user + " to=" + clone.to());
         audit.record("SHEET_CLONED sheet=" + clone.to() + " by=" + user + " from=" + clone.from());
-        RollupLines.record(new Rollup(Map.of(), "", "", ""), rollups.compute(clone.to()), clone.to(), user, audit);
+        RollupLines.record(new Rollup(Map.of(), "", "", "", null), rollups.compute(clone.to()), clone.to(), user, audit);
     }
 }

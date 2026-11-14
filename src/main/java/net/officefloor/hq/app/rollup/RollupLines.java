@@ -5,7 +5,9 @@ import net.officefloor.hq.app.Audit;
 
 /**
  * The lines that follow a change's own records: one ROLLUP line per person whose figures it moved (a person new to the
- * sheet counts as moved), in the order of the list, then a TOTALS line when the sheet's totals moved.
+ * sheet counts as moved), in the order of the list, then a TOTALS line when the sheet's totals moved, then one ALERT
+ * line per person whose due-total went from at or below the sheet's alert threshold (or no due-total) to above it, in the
+ * order of the list.
  */
 public final class RollupLines {
 
@@ -26,6 +28,14 @@ public final class RollupLines {
                 || !now.overdueTotal().equals(was.overdueTotal())) {
             audit.record("TOTALS" + prefix + " claimed-total=" + now.claimedTotal() + " due-total="
                     + now.dueTotal() + " overdue-total=" + now.overdueTotal());
+        }
+        for (Map.Entry<Long, Rollup.Figures> entry : now.people().entrySet()) {
+            Rollup.Figures figures = entry.getValue();
+            Rollup.Figures before = was.people().get(entry.getKey());
+            if (Rollup.above(figures.dueTotal(), now.alertThreshold())
+                    && !Rollup.above(before == null ? null : before.dueTotal(), now.alertThreshold())) {
+                audit.record("ALERT" + prefix + " name=" + figures.name() + " due-total=" + figures.dueTotal());
+            }
         }
     }
 }
