@@ -119,3 +119,13 @@ export type BulkSettleResult = { settled: number; refused: number };
 export function bulkSettleClaims(sheetId: string, by: string, claimIds: number[]): Promise<BulkSettleResult> {
   return postJson<BulkSettleResult>(`${sheetBase(sheetId)}/bulk-settle?by=${encodeURIComponent(by)}`, { claimIds });
 }
+
+/** How many claims a paste added. */
+export type PasteResult = { added: number };
+
+/** Add a DRAFT claim per line of name,amount,date,note (the note may hold commas; a blank date takes
+ *  the sheet's today; the note may be absent), in order, to the named person; refused (rejects),
+ *  adding nothing, when any line would be refused by the claim form or names no one on the sheet. */
+export function pasteClaims(sheetId: string, by: string, text: string): Promise<PasteResult> {
+  return postJson<PasteResult>(`${sheetBase(sheetId)}/paste-claims?by=${encodeURIComponent(by)}`, { text });
+}
