@@ -13,7 +13,8 @@ const EMPTY: ClaimInput = { amount: '', date: '', note: '' };
  *  claim's date, or bound by the person's last statement; none when there is no such rate), whether
  *  it is stated,
  *  the period its date falls in (none when no period contains it), who opened it, and buttons that
- *  change its status (the user who opened a claim cannot settle it). */
+ *  change its status (the user who opened a claim cannot settle it). Only a DRAFT can be edited:
+ *  editing any other claim is refused with an error on the claim. */
 export function PersonClaims({ sheetId, user, personId, claims, grade, rates }: {
   sheetId: string; user: string; personId: number; claims: Claim[]; grade: string; rates: Rate[] | undefined;
 }) {
@@ -21,6 +22,8 @@ export function PersonClaims({ sheetId, user, personId, claims, grade, rates }: 
   const periods = useQuery({ queryKey: periodsKey(sheetId), queryFn: () => listPeriods(sheetId) });
   const [form, setForm] = useState<ClaimInput>(EMPTY);
   const [editing, setEditing] = useState<number | null>(null);
+  // The claim whose edit was refused (it is not a DRAFT); cleared by the next action on any claim here.
+  const [editRefused, setEditRefused] = useState<number | null>(null);
 
   const save = useMutation({
     mutationFn: (v: { id: number | null; input: ClaimInput }) =>
@@ -44,6 +47,7 @@ export function PersonClaims({ sheetId, user, personId, claims, grade, rates }: 
   const act = (id: number, action: ClaimAction) => {
     actOnce(() => {
       move.reset();
+      setEditRefused(null);
       return move.mutateAsync({ id, action });
     });
   };
@@ -54,10 +58,15 @@ export function PersonClaims({ sheetId, user, personId, claims, grade, rates }: 
   };
 
   const open = (c: Claim) => {
+    move.reset();
+    if (c.status !== 'DRAFT') {
+      setEditRefused(c.id);
+      return;
+    }
+    setEditRefused(null);
     setForm({ amount: c.amount, date: c.date, note: c.note });
     setEditing(c.id);
     save.reset();
-    move.reset();
   };
 
   const cancel = () => {
@@ -90,6 +99,8 @@ export function PersonClaims({ sheetId, user, personId, claims, grade, rates }: 
         {save.isError && (
           <span data-testid="claim-form-error">{save.error instanceof HttpError && save.error.status === 423
             ? 'A claim dated inside a closed period cannot be added or edited.'
+            : save.error instanceof HttpError && save.error.status === 409
+            ? 'Only a DRAFT claim can be edited.'
             : 'A claim needs an amount of 0.00 or more with up to two decimals.'}</span>
         )}
       </form>
@@ -122,6 +133,11 @@ export function PersonClaims({ sheetId, user, personId, claims, grade, rates }: 
                   <button type="button" data-testid="claim-cancel" onClick={cancel}>
                     Cancel
                   </button>
+                )}
+                {editRefused === c.id && (
+                  <span data-testid="claim-error">
+                    {`A ${c.status} claim cannot be edited. To change it, void it and add a new one.`}
+                  </span>
                 )}
                 {move.isError && move.variables?.id === c.id && (
                   <span data-testid="claim-error">{move.error instanceof HttpError && move.error.status === 423

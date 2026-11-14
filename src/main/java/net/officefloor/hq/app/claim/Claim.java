@@ -3,8 +3,8 @@ package net.officefloor.hq.app.claim;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
 /** A claim of a person: an amount (two decimals, as text), a date (yyyy-MM-dd), a note and a status
- *  (a {@link ClaimStatus} name), and its number on the sheet (given when opened; none while a draft or
- *  once voided), its settled due (fixed when settled; none otherwise, or when there was no rate), and
+ *  (a {@link ClaimStatus} name), and its number on the sheet (given when opened and kept when voided;
+ *  none while a draft), its settled due (fixed when settled; none otherwise, or when there was no rate), and
  *  who opened it (none while a draft), and whether its person's last statement bound it, with the
  *  figure it bound (none when it had none): a bound claim shows and totals that figure. */
 public class Claim {
@@ -20,8 +20,6 @@ public class Claim {
     private String openedBy;
     private boolean stated;
     private String statedDue;
-    /** The number a claim had before this request cleared it (a void), for its audit line. */
-    private Long numberHad;
 
     public Claim(long id, String sheetId, long personId, String amount, String date, String note,
             String status, Long number, String settledDue, String openedBy) {
@@ -86,16 +84,9 @@ public class Claim {
         return stated ? statedDue : live;
     }
 
-    /** Clear the number, keeping the one it had for the audit line. */
-    public void clearNumber() {
-        this.numberHad = number;
-        this.number = null;
-    }
-
-    /** The audit suffix: {@code " number=<n>"} for a claim that has (or just had) a number. */
+    /** The audit suffix: {@code " number=<n>"} for a claim that has a number. */
     @JsonIgnore
     public String getAuditNumber() {
-        Long n = number != null ? number : numberHad;
-        return n == null ? "" : " number=" + n;
+        return number == null ? "" : " number=" + number;
     }
 }
